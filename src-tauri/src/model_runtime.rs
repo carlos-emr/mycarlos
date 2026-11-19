@@ -1234,6 +1234,62 @@ pub mod engine_testing {
         runner: Arc<Runner>,
         /// The quotes the last summary had that were not in the pages read.
         unlocated: std::sync::Mutex<Vec<String>>,
+        /// The model file's SHA-256 as it was handed over, and its size.
+        model_sha256: String,
+        model_bytes: u64,
+    }
+
+    /// A summary with what a measurement needs (the evaluation run in tests/model_engine.rs).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Measured {
+        pub sentences: Vec<MeasuredSentence>,
+        /// The index of the last page read, and whether only its start fitted.
+        pub last_page: u32,
+        pub last_page_cut: bool,
+        /// The answer's `Stats` as the helper reports them: counts and times, never words.
+        pub stats: Option<serde_json::Value>,
+        /// The time limit the runner gave this answer.
+        pub answer_limit_ms: u64,
+    }
+
+    /// One summary sentence: its words, the quote the model wrote, and whether that quote was
+    /// found in the pages read (the app shows "No source found" when it was not).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredSentence {
+        pub text: String,
+        pub quote: String,
+        pub located: bool,
+    }
+
+    /// What a summary is made under in this build, for telling measurements apart: the system
+    /// text, the summary request and grammar for `lang`, the caps, and a SHA-256 over all of them.
+    pub fn summary_build(lang: &str) -> Result<serde_json::Value, String> {
+        let language =
+            model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
+        let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
+        let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
+        let caps = serde_json::json!({
+            "maxSentences": model_helper::MAX_SENTENCES,
+            "summaryTokens": model_helper::SUMMARY_TOKENS,
+            "contextTokens": model_helper::CONTEXT_TOKENS,
+            "maxTextChars": model_helper::MAX_TEXT_CHARS,
+            "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,
+        });
+        let caps_text = caps.to_string();
+        let mut hash = Sha256::new();
+        for part in [model_helper::SYSTEM_PROMPT, &prompt, &grammar, &caps_text] {
+            hash.update((part.len() as u64).to_le_bytes());
+            hash.update(part.as_bytes());
+        }
+        Ok(serde_json::json!({
+            "fingerprint": format!("{:x}", hash.finalize()),
+            "systemPrompt": model_helper::SYSTEM_PROMPT,
+            "summaryPrompt": prompt,
+            "grammar": grammar,
+            "caps": caps,
+        }))
     }
 
     impl ModelRunner {
@@ -1256,6 +1312,7 @@ pub mod engine_testing {
                 other => return Err(format!("unknown chat format {other}")),
             };
             let (file, sha256, size_bytes) = handed_over(path)?;
+            let model_sha256 = sha256.clone();
             let verified = Verified {
                 file,
                 path: path.to_owned(),
@@ -1281,6 +1338,70 @@ pub mod engine_testing {
             Ok(Self {
                 runner,
                 unlocated: std::sync::Mutex::default(),
+                model_sha256,
+                model_bytes: size_bytes,
+            })
+        }
+
+        /// The model file's SHA-256, taken while it was read for the helper, and its size.
+        pub fn model_file(&self) -> (String, u64) {
+            (self.model_sha256.clone(), self.model_bytes)
+        }
+
+        /// A summary of `pages` (index, text) in `lang`, as the app asks for one, with each
+        /// sentence's own quote (also one that was not found), the fit, the stats and the limit.
+        pub fn summarize_measured(
+            &self,
+            lang: &str,
+            pages: &[(u32, &str)],
+        ) -> Result<Measured, String> {
+            let request = SummaryRequest {
+                lang: lang.to_owned(),
+                pages: pages
+                    .iter()
+                    .map(|(index, text)| Page {
+                        index: *index,
+                        text: (*text).to_owned(),
+                    })
+                    .collect(),
+                max_sentences: model_helper::MAX_SENTENCES,
+            };
+            let text_bytes = pages.iter().map(|(_, text)| text.len()).sum();
+            let (prompt, answer) = crate::local_runner::summary_request_size(text_bytes);
+            let answer_limit_ms = ANSWER_LIMIT.for_request(prompt, answer).as_millis() as u64;
+            let summary = self
+                .runner
+                .summarize(self.runner.ticket(), &request)
+                .map_err(|error| format!("{error:?}"))?;
+            // The runner empties a quote it cannot find, in sentence order, and keeps what it
+            // said in `unlocated_quotes`; the grammar never lets the model write an empty one.
+            let mut missing = summary.unlocated_quotes.into_iter();
+            let sentences = summary
+                .sentences
+                .into_iter()
+                .map(|sentence| {
+                    let located = !sentence.quote.is_empty();
+                    let quote = if located {
+                        sentence.quote
+                    } else {
+                        missing.next().unwrap_or_default()
+                    };
+                    MeasuredSentence {
+                        text: sentence.text,
+                        quote,
+                        located,
+                    }
+                })
+                .collect();
+            Ok(Measured {
+                sentences,
+                last_page: summary.last_page,
+                last_page_cut: summary.last_page_cut,
+                stats: self
+                    .runner
+                    .last_stats()
+                    .and_then(|stats| serde_json::to_value(stats).ok()),
+                answer_limit_ms,
             })
         }
 

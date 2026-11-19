@@ -12,6 +12,9 @@
 
 use mycarlos_tauri_poc_lib::model_engine_testing::ModelRunner;
 
+#[path = "model_engine_support/evidence.rs"]
+mod evaluation_evidence;
+
 /// A GGUF version 3 file, written by hand: its key/value pairs, then its F32 tensors.
 struct Gguf {
     kv: Vec<u8>,
@@ -451,4 +454,374 @@ fn a_real_model_answers_the_same_after_another_document_as_fresh() {
         assert!(!text.contains("FAKE-MARKER") && !quote.contains("FAKE-MARKER"));
     }
     assert!(!warm_explained.contains("FAKE-MARKER"));
+}
+
+/// The evaluation run's measured summary, on the tiny model: each sentence with its quote and
+/// whether it was found, the fit, the stats, the runner's time limit, and the model file's hash.
+#[test]
+fn a_measured_summary_reports_its_quotes_fit_stats_limit_and_model_file() {
+    use sha2::{Digest, Sha256};
+    let dir = tempfile::tempdir().unwrap();
+    let bytes = tiny_model();
+    let model = model_file(dir.path(), &bytes);
+    let runner = ModelRunner::start(executable(), &model).unwrap_or_else(|error| panic!("{error}"));
+    let pages = [
+        (0, "FAKE: a blood test was done."),
+        (1, "FAKE: a second page."),
+    ];
+    let measured = runner.summarize_measured("en", &pages).unwrap();
+    assert_eq!((measured.last_page, measured.last_page_cut), (1, false));
+    assert_eq!(measured.sentences.len(), 6, "{measured:?}");
+    for sentence in &measured.sentences {
+        assert_eq!(
+            (sentence.text.as_str(), sentence.quote.as_str()),
+            ("a", "a")
+        );
+        assert!(sentence.located);
+    }
+    let stats = measured.stats.as_ref().expect("stats");
+    assert!(stats["promptTokens"].as_u64().unwrap() > 0, "{stats}");
+    assert!(stats["answerTokens"].as_u64().unwrap() > 0, "{stats}");
+    // The runner's own limit: 30 s + 150 ms for each of 750 + 48 bytes / 3 prompt tokens,
+    // + 600 ms for each of the 400 answer tokens allowed.
+    assert_eq!(
+        measured.answer_limit_ms,
+        30_000 + 150 * (750 + 16) + 600 * 400
+    );
+    let (sha256, size) = runner.model_file();
+    assert_eq!(size, bytes.len() as u64);
+    assert_eq!(sha256, format!("{:x}", Sha256::digest(&bytes)));
+    runner.stop();
+}
+
+/// A build's summary fingerprint covers its prompt, grammar and caps, per language.
+#[test]
+fn a_summary_build_names_its_prompt_grammar_and_caps_by_one_fingerprint() {
+    use mycarlos_tauri_poc_lib::model_engine_testing::summary_build;
+    let en = summary_build("en").unwrap();
+    assert_eq!(en, summary_build("en").unwrap());
+    assert_eq!(en["fingerprint"].as_str().unwrap().len(), 64);
+    assert_ne!(
+        en["fingerprint"],
+        summary_build("fr").unwrap()["fingerprint"]
+    );
+    let cap = en["caps"]["maxSentences"].as_u64().unwrap();
+    assert!(en["summaryPrompt"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("in English, in at most {cap} short")));
+    assert!(en["grammar"]
+        .as_str()
+        .unwrap()
+        .contains(&format!("{{0,{}}}", cap - 1)));
+    assert!(summary_build("xx").is_err());
+}
+
+/// By hand, never in CI: one evaluation run of the AI summary over FAKE documents
+/// (`scripts/summary-evaluation/harness/HARNESS.md`). A real model (`MYCARLOS_TEST_MODEL`) summarizes
+/// each document in `MYCARLOS_EVAL_DOCS` (`<id>.json`: `{"id","lang","pages":[{"index","text"}]}`)
+/// in `MYCARLOS_TEST_LANG` (default `en`), through the app's own helper and sandbox. Each answer is
+/// appended to `MYCARLOS_EVAL_OUT` as one JSON line, written and synced before the next document,
+/// after a first line naming the run: `MYCARLOS_EVAL_VARIANT`, `MYCARLOS_EVAL_COMMIT`, this build's
+/// summary fingerprint (prompt, grammar, caps) and the model file's SHA-256 as it was handed over.
+/// `MYCARLOS_EVAL_EXPECT_SHA256`, when set, refuses any other model file. A run stopped part way is
+/// resumed only for identical actual helper/harness binaries, commit, variant, build, model, chat
+/// format, language, explicit thread count and full input manifest. Actual failed attempts stay
+/// recorded; a failure stops this run before the next document. An incomplete tail is refused,
+/// never discarded automatically. `MYCARLOS_TEST_CHAT_FORMAT` defaults to builtin.
+/// On Linux each line also carries the helper's memory (`helper_memory`): the run's after the
+/// model loaded, each document's its own peak.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_evaluation_run() {
+    use mycarlos_tauri_poc_lib::model_engine_testing::summary_build;
+    use serde_json::{json, Value};
+    use std::io::Write;
+    use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+    let variable = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name}"));
+    let optional = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    let model = std::path::PathBuf::from(variable("MYCARLOS_TEST_MODEL"));
+    let docs = std::path::PathBuf::from(variable("MYCARLOS_EVAL_DOCS"));
+    let out = std::path::PathBuf::from(variable("MYCARLOS_EVAL_OUT"));
+    let lang = optional("MYCARLOS_TEST_LANG").unwrap_or_else(|| "en".to_owned());
+    let format = optional("MYCARLOS_TEST_CHAT_FORMAT").unwrap_or_else(|| "builtin".to_owned());
+    let threads: u32 = variable("MYCARLOS_TEST_THREADS")
+        .parse()
+        .expect("positive thread count");
+    assert!(
+        threads > 0,
+        "explicit positive MYCARLOS_TEST_THREADS required"
+    );
+    let variant = variable("MYCARLOS_EVAL_VARIANT");
+    let commit = variable("MYCARLOS_EVAL_COMMIT");
+    assert!(
+        !variant.trim().is_empty() && !commit.trim().is_empty(),
+        "variant and commit are required"
+    );
+    let now = || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    };
+    let build = summary_build(&lang).unwrap();
+
+    let mut documents: Vec<(String, Value)> = std::fs::read_dir(&docs)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .map(|path| {
+            let document: Value =
+                evaluation_evidence::strict_json(&std::fs::read(&path).unwrap()).unwrap();
+            let id = document["id"].as_str().expect("document id").to_owned();
+            assert_eq!(
+                path.file_stem().and_then(|s| s.to_str()),
+                Some(id.as_str()),
+                "input filename differs from ID"
+            );
+            (id, document)
+        })
+        .collect();
+    documents.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(
+        !documents.is_empty(),
+        "no <id>.json documents in {}",
+        docs.display()
+    );
+
+    let manifest =
+        evaluation_evidence::document_manifest(&documents).expect("valid unique input documents");
+    let program = executable();
+    let runner_sha256 =
+        evaluation_evidence::executable_sha256(program).expect("hash the actual helper executable");
+    let harness_sha256 = evaluation_evidence::executable_sha256(&std::env::current_exe().unwrap())
+        .expect("hash the actual harness executable");
+    let started = Instant::now();
+    let runner =
+        ModelRunner::start_with(program, &model, &format).unwrap_or_else(|error| panic!("{error}"));
+    let start_ms = started.elapsed().as_millis() as u64;
+    let (model_sha256, model_bytes) = runner.model_file();
+    // The helper's memory once the model is loaded: its peak so far is the load's.
+    let loaded = helper_memory::helper().and_then(helper_memory::read);
+    if let Some(expected) = optional("MYCARLOS_EVAL_EXPECT_SHA256") {
+        assert_eq!(model_sha256, expected, "not the expected model file");
+    }
+    runner.override_threads(Some(threads));
+    let run = json!({
+        "kind": "run",
+        "variant": variant,
+        "commit": commit,
+        "runnerSha256": runner_sha256,
+        "harnessSha256": harness_sha256,
+        "documents": manifest,
+        "build": build,
+        "model": {
+            "file": model.file_name().map(|name| name.to_string_lossy().into_owned()),
+            "sha256": model_sha256,
+            "bytes": model_bytes,
+            "chatFormat": format,
+        },
+        "lang": lang,
+        "threads": threads,
+        "startMs": start_ms,
+        "startedAt": now(),
+        "helperMemory": loaded,
+    });
+
+    // Compare actual executable/configuration and the full input manifest before any append.
+    // Failed attempts remain evidence; only unattempted IDs are resumed.
+    let previous = if out.exists() {
+        std::fs::read(&out).unwrap()
+    } else {
+        Vec::new()
+    };
+    let resume = evaluation_evidence::resume(&previous, &run)
+        .unwrap_or_else(|error| panic!("{}: {error}", out.display()));
+    if resume.complete {
+        println!("{} is already complete; nothing appended", out.display());
+        runner.stop();
+        return;
+    }
+    let done = resume.done;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&out)
+        .unwrap();
+    let mut append = |entry: &Value| {
+        writeln!(file, "{entry}").unwrap();
+        file.sync_data().unwrap();
+    };
+    if resume.needs_header {
+        append(&run);
+    }
+    println!(
+        "run {} on {} ({} documents, {} done)",
+        run["variant"],
+        lang,
+        documents.len(),
+        done.len()
+    );
+
+    let attempts = evaluation_evidence::write_attempts(
+        documents.iter().filter(|(id, _)| !done.contains(id)),
+        |id, document| {
+            let pages: Vec<(u32, String)> = document["pages"]
+                .as_array()
+                .expect("pages")
+                .iter()
+                .map(|page| {
+                    (
+                        page["index"].as_u64().expect("page index") as u32,
+                        page["text"].as_str().expect("page text").to_owned(),
+                    )
+                })
+                .collect();
+            let borrowed: Vec<(u32, &str)> = pages
+                .iter()
+                .map(|(index, text)| (*index, text.as_str()))
+                .collect();
+            // The helper's peak is set back just before the document, so the line carries this
+            // document's own peak; "helperStart" when that could not be done or the helper restarted.
+            let before = helper_memory::helper();
+            let reset = before.is_some_and(helper_memory::reset_peak);
+            let asked = Instant::now();
+            let answer = runner.summarize_measured(&lang, &borrowed);
+            let wall_ms = asked.elapsed().as_millis() as u64;
+            let after = helper_memory::helper();
+            let memory = after.and_then(helper_memory::read).map(|mut memory| {
+                memory["peakSince"] = json!(if reset && after == before {
+                    "document"
+                } else {
+                    "helperStart"
+                });
+                memory
+            });
+            let mut entry = json!({
+                "kind": "document",
+                "id": id,
+                "docLang": document["lang"],
+                "pagesSha256": run["documents"][id]["pagesSha256"],
+                "pages": pages.len(),
+                "textBytes": pages.iter().map(|(_, text)| text.len()).sum::<usize>(),
+                "wallMs": wall_ms,
+                "helperMemory": memory,
+            });
+            match &answer {
+                Ok(measured) => {
+                    entry["result"] = serde_json::to_value(measured).unwrap();
+                    println!(
+                        "{id}: {:.1} s, {} sentences, {} located{}",
+                        wall_ms as f64 / 1000.0,
+                        measured.sentences.len(),
+                        measured
+                            .sentences
+                            .iter()
+                            .filter(|sentence| sentence.located)
+                            .count(),
+                        if measured.last_page_cut { ", cut" } else { "" }
+                    );
+                }
+                Err(error) => {
+                    entry["error"] = json!(error);
+                    println!(
+                        "{id}: failed after {:.1} s: {error}",
+                        wall_ms as f64 / 1000.0
+                    );
+                }
+            }
+            entry
+        },
+        |entry| append(entry),
+    );
+    let answered = match attempts {
+        Ok(count) => count,
+        Err(_) => {
+            runner.stop();
+            panic!(
+                "evaluation stopped after a recorded failure; remaining documents can be resumed"
+            );
+        }
+    };
+    append(&json!({"kind": "end", "answered": done.len() + answered, "finishedAt": now()}));
+    runner.stop();
+}
+
+/// The model helper's memory for the evaluation run, from the kernel's own counts (Linux only;
+/// elsewhere nothing is measured). It tells how much memory a summary really takes beside the
+/// model, so the working allowance the app asks for can be checked against it.
+#[cfg(target_os = "linux")]
+mod helper_memory {
+    use serde_json::{json, Value};
+
+    /// The helper this test process started: its own child, running with the helper argument.
+    pub fn helper() -> Option<u32> {
+        let parent = std::process::id().to_string();
+        std::fs::read_dir("/proc")
+            .ok()?
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+            .find(|pid| {
+                let status =
+                    std::fs::read_to_string(format!("/proc/{pid}/status")).unwrap_or_default();
+                let child = status
+                    .lines()
+                    .find_map(|line| line.strip_prefix("PPid:"))
+                    .is_some_and(|value| value.trim() == parent);
+                let arguments = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+                child
+                    && arguments
+                        .split(|byte| *byte == 0)
+                        .any(|argument| argument == b"--mycarlos-model-helper")
+            })
+    }
+
+    /// Sets the helper's peak resident size back to its present size (`clear_refs` 5), so that
+    /// the next reading's peak is the next document's own. False when the kernel refused.
+    pub fn reset_peak(pid: u32) -> bool {
+        std::fs::write(format!("/proc/{pid}/clear_refs"), "5").is_ok()
+    }
+
+    /// The peak resident size since the last reset (or the helper's start), the size now and its
+    /// anonymous, file and shared parts (the weights are in the file or shared part), in KiB,
+    /// and the memory the machine still had available.
+    pub fn read(pid: u32) -> Option<Value> {
+        let kib = |text: &str, name: &str| {
+            text.lines().find_map(|line| {
+                line.strip_prefix(name)?
+                    .strip_prefix(':')?
+                    .trim()
+                    .trim_end_matches("kB")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
+        };
+        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+        let machine = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+        Some(json!({
+            "peakKiB": kib(&status, "VmHWM")?,
+            "rssKiB": kib(&status, "VmRSS"),
+            "anonKiB": kib(&status, "RssAnon"),
+            "fileKiB": kib(&status, "RssFile"),
+            "shmemKiB": kib(&status, "RssShmem"),
+            "availableKiB": kib(&machine, "MemAvailable"),
+        }))
+    }
+}
+
+#[cfg(windows)]
+mod helper_memory {
+    pub fn helper() -> Option<u32> {
+        None
+    }
+
+    pub fn reset_peak(_pid: u32) -> bool {
+        false
+    }
+
+    pub fn read(_pid: u32) -> Option<serde_json::Value> {
+        None
+    }
 }
