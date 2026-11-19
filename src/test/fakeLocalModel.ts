@@ -1,3 +1,4 @@
+import type { SummaryProgressEvent } from "../ai/summaryProgress";
 import type {
   DocumentText,
   LocalModel,
@@ -39,6 +40,12 @@ export function fakeLocalModel(
     lastPage?: (document: DocumentText) => number;
     /** The first page alone was too long, and only its start was read. */
     lastPageCut?: boolean;
+    /** Runs inside a summary before it answers, with the way to report
+     * progress, as the helper's events arrive (counts only). A test can
+     * hold the answer here. */
+    whileSummarizing?: (
+      report: (event: Omit<SummaryProgressEvent, "answerId">) => void,
+    ) => Promise<void>;
   } = {},
 ): FakeLocalModel {
   const calls: FakeLocalModel["calls"] = [];
@@ -58,8 +65,11 @@ export function fakeLocalModel(
     cancels: 0,
     kept: [],
     status: async () => status,
-    summarize: async (document, lang, keepFor) => {
+    summarize: async (document, lang, keepFor, onProgress) => {
       calls.push({ tool: "summary", lang, input: document.joined });
+      await options.whileSummarizing?.((event) =>
+        onProgress?.({ answerId: "FAKE-answer", ...event }),
+      );
       const keptId = keep(keepFor, { tool: "summary", lang });
       const sentences = options.sentences
         ? options.sentences(document)
