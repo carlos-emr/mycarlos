@@ -1857,6 +1857,36 @@ ai-summary-showInDocument = Voir dans le document
 
 ai-summary-partial = Ce résumé utilise seulement une partie du texte du document.
 
+ai-summary-tooLong =
+    { $last ->
+    [one] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ la page 1 sur { $total }.
+   *[other] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ les pages 1 à { $last } sur { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ la page 1 et la dernière page, la page { $tail }, sur { $total }.
+   *[other] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ les pages 1 à { $last } et la dernière page, la page { $tail }, sur { $total }.
+    }
+
+ai-summary-tooLongStart = Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il ne peut en lire qu’environ le début de la page 1.
+
+ai-summary-tooLongAfter = S’il ne peut pas tout lire, le résumé le dira.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Résumer la page 1
+   *[other] Résumer les pages 1 à { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Résumer la page 1 et la page { $tail }
+   *[other] Résumer les pages 1 à { $last } et la page { $tail }
+    }
+
+ai-summary-readStart = Résumer le début de la page 1
+
 ai-summary-noText = myCarlos n’a pu lire aucun texte dans ce document et ne peut donc pas le résumer. Il s’agit peut-être d’une numérisation.
 
 ai-explain-box = Mot ou expression
@@ -1876,6 +1906,13 @@ ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
 ai-model-add = Ajouter un fichier de modèle…
 
 ai-model-accepted = { $name }, { $size } Mo. Licence : { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Lit environ { $pages } page à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
+    [many] Lit environ { $pages } de pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
+   *[other] Lit environ { $pages } pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
+    }
 
 ai-model-where = Où obtenir le fichier
 

@@ -1895,6 +1895,36 @@ ai-summary-showInDocument = Pokaż w dokumencie
 
 ai-summary-partial = To podsumowanie wykorzystuje tylko część tekstu dokumentu.
 
+ai-summary-tooLong =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } z { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 i ostatnią stronę, stronę { $tail }, z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } oraz ostatnią stronę, stronę { $tail }, z { $total }.
+    }
+
+ai-summary-tooLongStart = Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej tylko początek strony 1.
+
+ai-summary-tooLongAfter = Jeśli nie zdoła przeczytać całości, podsumowanie o tym poinformuje.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Podsumuj stronę 1
+   *[other] Podsumuj strony od 1 do { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Podsumuj stronę 1 i stronę { $tail }
+   *[other] Podsumuj strony od 1 do { $last } i stronę { $tail }
+    }
+
+ai-summary-readStart = Podsumuj początek strony 1
+
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
 
 ai-explain-box = Słowo lub wyrażenie
@@ -1914,6 +1944,14 @@ ai-settings-subtitle = Działanie asystenta AI na tym komputerze
 ai-model-add = Dodaj plik modelu…
 
 ai-model-accepted = { $name }, { $size } MB. Licencja: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Czyta naraz około { $pages } strony (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [few] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [many] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+   *[other] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    }
 
 ai-model-where = Gdzie pobrać plik
 
