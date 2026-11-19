@@ -1114,20 +1114,35 @@ export function createVaultBridge(): VaultBridge {
       onProgress,
     ) => {
       // Listening starts before the run does, so that no early event is
-      // missed; only this answer's events are passed on.
-      const stop = onProgress
-        ? listen<SummaryProgressEvent>("ai-answer-progress", (event) => {
-            if (event.payload?.answerId === answerId) onProgress(event.payload);
-          })
-        : null;
+      // missed; only this answer's events are passed on. The progress is
+      // only for show: a listener that cannot be attached (a refused
+      // permission, a webview that will not listen) leaves the summary to
+      // run without it, never fails it.
+      let unlisten: (() => void) | null = null;
+      if (onProgress) {
+        try {
+          unlisten = await listen<SummaryProgressEvent>(
+            "ai-answer-progress",
+            (event) => {
+              if (event.payload?.answerId === answerId)
+                onProgress(event.payload);
+            },
+          );
+        } catch {
+          unlisten = null;
+        }
+      }
       try {
-        await stop;
         return await invoke<ModelSummary>("ai_summarize", {
           answerId,
           request: { pages, lang, ...keep },
         });
       } finally {
-        if (stop) void stop.then((unlisten) => unlisten());
+        try {
+          unlisten?.();
+        } catch {
+          // Already gone: nothing to stop.
+        }
       }
     },
     aiExplain: (
