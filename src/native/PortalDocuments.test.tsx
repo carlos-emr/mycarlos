@@ -2367,6 +2367,35 @@ describe("Link another clinic (#145)", () => {
     expect(linkAnother()).toBeNull();
   });
 
+  it("shows the form directly when the only clinic's device was removed from its portal (#293)", () => {
+    const waits = new PortalWaits();
+    const { props, rerender } = fixture({ waits });
+    // A working link: the form waits behind the button.
+    expect(addressBox()).toBeNull();
+    expect(linkAnother()).not.toBeNull();
+    // The portal says this device was removed: that link no longer counts as linked.
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    expect(addressBox()).toBeVisible();
+    expect(linkAnother()).toBeNull();
+    // A second, working clinic brings the button back, and the removed one stays an earlier attempt.
+    rerender(
+      <PortalDocuments
+        {...props}
+        waits={waits}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [
+            link,
+            { ...link, id: "link-2", clinicName: "FAKE Second Clinic" },
+          ],
+        }}
+      />,
+    );
+    expect(addressBox()).toBeNull();
+    expect(linkAnother()).not.toBeNull();
+  });
+
   it("puts the linked clinics first, and the form behind Link another clinic", () => {
     fixture();
     expect(addressBox()).toBeNull();
