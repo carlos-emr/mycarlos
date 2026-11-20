@@ -1214,6 +1214,20 @@ p {
   color: var(--ink);
   font-weight: 700;
 }
+.native-reader-ai .native-reader-ai-about {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-bottom: 12px;
+}
+.native-reader-ai .native-reader-ai-about h4,
+.native-reader-ai .native-reader-ai-about p {
+  margin: 0;
+}
+.native-reader-ai .native-reader-ai-about p {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
 .native-reader-ai .ai-meta {
   color: var(--ink-soft);
   font-size: 0.875rem;

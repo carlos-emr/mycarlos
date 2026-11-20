@@ -2903,6 +2903,8 @@ export function VaultLibrary({
                         setReaderRecordId(null);
                         setSection("ai");
                       },
+                      // The reader's Summary offers the notice (#355).
+                      onOpenAiNotice: () => openAiNotice({ before: null }),
                       beforeFirstUse: beforeFirstAiUse,
                     }
                   : undefined
