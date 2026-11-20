@@ -17,7 +17,8 @@ mod document_notification_windows;
 pub mod document_notifications;
 // The platform push hooks (one per platform, each with its own device test) and the Preferences
 // choice will call this; until then only the reconcile after opening the vault uses it.
-#[cfg(any(target_os = "android", test))]
+// Its tests need the Linux memfd and /proc, so they run on the Linux host only.
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
 mod android_pdf;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
