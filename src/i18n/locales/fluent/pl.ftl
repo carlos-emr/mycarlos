@@ -1931,6 +1931,8 @@ ai-label-settingsShowFull = Pokaż ponownie pełne ostrzeżenie
 
 ai-label-settingsFullShown = Pełne ostrzeżenie jest pokazywane przy każdej odpowiedzi AI.
 
+ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana przy odpowiedziach AI, dla których ją wybrano.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie

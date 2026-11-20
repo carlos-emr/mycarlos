@@ -1,4 +1,8 @@
-import { AI_LABEL_STORAGE_KEY } from "../aiLabelPreference";
+import {
+  AI_LABEL_STORAGE_KEY,
+  rememberShortAiLabel,
+  showFullAiLabelAgain,
+} from "../aiLabelPreference";
 import { humanText, visibleText } from "../test/humanText";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -276,6 +280,8 @@ describe("the reader's AI helper", () => {
       await user.click(info);
       expect(info).toHaveAttribute("aria-expanded", "true");
       expect(within(panel).getByText(sentence)).toBeVisible();
+      // The focus went to the button that took Hide's place, not to the page.
+      expect(info).toHaveFocus();
       // The choice is kept: the same tool and model show the tag again, with no Hide button.
       expect(window.localStorage.getItem(AI_LABEL_STORAGE_KEY)).toContain(
         "summary:",
@@ -284,6 +290,41 @@ describe("the reader's AI helper", () => {
         within(panel).queryByRole("button", { name: "Don't show this again" }),
       ).toBeNull();
     } finally {
+      window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    }
+  });
+
+  it("shows the full sentence again for a model the choice was not made for, and describes Hide by the warning", async () => {
+    window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    // A choice for some other model.
+    rememberShortAiLabel("summary", "f".repeat(64));
+    try {
+      const model = fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: your potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+      });
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const sentence =
+        "Written by AI and may be wrong. Check with your doctor.";
+      expect(await within(panel).findByText(sentence)).toBeVisible();
+      expect(within(panel).queryByText("AI draft")).toBeNull();
+      // Hide is described by the warning it hides.
+      const hide = within(panel).getByRole("button", {
+        name: "Don't show this again",
+      });
+      expect(hide).toHaveAccessibleDescription(sentence);
+    } finally {
+      showFullAiLabelAgain();
       window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
     }
   });

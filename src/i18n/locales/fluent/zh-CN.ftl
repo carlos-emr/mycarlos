@@ -1703,6 +1703,8 @@ ai-label-settingsShowFull = 再次显示完整提示
 
 ai-label-settingsFullShown = 每条 AI 回答都显示完整提示。
 
+ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的“AI 草稿”标签。
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文档中显示

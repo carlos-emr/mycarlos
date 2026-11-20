@@ -1891,6 +1891,8 @@ ai-label-settingsShowFull = Mostrar o aviso completo novamente
 
 ai-label-settingsFullShown = O aviso completo é mostrado em cada resposta da IA.
 
+ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrada nas respostas da IA para as quais você a escolheu.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver no documento

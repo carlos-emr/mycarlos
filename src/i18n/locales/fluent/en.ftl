@@ -1855,6 +1855,8 @@ ai-label-settingsShowFull = Show the full warning again
 
 ai-label-settingsFullShown = The full warning is shown on every AI answer.
 
+ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document

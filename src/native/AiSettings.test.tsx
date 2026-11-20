@@ -41,5 +41,33 @@ describe("Settings → AI helper: the warning on AI answers (#351)", () => {
     expect(
       await screen.findByText("The full warning is shown on every AI answer."),
     ).toBeInTheDocument();
+    // The focus is on the row's heading, not lost to the page.
+    expect(
+      screen.getByRole("heading", { name: "Warning on AI answers" }),
+    ).toHaveFocus();
+  });
+
+  it("keeps one status element on the page, so that its change of words is read out", async () => {
+    setLocaleOverride("en");
+    render(<AiSettings aiStatus={null} onAiStatus={vi.fn()} />);
+    const status = screen.getByText(
+      "The full warning is shown on every AI answer.",
+    );
+    expect(status).toHaveAttribute("role", "status");
+    // The same element says the new words, and goes on saying them.
+    rememberShortAiLabel("summary", MODEL);
+    expect(
+      await screen.findByText(
+        "A short “AI draft” tag is shown on the AI answers you chose it for.",
+      ),
+    ).toBe(status);
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Show the full warning again" }),
+      );
+    expect(
+      await screen.findByText("The full warning is shown on every AI answer."),
+    ).toBe(status);
   });
 });

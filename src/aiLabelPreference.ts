@@ -14,7 +14,9 @@ export const AI_LABEL_STORAGE_KEY = "mycarlos.aiLabelShort.v1";
 
 export type AiLabelTool = "summary" | "explain";
 
-/** Raised when a tool's behaviour changes enough that its answers deserve the full warning again. */
+/** Raised when a tool's behaviour changes enough that its answers deserve the full warning again.
+ * The summary's prompt is in Rust (`summary_prompt` in src-tauri/src/model_helper.rs): change that
+ * prompt's meaning, raise this. */
 export const AI_TOOL_REVISION: Record<AiLabelTool, string> = {
   summary: "1",
   explain: "1",
@@ -34,9 +36,11 @@ let memory: string[] = [];
 let memoryOnly = false;
 
 function read(): string[] {
+  // A write that could not be stored: what is in memory is the truth, not a stale stored list.
+  if (memoryOnly) return memory;
   try {
     const raw = window.localStorage.getItem(AI_LABEL_STORAGE_KEY);
-    if (raw === null) return memoryOnly ? memory : [];
+    if (raw === null) return [];
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed)
       ? parsed.filter((item): item is string => typeof item === "string")

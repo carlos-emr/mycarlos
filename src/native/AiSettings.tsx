@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import {
   aiLabelSnapshot,
   anyShortAiLabel,
@@ -25,6 +25,7 @@ export function AiSettings({
   // Whether "Don't show this again" was chosen on any AI answer (#351).
   useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
   const shortLabel = anyShortAiLabel();
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
   return (
     <main className="library-main purpose-screen">
       <div className="main-head">
@@ -55,20 +56,30 @@ export function AiSettings({
         </section>
         <section className="setting-row">
           <div>
-            <h2>{t("ai.label.settingsTitle")}</h2>
+            <h2 ref={headingRef} tabIndex={-1}>
+              {t("ai.label.settingsTitle")}
+            </h2>
             <p>{t("ai.label.settingsBody")}</p>
           </div>
           <div>
-            {shortLabel ? (
+            {/* Always on the page, so that a change of its words is read out; the button goes
+                when there is nothing to bring back, and the focus goes to the row's heading. */}
+            <p role="status">
+              {shortLabel
+                ? t("ai.label.settingsShortShown")
+                : t("ai.label.settingsFullShown")}
+            </p>
+            {shortLabel && (
               <button
                 className="button"
                 type="button"
-                onClick={showFullAiLabelAgain}
+                onClick={() => {
+                  showFullAiLabelAgain();
+                  headingRef.current?.focus();
+                }}
               >
                 {t("ai.label.settingsShowFull")}
               </button>
-            ) : (
-              <p role="status">{t("ai.label.settingsFullShown")}</p>
             )}
           </div>
         </section>

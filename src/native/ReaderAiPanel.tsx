@@ -728,16 +728,34 @@ function AiResultLabel({ tool, model }: { tool: AiTool; model: ModelInfo }) {
   useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
   const [open, setOpen] = useState(false);
   const fullId = useId();
+  const warningId = useId();
+  const infoRef = useRef<HTMLButtonElement | null>(null);
+  // Pressing Don't show this again takes its own button away: the focus goes to the button that
+  // took its place (What "AI draft" means), not to the page.
+  const [justHid, setJustHid] = useState(false);
+  const short = aiLabelIsShort(tool, model.sha256);
+  useLayoutEffect(() => {
+    if (short && justHid) {
+      infoRef.current?.focus();
+      setJustHid(false);
+    }
+  }, [short, justHid]);
   // The sentence (or the tag) stays a paragraph of its own: the button sits beside it, so that a
   // test or a reader finds the warning's words exactly.
-  if (!aiLabelIsShort(tool, model.sha256))
+  if (!short)
     return (
       <div className="ai-label-row">
-        <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+        <p id={warningId} className="ai-label">
+          {t("aiHelper.resultLabel")}
+        </p>
         <button
           className="button ai-label-hide"
           type="button"
-          onClick={() => rememberShortAiLabel(tool, model.sha256)}
+          aria-describedby={warningId}
+          onClick={() => {
+            setJustHid(true);
+            rememberShortAiLabel(tool, model.sha256);
+          }}
         >
           {t("aiHelper.resultLabelHide")}
         </button>
@@ -748,6 +766,7 @@ function AiResultLabel({ tool, model }: { tool: AiTool; model: ModelInfo }) {
       <div className="ai-label-row">
         <p className="ai-label">{t("aiHelper.resultLabelShort")}</p>
         <button
+          ref={infoRef}
           className="button ai-label-info"
           type="button"
           aria-expanded={open}

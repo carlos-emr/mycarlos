@@ -60,10 +60,16 @@ describe("the AI warning's short tag choice (#351)", () => {
       throw new Error("blocked");
     });
     rememberShortAiLabel("summary", MODEL_A);
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    // A stored list that is stale (the write that failed is not in it) never wins.
+    const stale = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockReturnValue(JSON.stringify([]));
+    expect(aiLabelIsShort("summary", MODEL_A)).toBe(true);
+    stale.mockImplementation(() => {
       throw new Error("blocked");
     });
     expect(aiLabelIsShort("summary", MODEL_A)).toBe(true);
+    // A stale stored list never wins over what could not be written.
     // Once the storage works again, a clear clears for real.
     vi.restoreAllMocks();
     showFullAiLabelAgain();
