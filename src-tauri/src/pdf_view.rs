@@ -2248,4 +2248,5 @@ mod tests {
                 BoxesOutcome::Cancelled
             ));
         }
-    }}
+    }
+}
