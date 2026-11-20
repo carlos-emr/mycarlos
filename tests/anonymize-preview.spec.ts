@@ -283,10 +283,7 @@ test("on a wide window Close is the last button in the action row, at the bottom
     await expect(preview.locator(".native-anonymize-summary")).toContainText(
       /^Removed: .*name.*: .*1/, // Fluent isolates each value with invisible marks
     );
-    await expect(preview.locator("mark[data-check]")).toHaveText([
-      "Blake",
-      "214",
-    ]);
+    await expect(preview.locator("[data-check]")).toHaveText(["Blake", "214"]);
     await expect(preview.getByText(/2.*words to check/)).toBeVisible();
     await expect(
       preview.getByText("The saved file is not protected by myCarlos."),
