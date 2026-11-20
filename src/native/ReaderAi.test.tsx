@@ -1,3 +1,4 @@
+import { AI_LABEL_STORAGE_KEY } from "../aiLabelPreference";
 import { humanText, visibleText } from "../test/humanText";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -239,6 +240,52 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("shortens the warning to an AI draft tag after Don't show this again, never removes the tag, and brings the sentence back from the info button", async () => {
+    window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    try {
+      const model = fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: your potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+      });
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const sentence =
+        "Written by AI and may be wrong. Check with your doctor.";
+      expect(await within(panel).findByText(sentence)).toBeVisible();
+      await user.click(
+        within(panel).getByRole("button", { name: "Don't show this again" }),
+      );
+      // The full sentence is hidden; the short tag stays, and says what it means on demand.
+      expect(within(panel).getByText("AI draft")).toBeVisible();
+      expect(within(panel).getByText(sentence)).not.toBeVisible();
+      const info = within(panel).getByRole("button", {
+        name: "What “AI draft” means",
+      });
+      expect(info).toHaveAttribute("aria-expanded", "false");
+      await user.click(info);
+      expect(info).toHaveAttribute("aria-expanded", "true");
+      expect(within(panel).getByText(sentence)).toBeVisible();
+      // The choice is kept: the same tool and model show the tag again, with no Hide button.
+      expect(window.localStorage.getItem(AI_LABEL_STORAGE_KEY)).toContain(
+        "summary:",
+      );
+      expect(
+        within(panel).queryByRole("button", { name: "Don't show this again" }),
+      ).toBeNull();
+    } finally {
+      window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    }
   });
 
   it("labels every answer with the words of the AI helper notice, in all seven languages", () => {

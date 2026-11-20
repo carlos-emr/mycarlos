@@ -1877,6 +1877,20 @@ ai-notInstalled-openPreferences = Abrir la configuración del asistente de IA
 
 aiHelper-resultLabel = Escrito por IA; puede contener errores. Consulte con su médico.
 
+aiHelper-resultLabelShort = Borrador de IA
+
+aiHelper-resultLabelHide = No volver a mostrar
+
+aiHelper-resultLabelInfo = Qué significa «Borrador de IA»
+
+ai-label-settingsTitle = Aviso en las respuestas de la IA
+
+ai-label-settingsBody = Cada respuesta de la IA indica que fue escrita por IA y que puede contener errores. Tras «No volver a mostrar», una etiqueta corta «Borrador de IA» sustituye la frase completa. La etiqueta nunca se quita. La elección se guarda en este dispositivo y vuelve a empezar si cambia el modelo o la herramienta.
+
+ai-label-settingsShowFull = Mostrar de nuevo el aviso completo
+
+ai-label-settingsFullShown = El aviso completo se muestra en cada respuesta de la IA.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver en el documento

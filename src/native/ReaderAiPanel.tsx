@@ -1,10 +1,18 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
 } from "react";
+import {
+  aiLabelIsShort,
+  aiLabelSnapshot,
+  rememberShortAiLabel,
+  subscribeAiLabel,
+} from "../aiLabelPreference";
 import {
   formatDate,
   getLocale,
@@ -640,7 +648,7 @@ export function ReaderAiPanel({
         {noText && <p>{t("ai.summary.noText")}</p>}
         {summary && (
           <div className="native-reader-ai-result">
-            <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+            <AiResultLabel tool={summary.tool} model={summary.model} />
             <ol lang={summary.lang}>
               {summary.sentences.map(({ text, source }, index) => (
                 <li key={index}>
@@ -694,7 +702,7 @@ export function ReaderAiPanel({
         )}
         {explained && tool === "explain" && (
           <div className="native-reader-ai-result">
-            <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+            <AiResultLabel tool={explained.tool} model={explained.model} />
             <p>{explained.text}</p>
             <ResultMeta
               tool={explained.tool}
@@ -706,6 +714,53 @@ export function ReaderAiPanel({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The warning above an AI answer (#351). The full sentence, with "Don't show this again"; after
+ * that choice, for this tool and model, the short "AI draft" tag and a small button that shows the
+ * full sentence. The tag is never removed, and a screen reader hears it as the answer's first
+ * words. Settings → AI helper brings the full sentence back.
+ */
+function AiResultLabel({ tool, model }: { tool: AiTool; model: ModelInfo }) {
+  const { t } = useI18n();
+  useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
+  const [open, setOpen] = useState(false);
+  const fullId = useId();
+  // The sentence (or the tag) stays a paragraph of its own: the button sits beside it, so that a
+  // test or a reader finds the warning's words exactly.
+  if (!aiLabelIsShort(tool, model.sha256))
+    return (
+      <div className="ai-label-row">
+        <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+        <button
+          className="button ai-label-hide"
+          type="button"
+          onClick={() => rememberShortAiLabel(tool, model.sha256)}
+        >
+          {t("aiHelper.resultLabelHide")}
+        </button>
+      </div>
+    );
+  return (
+    <div className="ai-label-short">
+      <div className="ai-label-row">
+        <p className="ai-label">{t("aiHelper.resultLabelShort")}</p>
+        <button
+          className="button ai-label-info"
+          type="button"
+          aria-expanded={open}
+          aria-controls={fullId}
+          onClick={() => setOpen((now) => !now)}
+        >
+          {t("aiHelper.resultLabelInfo")}
+        </button>
+      </div>
+      <p id={fullId} className="ai-label" hidden={!open}>
+        {t("aiHelper.resultLabel")}
+      </p>
+    </div>
   );
 }
 

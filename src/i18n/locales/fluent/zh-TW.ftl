@@ -1689,6 +1689,20 @@ ai-notInstalled-openPreferences = 開啟 AI 助理設定
 
 aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
 
+aiHelper-resultLabelShort = AI 草稿
+
+aiHelper-resultLabelHide = 不再顯示
+
+aiHelper-resultLabelInfo = 「AI 草稿」是什麼意思
+
+ai-label-settingsTitle = AI 回答上的提示
+
+ai-label-settingsBody = 每則 AI 回答都會說明由 AI 撰寫、可能有誤。選擇「不再顯示」後，完整的句子會由簡短的「AI 草稿」標籤取代。標籤不會被移除。此選擇儲存在本裝置上，模型或工具更換後會重新開始。
+
+ai-label-settingsShowFull = 再次顯示完整提示
+
+ai-label-settingsFullShown = 每則 AI 回答都顯示完整提示。
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文件中顯示

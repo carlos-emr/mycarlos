@@ -775,6 +775,7 @@ state, described in the recovery-key sections above.
 | Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
+| "Don't show this again" on the AI warning (#351) | `mycarlos.aiLabelShort.v1` | That this device's user chose the short "AI draft" tag for a tool and model (`tool:revision:model-sha256`); no vault, patient or document. A different model or tool revision, or Settings → AI helper, clears it. The tag itself is never removed |
 
 **Waiting keys for tray notices (myCarlos integration planned in #230; Portal contract in carlos-portal#88).** To let a
 locked myCarlos in the tray ask a linked portal "is anything waiting?", the planned integration

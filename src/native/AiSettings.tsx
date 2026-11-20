@@ -1,3 +1,10 @@
+import { useSyncExternalStore } from "react";
+import {
+  aiLabelSnapshot,
+  anyShortAiLabel,
+  showFullAiLabelAgain,
+  subscribeAiLabel,
+} from "../aiLabelPreference";
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
@@ -15,6 +22,9 @@ export function AiSettings({
   onAiStatus: (status: ModelStatus) => void;
 }) {
   const { t } = useI18n();
+  // Whether "Don't show this again" was chosen on any AI answer (#351).
+  useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
+  const shortLabel = anyShortAiLabel();
   return (
     <main className="library-main purpose-screen">
       <div className="main-head">
@@ -40,6 +50,25 @@ export function AiSettings({
             <p className="section-intro">{t("ai.preferences.body")}</p>
             {aiStatus && (
               <AiModelSetting status={aiStatus} onStatus={onAiStatus} />
+            )}
+          </div>
+        </section>
+        <section className="setting-row">
+          <div>
+            <h2>{t("ai.label.settingsTitle")}</h2>
+            <p>{t("ai.label.settingsBody")}</p>
+          </div>
+          <div>
+            {shortLabel ? (
+              <button
+                className="button"
+                type="button"
+                onClick={showFullAiLabelAgain}
+              >
+                {t("ai.label.settingsShowFull")}
+              </button>
+            ) : (
+              <p role="status">{t("ai.label.settingsFullShown")}</p>
             )}
           </div>
         </section>
