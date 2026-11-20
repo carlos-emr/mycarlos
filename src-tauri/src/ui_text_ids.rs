@@ -187,6 +187,10 @@ pub enum MessageId {
     InterfaceAnonymizePreviewConfirmTitle,
     InterfaceAnonymizePreviewCutPages,
     InterfaceAnonymizePreviewEmptyPages,
+    InterfaceAnonymizePreviewEponymKeep,
+    InterfaceAnonymizePreviewEponymKeepAll,
+    InterfaceAnonymizePreviewEponymOne,
+    InterfaceAnonymizePreviewEponymTitle,
     InterfaceAnonymizePreviewFailedPages,
     InterfaceAnonymizePreviewFooterNote,
     InterfaceAnonymizePreviewHeaderNote,
@@ -1250,6 +1254,10 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewConfirmTitle,
         Self::InterfaceAnonymizePreviewCutPages,
         Self::InterfaceAnonymizePreviewEmptyPages,
+        Self::InterfaceAnonymizePreviewEponymKeep,
+        Self::InterfaceAnonymizePreviewEponymKeepAll,
+        Self::InterfaceAnonymizePreviewEponymOne,
+        Self::InterfaceAnonymizePreviewEponymTitle,
         Self::InterfaceAnonymizePreviewFailedPages,
         Self::InterfaceAnonymizePreviewFooterNote,
         Self::InterfaceAnonymizePreviewHeaderNote,
@@ -2315,6 +2323,12 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
             Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
+            Self::InterfaceAnonymizePreviewEponymKeep => "interface-AnonymizePreview-eponymKeep",
+            Self::InterfaceAnonymizePreviewEponymKeepAll => {
+                "interface-AnonymizePreview-eponymKeepAll"
+            }
+            Self::InterfaceAnonymizePreviewEponymOne => "interface-AnonymizePreview-eponymOne",
+            Self::InterfaceAnonymizePreviewEponymTitle => "interface-AnonymizePreview-eponymTitle",
             Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
             Self::InterfaceAnonymizePreviewFooterNote => "interface-AnonymizePreview-footerNote",
             Self::InterfaceAnonymizePreviewHeaderNote => "interface-AnonymizePreview-headerNote",
@@ -4751,6 +4765,18 @@ impl MessageId {
             }
             "interface.AnonymizePreview.removeWord" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveWord)
+            }
+            "interface.AnonymizePreview.eponymTitle" => {
+                Some(Self::InterfaceAnonymizePreviewEponymTitle)
+            }
+            "interface.AnonymizePreview.eponymOne" => {
+                Some(Self::InterfaceAnonymizePreviewEponymOne)
+            }
+            "interface.AnonymizePreview.eponymKeep" => {
+                Some(Self::InterfaceAnonymizePreviewEponymKeep)
+            }
+            "interface.AnonymizePreview.eponymKeepAll" => {
+                Some(Self::InterfaceAnonymizePreviewEponymKeepAll)
             }
             "interface.AnonymizePreview.removedSummary" => {
                 Some(Self::InterfaceAnonymizePreviewRemovedSummary)

@@ -74,6 +74,7 @@ function renderPreview({
     }),
   ),
   pickDestination = vi.fn(async (_ticket: string) => "pick-1" as string | null),
+  details = known,
 } = {}) {
   const onClose = vi.fn();
   const cancelRead = vi.fn();
@@ -84,7 +85,7 @@ function renderPreview({
       clinicNames={["Maplewood Family Health Team"]}
       readText={readText}
       cancelRead={cancelRead}
-      knownDetails={async () => known}
+      knownDetails={async () => details}
       pickDestination={pickDestination}
       saveText={saveText}
       exportHeader="FAKE header line"
@@ -171,6 +172,43 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(
       screen.getByRole("button", { name: humanText("Undo the last removal") }),
     ).toBeDisabled();
+  });
+
+  it("offers to keep a name inside an eponym phrase as a medical term, one or all, and undoes it (#214)", async () => {
+    const user = userEvent.setup();
+    const eponymPages = [
+      {
+        index: 0,
+        text: "Patient: Peter Bell\nHas Bell's palsy. Follow up Bell's palsy in May.",
+      },
+    ];
+    renderPreview({
+      text: documentText({
+        pages: eponymPages,
+        ...joinPages(eponymPages),
+      }),
+      details: { ...known, names: ["Peter Bell"] },
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // Removed by default, as before.
+    expect(shownString()).not.toContain("Bell's palsy");
+    expect(
+      screen.getAllByText(/This may be a medical term:.*Bell's palsy/),
+    ).toHaveLength(2);
+    await user.click(screen.getAllByRole("button", { name: "Keep" })[0]);
+    expect(shownString()).toContain("Has Bell's palsy.");
+    expect(shownString()).toContain("Follow up [NAME 1]'s palsy");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Undo the last removal") }),
+    );
+    expect(shownString()).not.toContain("Has Bell's palsy.");
+    await user.click(screen.getAllByRole("button", { name: /Keep all/ })[0]);
+    expect(shownString()).toContain("Has Bell's palsy.");
+    expect(shownString()).toContain("Follow up Bell's palsy");
+    // The full name is never offered and stays removed.
+    expect(shownString()).not.toContain("Peter");
   });
 
   it("saves only the preview's text, after the confirmation, and never without it", async () => {

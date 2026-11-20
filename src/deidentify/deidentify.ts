@@ -78,6 +78,11 @@ export interface Removed {
   /** Where its replacement is in the text to send. */
   sentStart: number;
   sentEnd: number;
+  /** A name taken out of a medical eponym's own phrase ("Graves" in "Graves' disease"): the phrase
+   * as the document wrote it. The name is removed by default; the preview offers to keep this
+   * one occurrence as a medical term (`keepAsMedicalTerm`). Never set for a full name, a word
+   * after a title, or anything that is not a lone word of a name. */
+  eponym?: string;
 }
 
 /** A word left in the text that may be a name: a name found elsewhere,
@@ -4438,6 +4443,53 @@ function isMedicalTerm(
   return false;
 }
 
+/**
+ * The eponym phrase a lone word stands in ("Graves' disease", "Bell's palsy", "maladie d'Addison"),
+ * as the document wrote it, or null: only one word, not right after a title ("Mrs. Graves"), and
+ * only a phrase of the allow-list. A drug or a look-alike phrase is not offered. Read for the
+ * preview's "This may be a medical term"; it decides nothing about what is removed.
+ */
+function eponymPhraseAt(
+  text: string,
+  start: number,
+  end: number,
+): string | null {
+  const word = text.slice(start, end);
+  if (/[\s,;:]/u.test(word)) return null;
+  if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
+    return null;
+  const from = Math.max(0, start - GUARD_REACH);
+  const guarded = guardKey(text.slice(from, end + GUARD_REACH));
+  // The guard folds letters one for one (as isMedicalTerm assumes), so positions line up.
+  const spanStart = start - from;
+  const spanEnd = end - from;
+  // The longest phrase that holds the word ("Graves' disease", not "Graves'").
+  let best: { at: number; length: number } | null = null;
+  for (const key of new Set([
+    guardKey(word),
+    ...guardKey(word).split(/[^\p{L}'-]+/u),
+  ])) {
+    const forms = EPONYM_FORMS.get(key);
+    if (!forms) continue;
+    for (const form of forms) {
+      if (form === guardKey(word)) continue;
+      for (
+        let at = guarded.indexOf(form);
+        at >= 0;
+        at = guarded.indexOf(form, at + 1)
+      )
+        if (
+          at < spanEnd &&
+          spanStart < at + form.length &&
+          (!best || form.length > best.length)
+        )
+          best = { at, length: form.length };
+    }
+  }
+  if (best) return text.slice(from + best.at, from + best.at + best.length);
+  return null;
+}
+
 /** A clinical role belongs to this occurrence, never to a surname globally.
  * Matching-copy accents have already been folded. Direct identity findings
  * still win; this prevents their alias sweep from consuming an eponym. */
@@ -4845,6 +4897,10 @@ function build(
     text += source.slice(at, finding.start);
     const sentStart = text.length;
     text += replacement;
+    const eponym =
+      kind === "name"
+        ? (eponymPhraseAt(source, finding.start, finding.end) ?? undefined)
+        : undefined;
     removed.push({
       kind,
       original,
@@ -4853,6 +4909,7 @@ function build(
       end: finding.end,
       sentStart,
       sentEnd: text.length,
+      ...(eponym ? { eponym } : {}),
     });
     at = finding.end;
   }
@@ -4932,6 +4989,60 @@ export function removeMore(
       end,
       replacement,
     },
+  ].sort((a, b) => a.start - b.start);
+  return build(source, findings, settings);
+}
+
+/**
+ * The patient keeps one removed word as a medical term (the preview's "Keep" beside "This may be a
+ * medical term: Graves' disease"): the part whose replacement stands at `sentStart` to `sentEnd`
+ * in the text to send, which must be marked `eponym`, is put back as the document wrote it. Every
+ * other removal stays as it was, so paste-back still restores exactly.
+ */
+export function keepAsMedicalTerm(
+  deidentified: Deidentified,
+  sentStart: number,
+  sentEnd: number,
+): Deidentified {
+  const part = deidentified.onDevice.removed.find(
+    (candidate) =>
+      candidate.sentStart === sentStart && candidate.sentEnd === sentEnd,
+  );
+  if (!part?.eponym) throw new RangeError("not a medical term candidate");
+  return keepEponyms(deidentified, (other) => other === part);
+}
+
+/** "Keep all" for one phrase: every removal marked with that eponym phrase, whichever its case. */
+export function keepAllAsMedicalTerm(
+  deidentified: Deidentified,
+  phrase: string,
+): Deidentified {
+  const wanted = guardKey(phrase);
+  return keepEponyms(
+    deidentified,
+    (part) => part.eponym !== undefined && guardKey(part.eponym) === wanted,
+  );
+}
+
+function keepEponyms(
+  deidentified: Deidentified,
+  keep: (part: Removed) => boolean,
+): Deidentified {
+  const { removed, possibleNames, source, ...settings } = deidentified.onDevice;
+  const findings: Finding[] = [
+    ...removed
+      .filter((part) => !keep(part))
+      .map((part) => ({
+        kind: part.kind,
+        start: part.start,
+        end: part.end,
+        replacement: part.replacement,
+      })),
+    ...possibleNames.map((possible) => ({
+      kind: "possibleName" as const,
+      start: possible.start,
+      end: possible.end,
+    })),
   ].sort((a, b) => a.start - b.start);
   return build(source, findings, settings);
 }

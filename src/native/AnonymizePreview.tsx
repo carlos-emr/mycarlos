@@ -31,6 +31,8 @@ import {
 import type { DocumentText } from "../documentText";
 import {
   deidentify,
+  keepAllAsMedicalTerm,
+  keepAsMedicalTerm,
   removeMore,
   restoreChecked,
   type Deidentified,
@@ -280,6 +282,21 @@ export function AnonymizePreview({
     }
   };
 
+  /** Keeps one removed word as a medical term (a new step the patient can undo). */
+  const keepOne = (sentStart: number, sentEnd: number) => {
+    if (!current) return;
+    try {
+      const next = keepAsMedicalTerm(current, sentStart, sentEnd);
+      setHistory((steps) => [...steps, next]);
+    } catch {
+      /* the part is no longer a candidate */
+    }
+  };
+  const keepAll = (phrase: string) => {
+    if (!current) return;
+    setHistory((steps) => [...steps, keepAllAsMedicalTerm(current, phrase)]);
+  };
+
   /** The selection, as a range of the shown text, when it lies in it. */
   const selectedRange = (): [number, number] | null => {
     const selection = window.getSelection();
@@ -458,6 +475,9 @@ export function AnonymizePreview({
       runs.push({ start: at, text: current.toSend.slice(at) });
   }
   const possibleNames = current?.onDevice.possibleNames ?? [];
+  const eponymCandidates = (current?.onDevice.removed ?? []).filter(
+    (part) => part.eponym !== undefined,
+  );
   // Capitalised words and long numbers still in the text: highlighted for the patient to look
   // at, never removed by themselves.
   const checks = current
@@ -772,6 +792,43 @@ export function AnonymizePreview({
                         {translateNow("interface.AnonymizePreview.removeWord", {
                           word: possible.original,
                         })}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {eponymCandidates.length > 0 && (
+              <div className="native-anonymize-possible">
+                <h3>
+                  {translateNow("interface.AnonymizePreview.eponymTitle")}
+                </h3>
+                <ul>
+                  {eponymCandidates.map((part) => (
+                    <li key={part.sentStart}>
+                      <span>
+                        {translateNow("interface.AnonymizePreview.eponymOne", {
+                          phrase: part.eponym ?? "",
+                        })}
+                      </span>{" "}
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => keepOne(part.sentStart, part.sentEnd)}
+                      >
+                        {translateNow("interface.AnonymizePreview.eponymKeep")}
+                      </button>{" "}
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => keepAll(part.eponym ?? "")}
+                      >
+                        {translateNow(
+                          "interface.AnonymizePreview.eponymKeepAll",
+                          { phrase: part.eponym ?? "" },
+                        )}
                       </button>
                     </li>
                   ))}
