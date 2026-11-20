@@ -286,6 +286,42 @@ fn readable_page_text(pdf: &[u8], index: u32, legacy: &str) -> String {
     positioned_page_text(pdf, index).unwrap_or_else(|| legacy.to_owned())
 }
 
+/// Whether every `q ... Q` block of a page's drawing holds no text object and every `cm` is
+/// inside such a block, and the transform keeps horizontal text horizontal (no rotation or
+/// skew). Then none of them can change how the page's text lines are read.
+fn graphics_state_wraps_no_text(operations: &[lopdf::content::Operation]) -> bool {
+    let mut open: Vec<usize> = Vec::new();
+    for (at, operation) in operations.iter().enumerate() {
+        match operation.operator.as_str() {
+            "q" => open.push(at),
+            "Q" => {
+                let Some(start) = open.pop() else {
+                    return false;
+                };
+                if operations[start..at]
+                    .iter()
+                    .any(|inner| inner.operator == "BT")
+                {
+                    return false;
+                }
+            }
+            "cm" => {
+                let plain = open.last().is_some()
+                    && operation.operands.len() == 6
+                    && operation.operands[1].as_float().is_ok_and(|b| b == 0.0)
+                    && operation.operands[2].as_float().is_ok_and(|c| c == 0.0)
+                    && operation.operands[0].as_float().is_ok_and(|a| a > 0.0)
+                    && operation.operands[3].as_float().is_ok_and(|d| d != 0.0);
+                if !plain {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    open.is_empty()
+}
+
 fn positioned_page_text(pdf: &[u8], index: u32) -> Option<String> {
     use lopdf::content::{Content, Operation};
     const CONTENT_LIMIT: usize = 16 * 1024 * 1024;
@@ -315,14 +351,19 @@ fn positioned_page_text(pdf: &[u8], index: u32) -> Option<String> {
             .ok()?,
     )
     .ok()?;
+    let graphics_state_wraps_no_text = graphics_state_wraps_no_text(&content.operations);
     let mut operations = Vec::with_capacity(content.operations.len());
     let mut font_size: Option<f32> = None;
     let mut previous_size: Option<f32> = None;
     let mut has_text = false;
     for operation in content.operations {
         match operation.operator.as_str() {
-            // These require graphics/text-matrix tracking, outside this conservative path.
-            "cm" | "Tm" | "q" | "Q" => return None,
+            // The text matrix needs tracking, outside this conservative path.
+            "Tm" => return None,
+            // Graphics state changes are fine only when they wrap no text: a header or
+            // logo form object drawn as `q ... cm /Fm0 Do Q` (#306). One around text, or a
+            // `cm` outside any `q`, would change how the text's movements are read.
+            "cm" | "q" | "Q" if !graphics_state_wraps_no_text => return None,
             "Tf" => {
                 font_size = operation
                     .operands
@@ -998,13 +1039,29 @@ mod tests {
     }
 
     fn pdf_with_operators(operators: &str) -> Vec<u8> {
+        pdf_with_form(operators, None)
+    }
+
+    /// A page with `operators`, and, when given, a form object `Fm0` drawing `form_operators`.
+    fn pdf_with_form(operators: &str, form_operators: Option<&str>) -> Vec<u8> {
         use lopdf::{dictionary, Document, Object, Stream};
         let mut document = Document::with_version("1.5");
         let pages = document.new_object_id();
         let font = document.add_object(dictionary! {
             "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding"
         });
-        let resources = document.add_object(dictionary! { "Font" => dictionary! { "F1" => font } });
+        let mut resources_dictionary = dictionary! { "Font" => dictionary! { "F1" => font } };
+        if let Some(form_operators) = form_operators {
+            let form = document.add_object(Stream::new(
+                dictionary! {
+                    "Type" => "XObject", "Subtype" => "Form",
+                    "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()]
+                },
+                form_operators.as_bytes().to_vec(),
+            ));
+            resources_dictionary.set("XObject", dictionary! { "Fm0" => form });
+        }
+        let resources = document.add_object(resources_dictionary);
         let content =
             document.add_object(Stream::new(dictionary! {}, operators.as_bytes().to_vec()));
         let page = document.add_object(dictionary! {
@@ -1038,6 +1095,54 @@ mod tests {
         let readable = readable_page_text(&pdf, 0, &raw);
         assert_eq!(readable, "HbA1c: 1.5 mg; BP: 120/80; cm2.\nPatient: FAKE Morgan Patient\nProvider: FAKE Riverside Imaging\n");
         assert_eq!(page_text(&pdf, 0), raw);
+    }
+
+    #[test]
+    fn a_form_object_drawn_first_keeps_the_pages_line_breaks() {
+        // #306: a header or logo drawn as a form object before the text used to make the reader
+        // fall back to the legacy text, which runs the lines together ("1-2The patient").
+        let text = "BT /F1 11 Tf 72 740 Td (Range: 1-2) Tj 0 -24 Td (The patient: FAKE Morgan Patient) Tj ET";
+        for operators in [
+            format!("q 1 0 0 1 0 0 cm /Fm0 Do Q {text}"),
+            format!("/Fm0 Do {text}"),
+            format!("q 0.5 0 0 0.5 10 10 cm /Fm0 Do Q q /Fm0 Do Q {text}"),
+            format!("{text} q 1 0 0 1 0 0 cm /Fm0 Do Q"),
+        ] {
+            let pdf = pdf_with_form(&operators, Some("0 0 100 20 re f"));
+            let raw = page_text(&pdf, 0);
+            assert_eq!(
+                raw, "Range: 1-2The patient: FAKE Morgan Patient\n",
+                "{operators}"
+            );
+            assert_eq!(
+                readable_page_text(&pdf, 0, &raw),
+                "Range: 1-2\nThe patient: FAKE Morgan Patient\n",
+                "{operators}"
+            );
+        }
+    }
+
+    #[test]
+    fn graphics_state_that_could_change_how_lines_read_still_falls_back() {
+        let text = "BT /F1 11 Tf 72 740 Td (Range: 1-2) Tj 0 -24 Td (The patient) Tj ET";
+        for operators in [
+            // Around the text, as before.
+            format!("q 1 0 0 1 0 0 cm {text} Q"),
+            // A transform outside any q, which would apply to the text after it.
+            format!("0.5 0 0 0.5 0 0 cm /Fm0 Do {text}"),
+            // A rotation or a skew, even around a form object only.
+            format!("q 0 1 -1 0 0 0 cm /Fm0 Do Q {text}"),
+            format!("q 1 0 0.3 1 0 0 cm /Fm0 Do Q {text}"),
+            // An unbalanced Q, or a q never closed.
+            format!("Q /Fm0 Do {text}"),
+            format!("q /Fm0 Do {text}"),
+            // The text matrix, as before.
+            format!("q /Fm0 Do Q BT /F1 11 Tf 1 0 0 1 72 740 Tm (Range) Tj 0 -24 Td (The patient) Tj ET"),
+        ] {
+            let pdf = pdf_with_form(&operators, Some("0 0 100 20 re f"));
+            let raw = page_text(&pdf, 0);
+            assert_eq!(readable_page_text(&pdf, 0, &raw), raw, "{operators}");
+        }
     }
 
     #[test]
