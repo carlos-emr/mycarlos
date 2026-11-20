@@ -266,17 +266,14 @@ fn page_text(pdf: &[u8], index: u32) -> String {
     let Ok(mut document) = lopdf::Document::load_mem(pdf) else {
         return String::new();
     };
-    if let Some(page_id) = index
-        .checked_add(1)
-        .and_then(|number| document.get_pages().get(&number).copied())
-    {
-        // Text drawn by form objects is on the page too (#300). A page this cannot read keeps
-        // the text the page's own content gives.
-        inline_form_objects(&mut document, page_id);
+    let number = index.saturating_add(1);
+    let mut text = match document.get_pages().get(&number).copied() {
+        // Text drawn by form objects is on the page too (#300), when reading it gives at
+        // least the text the page's own content gives.
+        Some(page_id) => page_extraction(&mut document, page_id, number, 16 * 1024 * 1024),
+        None => None,
     }
-    let mut text = document
-        .extract_text_with_limit(&[index + 1], 16 * 1024 * 1024)
-        .unwrap_or_default();
+    .unwrap_or_default();
     if text.len() > MAX_PAGE_TEXT_BYTES {
         let mut end = MAX_PAGE_TEXT_BYTES;
         while !text.is_char_boundary(end) {
@@ -290,25 +287,49 @@ fn page_text(pdf: &[u8], index: u32) -> String {
 const MAX_FORM_DEPTH: usize = 4;
 const MAX_FORMS_INLINED: usize = 2_000;
 const MAX_INLINED_OPERATIONS: usize = 2_000_000;
+const MAX_INLINED_FONTS: usize = 512;
 const FORM_CONTENT_LIMIT: usize = 16 * 1024 * 1024;
 
 /// What inlining the form objects of one page has used so far.
 struct FormBudget {
     forms: usize,
     operations: usize,
+    /// Decompressed bytes of every form drawn, each drawing counted.
+    bytes: usize,
+}
+
+/// A form object read once, however often the page draws it.
+struct DecodedForm {
+    operations: Vec<lopdf::content::Operation>,
+    resources: Option<lopdf::Dictionary>,
+    /// The form's own font names, and the names they were given in the page's fonts. A font
+    /// that is not a font dictionary gets a name no font has, so its text is skipped, never
+    /// read with another font.
+    fonts: Vec<(Vec<u8>, Vec<u8>)>,
+    matrix: Option<Vec<lopdf::Object>>,
+}
+
+/// The decoded forms of a page, and the fonts they add to it.
+struct FormCache {
+    forms: std::collections::HashMap<lopdf::ObjectId, std::rc::Rc<DecodedForm>>,
+    fonts: Vec<(Vec<u8>, lopdf::Dictionary)>,
 }
 
 /// Replaces a page's drawing, in a private parsed copy that is never saved or rendered, by the same
 /// drawing with each form object it draws (`/Name Do`) written out where it is drawn (#300).
+/// True when the page was changed.
 ///
 /// The extractor reads only the page's own content, so a page that draws all its text through form
 /// objects (a page placed on another by a printing library, a template, a header) returned no text
-/// at all, and the AI helper never saw it. A form object brings its own fonts: each is added to the
-/// page's fonts under a name of its own, so two forms that both call their font `F1` keep their own
-/// encodings. Images and other drawing objects are left out: they hold no text. Forms inside forms
-/// go to a fixed depth, and the whole is bounded in forms, operations and size. A page this cannot
-/// read is left as it was.
-fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId) {
+/// at all, and the AI helper never saw it. Each form is written out as `q [Matrix cm] ... Q`, then
+/// the caller's current font is selected again, so a form's `Tf` never leaks into the text after
+/// it. A form brings its own fonts: each form's fonts are added to the page's fonts once, under
+/// names of their own, so two forms that both call their font `F1` keep their own encodings. A
+/// form without its own font for a name falls back to the page's (and the enclosing forms') fonts,
+/// as a reader does for a missing resource. Images and other drawing objects are left out: they
+/// hold no text. Forms inside forms go to a fixed depth; forms, fonts, operations and bytes are
+/// bounded, and a page that passes a bound is left as it was. Each form is decoded once.
+fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId) -> bool {
     use lopdf::content::Content;
     use lopdf::{Dictionary, Object};
     let Some(operations) = document
@@ -317,16 +338,16 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
         .and_then(|bytes| Content::decode(&bytes).ok())
         .map(|content| content.operations)
     else {
-        return;
+        return false;
     };
     if !operations
         .iter()
         .any(|operation| operation.operator == "Do")
     {
-        return;
+        return false;
     }
     let Ok((own, ids)) = document.get_page_resources(page_id) else {
-        return;
+        return false;
     };
     let mut chain: Vec<Dictionary> = own.into_iter().cloned().collect();
     chain.extend(
@@ -334,16 +355,20 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
             .filter_map(|id| document.get_dictionary(id).ok().cloned()),
     );
     let Ok(page_fonts) = document.get_page_fonts(page_id) else {
-        return;
+        return false;
     };
-    let mut fonts: Vec<(Vec<u8>, Dictionary)> = page_fonts
-        .into_iter()
-        .map(|(name, font)| (name, font.clone()))
-        .collect();
+    let mut cache = FormCache {
+        forms: std::collections::HashMap::new(),
+        fonts: page_fonts
+            .into_iter()
+            .map(|(name, font)| (name, font.clone()))
+            .collect(),
+    };
     let mut out = Vec::new();
     let mut budget = FormBudget {
         forms: 0,
         operations: 0,
+        bytes: 0,
     };
     if inline_operations(
         document,
@@ -351,19 +376,22 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
         &operations,
         0,
         &[],
-        &mut fonts,
+        &mut cache,
         &mut out,
         &mut budget,
     )
     .is_none()
     {
-        return;
+        return false;
     }
     let Ok(encoded) = (Content { operations: out }).encode() else {
-        return;
+        return false;
     };
+    if encoded.len() > FORM_CONTENT_LIMIT {
+        return false;
+    }
     let mut font_dictionary = Dictionary::new();
-    for (name, font) in fonts {
+    for (name, font) in cache.fonts {
         font_dictionary.set(name, Object::Dictionary(font));
     }
     let mut resources = Dictionary::new();
@@ -374,10 +402,40 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
         .ok()
         .and_then(|page| page.as_dict_mut().ok())
     else {
-        return;
+        return false;
     };
     page.set("Resources", Object::Dictionary(resources));
     page.set("Contents", stream);
+    true
+}
+
+/// The page's text with its form objects written out, when that reads at least as much as the
+/// page alone: the page's own text is never given up for them. A form the extractor cannot read
+/// (a font without a type, content over the limit) fails the whole page in lopdf, so the result
+/// is checked, and the page as it was is used when the inlined one is worse.
+fn page_extraction(
+    document: &mut lopdf::Document,
+    page_id: lopdf::ObjectId,
+    number: u32,
+    limit: usize,
+) -> Option<String> {
+    let count = |text: &str| text.chars().filter(|c| !c.is_whitespace()).count();
+    let plain = document.extract_text_with_limit(&[number], limit);
+    // Only the page's own dictionary is changed by inlining: keep it, to put it back.
+    let original = document.get_object(page_id).ok().cloned();
+    if !inline_form_objects(document, page_id) {
+        return plain.ok();
+    }
+    match (document.extract_text_with_limit(&[number], limit), plain) {
+        (Ok(inlined), Ok(plain)) if count(&inlined) >= count(&plain) => Some(inlined),
+        (Ok(inlined), Err(_)) => Some(inlined),
+        (_, plain) => {
+            if let Some(original) = original {
+                document.objects.insert(page_id, original);
+            }
+            plain.ok()
+        }
+    }
 }
 
 /// Appends `operations` to `out`, each form object drawn written out in place. `renamed` maps this
@@ -389,12 +447,14 @@ fn inline_operations(
     operations: &[lopdf::content::Operation],
     depth: usize,
     renamed: &[(Vec<u8>, Vec<u8>)],
-    fonts: &mut Vec<(Vec<u8>, lopdf::Dictionary)>,
+    cache: &mut FormCache,
     out: &mut Vec<lopdf::content::Operation>,
     budget: &mut FormBudget,
 ) -> Option<()> {
-    use lopdf::content::Content;
+    use lopdf::content::{Content, Operation};
     use lopdf::{Dictionary, Object};
+    // This level's current font, as written out, selected again after each form.
+    let mut current_font: Option<Operation> = None;
     for operation in operations {
         budget.operations += 1;
         if budget.operations > MAX_INLINED_OPERATIONS {
@@ -408,24 +468,24 @@ fn inline_operations(
                         operation.operands[0] = Object::Name(new.clone());
                     }
                 }
+                current_font = Some(operation.clone());
                 out.push(operation);
             }
             "Do" => {
                 let Some(Object::Name(name)) = operation.operands.first() else {
                     continue;
                 };
-                let Some(form) = chain.iter().find_map(|resources| {
+                let Some((id, stream)) = chain.iter().find_map(|resources| {
                     let (_, xobjects) =
                         document.dereference(resources.get(b"XObject").ok()?).ok()?;
-                    let (_, object) = document
-                        .dereference(xobjects.as_dict().ok()?.get(name).ok()?)
-                        .ok()?;
+                    let reference = xobjects.as_dict().ok()?.get(name).ok()?;
+                    let (id, object) = document.dereference(reference).ok()?;
                     let stream = object.as_stream().ok()?;
                     // A form in an optional-content layer may be switched off: its text is not
                     // on the page the patient sees.
                     (stream.dict.get(b"Subtype").ok()?.as_name().ok()? == b"Form"
                         && !stream.dict.has(b"OC"))
-                    .then_some(stream)
+                    .then_some((id?, stream))
                 }) else {
                     // An image, or a name that is no form object: no text in it.
                     continue;
@@ -437,62 +497,111 @@ fn inline_operations(
                 if budget.forms > MAX_FORMS_INLINED {
                     return None;
                 }
-                let inner = Content::decode(
-                    &form
-                        .decompressed_content_with_limit(FORM_CONTENT_LIMIT)
-                        .ok()?,
-                )
-                .ok()?
-                .operations;
-                // The form's own resources come first; it may also use the page's.
-                let own = form
-                    .dict
-                    .get(b"Resources")
-                    .ok()
-                    .and_then(|object| document.dereference(object).ok())
-                    .and_then(|(_, object)| object.as_dict().ok())
-                    .cloned();
-                let mut inner_renamed: Vec<(Vec<u8>, Vec<u8>)> = renamed.to_vec();
-                let mut inner_chain: Vec<Dictionary> = chain.to_vec();
-                if let Some(own) = own {
-                    if let Some(font_resources) = own
-                        .get(b"Font")
-                        .ok()
-                        .and_then(|object| document.dereference(object).ok())
-                        .and_then(|(_, object)| object.as_dict().ok())
-                    {
-                        // Each of the form's fonts gets a name no other font has.
-                        for (font_name, font) in font_resources.iter() {
-                            let Some(font) = document
-                                .dereference(font)
-                                .ok()
-                                .and_then(|(_, object)| object.as_dict().ok())
-                            else {
-                                continue;
-                            };
-                            let new = format!(
-                                "MCForm{}_{}",
-                                fonts.len(),
-                                String::from_utf8_lossy(font_name)
-                            )
-                            .into_bytes();
-                            fonts.push((new.clone(), font.clone()));
-                            inner_renamed.retain(|(old, _)| old != font_name);
-                            inner_renamed.push((font_name.clone(), new));
+                let form = match cache.forms.get(&id) {
+                    Some(form) => std::rc::Rc::clone(form),
+                    None => {
+                        let inner = Content::decode(
+                            &stream
+                                .decompressed_content_with_limit(FORM_CONTENT_LIMIT)
+                                .ok()?,
+                        )
+                        .ok()?
+                        .operations;
+                        let resources = stream
+                            .dict
+                            .get(b"Resources")
+                            .ok()
+                            .and_then(|object| document.dereference(object).ok())
+                            .and_then(|(_, object)| object.as_dict().ok())
+                            .cloned();
+                        // The form's fonts join the page's once, however often it is drawn.
+                        let mut fonts = Vec::new();
+                        if let Some(font_resources) = resources
+                            .as_ref()
+                            .and_then(|own| own.get(b"Font").ok())
+                            .and_then(|object| document.dereference(object).ok())
+                            .and_then(|(_, object)| object.as_dict().ok())
+                        {
+                            for (font_name, font) in font_resources.iter() {
+                                let new = format!(
+                                    "MCForm{}_{}",
+                                    cache.fonts.len() + fonts.len(),
+                                    String::from_utf8_lossy(font_name)
+                                )
+                                .into_bytes();
+                                let font = document
+                                    .dereference(font)
+                                    .ok()
+                                    .and_then(|(_, object)| object.as_dict().ok())
+                                    // lopdf refuses a whole page for a font with no /Type /Font.
+                                    .filter(|font| {
+                                        font.get(b"Type")
+                                            .and_then(Object::as_name)
+                                            .is_ok_and(|kind| kind == b"Font")
+                                    });
+                                if let Some(font) = font {
+                                    if cache.fonts.len() >= MAX_INLINED_FONTS {
+                                        return None;
+                                    }
+                                    cache.fonts.push((new.clone(), font.clone()));
+                                }
+                                fonts.push((font_name.clone(), new));
+                            }
                         }
+                        let matrix = stream
+                            .dict
+                            .get(b"Matrix")
+                            .ok()
+                            .and_then(|object| object.as_array().ok())
+                            .filter(|numbers| {
+                                numbers.len() == 6
+                                    && numbers.iter().all(|number| number.as_float().is_ok())
+                            })
+                            .cloned();
+                        let form = std::rc::Rc::new(DecodedForm {
+                            operations: inner,
+                            resources,
+                            fonts,
+                            matrix,
+                        });
+                        cache.forms.insert(id, std::rc::Rc::clone(&form));
+                        form
                     }
-                    inner_chain.insert(0, own);
+                };
+                // Every drawing of a form counts its bytes: a big form drawn many times is bounded.
+                budget.bytes = budget.bytes.saturating_add(stream.content.len().max(1));
+                if budget.bytes > 4 * FORM_CONTENT_LIMIT {
+                    return None;
+                }
+                let mut inner_renamed: Vec<(Vec<u8>, Vec<u8>)> = renamed.to_vec();
+                for (old, new) in &form.fonts {
+                    inner_renamed.retain(|(name, _)| name != old);
+                    inner_renamed.push((old.clone(), new.clone()));
+                }
+                let mut inner_chain: Vec<Dictionary> = chain.to_vec();
+                if let Some(own) = &form.resources {
+                    inner_chain.insert(0, own.clone());
+                }
+                // q [Matrix cm] ... Q: the form's graphics state stays inside it.
+                out.push(Operation::new("q", vec![]));
+                if let Some(matrix) = &form.matrix {
+                    out.push(Operation::new("cm", matrix.clone()));
                 }
                 inline_operations(
                     document,
                     &inner_chain,
-                    &inner,
+                    &form.operations,
                     depth + 1,
                     &inner_renamed,
-                    fonts,
+                    cache,
                     out,
                     budget,
                 )?;
+                out.push(Operation::new("Q", vec![]));
+                // The form's font does not carry on into the text after it.
+                if let Some(font) = &current_font {
+                    out.push(font.clone());
+                }
             }
             _ => out.push(operation.clone()),
         }
@@ -513,7 +622,8 @@ fn positioned_page_text(pdf: &[u8], index: u32) -> Option<String> {
     let mut document = lopdf::Document::load_mem(pdf).ok()?;
     let number = index.checked_add(1)?;
     let page_id = *document.get_pages().get(&number)?;
-    inline_form_objects(&mut document, page_id);
+    // The page with its form objects written out, when that reads at least as much (#300).
+    page_extraction(&mut document, page_id, number, CONTENT_LIMIT);
     let horizontal_fonts: Vec<Vec<u8>> = document
         .get_page_fonts(page_id)
         .ok()?
@@ -1318,6 +1428,149 @@ mod tests {
         let mut pdf = Vec::new();
         document.save_to(&mut pdf).unwrap();
         pdf
+    }
+
+    /// A page drawing `page_operators` and one form object `Fm0` drawing `form_operators`, whose own
+    /// fonts are `fonts` (name, has /Type /Font), all Helvetica.
+    fn pdf_with_form_fonts(
+        page_operators: &str,
+        form_operators: &[u8],
+        fonts: &[(String, bool)],
+        matrix: bool,
+    ) -> Vec<u8> {
+        use lopdf::{dictionary, Document, Object, Stream};
+        let mut document = Document::with_version("1.5");
+        let pages = document.new_object_id();
+        let font = document.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding"
+        });
+        let mut form_fonts = dictionary! {};
+        for (name, typed) in fonts {
+            let mut dict = dictionary! {
+                "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding"
+            };
+            if *typed {
+                dict.set("Type", "Font");
+            }
+            form_fonts.set(name.as_str(), document.add_object(dict));
+        }
+        let mut form_dict = dictionary! {
+            "Type" => "XObject", "Subtype" => "Form",
+            "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Resources" => dictionary! { "Font" => form_fonts }
+        };
+        if matrix {
+            form_dict.set(
+                "Matrix",
+                vec![1.into(), 0.into(), 0.into(), 1.into(), 5.into(), 5.into()],
+            );
+        }
+        let form = document.add_object(Stream::new(form_dict, form_operators.to_vec()));
+        let resources = document.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => font }, "XObject" => dictionary! { "Fm0" => form }
+        });
+        let content = document.add_object(Stream::new(
+            dictionary! {},
+            page_operators.as_bytes().to_vec(),
+        ));
+        let page = document.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages, "Resources" => resources,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content
+        });
+        document.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1
+            }),
+        );
+        let catalog = document.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        document.trailer.set("Root", catalog);
+        let mut pdf = Vec::new();
+        document.save_to(&mut pdf).unwrap();
+        pdf
+    }
+
+    #[test]
+    fn a_forms_font_never_carries_on_into_the_text_after_it() {
+        // The form's own F1 maps "A" to "B"; the page's F1 does not. The text after the form is
+        // the page's, read with the page's font.
+        let pdf = pdf_with_forms(
+            "BT /F1 11 Tf (A) Tj ET /Fm0 Do BT (A) Tj ET",
+            &[("Fm0", "BT /F1 11 Tf (A) Tj ET", true, false)],
+        );
+        assert_eq!(page_text(&pdf, 0), "A\nB\nA\n");
+    }
+
+    #[test]
+    fn a_page_that_draws_a_form_with_many_fonts_many_times_stays_bounded() {
+        // A hostile page: a form with 10,000 fonts drawn 2,000 times. Over the bounds, so the
+        // page is read as it was, at once, with its own text.
+        let fonts: Vec<(String, bool)> = (0..10_000).map(|n| (format!("G{n}"), true)).collect();
+        let draws = "/Fm0 Do ".repeat(2_000);
+        let pdf = pdf_with_form_fonts(
+            &format!("BT /F1 11 Tf (Page text) Tj ET {draws}"),
+            b"BT /G0 11 Tf (Form text) Tj ET",
+            &fonts,
+            false,
+        );
+        let started = std::time::Instant::now();
+        assert_eq!(page_text(&pdf, 0), "Page text\n");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_big_form_drawn_many_times_is_bounded_in_bytes() {
+        // 100 KiB of drawing, drawn 2,000 times: 200 MB written out if nothing bounded it.
+        let big = format!("BT /F1 11 Tf ({}) Tj ET", "x".repeat(100_000));
+        let pdf = pdf_with_form_fonts(
+            &format!(
+                "BT /F1 11 Tf (Page text) Tj ET {}",
+                "/Fm0 Do ".repeat(2_000)
+            ),
+            big.as_bytes(),
+            &[],
+            false,
+        );
+        let started = std::time::Instant::now();
+        let text = page_text(&pdf, 0);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        assert!(
+            text.starts_with("Page text\n"),
+            "{}",
+            &text[..20.min(text.len())]
+        );
+    }
+
+    #[test]
+    fn a_form_the_extractor_cannot_read_never_costs_the_page_its_own_text() {
+        // A form font with no /Type /Font fails the whole page in lopdf: its text is skipped,
+        // never read with another font, and the page's own text stays.
+        let pdf = pdf_with_form_fonts(
+            "BT /F1 11 Tf (Page text) Tj ET /Fm0 Do",
+            b"BT /G0 11 Tf (Form text) Tj ET",
+            &[("G0".to_owned(), false)],
+            false,
+        );
+        assert_eq!(page_text(&pdf, 0).trim_end(), "Page text");
+        // A form whose drawing cannot be decoded leaves the page as it was.
+        let pdf = pdf_with_form_fonts(
+            "BT /F1 11 Tf (Page text) Tj ET /Fm0 Do",
+            b"BT /F1 11 Tf (unclosed Tj",
+            &[],
+            false,
+        );
+        assert_eq!(page_text(&pdf, 0).trim_end(), "Page text");
+    }
+
+    #[test]
+    fn a_form_with_a_matrix_is_read_and_a_forms_matrix_cannot_hide_its_text() {
+        let pdf = pdf_with_form_fonts(
+            "BT /F1 11 Tf (Page text) Tj ET /Fm0 Do",
+            b"BT /G0 11 Tf (Form text) Tj ET",
+            &[("G0".to_owned(), true)],
+            true,
+        );
+        assert_eq!(page_text(&pdf, 0), "Page text\nForm text\n");
     }
 
     #[test]
