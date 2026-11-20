@@ -2,7 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { useI18n } from "../i18n";
-import type { ModelRow, ModelAddOutcome, ModelStatus } from "../ai/types";
+import { PatientModelRows } from "./PatientModelRows";
+import type {
+  PatientModelRow,
+  ModelRow,
+  ModelAddOutcome,
+  ModelStatus,
+} from "../ai/types";
 import { capacityInPages } from "../ai/capacity";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -23,7 +29,7 @@ const mb = (bytes: number, locale?: string) =>
  * `download` is a catalog model's download and its check, `check` a picked
  * file's check. */
 type CopyProgress = { done: number; total: number; index?: number | null };
-type ModelAddNow = CopyProgress & { kind: "download" | "check" };
+type ModelAddNow = CopyProgress & { kind: "download" | "check" | "trial" };
 
 /** How much of the file is in, as a whole percent (#275). */
 export const percentOf = (done: number, total: number) =>
@@ -136,12 +142,15 @@ export function AiModelSetting({
   const mb = (bytes: number) => Math.round(bytes / MB).toLocaleString(locale);
   const id = useId();
   const [rows, setRows] = useState<ModelRow[]>([]);
+  const [patientRows, setPatientRows] = useState<PatientModelRow[]>([]);
+  const [pendingPick, setPendingPick] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [listError, setListError] = useState(false);
   const [progress, setProgress] = useState<CopyProgress | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [working, setWorking] = useState(false);
+  const [trialing, setTrialing] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<ModelRow | null>(null);
@@ -217,7 +226,7 @@ export function AiModelSetting({
         const revision = activityRevision.current;
         try {
           const [next, nextStatus] = await Promise.all([
-            invoke<ModelRow[]>("ai_models"),
+            invoke<(ModelRow | PatientModelRow)[]>("ai_models"),
             reconcile
               ? invoke<ModelStatus>("ai_model_status")
               : Promise.resolve(null),
@@ -229,7 +238,18 @@ export function AiModelSetting({
             if (reconcile) continue;
             return;
           }
-          setRows(next);
+          setRows(
+            next.filter(
+              (row): row is ModelRow =>
+                row.index !== null && row.model !== null,
+            ),
+          );
+          setPatientRows(
+            next.filter(
+              (row): row is PatientModelRow =>
+                row.index === null && row.model === null,
+            ),
+          );
           if (
             nextStatus &&
             JSON.stringify(publishedStatus.current) !==
@@ -348,6 +368,7 @@ export function AiModelSetting({
   }, [rows, loaded, adding, working, refreshing, refusal, listError]);
 
   const attach = (now: ModelAddNow) => {
+    setTrialing(now.kind === "trial");
     mutationNotice.current = false;
     setDownloading(now.kind === "download");
     starter.current = now.kind === "download" ? "download" : "add";
@@ -360,6 +381,13 @@ export function AiModelSetting({
     );
   };
   const finish = (result: ModelAddOutcome, foreign = false) => {
+    setTrialing(false);
+    if (!foreign && result.outcome === "notListed" && result.pickId) {
+      setPendingPick(result.pickId);
+      setProgress(null);
+      setNote(null);
+      return;
+    }
     activityRevision.current += 1;
     progressObserved.current = false;
     setNote(null);
@@ -453,10 +481,16 @@ export function AiModelSetting({
   }, [polling]);
 
   const run = (
-    command: "ai_model_add_picked" | "ai_model_download",
+    command:
+      | "ai_model_add_picked"
+      | "ai_model_download"
+      | "ai_model_add_unchecked",
     index: number | null,
+    pickId?: string,
   ) => {
     if (busy || own.current || mutating.current) return;
+    setPendingPick(null);
+    setTrialing(false);
     activityRevision.current += 1;
     endedWhileOwn.current = null;
     progressObserved.current = false;
@@ -473,9 +507,11 @@ export function AiModelSetting({
     own.current = true;
     setProgress({ done: 0, total: 0, index });
     const result =
-      index === null
-        ? invoke<ModelAddOutcome>(command)
-        : invoke<ModelAddOutcome>(command, { request: { index } });
+      command === "ai_model_add_unchecked"
+        ? invoke<ModelAddOutcome>(command, { request: { pickId } })
+        : index === null
+          ? invoke<ModelAddOutcome>(command)
+          : invoke<ModelAddOutcome>(command, { request: { index } });
     void result
       .then(async (ended) => {
         if (!mounted.current) return;
@@ -520,8 +556,8 @@ export function AiModelSetting({
   };
 
   const mutate = async (
-    command: "ai_model_use" | "ai_model_remove",
-    index: number,
+    command: "ai_model_use" | "ai_model_remove" | "ai_model_trial",
+    index: number | string,
   ) => {
     if (busy || own.current || mutating.current) return;
     mutating.current = true;
@@ -529,13 +565,17 @@ export function AiModelSetting({
     const mutation = ++mutationRequest.current;
     activityRevision.current += 1;
     setWorking(true);
+    setTrialing(command === "ai_model_trial");
     setRefusal(null);
     setMessage(null);
     setConfirming(null);
     after.current = command === "ai_model_remove" ? "removed" : null;
-    if (command === "ai_model_remove") targetIndex.current = index;
+    if (command === "ai_model_remove")
+      targetIndex.current = typeof index === "number" ? index : null;
     try {
-      await invoke<ModelStatus>(command, { request: { index } });
+      await invoke(command, {
+        request: typeof index === "number" ? { index } : { sha256: index },
+      });
       if (!mounted.current || mutation !== mutationRequest.current) return;
       if (command === "ai_model_use") setMessage("ai.models.changed");
     } catch (failure) {
@@ -554,6 +594,7 @@ export function AiModelSetting({
         await reloadRef.current(true, true);
         mutating.current = false;
         setWorking(false);
+        setTrialing(false);
       }
     }
   };
@@ -577,7 +618,13 @@ export function AiModelSetting({
           total: mb(progress.total),
         })
       : adding
-        ? t(downloading ? "ai.models.starting" : "ai.models.picking")
+        ? t(
+            trialing
+              ? "ai.patient.notTried"
+              : downloading
+                ? "ai.models.starting"
+                : "ai.models.picking",
+          )
         : message
           ? t(message as "ai.model.added")
           : "";
@@ -750,6 +797,22 @@ export function AiModelSetting({
           );
         })}
       </div>
+      <PatientModelRows
+        rows={patientRows}
+        busy={busy}
+        unsupported={unsupported}
+        onAction={mutate}
+      />
+      {pendingPick && (
+        <ConfirmDialog
+          title={t("ai.patient.addTitle")}
+          confirmLabel={t("ai.patient.addConfirm")}
+          onCancel={() => setPendingPick(null)}
+          onConfirm={() => run("ai_model_add_unchecked", null, pendingPick)}
+        >
+          {t("ai.patient.addWarning")}
+        </ConfirmDialog>
+      )}
       {!unsupported && loaded && (
         <button
           ref={addRef}

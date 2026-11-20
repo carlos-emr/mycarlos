@@ -1218,10 +1218,33 @@ formats and the delivery wire format are unchanged.
 
 ## Format 13: previous full names
 
-This build understands manifest formats 1–13. Format 12 (remembered refusals, #143, above) is a real format: a vault at 12 upgrades to 13 at its next writable unlock, in a commit of its own, like any older one. A format newer than 13 is refused as newer without being rewritten or interpreted; the parked model-file draft (#298) takes the next number, 14, when it merges. Format numbers are taken at merge (above): this one is 13 because it merges after #143's 12. Header, object and backup container formats do not change.
+Format 13 follows remembered refusals (format 12, #143). This build reads both formats and upgrades either on writable unlock as described under Format 14. Header, object and backup container formats do not change.
 
 A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 13 rather than read/drop this field.
 
 The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
 
 Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.
+
+## Format 14: approvals of AI models myCarlos hasn't checked (#276)
+
+Format 14 follows previous full names (format 13, #297).
+
+Format 14 adds one optional manifest field, `approvedModels`: the SHA-256 of
+each AI model, not on myCarlos's list, that the patient chose to use in this
+vault. A model the patient adds from a file is recorded outside the vault, in
+`models-in-use.json` beside the models folder, by its size and hash. It runs
+only once the open vault holds its hash here too. The patient is asked once,
+at its first answer. So a file swapped together with its record outside the
+vault, or a second vault of the same computer account, asks again.
+
+- Hashes only: 64 lowercase hexadecimal characters each, each once, at most
+  **32**. Past 32 the oldest goes. Approvals aren't the patient's documents, so
+  #71's "nothing is deleted" doesn't cover them.
+- An approval is written in a manifest commit of its own, with no history
+  entry: the history is the documents'.
+- A manifest before format 14 with any approval, or a format 14 one with a
+  malformed, repeated or 33rd hash, is corrupt.
+- A format 1–13 vault is upgraded to format 14 at its next writable unlock, in
+  a commit of its own, with nothing else changed. Header and object formats are
+  unchanged.

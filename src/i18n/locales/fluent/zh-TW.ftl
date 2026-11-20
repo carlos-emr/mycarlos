@@ -2102,3 +2102,24 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+
+# Patient-added models (#298).
+ai-patient-name = 您的模型 { $number }
+ai-patient-title = 您新增的模型
+ai-patient-warning = myCarlos 尚未驗證這些模型或其醫學回答。
+ai-patient-passed = 試啟動成功。
+ai-patient-model = 無法載入此模型。
+ai-patient-template = 此模型沒有受支援的聊天範本。
+ai-patient-context = 此模型對這台電腦而言太大。
+ai-patient-notTried = 試啟動尚未完成。
+ai-patient-use = 使用
+ai-patient-trial = 重試
+ai-patient-addTitle = 新增未列出的模型？
+ai-patient-addConfirm = 新增並試用此模型
+ai-patient-addWarning = 請僅新增來自可信來源的檔案。myCarlos 將複製此檔案，並嘗試用虛構請求啟動它。這不會驗證其醫學回答，也不會自動選擇該模型。
+ai-patient-changed = 所選模型已變更。請關閉此問題後重試。
+ai-patient-approveTitle = 允許此模型回答？
+ai-patient-approving = 正在儲存許可…
+ai-patient-approve = 允許用於此保險庫
+ai-patient-approveWarning = 允許 { $name } 編寫摘要和解釋嗎？myCarlos 尚未驗證此模型或其醫學回答。
+ai-patient-approveScope = 此許可僅儲存在目前開啟的保險庫中。新增或選擇檔案並不代表給予此許可。

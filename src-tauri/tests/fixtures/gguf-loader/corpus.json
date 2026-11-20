@@ -1,0 +1,13 @@
+[
+  {"name":"tiny-chatml","template":"chatml","expected":"ok"},
+  {"name":"missing-template","template":"none","expected":"Template"},
+  {"name":"unknown-template","template":"unknown","expected":"Template"},
+  {"name":"magic-only","template":"chatml","cut":4,"expected":"Model"},
+  {"name":"short-header","template":"chatml","cut":23,"expected":"Model"},
+  {"name":"short-metadata","template":"chatml","cut":100},
+  {"name":"missing-tensor-tail","template":"chatml","trim":1},
+  {"name":"version-zero","template":"chatml","offset":4,"hex":"00000000"},
+  {"name":"version-max","template":"chatml","offset":4,"hex":"ffffffff"},
+  {"name":"zero-tensors","template":"chatml","offset":8,"hex":"0000000000000000"},
+  {"name":"long-first-key","template":"chatml","offset":24,"hex":"ffffffffffffffff"}
+]

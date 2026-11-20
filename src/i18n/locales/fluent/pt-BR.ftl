@@ -2304,3 +2304,24 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+# Patient-added models (#298).
+ai-patient-name = Seu modelo { $number }
+ai-patient-title = Modelos que você adicionou
+ai-patient-warning = O myCarlos não verificou estes modelos nem suas respostas médicas.
+ai-patient-passed = A inicialização de teste passou.
+ai-patient-model = Não foi possível carregar este modelo.
+ai-patient-template = Este modelo não tem um formato de conversa compatível.
+ai-patient-context = Este modelo é grande demais para este computador.
+ai-patient-notTried = A inicialização de teste não terminou.
+ai-patient-use = Usar
+ai-patient-trial = Tentar novamente
+ai-patient-addTitle = Adicionar um modelo fora da lista?
+ai-patient-addConfirm = Adicionar e testar este modelo
+ai-patient-addWarning = Adicione apenas arquivos de fontes confiáveis. O myCarlos copiará este arquivo e tentará iniciá-lo com uma solicitação FICTÍCIA. Isso não verifica suas respostas médicas. Ele não será selecionado automaticamente.
+ai-patient-changed = O modelo selecionado mudou. Feche esta pergunta e tente novamente.
+ai-patient-approveTitle = Permitir respostas deste modelo?
+ai-patient-approving = Salvando autorização…
+ai-patient-approve = Permitir para este cofre
+ai-patient-approveWarning = Permitir que { $name } escreva resumos e explicações? O myCarlos não verificou este modelo nem suas respostas médicas.
+ai-patient-approveScope = Esta autorização é salva somente no cofre aberto. Adicionar ou selecionar um arquivo não concede esta autorização.

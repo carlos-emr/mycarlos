@@ -102,14 +102,28 @@ export interface ModelRow {
   inUse: boolean;
 }
 
+/** An unlisted file, identified only by native's content hash. */
+export interface PatientModelRow {
+  index: null;
+  model: null;
+  number: number;
+  sha256: string;
+  sizeBytes: number;
+  state: "installed" | "damaged" | "notTried" | "unusable";
+  addedByYou: true;
+  checked: false;
+  trial: "passed" | "model" | "template" | "context" | null;
+  inUse: boolean;
+}
+
 /** How `ai_model_add_picked` ended. `added` carries the new status; the
  * others are refusals, except `cancelled`, which is silent. */
 export type ModelAddOutcome =
   | { outcome: "added"; status: ModelStatus }
   | { outcome: "cancelled" }
+  | { outcome: "notListed"; pickId?: string }
   | {
       outcome:
-        | "notListed"
         | "tooBig"
         | "incomplete"
         | "wrongHash"

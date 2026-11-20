@@ -36,6 +36,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
+mod approved_models;
 mod delivery;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
@@ -55,17 +56,16 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// and push destinations (#192); format 10 adds the AI helper's answers (#72),
 /// objects of their own; format 11 caps the hidden answers apart from the
 /// shown ones (D13); format 12 remembers clinic deliveries that failed their
-/// checks (#143).
-/// Formats 1–3 are still read; an
+/// checks (#143); format 13 remembers previous names (#297); format 14 stores
+/// per-vault approvals of patient-added AI models (#276).
+/// Older formats are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
 /// Format 13 (previous full names) follows 12 (remembered refusals, #143). Its number was
-/// taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"); the parked
-/// model-file draft (#298) takes the next number when it merges. A renumber changes this
-/// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
+/// assigned when #297 landed.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_APPROVED_MODELS;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
@@ -89,6 +89,12 @@ const MANIFEST_FORMAT_AI_RESULTS: u32 = 10;
 /// The first format whose hidden AI answers have a cap of their own (D13):
 /// 32 shown and 96 hidden per document.
 const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
+/// The first format that keeps the patient's approvals of AI models myCarlos
+/// hasn't checked (#276). The newest, so `VAULT_FORMAT` is this one. Its number
+/// is taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"): a
+/// renumber changes this line and the format's heading in VAULT_FORMAT.md,
+/// nothing else here.
+const MANIFEST_FORMAT_APPROVED_MODELS: u32 = 14;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -662,6 +668,10 @@ struct Manifest {
         skip_serializing_if = "crate::document_notifications::RemoteNotices::is_empty"
     )]
     remote_notices: crate::document_notifications::RemoteNotices,
+    /// Format 14 (#276). The hashes of AI models myCarlos hasn't checked that the patient
+    /// approved in this vault (`approved_models`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    approved_models: Vec<String>,
     /// Clinic deliveries that failed their checks, so that they are not
     /// downloaded and refused again (#143). Format 12 only (after main's
     /// 10, AI answers, and 11, their caps). Kept here, not in
@@ -1328,11 +1338,12 @@ impl VaultStore {
         &self,
         origin: AnswerOrigin,
         cap: Duration,
-        reserve: impl FnOnce() -> T,
+        reserve: impl FnOnce(&[String]) -> T,
     ) -> Option<(AnswerHold, T)> {
         let guard = self.session();
-        guard.as_ref()?;
-        self.idle.admit_answer(origin, cap, reserve)
+        let unlocked = guard.as_ref()?;
+        self.idle
+            .admit_answer(origin, cap, || reserve(&unlocked.manifest.approved_models))
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
@@ -1474,6 +1485,7 @@ impl VaultStore {
                 portal_links: Vec::new(),
                 waiting_aids: Vec::new(),
                 remote_notices: Default::default(),
+                approved_models: Vec::new(),
                 refused_deliveries: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
@@ -5067,6 +5079,9 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             })
         })
     {
+        return Err(VaultError::Corrupt);
+    }
+    if !approved_models::valid(manifest) {
         return Err(VaultError::Corrupt);
     }
     // A waiting reading aid (format 8) shares the one delivery-ID space with filed deliveries.
@@ -9842,6 +9857,7 @@ mod tests {
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
+            approved_models: Vec::new(),
             refused_deliveries: Vec::new(),
         };
         (vault_id, manifest)
@@ -15564,6 +15580,7 @@ mod tests {
             portal_links: Vec::new(),
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
+            approved_models: Vec::new(),
             refused_deliveries: Vec::new(),
         }
     }
@@ -17456,9 +17473,10 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS,
             // Their hidden answers capped apart, format 11.
             MANIFEST_FORMAT_AI_HIDDEN_CAP,
-            // Remembered refusals (#143), format 12: the last before previous
-            // full names (13).
+            // Remembered refusals (#143), format 12.
             MANIFEST_FORMAT_REFUSED,
+            // Previous full names (#297), format 13.
+            MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
@@ -20262,6 +20280,8 @@ mod tests {
         manifest.format_version = 11;
         manifest.profiles[0].previous_full_names = Some(vec!["FAKE Zorvana".into()]);
         assert!(validate_manifest_structure(&manifest, id).is_err());
+        manifest.format_version = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+        assert!(validate_manifest_structure(&manifest, id).is_ok());
         manifest.format_version = VAULT_FORMAT;
         assert!(validate_manifest_structure(&manifest, id).is_ok());
         for invalid in [

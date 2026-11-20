@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+import { ConfirmDialog } from "./ConfirmDialog";
 import {
   useEffect,
   useLayoutEffect,
@@ -104,6 +106,10 @@ export function ReaderAiPanel({
   const lang = getLocale();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [working, setWorking] = useState(false);
+  const [approval, setApproval] = useState<ModelInfo | null>(null);
+  const approvalRequest = useRef(0);
+  const approving = useRef(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
   // The last run's failure, said in the panel's alert; null when none.
   const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
   const [noText, setNoText] = useState(false);
@@ -211,13 +217,54 @@ export function ReaderAiPanel({
     };
   }, []);
 
+  const approvePatientModel = async () => {
+    if (!approval || approving.current) return;
+    approving.current = true;
+    setApprovalBusy(true);
+    const request = approvalRequest.current;
+    try {
+      const current = await aiRef.current.model.status();
+      if (!live.current || request !== approvalRequest.current) return;
+      if (
+        current.state !== "installed" ||
+        current.model.sha256 !== approval.sha256
+      )
+        throw new Error(t("ai.patient.changed"));
+      await invoke("ai_model_approve", {
+        request: { sha256: approval.sha256 },
+      });
+      if (!live.current || request !== approvalRequest.current) return;
+      setApproval(null);
+      setFailed(null);
+      if (tool === "summary") setAgain((previous) => previous + 1);
+      // Explain stays under its explicit submit button: no saved term is sent
+      // after a dialog while the patient may have changed it.
+    } catch (failure) {
+      if (live.current && request === approvalRequest.current)
+        setFailed({ failure });
+    } finally {
+      approving.current = false;
+      if (live.current) setApprovalBusy(false);
+    }
+  };
+
   const installed = status?.state === "installed";
   const statusRef = useRef(status);
   statusRef.current = status;
   const stopped = (failure: unknown) => {
     // Stopped because the patient left, or the vault locked: nothing to say.
     if (!live.current || failure instanceof ModelCancelled) return;
-    if (failure instanceof ModelNotInstalled) setStatus(NOT_INSTALLED);
+    if (hasVaultErrorCode(failure, "aiNeedsApproval")) {
+      const request = ++approvalRequest.current;
+      void aiRef.current.model
+        .status()
+        .then((current) => {
+          if (!live.current || request !== approvalRequest.current) return;
+          if (current.state === "installed") setApproval(current.model);
+          else setStatus(current);
+        })
+        .catch(() => live.current && setFailed({ failure }));
+    } else if (failure instanceof ModelNotInstalled) setStatus(NOT_INSTALLED);
     else setFailed({ failure });
   };
 
@@ -451,6 +498,22 @@ export function ReaderAiPanel({
       aria-labelledby="reader-ai-title"
       aria-busy={status === null || working}
     >
+      {approval && (
+        <ConfirmDialog
+          title={t("ai.patient.approveTitle")}
+          confirmLabel={t(
+            approvalBusy ? "ai.patient.approving" : "ai.patient.approve",
+          )}
+          onConfirm={() => void approvePatientModel()}
+          onCancel={() => {
+            approvalRequest.current += 1;
+            setApproval(null);
+          }}
+        >
+          <p>{t("ai.patient.approveWarning", { name: approval.name })}</p>
+          <p>{t("ai.patient.approveScope")}</p>
+        </ConfirmDialog>
+      )}
       {/* Folded, the heading still names the panel for a screen reader. */}
       <h3 id="reader-ai-title" className={folded ? "sr-only" : undefined}>
         {title}
