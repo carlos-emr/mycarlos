@@ -933,6 +933,9 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.placeholder.manual",
   "interface.AnonymizePreview.possibleNames",
   "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.removedSummary",
+  "interface.AnonymizePreview.removedSummaryItem",
+  "interface.AnonymizePreview.removedSummaryNone",
   "interface.AnonymizePreview.removeSelected",
   "interface.AnonymizePreview.selectFirst",
   "interface.AnonymizePreview.phrase",
@@ -2157,6 +2160,12 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-possibleNames",
   "interface.AnonymizePreview.removeWord":
     "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.removedSummary":
+    "interface-AnonymizePreview-removedSummary",
+  "interface.AnonymizePreview.removedSummaryItem":
+    "interface-AnonymizePreview-removedSummaryItem",
+  "interface.AnonymizePreview.removedSummaryNone":
+    "interface-AnonymizePreview-removedSummaryNone",
   "interface.AnonymizePreview.removeSelected":
     "interface-AnonymizePreview-removeSelected",
   "interface.AnonymizePreview.selectFirst":
@@ -3324,6 +3333,12 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.placeholder.manual": undefined;
   "interface.AnonymizePreview.possibleNames": undefined;
   "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.removedSummary": { list: FluentArgument };
+  "interface.AnonymizePreview.removedSummaryItem": {
+    count: FluentArgument;
+    kind: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedSummaryNone": undefined;
   "interface.AnonymizePreview.removeSelected": undefined;
   "interface.AnonymizePreview.selectFirst": undefined;
   "interface.AnonymizePreview.phrase": undefined;

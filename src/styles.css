@@ -1324,6 +1324,14 @@ p {
 .native-anonymize-paste .native-anonymize-text {
   margin: 0;
 }
+/* What has been removed, by kind, above the text it is marked in. */
+.native-anonymize-summary {
+  margin: 0;
+  padding: 8px 20px 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
 .native-anonymize-possible {
   padding: 8px 20px 0;
 }

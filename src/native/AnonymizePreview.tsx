@@ -18,6 +18,7 @@ import {
 } from "react";
 import { useModalFocus } from "../useModalFocus";
 import { useMediaMatch } from "./smallWindow";
+import { removalCounts } from "./anonymizeReview";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   hasVaultErrorCode,
@@ -449,6 +450,27 @@ export function AnonymizePreview({
       runs.push({ start: at, text: current.toSend.slice(at) });
   }
   const possibleNames = current?.onDevice.possibleNames ?? [];
+  // What has been taken out so far, by kind: from the result itself, so it follows each
+  // removal the patient makes and each undo.
+  const removalSummary = (() => {
+    if (!current) return "";
+    const counts = removalCounts(current.onDevice.removed);
+    if (counts.length === 0)
+      return translateNow("interface.AnonymizePreview.removedSummaryNone");
+    const items = counts.map(({ kind, count }) =>
+      translateNow("interface.AnonymizePreview.removedSummaryItem", {
+        kind: translateNow(kindKey(kind)),
+        count,
+      }),
+    );
+    let list = items.join(", ");
+    try {
+      list = new Intl.ListFormat(getLocale(), { type: "unit" }).format(items);
+    } catch {
+      // An older engine: a plain comma list.
+    }
+    return translateNow("interface.AnonymizePreview.removedSummary", { list });
+  })();
   const busy = !current || saving;
 
   const closeButton = (
@@ -562,6 +584,7 @@ export function AnonymizePreview({
         )}
         {current && (
           <>
+            <p className="native-anonymize-summary">{removalSummary}</p>
             <p className="native-anonymize-header">
               <span>
                 {translateNow("interface.AnonymizePreview.headerNote")}

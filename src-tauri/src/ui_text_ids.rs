@@ -236,6 +236,9 @@ pub enum MessageId {
     InterfaceAnonymizePreviewRemoveWord,
     InterfaceAnonymizePreviewRemovedKind,
     InterfaceAnonymizePreviewRemovedPlaces,
+    InterfaceAnonymizePreviewRemovedSummary,
+    InterfaceAnonymizePreviewRemovedSummaryItem,
+    InterfaceAnonymizePreviewRemovedSummaryNone,
     InterfaceAnonymizePreviewReplaced,
     InterfaceAnonymizePreviewSave,
     InterfaceAnonymizePreviewSaveCancelled,
@@ -1285,6 +1288,9 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewRemoveWord,
         Self::InterfaceAnonymizePreviewRemovedKind,
         Self::InterfaceAnonymizePreviewRemovedPlaces,
+        Self::InterfaceAnonymizePreviewRemovedSummary,
+        Self::InterfaceAnonymizePreviewRemovedSummaryItem,
+        Self::InterfaceAnonymizePreviewRemovedSummaryNone,
         Self::InterfaceAnonymizePreviewReplaced,
         Self::InterfaceAnonymizePreviewSave,
         Self::InterfaceAnonymizePreviewSaveCancelled,
@@ -2395,6 +2401,15 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewRemovedKind => "interface-AnonymizePreview-removedKind",
             Self::InterfaceAnonymizePreviewRemovedPlaces => {
                 "interface-AnonymizePreview-removedPlaces"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummary => {
+                "interface-AnonymizePreview-removedSummary"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummaryItem => {
+                "interface-AnonymizePreview-removedSummaryItem"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummaryNone => {
+                "interface-AnonymizePreview-removedSummaryNone"
             }
             Self::InterfaceAnonymizePreviewReplaced => "interface-AnonymizePreview-replaced",
             Self::InterfaceAnonymizePreviewSave => "interface-AnonymizePreview-save",
@@ -4699,6 +4714,15 @@ impl MessageId {
             }
             "interface.AnonymizePreview.removeWord" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveWord)
+            }
+            "interface.AnonymizePreview.removedSummary" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummary)
+            }
+            "interface.AnonymizePreview.removedSummaryItem" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummaryItem)
+            }
+            "interface.AnonymizePreview.removedSummaryNone" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummaryNone)
             }
             "interface.AnonymizePreview.removeSelected" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveSelected)

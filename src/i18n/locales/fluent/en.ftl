@@ -2169,6 +2169,12 @@ interface-AnonymizePreview-possibleNames = Words that may be names
 
 interface-AnonymizePreview-removeWord = Remove “{ $word }”
 
+interface-AnonymizePreview-removedSummary = Removed: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
+
+interface-AnonymizePreview-removedSummaryItem = { $kind }: { $count }
+
 interface-AnonymizePreview-removeSelected = Remove the selected text
 
 interface-AnonymizePreview-selectFirst = Select some of the text first.

@@ -419,6 +419,32 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("says at the top what was removed, by kind, and follows each removal and undo", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    const summary = () =>
+      document.querySelector<HTMLElement>(".native-anonymize-summary")!;
+    // From the automatic result: the patient's name, birth date, a date and the doctor.
+    expect(summary()).toHaveHumanTextContent(/^Removed: .*name: 1/);
+    expect(summary()).toHaveHumanTextContent(/date of birth: 1/);
+    expect(summary()).not.toHaveHumanTextContent(/removed by you/);
+    await user.type(
+      screen.getByLabelText(humanText("Word or phrase to remove everywhere")),
+      "chest pain",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Remove everywhere") }),
+    );
+    expect(summary()).toHaveHumanTextContent(/removed by you: 1/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Undo the last removal") }),
+    );
+    expect(summary()).not.toHaveHumanTextContent(/removed by you/);
+  });
+
   it("puts Close last in the action row, at the bottom right, on a wide window", async () => {
     const user = userEvent.setup();
     await page.viewport(1100, 800);

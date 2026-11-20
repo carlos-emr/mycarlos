@@ -2002,6 +2002,12 @@ interface-AnonymizePreview-possibleNames = 可能是姓名的词
 
 interface-AnonymizePreview-removeWord = 移除“{ $word }”
 
+interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
+
+interface-AnonymizePreview-removedSummaryNone = 尚未移除任何内容。
+
+interface-AnonymizePreview-removedSummaryItem = { $kind }：{ $count }
+
 interface-AnonymizePreview-removeSelected = 移除选中的文本
 
 interface-AnonymizePreview-selectFirst = 请先选中一部分文本。
