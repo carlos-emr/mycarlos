@@ -778,3 +778,41 @@ summary:
 You must keep taking your other medicines. ||
 expect:
 You must keep taking your other medicines.
+===
+name: do_not_stop_taking_does_not_carry_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must not stop taking FAKEDRUG tablets after the infusion. ||
+expect:
+You must not stop taking FAKEDRUG tablets after the infusion.
+The document says: “Stop taking FAKEDRUG tablets after the infusion.”
+===
+name: a_sentence_with_no_direction_does_not_carry_a_stop
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+Your FAKEDRUG tablets were reviewed after the infusion. ||
+expect:
+Your FAKEDRUG tablets were reviewed after the infusion.
+The document says: “Stop taking FAKEDRUG tablets after the infusion.”
+===
+name: do_not_take_carries_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must not take FAKEDRUG tablets after the infusion. ||
+expect:
+You must not take FAKEDRUG tablets after the infusion.
+===
+name: a_sentence_with_no_direction_may_carry_a_keep
+pages:
+Plan
+Keep taking FAKEDRUG tablets after the infusion.
+summary:
+Your FAKEDRUG tablets after the infusion are the usual ones. ||
+expect:
+Your FAKEDRUG tablets after the infusion are the usual ones.

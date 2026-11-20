@@ -856,31 +856,58 @@ const CHANGE_PHRASES: &[(&str, Direction)] = &[
 /// is the clinician's plan, not an instruction to stop now.
 const CHANGE_PHRASES_AFTER_THE_MEDICINE: &[&str] = &["stops after", "stop after", "then stop"];
 
-/// Words in a sentence that show which way it goes (see `Direction`); a sentence may show several.
+/// Words in a sentence that show which way it goes (see `Direction`); a sentence may show several. A "not",
+/// "dont" or "never" just before the word turns it round: "do not stop taking" is Keep, "do not keep taking"
+/// is Stop, "do not start" is Stop, "do not increase" is Keep.
 fn directions_of(text: &str) -> Vec<Direction> {
     let toks = tokens(&text.replace(['\'', '\u{2019}'], ""));
-    let has = |words: &[&str]| toks.iter().any(|t| words.contains(&t.0.as_str()));
     let mut out = Vec::new();
-    if has(&["stop", "stops", "stopped", "stopping"])
-        || find_phrase(
-            &toks,
-            &["do not take", "dont take", "no longer", "must not take"],
-            0,
-        )
-        .is_some()
+    let mut push = |direction: Direction| {
+        if !out.contains(&direction) {
+            out.push(direction);
+        }
+    };
+    for (i, (word, ..)) in toks.iter().enumerate() {
+        let word = word.as_str();
+        let direction = if ["stop", "stops", "stopped", "stopping"].contains(&word) {
+            Direction::Stop
+        } else if ["keep", "keeps", "continue", "continues", "resume"].contains(&word) {
+            Direction::Keep
+        } else if ["start", "starts", "begin", "begins"].contains(&word) {
+            Direction::Start
+        } else if [
+            "increase", "decrease", "reduce", "lower", "change", "double", "halve",
+        ]
+        .contains(&word)
+        {
+            Direction::Dose
+        } else {
+            continue;
+        };
+        let negated = i > 0 && ["not", "dont", "never"].contains(&toks[i - 1].0.as_str());
+        push(match (negated, direction) {
+            (false, direction) => direction,
+            (true, Direction::Stop) => Direction::Keep,
+            (true, Direction::Keep) => Direction::Stop,
+            (true, Direction::Start) => Direction::Stop,
+            (true, Direction::Dose) => Direction::Keep,
+        });
+    }
+    // "do not take", "no longer": a stop without the word.
+    if find_phrase(
+        &toks,
+        &[
+            "do not take",
+            "dont take",
+            "no longer",
+            "must not take",
+            "should not take",
+        ],
+        0,
+    )
+    .is_some()
     {
-        out.push(Direction::Stop);
-    }
-    if has(&["keep", "keeps", "continue", "continues", "resume"]) {
-        out.push(Direction::Keep);
-    }
-    if has(&["start", "starts", "begin", "begins"]) {
-        out.push(Direction::Start);
-    }
-    if has(&[
-        "increase", "decrease", "reduce", "lower", "change", "double", "halve",
-    ]) {
-        out.push(Direction::Dose);
+        push(Direction::Stop);
     }
     out
 }
@@ -1155,8 +1182,11 @@ fn carries_medicine(sentence: &str, change: &MedicineChange) -> bool {
     if shared < change.words.len().min(2) {
         return false;
     }
+    // A stop, start or dose change needs a sentence that says the direction ("Your ramipril was reviewed."
+    // does not carry "Stop taking ramipril"); a "keep taking" line may also be carried by a sentence that
+    // says nothing of the direction, unless it has only generic words.
     let said = directions_of(sentence);
-    if change.direction_required {
+    if change.direction_required || change.direction != Direction::Keep {
         said.contains(&change.direction)
     } else {
         said.is_empty() || said.contains(&change.direction)
@@ -2352,5 +2382,50 @@ mod tests {
         assert!(is_absence_sentence(
             "The document includes no instructions."
         ));
+    }
+
+    #[test]
+    fn given_a_negated_stop_when_checked_then_it_does_not_carry_a_stop() {
+        check_case("do_not_stop_taking_does_not_carry_stop_taking");
+        check_case("do_not_take_carries_stop_taking");
+    }
+
+    #[test]
+    fn given_a_sentence_with_no_direction_when_checked_then_it_carries_a_keep_but_not_a_stop() {
+        check_case("a_sentence_with_no_direction_does_not_carry_a_stop");
+        check_case("a_sentence_with_no_direction_may_carry_a_keep");
+    }
+
+    #[test]
+    fn given_negation_when_directions_are_read_then_the_direction_turns_round() {
+        assert_eq!(directions_of("Stop taking it."), vec![Direction::Stop]);
+        assert_eq!(
+            directions_of("Do not stop taking it."),
+            vec![Direction::Keep]
+        );
+        assert_eq!(
+            directions_of("Don\u{2019}t stop taking it."),
+            vec![Direction::Keep]
+        );
+        assert_eq!(
+            directions_of("Never stop it on your own."),
+            vec![Direction::Keep]
+        );
+        assert_eq!(
+            directions_of("Do not keep taking it."),
+            vec![Direction::Stop]
+        );
+        assert_eq!(directions_of("Do not start it."), vec![Direction::Stop]);
+        assert_eq!(
+            directions_of("Do not increase the dose."),
+            vec![Direction::Keep]
+        );
+        assert_eq!(directions_of("Do not take it."), vec![Direction::Stop]);
+        assert_eq!(
+            directions_of("Your ramipril was reviewed."),
+            Vec::<Direction>::new()
+        );
+        let both = directions_of("Keep taking the first and stop taking the second.");
+        assert!(both.contains(&Direction::Keep) && both.contains(&Direction::Stop));
     }
 }
