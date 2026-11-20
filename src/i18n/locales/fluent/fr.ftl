@@ -2210,6 +2210,15 @@ interface-AnonymizePreview-removedSummaryNone = Rien n’a encore été retiré.
 
 interface-AnonymizePreview-removedSummaryItem = { $kind } : { $count }
 
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } mot à vérifier
+   *[other] { $count } mots à vérifier
+}
+
+interface-AnonymizePreview-toCheckHelp = Les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus sont surlignés : ils peuvent identifier quelqu’un. Sélectionnez-en un, puis choisissez Retirer.
+
+interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
+
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 
 interface-AnonymizePreview-selectFirst = Sélectionnez d'abord une partie du texte.

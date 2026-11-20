@@ -2008,6 +2008,12 @@ interface-AnonymizePreview-removedSummaryNone = 尚未移除任何內容。
 
 interface-AnonymizePreview-removedSummaryItem = { $kind }：{ $count }
 
+interface-AnonymizePreview-toCheck = { $count } 個詞需要檢查
+
+interface-AnonymizePreview-toCheckHelp = 句子中間以大寫字母開頭的詞，以及三位或更多位的數字會被醒目標示：它們可能識別出某個人。請選擇其一，然後選擇「移除」。
+
+interface-AnonymizePreview-checkPicked = 「{ $word }」可能識別出某個人。
+
 interface-AnonymizePreview-removeSelected = 移除選取的文字
 
 interface-AnonymizePreview-selectFirst = 請先選取一部分文字。

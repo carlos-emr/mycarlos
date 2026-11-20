@@ -2175,6 +2175,15 @@ interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
 
 interface-AnonymizePreview-removedSummaryItem = { $kind }: { $count }
 
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } word to check
+   *[other] { $count } words to check
+}
+
+interface-AnonymizePreview-toCheckHelp = Words that start with a capital letter inside a sentence, and numbers with three or more digits, are highlighted: they may identify someone. Select one, then choose Remove.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” may identify someone.
+
 interface-AnonymizePreview-removeSelected = Remove the selected text
 
 interface-AnonymizePreview-selectFirst = Select some of the text first.

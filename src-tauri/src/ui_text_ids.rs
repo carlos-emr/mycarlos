@@ -175,6 +175,7 @@ pub enum MessageId {
     FrameWindowLabel,
     HiddenBackToSecurity,
     InterfaceAiHelperNoticeContinue,
+    InterfaceAnonymizePreviewCheckPicked,
     InterfaceAnonymizePreviewClose,
     InterfaceAnonymizePreviewConfirmBody,
     InterfaceAnonymizePreviewConfirmTitle,
@@ -246,6 +247,8 @@ pub enum MessageId {
     InterfaceAnonymizePreviewSelectFirst,
     InterfaceAnonymizePreviewTextRegion,
     InterfaceAnonymizePreviewTitle,
+    InterfaceAnonymizePreviewToCheck,
+    InterfaceAnonymizePreviewToCheckHelp,
     InterfaceAnonymizePreviewUndo,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
@@ -1227,6 +1230,7 @@ impl MessageId {
         Self::FrameWindowLabel,
         Self::HiddenBackToSecurity,
         Self::InterfaceAiHelperNoticeContinue,
+        Self::InterfaceAnonymizePreviewCheckPicked,
         Self::InterfaceAnonymizePreviewClose,
         Self::InterfaceAnonymizePreviewConfirmBody,
         Self::InterfaceAnonymizePreviewConfirmTitle,
@@ -1298,6 +1302,8 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewSelectFirst,
         Self::InterfaceAnonymizePreviewTextRegion,
         Self::InterfaceAnonymizePreviewTitle,
+        Self::InterfaceAnonymizePreviewToCheck,
+        Self::InterfaceAnonymizePreviewToCheckHelp,
         Self::InterfaceAnonymizePreviewUndo,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
@@ -2279,6 +2285,7 @@ impl MessageId {
             Self::FrameWindowLabel => "frame-window-label",
             Self::HiddenBackToSecurity => "hidden-backToSecurity",
             Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
+            Self::InterfaceAnonymizePreviewCheckPicked => "interface-AnonymizePreview-checkPicked",
             Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
             Self::InterfaceAnonymizePreviewConfirmBody => "interface-AnonymizePreview-confirmBody",
             Self::InterfaceAnonymizePreviewConfirmTitle => {
@@ -2420,6 +2427,8 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
             Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
             Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
+            Self::InterfaceAnonymizePreviewToCheck => "interface-AnonymizePreview-toCheck",
+            Self::InterfaceAnonymizePreviewToCheckHelp => "interface-AnonymizePreview-toCheckHelp",
             Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
@@ -4723,6 +4732,13 @@ impl MessageId {
             }
             "interface.AnonymizePreview.removedSummaryNone" => {
                 Some(Self::InterfaceAnonymizePreviewRemovedSummaryNone)
+            }
+            "interface.AnonymizePreview.toCheck" => Some(Self::InterfaceAnonymizePreviewToCheck),
+            "interface.AnonymizePreview.toCheckHelp" => {
+                Some(Self::InterfaceAnonymizePreviewToCheckHelp)
+            }
+            "interface.AnonymizePreview.checkPicked" => {
+                Some(Self::InterfaceAnonymizePreviewCheckPicked)
             }
             "interface.AnonymizePreview.removeSelected" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveSelected)

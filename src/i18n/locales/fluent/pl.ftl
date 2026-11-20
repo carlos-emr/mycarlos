@@ -2256,6 +2256,17 @@ interface-AnonymizePreview-removedSummaryNone = Jeszcze nic nie usunięto.
 
 interface-AnonymizePreview-removedSummaryItem = { $kind }: { $count }
 
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } słowo do sprawdzenia
+    [few] { $count } słowa do sprawdzenia
+    [many] { $count } słów do sprawdzenia
+   *[other] { $count } słowa do sprawdzenia
+}
+
+interface-AnonymizePreview-toCheckHelp = Podświetlone są słowa pisane wielką literą w środku zdania oraz liczby co najmniej trzycyfrowe: mogą kogoś identyfikować. Wybierz jedno, a potem Usuń.
+
+interface-AnonymizePreview-checkPicked = „{ $word }” może kogoś identyfikować.
+
 interface-AnonymizePreview-removeSelected = Usuń zaznaczony tekst
 
 interface-AnonymizePreview-selectFirst = Najpierw zaznacz fragment tekstu.

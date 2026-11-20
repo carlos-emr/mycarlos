@@ -18,7 +18,7 @@ import {
 } from "react";
 import { useModalFocus } from "../useModalFocus";
 import { useMediaMatch } from "./smallWindow";
-import { removalCounts } from "./anonymizeReview";
+import { removalCounts, wordsToCheck } from "./anonymizeReview";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   hasVaultErrorCode,
@@ -172,6 +172,10 @@ export function AnonymizePreview({
   const [notice, setNotice] = useTextState();
   const [phrase, setPhrase] = useState("");
   const [confirming, setConfirming] = useState(false);
+  // A highlighted word the patient selected, to offer "Remove" for it.
+  const [picked, setPicked] = useState<{ start: number; word: string } | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
   // After a save: the AI's answer pasted back, and what it came to. The list
@@ -429,8 +433,12 @@ export function AnonymizePreview({
   };
 
   /** The shown text as runs: plain text, and each removal as a mark. */
-  const runs: { start: number; text: string; kind?: RemovedKind | "date" }[] =
-    [];
+  const runs: {
+    start: number;
+    text: string;
+    kind?: RemovedKind | "date";
+    check?: boolean;
+  }[] = [];
   if (current) {
     let at = 0;
     for (const part of current.onDevice.removed) {
@@ -450,6 +458,40 @@ export function AnonymizePreview({
       runs.push({ start: at, text: current.toSend.slice(at) });
   }
   const possibleNames = current?.onDevice.possibleNames ?? [];
+  // Capitalised words and long numbers still in the text: highlighted for the patient to look
+  // at, never removed by themselves.
+  const checks = current
+    ? wordsToCheck(current.toSend, current.onDevice.removed, possibleNames)
+    : [];
+  const pickedCheck = picked
+    ? (checks.find(
+        (found) => found.start === picked.start && found.word === picked.word,
+      ) ?? null)
+    : null;
+  // The plain runs, cut where a word to check stands.
+  const shownRuns = runs.flatMap((run) => {
+    if (run.kind || !current) return [run];
+    const pieces: typeof runs = [];
+    const end = run.start + run.text.length;
+    let at = run.start;
+    for (const found of checks) {
+      if (found.start < at || found.end > end) continue;
+      if (found.start > at)
+        pieces.push({
+          start: at,
+          text: current.toSend.slice(at, found.start),
+        });
+      pieces.push({
+        start: found.start,
+        text: current.toSend.slice(found.start, found.end),
+        check: true,
+      });
+      at = found.end;
+    }
+    if (at < end)
+      pieces.push({ start: at, text: current.toSend.slice(at, end) });
+    return pieces;
+  });
   // What has been taken out so far, by kind: from the result itself, so it follows each
   // removal the patient makes and each undo.
   const removalSummary = (() => {
@@ -598,8 +640,31 @@ export function AnonymizePreview({
               role="region"
               aria-label={translateNow("interface.AnonymizePreview.textRegion")}
             >
-              {runs.map((run) =>
-                run.kind ? (
+              {shownRuns.map((run) =>
+                run.check ? (
+                  // Highlighted only: a screen reader is given the count below, not a stop at
+                  // each word. A click offers Remove (keyboard: the list below the text).
+                  <mark
+                    key={run.start}
+                    data-start={run.start}
+                    data-check=""
+                    role="none"
+                    className={
+                      picked?.start === run.start
+                        ? "native-anonymize-check native-anonymize-check-picked"
+                        : "native-anonymize-check"
+                    }
+                    onClick={() =>
+                      setPicked((now) =>
+                        now?.start === run.start
+                          ? null
+                          : { start: run.start, word: run.text },
+                      )
+                    }
+                  >
+                    {run.text}
+                  </mark>
+                ) : run.kind ? (
                   <mark
                     key={run.start}
                     data-start={run.start}
@@ -636,6 +701,54 @@ export function AnonymizePreview({
                     page: text.pages[text.pages.length - 1].index + 1,
                   })}
                 </span>
+              </p>
+            )}
+            {checks.length > 0 && (
+              <details className="native-anonymize-checks">
+                <summary>
+                  {translateNow("interface.AnonymizePreview.toCheck", {
+                    count: checks.length,
+                  })}
+                </summary>
+                <p>{translateNow("interface.AnonymizePreview.toCheckHelp")}</p>
+                <ul>
+                  {checks.map((found) => (
+                    <li key={found.start}>
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => remove(found.start, found.end)}
+                      >
+                        {translateNow("interface.AnonymizePreview.removeWord", {
+                          word: found.word,
+                        })}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {pickedCheck && (
+              <p className="native-anonymize-picked">
+                <span>
+                  {translateNow("interface.AnonymizePreview.checkPicked", {
+                    word: pickedCheck.word,
+                  })}
+                </span>{" "}
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    remove(pickedCheck.start, pickedCheck.end);
+                    setPicked(null);
+                  }}
+                >
+                  {translateNow("interface.AnonymizePreview.removeWord", {
+                    word: pickedCheck.word,
+                  })}
+                </button>
               </p>
             )}
             {possibleNames.length > 0 && (

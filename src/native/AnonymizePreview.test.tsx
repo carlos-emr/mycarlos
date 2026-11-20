@@ -419,6 +419,52 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("highlights what is still in the text and may identify someone, counts it once for a screen reader, and offers Remove", async () => {
+    const user = userEvent.setup();
+    const checkPages = [
+      {
+        index: 0,
+        text: "Patient: Avery Example\nSeen with Blake at room 214 on Monday. Ramipril 5 mg.",
+      },
+    ];
+    renderPreview({
+      text: documentText({ pages: checkPages, ...joinPages(checkPages) }),
+    });
+    const region = await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    const marks = () =>
+      [...region.querySelectorAll<HTMLElement>("mark[data-check]")].map(
+        (mark) => mark.textContent,
+      );
+    // The capitalised word that does not start a sentence and the number of three digits; not
+    // the placeholders, "Monday", the drug, "Seen" (a sentence start) or the dose "5".
+    expect(marks()).toEqual(["Blake", "214"]);
+    // One count for a screen reader, in a closed list, not a stop at each word.
+    expect(screen.getByText(humanText("2 words to check"))).toBeInTheDocument();
+    for (const mark of region.querySelectorAll("mark[data-check]"))
+      expect(mark).toHaveAttribute("role", "none");
+    // Clicking a highlighted word offers Remove for it; Remove takes it out as one step.
+    await user.click(region.querySelector<HTMLElement>("mark[data-check]")!);
+    await user.click(
+      screen
+        .getAllByRole("button", { name: humanText("Remove “Blake”") })
+        .find((button) => button.closest(".native-anonymize-picked"))!,
+    );
+    expect(marks()).toEqual(["214"]);
+    expect(region).not.toHaveTextContent("Blake");
+    expect(screen.getByText(humanText("1 word to check"))).toBeInTheDocument();
+    expect(
+      document.querySelector(".native-anonymize-summary"),
+    ).toHaveHumanTextContent(/removed by you: 1/);
+    // The list below the text reaches the same removal from the keyboard.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Remove “214”") }),
+    );
+    expect(marks()).toEqual([]);
+    expect(document.querySelector(".native-anonymize-checks")).toBeNull();
+  });
+
   it("says at the top what was removed, by kind, and follows each removal and undo", async () => {
     const user = userEvent.setup();
     renderPreview();
