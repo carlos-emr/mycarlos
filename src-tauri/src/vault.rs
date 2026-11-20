@@ -19316,11 +19316,15 @@ mod tests {
                     created_at_ms: 1,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 }],
                 folders,
                 records: Vec::new(),
                 history: HistoryState::default(),
                 portal_links: Vec::new(),
+                waiting_aids: Vec::new(),
+                remote_notices: Default::default(),
+                refused_deliveries: Vec::new(),
             };
             validate_manifest_structure(&manifest, manifest.vault_id).unwrap();
         }
