@@ -21,7 +21,10 @@
 //! - longer terms first, never overlapping; a "plain" phrase ("LDL-C", "Ringer's lactate",
 //!   "pulmonary hypertension") keeps a shorter term inside it unexplained;
 //! - a unit, or a term with an upper-case letter, matches only as written ("EGFR" is not
-//!   "eGFR"); any other all-lower-case term matches in any case;
+//!   "eGFR"); any other all-lower-case term matches in any case. The one exception: at the very
+//!   start of a sentence, the first letter of a term listed as an ordinary lower-case word may be
+//!   a capital ("Tissue transglutaminase IgA" is the term "tissue transglutaminase IgA", not
+//!   its halves), never the first letter of an abbreviation ("EGFR", "TTG");
 //! - a term needs a non-letter, non-digit on both sides (a unit may follow a digit), and a hyphen
 //!   or slash joining it to a letter or digit is no break ("LDL-C", "albumin/creatinine");
 //! - nothing is inserted when the term is already explained: a bracket right after it; ", a",
@@ -235,7 +238,22 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
                 || (!chars[j].is_alphanumeric()
                     && (unit
                         || !(joined(j) && chars.get(j + 1).is_some_and(|c| c.is_alphanumeric()))));
-            if !starts || !ends || !(0..m).all(|k| same(chars[i + k], term[k], cased)) {
+            // A sentence may begin with a term that is listed as an ordinary lower-case word
+            // ("tissue transglutaminase IgA"): only its first letter may then be a capital. That
+            // is the one place a term with an upper-case letter later in it ("IgA", "A1c") is
+            // not matched only as written. A term that begins like an abbreviation ("eGFR",
+            // "tTG", "mU/L") and a first word that is not at the start of the sentence are not
+            // affected.
+            let lead_capital = i == 0
+                && !unit
+                && cased
+                && term.len() > 1
+                && term[0].is_lowercase()
+                && term[1].is_lowercase();
+            if !starts
+                || !ends
+                || !(0..m).all(|k| same(chars[i + k], term[k], cased && !(k == 0 && lead_capital)))
+            {
                 continue;
             }
             if claimed[i..j].iter().any(|c| *c) {
@@ -379,6 +397,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn given_a_sentence_starting_with_a_lower_case_listed_term_when_explained_then_the_capital_matches_the_whole_term(
+    ) {
+        check("a_sentence_initial_capital_matches_a_term_listed_in_lower_case");
+        check("a_hemoglobin_a1c_at_the_start_of_a_sentence_is_one_term");
+    }
+
+    #[test]
+    fn given_a_capital_after_the_first_word_when_explained_then_it_is_still_matched_only_as_written(
+    ) {
+        check("a_capital_after_the_first_word_is_still_matched_only_as_written");
+    }
+
+    #[test]
+    fn given_a_sentence_starting_with_an_abbreviation_in_the_wrong_case_when_explained_then_it_is_not_matched(
+    ) {
+        check("a_sentence_initial_abbreviation_in_the_wrong_case_is_not_matched");
+    }
+
+    #[test]
+    fn given_the_bare_enzyme_name_when_explained_then_it_is_not_called_a_test() {
+        check("the_bare_enzyme_name_is_not_a_test");
+    }
+
+    #[test]
+    fn given_ldl_and_hdl_when_explained_then_each_gets_its_own_explanation() {
+        check("ldl_and_hdl_each_get_their_own_explanation");
+    }
+
+    #[test]
+    fn given_a_french_hormone_enzyme_and_antibody_when_explained_then_each_is_named_for_what_it_is()
+    {
+        check("a_french_hormone_enzyme_and_antibody");
     }
 
     #[test]

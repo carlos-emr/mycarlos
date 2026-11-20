@@ -35,12 +35,12 @@ expect: Take it PO (by mouth) twice a day; the po box is closed.
 name: only_the_first_use_in_a_sentence
 lang: en
 sentence: The CRP was 30 and the CRP will be repeated.
-expect: The CRP (a blood test for inflammation) was 30 and the CRP will be repeated.
+expect: The CRP (a protein in the blood that goes up with inflammation) was 30 and the CRP will be repeated.
 ===
 name: each_glossary_line_gets_its_own
 lang: en
 sentence: ALT and AST are high.
-expect: ALT (a liver blood test) and AST (a liver blood test) are high.
+expect: ALT (an enzyme found mainly in the liver, measured to check the liver) and AST (an enzyme found in the liver, heart and muscles, measured to check the liver) are high.
 ===
 name: two_spellings_of_one_line
 lang: en
@@ -110,7 +110,7 @@ expect: Her LDL-C was 2.1 mmol/L.
 name: ttg_iga_as_one_term
 lang: en
 sentence: The tTG-IgA was high.
-expect: The tTG-IgA (a blood test for celiac disease) was high.
+expect: The tTG-IgA (an antibody in the blood that is often high in celiac disease) was high.
 ===
 name: ckd_epi_is_left_alone
 lang: en
@@ -165,7 +165,7 @@ expect: She has ocular hypertension.
 name: gastric_erosions
 lang: en
 sentence: The gastroscopy showed gastric erosions.
-expect: The gastroscopy (a camera test of the stomach) showed gastric erosions (small areas where a surface is worn away).
+expect: The gastroscopy (a look inside the food pipe, stomach and start of the bowel with a thin camera tube) showed gastric erosions (small areas where a surface is worn away).
 ===
 name: acr_eular_criteria
 lang: en
@@ -180,12 +180,12 @@ expect: Insulin glargine 300 U/mL at bedtime.
 name: glycated_hemoglobin
 lang: en
 sentence: The glycated hemoglobin was 7.5%.
-expect: The glycated hemoglobin (a blood test of the average blood sugar over the past few months) was 7.5%.
+expect: The glycated hemoglobin (sugar attached to the red blood cells, which shows the average blood sugar over the past few months) was 7.5%.
 ===
 name: hemoglobine_a1c_in_french
 lang: fr
 sentence: L'hémoglobine A1c est à 8 %.
-expect: L'hémoglobine A1c (une analyse de sang qui mesure le sucre moyen des derniers mois) est à 8 %.
+expect: L'hémoglobine A1c (le sucre fixé sur les globules rouges, qui montre le sucre moyen des derniers mois) est à 8 %.
 ===
 name: recalled_is_not_called
 lang: en
@@ -215,7 +215,7 @@ expect: The CRP, the white count and the lactate (a blood substance that can go 
 name: a_lab_value_in_units_per_millilitre
 lang: en
 sentence: The tTG-IgA was 86 U/mL.
-expect: The tTG-IgA (a blood test for celiac disease) was 86 U/mL.
+expect: The tTG-IgA (an antibody in the blood that is often high in celiac disease) was 86 U/mL.
 ===
 name: an_insulin_brand_strength
 lang: en
@@ -235,7 +235,7 @@ expect: The potassium was 5.3 mmol/L and the sugar 8.4 mmol/L.
 name: a_unit_with_a_lower_case_l
 lang: en
 sentence: The CRP was 22 mg/l.
-expect: The CRP (a blood test for inflammation) was 22 mg/l.
+expect: The CRP (a protein in the blood that goes up with inflammation) was 22 mg/l.
 ===
 name: a_french_cell_count_is_not_grams
 lang: fr
@@ -266,3 +266,38 @@ name: a_list_inside_brackets
 lang: en
 sentence: Have a blood test (creatinine, potassium) in 1 week.
 expect: Have a blood test (creatinine, a waste product in the blood that shows how well the kidneys work, potassium) in 1 week.
+===
+name: a_sentence_initial_capital_matches_a_term_listed_in_lower_case
+lang: en
+sentence: Tissue transglutaminase IgA was 92 U/mL.
+expect: Tissue transglutaminase IgA (an antibody in the blood that is often high in celiac disease) was 92 U/mL.
+===
+name: a_hemoglobin_a1c_at_the_start_of_a_sentence_is_one_term
+lang: en
+sentence: Hemoglobin A1c was 7.5%.
+expect: Hemoglobin A1c (sugar attached to the red blood cells, which shows the average blood sugar over the past few months) was 7.5%.
+===
+name: a_capital_after_the_first_word_is_still_matched_only_as_written
+lang: en
+sentence: The Tissue transglutaminase IgA was high.
+expect: The Tissue transglutaminase IgA (a kind of antibody in the blood) was high.
+===
+name: a_sentence_initial_abbreviation_in_the_wrong_case_is_not_matched
+lang: en
+sentence: TTG-IgA was high.
+expect: TTG-IgA was high.
+===
+name: the_bare_enzyme_name_is_not_a_test
+lang: en
+sentence: The tissue transglutaminase enzyme is made in the gut.
+expect: The tissue transglutaminase enzyme is made in the gut.
+===
+name: ldl_and_hdl_each_get_their_own_explanation
+lang: en
+sentence: HDL was low and LDL was high.
+expect: HDL (the kind of cholesterol that helps clear extra cholesterol from the blood) was low and LDL (the kind of cholesterol that can build up in blood vessels) was high.
+===
+name: a_french_hormone_enzyme_and_antibody
+lang: fr
+sentence: La TSH est normale, l'ALT aussi, et l'anti-CCP est négatif.
+expect: La TSH (une hormone d'une glande du cerveau qui règle le travail de la thyroïde) est normale, l'ALT (une enzyme surtout présente dans le foie, mesurée pour vérifier le foie) aussi, et l'anti-CCP (un anticorps du sang souvent présent dans un type d'arthrite) est négatif.
