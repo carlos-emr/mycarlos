@@ -684,6 +684,7 @@ pub enum MessageId {
     NoticesStepLater,
     NoticesStepNotNow,
     NoticesStepTitle,
+    NotificationAndroidNewDocument,
     NotificationsAllow,
     NotificationsAutoAllow,
     NotificationsAutoHelp,
@@ -1733,6 +1734,7 @@ impl MessageId {
         Self::NoticesStepLater,
         Self::NoticesStepNotNow,
         Self::NoticesStepTitle,
+        Self::NotificationAndroidNewDocument,
         Self::NotificationsAllow,
         Self::NotificationsAutoAllow,
         Self::NotificationsAutoHelp,
@@ -3060,6 +3062,7 @@ impl MessageId {
             Self::NoticesStepLater => "noticesStep-later",
             Self::NoticesStepNotNow => "noticesStep-notNow",
             Self::NoticesStepTitle => "noticesStep-title",
+            Self::NotificationAndroidNewDocument => "notification-android-newDocument",
             Self::NotificationsAllow => "notifications-allow",
             Self::NotificationsAutoAllow => "notifications-autoAllow",
             Self::NotificationsAutoHelp => "notifications-autoHelp",
@@ -4852,6 +4855,7 @@ impl MessageId {
             "personDetails.previousRemove" => Some(Self::PersonDetailsPreviousRemove),
             "personDetails.previousAdd" => Some(Self::PersonDetailsPreviousAdd),
             "personDetails.previousInvalid" => Some(Self::PersonDetailsPreviousInvalid),
+            "notification.android.newDocument" => Some(Self::NotificationAndroidNewDocument),
             _ => None,
         }
     }

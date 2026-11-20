@@ -55,7 +55,8 @@ class ReadyMessagingService : FirebaseMessagingService() {
             val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(c, CHANNEL)
                           else Notification.Builder(c)
             manager(c).notify(TAG, 1, builder.setSmallIcon(ca.carlos.mycarlos.R.drawable.mycarlos_push)
-                .setContentTitle("myCarlos").setContentText("A new document is available in myCarlos.")
+                .setContentTitle("myCarlos")
+                .setContentText(c.getString(ca.carlos.mycarlos.R.string.mycarlos_push_new_document))
                 .setVisibility(Notification.VISIBILITY_PRIVATE).setAutoCancel(true).setContentIntent(pending).build())
             return true
         }
