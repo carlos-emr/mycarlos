@@ -1102,10 +1102,11 @@ export function createVaultBridge(): VaultBridge {
       }),
     listReceived: () => invoke<ReceivedState>("received_list"),
     acceptReceived: (ids) =>
-      invoke<ReceivedAcceptOutcome>(
-        "received_accept",
-        ids ? { request: { ids } } : undefined,
-      ),
+      ids
+        ? invoke<ReceivedAcceptOutcome>("received_accept", {
+            request: { ids },
+          })
+        : invoke<ReceivedAcceptOutcome>("received_accept"),
     discardReceived: (ids) =>
       invoke<number>("received_discard", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>

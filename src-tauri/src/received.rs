@@ -274,7 +274,7 @@ impl ReceivedFiles {
     /// Forgets exactly the waiting files named (the patient said Cancel): nothing was stored, and
     /// a file that arrived since, or one an import has taken, is not touched. Unknown ids are
     /// ignored. Returns how many were forgotten.
-    pub(crate) fn discard(&self, ids: &[Uuid]) -> usize {
+    pub(crate) fn forget(&self, ids: &[Uuid]) -> usize {
         let mut waiting = self.waiting();
         let before = waiting.files.len();
         waiting.files.retain(|(id, _)| !ids.contains(id));
@@ -661,17 +661,17 @@ mod tests {
         let shown = files.add_share(vec![ReceivedSource::Path(first)]).unwrap();
         // One that arrived while the question was open is not part of it.
         let later = files.add_share(vec![ReceivedSource::Path(second)]).unwrap();
-        assert_eq!(files.discard(&shown), 1);
+        assert_eq!(files.forget(&shown), 1);
         assert_eq!(
             files.list().iter().map(|file| file.id).collect::<Vec<_>>(),
             later
         );
         // A repeat, or ids that are unknown, forget nothing more.
-        assert_eq!(files.discard(&shown), 0);
-        assert_eq!(files.discard(&[Uuid::new_v4()]), 0);
+        assert_eq!(files.forget(&shown), 0);
+        assert_eq!(files.forget(&[Uuid::new_v4()]), 0);
         // Files an import has taken are not waiting, so cancelling cannot reach them.
         let taken = files.take(&later).unwrap();
-        assert_eq!(files.discard(&later), 0);
+        assert_eq!(files.forget(&later), 0);
         files.finish(&taken);
     }
 

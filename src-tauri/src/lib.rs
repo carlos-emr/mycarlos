@@ -4244,7 +4244,7 @@ fn received_discard(
     received: State<'_, Arc<ReceivedFiles>>,
     request: ReceivedDiscardRequest,
 ) -> usize {
-    received.discard(&request.ids)
+    received.forget(&request.ids)
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
