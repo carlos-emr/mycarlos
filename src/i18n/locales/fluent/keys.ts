@@ -1045,6 +1045,25 @@ export const MESSAGE_KEYS = [
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "ai.patient.name",
+  "ai.patient.title",
+  "ai.patient.warning",
+  "ai.patient.passed",
+  "ai.patient.model",
+  "ai.patient.template",
+  "ai.patient.context",
+  "ai.patient.notTried",
+  "ai.patient.use",
+  "ai.patient.trial",
+  "ai.patient.addTitle",
+  "ai.patient.addConfirm",
+  "ai.patient.addWarning",
+  "ai.patient.changed",
+  "ai.patient.approveTitle",
+  "ai.patient.approving",
+  "ai.patient.approve",
+  "ai.patient.approveWarning",
+  "ai.patient.approveScope",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2289,6 +2308,25 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "ai.patient.name": "ai-patient-name",
+  "ai.patient.title": "ai-patient-title",
+  "ai.patient.warning": "ai-patient-warning",
+  "ai.patient.passed": "ai-patient-passed",
+  "ai.patient.model": "ai-patient-model",
+  "ai.patient.template": "ai-patient-template",
+  "ai.patient.context": "ai-patient-context",
+  "ai.patient.notTried": "ai-patient-notTried",
+  "ai.patient.use": "ai-patient-use",
+  "ai.patient.trial": "ai-patient-trial",
+  "ai.patient.addTitle": "ai-patient-addTitle",
+  "ai.patient.addConfirm": "ai-patient-addConfirm",
+  "ai.patient.addWarning": "ai-patient-addWarning",
+  "ai.patient.changed": "ai-patient-changed",
+  "ai.patient.approveTitle": "ai-patient-approveTitle",
+  "ai.patient.approving": "ai-patient-approving",
+  "ai.patient.approve": "ai-patient-approve",
+  "ai.patient.approveWarning": "ai-patient-approveWarning",
+  "ai.patient.approveScope": "ai-patient-approveScope",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3452,6 +3490,25 @@ export interface MessageArgsByKey {
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "ai.patient.name": { number: FluentArgument };
+  "ai.patient.title": undefined;
+  "ai.patient.warning": undefined;
+  "ai.patient.passed": undefined;
+  "ai.patient.model": undefined;
+  "ai.patient.template": undefined;
+  "ai.patient.context": undefined;
+  "ai.patient.notTried": undefined;
+  "ai.patient.use": undefined;
+  "ai.patient.trial": undefined;
+  "ai.patient.addTitle": undefined;
+  "ai.patient.addConfirm": undefined;
+  "ai.patient.addWarning": undefined;
+  "ai.patient.changed": undefined;
+  "ai.patient.approveTitle": undefined;
+  "ai.patient.approving": undefined;
+  "ai.patient.approve": undefined;
+  "ai.patient.approveWarning": { name: FluentArgument };
+  "ai.patient.approveScope": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -2304,3 +2304,24 @@ personDetails-previousEntry = Nombre completo anterior { $number }
 personDetails-previousRemove = Quitar nombre completo anterior { $number }
 personDetails-previousAdd = Añadir nombre completo anterior
 personDetails-previousInvalid = Use hasta 16 nombres distintos y no vacíos, de hasta 120 caracteres cada uno, sin caracteres de control.
+
+# Patient-added models (#298).
+ai-patient-name = Su modelo { $number }
+ai-patient-title = Modelos que ha añadido
+ai-patient-warning = myCarlos no ha comprobado estos modelos ni sus respuestas médicas.
+ai-patient-passed = El inicio de prueba fue correcto.
+ai-patient-model = No se pudo cargar este modelo.
+ai-patient-template = Este modelo no tiene una plantilla de conversación compatible.
+ai-patient-context = Este modelo es demasiado grande para este equipo.
+ai-patient-notTried = El inicio de prueba no ha terminado.
+ai-patient-use = Usar
+ai-patient-trial = Reintentar
+ai-patient-addTitle = ¿Añadir un modelo que no está en la lista?
+ai-patient-addConfirm = Añadir y probar este modelo
+ai-patient-addWarning = Añada solo archivos de fuentes de confianza. myCarlos copiará este archivo e intentará iniciarlo con una solicitud FICTICIA. Esto no comprueba sus respuestas médicas. No se seleccionará automáticamente.
+ai-patient-changed = El modelo seleccionado cambió. Cierre esta pregunta e inténtelo de nuevo.
+ai-patient-approveTitle = ¿Permitir respuestas de este modelo?
+ai-patient-approving = Guardando autorización…
+ai-patient-approve = Permitir para esta bóveda
+ai-patient-approveWarning = ¿Permitir que { $name } escriba resúmenes y explicaciones? myCarlos no ha comprobado este modelo ni sus respuestas médicas.
+ai-patient-approveScope = Esta autorización se guarda solo en la bóveda abierta. Añadir o seleccionar un archivo no concede esta autorización.

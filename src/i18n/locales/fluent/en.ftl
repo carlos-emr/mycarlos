@@ -2269,3 +2269,24 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+# Patient-added models (#298).
+ai-patient-name = Your model { $number }
+ai-patient-title = Models you added
+ai-patient-warning = myCarlos has not checked these models or their medical answers.
+ai-patient-passed = The trial start passed.
+ai-patient-model = This model could not be loaded.
+ai-patient-template = This model has no supported chat template.
+ai-patient-context = This model is too large for this computer.
+ai-patient-notTried = The trial start has not finished.
+ai-patient-use = Use
+ai-patient-trial = Try again
+ai-patient-addTitle = Add an unlisted model?
+ai-patient-addConfirm = Add and try this model
+ai-patient-addWarning = Only add files from a source you trust. myCarlos will copy this file and try starting it with a FAKE request. This does not check its medical answers. It will not be selected automatically.
+ai-patient-changed = The selected model changed. Close this question and try again.
+ai-patient-approveTitle = Allow answers from this model?
+ai-patient-approving = Saving approval…
+ai-patient-approve = Allow for this vault
+ai-patient-approveWarning = Allow { $name } to write summaries and explanations? myCarlos has not checked this model or its medical answers.
+ai-patient-approveScope = This approval is kept only in the vault you have open. Adding or selecting a file does not give this approval.

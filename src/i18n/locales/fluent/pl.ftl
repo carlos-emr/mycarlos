@@ -2350,3 +2350,24 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+# Patient-added models (#298).
+ai-patient-name = Twój model { $number }
+ai-patient-title = Dodane przez Ciebie modele
+ai-patient-warning = myCarlos nie sprawdził tych modeli ani ich odpowiedzi medycznych.
+ai-patient-passed = Próbne uruchomienie powiodło się.
+ai-patient-model = Nie udało się wczytać tego modelu.
+ai-patient-template = Ten model nie ma obsługiwanego szablonu rozmowy.
+ai-patient-context = Ten model jest zbyt duży dla tego komputera.
+ai-patient-notTried = Próbne uruchomienie nie zostało zakończone.
+ai-patient-use = Użyj
+ai-patient-trial = Spróbuj ponownie
+ai-patient-addTitle = Dodać model spoza listy?
+ai-patient-addConfirm = Dodaj i wypróbuj ten model
+ai-patient-addWarning = Dodawaj tylko pliki z zaufanych źródeł. myCarlos skopiuje plik i spróbuje go uruchomić z FIKCYJNYM żądaniem. Nie sprawdza to odpowiedzi medycznych. Model nie zostanie wybrany automatycznie.
+ai-patient-changed = Wybrany model zmienił się. Zamknij to pytanie i spróbuj ponownie.
+ai-patient-approveTitle = Zezwolić na odpowiedzi tego modelu?
+ai-patient-approving = Zapisywanie zgody…
+ai-patient-approve = Zezwól dla tego sejfu
+ai-patient-approveWarning = Zezwolić modelowi { $name } na pisanie podsumowań i wyjaśnień? myCarlos nie sprawdził tego modelu ani jego odpowiedzi medycznych.
+ai-patient-approveScope = Ta zgoda jest zapisywana tylko w otwartym sejfie. Dodanie lub wybranie pliku nie oznacza udzielenia tej zgody.

@@ -2304,3 +2304,24 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+# Patient-added models (#298).
+ai-patient-name = Votre modèle { $number }
+ai-patient-title = Modèles que vous avez ajoutés
+ai-patient-warning = myCarlos n’a vérifié ni ces modèles ni leurs réponses médicales.
+ai-patient-passed = Le démarrage d’essai a réussi.
+ai-patient-model = Ce modèle n’a pas pu être chargé.
+ai-patient-template = Ce modèle n’a pas de modèle de conversation pris en charge.
+ai-patient-context = Ce modèle est trop volumineux pour cet ordinateur.
+ai-patient-notTried = Le démarrage d’essai n’est pas terminé.
+ai-patient-use = Utiliser
+ai-patient-trial = Réessayer
+ai-patient-addTitle = Ajouter un modèle non répertorié ?
+ai-patient-addConfirm = Ajouter et essayer ce modèle
+ai-patient-addWarning = N’ajoutez que des fichiers provenant d’une source fiable. myCarlos copiera ce fichier et essaiera de le démarrer avec une demande FICTIVE. Cela ne vérifie pas ses réponses médicales. Il ne sera pas sélectionné automatiquement.
+ai-patient-changed = Le modèle sélectionné a changé. Fermez cette question et réessayez.
+ai-patient-approveTitle = Autoriser les réponses de ce modèle ?
+ai-patient-approving = Enregistrement de l’autorisation…
+ai-patient-approve = Autoriser pour ce coffre
+ai-patient-approveWarning = Autoriser { $name } à rédiger des résumés et des explications ? myCarlos n’a vérifié ni ce modèle ni ses réponses médicales.
+ai-patient-approveScope = Cette autorisation est conservée uniquement dans le coffre ouvert. Ajouter ou sélectionner un fichier ne donne pas cette autorisation.
