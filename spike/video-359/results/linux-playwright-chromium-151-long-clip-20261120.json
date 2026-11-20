@@ -1,0 +1,65 @@
+{
+ "engine": "chromium",
+ "browser": "151.0.7922.34",
+ "mime": "video/mp4;codecs=avc1",
+ "recordedSeconds": 60,
+ "fileBytes": 17182685,
+ "metadata": true,
+ "metadataMs": 1237,
+ "duration": 59.999033,
+ "requestsBeforeMetadata": 61,
+ "bytesServedBeforeMetadata": 15904733,
+ "fractionOfFile": 0.926,
+ "firstRequests": [
+  {
+   "from": 0,
+   "to": 262143,
+   "n": 262144
+  },
+  {
+   "from": 327680,
+   "to": 589823,
+   "n": 262144
+  },
+  {
+   "from": 163840,
+   "to": 425983,
+   "n": 262144
+  },
+  {
+   "from": 655360,
+   "to": 917503,
+   "n": 262144
+  },
+  {
+   "from": 917504,
+   "to": 1179647,
+   "n": 262144
+  },
+  {
+   "from": 1179648,
+   "to": 1441791,
+   "n": 262144
+  },
+  {
+   "from": 1638400,
+   "to": 1900543,
+   "n": 262144
+  },
+  {
+   "from": 1900544,
+   "to": 2162687,
+   "n": 262144
+  },
+  {
+   "from": 2293760,
+   "to": 2555903,
+   "n": 262144
+  },
+  {
+   "from": 2555904,
+   "to": 2818047,
+   "n": 262144
+  }
+ ]
+}

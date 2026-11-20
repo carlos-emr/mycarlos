@@ -1,0 +1,126 @@
+{
+ "browser": "151.0.7922.34",
+ "mime": "video/mp4;codecs=avc1",
+ "seconds": 60,
+ "fragments": 65,
+ "sidxBytes": 812,
+ "variants": {
+  "as-recorded": {
+   "fileBytes": 17403483,
+   "metadata": true,
+   "metadataMs": 1205,
+   "duration": 59.984033,
+   "error": null,
+   "seeks": [
+    [
+     29.99,
+     true,
+     29.99,
+     242
+    ],
+    [
+     53.99,
+     true,
+     53.99,
+     183
+    ],
+    [
+     6,
+     true,
+     6,
+     194
+    ],
+    [
+     59.58,
+     true,
+     59.58,
+     121
+    ]
+   ],
+   "playedSeconds": 1.44,
+   "requestsTotal": 71,
+   "bytesServedTotal": 18390198,
+   "bytesBeforeMetadata": 13962843,
+   "fractionBeforeMetadata": 0.802,
+   "metadataMs2": 1108
+  },
+  "with-sidx": {
+   "fileBytes": 17404295,
+   "metadata": true,
+   "metadataMs": 63,
+   "duration": 61.176438,
+   "error": null,
+   "seeks": [
+    [
+     30.59,
+     true,
+     30.59,
+     4886
+    ],
+    [
+     55.06,
+     true,
+     55.06,
+     2965
+    ],
+    [
+     6.12,
+     true,
+     6.12,
+     43
+    ],
+    [
+     60.78,
+     true,
+     60.78,
+     17
+    ]
+   ],
+   "playedSeconds": 1.46,
+   "requestsTotal": 67,
+   "bytesServedTotal": 17502599,
+   "bytesBeforeMetadata": 524288,
+   "fractionBeforeMetadata": 0.03,
+   "metadataMs2": 47
+  },
+  "with-mfra": {
+   "fileBytes": 17404246,
+   "metadata": true,
+   "metadataMs": 1019,
+   "duration": 59.984033,
+   "error": null,
+   "seeks": [
+    [
+     29.99,
+     true,
+     29.99,
+     214
+    ],
+    [
+     53.99,
+     true,
+     53.99,
+     219
+    ],
+    [
+     6,
+     true,
+     6,
+     238
+    ],
+    [
+     59.58,
+     true,
+     59.58,
+     112
+    ]
+   ],
+   "playedSeconds": 1.46,
+   "requestsTotal": 79,
+   "bytesServedTotal": 20517206,
+   "bytesBeforeMetadata": 13963606,
+   "fractionBeforeMetadata": 0.802,
+   "metadataMs2": 1167
+  }
+ }
+}

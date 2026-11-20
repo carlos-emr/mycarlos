@@ -453,7 +453,7 @@
   };
 
   // ---- phase 2: playback and seeking ------------------------------------------
-  async function playOne(name, url) {
+  async function playOne(name, url, metadataOnly) {
     const r = { name, url: url.replace(/^(\w+:\/\/[^/]*).*/, "$1/…") };
     const v = document.createElement("video");
     v.muted = true;
@@ -492,6 +492,11 @@
       r.pageVisibility = document.visibilityState;
       if (v.error) r.error = { code: v.error.code, message: v.error.message };
       if (!meta) return r;
+      if (metadataOnly) {
+        r.duration = v.duration;
+        r.durationFinite = Number.isFinite(v.duration);
+        return r;
+      }
       r.duration = v.duration;
       r.durationFinite = Number.isFinite(v.duration);
       r.size = [v.videoWidth, v.videoHeight];
@@ -531,9 +536,9 @@
     }
     return r;
   }
-  window.spikePlayback = async function (urls) {
+  window.spikePlayback = async function (urls, metadataOnly) {
     const out = [];
-    for (const [name, url] of Object.entries(urls)) out.push(await playOne(name, url));
+    for (const [name, url] of Object.entries(urls)) out.push(await playOne(name, url, !!metadataOnly));
     return out;
   };
   window.spikeClipNames = () => Object.keys(window.__clips || {});
