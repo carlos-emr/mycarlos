@@ -263,9 +263,17 @@ pub(crate) fn render(pdf: &[u8], password: &str, index: u32, width: u32) -> Resu
 
 /// The text on page `index`, for screen readers and copying, or nothing when it cannot be read.
 fn page_text(pdf: &[u8], index: u32) -> String {
-    let Ok(document) = lopdf::Document::load_mem(pdf) else {
+    let Ok(mut document) = lopdf::Document::load_mem(pdf) else {
         return String::new();
     };
+    if let Some(page_id) = index
+        .checked_add(1)
+        .and_then(|number| document.get_pages().get(&number).copied())
+    {
+        // Text drawn by form objects is on the page too (#300). A page this cannot read keeps
+        // the text the page's own content gives.
+        inline_form_objects(&mut document, page_id);
+    }
     let mut text = document
         .extract_text_with_limit(&[index + 1], 16 * 1024 * 1024)
         .unwrap_or_default();
@@ -277,6 +285,219 @@ fn page_text(pdf: &[u8], index: u32) -> String {
         text.truncate(end);
     }
     text
+}
+
+const MAX_FORM_DEPTH: usize = 4;
+const MAX_FORMS_INLINED: usize = 2_000;
+const MAX_INLINED_OPERATIONS: usize = 2_000_000;
+const FORM_CONTENT_LIMIT: usize = 16 * 1024 * 1024;
+
+/// What inlining the form objects of one page has used so far.
+struct FormBudget {
+    forms: usize,
+    operations: usize,
+}
+
+/// Replaces a page's drawing, in a private parsed copy that is never saved or rendered, by the same
+/// drawing with each form object it draws (`/Name Do`) written out where it is drawn (#300).
+///
+/// The extractor reads only the page's own content, so a page that draws all its text through form
+/// objects (a page placed on another by a printing library, a template, a header) returned no text
+/// at all, and the AI helper never saw it. A form object brings its own fonts: each is added to the
+/// page's fonts under a name of its own, so two forms that both call their font `F1` keep their own
+/// encodings. Images and other drawing objects are left out: they hold no text. Forms inside forms
+/// go to a fixed depth, and the whole is bounded in forms, operations and size. A page this cannot
+/// read is left as it was.
+fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId) {
+    use lopdf::content::Content;
+    use lopdf::{Dictionary, Object};
+    let Some(operations) = document
+        .get_page_content_with_limit(page_id, FORM_CONTENT_LIMIT)
+        .ok()
+        .and_then(|bytes| Content::decode(&bytes).ok())
+        .map(|content| content.operations)
+    else {
+        return;
+    };
+    if !operations
+        .iter()
+        .any(|operation| operation.operator == "Do")
+    {
+        return;
+    }
+    let Ok((own, ids)) = document.get_page_resources(page_id) else {
+        return;
+    };
+    let mut chain: Vec<Dictionary> = own.into_iter().cloned().collect();
+    chain.extend(
+        ids.into_iter()
+            .filter_map(|id| document.get_dictionary(id).ok().cloned()),
+    );
+    let Ok(page_fonts) = document.get_page_fonts(page_id) else {
+        return;
+    };
+    let mut fonts: Vec<(Vec<u8>, Dictionary)> = page_fonts
+        .into_iter()
+        .map(|(name, font)| (name, font.clone()))
+        .collect();
+    let mut out = Vec::new();
+    let mut budget = FormBudget {
+        forms: 0,
+        operations: 0,
+    };
+    if inline_operations(
+        document,
+        &chain,
+        &operations,
+        0,
+        &[],
+        &mut fonts,
+        &mut out,
+        &mut budget,
+    )
+    .is_none()
+    {
+        return;
+    }
+    let Ok(encoded) = (Content { operations: out }).encode() else {
+        return;
+    };
+    let mut font_dictionary = Dictionary::new();
+    for (name, font) in fonts {
+        font_dictionary.set(name, Object::Dictionary(font));
+    }
+    let mut resources = Dictionary::new();
+    resources.set("Font", Object::Dictionary(font_dictionary));
+    let stream = document.add_object(lopdf::Stream::new(Dictionary::new(), encoded));
+    let Some(page) = document
+        .get_object_mut(page_id)
+        .ok()
+        .and_then(|page| page.as_dict_mut().ok())
+    else {
+        return;
+    };
+    page.set("Resources", Object::Dictionary(resources));
+    page.set("Contents", stream);
+}
+
+/// Appends `operations` to `out`, each form object drawn written out in place. `renamed` maps this
+/// level's font names to the names given to them in the page's fonts. None when a bound is passed.
+#[allow(clippy::too_many_arguments)]
+fn inline_operations(
+    document: &lopdf::Document,
+    chain: &[lopdf::Dictionary],
+    operations: &[lopdf::content::Operation],
+    depth: usize,
+    renamed: &[(Vec<u8>, Vec<u8>)],
+    fonts: &mut Vec<(Vec<u8>, lopdf::Dictionary)>,
+    out: &mut Vec<lopdf::content::Operation>,
+    budget: &mut FormBudget,
+) -> Option<()> {
+    use lopdf::content::Content;
+    use lopdf::{Dictionary, Object};
+    for operation in operations {
+        budget.operations += 1;
+        if budget.operations > MAX_INLINED_OPERATIONS {
+            return None;
+        }
+        match operation.operator.as_str() {
+            "Tf" => {
+                let mut operation = operation.clone();
+                if let Some(Object::Name(name)) = operation.operands.first() {
+                    if let Some((_, new)) = renamed.iter().find(|(old, _)| old == name) {
+                        operation.operands[0] = Object::Name(new.clone());
+                    }
+                }
+                out.push(operation);
+            }
+            "Do" => {
+                let Some(Object::Name(name)) = operation.operands.first() else {
+                    continue;
+                };
+                let Some(form) = chain.iter().find_map(|resources| {
+                    let (_, xobjects) =
+                        document.dereference(resources.get(b"XObject").ok()?).ok()?;
+                    let (_, object) = document
+                        .dereference(xobjects.as_dict().ok()?.get(name).ok()?)
+                        .ok()?;
+                    let stream = object.as_stream().ok()?;
+                    // A form in an optional-content layer may be switched off: its text is not
+                    // on the page the patient sees.
+                    (stream.dict.get(b"Subtype").ok()?.as_name().ok()? == b"Form"
+                        && !stream.dict.has(b"OC"))
+                    .then_some(stream)
+                }) else {
+                    // An image, or a name that is no form object: no text in it.
+                    continue;
+                };
+                if depth >= MAX_FORM_DEPTH {
+                    continue;
+                }
+                budget.forms += 1;
+                if budget.forms > MAX_FORMS_INLINED {
+                    return None;
+                }
+                let inner = Content::decode(
+                    &form
+                        .decompressed_content_with_limit(FORM_CONTENT_LIMIT)
+                        .ok()?,
+                )
+                .ok()?
+                .operations;
+                // The form's own resources come first; it may also use the page's.
+                let own = form
+                    .dict
+                    .get(b"Resources")
+                    .ok()
+                    .and_then(|object| document.dereference(object).ok())
+                    .and_then(|(_, object)| object.as_dict().ok())
+                    .cloned();
+                let mut inner_renamed: Vec<(Vec<u8>, Vec<u8>)> = renamed.to_vec();
+                let mut inner_chain: Vec<Dictionary> = chain.to_vec();
+                if let Some(own) = own {
+                    if let Some(font_resources) = own
+                        .get(b"Font")
+                        .ok()
+                        .and_then(|object| document.dereference(object).ok())
+                        .and_then(|(_, object)| object.as_dict().ok())
+                    {
+                        // Each of the form's fonts gets a name no other font has.
+                        for (font_name, font) in font_resources.iter() {
+                            let Some(font) = document
+                                .dereference(font)
+                                .ok()
+                                .and_then(|(_, object)| object.as_dict().ok())
+                            else {
+                                continue;
+                            };
+                            let new = format!(
+                                "MCForm{}_{}",
+                                fonts.len(),
+                                String::from_utf8_lossy(font_name)
+                            )
+                            .into_bytes();
+                            fonts.push((new.clone(), font.clone()));
+                            inner_renamed.retain(|(old, _)| old != font_name);
+                            inner_renamed.push((font_name.clone(), new));
+                        }
+                    }
+                    inner_chain.insert(0, own);
+                }
+                inline_operations(
+                    document,
+                    &inner_chain,
+                    &inner,
+                    depth + 1,
+                    &inner_renamed,
+                    fonts,
+                    out,
+                    budget,
+                )?;
+            }
+            _ => out.push(operation.clone()),
+        }
+    }
+    Some(())
 }
 
 /// Preserve unambiguous Td/TD line movements for the reader only. The original PDF,
@@ -292,6 +513,7 @@ fn positioned_page_text(pdf: &[u8], index: u32) -> Option<String> {
     let mut document = lopdf::Document::load_mem(pdf).ok()?;
     let number = index.checked_add(1)?;
     let page_id = *document.get_pages().get(&number)?;
+    inline_form_objects(&mut document, page_id);
     let horizontal_fonts: Vec<Vec<u8>> = document
         .get_page_fonts(page_id)
         .ok()?
@@ -1040,6 +1262,127 @@ mod tests {
         assert_eq!(page_text(&pdf, 0), raw);
     }
 
+    /// A page drawing `page_operators`, with form objects `(name, operators, own font)`: a form
+    /// with a font has its own `F1` whose encoding maps the code for "A" to "B".
+    fn pdf_with_forms(page_operators: &str, forms: &[(&str, &str, bool, bool)]) -> Vec<u8> {
+        use lopdf::{dictionary, Document, Object, Stream};
+        let mut document = Document::with_version("1.5");
+        let pages = document.new_object_id();
+        let font = document.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding"
+        });
+        let mut xobjects = dictionary! {};
+        for (name, operators, own_font, hidden_layer) in forms {
+            let mut dict = dictionary! {
+                "Type" => "XObject", "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()]
+            };
+            if *own_font {
+                let swapped = document.add_object(dictionary! {
+                    "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+                    "Encoding" => dictionary! {
+                        "Type" => "Encoding", "BaseEncoding" => "WinAnsiEncoding",
+                        "Differences" => vec![65.into(), Object::Name(b"B".to_vec())]
+                    }
+                });
+                dict.set(
+                    "Resources",
+                    dictionary! { "Font" => dictionary! { "F1" => swapped } },
+                );
+            }
+            if *hidden_layer {
+                dict.set("OC", dictionary! { "Type" => "OCG", "Name" => "Hidden" });
+            }
+            let form = document.add_object(Stream::new(dict, operators.as_bytes().to_vec()));
+            xobjects.set(*name, form);
+        }
+        let resources = document.add_object(
+            dictionary! { "Font" => dictionary! { "F1" => font }, "XObject" => xobjects },
+        );
+        let content = document.add_object(Stream::new(
+            dictionary! {},
+            page_operators.as_bytes().to_vec(),
+        ));
+        let page = document.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages, "Resources" => resources,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content
+        });
+        document.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1
+            }),
+        );
+        let catalog = document.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        document.trailer.set("Root", catalog);
+        let mut pdf = Vec::new();
+        document.save_to(&mut pdf).unwrap();
+        pdf
+    }
+
+    #[test]
+    fn text_drawn_only_by_a_form_object_is_read() {
+        // #300: a page drawn through one form object returned no text at all.
+        let pdf = pdf_with_forms(
+            "q 1 0 0 1 0 0 cm /Fm0 Do Q",
+            &[(
+                "Fm0",
+                "BT /F1 11 Tf 72 740 Td (FAKE Morgan Patient) Tj 0 -24 Td (Imaging Report) Tj ET",
+                false,
+                false,
+            )],
+        );
+        assert_eq!(page_text(&pdf, 0), "FAKE Morgan PatientImaging Report\n");
+    }
+
+    #[test]
+    fn form_text_comes_where_the_form_is_drawn_and_forms_nest() {
+        let pdf = pdf_with_forms(
+            "BT /F1 11 Tf (One) Tj ET /Fm0 Do BT /F1 11 Tf (Four) Tj ET",
+            &[
+                ("Fm0", "BT /F1 11 Tf (Two) Tj ET /Fm1 Do", false, false),
+                ("Fm1", "BT /F1 11 Tf (Three) Tj ET", false, false),
+            ],
+        );
+        assert_eq!(page_text(&pdf, 0), "One\nTwo\nThree\nFour\n");
+    }
+
+    #[test]
+    fn a_forms_own_font_keeps_its_own_encoding_beside_the_pages_font() {
+        // Both call their font F1; the form's maps the code for "A" to "B".
+        let pdf = pdf_with_forms(
+            "BT /F1 11 Tf (A) Tj ET /Fm0 Do BT /F1 11 Tf (A) Tj ET",
+            &[("Fm0", "BT /F1 11 Tf (A) Tj ET", true, false)],
+        );
+        assert_eq!(page_text(&pdf, 0), "A\nB\nA\n");
+    }
+
+    #[test]
+    fn a_page_without_form_objects_reads_exactly_as_before() {
+        let pdf = pdf_with_operators("BT /F1 11 Tf 72 740 Td (FAKE) Tj 0 -24 Td (field) Tj ET");
+        assert_eq!(page_text(&pdf, 0), "FAKEfield\n");
+        // Images and unknown names hold no text and add none.
+        let pdf = pdf_with_forms("BT /F1 11 Tf (FAKE) Tj ET /Im0 Do /Missing Do", &[]);
+        assert_eq!(page_text(&pdf, 0), "FAKE\n");
+    }
+
+    #[test]
+    fn a_form_in_an_optional_layer_and_runaway_nesting_add_nothing() {
+        let pdf = pdf_with_forms(
+            "BT /F1 11 Tf (Seen) Tj ET /Fm0 Do",
+            &[("Fm0", "BT /F1 11 Tf (Hidden layer) Tj ET", false, true)],
+        );
+        assert_eq!(page_text(&pdf, 0), "Seen\n");
+        // A form that draws itself stops at the fixed depth and does not run away.
+        let pdf = pdf_with_forms(
+            "/Fm0 Do",
+            &[("Fm0", "BT /F1 11 Tf (Loop) Tj ET /Fm0 Do", false, false)],
+        );
+        let text = page_text(&pdf, 0);
+        assert!(text.starts_with("Loop\n"), "{text}");
+        assert_eq!(text.matches("Loop").count(), MAX_FORM_DEPTH);
+    }
+
     #[test]
     fn reader_falls_back_for_unsupported_transforms_and_fonts() {
         for operators in [
@@ -1513,7 +1856,8 @@ mod tests {
 
         #[test]
         fn text_the_picture_draws_but_the_page_text_leaves_out_never_takes_a_quotes_box() {
-            // A header drawn from a form XObject: hayro draws it, lopdf's page text skips it.
+            // A header drawn from an optional-content form XObject: hayro draws it, the page text
+            // skips it.
             // Its "FAKE" and "c" would otherwise line up with the letter's first words.
             let pdf = page(&format!("q /Hdr Do Q {LETTER}"), |document| {
                 let font = document.add_object(dictionary! {
@@ -1524,6 +1868,9 @@ mod tests {
                     dictionary! {
                         "Type" => "XObject", "Subtype" => "Form",
                         "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                        // An optional-content form: the picture draws it (no layer is switched
+                        // off), the page text leaves it out (#300 reads plain forms only).
+                        "OC" => dictionary! { "Type" => "OCG", "Name" => "Header" },
                         "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } }
                     },
                     b"BT /F1 9 Tf 72 760 Td (FAKE Test Clinic header - page 1 of 1) Tj ET".to_vec(),
@@ -1588,6 +1935,9 @@ mod tests {
                     dictionary! {
                         "Type" => "XObject", "Subtype" => "Form",
                         "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                        // An optional-content form: the picture draws it (no layer is switched
+                        // off), the page text leaves it out (#300 reads plain forms only).
+                        "OC" => dictionary! { "Type" => "OCG", "Name" => "Header" },
                         "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } }
                     },
                     format!("BT /F1 12 Tf 72 760 Td ({SAME}) Tj ET").into_bytes(),
@@ -1601,6 +1951,32 @@ mod tests {
             for at in [text.find(SAME).unwrap(), text.rfind(SAME).unwrap()] {
                 assert_eq!(boxed(&pdf, &text, at), Err(Absent::Unaligned));
             }
+        }
+
+        #[test]
+        fn a_plain_form_headers_text_is_in_the_page_text_and_gets_its_own_box() {
+            // #300: the same header, as a plain form XObject, is now in the page text, so the
+            // glyphs and the text line up and the header's words are boxed on the header line.
+            let pdf = page(&format!("q /Hdr Do Q {LETTER}"), |document| {
+                let font = document.add_object(dictionary! {
+                    "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+                    "Encoding" => "WinAnsiEncoding"
+                });
+                let header = document.add_object(Stream::new(
+                    dictionary! {
+                        "Type" => "XObject", "Subtype" => "Form",
+                        "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                        "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } }
+                    },
+                    b"BT /F1 9 Tf 72 760 Td (FAKE Test Clinic header - page 1 of 1) Tj ET".to_vec(),
+                ));
+                dictionary! { "XObject" => dictionary! { "Hdr" => header } }
+            });
+            assert!(text_of(&pdf, 0).contains("FAKE Test Clinic header - page 1 of 1"));
+            let header = place(&pdf, 0, "FAKE Test Clinic header").unwrap();
+            assert!(fractions(header[0])[1] < 0.06, "{:?}", fractions(header[0]));
+            let body = place(&pdf, 0, "The patient reports tiredness").unwrap();
+            assert!(fractions(body[0])[1] > 0.1);
         }
 
         #[test]
@@ -1872,5 +2248,4 @@ mod tests {
                 BoxesOutcome::Cancelled
             ));
         }
-    }
-}
+    }}
