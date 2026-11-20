@@ -5,7 +5,8 @@ import { useI18n } from "../i18n";
 import { NotificationSetting } from "./NotificationSetting";
 
 /** Settings > Preferences: how myCarlos looks on this computer. Nothing here
- * is kept in the vault. */
+ * is kept in the vault. The AI helper's model has its own page,
+ * Settings > AI helper (`AiSettings`). */
 export function PreferencesSettings() {
   const native = useNativeZoom();
   const { t } = useI18n();

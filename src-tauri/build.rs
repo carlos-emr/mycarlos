@@ -64,7 +64,12 @@ fn main() {
         let generated_sources = main.join("java/ca/carlos/mycarlos/push");
         let canonical = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("android-push/kotlin");
-        let names = ["PushPlugin.kt", "PushState.kt", "ReadyMessagingService.kt", "ScopedCredentialStore.kt"];
+        let names = [
+            "PushPlugin.kt",
+            "PushState.kt",
+            "ReadyMessagingService.kt",
+            "ScopedCredentialStore.kt",
+        ];
         let config = main.join("res/values/mycarlos_firebase.xml");
         let icon = main.join("res/drawable/mycarlos_push.xml");
         for path in [&app_gradle, &generated_sources, &canonical, &config, &icon] {
@@ -72,7 +77,9 @@ fn main() {
         }
         let any_source = names.iter().any(|n| generated_sources.join(n).exists());
         let sources_match = names.iter().all(|n| {
-            std::fs::read(generated_sources.join(n)).ok().zip(std::fs::read(canonical.join(n)).ok())
+            std::fs::read(generated_sources.join(n))
+                .ok()
+                .zip(std::fs::read(canonical.join(n)).ok())
                 .is_some_and(|(generated, source)| generated == source)
         });
         assert!(android_push_profile::consistent(
@@ -104,8 +111,16 @@ fn main() {
     let mut attributes = tauri_build::Attributes::new().plugin(
         "android-push",
         tauri_build::InlinedPlugin::new().commands(&[
-            "snapshot", "requestPermission", "enableTransport", "disableTransport",
-            "storeCredential", "loadCredential", "removeCredential", "showGeneric",
+            "listen",
+            "receiveAllowed",
+            "snapshot",
+            "requestPermission",
+            "enableTransport",
+            "disableTransport",
+            "storeCredential",
+            "loadCredential",
+            "removeCredential",
+            "showGeneric",
         ]),
     );
     if windows_msvc {
@@ -121,6 +136,18 @@ fn main() {
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "ai_model_catalog",
+            "ai_model_status",
+            "ai_models",
+            "ai_model_use",
+            "ai_model_add_picked",
+            "ai_model_add_cancel",
+            "ai_model_add_active",
+            "ai_model_download",
+            "ai_model_remove",
+            "ai_summarize",
+            "ai_explain",
+            "ai_cancel",
             "kdf_benchmark",
             "vault_status",
             "vault_passphrase_rules",
@@ -132,12 +159,16 @@ fn main() {
             "vault_snapshot",
             "vault_history",
             "vault_portal_link",
+            "vault_portal_connect",
             "vault_check_documents",
+            "vault_forget_refused_deliveries",
             "vault_notification_status",
             "vault_set_notifications",
             "vault_set_automatic_document_checks",
             "vault_request_device_approval",
             "vault_restart_device_approval",
+            "vault_refresh_device_approval",
+            "vault_submit_approval_code",
             "vault_change_passphrase",
             "vault_recovery_key_begin",
             "vault_recovery_key_confirm",
@@ -168,6 +199,12 @@ fn main() {
             "vault_unlock_pdf",
             "vault_view_page",
             "vault_view_cancel",
+            "vault_page_boxes",
+            "vault_document_text",
+            "vault_document_text_cancel",
+            "vault_record_known_details",
+            "vault_export_text_pick",
+            "vault_export_text_picked",
             "vault_export_pick",
             "vault_export_picked",
             "vault_save_photo",
@@ -175,6 +212,9 @@ fn main() {
             "vault_view_photo",
             "vault_hide_record",
             "vault_unhide_record",
+            "vault_ai_result_save",
+            "vault_ai_results",
+            "vault_ai_result_read",
             "vault_hide_unavailable_records",
             "vault_reset",
         ])),

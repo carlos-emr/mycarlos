@@ -57,6 +57,15 @@ test("replaying unchanged moves and hides does not invent history or change the 
     },
     { record: FAKE_IDS.record },
   );
-  expect(replay.snapshot).toEqual(result.first);
+  type Captured = {
+    capture: { epoch: string; sequence: number };
+    [field: string]: unknown;
+  };
+  const { capture: firstCapture, ...firstData } = result.first as Captured;
+  const { capture: replayCapture, ...replayData } = replay.snapshot as Captured;
+  expect(replayCapture.epoch).toBe(firstCapture.epoch);
+  expect(replayCapture.sequence).toBeGreaterThan(firstCapture.sequence);
+  // Only runtime capture metadata changes; every vault field and history entry stays exact.
+  expect(replayData).toEqual(firstData);
   expect(replay.history).toEqual(result.history);
 });

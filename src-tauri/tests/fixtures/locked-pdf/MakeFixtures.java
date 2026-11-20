@@ -28,6 +28,7 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
 
 public class MakeFixtures {
     static final String PASSWORD = "FAKE-portal-2026";
+    static final String SPACED_PASSWORD = "  FAKE-portal-2026  ";
     static final String NON_ASCII = "FAKE-mot-de-passe-éàç-Łódź-日本";
 
     public static void main(String[] args) throws Exception {
@@ -44,6 +45,7 @@ public class MakeFixtures {
         // As CARLOS sends them: AES-256, revision 6.
         protect(text, out.resolve("text-aes256.pdf"), PASSWORD, 256, true);
         protect(image, out.resolve("image-aes256.pdf"), PASSWORD, 256, true);
+        protect(image, out.resolve("image-aes256-spaced.pdf"), SPACED_PASSWORD, 256, true);
         protect(form, out.resolve("form-aes256.pdf"), PASSWORD, 256, true);
         protect(eform, out.resolve("eform-aes256.pdf"), PASSWORD, 256, true);
         protect(text, out.resolve("text-aes256-non-ascii.pdf"), NON_ASCII, 256, true);

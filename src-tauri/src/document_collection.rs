@@ -33,6 +33,8 @@ pub(crate) enum StopReason {
 /// A fresh token belongs to one cycle. Nothing ever clears a cancelled token.
 pub(crate) struct CycleControl {
     deadline: Instant,
+    /// MAX_PHYSICAL_READ, except in tests that shrink it to keep their fixtures small.
+    physical_cap: usize,
     cancelled: Arc<AtomicBool>,
     reason: AtomicU8,
     requests: AtomicUsize,
@@ -65,9 +67,25 @@ impl CycleControl {
         value
     }
 
+    /// Moves the cycle's deadline, for tests of the byte budget rather than the clock.
+    #[cfg(test)]
+    pub(crate) fn with_test_deadline(mut self, deadline: Instant) -> Self {
+        self.deadline = deadline;
+        self
+    }
+
+    /// A smaller physical-read budget, so budget tests need megabytes of fixture, not 40 MiB.
+    #[cfg(test)]
+    pub(crate) fn with_test_physical_cap(mut self, cap: usize) -> Self {
+        assert!(cap <= MAX_PHYSICAL_READ);
+        self.physical_cap = cap;
+        self
+    }
+
     pub(crate) fn new(now: Instant, cancelled: Arc<AtomicBool>) -> Self {
         Self {
             deadline: now + CYCLE_TIME,
+            physical_cap: MAX_PHYSICAL_READ,
             cancelled,
             reason: AtomicU8::new(0),
             requests: AtomicUsize::new(0),
@@ -182,7 +200,11 @@ impl CycleControl {
         if self.stopped() {
             return false;
         }
-        if bytes > MAX_PHYSICAL_READ.saturating_sub(self.physical.load(Ordering::Acquire)) {
+        if bytes
+            > self
+                .physical_cap
+                .saturating_sub(self.physical.load(Ordering::Acquire))
+        {
             self.stop(StopReason::Budget);
             return false;
         }
@@ -208,10 +230,11 @@ impl<R: Read> Read for PhysicalRead<'_, R> {
         if buffer.is_empty() {
             return Ok(0);
         }
-        if !self
-            .control
-            .take(&self.control.physical, MAX_PHYSICAL_READ, buffer.len())
-        {
+        if !self.control.take(
+            &self.control.physical,
+            self.control.physical_cap,
+            buffer.len(),
+        ) {
             // read_exact retries Interrupted forever. A stopped cycle must return a
             // terminal I/O error; caller maps control.reason() before corruption.
             return Err(io::Error::other("collection stopped"));

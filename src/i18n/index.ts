@@ -4,6 +4,7 @@ import type { MessageKey } from "./locales";
 
 export {
   formatDate,
+  formatDeviceName,
   formatNumber,
   getLocale,
   getLocaleOverride,
@@ -16,7 +17,9 @@ export {
   resolveLocale,
   setLocaleOverride,
   t,
+  tPlain,
   translate,
+  translatePlain,
 } from "./core";
 export type { Params } from "./core";
 export { withElements } from "./elements";

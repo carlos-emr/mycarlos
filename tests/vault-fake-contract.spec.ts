@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import {
   FAKE_IDS,
+  FAKE_PASSPHRASE,
   FAKE_DOCUMENT_PASSWORD,
   fakeVaultWith,
   myRecords,
@@ -34,6 +35,55 @@ async function invoke(page: Page, command: string, args: unknown = {}) {
   );
 }
 
+test("snapshot captures increase within the fake runtime across renderer reload", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  const first = (await invoke(page, "vault_snapshot")).value as {
+    capture: { epoch: string; sequence: number };
+  };
+  const second = (await invoke(page, "vault_snapshot")).value as typeof first;
+  expect(first.capture.epoch).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
+  expect(second.capture.epoch).toBe(first.capture.epoch);
+  expect(second.capture.sequence).toBeGreaterThan(first.capture.sequence);
+  expect(Number.isSafeInteger(second.capture.sequence)).toBe(true);
+  await scriptFake(page, "vault_snapshot", { resolve: first });
+  expect((await invoke(page, "vault_snapshot")).value).toEqual(first);
+  // Length alone is not the UUID wire format emitted by the native store.
+  await scriptFake(page, "vault_snapshot", {
+    resolve: {
+      ...first,
+      capture: { ...first.capture, epoch: "-".repeat(36) },
+    },
+  });
+  expect((await invoke(page, "vault_snapshot")).error).toContain(
+    "requires capture-time metadata",
+  );
+  await scriptFake(page, "vault_snapshot", {
+    resolve: { profiles: [], folders: [], records: [], recovery: null },
+  });
+  expect((await invoke(page, "vault_snapshot")).error).toContain(
+    "requires capture-time metadata",
+  );
+  await page.reload();
+  // Unlock the persisted fake session after reload; its runtime epoch survives.
+  await expect(
+    page.getByRole("heading", { name: "Unlock your vault", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Passphrase", { exact: true }).fill(FAKE_PASSPHRASE);
+  await page.getByRole("button", { name: "Unlock", exact: true }).click();
+  await expect(myRecords(page)).toBeVisible();
+  const afterReload = (await invoke(page, "vault_snapshot"))
+    .value as typeof first;
+  expect(afterReload.capture.epoch).toBe(first.capture.epoch);
+  expect(afterReload.capture.sequence).toBeGreaterThan(second.capture.sequence);
+  await expectOnlyFakedCommands(page);
+});
+
 test("fixture IDs are UUIDs and malformed native IDs are refused", async ({
   page,
 }) => {
@@ -47,7 +97,6 @@ test("fixture IDs are UUIDs and malformed native IDs are refused", async ({
       id: string;
       profileId: string;
       folderIds: string[];
-      sourceKind: string;
     }[];
     portalLinks: { id: string }[];
   };
@@ -61,7 +110,9 @@ test("fixture IDs are UUIDs and malformed native IDs are refused", async ({
     expect(id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-  expect(snapshot.records.every((r) => r.sourceKind === "manual")).toBe(true);
+  // Native records carry no sourceKind since #150 (the source is the
+  // record's own label and its delivery); the fake must not either.
+  expect(snapshot.records.every((r) => !("sourceKind" in r))).toBe(true);
   for (const [command, args] of [
     ["vault_request_device_approval", { linkId: "FAKE-link-1" }],
     ["vault_hide_record", { request: { recordId: "letter" } }],

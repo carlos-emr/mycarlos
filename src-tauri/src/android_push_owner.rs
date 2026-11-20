@@ -1,7 +1,9 @@
-//! Durable native lifecycle seam for Android push. No IPC, network or vault decryption.
+//! Reservations for a future authenticated Android provider-handle binding service.
+//! Local binding ids and epochs never appear in a provider message or the Portal subscription API.
+//! These reservations cannot authorize document checks or display. No IPC, network or vault decryption.
 //! Methods return work only AFTER a successful atomic persistence callback. The host serializes
 //! calls and supplies links checked against current native vault state, never renderer identity.
-use crate::document_notifications::{Activation, Owner, ReadyHint};
+use crate::document_notifications::Owner;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -25,7 +27,10 @@ impl NativeLink {
         link_id: Uuid,
         device_key_id: String,
     ) -> Result<Self, Error> {
-        Owner::new(vault_id, link_id, device_key_id.clone()).map_err(|_| Error::Invalid)?;
+        if vault_id.is_nil() {
+            return Err(Error::Invalid);
+        }
+        Owner::new(link_id, device_key_id.clone()).map_err(|_| Error::Invalid)?;
         Ok(Self {
             vault_id,
             link_id,
@@ -33,7 +38,7 @@ impl NativeLink {
         })
     }
     fn valid(&self) -> bool {
-        Owner::new(self.vault_id, self.link_id, self.device_key_id.clone()).is_ok()
+        !self.vault_id.is_nil() && Owner::new(self.link_id, self.device_key_id.clone()).is_ok()
     }
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -44,8 +49,9 @@ struct Destination {
     epoch: Uuid,
     desired_generation: u64,
     enrolled_generation: u64,
-    #[serde(default)]
-    last_notified: u64,
+    // Read an earlier draft's persisted cursor without ever emitting or using it.
+    #[serde(default, rename = "last_notified", skip_serializing)]
+    _legacy_cursor: u64,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -61,7 +67,6 @@ pub enum Error {
     Capacity,
     Disabled,
     Persist,
-    Display,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Permission {
@@ -95,15 +100,6 @@ pub struct Enrollment {
     pub destination: DestinationRef,
     pub token_generation: u64,
     pub provider_token: Zeroizing<String>,
-}
-/// Constructed only inside validated Lifecycle display. No raw hint constructor/IPC grant.
-pub struct ForegroundNotice {
-    hint: Vec<u8>,
-}
-impl ForegroundNotice {
-    pub(crate) fn hint(&self) -> &[u8] {
-        &self.hint
-    }
 }
 pub struct Lifecycle {
     saved: Saved,
@@ -152,7 +148,6 @@ impl Lifecycle {
                     || r.epoch.is_nil()
                     || r.enrolled_generation > r.desired_generation
                     || r.desired_generation > i64::MAX as u64
-                    || r.last_notified > i64::MAX as u64
             })
         {
             return Err(Error::Invalid);
@@ -218,7 +213,7 @@ impl Lifecycle {
                 epoch: Uuid::new_v4(),
                 desired_generation: 0,
                 enrolled_generation: 0,
-                last_notified: 0,
+                _legacy_cursor: 0,
             });
         }
         self.commit(next, persist)?;
@@ -414,54 +409,6 @@ impl Lifecycle {
         self.commit(next, persist)?;
         Ok(true)
     }
-    /// Native host holds its lifecycle/ownership lock across this call and the synchronous
-    /// provider closure. Kotlin rechecks OS permission, foreground and local transport state.
-    pub fn display_foreground(
-        &mut self,
-        raw: &[u8],
-        current: &NativeLink,
-        permission: Permission,
-        show: impl FnOnce(ForegroundNotice) -> Result<(), ()>,
-        persist: impl FnOnce(&[u8]) -> Result<(), ()>,
-    ) -> Result<bool, Error> {
-        let hint = ReadyHint::decode(raw).map_err(|_| Error::Invalid)?;
-        if permission != Permission::Granted {
-            return Ok(false);
-        }
-        let Some(index) = self.saved.active.iter().position(|r| {
-            r.link == *current
-                && r.enrolled_generation > 0
-                && hint.matches_destination(r.id, r.epoch)
-                && hint.sequence() > r.last_notified
-        }) else {
-            return Ok(false);
-        };
-        show(ForegroundNotice { hint: raw.to_vec() }).map_err(|_| Error::Display)?;
-        let mut next = self.saved.clone();
-        next.active[index].last_notified = hint.sequence();
-        self.commit(next, persist)?;
-        Ok(true)
-    }
-    /// Navigation hint only; current link must be reverified after unlock. Reconcile separately
-    /// on resume/unlock/reconnect regardless of invalid, missing, collapsed or duplicate hints.
-    pub fn activate(
-        &self,
-        raw: &[u8],
-        current: &NativeLink,
-        unlocked: bool,
-    ) -> Result<Option<Activation>, Error> {
-        let hint = ReadyHint::decode(raw).map_err(|_| Error::Invalid)?;
-        Ok(self
-            .saved
-            .active
-            .iter()
-            .any(|r| r.link == *current && hint.matches_destination(r.id, r.epoch))
-            .then_some(if unlocked {
-                Activation::ClinicDocuments
-            } else {
-                Activation::UnlockThenClinicDocuments
-            }))
-    }
 }
 
 #[cfg(test)]
@@ -476,9 +423,6 @@ mod tests {
     }
     fn consent(p: &mut Lifecycle, owner: NativeLink) {
         p.opt_in(owner, Permission::Granted, ok).unwrap();
-    }
-    fn hint(d: &DestinationRef) -> Vec<u8> {
-        serde_json::to_vec(&serde_json::json!({"version":1,"kind":"documents_ready","subscription_id":d.subscription_id,"epoch":d.epoch,"sequence":1})).unwrap()
     }
     #[test]
     fn fresh_and_restored_default_never_enable_transport() {
@@ -635,24 +579,6 @@ mod tests {
         assert_eq!(p.pending_revocations().len(), 1);
     }
     #[test]
-    fn hints_never_cross_owner_or_retired_epoch_and_require_unlock_navigation() {
-        let mut p = Lifecycle::default();
-        let owner = link(1);
-        consent(&mut p, owner.clone());
-        let d = p.destinations().remove(0);
-        assert_eq!(
-            p.activate(&hint(&d), &owner, false).unwrap(),
-            Some(Activation::UnlockThenClinicDocuments)
-        );
-        assert_eq!(p.activate(&hint(&d), &link(5), true).unwrap(), None);
-        p.opt_out(&owner, ok).unwrap();
-        assert_eq!(p.activate(&hint(&d), &owner, true).unwrap(), None);
-        assert!(matches!(
-            p.activate(b"https://example.invalid", &owner, true),
-            Err(Error::Invalid)
-        ));
-    }
-    #[test]
     fn permission_revocation_retires_consent_before_reenable_and_leaves_no_secrets() {
         let mut p = Lifecycle::default();
         consent(&mut p, link(1));
@@ -676,103 +602,6 @@ mod tests {
             TransportAction::Disabled
         );
         assert_eq!(p.pending_revocations().len(), 1);
-    }
-    #[test]
-    fn foreground_display_denies_permission_stale_owner_epoch_and_unenrolled_destination() {
-        let mut p = Lifecycle::default();
-        let owner = link(1);
-        consent(&mut p, owner.clone());
-        let d = p.destinations().remove(0);
-        assert!(!p
-            .display_foreground(
-                &hint(&d),
-                &owner,
-                Permission::Granted,
-                |_| panic!("unenrolled displayed"),
-                ok
-            )
-            .unwrap());
-        p.token_changed("synthetic".into(), 1, Permission::Granted, |_| true, ok)
-            .unwrap();
-        p.enrolled(&d, 1, ok).unwrap();
-        assert!(!p
-            .display_foreground(
-                &hint(&d),
-                &owner,
-                Permission::Denied,
-                |_| panic!("denied displayed"),
-                ok
-            )
-            .unwrap());
-        assert!(!p
-            .display_foreground(
-                &hint(&d),
-                &link(5),
-                Permission::Granted,
-                |_| panic!("wrong owner displayed"),
-                ok
-            )
-            .unwrap());
-        let mut stale = d.clone();
-        stale.epoch = Uuid::new_v4();
-        assert!(!p
-            .display_foreground(
-                &hint(&stale),
-                &owner,
-                Permission::Granted,
-                |_| panic!("stale epoch displayed"),
-                ok
-            )
-            .unwrap());
-        assert!(p
-            .display_foreground(&hint(&d), &owner, Permission::Granted, |_| Ok(()), ok)
-            .unwrap());
-        assert!(!p
-            .display_foreground(
-                &hint(&d),
-                &owner,
-                Permission::Granted,
-                |_| panic!("duplicate displayed"),
-                ok
-            )
-            .unwrap());
-        p.opt_out(&owner, ok).unwrap();
-        assert!(!p
-            .display_foreground(
-                &hint(&d),
-                &owner,
-                Permission::Granted,
-                |_| panic!("retired displayed"),
-                ok
-            )
-            .unwrap());
-    }
-    #[test]
-    fn failed_display_does_not_advance_sequence_and_failed_persist_retains_retry() {
-        let mut p = Lifecycle::default();
-        let owner = link(1);
-        consent(&mut p, owner.clone());
-        let d = p.destinations().remove(0);
-        p.token_changed("synthetic".into(), 1, Permission::Granted, |_| true, ok)
-            .unwrap();
-        p.enrolled(&d, 1, ok).unwrap();
-        assert_eq!(
-            p.display_foreground(&hint(&d), &owner, Permission::Granted, |_| Err(()), ok),
-            Err(Error::Display)
-        );
-        assert_eq!(
-            p.display_foreground(
-                &hint(&d),
-                &owner,
-                Permission::Granted,
-                |_| Ok(()),
-                |_| Err(())
-            ),
-            Err(Error::Persist)
-        );
-        assert!(p
-            .display_foreground(&hint(&d), &owner, Permission::Granted, |_| Ok(()), ok)
-            .unwrap());
     }
     #[test]
     fn corrupted_or_unbounded_state_cannot_restore_consent() {

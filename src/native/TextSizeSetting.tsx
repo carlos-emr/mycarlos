@@ -245,6 +245,11 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
                   event.preventDefault();
                   apply();
                 } else if (event.key === "Escape" && draft !== null) {
+                  if (
+                    event.nativeEvent.isComposing ||
+                    event.nativeEvent.keyCode === 229
+                  )
+                    return;
                   // Gives up what was typed. With nothing to give up, Escape
                   // is left to the page.
                   event.preventDefault();

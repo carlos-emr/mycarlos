@@ -12,6 +12,14 @@ use windows::{
 pub struct WindowsBackend {
     app_id: String,
 }
+
+/// The catalogue sentence as XML character data: only the three markup characters change.
+fn xml_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
 impl WindowsBackend {
     pub fn new(app_id: String) -> Self {
         Self { app_id }
@@ -48,15 +56,21 @@ impl Backend for WindowsBackend {
             Err(()) => Permission::Unknown,
         }
     }
-    fn accept(&self, still_current: &dyn Fn() -> bool) -> Result<(), Error> {
+    fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error> {
         let (_apartment, notifier) = self.notifier().map_err(|_| Error::OsRejected)?;
         if notifier.Setting().map_err(|_| Error::OsRejected)? != NotificationSetting::Enabled {
             return Err(Error::OsRejected);
         }
         let xml = XmlDocument::new().map_err(|_| Error::OsRejected)?;
-        // Entirely fixed local text. No document/patient/clinic identifiers, XML interpolation,
-        // command, URI, launch arguments, provider token or OS replacement guarantee.
-        xml.LoadXml(&HSTRING::from("<toast><visual><binding template=\"ToastGeneric\"><text>myCarlos</text><text>A clinic document has arrived in myCarlos. Open myCarlos to read it.</text></binding></visual></toast>")).map_err(|_| Error::OsRejected)?;
+        // Fixed catalogue text in the language the app last reported (the runtime resolves it;
+        // English when none was reported). No document/patient/clinic identifiers, no data
+        // interpolation, command, URI, launch arguments, provider token or OS replacement guarantee.
+        let source = format!(
+            "<toast><visual><binding template=\"ToastGeneric\"><text>myCarlos</text><text>{}</text></binding></visual></toast>",
+            xml_text(body)
+        );
+        xml.LoadXml(&HSTRING::from(source.as_str()))
+            .map_err(|_| Error::OsRejected)?;
         let toast =
             ToastNotification::CreateToastNotification(&xml).map_err(|_| Error::OsRejected)?;
         if !still_current() {

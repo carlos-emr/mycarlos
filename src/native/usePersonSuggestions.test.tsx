@@ -1,6 +1,12 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { VaultBridge, VaultRecord } from "../vault";
+import type { FoundIdentity, VaultBridge, VaultRecord } from "../vault";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 const records = ["a", "b"].map(
   (id) =>
@@ -36,6 +42,80 @@ function Probe({
   );
 }
 describe("session-only document suggestions", () => {
+  it("holds queued identity reads when paused during an in-flight extraction", async () => {
+    let finish!: (value: FoundIdentity | null) => void;
+    const identity = { name: "FAKE Mary Smith", birthDate: "1958-03-12" };
+    const read = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<FoundIdentity | null>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValue(identity);
+    const bridge = { sharedIdentity: read } as unknown as VaultBridge;
+    const view = render(<Probe bridge={bridge} />);
+    await waitFor(() => expect(read).toHaveBeenCalledExactlyOnceWith("a"));
+
+    view.rerender(<Probe bridge={bridge} paused />);
+    await act(async () => finish(identity));
+    // A completed hint may be cached while guarded, but the next native PDF
+    // read must wait until the patient returns to the eligible view.
+    expect(screen.getByText("Offer a")).toBeInTheDocument();
+    expect(screen.getByText("None b")).toBeInTheDocument();
+    expect(read.mock.calls.map(([id]) => id)).toEqual(["a"]);
+
+    view.rerender(<Probe bridge={bridge} />);
+    expect(await screen.findByText("Offer b")).toBeInTheDocument();
+    expect(read.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
+  });
+
+  it("discards a late identity after teardown without advancing the old queue or contaminating a new session", async () => {
+    let finishOld!: (value: FoundIdentity | null) => void;
+    const oldRead = vi.fn<(id: string) => Promise<FoundIdentity | null>>(
+      () =>
+        new Promise<FoundIdentity | null>((resolve) => {
+          finishOld = resolve;
+        }),
+    );
+    const oldBridge = { sharedIdentity: oldRead } as unknown as VaultBridge;
+    const oldView = render(<Probe bridge={oldBridge} />);
+    await waitFor(() => expect(oldRead).toHaveBeenCalledExactlyOnceWith("a"));
+    oldView.unmount();
+
+    let finishNew!: (value: FoundIdentity | null) => void;
+    const newRead = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<FoundIdentity | null>((resolve) => {
+            finishNew = resolve;
+          }),
+      )
+      .mockResolvedValue(null);
+    const newBridge = { sharedIdentity: newRead } as unknown as VaultBridge;
+    // Reusing record IDs must not revive a hint from the previous unlocked session.
+    render(<Probe bridge={newBridge} />);
+    await waitFor(() => expect(newRead).toHaveBeenCalledExactlyOnceWith("a"));
+    await act(async () =>
+      finishOld({ name: "FAKE Mary Smith", birthDate: "1958-03-12" }),
+    );
+    expect(screen.getByText("None a")).toBeInTheDocument();
+    expect(screen.getByText("None b")).toBeInTheDocument();
+    expect(oldRead.mock.calls.map(([id]) => id)).toEqual(["a"]);
+    expect(newRead.mock.calls.map(([id]) => id)).toEqual(["a"]);
+
+    await act(async () =>
+      finishNew({ name: "FAKE Mary Smith", birthDate: "1958-03-12" }),
+    );
+    expect(await screen.findByText("Offer a")).toBeInTheDocument();
+    await waitFor(() => expect(newRead).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("None b")).toBeInTheDocument();
+    expect(newRead.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
+    expect(oldRead.mock.calls.map(([id]) => id)).toEqual(["a"]);
+  });
+
   it("reads serially, pauses when guarded and forgets dismissals on a new session", async () => {
     let complete!: (value: { name: string; birthDate: string }) => void;
     const read = vi

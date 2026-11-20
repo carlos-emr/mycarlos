@@ -25,15 +25,6 @@ export function formatFileSize(value: number, in1024s: boolean): string {
   return `${formatNumber(value / 1_000_000, undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB, ${exact}`;
 }
 
-/** Native supplies this presentation identity separately from stored metadata. */
-export const recordSource = (record: {
-  sourceLabel: string;
-  sourceKind?: "manual";
-}) =>
-  record.sourceKind === "manual"
-    ? translateNow("record.source.manual")
-    : record.sourceLabel;
-
 // A kind is only a hint drawn from the file name, so it must not fire on a
 // fragment of another word: "Latest" is not a test, "Collaboration" is not a lab
 // and "Prescan" is not a scan. Words are compared from their start, which still
@@ -92,10 +83,23 @@ export const nameTooLong = (name: string) =>
   [...name.trim()].length > MAX_NAME_CHARS;
 
 /** "Shared with me" is the folder shared files go into (#61), shown in the
- * app's language, so no person may be called it in any of them. Case, space
- * around it and how its accents are typed don't matter. The native side
- * refuses the same names, read from the same catalogues. */
-const sharedKey = (name: string) => name.trim().normalize("NFC").toLowerCase();
+ * app's language, so no person may be called it in any of them. Case, how
+ * much or what kind of space separates its words, and how its letters are
+ * typed don't matter. The native side refuses the same names, read from the
+ * same catalogues.
+ *
+ * NFKC reads full-width letters as their plain forms, and every run of white
+ * space (double, non-breaking or full-width spaces) counts as one space. The
+ * set is JavaScript's \s plus U+0085, which is exactly Rust's White_Space plus
+ * U+FEFF, so ui_text.rs builds the same key when both use the same Unicode
+ * version (the vault's check is the one that counts). Invisible characters
+ * such as U+200B are not removed: they are out of scope here. */
+const sharedKey = (name: string) =>
+  name
+    .normalize("NFKC")
+    .replace(/[\s\u0085]+/gu, " ")
+    .trim()
+    .toLowerCase();
 const SHARED_NAMES = new Set(
   LOCALES.map((locale) =>
     sharedKey(translate(locale, "interface.LibrarySidebar.sharedWithMe")),

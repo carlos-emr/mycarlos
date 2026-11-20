@@ -6,7 +6,9 @@
 mod native_confirmation_macos;
 #[cfg(target_os = "macos")]
 #[path = "../src/ui_text.rs"]
-#[allow(dead_code)]
+// Its own unit tests are not built here (this test has no test harness), so their imports go
+// unused.
+#[allow(dead_code, unused_imports)]
 mod ui_text;
 #[cfg(target_os = "macos")]
 #[path = "../src/ui_text_ids.rs"]
