@@ -1161,7 +1161,8 @@ mod tests {
             format!("Q /Fm0 Do {text}"),
             format!("q /Fm0 Do {text}"),
             // The text matrix, as before.
-            format!("q /Fm0 Do Q BT /F1 11 Tf 1 0 0 1 72 740 Tm (Range) Tj 0 -24 Td (The patient) Tj ET"),
+            "q /Fm0 Do Q BT /F1 11 Tf 1 0 0 1 72 740 Tm (Range) Tj 0 -24 Td (The patient) Tj ET"
+                .to_owned(),
         ] {
             let pdf = pdf_with_form(&operators, Some("0 0 100 20 re f"));
             let raw = page_text(&pdf, 0);
