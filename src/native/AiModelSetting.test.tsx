@@ -197,6 +197,26 @@ describe("Add a model file", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["zh-CN", "zh-TW"] as const)(
+    "puts no space between the reads line and its estimate note in %s",
+    async (locale) => {
+      setLocaleOverride(locale);
+      answer({
+        ai_model_catalog: [
+          { ...fake, capacity: { contextTokens: 8192, documentTokens: 6510 } },
+        ],
+      });
+      render(
+        <AiModelSetting
+          status={{ state: "notInstalled" }}
+          onStatus={vi.fn()}
+        />,
+      );
+      const line = await screen.findByText(/在下次使用此模型之前/);
+      expect(line.textContent).toMatch(/。在下次使用此模型之前/);
+    },
+  );
+
   it("says how much of a document each model reads at a time, pages first (#301)", async () => {
     answer({
       ai_model_catalog: [
@@ -1984,7 +2004,7 @@ describe("Loading the chosen model once (D218)", () => {
       await screen.findByRole("radio", { name: other.name }),
     );
   };
-  const ready = "This model runs on this computer.";
+  const ready = "This model started on this computer.";
   const checking = "Checking that this model runs on this computer…";
   // What a check said is kept for the app session: each case starts with none.
   beforeEach(() => forgetLoadChecks());

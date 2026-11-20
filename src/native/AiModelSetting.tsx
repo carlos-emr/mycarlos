@@ -833,7 +833,11 @@ export function AiModelSetting({
                           catalogue's figure: said to be an estimate (model
                           limits). */}
                       {!reading.confirmed && (
-                        <> {t("ai.model.readsEstimate")}</>
+                        <>
+                          {/* Chinese writes no space between sentences. */}
+                          {locale.startsWith("zh") ? "" : " "}
+                          {t("ai.model.readsEstimate")}
+                        </>
                       )}
                     </p>
                   )

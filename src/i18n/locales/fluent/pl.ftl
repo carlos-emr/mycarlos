@@ -1989,7 +1989,7 @@ ai-model-readsEstimate = To wartość szacunkowa do następnego użycia tego mod
 ai-model-loadCheck = Sprawdzanie, czy ten model działa na tym komputerze…
 ai-model-loadCheckCannotRun = Ten komputer nie mógł uruchomić tego modelu. Można spróbować ponownie później albo wybrać inny model.
 ai-model-loadCheckMemory = Brakuje teraz wolnej pamięci, aby wypróbować ten model. Można zamknąć inne programy i spróbować ponownie.
-ai-model-loadCheckReady = Ten model działa na tym komputerze.
+ai-model-loadCheckReady = Ten model uruchomił się na tym komputerze.
 ai-model-loadCheckRetry = Spróbuj ponownie
 
 ai-model-where = Gdzie pobrać plik

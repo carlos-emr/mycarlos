@@ -1948,7 +1948,7 @@ ai-model-readsEstimate = É uma estimativa até a próxima vez que este modelo f
 ai-model-loadCheck = Verificando se este modelo funciona neste computador…
 ai-model-loadCheckCannotRun = Este computador não conseguiu executar este modelo. Tente de novo mais tarde ou escolha outro modelo.
 ai-model-loadCheckMemory = Não há memória livre suficiente para testar este modelo agora. Feche outros programas e tente de novo.
-ai-model-loadCheckReady = Este modelo funciona neste computador.
+ai-model-loadCheckReady = Este modelo iniciou neste computador.
 ai-model-loadCheckRetry = Tentar de novo
 
 ai-model-where = Onde obter o arquivo
