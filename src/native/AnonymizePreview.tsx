@@ -663,13 +663,14 @@ export function AnonymizePreview({
             >
               {shownRuns.map((run) =>
                 run.check ? (
-                  // Highlighted only: a screen reader is given the count below, not a stop at
-                  // each word. A click offers Remove (keyboard: the list below the text).
-                  <mark
+                  // A decorated span, like any other plain text: the words, their offsets
+                  // (`data-start`) and the saved file are the same with or without the flag.
+                  // A screen reader is given the count below, not a stop at each word; a click
+                  // offers Remove (keyboard: the list below the text).
+                  <span
                     key={run.start}
                     data-start={run.start}
                     data-check=""
-                    role="none"
                     className={
                       picked?.start === run.start
                         ? "native-anonymize-check native-anonymize-check-picked"
@@ -684,7 +685,7 @@ export function AnonymizePreview({
                     }
                   >
                     {run.text}
-                  </mark>
+                  </span>
                 ) : run.kind ? (
                   <mark
                     key={run.start}

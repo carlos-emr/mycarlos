@@ -472,7 +472,7 @@ describe("the anonymize preview (#72 part B)", () => {
       name: humanText("The text that will be saved"),
     });
     const marks = () =>
-      [...region.querySelectorAll<HTMLElement>("mark[data-check]")].map(
+      [...region.querySelectorAll<HTMLElement>("[data-check]")].map(
         (mark) => mark.textContent,
       );
     // The capitalised word that does not start a sentence and the number of three digits; not
@@ -480,10 +480,13 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(marks()).toEqual(["Blake", "214"]);
     // One count for a screen reader, in a closed list, not a stop at each word.
     expect(screen.getByText(humanText("2 words to check"))).toBeInTheDocument();
-    for (const mark of region.querySelectorAll("mark[data-check]"))
-      expect(mark).toHaveAttribute("role", "none");
+    // Decoration only: a flagged word is plain text in a span, with its offset like any other.
+    for (const flagged of region.querySelectorAll("[data-check]")) {
+      expect(flagged.tagName).toBe("SPAN");
+      expect(flagged).toHaveAttribute("data-start");
+    }
     // Clicking a highlighted word offers Remove for it; Remove takes it out as one step.
-    await user.click(region.querySelector<HTMLElement>("mark[data-check]")!);
+    await user.click(region.querySelector<HTMLElement>("[data-check]")!);
     await user.click(
       screen
         .getAllByRole("button", { name: humanText("Remove “Blake”") })
@@ -525,6 +528,38 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(
       document.querySelector(".native-anonymize-warning"),
     ).toHaveHumanTextContent(/^Removing details is never perfect/);
+  });
+
+  it("saves exactly the words with or without the flags: they are decoration only", async () => {
+    const user = userEvent.setup();
+    const checkPages = [
+      {
+        index: 0,
+        text: "Patient: Avery Example\nSeen with Blake at room 214 on Monday.",
+      },
+    ];
+    const { saveText } = renderPreview({
+      text: documentText({ pages: checkPages, ...joinPages(checkPages) }),
+    });
+    const region = await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    expect(region.querySelectorAll("[data-check]")).toHaveLength(2);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await screen.findByText(humanText("The text was saved."));
+    const [, , saved] = saveText.mock.calls[0];
+    // No markup, no marker and nothing added for the flagged words: the shown words, as they are.
+    expect(saved).toBe(shownString());
+    expect(saved).toBe(
+      "Patient: [NAME 1]\nSeen with Blake at room 214 on Monday.",
+    );
   });
 
   it("says at the top what was removed, by kind, and follows each removal and undo", async () => {
