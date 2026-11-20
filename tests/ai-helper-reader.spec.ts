@@ -12,6 +12,7 @@ import {
   type FakeAiSetup,
 } from "./support/aiFake";
 import { translate } from "./support/fluent";
+import { AI_EXPLAIN_ENABLED } from "../src/ai/features";
 import {
   FAKE_PAGE_COUNT,
   fakeCalls,
@@ -28,6 +29,14 @@ import {
 // from ai_summarize and ai_explain, as root-aa's runtime gives them. With a
 // model, the first Summary or Explain of a session comes after the AI
 // helper's notice. FAKE data only.
+//
+// Explain is switched off in the UI (src/ai/features.ts, 11 Nov 2026): with
+// the switch off the reader offers Summary only, its Explain steps check that
+// no Explain button is there, and the tests that only drive Explain are
+// skipped. ReaderAi.test.tsx covers Explain's code with the switch on.
+
+const EXPLAIN_OFF =
+  "Explain is switched off in the UI (src/ai/features.ts); this test runs again when it is switched on";
 
 const en = (
   key: Parameters<typeof translate>[1],
@@ -112,7 +121,7 @@ async function lockByMinimizing(page: Page) {
   ).toBeVisible();
 }
 
-test("with no model, Summary and Explain say so and lead to Preferences, and nothing is read", async ({
+test("with no model, the AI helper says so and leads to Preferences, and nothing is read", async ({
   page,
 }) => {
   const reader = await openReader(page);
@@ -124,19 +133,31 @@ test("with no model, Summary and Explain say so and lead to Preferences, and not
   await expect(summaryPanel).toContainText(en("ai.notInstalled.title"));
   await expect(summaryPanel).toContainText(en("ai.notInstalled.body"));
 
-  await button(reader, en("ai.explain.title")).click();
-  const explainPanel = panel(reader, en("ai.explain.title"));
-  await expect(explainPanel).toContainText(en("ai.notInstalled.title"));
-  await expect(explainPanel.getByRole("textbox")).toHaveCount(0);
+  // With Explain offered, its panel says the same; with it switched off, no
+  // Explain button is there and Summary's panel leads on.
+  let leadsOn = summaryPanel;
+  if (AI_EXPLAIN_ENABLED) {
+    await button(reader, en("ai.explain.title")).click();
+    const explainPanel = panel(reader, en("ai.explain.title"));
+    await expect(explainPanel).toContainText(en("ai.notInstalled.title"));
+    await expect(explainPanel.getByRole("textbox")).toHaveCount(0);
+    leadsOn = explainPanel;
+  } else {
+    await expect(button(reader, en("ai.explain.title"))).toHaveCount(0);
+  }
 
-  // Open Preferences: the reader closes, and the AI helper's row says why.
-  await explainPanel
+  // Open the AI helper's settings: the reader closes, and the helper's own
+  // page says why.
+  await leadsOn
     .getByRole("button", {
       name: en("ai.notInstalled.openPreferences"),
       exact: true,
     })
     .click();
   await expect(reader).toBeHidden();
+  await expect(
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
+  ).toBeVisible();
   const row = page.getByRole("heading", {
     name: `${en("ai.preferences.title")} ${en("ai.preferences.notInstalled")}`,
     exact: true,
@@ -179,6 +200,7 @@ test("leaving the reader while its Summary reads the text stops the read", async
 test("switching from Summary to Explain while the text is read stops the read", async ({
   page,
 }) => {
+  test.skip(!AI_EXPLAIN_ENABLED, EXPLAIN_OFF);
   const reader = await openReader(page, { model: INSTALLED });
   await holdAi(page, AI_COMMANDS.documentText);
   await firstUse(page, reader, en("ai.summary.button"));
@@ -212,7 +234,7 @@ test("a lock while the Summary reads the text ends the read and the reader", asy
   await expectOnlyFakedCommands(page);
 });
 
-test.describe("with a model on this computer", () => {
+test.describe("with a model on this device", () => {
   test("a summary is labeled as the AI's, links its sources, and was asked for the document's pages", async ({
     page,
   }) => {
@@ -255,9 +277,50 @@ test.describe("with a model on this computer", () => {
     await expectOnlyFakedCommands(page);
   });
 
+  test("after Show in document, Tab goes on from the marked words, not back to Close", async ({
+    page,
+  }) => {
+    const reader = await openReader(page, { model: INSTALLED });
+    await firstUse(page, reader, en("ai.summary.button"));
+    const summaryPanel = panel(reader, en("ai.summary.title"));
+    const show = summaryPanel.getByRole("button", {
+      name: en("ai.summary.showInDocument"),
+    });
+    await show.nth(1).click();
+    const marked = reader.locator(".native-reader-text mark");
+    await expect(marked).toHaveText(fakePageText(LETTER, 2));
+    await expect(marked).toBeFocused();
+    // Tab: the next control after the marked words, the summary's first
+    // Show in document; never the reader's Close at the top.
+    await page.keyboard.press("Tab");
+    await expect(show.first()).toBeFocused();
+    await expect(
+      reader.getByRole("button", { name: en("photo.close"), exact: true }),
+    ).not.toBeFocused();
+    // Shift+Tab from the marked words: back in the page's order. First the
+    // page text's own box, which holds them and takes the focus so that the
+    // keys scroll it (D144), then the page text's toggle.
+    await marked.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      reader.getByRole("region", {
+        name: en("interface.DocumentReader.textOnThisPage"),
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(
+      reader.getByText(en("interface.DocumentReader.textOnThisPage"), {
+        exact: true,
+      }),
+    ).toBeFocused();
+    await expectOnlyFakedCommands(page);
+  });
+
   test("a typed term is explained, with the model and the label", async ({
     page,
   }) => {
+    test.skip(!AI_EXPLAIN_ENABLED, EXPLAIN_OFF);
     const reader = await openReader(page, {
       model: INSTALLED,
       explanation: "FAKE: a word from the letter, in plain words.",
@@ -276,6 +339,21 @@ test.describe("with a model on this computer", () => {
     await expect(explainPanel).toContainText(en("aiHelper.resultLabel"));
     const [asked] = await aiCalls(page, AI_COMMANDS.explain);
     expect(asked.request).toMatchObject({ term: "FAKE term", lang: "en" });
+    await expectOnlyFakedCommands(page);
+  });
+
+  test("with Explain switched off, the reader offers Summary only", async ({
+    page,
+  }) => {
+    test.skip(
+      AI_EXPLAIN_ENABLED,
+      "Explain is offered: the test above drives it",
+    );
+    const reader = await openReader(page, { model: INSTALLED });
+    await expect(button(reader, en("ai.summary.button"))).toBeVisible();
+    await expect(button(reader, en("ai.explain.title"))).toHaveCount(0);
+    await expect(panel(reader, en("ai.explain.title"))).toHaveCount(0);
+    expect(await aiCalls(page, AI_COMMANDS.explain)).toEqual([]);
     await expectOnlyFakedCommands(page);
   });
 
@@ -367,16 +445,22 @@ test.describe("with a model on this computer", () => {
     await expectOnlyFakedCommands(page);
   });
 
-  for (const code of ["aiMemory", "aiBusy", "aiFailed"] as const)
-    test(`a run refused with ${code} says the helper could not finish`, async ({
-      page,
-    }) => {
+  // Each refusal with the message key the native side gives it (lib.rs
+  // ai_error): storage, memory and busy say their own words (#253); any
+  // other failure says the helper could not finish.
+  for (const [code, key] of [
+    ["aiStorage", "ai.error.storage"],
+    ["aiMemory", "ai.error.memory"],
+    ["aiBusy", "ai.error.busy"],
+    ["aiFailed", "ai.failed"],
+  ] as const)
+    test(`a run refused with ${code} says ${key}`, async ({ page }) => {
       const reader = await openReader(page, { model: INSTALLED });
-      await refuseAi(page, AI_COMMANDS.summarize, code);
+      await refuseAi(page, AI_COMMANDS.summarize, code, key);
       await firstUse(page, reader, en("ai.summary.button"));
       await expect(
         panel(reader, en("ai.summary.title")).getByRole("alert"),
-      ).toHaveText(en("ai.failed"));
+      ).toHaveText(en(key));
       await expect(page.getByText(en("aiHelper.resultLabel"))).toHaveCount(0);
       await expectOnlyFakedCommands(page);
     });

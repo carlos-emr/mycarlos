@@ -14,7 +14,6 @@ const hiddenRecord = (id: string, profileId: string): VaultRecord => ({
   displayName: `FAKE ${id} {name}.pdf`,
   folderIds: [],
   sourceLabel: "Manual import — unverified",
-  sourceKind: "manual",
   mediaType: "application/pdf",
   plaintextSize: 2048,
   importedAtMs: 1,

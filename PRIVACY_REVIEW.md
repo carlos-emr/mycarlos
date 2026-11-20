@@ -36,8 +36,8 @@ Everything the patient puts into myCarlos is kept in one encrypted "vault" on th
 | What             | Examples                                                                                                                                                                                                   | Kept encrypted?                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | Documents        | The PDF files the patient adds, photos taken with the camera in myCarlos (on a computer or a phone), and PDFs shared to myCarlos from another app (kept in "Shared with me" until the patient moves each to a person), including documents the patient has **hidden** | Yes, each with its own key        |
-| Document details | Name (the patient can rename it), size, date added, the label "Manual import — unverified", which folder it is in                                                                                          | Yes                               |
-| AI answers       | What the AI helper wrote about a document on this computer (#72): a plain-words summary or a term explained, with the tool, language, model and date. Kept encrypted with the document. Asking again shows the new answer and hides the older one, which stays in the vault, never deleted (#71, D3); nothing leaves the device | Yes                               |
+| Document details | Name (the patient can rename it), size, date added, the stored label "Manual import — unverified" (stored unchanged; the app shows it as the status "Unverified", then "Manual import", or, when the vault has checked a clinic's signature, as "Verified", then "From {clinic}"), which folder it is in | Yes                               |
+| AI answers       | What the AI helper wrote about a document on this device (#72): a plain-words summary or a term explained, with the tool, language, model and date. Kept encrypted with the document. Asking again shows the new answer and hides the older one, which stays in the vault, never deleted (#71, D3); nothing leaves the device | Yes                               |
 | Profiles         | A display name for each person the patient keeps records for                                                                                                                                               | Yes                               |
 | Folders          | Folder names and how they nest                                                                                                                                                                             | Yes                               |
 | Passphrase       | Never stored. The vault's key is stored locked with a key worked out from the passphrase each time it is typed                                                                                             | The vault's key is locked with it |
@@ -297,6 +297,29 @@ model download (#219), only when the patient clicks it: the download site sees t
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
+**Tray notices (myCarlos integration planned in #230; Portal contract merged in carlos-portal#88).**
+With the tray, closing the window locks the vault. While unlocked at clinic-link time, the device
+registers a separate waiting key's id, public key and algorithm with that portal, in a request
+signed by the link's device key. To still tell the patient that a clinic has sent something, the
+locked app may then ask each linked portal "is anything waiting?" with its waiting key. Each check's
+body contains only the key's id. Its signed header also carries the audience, issuer, key id,
+one-time nonce, times and request hash listed in `SECURITY_OPERATIONS.md` ("Tray notices").
+The answer is yes or no. The patient sees a generic notice
+("A new document is waiting. Unlock myCarlos to see it."), with no clinic, document, name or count.
+
+To work while the vault is locked, the waiting keys and the linked portals' addresses are kept
+**outside the vault**: in a sealed file beside the settings, whose key is in the OS credential
+store of the patient's OS account (Ben accepted this on 5 November 2026). Anyone who can run as
+that OS account can therefore learn the stored portal addresses (and so associated clinics),
+count the populated waiting-key slots, and ask whether something is waiting at each. They cannot
+read or pick up documents with a waiting key. The fixed-size sealed file has 16 slots; its size
+does not reveal how many are populated. The keys are wiped locally on unlink,
+when the notices or the tray are turned off, and on vault reset; they are not in myCarlos portable
+backups. Portal revocation may wait while the device is offline, as explained in the operations
+guide. Where the app has no supported OS credential-store adapter, there are no tray notices.
+The Windows adapter is described in #270; Linux and macOS adapters remain future work. Details:
+`VAULT_FORMAT.md` ("Settings kept outside the vault"), `SECURITY_OPERATIONS.md` ("Tray notices").
+
 ## 8. How it is protected
 
 - A random key for the vault, and a separate key for each document.
@@ -306,7 +329,9 @@ computer's IP address, the time and which public file was fetched, and nothing e
 - Passphrases must be at least 15 characters, and a check on the device refuses ones that are easy
   to guess (see section 5 for how strong that makes them).
 - The app locks after 1 to 15 minutes without use (5 by default); a file window, or the system
-  window confirming a new recovery key, that it opened extends that by up to 15 more minutes. When
+  window confirming a new recovery key, that it opened extends that by up to 15 more minutes, and
+  an AI answer being written by the time it takes, up to that answer's own limit (5 to 20
+  minutes; 20 at most while the AI helper starts). When
   its window is minimised or, on a phone, when it goes to the background, it hides its content at
   once and locks as soon as any import, save or backup under way has finished (see section 4 for the
   details).
@@ -334,7 +359,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   release.
 - **Lost or stolen device.** There is no remote lock or wipe. What protects the vault is the
   device's own lock, the app's automatic lock (up to 15 minutes after last use, or up to 15 more
-  while a file window it opened is showing) and the passphrase.
+  while a file window it opened is showing, or, while an AI answer is written, up to its limit of
+  at most 20 minutes plus the AI helper's start) and the passphrase.
 - **Uninstalling.** On a computer, removing the app leaves the vault's encrypted files in place,
   vaults set aside included, and some app files, such as the lock-delay setting; the app's
   instructions say to delete the vault's folder by hand. On
@@ -449,8 +475,8 @@ sees is in `AI_HELPER_NOTICE.md`.
 helper is meant to explain one document in plain words. It can be used in two ways:
 
 - **On this device:** a small AI model runs in a separate helper inside myCarlos and writes a
-  plain-words summary of one document, or explains a word or phrase the patient selects. Nothing
-  about the patient leaves the device.
+  plain-words summary of one document. Explaining a word or phrase the patient selects is switched
+  off in the UI for now (THREAT_MODEL AI-05). Nothing about the patient leaves the device.
 - **With another AI service, by the patient:** myCarlos removes identifying details from a
   document's text and shows the result. The patient then saves it as a text file and gives it to
   whichever AI service they choose. myCarlos itself sends none of it anywhere. Ben chose this on
@@ -519,7 +545,7 @@ and outside the vault. It holds public model hashes and sizes only. For a model 
 that is not on myCarlos's list, it also holds the number it is shown by ("Your model 2") and what
 its trial start found. The file's own name is never stored: on disk it is named after its hash. A
 model not on the list runs only once the open vault approves it, at its first answer. The vault
-keeps that approval as the model's hash, encrypted with the rest (vault format 13). Nothing about
+keeps that approval as the model's hash, encrypted with the rest (vault format 14). Nothing about
 any of this leaves the computer. Removing a model removes its file and its record outside the
 vault; an approval in the vault stays until 32 newer ones have pushed it out.
 

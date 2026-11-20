@@ -25,6 +25,35 @@ use sha2::{Digest, Sha256};
 
 use crate::local_runner::{MemoryProbe, ModelInfo};
 
+/// How much of a document one summary reads (#301), in the model's tokens: the context the
+/// helper runs the model with, and what is left of it for the document's text once the prompt
+/// around the pages, the answer and the margin between them are set aside
+/// ([`crate::model_helper::document_budget`]). The renderer turns the room into "about" pages
+/// and characters; only the model's tokenizer knows the exact count, so the helper's own fit
+/// (`lastPage`, `lastPageCut`) stays what an answer reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Capacity {
+    pub(crate) context_tokens: u32,
+    pub(crate) document_tokens: u32,
+}
+
+impl Capacity {
+    /// A model the helper runs at its own context ([`crate::model_helper::CONTEXT_TOKENS`]).
+    /// Every catalogue model is made for a longer context than that, so the helper's is the
+    /// limit. The prompt is reserved as [`crate::local_runner::SUMMARY_PROMPT_TOKENS`] (about
+    /// 450 to 600 are used, by language and chat format), so this room is 150 to 300 tokens
+    /// smaller than the helper's own. How many tokens a text takes is the renderer's estimate
+    /// (`capacity.ts`), a separate matter.
+    pub(crate) const HELPER: Capacity = Capacity {
+        context_tokens: crate::model_helper::CONTEXT_TOKENS,
+        document_tokens: crate::model_helper::document_budget(
+            crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+            crate::model_helper::SUMMARY_TOKENS,
+        ) as u32,
+    };
+}
+
 /// One accepted model. Swapping the model is a change to [`CATALOG`] only.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +70,10 @@ pub(crate) struct Accepted {
     pub(crate) source_url: &'static str,
     /// How the helper puts a conversation to this model.
     pub(crate) chat_format: crate::model_helper::ChatFormat,
+    /// How much of a document it reads at a time. Per entry, so that a model whose own
+    /// context is shorter than the helper's can say so; a model added from any file would take
+    /// it from the file's header (not yet: catalogue models only).
+    pub(crate) capacity: Capacity,
     /// Whether Preferences lists it (name, address, Copy). An entry that is
     /// not listed is still accepted by "Add a model file…": its size and hash
     /// are on the list.
@@ -62,6 +95,7 @@ pub(crate) const CATALOG: &[Accepted] = &[
         notices: &[],
         source_url: "https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF/resolve/4168f45a16a1290d65a4ec0fa312ae917a4c15d6/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         chat_format: crate::model_helper::ChatFormat::Builtin,
+        capacity: Capacity::HELPER,
         listed: true,
     },
     // Listed since #276 (several models, one in use). The default is the first
@@ -76,6 +110,7 @@ pub(crate) const CATALOG: &[Accepted] = &[
         notices: &[],
         source_url: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/6938c58e698502037401a5f19f6905f2fb2f7dee/gemma-4-E2B-it-Q4_0.gguf",
         chat_format: crate::model_helper::ChatFormat::Gemma4,
+        capacity: Capacity::HELPER,
         listed: true,
     },
 ];
@@ -188,11 +223,16 @@ impl Yours {
 /// (`…-00001-of-00003.gguf`): llama.cpp would open its other parts by name, which the helper's
 /// sandbox never allows, so it is refused before anything is copied.
 fn split_name(name: &str) -> bool {
-    let stem = name.rsplit_once('.').filter(|(_, extension)| extension.eq_ignore_ascii_case("gguf"))
+    let stem = name
+        .rsplit_once('.')
+        .filter(|(_, extension)| extension.eq_ignore_ascii_case("gguf"))
         .map_or(name, |(stem, _)| stem);
     let digits = |text: &str| text.len() == 5 && text.bytes().all(|byte| byte.is_ascii_digit());
     stem.rsplit_once("-of-").is_some_and(|(start, total)| {
-        digits(total) && start.rsplit_once('-').is_some_and(|(prefix, part)| !prefix.is_empty() && digits(part))
+        digits(total)
+            && start
+                .rsplit_once('-')
+                .is_some_and(|(prefix, part)| !prefix.is_empty() && digits(part))
     })
 }
 
@@ -327,6 +367,9 @@ pub(crate) enum ModelStatus {
     NotInstalled,
     Installed {
         model: ModelInfo,
+        /// How much of a document it reads at a time, when known (the reader warns before a
+        /// summary that will not read it all). `None` leaves the reader as before.
+        capacity: Option<Capacity>,
     },
     /// This computer cannot run the helper: the row explains, no Add button.
     Unsupported {
@@ -912,6 +955,9 @@ pub(crate) struct Store {
     /// the app ends the helper that holds it. A new run cannot start meanwhile
     /// (its use-check finds the lock taken and answers busy).
     before_replace: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// Per-instance unit-test barrier at the cancellable placement boundary.
+    #[cfg(test)]
+    after_placement_lock: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Runs holding the model now (see [`VerifiedModel`]).
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
@@ -941,6 +987,8 @@ impl Store {
             busy: Mutex::new(()),
             adding: Mutex::new(()),
             before_replace: Mutex::new(None),
+            #[cfg(test)]
+            after_placement_lock: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
             yours_min_bytes: YOURS_MIN_BYTES,
@@ -1063,6 +1111,10 @@ impl Store {
             Some(entry) if self.present(&entry) == Some(true) && !self.damaged() => {
                 ModelStatus::Installed {
                     model: entry.info(),
+                    capacity: match entry {
+                        Entry::Listed(_, model) => Some(model.capacity),
+                        Entry::Yours(_) => None,
+                    },
                 }
             }
             Some(_) => ModelStatus::Damaged,
@@ -1155,6 +1207,16 @@ impl Store {
         // when the file arrives stays in use; with none, this one becomes it. The helper ends
         // only when the file it holds is the one replaced.
         let _placing = self.busy.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(test)]
+        if let Some(hook) = self.after_placement_lock.lock().unwrap().as_ref() {
+            hook();
+        }
+        // Cancel can arrive while verification holds the placement lock. It still
+        // wins before the staged file replaces anything or the choice changes.
+        if self.cancel_add.load(Ordering::SeqCst) {
+            let _ = remove_model_file(&part);
+            return Err(ModelError::Cancelled);
+        }
         let in_use_before = self.in_use();
         let replacing_in_use = in_use_before
             .as_ref()
@@ -1934,6 +1996,7 @@ mod tests {
             notices: &[],
             source_url: "https://example.invalid/fake",
             chat_format: crate::model_helper::ChatFormat::Builtin,
+            capacity: Capacity::HELPER,
             listed: true,
         }];
         (bytes, Box::leak(list.into_boxed_slice()))
@@ -2369,6 +2432,161 @@ mod tests {
     }
 
     #[test]
+    fn catalog_changes_cancel_only_the_answer_owned_by_the_model_in_use() {
+        use crate::local_runner::{AnswerLimit, Runner, RunnerConfig, RunnerError, SummaryRequest};
+        use std::time::Duration;
+
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let runner = Arc::new(Runner::new(RunnerConfig {
+            command: temp.path().join("NEVER-EXECUTED-FAKE-HELPER"),
+            args: vec![],
+            needed_bytes: 1,
+            start_timeout: Duration::from_secs(1),
+            answer_limit: AnswerLimit::fixed(Duration::from_secs(1)),
+            memory_limit_bytes: None,
+            expected_model: None,
+            model_file: None,
+            sandboxed: false,
+            generation_threads: None,
+        }));
+        let stopping = Arc::clone(&runner);
+        store.set_before_replace(Box::new(move || {
+            stopping.cancel_all();
+            stopping.stop();
+        }));
+        let old = runner.ticket();
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        assert!(
+            runner.is_current(old),
+            "adding an inactive file keeps the answer"
+        );
+        store.remove(Some(1)).unwrap();
+        assert!(
+            runner.is_current(old),
+            "removing an inactive file keeps the answer"
+        );
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        store.use_model(0).unwrap();
+        assert!(
+            runner.is_current(old),
+            "reselecting In use keeps the answer"
+        );
+        store.use_model(1).unwrap();
+        assert!(
+            !runner.is_current(old),
+            "switching cancels the previous answer"
+        );
+        let request = SummaryRequest {
+            lang: "en".into(),
+            pages: vec![],
+            max_sentences: 1,
+        };
+        assert!(matches!(
+            runner.summarize(old, &request),
+            Err(RunnerError::Cancelled)
+        ));
+        let next = runner.ticket();
+        store.remove(Some(0)).unwrap();
+        assert!(
+            runner.is_current(next),
+            "old-file removal cannot cancel the new answer"
+        );
+        assert!(!runner.is_running());
+        assert_eq!(runner.last_stats(), None);
+        store.remove(Some(1)).unwrap();
+        assert!(
+            !runner.is_current(next),
+            "removing In use cancels its answer"
+        );
+        assert!(matches!(
+            runner.summarize(next, &request),
+            Err(RunnerError::Cancelled)
+        ));
+        assert_eq!(store.status(&good()), ModelStatus::NotInstalled);
+    }
+
+    #[test]
+    fn the_chosen_catalog_file_is_reverified_without_falling_back_to_another_model() {
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
+        store.use_model(1).unwrap();
+        let mut changed = b;
+        changed[0] ^= 1;
+        fs::write(store.dir.join("b.gguf"), changed).unwrap();
+        assert_eq!(store.verified_model().err(), Some(ModelError::Damaged));
+        assert_eq!(store.status(&good()), ModelStatus::Damaged);
+        assert_eq!(row(&store, 1), (RowState::Damaged, true, true));
+        assert_eq!(row(&store, 0), (RowState::Installed, true, false));
+        assert!(store.installed_size().is_some());
+        store.use_model(0).unwrap();
+        let mut verified = store.verified_model().unwrap();
+        let mut bytes = vec![];
+        verified.file.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, a);
+        assert_eq!(verified.info.sha256, store.catalog[0].sha256);
+    }
+
+    #[test]
+    fn cancel_after_the_placement_lock_leaves_no_model_or_choice_change() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (temp, a, b, store) = two(true);
+        store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
+        let choice_before = fs::read(store.choice_path()).unwrap();
+        let picked_b = temp.path().join("picked-b.gguf");
+        fs::write(&picked_b, &b).unwrap();
+        let stopped = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&stopped);
+        store.set_before_replace(Box::new(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        }));
+        let (placed, at_placement) = mpsc::channel();
+        let (release, wait_release) = mpsc::channel();
+        let wait_release = Mutex::new(wait_release);
+        *store.after_placement_lock.lock().unwrap() = Some(Box::new(move || {
+            // Copy, hash, sync and lock acquisition are complete. Pause before
+            // the cancellation check; a pre-lock-only check cannot pass this test.
+            placed.send(()).unwrap();
+            wait_release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap();
+        }));
+        let store = Arc::new(store);
+        let (copied, at_copy_end) = mpsc::channel();
+        let busy = store.busy.lock().unwrap();
+        let adding = {
+            let worker = Arc::clone(&store);
+            std::thread::spawn(move || {
+                let mut reported = false;
+                worker.add(&picked_b, &good(), |done, total| {
+                    if done == total && !reported {
+                        reported = true;
+                        copied.send(()).unwrap();
+                    }
+                })
+            })
+        };
+        // A concurrent verification may own this lock during the entire copy.
+        at_copy_end.recv_timeout(Duration::from_secs(10)).unwrap();
+        drop(busy);
+        at_placement.recv_timeout(Duration::from_secs(10)).unwrap();
+        store.cancel_add();
+        release.send(()).unwrap();
+        assert_eq!(adding.join().unwrap().unwrap_err(), ModelError::Cancelled);
+        assert_eq!(folder_names(&store), ["a.gguf"]);
+        assert_eq!(fs::read(store.choice_path()).unwrap(), choice_before);
+        assert_eq!(fs::read(store.dir.join("a.gguf")).unwrap(), a);
+        assert_eq!(row(&store, 0), (RowState::Installed, true, true));
+        assert_eq!(row(&store, 1), (RowState::NotDownloaded, false, false));
+        assert_eq!(stopped.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn several_models_stay_on_disk_and_the_first_installed_is_in_use() {
         let (temp, a, b, store) = two(true);
         assert_eq!(row(&store, 0), (RowState::NotDownloaded, false, false));
@@ -2381,7 +2599,10 @@ mod tests {
         assert_eq!(row(&store, 1), (RowState::Installed, true, true));
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: b_info }
+            ModelStatus::Installed {
+                model: b_info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         let mut names = folder_names(&store);
         names.sort();
@@ -2410,7 +2631,10 @@ mod tests {
         assert_eq!(ended.load(Ordering::SeqCst), 1);
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: b_info }
+            ModelStatus::Installed {
+                model: b_info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         // Remembered beside the models folder, not in it; a new store reads it.
         assert!(temp.path().join(CHOICE_FILE).is_file());
@@ -2544,7 +2768,10 @@ mod tests {
         assert_eq!(last, (1 << 20, 1 << 20));
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: info }
+            ModelStatus::Installed {
+                model: info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         let mut verified = store.verified_model().unwrap();
@@ -2851,7 +3078,8 @@ mod tests {
                 model: ModelInfo {
                     name: "FAKE model".into(),
                     sha256: store.catalog()[0].sha256.into()
-                }
+                },
+                capacity: Some(Capacity::HELPER)
             }
         );
         store.verified_model_with(&Free(Some(4 << 30))).unwrap();
@@ -3002,7 +3230,10 @@ mod tests {
         assert_eq!(last, (3 << 20, 3 << 20));
         assert_eq!(
             store.status(&good()),
-            ModelStatus::Installed { model: info }
+            ModelStatus::Installed {
+                model: info,
+                capacity: Some(Capacity::HELPER)
+            }
         );
         assert_eq!(folder_names(&store), ["fake.gguf"]);
         store.verified_model_with(&Free(Some(100 << 30))).unwrap();
@@ -3366,5 +3597,78 @@ mod tests {
             serde_json::to_value(ModelStatus::Damaged).unwrap(),
             serde_json::json!({ "state": "damaged" })
         );
+        // #301: the model in use says how much of a document it reads, or null when unknown.
+        let model = ModelInfo {
+            name: "FAKE model".into(),
+            sha256: "ab".repeat(32),
+        };
+        assert_eq!(
+            serde_json::to_value(ModelStatus::Installed {
+                model: model.clone(),
+                capacity: Some(Capacity::HELPER),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "state": "installed",
+                "model": { "name": "FAKE model", "sha256": "ab".repeat(32) },
+                "capacity": { "contextTokens": 8192, "documentTokens": 6510 }
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(ModelStatus::Installed {
+                model,
+                capacity: None
+            })
+            .unwrap()["capacity"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn a_model_reads_the_helpers_context_less_the_prompt_the_answer_and_the_margin() {
+        use crate::model_helper::{document_budget, CONTEXT_TOKENS, SUMMARY_TOKENS};
+        // #301: 8,192 less the summary prompt's reserve (750), the longest summary (900) and
+        // the margin (32), as the helper fits the pages (document_budget).
+        assert_eq!(
+            Capacity::HELPER,
+            Capacity {
+                context_tokens: 8_192,
+                document_tokens: 6_510,
+            }
+        );
+        assert_eq!(Capacity::HELPER.context_tokens, CONTEXT_TOKENS);
+        assert_eq!(
+            Capacity::HELPER.document_tokens as usize,
+            document_budget(
+                crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                SUMMARY_TOKENS
+            )
+        );
+        // The reserve covers the prompt the helper writes around the pages, at the summary's
+        // own cap, in every language the reader asks in: its words at a cautious 4 bytes a
+        // token, plus the chat template's own tokens. Measured on the M2 prompt (17-18 Nov
+        // 2026, every graded run): 555 tokens before the document (`prefixLen`, every
+        // language) and about 45 after it, about 600 in all for about 2,700 bytes, so 4.5
+        // bytes a token; 3 bytes a token (the old bound) put it at 880 to 920, above the
+        // reserve, although the real prompt fits it with about 150 to spare.
+        const TEMPLATE_TOKENS: usize = 30;
+        for (_, language) in crate::model_helper::LANGUAGES {
+            let words = crate::model_helper::SYSTEM_PROMPT.len()
+                + crate::model_helper::summary_prompt(language, crate::model_helper::MAX_SENTENCES)
+                    .len();
+            assert!(
+                words.div_ceil(4) + TEMPLATE_TOKENS
+                    < crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                "{language}: {words}"
+            );
+        }
+        // Every catalogue model says it, in the rows and the catalogue the renderer reads.
+        for model in CATALOG {
+            assert_eq!(model.capacity, Capacity::HELPER, "{}", model.name);
+            assert_eq!(
+                serde_json::to_value(model).unwrap()["capacity"],
+                serde_json::json!({ "contextTokens": 8192, "documentTokens": 6510 })
+            );
+        }
     }
 }

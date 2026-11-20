@@ -1,5 +1,5 @@
 use crate::history::{self, HistoryEntry, HistoryEvent};
-use crate::idle::IdleDeadline;
+use crate::idle::{AnswerHold, AnswerOrigin, IdleDeadline};
 use crate::portal_link::{self, LinkSummary, StoredLink};
 use crate::ui_text_ids::MessageId;
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -55,14 +55,30 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// keeps reading aids with their original; format 9 adds remote notice consent
 /// and push destinations (#192); format 10 adds the AI helper's answers (#72),
 /// objects of their own; format 11 caps the hidden answers apart from the
-/// shown ones (D13); format 13 keeps the patient's approvals of AI models
-/// myCarlos hasn't checked (#276; 12 is taken by another change).
-/// Formats 1–3 are still read; an
+/// shown ones (D13); format 12 remembers clinic deliveries that failed their
+/// checks (#143); format 13 remembers previous names (#297); format 14 stores
+/// per-vault approvals of patient-added AI models (#276).
+/// Older formats are still read; an
 /// unlock that can write upgrades one at once, in a commit of its own, before
 /// anything only the newer format can hold is written. An older build refuses
 /// a newer manifest.
+/// Format 13 (previous full names) follows 12 (remembered refusals, #143). Its number was
+/// assigned when #297 landed.
+const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 const VAULT_FORMAT: u32 = MANIFEST_FORMAT_APPROVED_MODELS;
+const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
+/// Format 12 (#143) remembers clinic deliveries that failed their checks. It
+/// follows 10 (AI answers, #212) and 11 (their caps, #250); previous full names
+/// are format 13 above. Its number was taken at merge (VAULT_FORMAT.md, "Format
+/// numbers are taken at merge"): a renumber changes this line, the list of formats
+/// above, the format's heading in VAULT_FORMAT.md and the "format 12" in
+/// THREAT_MODEL.md (DEL-01), nothing else here.
+const MANIFEST_FORMAT_REFUSED: u32 = 12;
+/// At most this many remembered refusals per linked clinic. Those kept stay;
+/// a further refusal is not remembered. A refusal lasts as long as its
+/// delivery, and at most 8 days.
+const MAX_REFUSED_PER_LINK: usize = 100;
 /// The first format that can hold hidden documents.
 const MANIFEST_FORMAT_HIDDEN: u32 = 2;
 /// The first format that can hold a history.
@@ -78,7 +94,7 @@ const MANIFEST_FORMAT_AI_HIDDEN_CAP: u32 = 11;
 /// is taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"): a
 /// renumber changes this line and the format's heading in VAULT_FORMAT.md,
 /// nothing else here.
-const MANIFEST_FORMAT_APPROVED_MODELS: u32 = 13;
+const MANIFEST_FORMAT_APPROVED_MODELS: u32 = 14;
 /// The smallest size class a format 2 manifest's plaintext is padded to.
 const MANIFEST_SIZE_CLASS_MIN: usize = 4 * 1024;
 /// Header format 2 adds the optional recovery-key envelope. Format 1 headers
@@ -278,6 +294,14 @@ pub enum VaultError {
     ApprovalRequestMissing,
     #[error("clinic approval needs review before another request")]
     ApprovalNeedsClinic,
+    #[error("the clinic portal still has the approval request open")]
+    ApprovalStillOpen,
+    #[error("the code does not match this clinic")]
+    ApprovalCodeMismatch,
+    #[error("too many codes were tried for this approval request")]
+    ApprovalCodeLocked,
+    #[error("the approval request is not waiting for a code")]
+    ApprovalCodeNotOpen,
     #[error("another passphrase operation or speed test is running")]
     Busy,
     #[error("a document check is stopping; please try again")]
@@ -306,6 +330,8 @@ pub enum VaultError {
     /// none is ever deleted (D3): a new one is refused, said as such.
     #[error("the document keeps the most AI answers it can")]
     AiResultsFull,
+    #[error("the complete summary exceeds its saved byte budget")]
+    AiSummaryTooLarge,
     #[error("the passphrase is too easy to guess")]
     WeakPassphrase,
     #[error("too many files were selected for one import")]
@@ -457,6 +483,12 @@ pub struct PatientProfile {
         deserialize_with = "present_identity"
     )]
     pub birth_date: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_previous_names"
+    )]
+    pub previous_full_names: Option<Vec<String>>,
 }
 
 // A present identity field must be a string, never null. Together with the
@@ -467,11 +499,34 @@ fn present_identity<'de, D: serde::Deserializer<'de>>(
     String::deserialize(deserializer).map(Some)
 }
 
+fn present_previous_names<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    Vec::<String>::deserialize(deserializer).map(Some)
+}
+
+fn checked_previous_names(names: Vec<String>) -> Result<Vec<String>, VaultError> {
+    if names.len() > MAX_PREVIOUS_FULL_NAMES {
+        return Err(VaultError::Invalid);
+    }
+    let mut result = Vec::new();
+    for name in names {
+        let name = name.trim().to_owned();
+        validate_name(&name)?;
+        if !result.contains(&name) {
+            result.push(name);
+        }
+    }
+    Ok(result)
+}
+
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProfileDetails {
     pub full_name: Option<String>,
     pub birth_date: Option<String>,
+    #[serde(default, deserialize_with = "present_previous_names")]
+    pub previous_full_names: Option<Vec<String>>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -613,10 +668,55 @@ struct Manifest {
         skip_serializing_if = "crate::document_notifications::RemoteNotices::is_empty"
     )]
     remote_notices: crate::document_notifications::RemoteNotices,
-    /// Format 13 (#276). The hashes of AI models myCarlos hasn't checked that the patient
+    /// Format 14 (#276). The hashes of AI models myCarlos hasn't checked that the patient
     /// approved in this vault (`approved_models`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     approved_models: Vec<String>,
+    /// Clinic deliveries that failed their checks, so that they are not
+    /// downloaded and refused again (#143). Format 12 only (after main's
+    /// 10, AI answers, and 11, their caps). Kept here, not in
+    /// the link, so that the link a check is working from stays as saved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    refused_deliveries: Vec<RefusedDelivery>,
+}
+
+/// A clinic delivery that failed its checks (#143): what the portal's
+/// listing says of it, never the document or anything inside it.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RefusedDelivery {
+    link_id: Uuid,
+    delivery_id: String,
+    ciphertext_sha256: String,
+    refused_at_ms: u64,
+    /// The delivery's own expiry, in seconds, from the listing.
+    expires_at: u64,
+}
+
+/// A link's remembered refusals whose deliveries have not expired.
+fn refused_for(
+    manifest: &Manifest,
+    link_id: Uuid,
+    now_ms: u64,
+) -> impl Iterator<Item = &RefusedDelivery> {
+    manifest
+        .refused_deliveries
+        .iter()
+        .filter(move |r| r.link_id == link_id && !r.expired(now_ms))
+}
+
+impl RefusedDelivery {
+    /// Whether its delivery has expired, so the portal no longer offers it.
+    fn expired(&self, now_ms: u64) -> bool {
+        self.expires_at.saturating_mul(1000) <= now_ms
+    }
+
+    fn valid(&self) -> bool {
+        crate::portal_delivery::uuid4(&self.delivery_id)
+            && crate::portal_delivery::hash(&self.ciphertext_sha256)
+            && self.expires_at > 0
+            && self.expires_at <= 9_007_199_254_740_991
+    }
 }
 
 /// Where the history's entries are, and what pins its chain: how many there
@@ -657,8 +757,6 @@ pub struct VaultRecord {
     pub folder_ids: Vec<Uuid>,
     pub display_name: String,
     pub source_label: String,
-    /// Presentation identity; the stored source label remains unchanged.
-    pub source_kind: &'static str,
     pub media_type: String,
     pub plaintext_size: u64,
     pub imported_at_ms: u64,
@@ -911,6 +1009,7 @@ pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
+    approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
     notifications: std::sync::OnceLock<Arc<crate::document_notification_runtime::Runtime>>,
     unlocked: Mutex<Option<UnlockedVault>>,
     snapshot_epoch: Uuid,
@@ -919,7 +1018,17 @@ pub struct VaultStore {
     /// Changes when a session opens or begins locking. Network work never
     /// holds the vault mutex and may not apply across this boundary.
     portal_session: Arc<AtomicU64>,
+    /// Shared admission for linking, approval requests and document checks.
     portal_check_running: AtomicBool,
+    /// How far each clinic code request has got in this run of the app, by
+    /// request id (clinic code v1). Never the code itself. In memory only.
+    approval_codes: Mutex<HashMap<Uuid, delivery::CodeProgress>>,
+    /// Linked devices this run of the app found gone from their portal:
+    /// removed there, or unknown to a portal that answered another device of
+    /// this vault in the same check (a reset portal deletes devices). Later
+    /// checks and status refreshes do not ask about them again. By link id,
+    /// in memory only: never saved, and a restart asks once more.
+    gone_links: Mutex<std::collections::HashSet<Uuid>>,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
     /// How the last session of this run of the app ended, for the next
@@ -941,6 +1050,7 @@ impl VaultStore {
             root,
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
+            approval_poll_progress: Mutex::new(HashMap::new()),
             notifications: std::sync::OnceLock::new(),
             unlocked: Mutex::new(None),
             snapshot_epoch: Uuid::new_v4(),
@@ -948,6 +1058,8 @@ impl VaultStore {
             kdf_running: AtomicBool::new(false),
             portal_session: Arc::new(AtomicU64::new(0)),
             portal_check_running: AtomicBool::new(false),
+            approval_codes: Mutex::new(HashMap::new()),
+            gone_links: Mutex::new(std::collections::HashSet::new()),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
@@ -977,7 +1089,20 @@ impl VaultStore {
                 .unwrap_or_else(|p| p.into_inner()) = None;
         }
     }
+    fn approval_poll_progress(
+        &self,
+    ) -> MutexGuard<'_, HashMap<Uuid, delivery::ApprovalPollProgress>> {
+        self.approval_poll_progress
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                let mut progress = poisoned.into_inner();
+                progress.clear();
+                self.approval_poll_progress.clear_poison();
+                progress
+            })
+    }
     fn invalidate_collection_cache(&self) {
+        self.approval_poll_progress().clear();
         self.collection.invalidate_cache();
         self.drop_idle_collection_cache();
     }
@@ -1138,7 +1263,7 @@ impl VaultStore {
             session,
             &control,
             &mut cache,
-            &crate::portal_approval::ApprovalHttp,
+            &crate::portal_approval::ApprovalHttp::default(),
             crate::portal_client::api,
         );
         // Manual preemption preserves progress. Consent/session invalidation
@@ -1199,6 +1324,26 @@ impl VaultStore {
     /// The session's idle deadline, which the app's native timer checks.
     pub fn idle(&self) -> &Arc<IdleDeadline> {
         &self.idle
+    }
+
+    /// Capture before asynchronous command validation. Lock ordering remains
+    /// session then idle, the same as opening and locking a vault.
+    pub(crate) fn answer_origin(&self) -> Option<AnswerOrigin> {
+        let guard = self.session();
+        guard.as_ref()?;
+        self.idle.answer_origin()
+    }
+
+    pub(crate) fn admit_answer<T>(
+        &self,
+        origin: AnswerOrigin,
+        cap: Duration,
+        reserve: impl FnOnce(&[String]) -> T,
+    ) -> Option<(AnswerHold, T)> {
+        let guard = self.session();
+        let unlocked = guard.as_ref()?;
+        self.idle
+            .admit_answer(origin, cap, || reserve(&unlocked.manifest.approved_models))
     }
 
     /// Takes the session mutex. A panic while it was held may have left the
@@ -1332,6 +1477,7 @@ impl VaultStore {
                     created_at_ms: now_ms,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 }],
                 folders: Vec::new(),
                 records: Vec::new(),
@@ -1340,6 +1486,7 @@ impl VaultStore {
                 waiting_aids: Vec::new(),
                 remote_notices: Default::default(),
                 approved_models: Vec::new(),
+                refused_deliveries: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -1637,7 +1784,7 @@ impl VaultStore {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let capture = self.reserve_snapshot_capture()?;
-        Ok(Self::snapshot_of(&self.root, unlocked, capture))
+        Ok(self.snapshot_of(unlocked, capture))
     }
 
     /// Called only under the session mutex, which orders reservation and
@@ -1676,15 +1823,22 @@ impl VaultStore {
     ///
     /// Every segment is read in order. `entries` are those before the first piece that is gone or
     /// does not authenticate, kept only while each follows the one before from the genesis value,
-    /// and never past the manifest's count. `later` are those after the last such piece, kept only
-    /// back from the end as far as the manifest's pinned head proves them (`linked_suffix`), and
+    /// and never past the manifest's count. `later` are those after the last such piece that holds
+    /// entries (a damaged padding piece hides nothing), kept only back from the end as far as the
+    /// manifest's pinned head proves them (`linked_suffix`), and
     /// never one already in `entries`. So every entry returned is authenticated by the chain from
     /// its start or from its pinned end, in order; nothing between is shown. `complete` is true
     /// exactly when every piece was read and `entries` are the whole chain the manifest pins (its
     /// count and head), as `verify` checks; a damaged padding piece makes it false too.
+    /// `every_event_shown` is true when `entries` then `later` are still that whole chain, so
+    /// only pieces without events are damaged (#120 C1).
     pub fn history_view(&self) -> Result<HistoryView, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        self.history_view_in_session(unlocked)
+    }
+
+    fn history_view_in_session(&self, unlocked: &UnlockedVault) -> Result<HistoryView, VaultError> {
         let cancelled = || self.cancel_io.load(Ordering::Acquire);
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -1697,6 +1851,7 @@ impl VaultStore {
                 entries: Vec::new(),
                 later: Vec::new(),
                 complete,
+                every_event_shown: complete,
             });
         }
         let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
@@ -1718,10 +1873,15 @@ impl VaultStore {
                 Ok(found) if all_read => entries.extend(found),
                 Ok(found) => later.extend(found),
                 // A damaged or missing piece: nothing in it can be checked, and what follows it
-                // only back from the pinned end.
+                // only back from the pinned end. A piece that holds no entries (padding, as the
+                // authenticated manifest counts them) loses none, so what was read after the
+                // last piece with entries stays for the pinned end to prove. (`linked_suffix`
+                // alone already shows only what the head proves; the clear is belt and braces.)
                 Err(error) if history_piece_damaged(&error) => {
                     all_read = false;
-                    later.clear();
+                    if segment.entry_count > 0 {
+                        later.clear();
+                    }
                 }
                 Err(error) => return Err(error),
             }
@@ -1754,6 +1914,17 @@ impl VaultStore {
         // Each entry once: the later ones are those after the checked start.
         let shown = entries.len() as u64;
         later.retain(|entry| entry.seq >= shown);
+        // Every pinned event is shown when the shown events, in order, link from the start of
+        // the chain to the pinned count and head (#120 C1): a damaged piece then held none of
+        // them, and nothing lies between `entries` and `later`.
+        let every_event_shown = complete || {
+            let mut every_event = entries.clone();
+            every_event.extend(later.iter().cloned());
+            let (whole, whole_head) =
+                history::linked_prefix(manifest.vault_id, &every_event, cancelled)
+                    .map_err(|_| VaultError::Cancelled)?;
+            whole == every_event.len() && whole == pinned && whole_head == manifest.history.head
+        };
         run_at_test_boundary("history-verified");
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -1762,14 +1933,24 @@ impl VaultStore {
             entries,
             later,
             complete,
+            every_event_shown,
         })
     }
 
-    fn snapshot_of(
-        root: &Path,
-        unlocked: &UnlockedVault,
-        capture: SnapshotCapture,
-    ) -> VaultSnapshot {
+    /// A link's summary for the screen, with this run's clinic code progress
+    /// for its current request (clinic code v1).
+    pub(crate) fn link_summary(&self, link: &StoredLink) -> LinkSummary {
+        let mut summary = link.summary();
+        if let Some(attempt) = &link.approval {
+            let progress = self.code_progress(attempt.request_id);
+            summary.approval_code_submitted = progress.submitted;
+            summary.approval_code_locked = progress.locked;
+        }
+        summary
+    }
+
+    fn snapshot_of(&self, unlocked: &UnlockedVault, capture: SnapshotCapture) -> VaultSnapshot {
+        let root = self.root.as_path();
         VaultSnapshot {
             capture,
             portal_linking_enabled: crate::portal_client::available(),
@@ -1778,7 +1959,12 @@ impl VaultStore {
                 .manifest
                 .portal_links
                 .iter()
-                .map(StoredLink::summary)
+                .map(|link| {
+                    let mut summary = self.link_summary(link);
+                    summary.refused_deliveries =
+                        refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary
+                })
                 .collect(),
             profiles: unlocked.manifest.profiles.clone(),
             folders: unlocked.manifest.folders.clone(),
@@ -1792,7 +1978,6 @@ impl VaultStore {
                     folder_ids: record.folder_ids.clone(),
                     display_name: record.display_name.clone(),
                     source_label: record.source_label.clone(),
-                    source_kind: "manual",
                     media_type: record.media_type.clone(),
                     plaintext_size: record.plaintext_size,
                     imported_at_ms: record.imported_at_ms,
@@ -1853,6 +2038,7 @@ impl VaultStore {
         now_ms: u64,
         session: u64,
     ) -> Result<LinkSummary, VaultError> {
+        let _running = self.start_portal_work()?;
         self.link_portal_using(
             portal,
             code,
@@ -1861,6 +2047,74 @@ impl VaultStore {
             (now_ms, session),
             |request, device, cancelled| crate::portal_client::link(request, device, cancelled),
         )
+    }
+
+    pub fn connect_portal(
+        &self,
+        portal: &str,
+        code: &str,
+        device_name: &str,
+        profile_id: Option<Uuid>,
+        now_ms: u64,
+        session: u64,
+    ) -> Result<(LinkSummary, Option<VaultError>), VaultError> {
+        self.connect_portal_using(
+            session,
+            || {
+                self.link_portal_using(
+                    portal,
+                    code,
+                    device_name,
+                    profile_id,
+                    (now_ms, session),
+                    |request, device, cancelled| {
+                        crate::portal_client::link(request, device, cancelled)
+                    },
+                )
+            },
+            &crate::portal_approval::ApprovalHttp::default(),
+        )
+    }
+
+    /// A read-only check of one linked device's approval status, for the
+    /// clinic view's automatic refresh (#131): it reads the portal and saves
+    /// the clinic's answer, and never sends or starts a request.
+    pub(crate) fn refresh_device_approval(
+        &self,
+        link_id: Uuid,
+        session: u64,
+    ) -> Result<delivery::ApprovalCheck, VaultError> {
+        use portal_link::LinkError;
+        // A device already found gone is not asked about again.
+        if self.link_gone(link_id) {
+            return Err(VaultError::Portal(LinkError::DeviceRemoved));
+        }
+        let result = self.poll_staff_approval(link_id, session);
+        let removed =
+            |error: &VaultError| matches!(error, VaultError::Portal(LinkError::DeviceRemoved));
+        if match &result {
+            Ok(check) => check.issue.as_ref().is_some_and(removed),
+            Err(error) => removed(error),
+        } {
+            self.mark_link_gone(link_id);
+        }
+        result
+    }
+
+    /// Whether this run of the app found this linked device gone from its
+    /// portal (see `gone_links`).
+    pub(crate) fn link_gone(&self, link_id: Uuid) -> bool {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(&link_id)
+    }
+
+    pub(crate) fn mark_link_gone(&self, link_id: Uuid) {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(link_id);
     }
 
     fn link_portal_using(
@@ -1971,7 +2225,8 @@ impl VaultStore {
         now_ms: u64,
     ) -> Result<Uuid, VaultError> {
         validate_person_name(display_name)?;
-        let (full_name, birth_date) = checked_profile_details(details, today, now_ms)?;
+        let (full_name, birth_date, previous_full_names) =
+            checked_profile_details(details, today, now_ms)?;
         self.mutate_recorded(|manifest, entries| {
             let id = Uuid::new_v4();
             let display_name = display_name.trim().to_owned();
@@ -1979,12 +2234,20 @@ impl VaultStore {
             entry.profile_id = Some(id);
             entry.name = Some(display_name.clone());
             entries.push(entry);
+            // Details given at creation are recorded as Edit details records
+            // them (#234): the history shows when they were first set.
+            if full_name.is_some() || birth_date.is_some() {
+                let mut entry = HistoryEntry::new(HistoryEvent::ProfileDetailsChanged, now_ms);
+                entry.profile_id = Some(id);
+                entries.push(entry);
+            }
             manifest.profiles.push(PatientProfile {
                 id,
                 display_name,
                 created_at_ms: now_ms,
                 full_name,
                 birth_date,
+                previous_full_names: previous_full_names.filter(|names| !names.is_empty()),
             });
             Ok(id)
         })
@@ -1997,7 +2260,8 @@ impl VaultStore {
         today: &str,
         now_ms: u64,
     ) -> Result<(), VaultError> {
-        let (full_name, birth_date) = checked_profile_details(details, today, now_ms)?;
+        let (full_name, birth_date, previous_full_names) =
+            checked_profile_details(details, today, now_ms)?;
         self.mutate_recorded(|manifest, entries| {
             if id == shared_profile_id(manifest.vault_id) {
                 return Err(VaultError::Invalid);
@@ -2007,9 +2271,16 @@ impl VaultStore {
                 .iter_mut()
                 .find(|p| p.id == id)
                 .ok_or(VaultError::NotFound)?;
-            if profile.full_name != full_name || profile.birth_date != birth_date {
+            let previous_full_names = previous_full_names
+                .map(|names| if names.is_empty() { None } else { Some(names) })
+                .unwrap_or_else(|| profile.previous_full_names.clone());
+            if profile.full_name != full_name
+                || profile.birth_date != birth_date
+                || profile.previous_full_names != previous_full_names
+            {
                 profile.full_name = full_name;
                 profile.birth_date = birth_date;
+                profile.previous_full_names = previous_full_names;
                 let mut entry = HistoryEntry::new(HistoryEvent::ProfileDetailsChanged, now_ms);
                 entry.profile_id = Some(id);
                 entries.push(entry);
@@ -2441,6 +2712,7 @@ impl VaultStore {
                     created_at_ms: now_ms,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 });
             }
             next.records
@@ -2918,10 +3190,44 @@ impl VaultStore {
     /// AI helper's native re-check (#72 part B, AI-02): every profile's
     /// display and full name and birth date, and the patient's name and
     /// birth date, the provider and the clinic from the document's delivery
-    /// manifest, if it has one. Nothing is stored or logged.
+    /// manifest, if it has one. Nothing is stored or logged. A history that
+    /// cannot show every pinned event refuses this privacy check: checked
+    /// fragments cannot establish all former folder names. The audit view may
+    /// still show those fragments. Damage only to pieces without events
+    /// (padding) does not refuse it: the shown events then link from the
+    /// genesis value to the manifest's pinned count and head, so they are every
+    /// event, in order (`every_event_shown`).
     pub fn known_identifiers(&self, record_id: Uuid) -> Result<KnownIdentifiers, VaultError> {
+        // History and current identifiers must describe the same session and
+        // manifest. Keep this guard through both reads without taking it twice.
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let view = self.history_view_in_session(unlocked)?;
+        // `every_event_shown` re-checks `entries` then `later` from the genesis
+        // value: each entry's number is its place and its `prev` is the hash of
+        // the one before, ending at the pinned count and head. Each hash covers
+        // the whole entry (`old_name` and `how` too), and the count and head are
+        // in the authenticated manifest, so these are exactly the pinned events.
+        // A gap needs no per-piece count to be caught: a missing event breaks
+        // the chain. There are no linked events beyond the pinned count either:
+        // `validate_history` makes the pieces with events add up to the count,
+        // with the padding last, and each piece read must hold its stated count.
+        // So with every piece read the flag equals `complete`; it differs only
+        // when the damaged pieces are padding.
+        if !(view.complete || view.every_event_shown) {
+            return Err(VaultError::Corrupt);
+        }
+        run_at_test_boundary("known-identifiers-history");
+        let former_names: Vec<String> = view
+            .entries
+            .into_iter()
+            .chain(view.later)
+            .filter(|entry| {
+                entry.event == HistoryEvent::FolderRenamed
+                    && entry.how.as_deref() == Some("personFolder")
+            })
+            .filter_map(|entry| entry.old_name)
+            .collect();
         let manifest = &unlocked.manifest;
         let shared = shared_profile_id(manifest.vault_id);
         let mut known = KnownIdentifiers::default();
@@ -2929,6 +3235,9 @@ impl VaultStore {
             if profile.id == shared {
                 continue;
             }
+            known
+                .names
+                .extend(profile.previous_full_names.iter().flatten().cloned());
             known.names.push(profile.display_name.clone());
             if let Some(full_name) = &profile.full_name {
                 known.names.push(full_name.clone());
@@ -2937,6 +3246,7 @@ impl VaultStore {
                 known.birth_dates.push(birth_date.clone());
             }
         }
+        known.names.extend(former_names);
         let record = manifest
             .records
             .iter()
@@ -3474,7 +3784,7 @@ impl VaultStore {
         // Taken under the same session guard: a lock that came between the
         // key being stored and a snapshot taken apart would report a key
         // that was stored as a failure.
-        Ok(Self::snapshot_of(&self.root, unlocked, capture))
+        Ok(self.snapshot_of(unlocked, capture))
     }
 
     /// Opens a locked vault with its recovery key and replaces the forgotten
@@ -4586,7 +4896,12 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
 
     let mut profile_ids = HashSet::new();
     for profile in &manifest.profiles {
-        if profile.id.is_nil()
+        if profile.previous_full_names.as_ref().is_some_and(|names| {
+            manifest.format_version < MANIFEST_FORMAT_PREVIOUS_FULL_NAMES
+                || profile.id == shared_profile_id(vault_id)
+                || names.is_empty()
+                || checked_previous_names(names.clone()).ok().as_ref() != Some(names)
+        }) || profile.id.is_nil()
             || !profile_ids.insert(profile.id)
             || validate_name(&profile.display_name).is_err()
             || profile
@@ -4660,6 +4975,25 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             || link
                 .profile_id
                 .is_some_and(|id| !profile_ids.contains(&id) || id == shared_profile_id(vault_id))
+        {
+            return Err(VaultError::Corrupt);
+        }
+    }
+    // Remembered refusals (#143): format 12, for a saved link, one per
+    // delivery, and a bounded number per link.
+    if manifest.format_version < MANIFEST_FORMAT_REFUSED && !manifest.refused_deliveries.is_empty()
+    {
+        return Err(VaultError::Corrupt);
+    }
+    let mut refused = HashSet::new();
+    let mut refused_per_link = HashMap::<Uuid, usize>::new();
+    for entry in &manifest.refused_deliveries {
+        let count = refused_per_link.entry(entry.link_id).or_default();
+        *count += 1;
+        if !link_ids.contains(&entry.link_id)
+            || *count > MAX_REFUSED_PER_LINK
+            || !refused.insert((entry.link_id, entry.delivery_id.as_str()))
+            || !entry.valid()
         {
             return Err(VaultError::Corrupt);
         }
@@ -6045,6 +6379,10 @@ pub struct HistoryView {
     pub later: Vec<HistoryEntry>,
     /// Whether they are the whole chain the manifest pins.
     pub complete: bool,
+    /// Whether every event the manifest pins is shown: `entries` then `later` link from the
+    /// start of the chain to its pinned count and head. True when complete; when not, the
+    /// damaged pieces held none of the events (padding, say), so nothing is missing between.
+    pub every_event_shown: bool,
 }
 
 /// The entries in one segment. `Corrupt` when its object is gone or does not
@@ -7794,6 +8132,13 @@ pub const SHARED_PROFILE_NAME: &str = "Shared with me";
 /// vault id, so the manifest needs no field of its own for it (VAULT_FORMAT):
 /// a UUID of version 8, RFC 9562's custom version, with the RFC 4122 variant.
 /// Every other profile has a random version 4 id, which can never equal it.
+impl VaultStore {
+    /// The open vault's id, for what is kept outside it (#230's notice keys).
+    pub(crate) fn open_vault_id(&self) -> Option<Uuid> {
+        self.session().as_ref().map(|open| open.manifest.vault_id)
+    }
+}
+
 pub fn shared_profile_id(vault_id: Uuid) -> Uuid {
     use sha2::Digest as _;
     let digest = Sha256::new()
@@ -7849,11 +8194,13 @@ pub(crate) fn valid_birth_date(date: &str) -> bool {
     year > 0 && day > 0 && day <= max
 }
 
+type CheckedProfileDetails = (Option<String>, Option<String>, Option<Vec<String>>);
+
 fn checked_profile_details(
     details: ProfileDetails,
     today: &str,
     now_ms: u64,
-) -> Result<(Option<String>, Option<String>), VaultError> {
+) -> Result<CheckedProfileDetails, VaultError> {
     // Calendar dates come from this device's renderer, as for backup names. Bound its
     // local day to the native clock's adjacent UTC dates, covering all time zones.
     if !valid_birth_date(today)
@@ -7876,7 +8223,11 @@ fn checked_profile_details(
     {
         return Err(VaultError::Invalid);
     }
-    Ok((full_name, birth_date))
+    let previous_full_names = details
+        .previous_full_names
+        .map(checked_previous_names)
+        .transpose()?;
+    Ok((full_name, birth_date, previous_full_names))
 }
 
 /// The people a vault keeps records for: every profile but the shared one.
@@ -8772,6 +9123,298 @@ mod tests {
         }
     }
 
+    #[test]
+    fn known_identifiers_include_a_person_folders_former_names() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store.rename_profile(profile, "FAKE Mom", 3).unwrap();
+        store.rename_profile(profile, "FAKE Mother", 4).unwrap();
+        let folder = store
+            .create_folder(profile, None, "FAKE Results", 5)
+            .unwrap();
+        store
+            .update_folder(folder, None, "FAKE Old results")
+            .unwrap();
+        // Former names come from the encrypted history after reopening too.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let known = store.known_identifiers(record).unwrap();
+        for name in ["FAKE Person", "FAKE Mom", "FAKE Mother"] {
+            assert!(known.names.contains(&name.to_owned()), "{name}");
+        }
+        // A plain folder's old name is no person's name.
+        assert!(!known.names.contains(&"FAKE Results".to_owned()));
+    }
+
+    #[test]
+    fn known_identifiers_propagate_history_cancellation() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        // A cancelled history read must not become a successful, incomplete
+        // identifier list that could let a former name pass the native check.
+        store.cancel_io.store(true, Ordering::Release);
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Cancelled)
+        ));
+        store.cancel_io.store(false, Ordering::Release);
+        assert!(store.known_identifiers(record).is_ok());
+    }
+
+    #[test]
+    fn known_identifiers_keep_a_consistent_snapshot_during_a_person_rename() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        store.rename_profile(profile, "FAKE Zorvana", 3).unwrap();
+        let store = Arc::new(store);
+        let worker_store = Arc::clone(&store);
+        let (worker_tx, worker_rx) = std::sync::mpsc::sync_channel(1);
+        AT_TEST_BOUNDARY.with(|slot| {
+            *slot.borrow_mut() = Some((
+                "known-identifiers-history",
+                Box::new(move || {
+                    let (blocked_tx, blocked_rx) = std::sync::mpsc::sync_channel(1);
+                    let worker_store = Arc::clone(&worker_store);
+                    let worker = std::thread::spawn(move || {
+                        // The reader still owns the same guard after history
+                        // verification, before it collects current names.
+                        blocked_tx
+                            .send(matches!(
+                                worker_store.unlocked.try_lock(),
+                                Err(std::sync::TryLockError::WouldBlock)
+                            ))
+                            .unwrap();
+                        worker_store.rename_profile(profile, "FAKE Neralis", 4)
+                    });
+                    assert!(blocked_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+                    worker_tx.send(worker).unwrap();
+                }),
+            ));
+        });
+        let before = store.known_identifiers(record).unwrap();
+        worker_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap();
+        let after = store.known_identifiers(record).unwrap();
+        for known in [before, after] {
+            assert!(known.names.contains(&"FAKE Zorvana".to_owned()));
+            let hits =
+                crate::text_recheck::identifier_hits("Zorvana", &known.names, &known.birth_dates);
+            assert_eq!(hits.len(), 1);
+            assert_eq!((hits[0].start, hits[0].end), (0, 7));
+        }
+    }
+
+    #[test]
+    fn known_identifiers_refuse_a_history_gap_even_with_checked_names_on_both_sides() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            let entries = (0..400)
+                .map(|index| {
+                    let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, index + 3);
+                    entry.how = Some("personFolder".to_owned());
+                    // All 400 distinct suffixes are alphabetic, so the whole
+                    // identifier remains a matchable name word.
+                    let suffix = format!(
+                        "{}{}",
+                        char::from(b'a' + (index / 26) as u8),
+                        char::from(b'a' + (index % 26) as u8)
+                    );
+                    entry.old_name = Some(format!("FAKE Zorvana{suffix}"));
+                    entry.name = Some(format!("FAKE {}", "x".repeat(220)));
+                    entry
+                })
+                .collect();
+            assert!(record_in_session(&store.root, unlocked, entries));
+        }
+        let all = store.history_view().unwrap().entries;
+        let segments = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .history
+            .segments
+            .clone();
+        let middle = &segments[1];
+        let first = middle.first_seq as usize;
+        let end = first + middle.entry_count as usize;
+        let name_in = |entries: &[HistoryEntry]| {
+            entries
+                .iter()
+                .find_map(|entry| entry.old_name.clone())
+                .unwrap()
+        };
+        let names = [
+            name_in(&all[..first]),
+            name_in(&all[first..end]),
+            name_in(&all[end..]),
+        ];
+        let known = store.known_identifiers(record).unwrap();
+        for name in &names {
+            assert!(known.names.contains(name));
+            let token = name.strip_prefix("FAKE ").unwrap();
+            let hits =
+                crate::text_recheck::identifier_hits(token, &known.names, &known.birth_dates);
+            assert_eq!(hits.len(), 1);
+            assert_eq!(
+                (hits[0].start, hits[0].end),
+                (0, token.encode_utf16().count() as u32)
+            );
+        }
+        let path = store.root.join("objects").join(&middle.object_name);
+        let original = damage_segment(&store.root, middle);
+        for missing in [false, true] {
+            if missing {
+                fs::remove_file(&path).unwrap();
+            }
+            let partial = store.history_view().unwrap();
+            assert!(!partial.complete);
+            assert!(partial
+                .entries
+                .iter()
+                .any(|entry| entry.old_name.as_ref() == Some(&names[0])));
+            assert!(partial
+                .later
+                .iter()
+                .any(|entry| entry.old_name.as_ref() == Some(&names[2])));
+            assert!(!partial
+                .entries
+                .iter()
+                .chain(&partial.later)
+                .any(|entry| entry.old_name.as_ref() == Some(&names[1])));
+            assert!(matches!(
+                store.known_identifiers(record),
+                Err(VaultError::Corrupt)
+            ));
+        }
+        fs::write(path, original).unwrap();
+        assert!(store.known_identifiers(record).is_ok());
+    }
+
+    #[test]
+    fn known_identifiers_keep_former_names_when_only_padding_is_damaged() {
+        let (_temp, store, record, _bytes) = original_pdf_fixture();
+        let renamed = |index: usize| {
+            let mut entry = HistoryEntry::new(HistoryEvent::FolderRenamed, index as u64 + 3);
+            entry.how = Some("personFolder".to_owned());
+            // Alphabetic suffixes keep each former name a matchable name word.
+            let suffix = format!(
+                "{}{}",
+                char::from(b'a' + (index / 26) as u8),
+                char::from(b'a' + (index % 26) as u8)
+            );
+            entry.old_name = Some(format!("FAKE Zorvana{suffix}"));
+            entry.name = Some(format!("FAKE {}", "x".repeat(220)));
+            entry
+        };
+        let segments = || {
+            store
+                .session()
+                .as_ref()
+                .unwrap()
+                .manifest
+                .history
+                .segments
+                .clone()
+        };
+        {
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            assert!(record_in_session(
+                &store.root,
+                unlocked,
+                (0..400).map(renamed).collect()
+            ));
+        }
+        // Pieces with events are padded to a power of two with pieces without any. Should
+        // these renames fill exactly a power of two, add more until there is padding.
+        let mut added = 400;
+        while !segments().iter().any(|segment| segment.entry_count == 0) {
+            assert!(added < 26 * 26, "a padding piece before the names run out");
+            let mut guard = store.session();
+            let unlocked = guard.as_mut().unwrap();
+            assert!(record_in_session(
+                &store.root,
+                unlocked,
+                vec![renamed(added)]
+            ));
+            added += 1;
+        }
+        let former: Vec<String> = store
+            .history_view()
+            .unwrap()
+            .entries
+            .into_iter()
+            .filter_map(|entry| entry.old_name)
+            .collect();
+        assert_eq!(former.len(), added);
+        let intact = store.known_identifiers(record).unwrap();
+        assert!(former.iter().all(|name| intact.names.contains(name)));
+        let pieces = segments();
+        let padding = pieces
+            .iter()
+            .find(|segment| segment.entry_count == 0)
+            .unwrap();
+        let path = store.root.join("objects").join(&padding.object_name);
+        let original = damage_segment(&store.root, padding);
+        for missing in [false, true] {
+            if missing {
+                fs::remove_file(&path).unwrap();
+            }
+            let view = store.history_view().unwrap();
+            assert!(!view.complete);
+            assert!(view.every_event_shown);
+            // Every pinned event is there, so every former name is too.
+            let known = store.known_identifiers(record).unwrap();
+            assert_eq!(known, intact);
+            let token = former.last().unwrap().strip_prefix("FAKE ").unwrap();
+            let hits =
+                crate::text_recheck::identifier_hits(token, &known.names, &known.birth_dates);
+            assert_eq!(hits.len(), 1);
+        }
+        // Only padding damaged, but the shown events do not end at the pinned head:
+        // refused. A lowered count is refused through the head too (the chain cut
+        // to that count ends at another hash); a valid manifest can't pin more
+        // events than its pieces hold (`validate_history`).
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Corrupt)
+        ));
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.count -= 1;
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Corrupt)
+        ));
+        store.session().as_mut().unwrap().manifest.history = history;
+        // A damaged piece with events beside the damaged padding: refused.
+        let events = pieces
+            .iter()
+            .find(|segment| segment.entry_count > 0 && segment.first_seq > 0)
+            .unwrap();
+        let events_original = damage_segment(&store.root, events);
+        assert!(!store.history_view().unwrap().every_event_shown);
+        assert!(matches!(
+            store.known_identifiers(record),
+            Err(VaultError::Corrupt)
+        ));
+        fs::write(
+            store.root.join("objects").join(&events.object_name),
+            events_original,
+        )
+        .unwrap();
+        fs::write(&path, original).unwrap();
+        assert!(store.history_view().unwrap().complete);
+        assert_eq!(store.known_identifiers(record).unwrap(), intact);
+    }
+
     fn original_pdf_fixture() -> (tempfile::TempDir, VaultStore, Uuid, Vec<u8>) {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
@@ -9145,6 +9788,7 @@ mod tests {
                     created_at_ms: 1,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 },
                 PatientProfile {
                     id: second_profile,
@@ -9152,6 +9796,7 @@ mod tests {
                     created_at_ms: 2,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 },
             ],
             folders: vec![
@@ -9213,6 +9858,7 @@ mod tests {
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
             approved_models: Vec::new(),
+            refused_deliveries: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -14900,6 +15546,7 @@ mod tests {
                 created_at_ms: 1,
                 full_name: None,
                 birth_date: None,
+                previous_full_names: None,
             }],
             folders: vec![],
             records: records
@@ -14934,6 +15581,7 @@ mod tests {
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
             approved_models: Vec::new(),
+            refused_deliveries: Vec::new(),
         }
     }
 
@@ -16515,6 +17163,7 @@ mod tests {
         let store = store_with_long_history(&temp.path().join("FAKE-vault"));
         let view = store.history_view().unwrap();
         assert!(view.complete);
+        assert!(view.every_event_shown);
         assert!(view.later.is_empty());
         let guard = store.session();
         let manifest = &guard.as_ref().unwrap().manifest;
@@ -16549,6 +17198,18 @@ mod tests {
         assert!(!view.complete);
         assert_eq!(view.entries, all);
         assert!(view.later.is_empty());
+        // Only padding is damaged: every pinned event checks out and is shown (#120 C1).
+        assert!(view.every_event_shown);
+        // But not when the chain no longer ends at the pinned head, or holds more than the
+        // pinned count, even though no piece with events is damaged.
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
+        assert!(!store.history_view().unwrap().every_event_shown);
+        store.session().as_mut().unwrap().manifest.history = history.clone();
+        store.session().as_mut().unwrap().manifest.history.count -= 1;
+        assert!(!store.history_view().unwrap().every_event_shown);
+        store.session().as_mut().unwrap().manifest.history = history;
+        assert!(store.history_view().unwrap().every_event_shown);
     }
 
     #[test]
@@ -16560,6 +17221,37 @@ mod tests {
         assert!(!history_piece_damaged(&VaultError::NoSpace));
         assert!(!history_piece_damaged(&VaultError::Cancelled));
         assert!(!history_piece_damaged(&VaultError::Locked));
+    }
+
+    #[test]
+    fn history_view_keeps_the_proven_end_when_padding_is_damaged_too() {
+        // A damaged padding piece holds no events, so it must not hide what the pinned end
+        // proves after an earlier damaged piece with events.
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let store = store_with_long_history(&root);
+        let all = store.history_entries().unwrap();
+        let history = store.session().as_ref().unwrap().manifest.history.clone();
+        let middle = &history.segments[1];
+        let padding = history.segments.last().unwrap();
+        assert!(middle.entry_count > 0 && history.segments[2].entry_count > 0);
+        assert_eq!(padding.entry_count, 0, "the last piece is padding");
+        let before = usize::try_from(middle.first_seq).unwrap();
+        let after = usize::try_from(history.segments[2].first_seq).unwrap();
+        damage_segment(&root, middle);
+        damage_segment(&root, padding);
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        assert!(!view.every_event_shown);
+        // The same when the padding piece is gone rather than damaged.
+        fs::remove_file(root.join("objects").join(&padding.object_name)).unwrap();
+        let view = store.history_view().unwrap();
+        assert!(!view.complete);
+        assert_eq!(view.entries, all[..before]);
+        assert_eq!(view.later, all[after..]);
+        assert!(!view.every_event_shown);
     }
 
     #[test]
@@ -16581,12 +17273,16 @@ mod tests {
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);
         assert_eq!(view.later, all[after..]);
+        // A piece with events is lost: not every event is shown.
+        assert!(!view.every_event_shown);
         let path = root.join("objects").join(&middle.object_name);
         fs::remove_file(&path).unwrap();
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert_eq!(view.entries, all[..before]);
         assert_eq!(view.later, all[after..]);
+        // A piece with events is lost: not every event is shown.
+        assert!(!view.every_event_shown);
         // Later pieces that do not end at the pinned head prove nothing, so none is shown.
         store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
         let view = store.history_view().unwrap();
@@ -16633,6 +17329,7 @@ mod tests {
         store.session().as_mut().unwrap().manifest.history.count += 1;
         let view = store.history_view().unwrap();
         assert!(!view.complete);
+        assert!(!view.every_event_shown);
         assert_eq!(view.entries, all);
         assert!(view.later.is_empty());
         // The chain does not end at the pinned head.
@@ -16640,6 +17337,7 @@ mod tests {
         store.session().as_mut().unwrap().manifest.history.head = "0".repeat(64);
         let view = store.history_view().unwrap();
         assert!(!view.complete);
+        assert!(!view.every_event_shown);
         assert_eq!(view.entries, all);
         assert!(view.later.is_empty());
         // Entries past the pinned count are never shown.
@@ -16647,6 +17345,7 @@ mod tests {
         store.session().as_mut().unwrap().manifest.history.count -= 1;
         let view = store.history_view().unwrap();
         assert!(!view.complete);
+        assert!(!view.every_event_shown);
         assert_eq!(view.entries, all[..all.len() - 1]);
         assert!(view.later.is_empty());
     }
@@ -16669,6 +17368,7 @@ mod tests {
         let view = store.history_view().unwrap();
         assert!(!view.complete);
         assert!(view.entries.is_empty());
+        assert!(!view.every_event_shown);
         assert_eq!(
             view.later,
             all[usize::try_from(segments[1].first_seq).unwrap()..]
@@ -16689,7 +17389,8 @@ mod tests {
             HistoryView {
                 entries: Vec::new(),
                 later: Vec::new(),
-                complete: true
+                complete: true,
+                every_event_shown: true,
             }
         );
     }
@@ -16770,6 +17471,11 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS - 1,
             // The AI helper's answers under one cap, format 10.
             MANIFEST_FORMAT_AI_RESULTS,
+            // Their hidden answers capped apart, format 11.
+            MANIFEST_FORMAT_AI_HIDDEN_CAP,
+            // Remembered refusals (#143), format 12: the last before previous
+            // full names (13).
+            MANIFEST_FORMAT_REFUSED,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
@@ -19395,10 +20101,201 @@ mod tests {
             assert!(documented.contains(value.as_str()), "{value}");
         }
     }
+    #[test]
+    fn previous_full_names_persist_preserve_clear_and_feed_authoritative_context() {
+        let (_temp, store, record, _) = original_pdf_fixture();
+        let id = store.snapshot().unwrap().profiles[0].id;
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        let aliases = || ProfileDetails {
+            previous_full_names: Some(vec![
+                "  FAKE Zorvana Neralis  ".into(),
+                "FAKE Zorvana Neralis".into(),
+            ]),
+            ..Default::default()
+        };
+        store
+            .update_profile_details(id, aliases(), &today, now)
+            .unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0].previous_full_names,
+            Some(vec!["FAKE Zorvana Neralis".into()])
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(store
+            .known_identifiers(record)
+            .unwrap()
+            .names
+            .contains(&"FAKE Zorvana Neralis".into()));
+        store
+            .update_profile_details(id, ProfileDetails::default(), &today, now + 1)
+            .unwrap();
+        assert!(store
+            .known_identifiers(record)
+            .unwrap()
+            .names
+            .contains(&"FAKE Zorvana Neralis".into()));
+        store
+            .update_profile_details(
+                id,
+                ProfileDetails {
+                    previous_full_names: Some(vec![]),
+                    ..Default::default()
+                },
+                &today,
+                now + 2,
+            )
+            .unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0].previous_full_names,
+            None
+        );
+        assert!(!store
+            .known_identifiers(record)
+            .unwrap()
+            .names
+            .contains(&"FAKE Zorvana Neralis".into()));
+        // Details events never gain the alias value, even after deletion.
+        let view = store.history_view().unwrap();
+        assert!(!serde_json::to_string(&view.entries)
+            .unwrap()
+            .contains("Zorvana"));
+    }
+
+    #[test]
+    fn previous_full_names_mutations_keep_existing_shared_and_locked_guards() {
+        let (_temp, store, _, _) = original_pdf_fixture();
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        let id = store.snapshot().unwrap().profiles[0].id;
+        let shared = shared_profile_id(store.session().as_ref().unwrap().manifest.vault_id);
+        let details = || ProfileDetails {
+            previous_full_names: Some(vec!["FAKE Previous Name".into()]),
+            ..Default::default()
+        };
+        assert!(matches!(
+            store.update_profile_details(shared, details(), &today, now),
+            Err(VaultError::Invalid)
+        ));
+        assert!(matches!(
+            store.update_profile_details(Uuid::new_v4(), details(), &today, now),
+            Err(VaultError::NotFound)
+        ));
+        store.lock();
+        assert!(matches!(
+            store.update_profile_details(id, details(), &today, now),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn previous_full_names_validate_bounds_and_strict_request_presence() {
+        for value in [
+            serde_json::json!({"previousFullNames":null}),
+            serde_json::json!({"previousFullNames":"FAKE"}),
+        ] {
+            assert!(serde_json::from_value::<ProfileDetails>(value).is_err());
+        }
+        let omitted: ProfileDetails = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(omitted.previous_full_names.is_none());
+        let clear: ProfileDetails =
+            serde_json::from_value(serde_json::json!({"previousFullNames":[]})).unwrap();
+        assert_eq!(clear.previous_full_names, Some(vec![]));
+        for names in [
+            vec!["".into()],
+            vec!["FAKE\nName".into()],
+            vec!["x".repeat(121)],
+            vec!["FAKE".into(); 17],
+        ] {
+            assert!(checked_previous_names(names).is_err());
+        }
+        assert!(checked_previous_names(vec!["界".repeat(120)]).is_ok());
+    }
+
+    #[test]
+    fn previous_full_names_upgrade_legacy_and_refuse_unknown_slots_without_rewriting() {
+        for version in [11, MANIFEST_FORMAT_REFUSED, VAULT_FORMAT + 1] {
+            let (_temp, store, _, _) = original_pdf_fixture();
+            let (key, mut manifest) = {
+                let guard = store.session();
+                let unlocked = guard.as_ref().unwrap();
+                (*unlocked.master_key, unlocked.manifest.clone())
+            };
+            // Use the actual owned fixture root, not a guessed destination.
+            let root = store.root.clone();
+            manifest.format_version = version;
+            for _ in 0..2 {
+                manifest.generation += 1;
+                write_manifest_at(&root, &key, &manifest).unwrap();
+            }
+            store.lock();
+            let paths = [
+                manifest_path(&root, manifest.generation),
+                manifest_path(&root, manifest.generation - 1),
+            ];
+            let before: Vec<_> = paths.iter().map(|p| fs::read(p).unwrap()).collect();
+            let opened = store.unlock(PASSWORD);
+            if version <= VAULT_FORMAT {
+                // Formats 11 and 12 (remembered refusals, #143) upgrade to this build's.
+                opened.unwrap();
+                assert_eq!(
+                    store.session().as_ref().unwrap().manifest.format_version,
+                    VAULT_FORMAT
+                );
+                assert!(store.snapshot().unwrap().profiles[0]
+                    .previous_full_names
+                    .is_none());
+            } else {
+                assert!(opened.is_err());
+                assert_eq!(
+                    before,
+                    paths
+                        .iter()
+                        .map(|p| fs::read(p).unwrap())
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn previous_full_names_format_gate_rejects_unknown_and_noncanonical_storage() {
+        let (_temp, store, _, _) = original_pdf_fixture();
+        let mut manifest = store.session().as_ref().unwrap().manifest.clone();
+        let id = manifest.vault_id;
+        // A format newer than this build's is refused, and said to be newer.
+        manifest.format_version = VAULT_FORMAT + 1;
+        assert!(validate_manifest_structure(&manifest, id).is_err());
+        assert!(newer_build_manifest(
+            &serde_json::to_vec(&manifest).unwrap()
+        ));
+        // Format 12 (remembered refusals) is a real format below this build's.
+        manifest.format_version = MANIFEST_FORMAT_REFUSED;
+        assert!(validate_manifest_structure(&manifest, id).is_ok());
+        assert!(!newer_build_manifest(
+            &serde_json::to_vec(&manifest).unwrap()
+        ));
+        manifest.format_version = 11;
+        manifest.profiles[0].previous_full_names = Some(vec!["FAKE Zorvana".into()]);
+        assert!(validate_manifest_structure(&manifest, id).is_err());
+        manifest.format_version = VAULT_FORMAT;
+        assert!(validate_manifest_structure(&manifest, id).is_ok());
+        for invalid in [
+            vec![],
+            vec![" FAKE Zorvana ".into()],
+            vec!["FAKE Zorvana".into(); 2],
+        ] {
+            manifest.profiles[0].previous_full_names = Some(invalid);
+            assert!(validate_manifest_structure(&manifest, id).is_err());
+        }
+    }
+
     fn identity_details() -> ProfileDetails {
         ProfileDetails {
             full_name: Some("  FAKE Mary Smith  ".into()),
             birth_date: Some("1958-03-12".into()),
+            previous_full_names: None,
         }
     }
 
@@ -19474,7 +20371,8 @@ mod tests {
                     id,
                     ProfileDetails {
                         full_name: None,
-                        birth_date: Some(date.into())
+                        birth_date: Some(date.into()),
+                        previous_full_names: None,
                     },
                     &today,
                     now
@@ -19507,6 +20405,42 @@ mod tests {
         ));
         assert_eq!(history_events(&store).len(), before);
         assert!(store.snapshot().unwrap().profiles[0].full_name.is_none());
+    }
+
+    #[test]
+    fn a_person_added_with_details_records_them_in_the_history_and_one_without_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        store.create(PASSWORD, "FAKE First", now).unwrap();
+        let before = history_events(&store).len();
+        let with = store
+            .create_profile_with_details("FAKE Mary", identity_details(), &today, now)
+            .unwrap();
+        let events = history_events(&store);
+        let added: Vec<_> = events[before..]
+            .iter()
+            .map(|entry| (entry.event, entry.profile_id))
+            .collect();
+        assert_eq!(
+            added,
+            vec![
+                (HistoryEvent::ProfileCreated, Some(with)),
+                (HistoryEvent::ProfileDetailsChanged, Some(with)),
+            ]
+        );
+        // "Later" (#234): no details, so no details event.
+        let before = history_events(&store).len();
+        let without = store
+            .create_profile_with_details("FAKE Later", ProfileDetails::default(), &today, now)
+            .unwrap();
+        let events = history_events(&store);
+        let added: Vec<_> = events[before..]
+            .iter()
+            .map(|entry| (entry.event, entry.profile_id))
+            .collect();
+        assert_eq!(added, vec![(HistoryEvent::ProfileCreated, Some(without))]);
     }
 
     #[test]
@@ -19566,7 +20500,9 @@ mod tests {
     #[test]
     fn identity_survives_migration_of_all_older_formats_without_record_loss() {
         let temp = tempfile::tempdir().unwrap();
-        for version in [1, 2, 3, 4, 5, 6, 7, 8] {
+        // Every format below this build's (12, #143), 10 and 11 (the AI helper's
+        // answers and their caps) included.
+        for version in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] {
             let root = temp.path().join(format!("v{version}"));
             let (store, ids, key, vault_id) =
                 old_format_vault(&root, &["FAKE a.pdf", "FAKE b.pdf"], version);

@@ -48,7 +48,7 @@ checklist-notAName = Inne niż imię i nazwisko
 
 checklist-notYet = , jeszcze nie
 
-checklist-spaces = Spacje są dozwolone, więc kilka niezwiązanych ze sobą słów to dobre hasło główne. myCarlos sprawdza te zasady na tym komputerze.
+checklist-spaces = Spacje są dozwolone, więc kilka niezwiązanych ze sobą słów to dobre hasło główne. myCarlos sprawdza te zasady na tym urządzeniu.
 
 comfort-autoLock-body = myCarlos blokuje się sam, gdy nie jest używany przez ten czas, aby nikt inny nie zobaczył dokumentów. Proszę wybrać od 1 do 15 minut.
 
@@ -78,7 +78,7 @@ create-stays = Sejf pozostaje na tym urządzeniu. Jeśli został utworzony na in
 
 create-submit = Utwórz sejf
 
-create-title = Skonfiguruj myCarlos na tym komputerze
+create-title = Skonfiguruj myCarlos na tym urządzeniu
 
 error-checkBoxes = Proszę sprawdzić { $boxes }, a potem spróbować ponownie.
 
@@ -194,9 +194,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Hasło dokumentu
 
+interface-DocumentReader-firstPage = Pierwsza strona
+
 interface-DocumentReader-fitWidth = Dopasuj do szerokości
 
 interface-DocumentReader-larger = Powiększ
+
+interface-DocumentReader-lastPage = Ostatnia strona
 
 interface-DocumentReader-nextPage = Następna strona
 
@@ -254,7 +258,7 @@ interface-notice-alreadyShared = { $name } był już w sekcji Udostępnione mi.
 
 interface-notice-changesResumed = { $outcome } W sejfie znów można wprowadzać zmiany.
 
-interface-notice-copySaved = Zapisano czytelną kopię na tym komputerze.
+interface-notice-copySaved = Zapisano czytelną kopię na tym urządzeniu.
 
 interface-notice-damagedHidden =
     { $count ->
@@ -340,7 +344,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = Stary zestaw n
 
 interface-person-records = Dokumenty osoby { $name }
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = Proszę sprawdzić ustawienia prywatności aparatu na komputerze i zezwolić myCarlos na jego używanie.
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = Proszę sprawdzić ustawienia prywatności aparatu na urządzeniu i zezwolić myCarlos na jego używanie.
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = W Ustawieniach systemowych proszę otworzyć Prywatność i ochrona, następnie Aparat i włączyć myCarlos.
 
@@ -371,6 +375,10 @@ interface-reader-page = Strona { $page }
 interface-reader-textFollows = Strona { $page } z { $total }. Poniżej znajduje się tekst strony.
 
 interface-reader-where = Strona { $page } z { $total }
+
+interface-reader-markedOnPage = Strona { $page }: cytowane słowa są zaznaczone na obrazie strony i w sekcji „Tekst na tej stronie”.
+
+interface-reader-markedInText = Strona { $page }: cytowane słowa są zaznaczone w sekcji „Tekst na tej stronie”. Nie udało się ich zaznaczyć na obrazie strony.
 
 interface-reader-zoom = { $percent }%
 
@@ -418,7 +426,7 @@ interface-RecordDetails-moveTo = Przenieś do
 
 interface-RecordDetails-read = Czytaj
 
-interface-RecordDetails-saveACopyToThisComputer = Zapisz kopię na tym komputerze
+interface-RecordDetails-saveACopyToThisComputer = Zapisz kopię na tym urządzeniu
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = Plik pozostaje zaszyfrowany w sejfie. Proszę zapisywać kopię tylko wtedy, gdy potrzebny jest czytelny plik poza myCarlos.
 
@@ -571,7 +579,7 @@ interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Można je przenieś�
 
 interface-VaultLibrary-moveTheSelectedDocuments = Przenieś wybrane dokumenty.
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos nie mógł zapisać zmiany na tym komputerze. Proszę zwolnić miejsce lub sprawdzić dysk, a następnie zablokować i odblokować sejf; naprawi się on sam, gdy będzie mógł zapisywać.
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos nie mógł zapisać zmiany na tym urządzeniu. Proszę zwolnić miejsce lub sprawdzić dysk, a następnie zablokować i odblokować sejf; naprawi się on sam, gdy będzie mógł zapisywać.
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteka zaszyfrowanych dokumentów myCarlos
 
@@ -632,8 +640,6 @@ interface-VaultLibrary-theyAreInNoOnesRecordsUntil = Nie należą do dokumentów
 interface-VaultLibrary-thisPhotoIsAlreadyInTheVault = To zdjęcie jest już w sejfie, więc nie zostało zapisane ponownie.
 
 interface-VaultLibrary-topLevel = Poziom główny
-
-interface-VaultLibrary-unlockedLockNow = Odblokowany · Zablokuj teraz
 
 interface-VaultLibrary-working = Przetwarzanie…
 
@@ -696,6 +702,12 @@ library-items =
     [many] { $count } widocznych elementów biblioteki
     *[other] { $count } widocznego elementu biblioteki
     }
+
+library-location-documents = Lokalizacja: { $place }. { $documents }.
+
+library-location-summary = Lokalizacja: { $place }. { $folders }, { $documents }.
+
+library-lock-unlocked = Odblokowany
 
 library-noMatch-help = Proszę spróbować innego wyszukiwania.
 
@@ -803,7 +815,7 @@ native-error-33 = myCarlos nie może bezpiecznie wyświetlać dokumentów w tym 
 
 native-error-34 = Brakuje miejsca, aby ukończyć tę operację.
 
-native-error-35 = myCarlos nie mógł odczytać lub zapisać swoich plików na tym komputerze. Proszę sprawdzić, czy dysk z myCarlos jest podłączony i ma wolne miejsce, a następnie spróbować ponownie. Jeśli wprowadzano zmianę, proszę najpierw sprawdzić w dokumentach, czy została zapisana.
+native-error-35 = myCarlos nie mógł odczytać lub zapisać swoich plików na tym urządzeniu. Proszę sprawdzić, czy dysk z myCarlos jest podłączony i ma wolne miejsce, a następnie spróbować ponownie. Jeśli wprowadzano zmianę, proszę najpierw sprawdzić w dokumentach, czy została zapisana.
 
 native-error-36 = Operacja została przerwana, ponieważ sejf został zablokowany.
 
@@ -972,7 +984,7 @@ photo-zoomIn = Powiększ
 
 photo-zoomOut = Pomniejsz
 
-preferences-subtitle = Wygląd myCarlos na tym komputerze
+preferences-subtitle = Wygląd myCarlos na tym urządzeniu
 
 readingAid-available = Twoja przychodnia wysłała też pomoc w czytaniu tego dokumentu.
 
@@ -993,8 +1005,6 @@ readingAid-title = Pomoc w czytaniu od Twojej przychodni
 readingAid-unavailable = Tej pomocy w czytaniu nie można bezpiecznie wyświetlić. Otwórz zamiast tego oryginalny dokument.
 
 record-kind-document = Dokument
-
-record-source-manual = Import ręczny — niezweryfikowany
 
 recover-intro = Proszę użyć klucza odzyskiwania, aby otworzyć sejf i wybrać nowe hasło główne.
 
@@ -1118,7 +1128,7 @@ rename-tooLong = Ta nazwa jest zbyt długa. Proszę ją skrócić, aby zapisać.
 
 rename-unsafe = Nazwy dokumentów nie mogą zawierać znaków { $characters } ani niewidocznych znaków sterujących ani kończyć się kropką.
 
-reset-plainly = Odłożenie sejfu usuwa z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym komputerze, zaszyfrowane. Ten sejf nadal można otworzyć jego pierwotnym hasłem głównym lub pasującym kluczem odzyskiwania. Utworzenie nowego sejfu nie zmienia tych danych dostępu. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.
+reset-plainly = Odłożenie sejfu usuwa z myCarlos na tym urządzeniu wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym urządzeniu, zaszyfrowane. Ten sejf nadal można otworzyć jego pierwotnym hasłem głównym lub pasującym kluczem odzyskiwania. Utworzenie nowego sejfu nie zmienia tych danych dostępu. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.
 
 reset-submit = Odłóż sejf
 
@@ -1360,7 +1370,7 @@ textSize-box = Rozmiar tekstu w procentach
 
 textSize-followsDevice = Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.
 
-textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym komputerze. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
+textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym urządzeniu. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
 
 textSize-key-command = Command
 
@@ -1418,6 +1428,14 @@ personDetails-birthDateRequired = Proszę wpisać datę urodzenia lub zaznaczyć
 
 personDetails-birthDateUnknown = Nie znam daty urodzenia tej osoby
 
+personDetails-birthDay = Dzień
+
+personDetails-birthMonth = Miesiąc
+
+personDetails-birthMonthChoose = Wybierz
+
+personDetails-birthYear = Rok
+
 personDetails-cancel = Anuluj
 
 personDetails-edit = Edytuj dane
@@ -1433,6 +1451,16 @@ personDetails-fullNameRequired = Proszę wpisać imię i nazwisko tej osoby.
 personDetails-futureDate = Data urodzenia nie może być w przyszłości.
 
 personDetails-help = Przechowywane w tym zaszyfrowanym sejfie, aby sugerować, dla kogo jest udostępniony dokument. Te dane nie potwierdzają źródła dokumentu.
+
+personDetails-setup = Imię i nazwisko oraz data urodzenia
+
+personDetails-later = Dodać je później
+
+personDetails-reminder = Proszę dodać imię i nazwisko oraz datę urodzenia dla profilu { $name }. Pomagają one myCarlos ustalić, dla kogo jest dokument.
+
+personDetails-notNow = Nie teraz
+
+personDetails-notSaved = Sejf jest gotowy, ale imię i nazwisko oraz data urodzenia nie zostały zapisane. Proszę je dodać w Edytuj dane.
 
 personDetails-invalidDate = Proszę wpisać prawidłową datę urodzenia: rok, miesiąc i dzień.
 
@@ -1468,19 +1496,19 @@ personSuggestion-offer = Wygląda na to, że ten dokument jest dla osoby { $name
 
 portal-address = Adres HTTPS portalu
 
-portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.
+portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Proszę sprawdzić aktualizacje przed rozpoczęciem nowej prośby.
 
-portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
+portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Proszę skontaktować się z przychodnią, aby ustalić dalsze kroki.
 
-portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Sprawdź aktualizacje przed rozpoczęciem nowej prośby.
+portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Dokumenty z przychodni.
 
-portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Wyślij ponownie zapisaną prośbę.
+portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Proszę wysłać ponownie zapisaną prośbę.
 
-portal-approvalRefused = Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Skontaktuj się z przychodnią, aby ustalić dalsze kroki.
+portal-approvalRefused = Przychodnia odrzuciła prośbę o zatwierdzenie tego urządzenia. Proszę skontaktować się z przychodnią, aby ustalić dalsze kroki.
 
 portal-approved = Przychodnia zatwierdziła to urządzenie.
 
-portal-awaiting = Zapisano prośbę o zatwierdzenie. Sprawdź aktualizacje lub wyślij ją ponownie.
+portal-awaiting = Zapisano prośbę o zatwierdzenie. Proszę sprawdzić aktualizacje lub wysłać ją ponownie.
 
 portal-check = Sprawdź nowe dokumenty
 
@@ -1488,9 +1516,9 @@ portal-clinicIssue = { $clinic }: { $detail }
 
 portal-code = Kod połączenia
 
-portal-compare = Poproś personel przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
+portal-compare = Proszę zwrócić się do personelu przychodni o porównanie całego odcisku na tym ekranie przed zatwierdzeniem urządzenia.
 
-portal-confirmationsPending = Zapisane dokumenty oczekujące na potwierdzenie odbioru: { $count }. Sprawdź ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.
+portal-confirmationsPending = Zapisane dokumenty oczekujące na potwierdzenie odbioru: { $count }. Proszę sprawdzić ponownie, aby dokończyć potwierdzenie. Zapisane kopie pozostają w sejfie.
 
 portal-copied = Skopiowano kod urządzenia.
 
@@ -1500,25 +1528,41 @@ portal-copyFailed = Zaznacz cały kod urządzenia i skopiuj go.
 
 portal-dateNotRecorded = Data nie została zapisana
 
+portal-defaultDeviceName = myCarlos na { $platform }
+
 portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
 
-portal-errorAddress = Wpisz adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.
+portal-deviceDetailsShow = Pokaż szczegóły urządzenia
 
-portal-errorCancelled = Łączenie zostało przerwane, ponieważ sejf został zablokowany. Sprawdź połączone urządzenia w portalu przed kolejną próbą.
+portal-deviceDetailsHide = Ukryj szczegóły urządzenia
 
-portal-errorCode = Wpisz pełny kod połączenia wyświetlany w portalu pacjenta.
+portal-earlierShow =
+    { $count ->
+    [one] Pokaż { $count } wcześniejszą próbę
+    [few] Pokaż { $count } wcześniejsze próby
+    [many] Pokaż { $count } wcześniejszych prób
+    *[other] Pokaż { $count } wcześniejszej próby
+    }
 
-portal-errorCodeRejected = Portal nie zaakceptował kodu. Utwórz nowy kod połączenia w portalu pacjenta.
+portal-earlierHide = Ukryj wcześniejsze próby
 
-portal-errorDamaged = Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Przywróć go z kopii zapasowej albo poproś przychodnię o ponowne wysłanie.
+portal-errorAddress = Proszę wpisać adres HTTPS portalu bez nazwy użytkownika, hasła, parametrów zapytania ani fragmentu.
 
-portal-errorDeviceName = Wybierz nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.
+portal-errorCancelled = Łączenie zostało przerwane, ponieważ sejf został zablokowany. Proszę sprawdzić połączone urządzenia w portalu przed kolejną próbą.
 
-portal-errorExists = To urządzenie jest już zarejestrowane. Sprawdź połączone urządzenia w portalu pacjenta.
+portal-errorCode = Proszę wpisać pełny kod połączenia wyświetlany w portalu pacjenta.
 
-portal-errorIncomplete = Nie udało się wykonać żądania do portalu. Sprawdź połączenie i zegar urządzenia, a następnie spróbuj ponownie.
+portal-errorCodeRejected = Portal nie zaakceptował kodu. Proszę utworzyć nowy kod połączenia w portalu pacjenta.
+
+portal-errorDamaged = Zapisany dokument z tej przychodni jest uszkodzony lub go brakuje, dlatego nie wysłano potwierdzenia jego odbioru. Pozostałe dokumenty zostały sprawdzone. Proszę przywrócić go z kopii zapasowej albo poprosić przychodnię o ponowne wysłanie.
+
+portal-errorDeviceName = Proszę wybrać nazwę urządzenia o długości od 1 do 64 znaków, bez znaków sterujących.
+
+portal-errorExists = To urządzenie jest już zarejestrowane. Proszę sprawdzić połączone urządzenia w portalu pacjenta.
+
+portal-errorIncomplete = Nie udało się wykonać żądania do portalu. Proszę sprawdzić połączenie i zegar urządzenia, a następnie spróbować ponownie.
 
 portal-errorKeys = Przychodnia nie opublikowała jeszcze klucza podpisu. Połączenie jest nieukończone.
 
@@ -1528,15 +1572,15 @@ portal-errorUnavailable = Łączenie z portalem nie jest jeszcze dostępne na ty
 
 portal-fingerprint = Pełny odcisk urządzenia
 
-portal-incomplete = Połączenie nie zostało ukończone. Sprawdź połączone urządzenia w portalu przed kolejną próbą.
+portal-incomplete = Ta zapisana próba jest niekompletna. Proszę sprawdzić połączone urządzenia w portalu lub skontaktować się z przychodnią przed ponownym łączeniem. Aplikacja nie może wznowić tej próby.
 
-portal-intro = Połącz myCarlos, używając adresu i kodu z portalu pacjenta.
+portal-intro = Proszę połączyć myCarlos, używając adresu i kodu z portalu pacjenta.
 
-portal-link = Połącz z przychodnią
+portal-link = Połącz i poproś o zatwierdzenie
 
 portal-matchPerson = Dopasuj dane z dokumentu
 
-portal-notRequested = Poproś przychodnię o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
+portal-notRequested = Proszę zwrócić się do przychodni o zatwierdzenie, aby odbierać dokumenty na tym urządzeniu.
 
 portal-partialResult = Niektóre sprawdzenia w przychodniach wymagają uwagi. Zapisano nowych dokumentów: { $added }. Nie udało się zweryfikować dokumentów: { $refused }.
 
@@ -1554,8 +1598,6 @@ portal-serviceDate = Data świadczenia: { $date }
 
 portal-serviceDateLabel = Data świadczenia
 
-portal-sourceVerified = Z { $clinic } · Zweryfikowano
-
 portal-title = Dokumenty z przychodni
 
 rename-help-profile = Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.
@@ -1570,6 +1612,57 @@ rename-profile-saved = Nazwa folderu została zmieniona na { $name }.
 
 rename-title-profile = Zmień nazwę folderu osoby
 
+portal-connectConsent = Ta czynność łączy to urządzenie i wysyła prośbę o zatwierdzenie. Przychodnia musi zatwierdzić urządzenie, zanim będzie ono mogło odbierać dokumenty.
+
+portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni.
+
+portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…
+
+portal-errorBusy = Trwa inna operacja związana z przychodnią. Proszę poczekać, aż się zakończy, i spróbować ponownie.
+
+portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
+
+portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
+
+portal-working = Trwa operacja związana z przychodnią…
+
+portal-approvalExpiredCard = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego samego urządzenia, proszę wybrać Rozpocznij nową prośbę o zatwierdzenie. Dokumenty i połączenie tego urządzenia pozostają bez zmian.
+
+portal-approvalPickedUp = System dokumentacji przychodni odebrał tę prośbę. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.
+
+portal-approvalReplyInvalid = Nie udało się zweryfikować odpowiedzi portalu przychodni na temat tej prośby, więc nie została użyta. Proszę skontaktować się z przychodnią.
+
+portal-approvalStillOpen = Ta prośba o zatwierdzenie jest nadal otwarta w portalu przychodni. Proszę poczekać, aż się zakończy, przed rozpoczęciem nowej.
+
+portal-approvalTimeLeft =
+    { $count ->
+    [one] Pozostały czas na tę prośbę: około { $count } minuty.
+    [few] Pozostały czas na tę prośbę: około { $count } minut.
+    [many] Pozostały czas na tę prośbę: około { $count } minut.
+    *[other] Pozostały czas na tę prośbę: około { $count } minuty.
+    }
+
+portal-approvalTimeOver = Czas na tę prośbę minął.
+
+portal-approvalTimeOverRestart = Czas na tę prośbę minął. Jeśli przychodnia nie zatwierdziła tego urządzenia, proszę wybrać { $button }.
+
+portal-approvalTimeUp = Czas na tę prośbę minął. Sprawdzanie w przychodni…
+
+portal-approvalUnanswered = myCarlos nie mógł uzyskać stanu tej prośby z portalu przychodni.
+
+portal-approvalUnreachable = myCarlos nie mógł połączyć się z portalem przychodni, więc stan tej prośby nie jest jeszcze znany.
+
+portal-approvalWait = Portal przychodni poprosił myCarlos o rzadsze sprawdzanie.
+
+portal-autoChecking = Dopóki ta strona jest otwarta, myCarlos automatycznie sprawdza, czy przychodnia odpowiedziała.
+
+portal-autoCheckStopped = Automatyczne sprawdzanie zostało zatrzymane. Aby sprawdzić ponownie, proszę wybrać { $button }.
+
+portal-awaitingClinic = Przychodnia otrzymała prośbę o zatwierdzenie. Oczekiwanie na zatwierdzenie tego urządzenia przez personel przychodni.
+
+portal-deviceRemoved = To urządzenie zostało usunięte z konta w portalu przychodni. Aby znów go używać, proszę połączyć je ponownie, używając nowego kodu połączenia z portalu pacjenta.
+
+portal-errorRateLimited = Portal przychodni poprosił myCarlos, aby odczekał przed ponowną próbą.
 hidden-backToSecurity = Powrót do zabezpieczeń
 
 interface-history-appVersion = Wersja myCarlos
@@ -1590,6 +1683,8 @@ interface-history-damaged = Część tej historii jest uszkodzona. Zdarzenia po 
 
 interface-history-damagedAll = Część tej historii jest uszkodzona. Jej zdarzeń nie można zweryfikować, więc nie wyświetlono żadnego z nich.
 
+interface-history-damagedStorageOnly = Część miejsca, w którym zapisano tę historię, jest uszkodzona, ale wszystkie jej zdarzenia zostały zweryfikowane i są wyświetlane.
+
 interface-history-damagedBefore = Część tej historii jest uszkodzona. Zdarzenia sprzed { $date } nie mogą zostać zweryfikowane i nie są wyświetlane.
 
 interface-history-damagedBetween = Część tej historii jest uszkodzona. Zdarzenia między { $from } a { $to } nie mogą zostać zweryfikowane i nie są wyświetlane.
@@ -1607,6 +1702,10 @@ interface-history-event-backupSaved = Zapisano zaszyfrowaną kopię zapasową
 interface-history-event-copySaved = Zapisano czytelną kopię
 
 interface-history-event-created = Utworzono sejf
+
+interface-history-event-deliveryRefusalsCleared = Wybrano „Spróbuj ponownie” dla niezweryfikowanych dokumentów z przychodni
+
+interface-history-event-deliveryRefused = Nie zweryfikowano dokumentu z przychodni
 
 interface-history-event-deliveryFiled = Zapisano dokument z przychodni
 
@@ -1633,6 +1732,8 @@ interface-history-event-historyStarted = Rozpoczęto zapisywanie historii
 interface-history-event-imported = Dodano dokument
 
 interface-history-event-moved = Przeniesiono dokument
+
+interface-history-event-other = Inne zdarzenie
 
 interface-history-event-passphraseChanged = Zmieniono hasło
 
@@ -1688,6 +1789,8 @@ interface-history-how-passphrase = Hasło
 
 interface-history-how-patient = Ukryto ręcznie
 
+interface-history-how-personFolder = Folder osoby
+
 interface-history-how-picked = Zaimportowano z wybranego pliku
 
 interface-history-how-recoveryKey = Klucz odzyskiwania
@@ -1736,17 +1839,81 @@ interface-history-to = Do
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. Możesz ją tutaj przeglądać; myCarlos nigdy jej nie zmienia ani nie usuwa.
 
+portal-checkAgain = Aby sprawdzić ponownie, proszę wybrać { $button }.
+
+portal-unlockCheckConsent = Po każdym odblokowaniu sejfu myCarlos łączy się z portalami połączonych przychodni, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty, jeśli przychodnia zatwierdziła urządzenie lub prośba o zatwierdzenie nadal jest otwarta.
+
+portal-unlockChecked = Po odblokowaniu sejfu sprawdzono, czy są nowe dokumenty z przychodni.
+
+portal-unlockCheckIncomplete = Po odblokowaniu sejfu myCarlos nie mógł dokończyć sprawdzania nowych dokumentów z przychodni.
+
+portal-unlockCheckNotRun = Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo trwała inna operacja związana z przychodnią.
+
+portal-unlockCheckWaiting = Po odblokowaniu sejfu myCarlos nie sprawdził nowych dokumentów z przychodni, bo portal przychodni poprosił o odczekanie.
+
+portal-unlockRefused =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie został dodany. Proszę skontaktować się z przychodnią.
+    [few] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Proszę skontaktować się z przychodnią.
+    [many] Nie udało się zweryfikować { $count } dokumentów z przychodni, więc nie zostały dodane. Proszę skontaktować się z przychodnią.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z przychodni, więc nie zostały dodane. Proszę skontaktować się z przychodnią.
+    }
+
+library-source-clinic = Z { $clinic }
+
+library-source-manualImport = Import ręczny
+
+library-status-unverified = Nie zweryfikowano
+
+library-status-verified = Zweryfikowano
+
+portal-approvedByCode = Przychodnia potwierdziła to urządzenie kodem.
+
+portal-codeFormat = Proszę wpisać 9 cyfr kodu z e-maila od przychodni.
+
+portal-codeHint = Proszę wpisać 9-cyfrowy kod, który przychodnia wysłała e-mailem. Proszę nigdy nie używać kodu wyświetlonego na stronie internetowej.
+
+portal-codeLabel = Kod z e-maila od przychodni
+
+portal-codeLocked = Wypróbowano zbyt wiele kodów dla tej prośby, więc myCarlos nie przyjmie kolejnego. Proszę skontaktować się z przychodnią.
+
+portal-codeMismatch = Ten kod nie pasuje do tej przychodni. Proszę sprawdzić, czy urządzenie połączono z prawdziwym adresem portalu przychodni, i spróbować ponownie.
+
+portal-codeNeeded = Przychodnia wysłała e-mailem kod do potwierdzenia tego urządzenia. Proszę wpisać go poniżej.
+
+portal-codeNotOpen = Ta prośba nie czeka teraz na kod. myCarlos pokaże odpowiedź przychodni przy następnym sprawdzeniu.
+
+portal-codeRefused = Portal przychodni nie przyjął kodu. Proszę spróbować ponownie za kilka minut.
+
+portal-codeSubmit = Potwierdź kod
+
+portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, proszę ponowić prośbę.
+
+portal-refusedDocuments =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [few] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [many] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    }
+
+portal-tryAgain = Spróbuj ponownie
+
+portal-tryAgainFor = Spróbuj ponownie: { $clinic }
+
+portal-linkAnother = Połącz z inną przychodnią
+
 ai-summary-button = Podsumowanie
 
 ai-summary-title = Podsumowanie prostymi słowami
 
 ai-explain-title = Wyjaśnij termin
 
-ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym komputerze
+ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym urządzeniu
 
-ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Preferencjach można pobrać model albo dodać posiadany plik modelu.
+ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym urządzeniu. W Ustawieniach, w sekcji Asystent AI, można pobrać model albo dodać posiadany plik modelu.
 
-ai-notInstalled-openPreferences = Otwórz Preferencje
+ai-notInstalled-openPreferences = Otwórz ustawienia asystenta AI
 
 aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.
 
@@ -1754,7 +1921,41 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
 
-ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
+ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
+
+ai-summary-showWhole = Pokaż całe podsumowanie
+
+ai-summary-partial = To podsumowanie wykorzystuje tylko część tekstu dokumentu.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } z { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 i ostatnią stronę, stronę { $tail }, z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } oraz ostatnią stronę, stronę { $tail }, z { $total }.
+    }
+
+ai-summary-tooLongStart = Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej tylko początek strony 1.
+
+ai-summary-tooLongAfter = Jeśli nie zdoła przeczytać całości, podsumowanie o tym poinformuje.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Podsumuj stronę 1
+   *[other] Podsumuj strony od 1 do { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Podsumuj stronę 1 i stronę { $tail }
+   *[other] Podsumuj strony od 1 do { $last } i stronę { $tail }
+    }
+
+ai-summary-readStart = Podsumuj początek strony 1
 
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
 
@@ -1766,13 +1967,23 @@ ai-explain-submit = Wyjaśnij
 
 ai-preferences-title = Asystent AI
 
-ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Można pobrać model albo dodać posiadany plik modelu; pozostaje on na tym komputerze.
+ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym urządzeniu. Pobierz jeden z poniższych modeli lub dodaj pasujący plik, który już masz. Modele pozostają na tym urządzeniu.
 
 ai-preferences-notInstalled = Nie zainstalowano
+
+ai-settings-subtitle = Działanie asystenta AI na tym urządzeniu
 
 ai-model-add = Dodaj plik modelu…
 
 ai-model-accepted = { $name }, { $size } MB. Licencja: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Czyta naraz około { $pages } strony (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [few] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [many] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+   *[other] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    }
 
 ai-model-where = Gdzie pobrać plik
 
@@ -1788,31 +1999,31 @@ ai-model-installed = Zainstalowano: { $name }
 
 ai-model-remove = Usuń model
 
-ai-model-removeConfirm = Usunąć model z tego komputera? Można go później dodać ponownie.
+ai-model-removeConfirm = Usunąć model z tego urządzenia? Można go później dodać ponownie.
 
 ai-model-damaged = Plik modelu jest uszkodzony lub został zmieniony. Proszę go usunąć i dodać ponownie.
 
-ai-model-unsupportedRam = Ten komputer nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba około 8 GB).
+ai-model-unsupportedRam = To urządzenie nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba około 8 GB).
 
-ai-model-unsupportedCpu = Procesor tego komputera nie jest obsługiwany przez asystenta AI.
+ai-model-unsupportedCpu = Procesor tego urządzenia nie jest obsługiwany przez asystenta AI.
 
-ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju komputera.
+ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju urządzenia.
 
-ai-model-refusedList = myCarlos nie akceptuje tego pliku. Proszę wybrać plik modelu podany powyżej.
+ai-model-refusedList = myCarlos nie akceptuje tego pliku. Wybierz jeden z plików modeli wymienionych powyżej.
 
 ai-model-refusedHash = To nie jest oczekiwany plik. Proszę pobrać go ponownie i dodać nową kopię.
 
 ai-model-refusedIncomplete = Nie udało się wczytać całego pliku. Proszę sprawdzić, czy pobieranie się zakończyło, i spróbować ponownie.
 
-ai-model-refusedDisk = Na tym komputerze brakuje wolnego miejsca. Model potrzebuje około 4 GB.
+ai-model-refusedDisk = Na tym urządzeniu brakuje wolnego miejsca. Model potrzebuje około 4 GB.
 
-ai-model-refusedStorage = Nie udało się zapisać modelu na tym komputerze.
+ai-model-refusedStorage = Nie udało się zapisać modelu na tym urządzeniu.
 
 ai-model-refusedBusy = Asystent AI pracuje. Proszę spróbować ponownie, gdy skończy.
 
 ai-model-download = Pobierz model domyślny
 
-ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o użytkowniku ani o jego dokumentach nie jest wysyłane. Strona, z której następuje pobieranie, widzi adres internetowy tego komputera, jak przy każdym pobieraniu.
+ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o użytkowniku ani o jego dokumentach nie jest wysyłane. Strona, z której następuje pobieranie, widzi adres internetowy tego urządzenia, jak przy każdym pobieraniu.
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
@@ -1832,6 +2043,16 @@ native-filter-models = Pliki modeli
 
 ai-working = Asystent AI pracuje…
 
+ai-workingLong = W przypadku długiego dokumentu może to potrwać kilka minut.
+
+ai-workingFor =
+    { $minutes ->
+    [one] Trwa to już { $minutes } minutę.
+    [few] Trwa to już { $minutes } minuty.
+    [many] Trwa to już { $minutes } minut.
+    *[other] Trwa to już { $minutes } minuty.
+    }
+
 ai-summary-ready = Podsumowanie jest gotowe.
 
 ai-explain-ready = Wyjaśnienie jest gotowe.
@@ -1842,14 +2063,40 @@ ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamkną
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
 
+ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego urządzenia. Można spróbować ponownie. Jeśli to się powtarza, można usunąć model w Ustawieniach, w sekcji Asystent AI, i dodać go ponownie.
+
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
 ai-summary-noSource = Nie znaleziono źródła
+
+ai-summary-englishOnly = Na razie podsumowania są pisane po angielsku. myCarlos sprawdza liczby i zasady „kiedy szukać pomocy” tylko po angielsku, więc sprawdź je w samym dokumencie.
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = To może potrwać kilka minut. Możesz czytać dalej list.
+
+ai-summary-progress-reading = Czytanie listu…
+
+ai-summary-progress-writing = Pisanie podsumowania…
+
+ai-summary-progress-checking = Sprawdzanie podsumowania…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Zostało mniej niż minuta
+        [one] Zostało około { $minutes } minuty
+        [few] Zostały około { $minutes } minuty
+        [many] Zostało około { $minutes } minut
+       *[other] Zostało około { $minutes } minut
+    }
+
+ai-summary-progress-slower = To trwa dłużej, niż oczekiwano.
+
 aiHelper-notice-title = O asystencie AI
 
-aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
+aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego urządzenia stronie, z której następuje pobieranie.
 
-aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
+aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego urządzenia stronie, z której następuje pobieranie.
 
 aiHelper-notice-testBuild = Ta wersja rozwojowa jest przeznaczona do użytku wyłącznie z fikcyjnymi plikami. Nie używaj jej z prawdziwymi informacjami o zdrowiu.
 
@@ -2044,12 +2291,62 @@ notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wy�
 notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
+notifications-autoNeedsNotices = Aby to włączyć, najpierw należy zezwolić na powiadomienia o nowych dokumentach.
 notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
 notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
+noticesStep-title = Powiadomienia z przychodni
+noticesStep-intro = Przychodnia jest połączona. myCarlos może powiadamiać o nowych dokumentach. Nic nie zostanie włączone bez zaznaczenia.
+noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $notices }”.
+noticesStep-done = Gotowe
+noticesStep-notNow = Nie teraz
 
 ai-summary-again = Podsumuj ponownie
 
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
 
 ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. Nowe odpowiedzi są wyświetlane, ale nie są zachowywane.
+
+# Catalog model list (#276A).
+
+ai-models-title = Modele na tym urządzeniu
+
+ai-models-group = Używany model
+
+ai-models-inUse = W użyciu
+
+ai-models-installed = Zainstalowany
+
+ai-models-addedByYou = Dodany przez Ciebie
+
+ai-models-notDownloaded = Niepobrany
+
+ai-models-downloading = Pobieranie
+ai-models-installing = Instalowanie
+
+ai-models-download = Pobierz
+
+ai-models-remove = Usuń
+
+ai-models-help = Model oznaczony jako W użyciu tworzy podsumowania i wyjaśnienia. Wybranie innego modelu zatrzymuje tworzoną odpowiedź.
+
+ai-models-loading = Odczytywanie listy modeli…
+
+ai-models-loadFailed = Nie udało się odczytać listy modeli. Spróbuj ponownie.
+
+ai-models-retry = Odczytaj ponownie listę modeli
+
+ai-models-starting = Rozpoczynanie pobierania…
+
+ai-models-picking = Wybierz plik modelu do dodania.
+
+ai-models-changed = Zmieniono używany model
+
+ai-summaryTooLarge = Pełne podsumowanie jest zbyt duże. Nie zapisano nowego podsumowania.
+
+personDetails-previousTitle = Poprzednie pełne imiona i nazwiska
+personDetails-previousHelp = Do 16 poprzednich pełnych imion i nazwisk pomaga wykrywać dane identyfikujące. Zmienione dane są tu proponowane; usuń je przed zapisaniem, jeśli nie chcesz ich zachować. Usunięcie dotyczy tylko tej listy; inne dokumenty i kopie zapasowe mogą je zachować.
+personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
+personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
+personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
+personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.

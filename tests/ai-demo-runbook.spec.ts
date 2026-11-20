@@ -10,6 +10,7 @@ import {
   type FakeAiSetup,
 } from "./support/aiFake";
 import { visibleHumanText } from "./support/fluent";
+import { AI_EXPLAIN_ENABLED } from "../src/ai/features";
 import {
   FAKE_PAGE_COUNT,
   fakePageText,
@@ -126,9 +127,9 @@ async function start(page: Page, setup: FakeAiSetup = {}) {
   await expect(myRecords(page)).toBeVisible();
 }
 
-async function preferences(page: Page) {
+async function aiSettings(page: Page) {
   await (
-    await named(page.locator("body"), "Preferences", "step 3 (sidebar)")
+    await named(page.locator("body"), "AI helper", "step 3 (sidebar)")
   ).click();
   return page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: /AI helper/ }),
@@ -139,7 +140,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   await start(page);
 
   // Step 3: Preferences → the AI helper row, Not installed.
-  const row = await preferences(page);
+  const row = await aiSettings(page);
   await says(row, "AI helper", "step 3");
   await says(row, "Not installed", "step 3");
   await says(
@@ -169,7 +170,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
 
   // Step 3: Download the default model → progress with Cancel → Model added.
   await holdAi(page, AI_COMMANDS.download);
-  await (await named(row, "Download the default model", "step 3")).click();
+  await (await named(row, `Download ${MODEL}`, "step 3")).click();
   await reads(
     row.getByRole("status"),
     /Downloading and checking… [\d,]+ of 3,013 MB/,
@@ -178,10 +179,12 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   await named(row, "Cancel", "step 3 (downloading)");
   await releaseAi(page, AI_COMMANDS.download);
   await says(row, "Model added", "step 3");
-  await says(row, `Installed: ${MODEL}`, "step 3");
-  await named(row, "Remove the model", "step 3");
+  await expect(
+    row.getByRole("radio", { name: MODEL, exact: true }),
+  ).toBeChecked();
+  await named(row, `Remove ${MODEL}`, "step 3");
 
-  // Step 5: Choose files to import → the three, Manual import — unverified.
+  // Step 5: Choose files to import → the three, Unverified, Manual import.
   await page
     .getByRole("button", { name: /My records/ })
     .locator("visible=true")
@@ -210,7 +213,12 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
     }
     await page.getByRole("button", { name, exact: true }).click();
     const details = page.getByRole("dialog", { name, exact: true });
-    if (first) await says(details, "Manual import — unverified", "step 5");
+    // Since #139 the details show the status and the source apart: "Unverified",
+    // then "Manual import".
+    if (first) {
+      await says(details, "Unverified", "step 5");
+      await says(details, "Manual import", "step 5");
+    }
     await (await named(details, "Read", "step 6")).click();
     const reader = page.getByRole("dialog", { name, exact: true });
     await expect(
@@ -298,7 +306,18 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
       fakePageText(name, 1),
     );
 
-    if (first) {
+    if (first && !AI_EXPLAIN_ENABLED) {
+      // Step 9 (Explain a term) is out of the demo while Explain is switched
+      // off in the UI (src/ai/features.ts), so it is skipped here and comes
+      // back with the switch. That the button is gone is checked by
+      // "offers Summary only" in ai-helper-reader.spec.ts.
+      test.info().annotations.push({
+        type: "skipped step",
+        description:
+          "runbook step 9 (Explain a term): Explain is switched off in the UI and out of the demo",
+      });
+    }
+    if (first && AI_EXPLAIN_ENABLED) {
       // Step 9: Explain a term → Word or phrase → Explain.
       await (await named(reader, "Explain a term", "step 9")).click();
       const explain = reader.getByRole("region", {
@@ -334,15 +353,15 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   for (const [model, words] of [
     [
       { state: "unsupported", reason: "ram" },
-      "This computer does not have enough memory for the AI helper (it needs about 8 GB).",
+      "This device does not have enough memory for the AI helper (it needs about 8 GB).",
     ],
     [
       { state: "unsupported", reason: "cpu" },
-      "This computer's processor is not supported by the AI helper.",
+      "This device's processor is not supported by the AI helper.",
     ],
     [
       { state: "unsupported", reason: "platform" },
-      "The AI helper is not available on this kind of computer yet.",
+      "The AI helper is not available on this kind of device yet.",
     ],
     [
       { state: "damaged" },
@@ -351,17 +370,13 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   ] as const) {
     const shown = await context.newPage();
     await start(shown, { model });
-    await says(
-      await preferences(shown),
-      words,
-      `If it stalls (${model.state})`,
-    );
+    await says(await aiSettings(shown), words, `If it stalls (${model.state})`);
     await shown.close();
   }
 
   // Refused adds and downloads.
   await start(page);
-  const row = await preferences(page);
+  const row = await aiSettings(page);
   for (const [command, outcome, words] of [
     [
       AI_COMMANDS.addPicked,
@@ -376,17 +391,17 @@ test("the runbook's 'If it stalls' messages match the app", async ({
     [
       AI_COMMANDS.addPicked,
       "notListed",
-      "This is not a file myCarlos accepts. Choose the model file listed above.",
+      "This is not a file myCarlos accepts. Choose one of the model files listed above.",
     ],
     [
       AI_COMMANDS.addPicked,
       "storage",
-      "The model could not be saved on this computer.",
+      "The model could not be saved on this device.",
     ],
     [
       AI_COMMANDS.addPicked,
       "noDisk",
-      "There is not enough free space on this computer. The model needs about 4 GB.",
+      "There is not enough free space on this device. The model needs about 4 GB.",
     ],
     [
       AI_COMMANDS.addPicked,
@@ -403,7 +418,7 @@ test("the runbook's 'If it stalls' messages match the app", async ({
     await answerAi(page, command, { outcome });
     const label =
       command === AI_COMMANDS.download
-        ? "Download the default model"
+        ? `Download ${MODEL}`
         : "Add a model file…";
     await page.getByRole("button", { name: label, exact: true }).click();
     await says(row.getByRole("alert"), words, `If it stalls (${outcome})`);
@@ -439,6 +454,6 @@ test("the runbook's 'If it stalls' messages match the app", async ({
   await open.getByRole("button", { name: "Summary", exact: true }).click();
   await refuseAi(reader, AI_COMMANDS.summarize, "aiDamaged");
   await open.getByRole("button", { name: "Summary", exact: true }).click();
-  await says(open, "The AI helper isn't on this computer yet", "If it stalls");
-  await named(open, "Open Preferences", "If it stalls");
+  await says(open, "The AI helper isn't on this device yet", "If it stalls");
+  await named(open, "Open AI helper settings", "If it stalls");
 });

@@ -25,14 +25,30 @@ mod idle;
 // some platforms.
 #[allow(dead_code)]
 mod local_model;
+// K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
+mod addressee;
+// K19 (evaluation only): the glossary post-step (pure std; tested on its own).
+mod glossary;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// Where a model's quote is in the pages: the one rule the runner, addressee and safety share
+// with the reader's `src/ai/locateQuote.ts`.
+mod quote_locate;
+mod quote_provenance;
+// K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod safety;
+mod summary_contract;
+mod summary_progress;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
 mod model_runtime;
+mod notice_key;
+#[cfg(windows)]
+mod notice_store_windows;
+mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -314,6 +330,10 @@ impl From<VaultError> for PublicText {
                     code: "approval_cancelled",
                     message_key: "portal.approvalCancelled",
                 },
+                _ if reason == Some(portal_approval::ApprovalReason::CodeAttempts) => Self {
+                    code: "approval_code_locked",
+                    message_key: "portal.codeLocked",
+                },
                 _ if reason.is_some_and(|r| r.needs_clinic()) => Self {
                     code: "approval_contact_clinic",
                     message_key: "portal.approvalContact",
@@ -334,6 +354,22 @@ impl From<VaultError> for PublicText {
             VaultError::PickupRefused => Self {
                 code: "pickup_refused",
                 message_key: "portal.errorRefused",
+            },
+            VaultError::ApprovalStillOpen => Self {
+                code: "approval_still_open",
+                message_key: "portal.approvalStillOpen",
+            },
+            VaultError::ApprovalCodeMismatch => Self {
+                code: "approval_code_mismatch",
+                message_key: "portal.codeMismatch",
+            },
+            VaultError::ApprovalCodeLocked => Self {
+                code: "approval_code_locked",
+                message_key: "portal.codeLocked",
+            },
+            VaultError::ApprovalCodeNotOpen => Self {
+                code: "approval_code_not_open",
+                message_key: "portal.codeNotOpen",
             },
             VaultError::Portal(reason) => {
                 use portal_link::LinkError;
@@ -366,11 +402,24 @@ impl From<VaultError> for PublicText {
                         code: "portal_link_device_exists",
                         message_key: "portal.errorExists",
                     },
+                    LinkError::Busy => Self {
+                        code: "portal_busy",
+                        message_key: "portal.errorBusy",
+                    },
+                    LinkError::RateLimited(_) => Self {
+                        code: "portal_rate_limited",
+                        message_key: "portal.errorRateLimited",
+                    },
                     LinkError::Cancelled => Self {
                         code: "cancelled",
                         message_key: "portal.errorCancelled",
                     },
-                    LinkError::Network | LinkError::InvalidResponse => Self {
+                    // Refusals keep the wording they had for every operation but
+                    // the status check (#131, `approval_check_issue`).
+                    LinkError::Network
+                    | LinkError::InvalidResponse
+                    | LinkError::DeviceRemoved
+                    | LinkError::HttpRefused(_, _) => Self {
                         code: "portal_link_incomplete",
                         message_key: "portal.errorIncomplete",
                     },
@@ -415,6 +464,10 @@ impl From<VaultError> for PublicText {
             VaultError::Invalid => Self {
                 code: "invalid",
                 message_key: "native.error.19",
+            },
+            VaultError::AiSummaryTooLarge => Self {
+                code: "aiSummaryTooLarge",
+                message_key: "ai.summaryTooLarge",
             },
             // The reader says it on this code: the answer is shown, not kept.
             VaultError::AiResultsFull => Self {
@@ -556,13 +609,20 @@ impl From<VaultError> for PublicError {
             VaultError::DamagedDocument(id) => Some(id),
             _ => None,
         };
+        // How long the clinic portal asked to wait, if it said (#131).
+        let retry_after_ms = match error {
+            VaultError::Portal(portal_link::LinkError::RateLimited(Some(seconds))) => {
+                Some(seconds.saturating_mul(1000))
+            }
+            _ => None,
+        };
         let PublicText { code, message_key } = PublicText::from(error);
         Self {
             code,
             message_key,
             record_id,
             note_key: None,
-            retry_after_ms: None,
+            retry_after_ms,
         }
     }
 }
@@ -1246,6 +1306,9 @@ struct TextTicket {
     pages_missing: bool,
     /// The index (from 0) of the last page the text holds.
     last_index: Option<u32>,
+    /// The document's page count, as the text read found it: a summary's last page read after a
+    /// gap is the document's own last page only if it is the last of these (E4b).
+    page_count: u32,
     /// What the pages said (`pages_digest`): a summary kept for this document must be of them.
     pages_digest: [u8; 32],
 }
@@ -1607,7 +1670,7 @@ struct RecordIdRequest {
 struct SaveAiResultRequest {
     record_id: Uuid,
     kept_id: Uuid,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "summary_contract::deserialize_sources")]
     sources: Option<Vec<Option<model_runtime::SourceSpan>>>,
 }
 
@@ -1853,6 +1916,7 @@ impl ModelAddActive {
 struct ModelAddReport<'a> {
     active: &'a ModelAddActive,
     kind: &'static str,
+    index: Option<usize>,
     reported: bool,
     index: Option<usize>,
 }
@@ -1862,6 +1926,7 @@ impl<'a> ModelAddReport<'a> {
         Self {
             active,
             kind,
+            index: None,
             reported: false,
             index: None,
         }
@@ -2180,8 +2245,9 @@ async fn ai_model_approve(
     store: State<'_, Arc<VaultStore>>,
     request: ModelHashRequest,
 ) -> CommandResult<()> {
+    let origin = store.answer_origin().ok_or(VaultError::Locked)?;
     run_blocking(store.inner(), move |store| {
-        store.approve_model(&request.sha256)
+        store.approve_model(origin, &request.sha256)
     })
     .await
 }
@@ -2298,10 +2364,17 @@ async fn ai_model_remove(
 /// and the pages must be the ones that text read gave, unchanged.
 #[tauri::command]
 async fn ai_summarize(
+    app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::SummarizeRequest,
+    mut request: model_runtime::SummarizeRequest,
+    answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    // Capture the actual unlocked session before validation can yield.
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let session = picks.session();
     let kept_for = match (request.record_id, request.ticket) {
         (Some(record_id), Some(ticket)) => {
             let text = picks.peek_text(ticket, record_id)?;
@@ -2315,20 +2388,38 @@ async fn ai_summarize(
             if sent != text.pages_digest {
                 return Err(ai_error(model_runtime::AiError::Failed));
             }
+            // The text read's own page count, not the renderer's (E4b).
+            request.page_count = Some(text.page_count);
             Some((record_id, text))
         }
         (None, None) => None,
         _ => return Err(ai_error(model_runtime::AiError::Failed)),
     };
-    let session = picks.session();
+    let sent_page_indices: Vec<_> = request.pages.iter().map(|page| page.index).collect();
     let lang = request.lang.clone();
+    let mut report = report_progress(app.clone(), answer_id);
     let result = run_ai(
         store.inner(),
-        picks.inner(),
-        session,
-        move |runtime, ticket, approved| runtime.summarize_approved(request, ticket, approved),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch, approved| {
+            runtime.summarize_for(ticket, request, watch, &mut report, approved)
+        },
     )
     .await?;
+    let read_pages =
+        model_runtime::summary_read_pages(&sent_page_indices, result.last_page, result.tail_page)
+            .ok_or_else(|| ai_error(model_runtime::AiError::Failed))?;
+    summary_contract::reserve(
+        result
+            .sentences
+            .iter()
+            .map(|s| (s.text.as_str(), s.quote.as_str())),
+        &result.model.name,
+        &result.model.sha256,
+        &lang,
+    )
+    .map_err(summary_error)?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -2341,7 +2432,7 @@ async fn ai_summarize(
                 } else {
                     0
                 },
-                last_index: result.last_page,
+                read_pages,
                 partial: text.partial(result.last_page, result.last_page_cut),
                 pages_missing: text.pages_missing,
                 model: result.model.clone(),
@@ -2360,15 +2451,26 @@ async fn ai_summarize(
 /// document, which must be a readable PDF, the answer is also kept for that document's save.
 #[tauri::command]
 async fn ai_explain(
+    app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::ExplainRequest,
+    answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    // Capture the actual unlocked session before validation can yield.
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
-        run_blocking(store.inner(), move |store| readable_pdf(store, record_id)).await?;
+        // Validation may outlive its originating session. It must not count
+        // as unowned activity in whichever session is open when it returns.
+        let store = Arc::clone(store.inner());
+        tauri::async_runtime::spawn_blocking(move || readable_pdf(&store, record_id))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))??;
     }
-    let session = picks.session();
     let (term, context, lang) = (
         request.term.trim().to_owned(),
         request.context.clone(),
@@ -2376,9 +2478,11 @@ async fn ai_explain(
     );
     let result = run_ai(
         store.inner(),
-        picks.inner(),
-        session,
-        move |runtime, ticket, approved| runtime.explain_approved(request, ticket, approved),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch, approved| {
+            runtime.explain_for(ticket, request, watch, approved)
+        },
     )
     .await?;
     let kept_id = kept_for.map(|record_id| {
@@ -2428,11 +2532,11 @@ fn ai_cancel() {
 }
 
 /// Runs `work` on the app's model runtime away from the IPC thread, only while the vault is
-/// unlocked, as activity for the idle lock when it starts and ends.
+/// unlocked, held as activity for the idle lock until it ends (`held_for_answer`).
 async fn run_ai<T, F>(
     store: &Arc<VaultStore>,
-    picks: &Arc<PendingPicks>,
-    session: u64,
+    origin: idle::AnswerOrigin,
+    announce: impl FnOnce(Duration) + Send + 'static,
     work: F,
 ) -> CommandResult<T>
 where
@@ -2440,6 +2544,7 @@ where
     F: FnOnce(
             &'static model_runtime::ModelRuntime,
             local_runner::Ticket,
+            local_runner::AnswerWatch,
             &[String],
         ) -> Result<T, model_runtime::AiError>
         + Send
@@ -2449,34 +2554,189 @@ where
     if !cfg!(desktop) {
         return Err(ai_error(AiError::NotInstalled));
     }
-    if !matches!(store.status(), Ok(VaultStatus::Unlocked)) {
-        return Err(ai_error(AiError::Cancelled));
-    }
-    let idle = Arc::clone(store.idle());
-    idle.touch(Instant::now());
     let runtime = model_runtime::app();
-    // Claim before reading approvals and checking the session. A later lock cancels this
-    // exact claim, including while the worker queues; approval data stays with this request.
-    let ticket = runtime.request_ticket();
-    let approved = store
-        .approved_models()
-        .map_err(|_| ai_error(AiError::Cancelled))?;
-    if picks.session() != session {
-        return Err(ai_error(AiError::Cancelled));
-    }
-    let picks = Arc::clone(picks);
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        if picks.session() != session {
-            return Err(AiError::Cancelled);
-        }
-        work(runtime, ticket, &approved)
+    let (hold, (ticket, approved)) = store
+        .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, |approved| {
+            (runtime.reserve_answer(), approved.to_vec())
+        })
+        .ok_or_else(|| ai_error(AiError::Cancelled))?;
+    held_for_answer(hold, announce, move |watch| {
+        work(runtime, ticket, watch, &approved)
     })
     .await
-    .map_err(|_| ai_error(AiError::Failed))?;
-    if !matches!(result, Err(AiError::Cancelled)) {
-        idle.touch(Instant::now());
+    .map_err(ai_error)
+}
+
+/// The renderer's word that an answer was asked, with its own time limit: the renderer's
+/// automatic lock waits for it that long at most, as the native one does (D19).
+const AI_ANSWER_STARTED: &str = "ai-answer-started";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiAnswerStarted {
+    answer_id: Uuid,
+    limit_ms: u64,
+}
+
+fn announce_answer(
+    app: tauri::AppHandle,
+    answer_id: Uuid,
+) -> impl FnOnce(Duration) + Send + 'static {
+    move |limit| {
+        use tauri::Emitter;
+        let limit_ms = u64::try_from(limit.as_millis()).unwrap_or(u64::MAX);
+        let _ = app.emit(
+            AI_ANSWER_STARTED,
+            AiAnswerStarted {
+                answer_id,
+                limit_ms,
+            },
+        );
     }
-    result.map_err(ai_error)
+}
+
+/// How far a summary is, for the page (#72): its stage, counts, and the time left when there is
+/// a number, keyed by the answer's id as `ai-answer-started` is, so that the page drops an
+/// abandoned answer's. Counts and seconds only, never a word. No event before the helper
+/// reads (the page's own "before" stage); checking is one event, 1 of 1.
+const AI_ANSWER_PROGRESS: &str = "ai-answer-progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiAnswerProgress {
+    answer_id: Uuid,
+    stage: &'static str,
+    done: u32,
+    total: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimate_seconds: Option<u32>,
+}
+
+impl AiAnswerProgress {
+    fn new(
+        answer_id: Uuid,
+        progress: local_runner::Progress,
+        estimate_seconds: Option<u32>,
+    ) -> Self {
+        use local_runner::Stage;
+        Self {
+            answer_id,
+            stage: match progress.stage {
+                Stage::Reading => "reading",
+                Stage::Writing => "writing",
+                Stage::Checking => "checking",
+            },
+            done: progress.done,
+            total: progress.total,
+            estimate_seconds,
+        }
+    }
+}
+
+fn report_progress(
+    app: tauri::AppHandle,
+    answer_id: Uuid,
+) -> impl FnMut(local_runner::Progress, Option<u32>) + Send + 'static {
+    move |progress, estimate_seconds| {
+        use tauri::Emitter;
+        let _ = app.emit(
+            AI_ANSWER_PROGRESS,
+            AiAnswerProgress::new(answer_id, progress, estimate_seconds),
+        );
+    }
+}
+
+#[cfg(test)]
+mod answer_progress_event_tests {
+    use super::*;
+    use local_runner::{Progress, Stage};
+
+    #[test]
+    fn the_progress_event_carries_counts_seconds_and_the_answers_id_only() {
+        let answer_id = Uuid::from_u128(7);
+        let reading = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Reading,
+                done: 512,
+                total: 1148,
+            },
+            Some(123),
+        ))
+        .unwrap();
+        assert_eq!(
+            reading,
+            serde_json::json!({
+                "answerId": answer_id.to_string(),
+                "stage": "reading",
+                "done": 512,
+                "total": 1148,
+                "estimateSeconds": 123,
+            })
+        );
+        // No number yet: no key. Checking is one step.
+        let checking = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Checking,
+                done: 1,
+                total: 1,
+            },
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            checking,
+            serde_json::json!({
+                "answerId": answer_id.to_string(),
+                "stage": "checking",
+                "done": 1,
+                "total": 1,
+            })
+        );
+        let writing = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Writing,
+                done: 3,
+                total: 10,
+            },
+            None,
+        ))
+        .unwrap();
+        assert_eq!(writing["stage"], "writing");
+    }
+}
+
+/// Runs an AI answer's `work` off the IPC thread as activity for the idle lock (D19): touched
+/// when it starts and when it ends, and held in between, however it ends (an answer, an
+/// error, a cancel, the limit). Until the answer is asked (the helper may be starting), for
+/// at most the longest answer limit; from then on, for at most that answer's own limit, which
+/// `announce` is told too. A lock still locks at once: it stops the answer and drops the hold.
+async fn held_for_answer<T: Send + 'static>(
+    hold: idle::AnswerHold,
+    announce: impl FnOnce(Duration) + Send + 'static,
+    work: impl FnOnce(local_runner::AnswerWatch) -> Result<T, model_runtime::AiError> + Send + 'static,
+) -> Result<T, model_runtime::AiError> {
+    use model_runtime::AiError;
+    if !hold.is_current() {
+        return Err(AiError::Cancelled);
+    }
+    let watch = hold.watch(announce);
+    let result = tauri::async_runtime::spawn_blocking(move || work(watch))
+        .await
+        .map_err(|_| AiError::Failed)?;
+    if !hold.finish(!matches!(result, Err(AiError::Cancelled))) {
+        return Err(AiError::Cancelled);
+    }
+    result
+}
+
+fn summary_error(error: summary_contract::Error) -> PublicError {
+    ai_error(match error {
+        summary_contract::Error::TooLarge => model_runtime::AiError::SummaryTooLarge,
+        summary_contract::Error::Invalid => model_runtime::AiError::Failed,
+    })
 }
 
 /// An AI run's failure for the renderer: its code says which; the words are the panel's.
@@ -2486,8 +2746,8 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
-        // The panel asks for the approval on the code (`aiNeedsApproval`); its own words come
-        // with the renderer's part of #276.
+        AiError::Storage => "ai.error.storage",
+        AiError::SummaryTooLarge => "ai.summaryTooLarge",
         AiError::Cancelled | AiError::Failed | AiError::NeedsApproval => "ai.failed",
     };
     PublicError {
@@ -2521,6 +2781,8 @@ struct AuditHistory {
     checked_until_ms: Option<u64>,
     /// The time of the first later entry, when there is one.
     checked_from_ms: Option<u64>,
+    /// Every event the manifest pins is shown, even when part of the storage is damaged.
+    every_event_shown: bool,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2538,6 +2800,7 @@ impl From<vault::HistoryView> for AuditHistory {
             complete: view.complete,
             checked_until_ms,
             checked_from_ms,
+            every_event_shown: view.every_event_shown,
         }
     }
 }
@@ -2695,7 +2958,13 @@ async fn vault_unlock(
 /// asked for) runs in the background, so opening never waits on the network.
 fn after_open(store: &Arc<VaultStore>) {
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || store.after_open());
+    tauri::async_runtime::spawn_blocking(move || {
+        // Notice keys of any other vault go (#230).
+        if let Some(vault_id) = store.open_vault_id() {
+            notice_key::after_open(vault_id);
+        }
+        store.after_open();
+    });
 }
 
 #[tauri::command]
@@ -2747,20 +3016,28 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
     locked
 }
 
-/// Counts time in a native picker as activity until it closes, capped by the
-/// grace, on every path.
-struct ActivityHold<'a>(&'a IdleDeadline);
+/// Counts time as activity until it is dropped, on every path, for at most
+/// its cap: a native picker until it closes (the grace), or an AI answer
+/// until it ends (its time limit).
+struct ActivityHold<'a> {
+    idle: &'a IdleDeadline,
+    id: idle::HoldId,
+}
 
 impl<'a> ActivityHold<'a> {
     fn new(idle: &'a IdleDeadline) -> Self {
-        idle.hold_started(Instant::now());
-        Self(idle)
+        Self::capped(idle, idle::GRACE)
+    }
+
+    fn capped(idle: &'a IdleDeadline, cap: Duration) -> Self {
+        let id = idle.hold_started(Instant::now(), cap);
+        Self { idle, id }
     }
 }
 
 impl Drop for ActivityHold<'_> {
     fn drop(&mut self) {
-        self.0.hold_ended(Instant::now());
+        self.idle.hold_ended(self.id, Instant::now());
     }
 }
 
@@ -2827,6 +3104,8 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// none do). `complete` says whether `entries` are the whole chain. When not, `checkedUntilMs` is
 /// the time of the last of `entries` and `checkedFromMs` the time of the first of `laterEntries`
 /// (each null when there is none), so the screen can say which events can't be checked.
+/// `everyEventShown` says the shown entries are still every event the manifest pins (only
+/// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
     audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
@@ -2895,6 +3174,162 @@ async fn vault_portal_link(
 }
 
 #[tauri::command]
+async fn vault_portal_connect(
+    store: State<'_, Arc<VaultStore>>,
+    request: PortalLinkRequest,
+) -> CommandResult<PortalConnectResult> {
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        store.connect_portal(
+            &request.portal_base,
+            &request.code,
+            &request.device_name,
+            request.profile_id,
+            now_ms(),
+            session,
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map(|(link, error)| PortalConnectResult {
+        link,
+        approval_error: error.map(PublicError::from),
+    })
+    .map_err(Into::into)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PortalConnectResult {
+    link: portal_link::LinkSummary,
+    approval_error: Option<PublicError>,
+}
+
+/// What a status check of a linked device's approval found (#131).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceApprovalCheck {
+    capture: vault::SnapshotCapture,
+    link: portal_link::LinkSummary,
+    expires_in_ms: Option<u64>,
+    issue: Option<PublicError>,
+    /// The vault went into read-only recovery during the check.
+    recovery: bool,
+}
+
+/// Why a status check could not finish, as the clinic view is told. Only
+/// here are these told apart from a connection failure (every other clinic
+/// operation keeps `portal_link_incomplete` for all of them): a reply that
+/// did not parse or verify, and a device removed from the portal account,
+/// are said and not asked again; another refusal is said plainly and
+/// retried, like a connection failure.
+fn approval_check_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Portal(LinkError::InvalidResponse) => {
+            ("approval_reply_invalid", "portal.approvalReplyInvalid")
+        }
+        VaultError::Portal(LinkError::DeviceRemoved) => {
+            ("portal_device_removed", "portal.deviceRemoved")
+        }
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("portal_refused", "portal.approvalUnanswered")
+        }
+        _ => return PublicError::from(error),
+    };
+    // A refusal may say how long to wait (maintenance sends Retry-After).
+    let retry_after_ms = match error {
+        VaultError::Portal(LinkError::HttpRefused(_, Some(seconds))) => {
+            Some(seconds.saturating_mul(1000))
+        }
+        _ => None,
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms,
+    }
+}
+
+/// A read-only status check of one linked device's approval, for the clinic
+/// view's automatic refresh (#131). It never sends or starts a request. Like
+/// the other clinic commands it is not activity: a check, however often it
+/// runs, never keeps an unattended vault open.
+#[tauri::command]
+async fn vault_refresh_device_approval(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<DeviceApprovalCheck> {
+    if !portal_client::available() {
+        return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
+    }
+    // Captured before queuing: a check queued in an older session must not
+    // read or save anything in a newer one.
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.refresh_device_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map(|check| DeviceApprovalCheck {
+            capture: check.capture,
+            link: check.link,
+            expires_in_ms: check.expires_in_ms,
+            issue: check.issue.map(approval_check_issue),
+            recovery: check.recovery,
+        })
+        .map_err(Into::into)
+}
+
+/// Why a code the patient typed was not taken (clinic code v1). A code that
+/// is not 9 digits, and a refusal by the portal, are said as such; the rest
+/// as a status check says them.
+fn approval_code_issue(error: VaultError) -> PublicError {
+    use portal_link::LinkError;
+    let (code, message_key) = match &error {
+        VaultError::Invalid => ("approval_code_format", "portal.codeFormat"),
+        VaultError::Portal(LinkError::HttpRefused(_, _)) => {
+            ("approval_code_refused", "portal.codeRefused")
+        }
+        _ => return approval_check_issue(error),
+    };
+    PublicError {
+        code,
+        message_key,
+        record_id: None,
+        note_key: None,
+        retry_after_ms: None,
+    }
+}
+
+/// Takes the code a clinic emailed for a linked device's open request
+/// (clinic code v1). It is checked natively and sent to the portal only if it
+/// matches this clinic; it is never saved or logged, and the typed text is
+/// wiped here once used.
+#[tauri::command]
+async fn vault_submit_approval_code(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+    mut code: String,
+) -> CommandResult<()> {
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = store.submit_approval_code(link_id, &code, session);
+        code.zeroize();
+        result
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(approval_code_issue)
+}
+
+#[tauri::command]
 async fn vault_request_device_approval(
     store: State<'_, Arc<VaultStore>>,
     link_id: Uuid,
@@ -2915,6 +3350,20 @@ async fn vault_restart_device_approval(
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.inner());
     tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+/// Try again (#143): forgets a clinic's remembered refusals, so that the next
+/// check downloads and checks its documents again.
+#[tauri::command]
+async fn vault_forget_refused_deliveries(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map_err(Into::into)
@@ -4200,6 +4649,123 @@ fn vault_view_cancel() {
     pdf_view::cancel_views();
 }
 
+/// Where a quoted span of a page's text is on the page picture (#292).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageBoxesRequest {
+    record_id: Uuid,
+    page: u32,
+    /// The span, in UTF-16 units of the page's readable text.
+    start: u32,
+    end: u32,
+    /// The text the span holds, as the reader read it: the helper checks it is the same.
+    quoted: String,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for PageBoxesRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// The quote's rectangles on the page picture, one per line run, as fractions of its width
+/// and height from the top left ([left, top, right, bottom]); none, and why, when the helper
+/// cannot place every word of it exactly.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PageBoxesAnswer {
+    rects: Vec<[f64; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    absent: Option<&'static str>,
+}
+
+impl PageBoxesAnswer {
+    fn from_outcome(outcome: pdf_view::BoxesOutcome, given: bool) -> Result<Self, VaultError> {
+        use pdf_unlock::Refusal;
+        use pdf_view::BoxesOutcome;
+        match outcome {
+            BoxesOutcome::Found(rects) => Ok(Self {
+                rects: rects
+                    .into_iter()
+                    .map(|rect| rect.map(|side| f64::from(side) / page_boxes::UNIT))
+                    .collect(),
+                absent: None,
+            }),
+            BoxesOutcome::Absent(absent) => Ok(Self {
+                rects: Vec::new(),
+                absent: Some(absent.name()),
+            }),
+            BoxesOutcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            BoxesOutcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            BoxesOutcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            BoxesOutcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            BoxesOutcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            BoxesOutcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
+            BoxesOutcome::Cancelled => Err(VaultError::Cancelled),
+            BoxesOutcome::Refused(_) | BoxesOutcome::Failed => Err(VaultError::PdfViewFailed),
+        }
+    }
+}
+
+/// Where a quote from a page's text is on the page picture, for Show in document (#292). The
+/// record is decrypted into memory only and handed to the PDF helper, as for a page view
+/// (`pdf_view::boxes_in_helper`). A newer such request, a lock or the reader closing stops it;
+/// a page request does not.
+#[tauri::command]
+async fn vault_page_boxes(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: PageBoxesRequest,
+) -> CommandResult<PageBoxesAnswer> {
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+        || request.quoted.len() > page_boxes::MAX_SPAN_TEXT_BYTES
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let (record_id, page) = (request.record_id, request.page);
+    let span = (request.start, request.end);
+    let quoted = std::mem::take(&mut request.quoted);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    let ticket = pdf_view::ViewTicket::boxes();
+    let result = run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.read_for_view(record_id, &mut *document)?;
+        PageBoxesAnswer::from_outcome(
+            pdf_view::boxes_in_helper(&document, &password, page, span, &quoted, &ticket),
+            given,
+        )
+    })
+    .await;
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
+}
+
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4416,6 +4982,7 @@ async fn vault_document_text(
                 && text.cut_pages.is_empty()
                 && text.failed_pages.is_empty()),
             last_index: text.pages.last().map(|page| page.index),
+            page_count: text.page_count,
             pages_digest: pages_digest(
                 text.pages
                     .iter()
@@ -4808,7 +5375,8 @@ async fn vault_ai_result_save(
         .kept_ai_answer(request.kept_id, request.record_id)
         .ok_or(vault::VaultError::Invalid)?;
     let (input, content) = answer
-        .content(request.sources.as_deref())
+        .checked_content(request.sources.as_deref())
+        .map_err(summary_error)?
         .ok_or(vault::VaultError::Invalid)?;
     // Still checked as the reader's answers are: the caps, and the model that
     // last answered here.
@@ -4933,6 +5501,8 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // Its notice keys go with it (#230).
+    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner()).await;
     Ok(true)
@@ -5120,6 +5690,9 @@ pub fn run() {
                     .join("vault-home")
                     .join("attempts.json"),
             ))));
+            // Notice keys (#230) live beside `vault-home` too, so no vault
+            // backup holds them.
+            notice_key::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -5191,12 +5764,16 @@ pub fn run() {
             vault_snapshot,
             vault_history,
             vault_portal_link,
+            vault_portal_connect,
             vault_check_documents,
+            vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
             vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,
+            vault_refresh_device_approval,
+            vault_submit_approval_code,
             vault_change_passphrase,
             vault_recovery_key_begin,
             vault_recovery_key_confirm,
@@ -5225,6 +5802,7 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_page_boxes,
             vault_document_text,
             vault_document_text_cancel,
             vault_record_known_details,
@@ -5586,6 +6164,65 @@ mod tests {
     }
 
     #[test]
+    fn a_clinic_portal_asking_to_wait_says_how_long_and_is_not_a_connection_failure() {
+        use portal_link::LinkError;
+        let waited = PublicError::from(VaultError::Portal(LinkError::RateLimited(Some(30))));
+        assert_eq!(waited.code, "portal_rate_limited");
+        assert_eq!(waited.retry_after_ms, Some(30_000));
+        let value = serde_json::to_value(&waited).unwrap();
+        assert_eq!(value["retryAfterMs"], 30_000);
+        let unsaid = PublicError::from(VaultError::Portal(LinkError::RateLimited(None)));
+        assert_eq!(unsaid.code, "portal_rate_limited");
+        assert!(serde_json::to_value(&unsaid).unwrap()["retryAfterMs"].is_null());
+        for other in [
+            LinkError::Network,
+            LinkError::InvalidResponse,
+            LinkError::Busy,
+        ] {
+            let error = PublicError::from(VaultError::Portal(other));
+            assert_ne!(error.code, "portal_rate_limited");
+            assert_eq!(error.retry_after_ms, None);
+        }
+    }
+
+    #[test]
+    fn a_status_check_tells_a_reply_that_did_not_verify_apart_from_no_connection() {
+        use portal_link::LinkError;
+        let invalid = approval_check_issue(VaultError::Portal(LinkError::InvalidResponse));
+        assert_eq!(invalid.code, "approval_reply_invalid");
+        assert_eq!(invalid.message_key, "portal.approvalReplyInvalid");
+        assert!(public_error_text(&invalid).contains("Contact your clinic"));
+        let offline = approval_check_issue(VaultError::Portal(LinkError::Network));
+        assert_eq!(offline.code, "portal_link_incomplete");
+        let waiting = approval_check_issue(VaultError::Portal(LinkError::RateLimited(Some(9))));
+        assert_eq!(
+            (waiting.code, waiting.retry_after_ms),
+            ("portal_rate_limited", Some(9_000))
+        );
+        assert_eq!(
+            approval_check_issue(VaultError::Portal(LinkError::DeviceRemoved)).code,
+            "portal_device_removed"
+        );
+        let maintenance =
+            approval_check_issue(VaultError::Portal(LinkError::HttpRefused(503, Some(300))));
+        assert_eq!(
+            (maintenance.code, maintenance.retry_after_ms),
+            ("portal_refused", Some(300_000))
+        );
+        // Every other clinic operation keeps its existing code.
+        for kept in [
+            LinkError::InvalidResponse,
+            LinkError::DeviceRemoved,
+            LinkError::HttpRefused(404, None),
+        ] {
+            assert_eq!(
+                PublicError::from(VaultError::Portal(kept)).code,
+                "portal_link_incomplete"
+            );
+        }
+    }
+
+    #[test]
     fn a_secret_tried_too_soon_after_wrong_ones_waits_and_says_so() {
         let throttle = Arc::new(AttemptThrottle::new(None));
         let wrong = || async { Err::<(), _>(PublicError::from(VaultError::WrongPassphrase)) };
@@ -5643,7 +6280,11 @@ mod tests {
             ),
             (
                 "async fn vault_reset(",
-                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
+                concat!(
+                    "VaultStore::reset).await?; ",
+                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "forget_vault(throttle.inner()).await; Ok(true)",
+                ),
             ),
             (
                 "async fn vault_restore(",
@@ -5901,6 +6542,7 @@ mod tests {
             truncated,
             pages_missing: false,
             last_index,
+            page_count: 4,
             pages_digest: [0; 32],
         };
         assert!(!ticket(false, Some(3)).partial(3, false));
@@ -5917,11 +6559,17 @@ mod tests {
             (
                 AiError::NotInstalled,
                 "aiNotInstalled",
-                "isn't on this computer",
+                "isn't on this device",
             ),
-            (AiError::Damaged, "aiDamaged", "isn't on this computer"),
+            (AiError::Damaged, "aiDamaged", "isn't on this device"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
+            (AiError::Storage, "aiStorage", "could not be read"),
+            (
+                AiError::SummaryTooLarge,
+                "aiSummaryTooLarge",
+                "complete summary is too large",
+            ),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -6085,7 +6733,15 @@ mod tests {
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .collect();
         files.sort();
-        assert_eq!(files, ["appearance.json", "default.json", "zoom.json"]);
+        assert_eq!(
+            files,
+            [
+                "appearance.json",
+                "default.json",
+                "events.json",
+                "zoom.json"
+            ]
+        );
     }
 
     #[test]
@@ -6104,6 +6760,74 @@ mod tests {
             appearance["permissions"],
             serde_json::json!(["core:window:allow-set-theme"])
         );
+    }
+
+    #[test]
+    fn the_page_may_listen_for_the_apps_events_and_nothing_wider() {
+        // The AI helper follows a model download through listen()
+        // ("ai-model-add-progress", "ai-model-add-ended"). Tauri refuses listen()
+        // unless a capability grants it, and a refused listen showed no progress
+        // bar in the built app while every mocked test passed. So: the grant is
+        // there whenever a page file listens, it is listen and unlisten only (the
+        // page never emits), and only the main window on a computer has it.
+        let events: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/events.json")).unwrap();
+        assert_eq!(events["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            events["platforms"],
+            serde_json::json!(["windows", "macOS", "linux"])
+        );
+        assert_eq!(
+            events["permissions"],
+            serde_json::json!(["core:event:allow-listen", "core:event:allow-unlisten"])
+        );
+        fn page_files(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    page_files(&path, found);
+                } else if path.extension().is_some_and(|e| e == "ts" || e == "tsx")
+                    && !path.to_string_lossy().contains(".test.")
+                {
+                    found.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        page_files(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../src")),
+            &mut files,
+        );
+        let listening: Vec<_> = files
+            .iter()
+            .filter(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .contains("\"@tauri-apps/api/event\"")
+            })
+            .collect();
+        // The grant is only for pages that listen; without one it must go.
+        assert!(!listening.is_empty());
+        // No capability file grants emitting or the whole event or core set.
+        for name in [
+            "appearance.json",
+            "default.json",
+            "events.json",
+            "zoom.json",
+        ] {
+            let text = std::fs::read_to_string(format!(
+                "{}/capabilities/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap();
+            for wider in [
+                "core:default",
+                "core:event:default",
+                "core:event:allow-emit",
+            ] {
+                assert!(!text.contains(wider), "{name} grants {wider}");
+            }
+        }
     }
 
     #[test]
@@ -6390,6 +7114,218 @@ mod tests {
         }
         // Closed just now, so the delay restarts from here.
         assert!(!idle.is_due(due_at(armed_at)));
+        assert!(idle.is_due(idle_past(Instant::now())));
+    }
+
+    fn held_test_answer<T: Send + 'static>(
+        idle: &Arc<IdleDeadline>,
+        announce: impl FnOnce(Duration) + Send + 'static,
+        work: impl FnOnce(local_runner::AnswerWatch) -> Result<T, model_runtime::AiError>
+            + Send
+            + 'static,
+    ) -> impl std::future::Future<Output = Result<T, model_runtime::AiError>> {
+        let origin = idle.answer_origin();
+        let idle = Arc::clone(idle);
+        async move {
+            let origin = origin.ok_or(model_runtime::AiError::Cancelled)?;
+            let (hold, ()) = idle
+                .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, |_| ())
+                .ok_or(model_runtime::AiError::Cancelled)?;
+            held_for_answer(hold, announce, work).await
+        }
+    }
+
+    #[test]
+    fn ownership_a_vault_origin_cannot_admit_after_reunlock() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let old = store.answer_origin().unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(store
+            .admit_answer(old, model_runtime::ANSWER_LIMIT.ceiling, |_| panic!(
+                "old command reserved a new ticket"
+            ))
+            .is_none());
+        let current = store.answer_origin().unwrap();
+        let (hold, reserved) = store
+            .admit_answer(current, model_runtime::ANSWER_LIMIT.ceiling, |_| 7)
+            .unwrap();
+        assert_eq!(reserved, 7);
+        assert!(hold.is_current());
+        assert!(hold.finish(true));
+    }
+
+    #[test]
+    fn ownership_a_delayed_old_admission_cannot_hold_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        // The old command passed its unlocked check, then waited before admission.
+        let old = held_test_answer(
+            &idle,
+            |_| (),
+            move |_watch| {
+                assert!(
+                    inside.is_due(idle_past(Instant::now())),
+                    "old admission must not hold the new session"
+                );
+                Ok(())
+            },
+        );
+        idle.disarm();
+        idle.arm(start);
+        assert!(matches!(
+            tauri::async_runtime::block_on(old),
+            Err(model_runtime::AiError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn ownership_old_watch_and_completion_cannot_touch_a_new_session() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let inside = Arc::clone(&idle);
+        let announced = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let heard = Arc::clone(&announced);
+        let result = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            move |_| {
+                heard.store(true, Ordering::SeqCst);
+            },
+            move |watch| {
+                inside.disarm();
+                inside.arm(start);
+                std::thread::sleep(Duration::from_millis(2));
+                watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    inside.is_due(idle_past(start)),
+                    "old watch must not postpone the new session"
+                );
+                Ok(())
+            },
+        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
+        assert!(
+            !announced.load(Ordering::SeqCst),
+            "old watch must not announce into a new session"
+        );
+        assert!(
+            idle.is_due(idle_past(start)),
+            "old completion must not restart the new deadline"
+        );
+    }
+
+    #[test]
+    fn ownership_a_new_answer_retires_the_old_answer_but_not_a_picker() {
+        let start = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(start));
+        idle.arm(start);
+        let _picker = ActivityHold::new(&idle);
+        let inside = Arc::clone(&idle);
+        let result = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| (),
+            move |old_watch| {
+                tauri::async_runtime::block_on(held_test_answer(
+                    &inside,
+                    |_| (),
+                    |_new_watch| Ok(()),
+                ))
+                .unwrap();
+                old_watch(model_runtime::ANSWER_LIMIT.ceiling);
+                assert!(
+                    !inside.is_due(idle_past(start + Duration::from_secs(10 * 60))),
+                    "the picker must remain held"
+                );
+                assert!(
+                    inside.is_due(idle_past(start + idle::GRACE + Duration::from_secs(1))),
+                    "the superseded answer must not extend the picker cap"
+                );
+                Ok(())
+            },
+        ));
+        assert_eq!(result, Err(model_runtime::AiError::Cancelled));
+    }
+
+    #[test]
+    fn an_answer_holds_the_idle_lock_until_it_ends_never_past_its_own_limit() {
+        let armed_at = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(armed_at));
+        idle.arm(armed_at);
+        let (told, heard) = std::sync::mpsc::channel();
+        let inside = Arc::clone(&idle);
+        let limit = Duration::from_secs(6 * 60);
+        let answered = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            move |limit| told.send(limit).unwrap(),
+            move |watch| {
+                // While the helper starts: held, for at most the longest limit.
+                let starting = Instant::now();
+                assert!(!inside.is_due(idle_past(starting)));
+                assert!(inside.is_due(idle_past(starting + model_runtime::ANSWER_LIMIT.ceiling)));
+                // Asked, with its own limit: held for at most that long.
+                watch(limit);
+                let asked = Instant::now();
+                assert!(!inside.is_due(idle_past(asked)));
+                assert!(inside.is_due(idle_past(asked + limit)));
+                Ok("FAKE answer")
+            },
+        ));
+        assert_eq!(answered, Ok("FAKE answer"));
+        // The renderer is told the same limit, for its own deadline.
+        assert_eq!(heard.try_recv(), Ok(limit));
+        // Ended just now: the delay runs from here, and nothing holds it.
+        let ended = Instant::now();
+        assert!(!idle.is_due(ended + Duration::from_secs(15 * 60)));
+        assert!(idle.is_due(idle_past(ended)));
+    }
+
+    #[test]
+    fn an_answers_hold_ends_however_the_answer_ends() {
+        use model_runtime::AiError;
+        // An answer; a refusal; a cancel (the panel closed, a newer request);
+        // and a failure, as an answer stopped at its limit ends.
+        for ending in [
+            Ok(()),
+            Err(AiError::Memory),
+            Err(AiError::Cancelled),
+            Err(AiError::Failed),
+        ] {
+            let armed_at = Instant::now();
+            let idle = Arc::new(IdleDeadline::new(armed_at));
+            idle.arm(armed_at);
+            let result = tauri::async_runtime::block_on(held_test_answer(
+                &idle,
+                |_| (),
+                move |watch| {
+                    watch(model_runtime::ANSWER_LIMIT.ceiling);
+                    ending
+                },
+            ));
+            assert_eq!(result, ending);
+            assert!(idle.is_due(idle_past(Instant::now())), "{ending:?}");
+        }
+        // Before the answer is asked (a failed start), and a run that panics.
+        let armed_at = Instant::now();
+        let idle = Arc::new(IdleDeadline::new(armed_at));
+        idle.arm(armed_at);
+        let refused = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| panic!("no answer was asked"),
+            |_watch| Err::<(), _>(AiError::NotInstalled),
+        ));
+        assert_eq!(refused, Err(AiError::NotInstalled));
+        assert!(idle.is_due(idle_past(Instant::now())));
+        let panicked = tauri::async_runtime::block_on(held_test_answer(
+            &idle,
+            |_| (),
+            |_watch| -> Result<(), AiError> { panic!("FAKE helper failure") },
+        ));
+        assert_eq!(panicked, Err(AiError::Failed));
         assert!(idle.is_due(idle_past(Instant::now())));
     }
 
@@ -6731,7 +7667,32 @@ mod tests {
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");
         let command_marker = ["#[tauri", "::command]"].concat();
-        assert_eq!(permissions.len(), library.matches(&command_marker).count());
+        // A command whose feature is switched off in the screens stays declared, compiled and
+        // tested, but is granted only while its flag in src/ai/features.ts is on (with
+        // removeUnusedCommands, Tauri then leaves it out of the handler). The flag and the grant
+        // change together.
+        // Each switched-off command with the flag in features.ts that switches it on.
+        const SWITCHABLE: &[(&str, &str)] = &[("ai_explain", "AI_EXPLAIN_ENABLED")];
+        let features = include_str!("../../src/ai/features.ts");
+        let mut not_granted = 0;
+        for &(command, flag) in SWITCHABLE {
+            let on = features.contains(&format!("export const {flag}: boolean = true;"));
+            let off = features.contains(&format!("export const {flag}: boolean = false;"));
+            assert!(on != off, "{flag} must be a plain true or false constant");
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            let granted = permissions.contains(&grant.as_str());
+            assert_eq!(
+                granted, on,
+                "{grant} must be granted exactly when {flag} is on"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += usize::from(!granted);
+        }
+        assert_eq!(
+            permissions.len() + not_granted,
+            library.matches(&command_marker).count()
+        );
         for permission in permissions {
             assert!(!permission.contains(':'));
             let command = permission.strip_prefix("allow-").unwrap().replace('-', "_");
@@ -6867,6 +7828,62 @@ mod tests {
     }
 
     #[test]
+    fn model_selection_accepts_only_an_index_without_paths_or_unknown_fields() {
+        let chosen: ModelIndexRequest =
+            serde_json::from_value(serde_json::json!({"index": 1})).unwrap();
+        assert_eq!(chosen.index, 1);
+        for value in [
+            serde_json::json!({"index": -1}),
+            serde_json::json!({"index": 0.5}),
+            serde_json::json!({"index": "1"}),
+            serde_json::json!({"path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "path": "/FAKE/model.gguf"}),
+            serde_json::json!({"index": 1, "sha256": "arbitrary"}),
+        ] {
+            assert!(serde_json::from_value::<ModelIndexRequest>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn model_add_metadata_keeps_the_download_row_but_picker_checks_stay_global() {
+        let active = ModelAddActive::default();
+        let mut report = ModelAddReport::new(&active, "download");
+        report.index = Some(1);
+        report.progress(5, 10);
+        let snapshot = active.get().unwrap();
+        assert_eq!(snapshot.index, Some(1));
+        let encoded = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(encoded["index"], 1);
+        assert_eq!(encoded["done"], 5);
+        drop(ModelAddReport::new(&active, "check"));
+        assert_eq!(active.get(), Some(snapshot));
+        drop(report);
+        assert_eq!(active.get(), None);
+
+        let mut picked = ModelAddReport::new(&active, "check");
+        picked.progress(2, 20);
+        let check = serde_json::to_value(active.get().unwrap()).unwrap();
+        assert!(check.get("index").is_none());
+        let legacy = serde_json::to_value(ModelAddProgress {
+            done: 2,
+            total: 20,
+            index: None,
+        })
+        .unwrap();
+        assert_eq!(legacy, serde_json::json!({"done": 2, "total": 20}));
+        let indexed = serde_json::to_value(ModelAddProgress {
+            done: 5,
+            total: 10,
+            index: Some(1),
+        })
+        .unwrap();
+        assert_eq!(
+            indexed,
+            serde_json::json!({"done": 5, "total": 10, "index": 1})
+        );
+    }
+
+    #[test]
     fn model_add_admission_stays_held_until_completion_is_emitted() {
         use std::sync::mpsc;
         use std::time::Duration;
@@ -6940,6 +7957,7 @@ mod tests {
                     active.get(),
                     Some(ModelAddNow {
                         kind: "check",
+                        index: None,
                         done: 2,
                         total: 20,
                         index: None,
@@ -7001,6 +8019,220 @@ mod tests {
             let _ = serde_json::from_slice::<HideUnavailableRequest>(&payload);
             let _ = serde_json::from_slice::<ResetRequest>(&payload);
         }
+    }
+}
+
+#[cfg(test)]
+mod historical_identifier_export_tests {
+    use super::*;
+
+    #[test]
+    fn native_text_export_refuses_a_former_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "Zorvana")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Zorvana".to_owned(),
+        };
+        // The current label alone must not reject the unique former token.
+        let current_only = vec!["FAKE Neralis".to_owned()];
+        assert!(text_recheck::identifier_hits("Zorvana", &current_only, &[]).is_empty());
+        assert!(!text_recheck::identifier_hits("Neralis", &current_only, &[]).is_empty());
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn profile_details_ipc_distinguishes_omission_clear_and_invalid_null() {
+        let profile = Uuid::new_v4();
+        let request = |details| serde_json::json!({"profileId":profile,"details":details,"today":"2026-11-09"});
+        let omitted: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({}))).unwrap();
+        assert!(omitted.details.previous_full_names.is_none());
+        let cleared: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({"previousFullNames":[]}))).unwrap();
+        assert_eq!(cleared.details.previous_full_names, Some(vec![]));
+        assert!(serde_json::from_value::<ProfileDetailsRequest>(request(
+            serde_json::json!({"previousFullNames":null})
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn native_text_export_refuses_a_previous_full_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        // The baseline uses every authoritative current, historical and delivery
+        // source. This canary must depend only on the explicit previous-name list.
+        let baseline = store.known_identifiers(record).unwrap();
+        assert!(
+            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        assert!(
+            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        let now = 1_792_713_600_000;
+        store
+            .update_profile_details(
+                profile,
+                vault::ProfileDetails {
+                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
+                    ..Default::default()
+                },
+                &vault::utc_date_text(now),
+                now,
+            )
+            .unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "Velorina")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Velorina".to_owned(),
+        };
+        let with_previous = store.known_identifiers(record).unwrap();
+        let hits = text_recheck::identifier_hits(
+            "Velorina",
+            &with_previous.names,
+            &with_previous.birth_dates,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].start, hits[0].end), (0, 8));
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
     }
 }
 
@@ -7985,6 +9217,7 @@ mod native_localization_tests {
             VaultError::NotFound,
             VaultError::Invalid,
             VaultError::AiResultsFull,
+            VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
@@ -8084,6 +9317,91 @@ mod native_localization_tests {
 }
 
 #[cfg(test)]
+mod event_permission_ipc_tests {
+    use super::*;
+
+    fn request(cmd: &str, body: serde_json::Value) -> tauri::webview::InvokeRequest {
+        let local = if cfg!(any(windows, target_os = "android")) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        };
+        tauri::webview::InvokeRequest {
+            cmd: cmd.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: local.parse().unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.into(),
+        }
+    }
+
+    /// With the real generated capability authority (only the OS runtime is mocked), as the
+    /// built app checks it: the main window may listen for every event the page listens to (the
+    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
+    /// emit, and no other window may listen.
+    #[test]
+    fn the_main_window_may_listen_for_events_and_may_not_emit() {
+        let app = tauri::test::mock_builder()
+            .build(production_context())
+            .unwrap();
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let other = tauri::WebviewWindowBuilder::new(&app, "FAKE-ungranted", Default::default())
+            .build()
+            .unwrap();
+        let listen = |event: &str| {
+            request(
+                "plugin:event|listen",
+                serde_json::json!({ "event": event, "target": { "kind": "Any" }, "handler": 7 }),
+            )
+        };
+        for event in [
+            "ai-model-add-progress",
+            "ai-model-add-ended",
+            "ai-answer-started",
+            "ai-answer-progress",
+        ] {
+            let id = tauri::test::get_ipc_response(&main, listen(event))
+                .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
+                .deserialize::<serde_json::Value>()
+                .unwrap();
+            tauri::test::get_ipc_response(
+                &main,
+                request(
+                    "plugin:event|unlisten",
+                    serde_json::json!({ "event": event, "eventId": id }),
+                ),
+            )
+            .unwrap_or_else(|refused| panic!("unlisten {event}: {refused}"));
+        }
+        let Err(refused) = tauri::test::get_ipc_response(&other, listen("ai-model-add-progress"))
+        else {
+            panic!("another window must not listen");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
+        let Err(refused) = tauri::test::get_ipc_response(
+            &main,
+            request(
+                "plugin:event|emit",
+                serde_json::json!({ "event": "FAKE-page-event", "payload": null }),
+            ),
+        ) else {
+            panic!("the page must not emit");
+        };
+        assert!(
+            refused.as_str().unwrap().contains("not allowed"),
+            "{refused}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod audit_history_ipc_tests {
     use super::*;
 
@@ -8152,6 +9470,7 @@ mod audit_history_ipc_tests {
                 entries,
                 later,
                 complete,
+                every_event_shown: complete,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -8231,11 +9550,13 @@ mod audit_history_ipc_tests {
                 "checkedUntilMs",
                 "complete",
                 "entries",
+                "everyEventShown",
                 "laterEntries"
             ]
             .into()
         );
         assert_eq!(response["complete"], true);
+        assert_eq!(response["everyEventShown"], true);
         assert!(response["checkedUntilMs"].is_null());
         let rows = &response["entries"];
         assert_eq!(rows[0]["event"], "created");
@@ -8284,7 +9605,8 @@ mod audit_history_ipc_tests {
                 "laterEntries": [],
                 "complete": false,
                 "checkedUntilMs": null,
-                "checkedFromMs": null
+                "checkedFromMs": null,
+                "everyEventShown": false
             })
         );
         store.lock();
@@ -8294,3 +9616,93 @@ mod audit_history_ipc_tests {
         assert_eq!(locked["code"], "locked");
     }
 }
+
+#[cfg(test)]
+mod page_boxes_command_tests {
+    use super::*;
+    use pdf_unlock::Refusal;
+    use pdf_view::BoxesOutcome;
+
+    #[test]
+    fn the_answer_gives_fractions_or_none_with_why_and_refusals_as_for_a_page() {
+        assert_eq!(
+            PageBoxesAnswer::from_outcome(
+                BoxesOutcome::Found(vec![[0, 6_553, 65_535, 13_107]]),
+                false
+            )
+            .unwrap(),
+            PageBoxesAnswer {
+                rects: vec![[0.0, 6_553.0 / 65_535.0, 1.0, 13_107.0 / 65_535.0]],
+                absent: None,
+            }
+        );
+        let absent =
+            PageBoxesAnswer::from_outcome(BoxesOutcome::Absent(page_boxes::Absent::Skewed), false)
+                .unwrap();
+        assert!(absent.rects.is_empty());
+        assert_eq!(
+            serde_json::to_value(&absent).unwrap(),
+            serde_json::json!({"rects": [], "absent": "skewed"})
+        );
+        assert_eq!(
+            serde_json::to_value(
+                PageBoxesAnswer::from_outcome(BoxesOutcome::Found(vec![[1, 2, 3, 4]]), false)
+                    .unwrap()
+            )
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+            ["rects"]
+        );
+        for (outcome, given, error) in [
+            (
+                BoxesOutcome::Refused(Refusal::WrongPassword),
+                true,
+                VaultError::PdfWrongPassword,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::WrongPassword),
+                false,
+                VaultError::PdfLocked,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::NoSuchPage),
+                false,
+                VaultError::Invalid,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::Damaged),
+                false,
+                VaultError::PdfViewFailed,
+            ),
+            (BoxesOutcome::Cancelled, false, VaultError::Cancelled),
+            (BoxesOutcome::NoSandbox, false, VaultError::PdfViewNoSandbox),
+            (BoxesOutcome::Failed, false, VaultError::PdfViewFailed),
+        ] {
+            assert_eq!(
+                std::mem::discriminant(&PageBoxesAnswer::from_outcome(outcome, given).unwrap_err()),
+                std::mem::discriminant(&error)
+            );
+        }
+    }
+
+    #[test]
+    fn the_boxes_command_wipes_the_password_and_runs_off_the_main_thread() {
+        let source = include_str!("lib.rs");
+        let body = |name: &str| {
+            let start = source.find(name).unwrap();
+            &source[start..start + source[start..].find("\n}\n").unwrap()]
+        };
+        let command = body("async fn vault_page_boxes(");
+        assert!(command.contains("run_blocking("));
+        assert!(command.contains("pdf_view::ViewTicket::boxes()"));
+        assert!(command.contains("pdf_view::boxes_in_helper("));
+        assert!(body("impl Drop for PageBoxesRequest").contains("password.zeroize()"));
+        assert!(source.contains("            vault_page_boxes,\n"));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod extraction_acceptance_tests;

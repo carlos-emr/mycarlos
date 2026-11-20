@@ -218,6 +218,37 @@ impl<A: ApprovalExchange> ApprovalExchange for BoundedApproval<'_, A> {
             result
         }
     }
+    // A clinic code is sent only from the clinic view, never by a background
+    // check; bounded the same way all the same, as the trait asks (#141).
+    fn submit_code(
+        &self,
+        link: &StoredLink,
+        attempt: &Attempt,
+        code_r: &str,
+        anchor: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(), VaultError> {
+        if !self.control.request() {
+            return Err(VaultError::Cancelled);
+        }
+        let deadline = Instant::now() + METADATA_TIME;
+        let stop =
+            || cancelled() || (self.stop)() || self.control.stopped() || Instant::now() >= deadline;
+        if stop() {
+            return Err(VaultError::Cancelled);
+        }
+        let result = self.inner.submit_code(link, attempt, code_r, anchor, &stop);
+        if stop() {
+            Err(VaultError::Cancelled)
+        } else {
+            result
+        }
+    }
+    // The portal's clock from the last status read, so a background check
+    // decides whether a request is still open as a manual one does (#131).
+    fn portal_time(&self) -> Option<u64> {
+        self.inner.portal_time()
+    }
 }
 
 pub(crate) fn check_cycle<F, A>(
@@ -318,6 +349,11 @@ where
     // A saved candidate is insufficient: only a currently signed accepted link
     // is eligible for implicit collection. Explicit manual approval is separate.
     links.retain(crate::portal_approval::currently_approved);
+    // A device this run of the app found gone from its portal (#168; a manual,
+    // after-unlock, status or earlier background check found it) is not asked
+    // again. Left out before the rotation, so it spends none of the cycle's
+    // link visits.
+    links.retain(|link| !store.link_gone(link.id));
     let deferred = cache
         .retry_first
         .take()
@@ -414,7 +450,21 @@ where
                         false,
                     )?;
                     if reply.status != 200 {
-                        return Err(VaultError::Portal(LinkError::Network));
+                        // A portal that removed this device says so (#128, as
+                        // the manual check reads it); any other answer is not
+                        // one this check can use. A "not found" for the list is
+                        // a network failure here on purpose: the manual check's
+                        // rule (another device of this vault answered by the
+                        // same portal) is not applied. A device a reset portal
+                        // deleted is asked again until a manual or after-unlock
+                        // check marks it gone, which happens at the next unlock.
+                        return Err(VaultError::Portal(
+                            if crate::portal_approval::device_removed(&reply) {
+                                LinkError::DeviceRemoved
+                            } else {
+                                LinkError::Network
+                            },
+                        ));
                     }
                     let page: Page = serde_json::from_slice(&reply.body).map_err(|_| {
                         cache.slots[i].as_mut().unwrap().pause();
@@ -551,6 +601,14 @@ where
             if !crate::portal_pickup::is_per_link_failure(&error) {
                 return Err(error);
             }
+            // The portal said this device was removed: not asked again in
+            // this run of the app (#168).
+            if matches!(
+                error,
+                VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved)
+            ) {
+                store.mark_link_gone(original.id);
+            }
         }
     }
     Ok(result)
@@ -604,6 +662,51 @@ mod tests {
         assert_eq!(s.after, 99);
     }
     #[test]
+    fn bounded_approval_passes_on_the_portal_clock() {
+        // Without it a background check read the default (none) and fell back
+        // to this device's clock where the portal had given its own (#131).
+        struct Clock;
+        impl ApprovalExchange for Clock {
+            fn get(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &dyn Fn() -> bool,
+            ) -> Result<Option<Attempt>, VaultError> {
+                unreachable!("only the clock is read")
+            }
+            fn post(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &str,
+                _: &dyn Fn() -> bool,
+            ) -> Result<Attempt, VaultError> {
+                unreachable!("only the clock is read")
+            }
+            fn submit_code(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &str,
+                _: &str,
+                _: &dyn Fn() -> bool,
+            ) -> Result<(), VaultError> {
+                unreachable!("only the clock is read")
+            }
+            fn portal_time(&self) -> Option<u64> {
+                Some(1_700_000_000)
+            }
+        }
+        let control = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)));
+        let bound = BoundedApproval {
+            inner: &Clock,
+            control: &control,
+            stop: &|| false,
+        };
+        assert_eq!(bound.portal_time(), Some(1_700_000_000));
+    }
+    #[test]
     fn approval_get_and_publish_observe_same_old_token_and_request_budget() {
         struct Exchange {
             token: Arc<AtomicBool>,
@@ -635,6 +738,16 @@ mod tests {
                 self.token.store(true, Ordering::Release);
                 assert!(stop());
                 Err(VaultError::Cancelled)
+            }
+            fn submit_code(
+                &self,
+                _: &StoredLink,
+                _: &Attempt,
+                _: &str,
+                _: &str,
+                _: &dyn Fn() -> bool,
+            ) -> Result<(), VaultError> {
+                unreachable!("this test sends no clinic code")
             }
         }
         let l = link();

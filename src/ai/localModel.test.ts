@@ -174,9 +174,13 @@ describe("nativeLocalModel", () => {
       document,
       "fr",
     );
+    // No keep, no answer id of its own, no progress listener: the screen's
+    // progress bar is asked for only when the reader passes one.
     expect(native.aiSummarize).toHaveBeenCalledWith(
       document.pages,
       "fr",
+      undefined,
+      undefined,
       undefined,
     );
     expect(result.sentences).toEqual([
@@ -234,10 +238,13 @@ describe("nativeLocalModel", () => {
       Date.now,
       "FAKE-record",
     );
-    expect(native.aiSummarize).toHaveBeenCalledWith(document.pages, "fr", {
-      recordId: "FAKE-record",
-      ticket: document.ticket,
-    });
+    expect(native.aiSummarize).toHaveBeenCalledWith(
+      document.pages,
+      "fr",
+      { recordId: "FAKE-record", ticket: document.ticket },
+      undefined,
+      undefined,
+    );
     expect(summary.keptId).toBe("FAKE-kept-1");
     const explained = await explainTerm(
       model,
@@ -292,7 +299,7 @@ describe("nativeLocalModel", () => {
     ).rejects.toBeInstanceOf(ModelCancelled);
   });
 
-  it.each(["aiMemory", "aiBusy", "aiFailed"])(
+  it.each(["aiMemory", "aiBusy", "aiStorage", "aiFailed"])(
     "passes %s on as it is",
     async (code) => {
       const failure = refusal(code);

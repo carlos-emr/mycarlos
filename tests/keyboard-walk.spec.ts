@@ -49,12 +49,19 @@ test("first setup works from the keyboard alone", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).focus();
   await page.keyboard.press("Enter");
   await expect(
-    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    page.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await walk(page, "create the vault");
 
   await page.getByRole("textbox", { name: "Whose records" }).focus();
   await page.keyboard.type("FAKE Patient");
+  // Then the person's details, or later (#234): Space ticks "Add them later",
+  // which leaves the details out, and Tab goes on to the passphrase.
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("checkbox", { name: "Add them later" }),
+  ).toBeFocused();
+  await page.keyboard.press("Space");
   await page.keyboard.press("Tab");
   await page.keyboard.type("FAKE correct horse battery staple");
   await page.getByRole("textbox", { name: "Confirm passphrase" }).focus();
@@ -152,7 +159,7 @@ test("the library works from the keyboard alone: open, move and search", async (
   await page.keyboard.press("Enter");
   const letterDetails = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
   await letterDetails
-    .getByRole("button", { name: "Save a copy to this computer" })
+    .getByRole("button", { name: "Save a copy to this device" })
     .focus();
   await page.keyboard.press("Enter");
   const confirm = page.getByRole("alertdialog", {

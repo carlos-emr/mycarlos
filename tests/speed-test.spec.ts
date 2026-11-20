@@ -165,10 +165,9 @@ test("a late 'locked' answer, after leaving Security or after the vault locked b
   await scriptFake(page, "kdf_benchmark", { pending: true });
   await run.click();
   await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.unlockedLockNow"),
-      exact: true,
-    })
+    // The window's own Lock now, named by its words (#121).
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
     .click();
   const unlockTitle = page.getByRole("heading", {
     name: en("unlock.title"),

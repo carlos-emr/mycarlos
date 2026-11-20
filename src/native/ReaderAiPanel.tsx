@@ -1,8 +1,23 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { formatDate, getLocale, t as translateNow, useI18n } from "../i18n";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  formatDate,
+  getLocale,
+  t as translateNow,
+  useI18n,
+  type MessageKey,
+} from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
+import { useSummaryProgress } from "./useSummaryProgress";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
+import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
+import { estimateFit, type FitEstimate } from "../ai/capacity";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -33,9 +48,28 @@ export interface ReaderAi {
 }
 
 const NOT_INSTALLED: ModelStatus = { state: "notInstalled" };
+// How often the minutes an answer has been working for are counted again.
+const WORKING_TICK_MS = 15_000;
 /** The longest term to explain, typed or selected: the native side refuses
  * a longer one (AGREEMENT.md). */
 export const TERM_MAX = 200;
+/** Refusals with words of their own (#253), by their code: the model's file
+ * could not be read, there is too little free memory, or the model is being
+ * added or removed. The words depend on the code alone, never on the
+ * refusal's message; any other failure says the helper could not finish. */
+const OWN_WORDS = {
+  aiStorage: "ai.error.storage",
+  aiMemory: "ai.error.memory",
+  aiBusy: "ai.error.busy",
+  aiSummaryTooLarge: "ai.summaryTooLarge",
+} as const satisfies Record<string, MessageKey>;
+
+/** The language summaries are written in, whatever language myCarlos is in
+ * (English only for now). The number and "when to get help" checks after the
+ * model work in English only, so a summary in another language would reach the
+ * patient without them. The Explain tool still answers in the app's language.
+ * To be lifted only when the other languages are checked and measured. */
+const SUMMARY_LANGUAGE = "en";
 
 /** The AI helper's panel in the reader: a plain-words summary of the
  * document, or the explanation of a term. Until a model is installed it says
@@ -47,6 +81,9 @@ export function ReaderAiPanel({
   initialTerm,
   contextFor,
   onShowSource,
+  quoteShown = false,
+  onCancel,
+  onReturnFocus,
 }: {
   ai: ReaderAi;
   tool: AiTool;
@@ -55,14 +92,31 @@ export function ReaderAiPanel({
   /** The sentence of the shown page a term is in, or "". */
   contextFor: (term: string) => string;
   onShowSource: (span: SourceSpan) => void;
+  /** A summary sentence's words are marked on the page shown (#292). */
+  quoteShown?: boolean;
+  /** Closes the panel: the patient chose not to summarize a document longer
+   * than the model reads at a time (#301). */
+  onCancel: () => void;
+  /** Puts the focus back on the button that opened the panel. */
+  onReturnFocus: () => void;
 }) {
   const { t } = useI18n();
   const lang = getLocale();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [working, setWorking] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // The last run's failure, said in the panel's alert; null when none.
+  const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
+  // A document longer than the model reads at a time, waiting for the
+  // patient's choice before the model starts (#301), with the pages it
+  // would read.
+  const [tooLong, setTooLong] = useState<{
+    document: DocumentText;
+    fit: Extract<FitEstimate, { fits: false }>;
+  } | null>(null);
+  const tooLongRef = useRef<HTMLButtonElement | null>(null);
+  const againRef = useRef<HTMLButtonElement | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   // The tool whose answer the model just wrote, to say so once (#253). A
   // summary read back from the vault is not new: the panel is made again
@@ -75,9 +129,40 @@ export function ReaderAiPanel({
   const [fromKept, setFromKept] = useState(false);
   // Why the answer on screen was not kept, if it was not.
   const [keepFailed, setKeepFailed] = useState<
-    "ai.keepFailed" | "ai.keepFull" | null
+    "ai.keepFailed" | "ai.keepFull" | "ai.summaryTooLarge" | null
   >(null);
   const [again, setAgain] = useState(0);
+  // On a narrow or short window (browser zoom included), while a sentence's
+  // words are marked on the page, the summary folds to one line so that the
+  // page picture keeps room (#292). The sentence shown, to come back to, and
+  // whether the patient unfolded the summary since.
+  const smallWindow = useMediaMatch(SMALL_WINDOW);
+  const [shownIndex, setShownIndex] = useState<number | null>(null);
+  const [unfolded, setUnfolded] = useState(false);
+  const wholeRef = useRef<HTMLDivElement | null>(null);
+  const unfoldRef = useRef<HTMLButtonElement | null>(null);
+  const backToShown = useRef(false);
+  // Whether "Show the whole summary" has the focus: a window that grows
+  // removes it, and the focus then goes to the sentence shown, not the page.
+  const unfoldFocused = useRef(false);
+  // Whole minutes the answer has been working for, shown from the first
+  // (#72: a long document's summary may take up to 20 minutes).
+  const [workingMinutes, setWorkingMinutes] = useState(0);
+  useEffect(() => {
+    if (!working) return;
+    const started = Date.now();
+    const timer = window.setInterval(
+      () => setWorkingMinutes(Math.floor((Date.now() - started) / 60_000)),
+      WORKING_TICK_MS,
+    );
+    return () => {
+      window.clearInterval(timer);
+      setWorkingMinutes(0);
+    };
+  }, [working]);
+  const progress = useSummaryProgress(working && tool === "summary");
+  // Events of a run that is no longer the latest are not shown.
+  const run = useRef(0);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -127,11 +212,13 @@ export function ReaderAiPanel({
   }, []);
 
   const installed = status?.state === "installed";
+  const statusRef = useRef(status);
+  statusRef.current = status;
   const stopped = (failure: unknown) => {
     // Stopped because the patient left, or the vault locked: nothing to say.
     if (!live.current || failure instanceof ModelCancelled) return;
     if (failure instanceof ModelNotInstalled) setStatus(NOT_INSTALLED);
-    else setFailed(true);
+    else setFailed({ failure });
   };
 
   // Keeps an answer with the document: the one the native side kept for it
@@ -144,35 +231,64 @@ export function ReaderAiPanel({
       if (!result.keptId) throw new Error("not kept natively");
       await kept.save(result.keptId, keptSources(result));
     } catch (failure) {
-      // A document full of kept answers (32, hidden ones included: nothing
-      // is deleted, D3) says so; any other failure is the general one.
+      // Size and history-capacity refusals have fixed messages; the answer stays shown.
       if (live.current)
         setKeepFailed(
-          hasVaultErrorCode(failure, "ai_results_full")
-            ? "ai.keepFull"
-            : "ai.keepFailed",
+          hasVaultErrorCode(failure, "aiSummaryTooLarge")
+            ? "ai.summaryTooLarge"
+            : hasVaultErrorCode(failure, "ai_results_full")
+              ? "ai.keepFull"
+              : "ai.keepFailed",
         );
     }
   };
 
+  // The model's summary of `document`, shown, said once, and kept. `mine` is
+  // the run's number (`run`): the progress of an older run is not shown.
+  const writeSummary = async (document: DocumentText, mine: number) => {
+    const result = await asModel(() =>
+      summarizeDocument(
+        aiRef.current.model,
+        document,
+        SUMMARY_LANGUAGE,
+        Date.now,
+        aiRef.current.kept?.recordId,
+        (event) => {
+          if (live.current && run.current === mine) progress.onProgress(event);
+        },
+      ),
+    );
+    if (!live.current) return;
+    setFromKept(false);
+    setSummary(result);
+    // A new summary: no sentence of it is shown yet.
+    setShownIndex(null);
+    setUnfolded(false);
+    setReadyFor("summary");
+    await keep(result);
+  };
+
   // A summary starts once the panel opens on an installed model: the patient
   // asked for it by opening the panel. A summary the vault kept in this
-  // language is shown instead, until "Summarize again". Once per language
-  // and request: React may run this effect twice (StrictMode), and a model
-  // takes a while.
+  // language (English, `SUMMARY_LANGUAGE`) is shown instead, until
+  // "Summarize again". Once per request: React may run this effect twice
+  // (StrictMode), and a model takes a while.
   const startedFor = useRef<string | null>(null);
   useEffect(() => {
-    const request = `${lang}#${again}`;
+    const request = `${SUMMARY_LANGUAGE}#${again}`;
     if (tool !== "summary" || !installed || startedFor.current === request)
       return;
     startedFor.current = request;
+    const mine = ++run.current;
+    progress.reset();
+    setTooLong(null);
     setWorking(true);
-    setFailed(false);
+    setFailed(null);
     setKeepFailed(null);
     const fresh = again > 0;
     Promise.resolve(
       !fresh && aiRef.current.kept
-        ? keptSummary(aiRef.current.kept, lang)
+        ? keptSummary(aiRef.current.kept, SUMMARY_LANGUAGE)
         : null,
     )
       .then(async (found) => {
@@ -180,6 +296,9 @@ export function ReaderAiPanel({
           if (!live.current) return;
           setFromKept(true);
           setSummary(found);
+          // A new summary: no sentence of it is shown yet.
+          setShownIndex(null);
+          setUnfolded(false);
           return;
         }
         // Closed while the kept answers were looked up: nothing is read.
@@ -195,32 +314,65 @@ export function ReaderAiPanel({
           setNoText(true);
           return;
         }
-        const result = await asModel(() =>
-          summarizeDocument(
-            aiRef.current.model,
-            document,
-            lang,
-            Date.now,
-            aiRef.current.kept?.recordId,
-          ),
-        );
-        if (!live.current) return;
-        setFromKept(false);
-        setSummary(result);
-        setReadyFor("summary");
-        await keep(result);
+        // A document longer than the model reads at a time waits for the
+        // patient's choice (#301): an estimate from its length, so only a
+        // known capacity asks; the answer still says the pages it read.
+        const current = statusRef.current;
+        const capacity =
+          current?.state === "installed" ? current.capacity : null;
+        const fit = capacity ? estimateFit(document, capacity) : null;
+        if (fit && !fit.fits) {
+          setTooLong({ document, fit });
+          return;
+        }
+        await writeSummary(document, mine);
       })
       .catch(stopped)
       .finally(() => live.current && setWorking(false));
-    // `stopped` and `keep` only read refs and setters: not dependencies.
-  }, [tool, installed, lang, again]);
+    // `stopped`, `keep` and `writeSummary` only read refs and setters: not
+    // dependencies.
+  }, [tool, installed, again]);
+
+  // The choice takes the focus on its first answer, described by the
+  // question, so a screen reader reads both and Tab reaches Cancel next. (Not
+  // the question itself: the reader's focus trap sends a Tab from text that
+  // is not a control back to the dialog's first control.)
+  useEffect(() => {
+    if (tooLong) tooLongRef.current?.focus();
+  }, [tooLong]);
+
+  // Not now. With a summary on screen (a kept one, asked to summarize
+  // again), only the question goes: the summary stays, and the focus goes
+  // back to Summarize again. With nothing else to show, the panel closes.
+  const cancelQuestion = () => {
+    if (summary) {
+      setTooLong(null);
+      if (againRef.current) againRef.current.focus();
+      else onReturnFocus();
+    } else onCancel();
+  };
+
+  // Summarize the pages the model can read: the choice goes, the focus goes
+  // back to Summary, and the status says the work.
+  const summarizeAnyway = () => {
+    const waiting = tooLong;
+    if (!waiting || working) return;
+    setTooLong(null);
+    const mine = ++run.current;
+    progress.reset();
+    setWorking(true);
+    onReturnFocus();
+    writeSummary(waiting.document, mine)
+      .catch(stopped)
+      .finally(() => live.current && setWorking(false));
+  };
 
   const explain = (event: FormEvent) => {
     event.preventDefault();
     const asked = term.trim();
     if (!asked || working) return;
     setWorking(true);
-    setFailed(false);
+    setFailed(null);
     setKeepFailed(null);
     asModel(() =>
       explainTerm(
@@ -242,126 +394,317 @@ export function ReaderAiPanel({
       .finally(() => live.current && setWorking(false));
   };
 
+  // Never while an answer is being written: its working line and the status
+  // a screen reader hears ("The summary is ready.") stay in view.
+  const folded =
+    quoteShown &&
+    smallWindow &&
+    !unfolded &&
+    !working &&
+    tool === "summary" &&
+    summary !== null &&
+    shownIndex !== null;
+  // Focus inside the summary when it folds (the window got smaller) goes to
+  // the button that unfolds it, never to the page. A "Show in document"
+  // press then moves it on to the marked words (the reader's own effect,
+  // which runs after this one). Before paint, while the focused element is
+  // still the active one in every webview (WebKit included).
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    if (folded && active && wholeRef.current?.contains(active))
+      unfoldRef.current?.focus();
+  }, [folded]);
+  // Unfolded: back to the sentence whose words are shown, after a press of
+  // "Show the whole summary", or when the window grew while that button had
+  // the focus and the focus fell to the page with it.
+  useLayoutEffect(() => {
+    if (folded) return;
+    const active = document.activeElement;
+    const lost = !active || active === document.body;
+    const back = backToShown.current || (unfoldFocused.current && lost);
+    backToShown.current = false;
+    unfoldFocused.current = false;
+    if (back && shownIndex !== null)
+      document.getElementById(`reader-ai-show-${shownIndex}`)?.focus();
+  }, [folded, shownIndex]);
+  const unfold = () => {
+    backToShown.current = true;
+    setUnfolded(true);
+  };
+
+  // The words of the stage the run is in. Before the helper's first word
+  // the status line keeps today's "working" words; the panel says how long.
+  const stageWords =
+    progress.view.stage === "before"
+      ? t("ai.summary.progress.before")
+      : t(`ai.summary.progress.${progress.view.stage}`);
+  const statusWords = progress.view.statusSaysSlower
+    ? t("ai.summary.progress.slower")
+    : progress.view.stage === "before"
+      ? t("ai.working")
+      : stageWords;
   const title = t(tool === "summary" ? "ai.summary.title" : "ai.explain.title");
   return (
     <section
       id="reader-ai-panel"
-      className="native-reader-ai"
+      className={`native-reader-ai${folded ? " native-reader-ai-folded" : ""}`}
       aria-labelledby="reader-ai-title"
       aria-busy={status === null || working}
     >
-      <h3 id="reader-ai-title">{title}</h3>
-      {/* No model to use: not added, failed its check, or not one this
-          computer can run. Preferences says which. */}
-      {status !== null && !installed && (
-        <div className="native-reader-ai-missing">
-          <p>
-            <strong>{t("ai.notInstalled.title")}</strong>
-          </p>
-          <p>{t("ai.notInstalled.body")}</p>
+      {/* Folded, the heading still names the panel for a screen reader. */}
+      <h3 id="reader-ai-title" className={folded ? "sr-only" : undefined}>
+        {title}
+      </h3>
+      {folded && (
+        <div className="native-reader-ai-fold">
+          <p id="reader-ai-folded">{t("ai.summary.folded")}</p>
           <button
+            ref={unfoldRef}
             className="button"
             type="button"
-            onClick={ai.onOpenPreferences}
+            aria-expanded="false"
+            aria-controls="reader-ai-whole"
+            aria-describedby="reader-ai-folded"
+            onClick={unfold}
+            onFocus={() => (unfoldFocused.current = true)}
+            // Focus that moved on clears it; a button taken away keeps it.
+            onBlur={(event) => {
+              if (event.relatedTarget) unfoldFocused.current = false;
+            }}
           >
-            {t("ai.notInstalled.openPreferences")}
+            {t("ai.summary.showWhole")}
           </button>
         </div>
       )}
-      {installed && tool === "explain" && (
-        <form className="native-reader-ai-explain" onSubmit={explain}>
-          <label htmlFor="reader-ai-term">{t("ai.explain.box")}</label>
-          <input
-            id="reader-ai-term"
-            type="text"
-            autoComplete="off"
-            value={term}
-            maxLength={TERM_MAX}
-            aria-describedby="reader-ai-term-hint"
-            onChange={(event) => setTerm(event.target.value)}
-          />
-          <p id="reader-ai-term-hint">{t("ai.explain.hint")}</p>
-          <button className="button primary" disabled={!term.trim() || working}>
-            {t("ai.explain.submit")}
-          </button>
-        </form>
-      )}
-      {/* Read out as it changes: the work, then that the answer came. A run
-          that failed says so in its alert, never "ready" for an earlier
-          answer. */}
-      <p className={working ? "native-dialog-status" : "sr-only"} role="status">
-        {working
-          ? t("ai.working")
-          : !failed && readyFor === tool && tool === "summary" && summary
-            ? t("ai.summary.ready")
-            : !failed && readyFor === tool && tool === "explain" && explained
-              ? t("ai.explain.ready")
-              : ""}
-      </p>
-      {failed && <p role="alert">{t("ai.failed")}</p>}
-      {noText && <p>{t("ai.summary.noText")}</p>}
-      {summary && (
-        <div className="native-reader-ai-result">
-          <p className="ai-label">{t("aiHelper.resultLabel")}</p>
-          <ol>
-            {summary.sentences.map(({ text, source }, index) => (
-              <li key={index}>
-                <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}
-                {source ? (
-                  <button
-                    className="button"
-                    type="button"
-                    aria-describedby={`reader-ai-sentence-${index}`}
-                    onClick={() => onShowSource(source)}
-                  >
-                    {t("ai.summary.showInDocument")}
-                  </button>
-                ) : (
-                  // Never a guessed place: a sentence whose words were not
-                  // found in the document says so (threat model AI-05).
-                  <span className="ai-no-source">
-                    {t("ai.summary.noSource")}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-          {/* Pages with no text, cut short or not read at all are never
-              left out silently, for a kept summary as for a new one. */}
-          {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}
-          {summary.partial && (
-            <p>{t("ai.summary.partial", { last: summary.lastPage })}</p>
-          )}
-          <ResultMeta
-            tool={summary.tool}
-            model={summary.model}
-            at={summary.createdAt}
-          />
-          {keepFailed && <p role="alert">{t(keepFailed)}</p>}
-          {fromKept && (
+      {/* Hidden, never removed, while folded: the answer and its state stay. */}
+      <div id="reader-ai-whole" ref={wholeRef} hidden={folded}>
+        {/* Said in the app's language, only when it is not English: the summary
+          below is in English (`SUMMARY_LANGUAGE`). */}
+        {tool === "summary" && lang !== SUMMARY_LANGUAGE && (
+          <p id="reader-ai-english-only">{t("ai.summary.englishOnly")}</p>
+        )}
+        {/* No model to use: not added, failed its check, or not one this
+          computer can run. Preferences says which. */}
+        {status !== null && !installed && (
+          <div className="native-reader-ai-missing">
+            <p>
+              <strong>{t("ai.notInstalled.title")}</strong>
+            </p>
+            <p>{t("ai.notInstalled.body")}</p>
             <button
               className="button"
               type="button"
-              disabled={working}
-              onClick={() => setAgain((count) => count + 1)}
+              onClick={ai.onOpenPreferences}
             >
-              {t("ai.summary.again")}
+              {t("ai.notInstalled.openPreferences")}
             </button>
-          )}
-        </div>
-      )}
-      {explained && tool === "explain" && (
-        <div className="native-reader-ai-result">
-          <p className="ai-label">{t("aiHelper.resultLabel")}</p>
-          <p>{explained.text}</p>
-          <ResultMeta
-            tool={explained.tool}
-            model={explained.model}
-            at={explained.createdAt}
-          />
-          {keepFailed && <p role="alert">{t(keepFailed)}</p>}
-        </div>
-      )}
+          </div>
+        )}
+        {installed && tool === "explain" && (
+          <form className="native-reader-ai-explain" onSubmit={explain}>
+            <label htmlFor="reader-ai-term">{t("ai.explain.box")}</label>
+            <input
+              id="reader-ai-term"
+              type="text"
+              autoComplete="off"
+              value={term}
+              maxLength={TERM_MAX}
+              aria-describedby="reader-ai-term-hint"
+              onChange={(event) => setTerm(event.target.value)}
+            />
+            <p id="reader-ai-term-hint">{t("ai.explain.hint")}</p>
+            <button
+              className="button primary"
+              disabled={!term.trim() || working}
+            >
+              {t("ai.explain.submit")}
+            </button>
+          </form>
+        )}
+        {/* Read out as it changes: the work, then that the answer came. A run
+          that failed says so in its alert, never "ready" for an earlier
+          answer. */}
+        <p
+          className={working ? "native-dialog-status" : "sr-only"}
+          role="status"
+        >
+          {working
+            ? tool === "summary"
+              ? statusWords
+              : t("ai.working")
+            : !failed && readyFor === tool && tool === "summary" && summary
+              ? t("ai.summary.ready")
+              : !failed && readyFor === tool && tool === "explain" && explained
+                ? t("ai.explain.ready")
+                : ""}
+        </p>
+        {/* Before the model starts on a document longer than it reads at a
+          time (#301): the patient's choice, so its first answer takes the
+          focus. */}
+        {tooLong && tool === "summary" && (
+          <div className="native-reader-ai-choice">
+            <p id="reader-ai-too-long">
+              {tooLong.fit.firstPageCut
+                ? t("ai.summary.tooLongStart")
+                : tooLong.fit.tailPage !== undefined
+                  ? t("ai.summary.tooLongWithLast", {
+                      last: tooLong.fit.lastPage,
+                      tail: tooLong.fit.tailPage,
+                      total: tooLong.fit.pageCount,
+                    })
+                  : t("ai.summary.tooLong", {
+                      last: tooLong.fit.lastPage,
+                      total: tooLong.fit.pageCount,
+                    })}
+            </p>
+            <p id="reader-ai-too-long-after">{t("ai.summary.tooLongAfter")}</p>
+            <div className="native-reader-ai-choice-actions">
+              <button
+                ref={tooLongRef}
+                className="button primary"
+                type="button"
+                aria-describedby="reader-ai-too-long reader-ai-too-long-after"
+                onClick={summarizeAnyway}
+              >
+                {tooLong.fit.firstPageCut
+                  ? t("ai.summary.readStart")
+                  : tooLong.fit.tailPage !== undefined
+                    ? t("ai.summary.readPagesAndLast", {
+                        last: tooLong.fit.lastPage,
+                        tail: tooLong.fit.tailPage,
+                      })
+                    : t("ai.summary.readPages", { last: tooLong.fit.lastPage })}
+              </button>
+              <button className="button" type="button" onClick={cancelQuestion}>
+                {t("common.cancel")}
+              </button>
+            </div>
+          </div>
+        )}
+        {/* Not in the status above, so a screen reader is not told each
+          minute; read with the panel. */}
+        {working && tool === "summary" && (
+          <div className="native-reader-ai-progress">
+            {/* The stage's words are in the status line above, which is on
+              screen too; only before the helper starts does the panel say
+              more (how long it can take). */}
+            {progress.view.stage === "before" && (
+              <p id="reader-ai-stage" className="native-reader-ai-wait">
+                {stageWords}
+              </p>
+            )}
+            <progress
+              {...(progress.view.stage === "before"
+                ? { "aria-labelledby": "reader-ai-stage" }
+                : { "aria-label": stageWords })}
+              max={100}
+              {...(progress.view.percent === null
+                ? {}
+                : {
+                    value: progress.view.percent,
+                    "aria-valuetext": `${stageWords}, ${new Intl.NumberFormat(
+                      lang,
+                      { style: "percent" },
+                    ).format(progress.view.percent / 100)}`,
+                  })}
+            />
+            {progress.view.slower ? (
+              <p className="native-reader-ai-wait">
+                {t("ai.summary.progress.slower")}
+              </p>
+            ) : (
+              progress.view.minutesLeft !== null && (
+                <p className="native-reader-ai-wait">
+                  {t("ai.summary.progress.estimate", {
+                    minutes: progress.view.minutesLeft,
+                  })}
+                </p>
+              )
+            )}
+          </div>
+        )}
+        {working && tool === "explain" && workingMinutes > 0 && (
+          <p className="native-reader-ai-wait">
+            {t("ai.workingFor", { minutes: workingMinutes })}
+          </p>
+        )}
+        {failed && (
+          <p role="alert">
+            {t(
+              Object.entries(OWN_WORDS).find(([code]) =>
+                hasVaultErrorCode(failed.failure, code),
+              )?.[1] ?? "ai.failed",
+            )}
+          </p>
+        )}
+        {noText && <p>{t("ai.summary.noText")}</p>}
+        {summary && (
+          <div className="native-reader-ai-result">
+            <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+            <ol lang={summary.lang}>
+              {summary.sentences.map(({ text, source }, index) => (
+                <li key={index}>
+                  <span id={`reader-ai-sentence-${index}`}>{text}</span>{" "}
+                  {source ? (
+                    <button
+                      id={`reader-ai-show-${index}`}
+                      className="button"
+                      type="button"
+                      aria-describedby={`reader-ai-sentence-${index}`}
+                      onClick={() => {
+                        setShownIndex(index);
+                        setUnfolded(false);
+                        onShowSource(source);
+                      }}
+                    >
+                      {t("ai.summary.showInDocument")}
+                    </button>
+                  ) : (
+                    // Never a guessed place: a sentence whose words were not
+                    // found in the document says so (threat model AI-05).
+                    <span className="ai-no-source">
+                      {t("ai.summary.noSource")}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {/* Pages with no text, cut short or not read at all are never
+              left out silently, for a kept summary as for a new one. */}
+            {summary.pagesMissing && <p>{t("ai.summary.pagesMissing")}</p>}
+            {summary.partial && <p>{t("ai.summary.partial")}</p>}
+            <ResultMeta
+              tool={summary.tool}
+              model={summary.model}
+              at={summary.createdAt}
+            />
+            {keepFailed && <p role="alert">{t(keepFailed)}</p>}
+            {fromKept && (
+              <button
+                ref={againRef}
+                className="button"
+                type="button"
+                disabled={working}
+                onClick={() => setAgain((count) => count + 1)}
+              >
+                {t("ai.summary.again")}
+              </button>
+            )}
+          </div>
+        )}
+        {explained && tool === "explain" && (
+          <div className="native-reader-ai-result">
+            <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+            <p>{explained.text}</p>
+            <ResultMeta
+              tool={explained.tool}
+              model={explained.model}
+              at={explained.createdAt}
+            />
+            {keepFailed && <p role="alert">{t(keepFailed)}</p>}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

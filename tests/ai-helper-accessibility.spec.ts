@@ -17,12 +17,16 @@ import {
   type FakeAiSetup,
 } from "./support/aiFake";
 import { translate } from "./support/fluent";
+import { AI_EXPLAIN_ENABLED } from "../src/ai/features";
 import {
   FAKE_PAGE_COUNT,
   fakeVaultWith,
   myRecords,
   openDetails,
 } from "./support/vaultFake";
+
+const EXPLAIN_OFF =
+  "Explain is switched off in the UI (src/ai/features.ts); this test runs again when it is switched on";
 
 // The AI helper's new screens (#72) for people who use a keyboard, a screen
 // reader or large text: the reader's Summary and Explain panel, the notice
@@ -82,15 +86,15 @@ async function openReader(page: Page) {
   return reader;
 }
 
-async function openPreferences(page: Page) {
+async function openAiSettings(page: Page) {
   // In the sidebar, or, in a narrow window, among the section tabs.
   await page
-    .getByRole("button", { name: en("sidebar.preferences"), exact: true })
+    .getByRole("button", { name: en("ai.preferences.title"), exact: true })
     .locator("visible=true")
     .first()
     .click();
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   return page.locator("section.setting-row").filter({
     has: page.getByRole("heading", { name: en("ai.preferences.title") }),
@@ -98,7 +102,15 @@ async function openPreferences(page: Page) {
 }
 
 const button = (scope: Locator, name: string) =>
-  scope.getByRole("button", { name, exact: true });
+  scope.getByRole("button", {
+    name:
+      name === en("ai.model.download")
+        ? new RegExp(`^${en("ai.models.download")} `)
+        : name === en("ai.model.remove")
+          ? new RegExp(`^${en("ai.models.remove")} `)
+          : name,
+    exact: true,
+  });
 
 /** Presses Enter on a control, as a keyboard user does. */
 async function press(control: Locator) {
@@ -160,6 +172,7 @@ test("the reader's Summary by keyboard: the notice takes and gives back the focu
 test("Explain by keyboard: the box is labelled, Enter asks, and the answer is read out", async ({
   page,
 }) => {
+  test.skip(!AI_EXPLAIN_ENABLED, EXPLAIN_OFF);
   await openLibrary(page, {
     model: INSTALLED,
     explanation: "FAKE: a word from the letter, in plain words.",
@@ -213,7 +226,7 @@ test("a run that could not finish is an alert, and no model leads on by keyboard
   await screenReaderSmoke(page, "the reader, no model to use", reader);
   await press(preferences);
   await expect(
-    page.getByRole("heading", { name: en("sidebar.preferences"), level: 1 }),
+    page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   await expectOnlyFakedCommands(page);
 });
@@ -222,7 +235,7 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
   page,
 }) => {
   await openLibrary(page);
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await screenReaderSmoke(page, "Preferences, no model");
 
   // Started, then cancelled.
@@ -245,9 +258,9 @@ test("Download by keyboard: the focus stays in the AI helper row through the pro
   await expectFocusIn(row, "the row while it downloads");
   await releaseAi(page, AI_COMMANDS.download);
   await expectAnnounced(page, en("ai.model.added"));
-  await expect(row).toContainText(
-    en("ai.model.installed", { name: FAKE_MODEL.name }),
-  );
+  await expect(
+    row.getByRole("radio", { name: FAKE_MODEL.name, exact: true }),
+  ).toBeChecked();
   await expectFocusIn(row, "the row once the model is added");
   await screenReaderSmoke(page, "Preferences, a model added");
   await expectOnlyFakedCommands(page);
@@ -257,7 +270,7 @@ test("a refused download is an alert, and the focus stays in the row", async ({
   page,
 }) => {
   await openLibrary(page);
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   await answerAi(page, AI_COMMANDS.download, { outcome: "network" });
   await press(button(row, en("ai.model.download")));
   await expectAnnounced(page, en("ai.model.refusedNetwork"));
@@ -269,7 +282,7 @@ test("Remove by keyboard: the question takes the focus, Cancel gives it back, an
   page,
 }) => {
   await openLibrary(page, { model: INSTALLED });
-  const row = await openPreferences(page);
+  const row = await openAiSettings(page);
   const remove = button(row, en("ai.model.remove"));
   await press(remove);
   const question = page.getByRole("alertdialog");
@@ -290,12 +303,12 @@ test("the row's other states are named and pass axe: damaged, and a computer tha
   page,
 }) => {
   await openLibrary(page, { model: { state: "damaged" } });
-  await openPreferences(page);
+  await openAiSettings(page);
   await screenReaderSmoke(page, "Preferences, a damaged model");
   // A page of its own: the fakes are installed once per page.
   const other = await page.context().newPage();
   await openLibrary(other, { model: { state: "unsupported", reason: "ram" } });
-  await openPreferences(other);
+  await openAiSettings(other);
   await screenReaderSmoke(other, "Preferences, not enough memory");
 });
 
@@ -342,8 +355,11 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
     ).click();
     await expect(reader).toContainText(en("aiHelper.resultLabel"));
     await expectReflow(page, "the reader with a summary");
-    await button(reader, en("ai.explain.title")).click();
-    await expectReflow(page, "the reader's Explain");
+    // Explain's panel, only while it is offered (src/ai/features.ts).
+    if (AI_EXPLAIN_ENABLED) {
+      await button(reader, en("ai.explain.title")).click();
+      await expectReflow(page, "the reader's Explain");
+    }
     await button(reader, en("photo.close")).click();
 
     // The row, with the model's real-length address and a refusal shown,
@@ -354,9 +370,8 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
     ).send("Page.setFontSizes", {
       fontSizes: { standard: 32 },
     });
-    await openLibrary(second);
-    await answerAi(second, AI_COMMANDS.catalog, [
-      {
+    await openLibrary(second, {
+      catalog: {
         name: FAKE_MODEL.name,
         fileName: "FAKE-model-name-instruct-Q4_K_M.gguf",
         sizeBytes: TOTAL,
@@ -366,8 +381,8 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
         sourceUrl:
           "https://huggingface.co/FAKE-organisation/FAKE-model-name-instruct-GGUF/resolve/FAKE-revision/FAKE-model-name-instruct-Q4_K_M.gguf",
       },
-    ]);
-    const row = await openPreferences(second);
+    });
+    const row = await openAiSettings(second);
     // The address itself (the download note names its host too).
     await expect(
       row.locator("code", { hasText: "huggingface.co" }),

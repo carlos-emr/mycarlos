@@ -1,5 +1,5 @@
 //! The AI models myCarlos hasn't checked that the patient approved in this vault (#276, format
-//! 13). A model the patient adds that is not on myCarlos's list is recorded outside the vault,
+//! 14). A model the patient adds that is not on myCarlos's list is recorded outside the vault,
 //! by its hash; it runs only once the open vault holds that hash here too. So a file swapped
 //! with its record outside the vault, or a second vault of the same computer account, asks the
 //! patient again. Hashes only: nothing about the model's file or its name.
@@ -17,7 +17,7 @@ fn valid_hash(sha256: &str) -> bool {
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// A manifest's approvals: none before format 13; at most [`MAX_APPROVED_MODELS`], each a
+/// A manifest's approvals: none before format 14; at most [`MAX_APPROVED_MODELS`], each a
 /// lowercase SHA-256, each once.
 pub(super) fn valid(manifest: &Manifest) -> bool {
     let approved = &manifest.approved_models;
@@ -30,9 +30,8 @@ pub(super) fn valid(manifest: &Manifest) -> bool {
 }
 
 impl VaultStore {
-    /// The hashes of models myCarlos hasn't checked that this vault approved, for the AI
-    /// runtime before each request.
-    pub fn approved_models(&self) -> Result<Vec<String>, VaultError> {
+    #[cfg(test)]
+    fn approved_models(&self) -> Result<Vec<String>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         Ok(unlocked.manifest.approved_models.clone())
@@ -40,12 +39,19 @@ impl VaultStore {
 
     /// Records the patient's approval of the model whose SHA-256 is `sha256`, once per vault,
     /// when they confirm its first answer. Approving one already approved changes nothing.
-    pub fn approve_model(&self, sha256: &str) -> Result<(), VaultError> {
+    pub(crate) fn approve_model(
+        &self,
+        origin: AnswerOrigin,
+        sha256: &str,
+    ) -> Result<(), VaultError> {
         if !valid_hash(sha256) {
             return Err(VaultError::Invalid);
         }
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if self.idle.answer_origin() != Some(origin) {
+            return Err(VaultError::Locked);
+        }
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
@@ -96,23 +102,38 @@ mod tests {
         format!("{n:02x}").repeat(32)
     }
 
+    fn approve(store: &VaultStore, sha256: &str) -> Result<(), VaultError> {
+        let origin = store.answer_origin().ok_or(VaultError::Locked)?;
+        store.approve_model(origin, sha256)
+    }
+
+    #[test]
+    fn approval_from_a_closed_session_cannot_change_the_next_session() {
+        let (_temp, store) = fixture();
+        let origin = store.answer_origin().unwrap();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert!(matches!(
+            store.approve_model(origin, &hash(1)),
+            Err(VaultError::Locked)
+        ));
+        assert!(store.approved_models().unwrap().is_empty());
+    }
+
     #[test]
     fn an_approval_is_kept_once_survives_a_lock_and_the_oldest_goes_past_the_cap() {
         let (_temp, store) = fixture();
         assert_eq!(store.approved_models().unwrap(), Vec::<String>::new());
-        store.approve_model(&hash(1)).unwrap();
-        store.approve_model(&hash(1)).unwrap();
+        approve(&store, &hash(1)).unwrap();
+        approve(&store, &hash(1)).unwrap();
         assert_eq!(store.approved_models().unwrap(), [hash(1)]);
         store.lock();
         assert!(matches!(store.approved_models(), Err(VaultError::Locked)));
-        assert!(matches!(
-            store.approve_model(&hash(2)),
-            Err(VaultError::Locked)
-        ));
+        assert!(matches!(approve(&store, &hash(2)), Err(VaultError::Locked)));
         store.unlock(PASSWORD).unwrap();
         assert_eq!(store.approved_models().unwrap(), [hash(1)]);
         for n in 2..=(MAX_APPROVED_MODELS as u8 + 1) {
-            store.approve_model(&hash(n)).unwrap();
+            approve(&store, &hash(n)).unwrap();
         }
         let approved = store.approved_models().unwrap();
         assert_eq!(approved.len(), MAX_APPROVED_MODELS);
@@ -127,10 +148,10 @@ mod tests {
     fn approving_one_vault_does_not_approve_another_vault_on_the_same_computer() {
         let (_first_dir, first) = fixture();
         let (_second_dir, second) = fixture();
-        first.approve_model(&hash(1)).unwrap();
+        approve(&first, &hash(1)).unwrap();
         assert_eq!(first.approved_models().unwrap(), [hash(1)]);
         assert!(second.approved_models().unwrap().is_empty());
-        second.approve_model(&hash(2)).unwrap();
+        approve(&second, &hash(2)).unwrap();
         first.lock();
         first.unlock(PASSWORD).unwrap();
         assert_eq!(first.approved_models().unwrap(), [hash(1)]);
@@ -146,16 +167,13 @@ mod tests {
             "ab".repeat(31),
             "zz".repeat(32),
         ] {
-            assert!(matches!(
-                store.approve_model(&bad),
-                Err(VaultError::Invalid)
-            ));
+            assert!(matches!(approve(&store, &bad), Err(VaultError::Invalid)));
         }
         assert!(store.approved_models().unwrap().is_empty());
     }
 
     #[test]
-    fn a_manifest_holds_approvals_only_from_format_13_each_once() {
+    fn a_manifest_holds_approvals_only_from_format_14_each_once() {
         let (_temp, store) = fixture();
         let guard = store.session();
         let mut manifest = guard.as_ref().unwrap().manifest.clone();

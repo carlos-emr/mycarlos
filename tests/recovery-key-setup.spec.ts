@@ -125,6 +125,10 @@ test("first setup: the key is shown, its kit saved, and it must be typed back wh
   await page
     .getByLabel(en("passphrase.confirm.label"), { exact: true })
     .fill(FAKE_PASSPHRASE);
+  // The person's details can wait (#234).
+  await page
+    .getByRole("checkbox", { name: en("personDetails.later"), exact: true })
+    .check();
   await page
     .getByRole("button", { name: en("create.submit"), exact: true })
     .click();
@@ -217,10 +221,9 @@ test("first setup: the key is shown, its kit saved, and it must be typed back wh
 
   // Locked and unlocked again: the vault has its key, so none is offered.
   await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.unlockedLockNow"),
-      exact: true,
-    })
+    // The window's own Lock now, named by its words (#121).
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
     .click();
   await page
     .getByLabel(en("passphrase.label"), { exact: true })

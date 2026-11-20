@@ -1,5 +1,7 @@
+import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
   ModelExplanation,
@@ -20,11 +22,13 @@ export interface PatientProfile {
   createdAtMs: number;
   fullName?: string;
   birthDate?: string;
+  previousFullNames?: string[];
 }
 
 export interface PersonDetails {
   fullName?: string;
   birthDate?: string;
+  previousFullNames?: string[];
 }
 export interface FoundIdentity {
   name: string;
@@ -45,7 +49,6 @@ export interface VaultRecord {
   folderIds: string[];
   displayName: string;
   sourceLabel: string;
-  sourceKind?: "manual";
   mediaType: string;
   plaintextSize: number;
   importedAtMs: number;
@@ -144,9 +147,45 @@ export interface PortalLinkSummary {
     | "challenge_cancelled"
     | "staff_required"
     | "no_accepted_approver"
+    | "code_attempts"
     | null;
   approvalCanRestart?: boolean;
   approvalRequestLimitReached?: boolean;
+  /** The clinic asked for the code it emailed (#141): the request that
+   * approved this device, when one did, else the current one. */
+  approvalByCode?: boolean;
+  /** A code was sent for the current request; the clinic has yet to answer. */
+  approvalCodeSubmitted?: boolean;
+  /** No more codes are taken for the current request. */
+  approvalCodeLocked?: boolean;
+  /** How many of this clinic's documents failed their checks and are not
+   * downloaded again until they expire or the patient tries again (#143). */
+  refusedDeliveries?: number;
+}
+
+/** What a read-only status check of a linked device's approval found (#131).
+ * It never sends, re-sends or starts a request. */
+export interface PortalApprovalCheck {
+  /** Native capture order for this partial device result. */
+  capture: SnapshotCapture;
+  /** The device's saved state after the check. */
+  link: PortalLinkSummary;
+  /** For a request still open: the time the portal leaves it, by the
+   * portal's own clock when it replied, so a wrong clock on this device does
+   * not change it. Absent when the portal did not say what time it was. */
+  expiresInMs?: number | null;
+  /** Why the check could not finish. `portal_link_incomplete`: the portal
+   * could not be reached; `portal_refused`: it answered, but not with the
+   * request's state; `portal_rate_limited`: it asked to wait
+   * (`retryAfterMs`); `approval_missing`: it does not have the saved
+   * request; `approval_reply_invalid`: its reply did not verify;
+   * `portal_device_removed`: this device was removed from the portal
+   * account; or any other vault error. What the check read before it is
+   * still saved; the failure itself saves nothing. */
+  issue?: PublicError | null;
+  /** The vault went into read-only recovery during the check: read the
+   * vault again. */
+  recovery?: boolean;
 }
 
 export interface PortalLinkInput {
@@ -241,7 +280,6 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
-  sourceKind?: "manual";
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -287,6 +325,11 @@ export interface AuditHistoryView {
   complete: boolean;
   checkedUntilMs: number | null;
   checkedFromMs: number | null;
+  /** Every event the manifest pins is shown, even when part of its storage is
+   * damaged (only padding, say): no event is missing and there is no gap.
+   * Native code always sends it; it is optional so that a view without it is
+   * read the safe way, with the damage notice and the gap. */
+  everyEventShown?: boolean;
 }
 
 /** An audit event that native code authenticated from the start of the history chain. */
@@ -298,6 +341,8 @@ export interface AuditHistoryEntry {
     | "created"
     | "historyStarted"
     | "unlocked"
+    | "deliveryRefused"
+    | "deliveryRefusalsCleared"
     | "imported"
     | "renamed"
     | "moved"
@@ -378,6 +423,12 @@ export interface VaultBridge {
   /** Reads the audit history as far as its encrypted chain checks out. */
   history(): Promise<AuditHistoryView>;
   linkPortal?(request: PortalLinkInput): Promise<PortalLinkSummary>;
+  /** One explicit action, under one native session ticket; a failed approval
+   * step returns the durable original link rather than creating another one. */
+  connectPortal?(request: PortalLinkInput): Promise<{
+    link: PortalLinkSummary;
+    approvalError: PublicError | null;
+  }>;
   checkDocuments?(): Promise<{
     added: number;
     refused: number;
@@ -385,7 +436,16 @@ export interface VaultBridge {
     issues?: { linkId: string; clinicName: string; code: string }[];
   }>;
   requestDeviceApproval?(linkId: string): Promise<void>;
+  /** Checks the code a clinic emailed natively, and sends it only if it
+   * matches this clinic (#141). */
+  submitApprovalCode?(linkId: string, code: string): Promise<void>;
   restartDeviceApproval?(linkId: string): Promise<void>;
+  /** Try again (#143): forgets a clinic's documents that failed their
+   * checks, so the next check downloads and checks them again. */
+  forgetRefusedDeliveries?(linkId: string): Promise<void>;
+  /** Reads one linked device's approval status from its portal and saves the
+   * clinic's answer (#131). It only reads: no request is sent or started. */
+  refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
   changePassphrase(
     currentPassphrase: string,
     newPassphrase: string,
@@ -520,6 +580,16 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
+   * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
+   * nothing: `rects` is empty, with the reason, when the helper cannot tie
+   * every character of the span to the glyph that draws it. Computers only. */
+  pageBoxes?(
+    recordId: string,
+    page: number,
+    span: { start: number; end: number; quoted: string },
+    password?: string,
+  ): Promise<PageBoxes>;
   /** Whether the AI helper (#72) has a model on this computer. */
   aiModelStatus(): Promise<ModelStatus>;
   /** A plain-words summary of a document's pages, written by the model on
@@ -531,6 +601,10 @@ export interface VaultBridge {
     pages: DocumentPageText[],
     lang: string,
     keep?: { recordId: string; ticket: string },
+    answerId?: string,
+    /** Told how far this answer's run is, as the helper reports it: counts
+     * only (`ai-answer-progress`), matched to `answerId`. */
+    onProgress?: (event: SummaryProgressEvent) => void,
   ): Promise<ModelSummary>;
   /** A term explained in plain words, with the sentence it is in. With
    * `recordId`, kept natively for that document's save, as a summary is. */
@@ -539,9 +613,16 @@ export interface VaultBridge {
     context: string,
     lang: string,
     recordId?: string,
+    answerId?: string,
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** Calls `handler` with an answer's own time limit, in milliseconds, as
+   * the model is asked it: the automatic lock waits that long at most for
+   * it (D19). Returns the way to stop listening. */
+  onAiAnswerStarted?(
+    handler: (answer: { answerId: string; limitMs: number }) => void,
+  ): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -610,7 +691,7 @@ export interface TextSaveOutcome {
   hits: { start: number; end: number }[];
 }
 
-interface PublicError {
+export interface PublicError {
   code?: string;
   message?: string;
   messageKey?: string;
@@ -620,7 +701,8 @@ interface PublicError {
   recordId?: string;
   /** A sentence to add after the message, about how the failure came about. */
   note?: string;
-  /** How long to wait before the next try, after several wrong ones. */
+  /** How long to wait before the next try: after several wrong ones, or
+   * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
 }
 
@@ -672,6 +754,10 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     approval_refused: "portal.approvalRefused",
     approval_contact_clinic: "portal.approvalContact",
     approval_missing: "portal.approvalMissing",
+    approval_reply_invalid: "portal.approvalReplyInvalid",
+    approval_still_open: "portal.approvalStillOpen",
+    portal_device_removed: "portal.deviceRemoved",
+    portal_refused: "portal.approvalUnanswered",
     portal_link_address: "portal.errorAddress",
     portal_link_code: "portal.errorCode",
     portal_link_device_name: "portal.errorDeviceName",
@@ -679,12 +765,25 @@ export function vaultErrorMessage(error: unknown, boxes?: BoxKey[]): string {
     portal_link_keys_missing: "portal.errorKeys",
     portal_link_device_exists: "portal.errorExists",
     portal_link_incomplete: "portal.errorIncomplete",
+    portal_busy: "portal.errorBusy",
+    portal_rate_limited: "portal.errorRateLimited",
     pickup_refused: "portal.errorRefused",
     pickup_damaged: "portal.errorDamaged",
+    approval_code_mismatch: "portal.codeMismatch",
+    approval_code_locked: "portal.codeLocked",
+    approval_code_not_open: "portal.codeNotOpen",
+    approval_code_format: "portal.codeFormat",
+    approval_code_refused: "portal.codeRefused",
     document_check_busy: "notifications.checkBusy",
   } as const;
   for (const [code, key] of Object.entries(portalErrors))
-    if (hasErrorCode(error, code)) return t(key);
+    if (hasErrorCode(error, code)) {
+      // The portal may say how long to wait (#131).
+      const wait = (error as PublicError).retryAfterMs;
+      return typeof wait === "number" && wait > 0
+        ? `${t(key)} ${t("error.retryIn", { count: Math.ceil(wait / 1000) })}`
+        : t(key);
+    }
   if (boxes?.length && hasErrorCode(error, "invalid"))
     return t("error.checkBoxes", {
       boxes: listed(boxes.map((box) => t(box))),
@@ -793,6 +892,15 @@ export interface ViewedPage {
   readableText?: string;
 }
 
+/** Where a quoted span is on a page picture (#292): one rectangle per line
+ * run, as fractions of the picture's width and height from its top left
+ * ([left, top, right, bottom]), or none, with why. */
+export interface PageBoxes {
+  rects: [number, number, number, number][];
+  /** Why there is no box, for tests and support; never shown as such. */
+  absent?: string;
+}
+
 /** True when the native side refused with `code`. */
 export function hasVaultErrorCode(error: unknown, code: string): boolean {
   return hasErrorCode(error, code);
@@ -801,6 +909,10 @@ export function hasVaultErrorCode(error: unknown, code: string): boolean {
 /** True when the native side reports that the vault is locked, for example by
  * its own idle deadline while this screen was not running. */
 export const isLockedError = (error: unknown) => hasErrorCode(error, "locked");
+
+/** True when the vault is in read-only recovery mode. */
+export const isRecoveryModeError = (error: unknown) =>
+  hasErrorCode(error, "recovery_mode");
 
 /** True when a password did not open a locked PDF (#54): the patient may try
  * again. */
@@ -865,10 +977,17 @@ export function createVaultBridge(): VaultBridge {
     checkDocuments: () => invoke("vault_check_documents"),
     restartDeviceApproval: (linkId) =>
       invoke("vault_restart_device_approval", { linkId }),
+    forgetRefusedDeliveries: (linkId) =>
+      invoke("vault_forget_refused_deliveries", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
+    submitApprovalCode: (linkId, code) =>
+      invoke("vault_submit_approval_code", { linkId, code }),
+    refreshDeviceApproval: (linkId) =>
+      invoke<PortalApprovalCheck>("vault_refresh_device_approval", { linkId }),
     linkPortal: (request) =>
       invoke<PortalLinkSummary>("vault_portal_link", { request }),
+    connectPortal: (request) => invoke("vault_portal_connect", { request }),
     changePassphrase: (currentPassphrase, newPassphrase) =>
       invoke<void>("vault_change_passphrase", {
         request: { currentPassphrase, newPassphrase },
@@ -992,6 +1111,10 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, page, width, password: password ?? null },
       });
     },
+    pageBoxes: (recordId, page, span, password) =>
+      invoke<PageBoxes>("vault_page_boxes", {
+        request: { recordId, page, ...span, password: password ?? null },
+      }),
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation
@@ -1008,15 +1131,64 @@ export function createVaultBridge(): VaultBridge {
       return cancellation;
     },
     aiModelStatus: () => invoke<ModelStatus>("ai_model_status"),
-    aiSummarize: (pages, lang, keep) =>
-      invoke<ModelSummary>("ai_summarize", {
-        request: { pages, lang, ...keep },
-      }),
-    aiExplain: (term, context, lang, recordId) =>
+    aiSummarize: async (
+      pages,
+      lang,
+      keep,
+      answerId = crypto.randomUUID(),
+      onProgress,
+    ) => {
+      // Listening starts before the run does, so that no early event is
+      // missed; only this answer's events are passed on. The progress is
+      // only for show: a listener that cannot be attached (a refused
+      // permission, a webview that will not listen) leaves the summary to
+      // run without it, never fails it.
+      let unlisten: (() => void) | null = null;
+      if (onProgress) {
+        try {
+          unlisten = await listen<SummaryProgressEvent>(
+            "ai-answer-progress",
+            (event) => {
+              if (event.payload?.answerId === answerId)
+                onProgress(event.payload);
+            },
+          );
+        } catch {
+          unlisten = null;
+        }
+      }
+      try {
+        return await invoke<ModelSummary>("ai_summarize", {
+          answerId,
+          request: { pages, lang, ...keep },
+        });
+      } finally {
+        try {
+          unlisten?.();
+        } catch {
+          // Already gone: nothing to stop.
+        }
+      }
+    },
+    aiExplain: (
+      term,
+      context,
+      lang,
+      recordId,
+      answerId = crypto.randomUUID(),
+    ) =>
       invoke<ModelExplanation>("ai_explain", {
+        answerId,
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    onAiAnswerStarted: (handler) => {
+      const stop = listen<{ answerId: string; limitMs: number }>(
+        "ai-answer-started",
+        (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
     documentText: (recordId, readId, password) =>
       invoke<DocumentText>("vault_document_text", {
         request: { recordId, readId, password: password ?? null },

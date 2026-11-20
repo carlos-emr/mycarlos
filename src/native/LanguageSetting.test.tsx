@@ -96,10 +96,11 @@ describe("saved app language", () => {
       const password = form.getByLabelText("Passphrase", { exact: true });
       fireEvent.change(name, { target: { value: "FAKE Language Patient" } });
       fireEvent.change(password, { target: { value: "FAKE draft" } });
-      const languageChoice = container.querySelector<HTMLInputElement>(
-        `.language-choice input[value="${locale}"]`,
-      )!;
-      fireEvent.click(languageChoice);
+      // The set-up screen has no language list of its own (the comfort screen
+      // before it and Preferences have); a language chosen there reaches it
+      // as the app language, with what was typed kept.
+      expect(container.querySelector(".language-choice")).toBeNull();
+      act(() => setLocaleOverride(locale));
       expect(
         screen.getByRole("heading", {
           name: translate(locale, "create.title"),

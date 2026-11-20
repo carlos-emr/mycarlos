@@ -31,6 +31,12 @@ async function checkedDocument(page: Page, clinicServiceDate: string) {
   });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
+  await sidebar(page)
+    .getByRole("button", {
+      name: en("interface.LibrarySidebar.sharedWithMe"),
+      exact: true,
+    })
+    .click();
   await page
     .getByRole("button", { name: en("portal.check"), exact: true })
     .click();

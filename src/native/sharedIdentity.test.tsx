@@ -9,6 +9,11 @@ import {
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
+import {
+  birthDateGroup,
+  birthDateValue,
+  enterBirthDate,
+} from "../test/birthDate";
 import type { VaultBridge, VaultSnapshot, FoundIdentity } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
@@ -321,10 +326,11 @@ describe("shared PDF suggestions use explicit Move", () => {
   it("keeps profile instructions, creation, and saved people readable at wide and narrow widths", () => {
     renderLibrary({ updateProfileDetails: vi.fn() });
     fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
-    const form = screen
-      .getByRole("textbox", { name: "New profile name" })
-      .closest("form")!;
-    const section = form.parentElement!;
+    // Adding a profile is a button that opens a dialog (Ben, 29 Oct).
+    const add = screen
+      .getByRole("button", { name: "Add profile" })
+      .closest(".native-profile-add")!;
+    const section = add.parentElement!;
     const intro = section.firstElementChild!;
     const list = section.querySelector(".native-person-details-list")!;
     const overlaps = (a: DOMRect, b: DOMRect) =>
@@ -337,7 +343,7 @@ describe("shared PDF suggestions use explicit Move", () => {
           section.style.width = `${width}px`;
           section.style.maxWidth = "100%";
           const bounds = section.getBoundingClientRect();
-          const boxes = [intro, form, list].map((element) =>
+          const boxes = [intro, add, list].map((element) =>
             element.getBoundingClientRect(),
           );
           expect(boxes[0].width).toBeGreaterThanOrEqual(
@@ -353,16 +359,24 @@ describe("shared PDF suggestions use explicit Move", () => {
           expect(section.scrollWidth).toBeLessThanOrEqual(
             section.clientWidth + 1,
           );
-          const unknown = section.querySelector<HTMLInputElement>(
-            'input[type="checkbox"]',
-          )!;
-          const choice = unknown.closest("label")!.getBoundingClientRect();
-          const control = unknown.getBoundingClientRect();
-          expect(choice.height).toBeGreaterThanOrEqual(44);
-          expect(control.left).toBeGreaterThanOrEqual(choice.left);
-          expect(control.right).toBeLessThanOrEqual(choice.right);
-          expect(control.right).toBeLessThanOrEqual(bounds.right);
         }
+      }
+      // The unknown birth-date choice in the dialog stays a 44px target.
+      section.style.width = "";
+      fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+      const dialog = screen.getByRole("dialog", { name: "Add profile" });
+      for (const fontSize of ["16px", "24px", "32px"]) {
+        document.documentElement.style.fontSize = fontSize;
+        const bounds = dialog.getBoundingClientRect();
+        const unknown = within(dialog).getByRole("checkbox", {
+          name: "I don't know this person's date of birth",
+        });
+        const choice = unknown.closest("label")!.getBoundingClientRect();
+        const control = unknown.getBoundingClientRect();
+        expect(choice.height).toBeGreaterThanOrEqual(44);
+        expect(control.left).toBeGreaterThanOrEqual(choice.left);
+        expect(control.right).toBeLessThanOrEqual(choice.right);
+        expect(control.right).toBeLessThanOrEqual(bounds.right);
       }
     } finally {
       document.documentElement.style.fontSize = "";
@@ -398,14 +412,16 @@ describe("shared PDF suggestions use explicit Move", () => {
           expect(form.scrollWidth).toBeLessThanOrEqual(form.clientWidth + 1);
         }
       }
-      expect(unknown).toBeChecked();
+      // FAKE Mom has no details yet, so the date box starts open.
+      expect(unknown).not.toBeChecked();
+      expect(birthDateGroup(form)).toBeEnabled();
       unknown.focus();
       await userEvent.keyboard(" ");
-      expect(unknown).not.toBeChecked();
-      expect(within(form).getByLabelText("Date of birth")).toBeEnabled();
-      await userEvent.keyboard(" ");
       expect(unknown).toBeChecked();
-      expect(within(form).getByLabelText("Date of birth")).toBeDisabled();
+      expect(birthDateGroup(form)).toBeDisabled();
+      await userEvent.keyboard(" ");
+      expect(unknown).not.toBeChecked();
+      expect(birthDateGroup(form)).toBeEnabled();
     } finally {
       document.documentElement.style.fontSize = "";
     }
@@ -450,18 +466,20 @@ describe("shared PDF suggestions use explicit Move", () => {
     const updateProfileDetails = vi.fn().mockResolvedValue(undefined);
     renderLibrary({ createProfile, updateProfileDetails });
     fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    const dialog = screen.getByRole("dialog", { name: "Add profile" });
     fireEvent.change(
-      screen.getByRole("textbox", { name: "New profile name" }),
+      within(dialog).getByRole("textbox", { name: "New profile name" }),
       { target: { value: "FAKE Riley" } },
     );
     fireEvent.change(
       screen.getByLabelText("Full name, as on clinic documents"),
       { target: { value: " FAKE Riley Example " } },
     );
-    fireEvent.change(screen.getByLabelText("Date of birth"), {
-      target: { value: "2012-06-02" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    enterBirthDate(birthDateGroup(), "2012-06-02");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add profile" }),
+    );
     await vi.waitFor(() =>
       expect(createProfile).toHaveBeenCalledWith("FAKE Riley", {
         fullName: "FAKE Riley Example",
@@ -476,7 +494,10 @@ describe("shared PDF suggestions use explicit Move", () => {
     const updateProfileDetails = vi.fn();
     renderLibrary({ createProfile, updateProfileDetails });
     fireEvent.click(screen.getAllByRole("button", { name: "Security" })[0]);
-    const add = screen.getByRole("button", { name: "Add profile" });
+    fireEvent.click(screen.getByRole("button", { name: "Add profile" }));
+    const add = within(
+      screen.getByRole("dialog", { name: "Add profile" }),
+    ).getByRole("button", { name: "Add profile" });
     fireEvent.change(screen.getByLabelText("New profile name"), {
       target: { value: "FAKE Riley" },
     });
@@ -486,13 +507,13 @@ describe("shared PDF suggestions use explicit Move", () => {
       { target: { value: " FAKE Riley Example " } },
     );
     expect(add).toBeDisabled();
-    const date = screen.getByLabelText("Date of birth");
-    fireEvent.change(date, { target: { value: "2012-06-02" } });
+    const date = birthDateGroup();
+    enterBirthDate(date, "2012-06-02");
     const unknown = screen.getByRole("checkbox", {
       name: "I don't know this person's date of birth",
     });
     fireEvent.click(unknown);
-    expect(date).toHaveValue("");
+    expect(birthDateValue(date)).toBe("");
     expect(date).toBeDisabled();
     fireEvent.click(unknown);
     expect(add).toBeDisabled();

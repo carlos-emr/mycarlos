@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "frozen_utc": "2026-11-02T17:58:41.016802+00:00",
+  "summary_model_outputs_seen": false,
+  "synthetic_only": true,
+  "documents": 12,
+  "bilingual_family_clusters": 6,
+  "development_families": 3,
+  "holdout_families": 3,
+  "required_facts": 48,
+  "sha256": {
+    "author_fixtures.py": "e431168978c848de388d23145b16a612203c2c14aad0a71a7c23b2cf4cc76c78",
+    "fixtures.json": "ea80cc65107245c95a2543ff612b1500feab872e4f6a03c93bb631be88548600"
+  },
+  "policy": "Do not alter v1 truth after model output; any correction requires versioned artifacts and an audit reason."
+}
