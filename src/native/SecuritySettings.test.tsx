@@ -444,7 +444,8 @@ describe("SecuritySettings privacy notice", () => {
     // Read after all of the text, Hidden first.
     const follows = (a: Node, b: Node) =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(paragraphs).toHaveLength(3);
+    // Three paragraphs of what is kept, and the one about readable copies.
+    expect(paragraphs).toHaveLength(4);
     expect(follows(last, hidden)).toBe(true);
     expect(follows(hidden, audit)).toBe(true);
     const box = (element: Element) => element.getBoundingClientRect();
@@ -497,16 +498,84 @@ describe("SecuritySettings passphrase change", () => {
 
   it("says hiding a document leaves copies outside the vault, not that it deletes (#71)", () => {
     renderSettings();
-    const section = screen
-      .getByRole("heading", {
+    // One section, "What myCarlos keeps", holds Hidden, History and the text
+    // about readable copies and screenshots (they were two sections).
+    expect(
+      screen.queryByRole("heading", {
         name: humanText("Readable copies and screenshots"),
-      })
+      }),
+    ).toBeNull();
+    const section = screen
+      .getByRole("heading", { name: humanText("What myCarlos keeps") })
       .closest("section")!;
     expect(section).toHaveHumanTextContent(
       /Hiding a document in myCarlos does not erase those copies/,
     );
-    // Nothing in myCarlos deletes a document since #71.
-    expect(section).not.toHaveHumanTextContent(/delet/i);
+    // Nothing in myCarlos deletes a document since #71: the copies text says
+    // so (the section's other text says myCarlos never deletes one).
+    const copies = within(section).getByText(
+      humanText(/Hiding a document in myCarlos does not erase those copies/),
+    );
+    expect(copies).not.toHaveHumanTextContent(/delet/i);
+    expect(
+      within(section).getByRole("button", { name: humanText(/^Hidden/) }),
+    ).toBeInTheDocument();
+    expect(
+      within(section).getByRole("button", {
+        name: humanText("Audit history"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists its sections in this order: encryption, passphrase, recovery key, backup, lock, connected clinics, profiles, what myCarlos keeps", () => {
+    renderSettings({
+      clinicDocuments: (
+        <section aria-labelledby="clinics-heading">
+          <h2 id="clinics-heading">Connected clinics</h2>
+        </section>
+      ),
+    });
+    const names = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent ?? "");
+    const order = [
+      /^Encryption/,
+      /^Change passphrase/,
+      /^Recovery key/,
+      /^Encrypted backup/,
+      /^Lock automatically/,
+      /^Connected clinics/,
+      /^Patient profiles/,
+      /^What myCarlos keeps/,
+    ];
+    const positions = order.map((pattern) =>
+      names.findIndex((name) => pattern.test(humanValue(name))),
+    );
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    // The AI helper's notice is in the AI helper section now (#355).
+    expect(
+      screen.queryByRole("button", { name: humanText("About the AI helper") }),
+    ).toBeNull();
+  });
+
+  it("shows the speed test for testers only in a development build", () => {
+    const { unmount } = render(
+      <SecuritySettings {...settingsProps({ showSpeedTest: false })} />,
+    );
+    expect(
+      screen.queryByRole("button", { name: humanText("Run speed test") }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("heading", {
+        name: humanText("Speed test, for testers"),
+      }),
+    ).toBeNull();
+    unmount();
+    renderSettings({ showSpeedTest: true });
+    expect(
+      screen.getByRole("button", { name: humanText("Run speed test") }),
+    ).toBeInTheDocument();
   });
 
   it("keeps mismatched passphrase drafts while translating and clears all three only on explicit submit", () => {

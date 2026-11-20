@@ -1204,7 +1204,6 @@ security-backup-title = Cópia de segurança criptografada
 
 security-copies-body = As exportações e capturas de tela ficam fora da proteção do cofre. Ocultar um documento no myCarlos não apaga essas cópias nem o prontuário médico original da clínica.
 
-security-copies-title = Cópias legíveis e capturas de tela
 
 security-devBuild-body = Use apenas arquivos fictícios.
 
@@ -1468,7 +1467,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Clínicas conectadas.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1564,7 +1563,7 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-title = Documentos da clínica
+portal-title = Clínicas conectadas
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
 
@@ -1580,13 +1579,13 @@ rename-title-profile = Renomear a pasta da pessoa
 
 portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
 
-portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Clínicas conectadas.
 
 portal-connecting = Conectando e solicitando a aprovação da clínica…
 
 portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
 
-portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Clínicas conectadas, indica o que fazer em seguida.
 
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 
@@ -2247,7 +2246,7 @@ notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois q
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
 notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
-notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Clínicas conectadas e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
 noticesStep-title = Avisos da sua clínica
 noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.

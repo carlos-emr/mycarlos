@@ -1064,7 +1064,6 @@ security-backup-title = 加密備份
 
 security-copies-body = 匯出檔案和螢幕截圖不受保險庫保護。在 myCarlos 中隱藏文件不會刪除這些副本或診所的原始病歷。
 
-security-copies-title = 可讀副本和螢幕截圖
 
 security-devBuild-body = 僅使用合成檔案。
 
@@ -1308,7 +1307,7 @@ portal-approvalCancelled = 此核准請求已取消。請先檢查最新狀態�
 
 portal-approvalContact = 需要確認診所的核准狀態。請聯絡診所了解後續步驟。
 
-portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「診所文件」。
+portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「已連線的診所」。
 
 portal-approvalMissing = 入口網站上找不到您已儲存的核准請求。請重新傳送已儲存的請求。
 
@@ -1400,7 +1399,7 @@ portal-serviceDate = 服務日期：{ $date }
 
 portal-serviceDateLabel = 服務日期
 
-portal-title = 診所文件
+portal-title = 已連線的診所
 
 rename-help-profile = 這只會變更顯示的資料夾名稱。此人的資料夾和文件仍會留在原處。
 
@@ -1416,13 +1415,13 @@ rename-title-profile = 重新命名此人的資料夾
 
 portal-connectConsent = 此操作會連線此裝置並傳送核准請求。診所必須先核准此裝置，裝置才能接收文件。
 
-portal-connected = 裝置已連結。可在「安全性」的「診所文件」下查看其核准狀態。
+portal-connected = 裝置已連結。可在「安全性」的「已連線的診所」下查看其核准狀態。
 
 portal-connecting = 正在連線並申請診所核准…
 
 portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
 
-portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「已連線的診所」下的核准狀態，了解下一步操作。
 
 portal-retryApproval = 重試已儲存的核准請求
 
@@ -2045,7 +2044,7 @@ notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoNeedsNotices = 請先允許文件送達通知，才能開啟此選項。
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
-notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
+notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「已連線的診所」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
 noticesStep-title = 來自診所的通知
 noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。

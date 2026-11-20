@@ -1311,7 +1311,7 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     absent();
     expect(
-      screen.getByRole("heading", { name: "Clinic documents" }),
+      screen.getByRole("heading", { name: "Connected clinics" }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
     absent();
@@ -2162,20 +2162,21 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       state: "installed",
       model: FAKE_MODEL,
     });
-    // Seen from Security while the model's status could not be read: the
-    // export's text only.
+    // Seen from the AI helper section (#355) while the model's status could
+    // not be read: the export's text only.
     fireEvent.click(
       within(reader).getByRole("button", { name: humanText("Close") }),
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("AI helper") }),
+    );
+    const aboutAi = await screen.findByRole("button", {
+      name: humanText("About the AI helper"),
+    });
+    // The AI helper section has read the status by now: the next read fails.
+    await waitFor(() => expect(native.aiModelStatus).toHaveBeenCalled());
     native.aiModelStatus.mockRejectedValueOnce(new Error("FAKE: no status"));
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Security") }),
-    );
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: humanText("About the AI helper"),
-      }),
-    );
+    fireEvent.click(aboutAi);
     const shareOnly = await screen.findByRole("dialog", {
       name: humanText("About the AI helper"),
     });

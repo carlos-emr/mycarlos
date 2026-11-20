@@ -9,10 +9,14 @@ import { AiModelSetting } from "./AiModelSetting";
 export function AiSettings({
   aiStatus,
   onAiStatus,
+  onOpenAiHelperNotice,
 }: {
   aiStatus: ModelStatus | null;
   /** The status after the model was added or removed here. */
   onAiStatus: (status: ModelStatus) => void;
+  /** Opens the notice about the AI helper (#72, #355): it is here, with the
+   * helper's other settings, and no longer in Security. */
+  onOpenAiHelperNotice?: () => void;
 }) {
   const { t } = useI18n();
   return (
@@ -43,6 +47,23 @@ export function AiSettings({
             )}
           </div>
         </section>
+        {onOpenAiHelperNotice && (
+          <section className="setting-row">
+            <div>
+              <h2>{t("aiHelper.notice.title")}</h2>
+              <p>{t("aiHelper.notice.introShare")}</p>
+            </div>
+            <div>
+              <button
+                className="button"
+                type="button"
+                onClick={onOpenAiHelperNotice}
+              >
+                {t("aiHelper.notice.title")}
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

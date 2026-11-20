@@ -15,7 +15,7 @@ import {
   sidebar,
 } from "./support/vaultFake";
 
-// Clinic documents, myCarlos's anchor workflow: linking this device to a
+// Connected clinics, myCarlos's anchor workflow: linking this device to a
 // clinic's patient portal in Security (a refused code is not kept, the link,
 // asking the clinic to approve the device, copying its device code), then
 // checking for new documents from the library, which arrive in Shared with

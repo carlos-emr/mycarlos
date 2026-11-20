@@ -4061,13 +4061,17 @@ button:disabled,
 .portal-documents {
   margin-block-end: 2rem;
 }
+/* In Security the clinics sit between two lists of settings. */
+.setting-list + .portal-documents {
+  margin-block-start: 1.25rem;
+}
 .portal-link {
   margin-block: 1.25rem;
   padding: 1rem;
   border: 1px solid var(--line);
   border-radius: 0.5rem;
 }
-/* #124 review: "Clinic documents" is a Security section like the others, so
+/* #124 review: "Connected clinics" is a Security section like the others, so
    its heading has their size (.setting-row h2), and a clinic's name in its
    card is no larger than that heading. */
 .portal-documents > h2 {
@@ -4106,7 +4110,7 @@ button:disabled,
   overflow-wrap: anywhere;
   font-family: monospace;
 }
-/* Clinic documents lists working links only; earlier attempts and each card's device code and
+/* Connected clinics lists working links only; earlier attempts and each card's device code and
    fingerprint wait behind a button and a disclosure. */
 .portal-device-details {
   margin-block: 0.75rem;
