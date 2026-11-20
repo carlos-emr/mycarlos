@@ -1,0 +1,89 @@
+{
+ "runner": "webkitgtk_runner.py",
+ "webkitgtk": "2.52.6",
+ "gstPluginPath": "<private-dir>/gstdl/x_gstreamer1.0-libav/usr/lib/x86_64-linux-gnu/gstreamer-1.0:<private-dir>/gstdl/x_gstreamer1.0-plugins-bad/usr/lib/x86_64-linux-gnu/gstreamer-1.0:<private-dir>/gstdl/x_gstreamer1.0-plugins-ugly/usr/lib/x86_64-linux-gnu/gstreamer-1.0:",
+ "support": {
+  "userAgent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+  "hasMediaRecorder": "function",
+  "hasMediaDevices": true,
+  "support": {
+   "video/mp4;codecs=avc1.42E01E,mp4a.40.2": true,
+   "video/mp4;codecs=avc1.640028,mp4a.40.2": true,
+   "video/mp4;codecs=avc1,mp4a.40.2": true,
+   "video/mp4;codecs=avc1": true,
+   "video/mp4": true,
+   "video/webm;codecs=vp9,opus": false,
+   "video/webm;codecs=vp8,opus": false,
+   "video/webm;codecs=vp8": false,
+   "video/webm": false
+  },
+  "firstMp4": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "firstWebm": null
+ },
+ "recordings": [],
+ "playback": {
+  "rangeHonoured": {
+   "clips": [
+    {
+     "name": "fixture-flower.webm",
+     "url": "mcspike://app/\u2026",
+     "canPlay": {
+      "mp4": "",
+      "webm": "probably"
+     },
+     "mediaEvents": [],
+     "metadata": false,
+     "metadataMs": 12096,
+     "networkState": 3,
+     "readyState": 0,
+     "pageVisibility": "visible"
+    }
+   ],
+   "requestCount": 0,
+   "requestsWithNonZeroStart": 0,
+   "firstRequests": []
+  },
+  "rangeIgnored": {
+   "clips": [
+    {
+     "name": "fixture-flower.webm",
+     "url": "mcspike://app/\u2026",
+     "canPlay": {
+      "mp4": "",
+      "webm": "probably"
+     },
+     "mediaEvents": [],
+     "metadata": false,
+     "metadataMs": 12010,
+     "networkState": 3,
+     "readyState": 0,
+     "pageVisibility": "visible"
+    }
+   ],
+   "requestCount": 0,
+   "requestsWithNonZeroStart": 0,
+   "firstRequests": []
+  },
+  "httpControl": {
+   "clips": [
+    {
+     "name": "fixture-flower.webm",
+     "url": "http://127.0.0.1:40361/\u2026",
+     "canPlay": {
+      "mp4": "",
+      "webm": "probably"
+     },
+     "mediaEvents": [],
+     "metadata": false,
+     "metadataMs": 12001,
+     "networkState": 3,
+     "readyState": 0,
+     "pageVisibility": "visible"
+    }
+   ],
+   "requestCount": 0,
+   "requestsWithNonZeroStart": 0,
+   "firstRequests": []
+  }
+ }
+}

@@ -1,0 +1,69 @@
+# PROPOSED, NOT INSTALLED. Needs Ben: it would live at .github/workflows/mycarlos-video-spike.yml.
+# Runs the #359 spike probe (spike/video-359) on the desktop webview engines a hosted runner has,
+# with FAKE canvas and tone sources only, and keeps the result files. By hand only.
+#
+# What it covers: Chrome (a stand-in for WebView2 and Android WebView) on Linux, Windows and macOS;
+# Playwright's WebKit on macOS (the Safari engine, a stand-in for WKWebView); WebKitGTK on Linux with the
+# GStreamer packages the .deb would depend on.
+# What it does NOT cover: the real WebView2, WKWebView, iOS and Android System WebView inside the
+# app (that needs the small Tauri harness app, not written yet), and Android emulators (API 24 and a
+# recent image), which need their own job like mycarlos-android-emulator.yml.
+name: myCarlos video spike (PR 0)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chrome:
+    name: Chrome on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22.14.0, cache: npm, cache-dependency-path: package-lock.json }
+      - run: npm ci
+      # The hosted runners ship Google Chrome, which has H.264 and AAC.
+      - run: node spike/video-359/runners/chromium_runner.mjs --channel chrome --reply-cap 262144 --out chrome-${{ runner.os }}.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: { name: video-spike-chrome-${{ runner.os }}, path: chrome-${{ runner.os }}.json }
+  webkit-macos:
+    name: WebKit (Playwright) on macOS
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22.14.0, cache: npm, cache-dependency-path: package-lock.json }
+      - run: npm ci
+      - run: npx playwright install webkit
+      - run: node spike/video-359/runners/chromium_runner.mjs --engine webkit --reply-cap 262144 --out webkit-macos.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: { name: video-spike-webkit-macos, path: webkit-macos.json }
+  webkitgtk:
+    name: WebKitGTK with GStreamer bad and ugly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb python3-gi gir1.2-webkit2-4.1 gir1.2-soup-3.0 \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+            pulseaudio
+      # A null audio sink, so that a tone has somewhere to run (the local run had none).
+      - run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=spike
+      - env:
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"   # a throw-away runner and a local page
+        run: xvfb-run -a python3 -I spike/video-359/runners/webkitgtk_runner.py --out webkitgtk.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: { name: video-spike-webkitgtk, path: webkitgtk.json }

@@ -1,0 +1,791 @@
+{
+ "runner": "webkitgtk_runner.py",
+ "webkitgtk": "2.52.6",
+ "gstPluginPath": "<private-dir>/gstdl/x_gstreamer1.0-libav/usr/lib/x86_64-linux-gnu/gstreamer-1.0:<private-dir>/gstdl/x_gstreamer1.0-plugins-bad/usr/lib/x86_64-linux-gnu/gstreamer-1.0:<private-dir>/gstdl/x_gstreamer1.0-plugins-ugly/usr/lib/x86_64-linux-gnu/gstreamer-1.0:",
+ "support": {
+  "userAgent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+  "hasMediaRecorder": "function",
+  "hasMediaDevices": true,
+  "support": {
+   "video/mp4;codecs=avc1.42E01E,mp4a.40.2": true,
+   "video/mp4;codecs=avc1.640028,mp4a.40.2": true,
+   "video/mp4;codecs=avc1,mp4a.40.2": true,
+   "video/mp4;codecs=avc1": true,
+   "video/mp4": true,
+   "video/webm;codecs=vp9,opus": false,
+   "video/webm;codecs=vp8,opus": false,
+   "video/webm;codecs=vp8": false,
+   "video/webm": false
+  },
+  "firstMp4": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "firstWebm": null
+ },
+ "recordings": [
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 320,
+   "height": 240,
+   "fps": 30,
+   "requestedVideoBps": 207360,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "stateAfterPause": "paused",
+   "stateAfterResume": "recording",
+   "events": [
+    "start@131",
+    "pause@2635",
+    "resume@4145",
+    "stop@8659"
+   ],
+   "pieces": [
+    [
+     1132,
+     1535
+    ],
+    [
+     2136,
+     12589
+    ],
+    [
+     4647,
+     38368
+    ],
+    [
+     5647,
+     12590
+    ],
+    [
+     6651,
+     12589
+    ],
+    [
+     7652,
+     12590
+    ],
+    [
+     8659,
+     18516
+    ]
+   ],
+   "pieceCount": 7,
+   "firstPieceMs": 1132,
+   "pieceGapsMs": [
+    1004,
+    2511,
+    1000,
+    1004,
+    1001,
+    1007
+   ],
+   "activeSeconds": 7,
+   "framesDrawn": 236,
+   "framesDrawnWhilePaused": 41,
+   "bytes": 108777,
+   "achievedVideoPlusAudioMbps": 0.12,
+   "firstBytes": "00000020667479706d70343200000000",
+   "firstPieceTopLevel": [
+    "ftyp:32",
+    "ftyp:32",
+    "moov:1471"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:32",
+     "ftyp:32",
+     "moov:1471",
+     "moof:600",
+     "mdat:11989",
+     "moof:600",
+     "mdat:11989",
+     "moof:600",
+     "moof:600",
+     "mdat:11990",
+     "moof:600",
+     "mdat:11989",
+     "moof:600",
+     "mdat:11990"
+    ],
+    "boxCount": 23,
+    "ftypCount": 2,
+    "moovCount": 1,
+    "moofCount": 11,
+    "mdatCount": 9,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 3000,
+      "kind": "vide"
+     },
+     {
+      "id": 2,
+      "timescale": 44100,
+      "kind": "soun"
+     }
+    ],
+    "orphanMoofs": 2,
+    "repeatedSequence": 2,
+    "perTrack": {
+     "vide": {
+      "timescale": 3000,
+      "fragments": 0,
+      "samples": 0,
+      "firstTfdt": null,
+      "lastTfdt": null,
+      "maxGapOrOverlapSeconds": 0
+     },
+     "soun": {
+      "timescale": 44100,
+      "fragments": 11,
+      "samples": 425,
+      "firstTfdt": 1,
+      "lastTfdt": 352257,
+      "maxGapOrOverlapSeconds": 0.998
+     }
+    }
+   },
+   "videoFramesInFile": 0,
+   "expectedFrames": 210,
+   "droppedFramesApprox": 210,
+   "clipName": "clip-320x240-mp4-av-paused",
+   "cpuSecondsDuringRecording": 4.8,
+   "wallSeconds": 8.81,
+   "cpuPercentOfOneCore": 54.5
+  },
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 320,
+   "height": 240,
+   "fps": 30,
+   "requestedVideoBps": 207360,
+   "withAudio": false,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 0,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "events": [
+    "start@64",
+    "stop@7090"
+   ],
+   "pieces": [
+    [
+     1066,
+     15072
+    ],
+    [
+     2067,
+     25262
+    ],
+    [
+     3067,
+     26575
+    ],
+    [
+     4068,
+     24530
+    ],
+    [
+     5068,
+     26049
+    ],
+    [
+     6069,
+     26994
+    ],
+    [
+     7090,
+     36722
+    ]
+   ],
+   "pieceCount": 7,
+   "firstPieceMs": 1066,
+   "pieceGapsMs": [
+    1001,
+    1000,
+    1001,
+    1000,
+    1001,
+    1021
+   ],
+   "activeSeconds": 7.06,
+   "framesDrawn": 196,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 181204,
+   "achievedVideoPlusAudioMbps": 0.21,
+   "firstBytes": "00000020667479706d70343200000000",
+   "firstPieceTopLevel": [
+    "ftyp:32",
+    "ftyp:32",
+    "moov:911",
+    "moof:264",
+    "mdat:13833"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:32",
+     "ftyp:32",
+     "moov:911",
+     "moof:264",
+     "mdat:13833",
+     "moof:264",
+     "mdat:12052",
+     "moof:264",
+     "mdat:12682",
+     "moof:264",
+     "mdat:12649",
+     "moof:264",
+     "mdat:13398",
+     "moof:264"
+    ],
+    "boxCount": 32,
+    "ftypCount": 2,
+    "moovCount": 1,
+    "moofCount": 15,
+    "mdatCount": 14,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 3000,
+      "kind": "vide"
+     }
+    ],
+    "orphanMoofs": 1,
+    "repeatedSequence": 1,
+    "perTrack": {
+     "vide": {
+      "timescale": 3000,
+      "fragments": 15,
+      "samples": 223,
+      "firstTfdt": 0,
+      "lastTfdt": 19500,
+      "maxGapOrOverlapSeconds": 0.5
+     }
+    }
+   },
+   "videoFramesInFile": 223,
+   "expectedFrames": 212,
+   "droppedFramesApprox": 0,
+   "clipName": "clip-320x240-mp4-v",
+   "cpuSecondsDuringRecording": 3.61,
+   "wallSeconds": 7.34,
+   "cpuPercentOfOneCore": 49.2
+  },
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 640,
+   "height": 360,
+   "fps": 30,
+   "requestedVideoBps": 622080,
+   "withAudio": false,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 0,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "events": [
+    "start@86",
+    "stop@7157"
+   ],
+   "pieces": [
+    [
+     1086,
+     36760
+    ],
+    [
+     2090,
+     78688
+    ],
+    [
+     3093,
+     73681
+    ],
+    [
+     4095,
+     78728
+    ],
+    [
+     5095,
+     77625
+    ],
+    [
+     6096,
+     74164
+    ],
+    [
+     7157,
+     112179
+    ]
+   ],
+   "pieceCount": 7,
+   "firstPieceMs": 1086,
+   "pieceGapsMs": [
+    1004,
+    1003,
+    1002,
+    1000,
+    1001,
+    1061
+   ],
+   "activeSeconds": 7.09,
+   "framesDrawn": 197,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 531825,
+   "achievedVideoPlusAudioMbps": 0.6,
+   "firstBytes": "00000020667479706d70343200000000",
+   "firstPieceTopLevel": [
+    "ftyp:32",
+    "ftyp:32",
+    "moov:912",
+    "moof:264",
+    "mdat:35520"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:32",
+     "ftyp:32",
+     "moov:912",
+     "moof:264",
+     "mdat:35520",
+     "moof:264",
+     "mdat:40760",
+     "moof:264",
+     "mdat:37400",
+     "moof:264",
+     "mdat:34684",
+     "moof:264",
+     "mdat:38469",
+     "moof:264"
+    ],
+    "boxCount": 32,
+    "ftypCount": 2,
+    "moovCount": 1,
+    "moofCount": 15,
+    "mdatCount": 14,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 3000,
+      "kind": "vide"
+     }
+    ],
+    "orphanMoofs": 1,
+    "repeatedSequence": 1,
+    "perTrack": {
+     "vide": {
+      "timescale": 3000,
+      "fragments": 15,
+      "samples": 223,
+      "firstTfdt": 1,
+      "lastTfdt": 19501,
+      "maxGapOrOverlapSeconds": 0.5
+     }
+    }
+   },
+   "videoFramesInFile": 223,
+   "expectedFrames": 213,
+   "droppedFramesApprox": 0,
+   "clipName": "clip-640x360-mp4-v",
+   "cpuSecondsDuringRecording": 6.08,
+   "wallSeconds": 7.45,
+   "cpuPercentOfOneCore": 81.7
+  },
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 1280,
+   "height": 720,
+   "fps": 30,
+   "requestedVideoBps": 2488320,
+   "withAudio": false,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 0,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "events": [
+    "start@96",
+    "stop@7114"
+   ],
+   "pieces": [
+    [
+     7114,
+     671
+    ]
+   ],
+   "pieceCount": 1,
+   "firstPieceMs": 7114,
+   "pieceGapsMs": [],
+   "activeSeconds": 7.1,
+   "framesDrawn": 194,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 671,
+   "achievedVideoPlusAudioMbps": 0,
+   "firstBytes": "00000020667479706d70343200000000",
+   "firstPieceTopLevel": [
+    "ftyp:32",
+    "ftyp:32",
+    "moov:607"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:32",
+     "ftyp:32",
+     "moov:607"
+    ],
+    "boxCount": 3,
+    "ftypCount": 2,
+    "moovCount": 1,
+    "moofCount": 0,
+    "mdatCount": 0,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 0,
+      "kind": "\u0000\u0000\u0000\u0000"
+     }
+    ],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {
+     "\u0000\u0000\u0000\u0000": {
+      "timescale": 0,
+      "fragments": 0,
+      "samples": 0,
+      "firstTfdt": null,
+      "lastTfdt": null,
+      "maxGapOrOverlapSeconds": 0
+     }
+    }
+   },
+   "clipName": "clip-1280x720-mp4-v",
+   "cpuSecondsDuringRecording": 6.89,
+   "wallSeconds": 7.24,
+   "cpuPercentOfOneCore": 95.2
+  },
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 1280,
+   "height": 720,
+   "fps": 30,
+   "requestedVideoBps": 2488320,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "events": [
+    "start@99",
+    "stop@7114"
+   ],
+   "pieces": [],
+   "pieceCount": 0,
+   "firstPieceMs": null,
+   "pieceGapsMs": [],
+   "activeSeconds": 7.11,
+   "framesDrawn": 192,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 0,
+   "achievedVideoPlusAudioMbps": 0,
+   "firstBytes": "",
+   "firstPieceTopLevel": [],
+   "container": {
+    "topLevel": [],
+    "boxCount": 0,
+    "ftypCount": 0,
+    "moovCount": 0,
+    "moofCount": 0,
+    "mdatCount": 0,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {}
+   },
+   "clipName": "clip-1280x720-mp4-av",
+   "cpuSecondsDuringRecording": 8.08,
+   "wallSeconds": 7.18,
+   "cpuPercentOfOneCore": 112.6
+  },
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": false,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 0,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "events": [
+    "start@103",
+    "stop@7108"
+   ],
+   "pieces": [
+    [
+     7108,
+     671
+    ]
+   ],
+   "pieceCount": 1,
+   "firstPieceMs": 7108,
+   "pieceGapsMs": [],
+   "activeSeconds": 7.1,
+   "framesDrawn": 194,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 671,
+   "achievedVideoPlusAudioMbps": 0,
+   "firstBytes": "00000020667479706d70343200000000",
+   "firstPieceTopLevel": [
+    "ftyp:32",
+    "ftyp:32",
+    "moov:607"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:32",
+     "ftyp:32",
+     "moov:607"
+    ],
+    "boxCount": 3,
+    "ftypCount": 2,
+    "moovCount": 1,
+    "moofCount": 0,
+    "mdatCount": 0,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 0,
+      "kind": "\u0000\u0000\u0000\u0000"
+     }
+    ],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {
+     "\u0000\u0000\u0000\u0000": {
+      "timescale": 0,
+      "fragments": 0,
+      "samples": 0,
+      "firstTfdt": null,
+      "lastTfdt": null,
+      "maxGapOrOverlapSeconds": 0
+     }
+    }
+   },
+   "clipName": "clip-1920x1080-mp4-v",
+   "cpuSecondsDuringRecording": 9.45,
+   "wallSeconds": 7.21,
+   "cpuPercentOfOneCore": 131.2
+  },
+  {
+   "mime": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+   "events": [
+    "start@57",
+    "stop@7069"
+   ],
+   "pieces": [
+    [
+     7068,
+     1231
+    ]
+   ],
+   "pieceCount": 1,
+   "firstPieceMs": 7068,
+   "pieceGapsMs": [],
+   "activeSeconds": 7.06,
+   "framesDrawn": 149,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 1231,
+   "achievedVideoPlusAudioMbps": 0,
+   "firstBytes": "00000020667479706d70343200000000",
+   "firstPieceTopLevel": [
+    "ftyp:32",
+    "ftyp:32",
+    "moov:1167"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:32",
+     "ftyp:32",
+     "moov:1167"
+    ],
+    "boxCount": 3,
+    "ftypCount": 2,
+    "moovCount": 1,
+    "moofCount": 0,
+    "mdatCount": 0,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 0,
+      "kind": "\u0000\u0000\u0000\u0000"
+     },
+     {
+      "id": 2,
+      "timescale": 44100,
+      "kind": "soun"
+     }
+    ],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {
+     "\u0000\u0000\u0000\u0000": {
+      "timescale": 0,
+      "fragments": 0,
+      "samples": 0,
+      "firstTfdt": null,
+      "lastTfdt": null,
+      "maxGapOrOverlapSeconds": 0
+     },
+     "soun": {
+      "timescale": 44100,
+      "fragments": 0,
+      "samples": 0,
+      "firstTfdt": null,
+      "lastTfdt": null,
+      "maxGapOrOverlapSeconds": 0
+     }
+    }
+   },
+   "clipName": "clip-1920x1080-mp4-av",
+   "cpuSecondsDuringRecording": 9.28,
+   "wallSeconds": 7.31,
+   "cpuPercentOfOneCore": 126.9
+  }
+ ],
+ "playback": {
+  "rangeHonoured": {
+   "clips": [
+    {
+     "name": "clip-320x240-mp4-av-paused",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12005
+    },
+    {
+     "name": "clip-320x240-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12001
+    },
+    {
+     "name": "clip-640x360-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12011
+    },
+    {
+     "name": "clip-1280x720-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12000
+    },
+    {
+     "name": "clip-1280x720-mp4-av",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12001
+    },
+    {
+     "name": "clip-1920x1080-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12001
+    },
+    {
+     "name": "clip-1920x1080-mp4-av",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12003
+    }
+   ],
+   "requestCount": 0,
+   "requestsWithNonZeroStart": 0,
+   "firstRequests": []
+  },
+  "rangeIgnored": {
+   "clips": [
+    {
+     "name": "clip-320x240-mp4-av-paused",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12007
+    },
+    {
+     "name": "clip-320x240-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12001
+    },
+    {
+     "name": "clip-640x360-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12003
+    },
+    {
+     "name": "clip-1280x720-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12001
+    },
+    {
+     "name": "clip-1280x720-mp4-av",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12000
+    },
+    {
+     "name": "clip-1920x1080-mp4-v",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12003
+    },
+    {
+     "name": "clip-1920x1080-mp4-av",
+     "url": "mcspike://app/\u2026",
+     "metadata": false,
+     "metadataMs": 12075
+    }
+   ],
+   "requestCount": 0,
+   "requestsWithNonZeroStart": 0,
+   "firstRequests": []
+  }
+ }
+}

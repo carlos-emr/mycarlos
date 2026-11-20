@@ -1,0 +1,1144 @@
+{
+ "runner": "chromium_runner.mjs",
+ "browser": "151.0.7922.34",
+ "executable": "playwright chromium",
+ "support": {
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+  "hasMediaRecorder": "function",
+  "hasMediaDevices": true,
+  "support": {
+   "video/mp4;codecs=avc1.42E01E,mp4a.40.2": false,
+   "video/mp4;codecs=avc1.640028,mp4a.40.2": false,
+   "video/mp4;codecs=avc1,mp4a.40.2": false,
+   "video/mp4;codecs=avc1": true,
+   "video/mp4": true,
+   "video/webm;codecs=vp9,opus": true,
+   "video/webm;codecs=vp8,opus": true,
+   "video/webm;codecs=vp8": true,
+   "video/webm": true
+  },
+  "firstMp4": "video/mp4;codecs=avc1",
+  "firstWebm": "video/webm;codecs=vp9,opus"
+ },
+ "recordings": [
+  {
+   "mime": "video/mp4;codecs=avc1",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/mp4;codecs=avc1",
+   "stateAfterPause": "paused",
+   "stateAfterResume": "recording",
+   "events": [
+    "start@0",
+    "pause@2501",
+    "resume@4002",
+    "stop@8504"
+   ],
+   "pieces": [
+    [
+     1317,
+     1222
+    ],
+    [
+     2462,
+     1082387
+    ],
+    [
+     5081,
+     403980
+    ],
+    [
+     7257,
+     1026487
+    ],
+    [
+     8458,
+     564843
+    ],
+    [
+     8504,
+     74342
+    ]
+   ],
+   "pieceCount": 6,
+   "firstPieceMs": 1317,
+   "pieceGapsMs": [
+    1145,
+    2619,
+    2176,
+    1201,
+    46
+   ],
+   "activeSeconds": 7,
+   "framesDrawn": 258,
+   "framesDrawnWhilePaused": 46,
+   "bytes": 3153261,
+   "achievedVideoPlusAudioMbps": 3.6,
+   "firstBytes": "000000246674797069736f6d00000200",
+   "firstPieceTopLevel": [
+    "ftyp:36",
+    "moov:1186"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:36",
+     "moov:1186",
+     "moof:636",
+     "mdat:556655",
+     "moof:588",
+     "mdat:524508",
+     "moof:492",
+     "mdat:403488",
+     "moof:204",
+     "mdat:66538",
+     "moof:564",
+     "mdat:482138",
+     "moof:564",
+     "mdat:476479"
+    ],
+    "boxCount": 20,
+    "ftypCount": 1,
+    "moovCount": 1,
+    "moofCount": 9,
+    "mdatCount": 9,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 30000,
+      "kind": "vide"
+     },
+     {
+      "id": 2,
+      "timescale": 48000,
+      "kind": "soun"
+     }
+    ],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {
+     "vide": {
+      "timescale": 30000,
+      "fragments": 9,
+      "samples": 203,
+      "firstTfdt": 0,
+      "lastTfdt": 209328,
+      "maxGapOrOverlapSeconds": 1.261
+     },
+     "soun": {
+      "timescale": 48000,
+      "fragments": 9,
+      "samples": 116,
+      "firstTfdt": 0,
+      "lastTfdt": 0,
+      "maxGapOrOverlapSeconds": 6.91
+     }
+    }
+   },
+   "videoFramesInFile": 203,
+   "expectedFrames": 210,
+   "droppedFramesApprox": 7,
+   "clipName": "clip-1920x1080-mp4-av-paused",
+   "wallSeconds": 8.631
+  },
+  {
+   "mime": "video/mp4;codecs=avc1",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": false,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 0,
+   "recorderMimeType": "video/mp4;codecs=avc1",
+   "events": [
+    "start@0",
+    "stop@7004"
+   ],
+   "pieces": [
+    [
+     1474,
+     753
+    ],
+    [
+     2492,
+     963855
+    ],
+    [
+     3723,
+     476327
+    ],
+    [
+     4879,
+     92128
+    ],
+    [
+     6274,
+     700017
+    ],
+    [
+     7004,
+     503587
+    ]
+   ],
+   "pieceCount": 6,
+   "firstPieceMs": 1474,
+   "pieceGapsMs": [
+    1018,
+    1231,
+    1156,
+    1395,
+    730
+   ],
+   "activeSeconds": 7,
+   "framesDrawn": 209,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 2736667,
+   "achievedVideoPlusAudioMbps": 3.13,
+   "firstBytes": "000000246674797069736f6d00000200",
+   "firstPieceTopLevel": [
+    "ftyp:36",
+    "moov:717"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:36",
+     "moov:717",
+     "moof:344",
+     "mdat:450383",
+     "moof:368",
+     "mdat:512760",
+     "moof:352",
+     "mdat:475975",
+     "moof:128",
+     "mdat:92000",
+     "moof:312",
+     "mdat:408391",
+     "moof:240",
+     "mdat:291074"
+    ],
+    "boxCount": 18,
+    "ftypCount": 1,
+    "moovCount": 1,
+    "moofCount": 8,
+    "mdatCount": 8,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 30000,
+      "kind": "vide"
+     }
+    ],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {
+     "vide": {
+      "timescale": 30000,
+      "fragments": 8,
+      "samples": 179,
+      "firstTfdt": 0,
+      "lastTfdt": 183175,
+      "maxGapOrOverlapSeconds": 1.333
+     }
+    }
+   },
+   "videoFramesInFile": 179,
+   "expectedFrames": 210,
+   "droppedFramesApprox": 31,
+   "clipName": "clip-1920x1080-mp4-v",
+   "wallSeconds": 7.11
+  },
+  {
+   "mime": "video/mp4;codecs=avc1",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/mp4;codecs=avc1",
+   "events": [
+    "start@0",
+    "stop@7014"
+   ],
+   "pieces": [
+    [
+     1383,
+     1222
+    ],
+    [
+     2685,
+     959270
+    ],
+    [
+     3747,
+     508380
+    ],
+    [
+     5558,
+     111135
+    ],
+    [
+     6694,
+     984135
+    ],
+    [
+     7014,
+     213838
+    ]
+   ],
+   "pieceCount": 6,
+   "firstPieceMs": 1383,
+   "pieceGapsMs": [
+    1302,
+    1062,
+    1811,
+    1136,
+    320
+   ],
+   "activeSeconds": 7.01,
+   "framesDrawn": 202,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 2777980,
+   "achievedVideoPlusAudioMbps": 3.17,
+   "firstBytes": "000000246674797069736f6d00000200",
+   "firstPieceTopLevel": [
+    "ftyp:36",
+    "moov:1186"
+   ],
+   "container": {
+    "topLevel": [
+     "ftyp:36",
+     "moov:1186",
+     "moof:580",
+     "mdat:457578",
+     "moof:564",
+     "mdat:500548",
+     "moof:596",
+     "mdat:507784",
+     "moof:236",
+     "mdat:110899",
+     "moof:540",
+     "mdat:430619",
+     "moof:620",
+     "mdat:552356"
+    ],
+    "boxCount": 16,
+    "ftypCount": 1,
+    "moovCount": 1,
+    "moofCount": 7,
+    "mdatCount": 7,
+    "mfraAtEnd": false,
+    "trailingBytes": 0,
+    "tracks": [
+     {
+      "id": 1,
+      "timescale": 30000,
+      "kind": "vide"
+     },
+     {
+      "id": 2,
+      "timescale": 48000,
+      "kind": "soun"
+     }
+    ],
+    "orphanMoofs": 0,
+    "repeatedSequence": 0,
+    "perTrack": {
+     "vide": {
+      "timescale": 30000,
+      "fragments": 7,
+      "samples": 176,
+      "firstTfdt": 0,
+      "lastTfdt": 191852,
+      "maxGapOrOverlapSeconds": 1.293
+     },
+     "soun": {
+      "timescale": 48000,
+      "fragments": 7,
+      "samples": 115,
+      "firstTfdt": 0,
+      "lastTfdt": 308289,
+      "maxGapOrOverlapSeconds": 1.329
+     }
+    }
+   },
+   "videoFramesInFile": 176,
+   "expectedFrames": 210,
+   "droppedFramesApprox": 34,
+   "clipName": "clip-1920x1080-mp4-av",
+   "wallSeconds": 7.101
+  },
+  {
+   "mime": "video/webm;codecs=vp9,opus",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/webm;codecs=vp9,opus",
+   "stateAfterPause": "paused",
+   "stateAfterResume": "recording",
+   "events": [
+    "start@0",
+    "pause@2549",
+    "resume@4029",
+    "stop@8548"
+   ],
+   "pieces": [
+    [
+     1003,
+     54691
+    ],
+    [
+     2037,
+     91527
+    ],
+    [
+     3098,
+     131837
+    ],
+    [
+     4184,
+     73671
+    ],
+    [
+     5226,
+     147991
+    ],
+    [
+     6284,
+     164671
+    ],
+    [
+     7357,
+     165912
+    ],
+    [
+     8457,
+     181404
+    ],
+    [
+     8548,
+     32646
+    ]
+   ],
+   "pieceCount": 9,
+   "firstPieceMs": 1003,
+   "pieceGapsMs": [
+    1034,
+    1061,
+    1086,
+    1042,
+    1058,
+    1073,
+    1100,
+    91
+   ],
+   "activeSeconds": 7.03,
+   "framesDrawn": 231,
+   "framesDrawnWhilePaused": 46,
+   "bytes": 1044350,
+   "achievedVideoPlusAudioMbps": 1.19,
+   "firstBytes": "1a45dfa39f4286810142f7810142f281",
+   "firstPieceTopLevel": [
+    "B:440786851"
+   ],
+   "container": {
+    "ebmlHeader": true,
+    "clusters": 9,
+    "hasDuration": true,
+    "hasCues": false,
+    "hasSeekHead": false
+   },
+   "clipName": "clip-1920x1080-webm-av-paused",
+   "wallSeconds": 8.687
+  },
+  {
+   "mime": "video/webm;codecs=vp9,opus",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": false,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 0,
+   "recorderMimeType": "video/webm;codecs=vp9,opus",
+   "events": [
+    "start@3",
+    "stop@7006"
+   ],
+   "pieces": [
+    [
+     1128,
+     1
+    ],
+    [
+     2237,
+     106858
+    ],
+    [
+     3283,
+     123514
+    ],
+    [
+     4350,
+     87060
+    ],
+    [
+     5361,
+     158741
+    ],
+    [
+     6444,
+     205512
+    ],
+    [
+     7006,
+     60853
+    ]
+   ],
+   "pieceCount": 7,
+   "firstPieceMs": 1128,
+   "pieceGapsMs": [
+    1109,
+    1046,
+    1067,
+    1011,
+    1083,
+    562
+   ],
+   "activeSeconds": 7,
+   "framesDrawn": 186,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 742539,
+   "achievedVideoPlusAudioMbps": 0.85,
+   "firstBytes": "1a45dfa39f4286810142f7810142f281",
+   "firstPieceTopLevel": [],
+   "container": {
+    "ebmlHeader": true,
+    "clusters": 2,
+    "hasDuration": true,
+    "hasCues": false,
+    "hasSeekHead": false
+   },
+   "clipName": "clip-1920x1080-webm-v",
+   "wallSeconds": 7.112
+  },
+  {
+   "mime": "video/webm;codecs=vp9,opus",
+   "width": 1920,
+   "height": 1080,
+   "fps": 30,
+   "requestedVideoBps": 5598720,
+   "withAudio": true,
+   "audioSource": {
+    "state": "running",
+    "tracks": 1
+   },
+   "streamAudioTracks": 1,
+   "recorderMimeType": "video/webm;codecs=vp9,opus",
+   "events": [
+    "start@6",
+    "stop@7096"
+   ],
+   "pieces": [
+    [
+     1660,
+     1
+    ],
+    [
+     2670,
+     72339
+    ],
+    [
+     3835,
+     114666
+    ],
+    [
+     4929,
+     100504
+    ],
+    [
+     5990,
+     134123
+    ],
+    [
+     7096,
+     85147
+    ],
+    [
+     7096,
+     22537
+    ]
+   ],
+   "pieceCount": 7,
+   "firstPieceMs": 1660,
+   "pieceGapsMs": [
+    1010,
+    1165,
+    1094,
+    1061,
+    1106,
+    0
+   ],
+   "activeSeconds": 7.08,
+   "framesDrawn": 140,
+   "framesDrawnWhilePaused": 0,
+   "bytes": 529317,
+   "achievedVideoPlusAudioMbps": 0.6,
+   "firstBytes": "1a45dfa39f4286810142f7810142f281",
+   "firstPieceTopLevel": [],
+   "container": {
+    "ebmlHeader": true,
+    "clusters": 7,
+    "hasDuration": true,
+    "hasCues": false,
+    "hasSeekHead": false
+   },
+   "clipName": "clip-1920x1080-webm-av",
+   "wallSeconds": 7.276
+  }
+ ],
+ "playback": {
+  "http": {
+   "clips": [
+    {
+     "name": "clip-1920x1080-mp4-av-paused",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@24",
+      "loadeddata@460",
+      "canplay@460",
+      "suspend@483",
+      "canplay@668",
+      "canplay@1129",
+      "canplay@1455",
+      "canplay@1550",
+      "abort@3057",
+      "emptied@3057"
+     ],
+     "metadata": true,
+     "metadataMs": 229,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": 7.0109,
+     "durationFinite": true,
+     "size": [
+      1920,
+      1080
+     ],
+     "seekable": [
+      0,
+      7.0109
+     ],
+     "seeks": [
+      {
+       "target": 3.51,
+       "seeked": true,
+       "ms": 228,
+       "landed": 3.51,
+       "readyState": 4
+      },
+      {
+       "target": 6.31,
+       "seeked": true,
+       "ms": 210,
+       "landed": 6.31,
+       "readyState": 4
+      },
+      {
+       "target": 0.7,
+       "seeked": true,
+       "ms": 461,
+       "landed": 0.7,
+       "readyState": 4
+      },
+      {
+       "target": 6.61,
+       "seeked": true,
+       "ms": 326,
+       "landed": 6.61,
+       "readyState": 4
+      }
+     ],
+     "playedSeconds": 1.46
+    },
+    {
+     "name": "clip-1920x1080-mp4-v",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@7",
+      "suspend@222",
+      "loadeddata@397",
+      "canplay@398",
+      "canplay@527",
+      "canplay@628",
+      "canplay@691",
+      "canplay@718",
+      "abort@2227",
+      "emptied@2227"
+     ],
+     "metadata": true,
+     "metadataMs": 150,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": 6.739167,
+     "durationFinite": true,
+     "size": [
+      1920,
+      1080
+     ],
+     "seekable": [
+      0,
+      6.739167
+     ],
+     "seeks": [
+      {
+       "target": 3.37,
+       "seeked": true,
+       "ms": 244,
+       "landed": 3.37,
+       "readyState": 4
+      },
+      {
+       "target": 6.07,
+       "seeked": true,
+       "ms": 129,
+       "landed": 6.07,
+       "readyState": 4
+      },
+      {
+       "target": 0.67,
+       "seeked": true,
+       "ms": 102,
+       "landed": 0.67,
+       "readyState": 4
+      },
+      {
+       "target": 6.34,
+       "seeked": true,
+       "ms": 63,
+       "landed": 6.34,
+       "readyState": 4
+      }
+     ],
+     "playedSeconds": 1.48
+    },
+    {
+     "name": "clip-1920x1080-mp4-av",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@10",
+      "suspend@82",
+      "suspend@276",
+      "loadeddata@452",
+      "canplay@452",
+      "canplay@1042",
+      "canplay@1324",
+      "canplay@1462",
+      "canplay@1547",
+      "abort@3063",
+      "emptied@3063"
+     ],
+     "metadata": true,
+     "metadataMs": 107,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": 6.979896,
+     "durationFinite": true,
+     "size": [
+      1920,
+      1080
+     ],
+     "seekable": [
+      0,
+      6.979896
+     ],
+     "seeks": [
+      {
+       "target": 3.49,
+       "seeked": true,
+       "ms": 345,
+       "landed": 3.49,
+       "readyState": 4
+      },
+      {
+       "target": 6.28,
+       "seeked": true,
+       "ms": 590,
+       "landed": 6.28,
+       "readyState": 4
+      },
+      {
+       "target": 0.7,
+       "seeked": true,
+       "ms": 283,
+       "landed": 0.7,
+       "readyState": 4
+      },
+      {
+       "target": 6.58,
+       "seeked": true,
+       "ms": 138,
+       "landed": 6.58,
+       "readyState": 4
+      }
+     ],
+     "playedSeconds": 1.41
+    },
+    {
+     "name": "clip-1920x1080-webm-av-paused",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@19",
+      "abort@105",
+      "emptied@105"
+     ],
+     "metadata": true,
+     "metadataMs": 99,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": null,
+     "durationFinite": false,
+     "size": [
+      1920,
+      1080
+     ],
+     "seekable": [
+      0,
+      null
+     ],
+     "seeks": [],
+     "exception": "TypeError: Failed to set the 'currentTime' property on 'HTMLMediaElement': The provided double value is non-finite."
+    },
+    {
+     "name": "clip-1920x1080-webm-v",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@11",
+      "abort@119",
+      "emptied@120"
+     ],
+     "metadata": true,
+     "metadataMs": 107,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": null,
+     "durationFinite": false,
+     "size": [
+      1920,
+      1080
+     ],
+     "seekable": [
+      0,
+      null
+     ],
+     "seeks": [],
+     "exception": "TypeError: Failed to set the 'currentTime' property on 'HTMLMediaElement': The provided double value is non-finite."
+    },
+    {
+     "name": "clip-1920x1080-webm-av",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@14",
+      "suspend@115",
+      "abort@122",
+      "emptied@122"
+     ],
+     "metadata": true,
+     "metadataMs": 117,
+     "networkState": 1,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": null,
+     "durationFinite": false,
+     "size": [
+      1920,
+      1080
+     ],
+     "seekable": [
+      0,
+      null
+     ],
+     "seeks": [],
+     "exception": "TypeError: Failed to set the 'currentTime' property on 'HTMLMediaElement': The provided double value is non-finite."
+    },
+    {
+     "name": "fixture-flower.webm",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@4",
+      "suspend@38",
+      "suspend@259",
+      "loadeddata@349",
+      "canplay@349",
+      "canplay@406",
+      "canplay@492",
+      "canplay@552",
+      "canplay@605",
+      "abort@2108",
+      "emptied@2108"
+     ],
+     "metadata": true,
+     "metadataMs": 16,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": 5.059,
+     "durationFinite": true,
+     "size": [
+      960,
+      540
+     ],
+     "seekable": [
+      0,
+      5.059
+     ],
+     "seeks": [
+      {
+       "target": 2.53,
+       "seeked": true,
+       "ms": 332,
+       "landed": 2.53,
+       "readyState": 4
+      },
+      {
+       "target": 4.55,
+       "seeked": true,
+       "ms": 57,
+       "landed": 4.55,
+       "readyState": 4
+      },
+      {
+       "target": 0.51,
+       "seeked": true,
+       "ms": 87,
+       "landed": 0.51,
+       "readyState": 4
+      },
+      {
+       "target": 4.66,
+       "seeked": true,
+       "ms": 59,
+       "landed": 4.66,
+       "readyState": 4
+      }
+     ],
+     "playedSeconds": 1.44
+    },
+    {
+     "name": "fixture-flower.mp4",
+     "url": "http://127.0.0.1:37531/…",
+     "canPlay": {
+      "mp4": "probably",
+      "webm": "probably"
+     },
+     "mediaEvents": [
+      "loadstart@9",
+      "suspend@162",
+      "loadeddata@351",
+      "canplay@351",
+      "canplay@642",
+      "canplay@779",
+      "canplay@1088",
+      "canplay@1149"
+     ],
+     "metadata": true,
+     "metadataMs": 21,
+     "networkState": 2,
+     "readyState": 1,
+     "pageVisibility": "visible",
+     "duration": 5.055,
+     "durationFinite": true,
+     "size": [
+      960,
+      540
+     ],
+     "seekable": [
+      0,
+      5.055
+     ],
+     "seeks": [
+      {
+       "target": 2.53,
+       "seeked": true,
+       "ms": 330,
+       "landed": 2.53,
+       "readyState": 4
+      },
+      {
+       "target": 4.55,
+       "seeked": true,
+       "ms": 292,
+       "landed": 4.55,
+       "readyState": 4
+      },
+      {
+       "target": 0.51,
+       "seeked": true,
+       "ms": 135,
+       "landed": 0.51,
+       "readyState": 4
+      },
+      {
+       "target": 4.65,
+       "seeked": true,
+       "ms": 311,
+       "landed": 4.65,
+       "readyState": 4
+      }
+     ],
+     "playedSeconds": 1.46
+    }
+   ],
+   "requestCount": 61,
+   "requestsWithNonZeroStart": 53,
+   "firstRequests": [
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=0-",
+     "status": 206,
+     "from": 0,
+     "to": 262143
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=557056-",
+     "status": 206,
+     "from": 557056,
+     "to": 819199
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=1081344-",
+     "status": 206,
+     "from": 1081344,
+     "to": 1343487
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=1343488-",
+     "status": 206,
+     "from": 1343488,
+     "to": 1605631
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=2031616-",
+     "status": 206,
+     "from": 2031616,
+     "to": 2293759
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=2490368-",
+     "status": 206,
+     "from": 2490368,
+     "to": 2752511
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=3047424-",
+     "status": 206,
+     "from": 3047424,
+     "to": 3153260
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=262144-",
+     "status": 206,
+     "from": 262144,
+     "to": 524287
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=3145728-",
+     "status": 206,
+     "from": 3145728,
+     "to": 3153260
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=524288-",
+     "status": 206,
+     "from": 524288,
+     "to": 786431
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=819200-",
+     "status": 206,
+     "from": 819200,
+     "to": 1081343
+    },
+    {
+     "path": "clip-1920x1080-mp4-av-paused",
+     "range": "bytes=1605632-",
+     "status": 206,
+     "from": 1605632,
+     "to": 1867775
+    }
+   ]
+  }
+ }
+}
