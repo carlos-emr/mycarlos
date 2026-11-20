@@ -48,7 +48,7 @@ checklist-notAName = Différente de votre nom
 
 checklist-notYet = , pas encore
 
-checklist-spaces = Les espaces sont autorisés, donc quelques mots sans lien entre eux font une bonne phrase secrète. myCarlos vérifie ces règles sur cet ordinateur.
+checklist-spaces = Les espaces sont autorisés, donc quelques mots sans lien entre eux font une bonne phrase secrète. myCarlos vérifie ces règles sur cet appareil.
 
 comfort-autoLock-body = myCarlos se verrouille de lui-même après ce délai sans utilisation, pour que personne d’autre ne voie vos documents. Choisissez entre 1 et 15 minutes.
 
@@ -78,7 +78,7 @@ create-stays = Votre coffre-fort reste sur cet appareil. Si vous en avez créé 
 
 create-submit = Créer le coffre-fort
 
-create-title = Configurer myCarlos sur cet ordinateur
+create-title = Configurer myCarlos sur cet appareil
 
 error-checkBoxes = Vérifiez { $boxes }, puis réessayez.
 
@@ -188,9 +188,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Mot de passe du document
 
+interface-DocumentReader-firstPage = Première page
+
 interface-DocumentReader-fitWidth = Ajuster à la largeur
 
 interface-DocumentReader-larger = Agrandir
+
+interface-DocumentReader-lastPage = Dernière page
 
 interface-DocumentReader-nextPage = Page suivante
 
@@ -247,7 +251,7 @@ interface-notice-alreadyShared = { $name } figurait déjà dans Partagés avec m
 
 interface-notice-changesResumed = { $outcome } Le coffre-fort accepte de nouveau les modifications.
 
-interface-notice-copySaved = Une copie lisible a été enregistrée sur cet ordinateur.
+interface-notice-copySaved = Une copie lisible a été enregistrée sur cet appareil.
 
 interface-notice-damagedHidden =
     { $count ->
@@ -327,7 +331,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = Votre ancienne
 
 interface-person-records = Documents de { $name }
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = Vérifiez les paramètres de confidentialité de la caméra de votre ordinateur et autorisez myCarlos à l’utiliser.
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = Vérifiez les paramètres de confidentialité de la caméra de votre appareil et autorisez myCarlos à l’utiliser.
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = Dans Réglages système, ouvrez Confidentialité et sécurité, puis Caméra, et activez myCarlos.
 
@@ -358,6 +362,10 @@ interface-reader-page = Page { $page }
 interface-reader-textFollows = Page { $page } sur { $total }. Le texte de la page suit.
 
 interface-reader-where = Page { $page } sur { $total }
+
+interface-reader-markedOnPage = Page { $page } : les mots cités sont marqués sur l’image de la page et dans « Texte de cette page ».
+
+interface-reader-markedInText = Page { $page } : les mots cités sont marqués dans « Texte de cette page ». Ils n’ont pas pu être marqués sur l’image de la page.
 
 interface-reader-zoom = { $percent }%
 
@@ -403,7 +411,7 @@ interface-RecordDetails-moveTo = Déplacer vers
 
 interface-RecordDetails-read = Lire
 
-interface-RecordDetails-saveACopyToThisComputer = Enregistrer une copie sur cet ordinateur
+interface-RecordDetails-saveACopyToThisComputer = Enregistrer une copie sur cet appareil
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = Le fichier reste chiffré dans le coffre-fort. Enregistrez une copie seulement si vous avez besoin d’un fichier lisible en dehors de myCarlos.
 
@@ -554,7 +562,7 @@ interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Déplacez-les dans v
 
 interface-VaultLibrary-moveTheSelectedDocuments = Déplacer les documents sélectionnés.
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos n’a pas pu enregistrer une modification sur cet ordinateur. Libérez de l’espace de stockage ou vérifiez le disque, puis verrouillez et déverrouillez de nouveau; le coffre-fort se répare lorsqu’il peut écrire.
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos n’a pas pu enregistrer une modification sur cet appareil. Libérez de l’espace de stockage ou vérifiez le disque, puis verrouillez et déverrouillez de nouveau; le coffre-fort se répare lorsqu’il peut écrire.
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Bibliothèque de documents chiffrés myCarlos
 
@@ -786,7 +794,7 @@ native-error-33 = myCarlos ne peut pas afficher les documents en toute sécurit�
 
 native-error-34 = L’espace de stockage est insuffisant pour terminer cette opération.
 
-native-error-35 = myCarlos n’a pas pu lire ou écrire ses fichiers sur cet ordinateur. Vérifiez que le lecteur contenant myCarlos est connecté et dispose d’espace libre, puis réessayez. Si vous étiez en train de modifier quelque chose, vérifiez d’abord dans vos documents si la modification a été faite.
+native-error-35 = myCarlos n’a pas pu lire ou écrire ses fichiers sur cet appareil. Vérifiez que le lecteur contenant myCarlos est connecté et dispose d’espace libre, puis réessayez. Si vous étiez en train de modifier quelque chose, vérifiez d’abord dans vos documents si la modification a été faite.
 
 native-error-36 = L’opération s’est arrêtée parce que le coffre-fort a été verrouillé.
 
@@ -953,7 +961,7 @@ photo-zoomIn = Agrandir
 
 photo-zoomOut = Réduire
 
-preferences-subtitle = L’apparence de myCarlos sur cet ordinateur
+preferences-subtitle = L’apparence de myCarlos sur cet appareil
 
 readingAid-available = Votre clinique a aussi envoyé une aide à la lecture pour ce document.
 
@@ -1096,7 +1104,7 @@ rename-tooLong = Ce nom est trop long. Raccourcissez-le pour l’enregistrer.
 
 rename-unsafe = Le nom d’un document ne peut pas contenir { $characters } ni de caractères de contrôle invisibles, ni se terminer par un point.
 
-reset-plainly = Mettre le coffre-fort de côté retire de myCarlos sur cet ordinateur tous vos documents, dossiers et profils de patients. Ils restent sur cet ordinateur, chiffrés. Ce coffre-fort peut toujours être ouvert avec sa phrase secrète d’origine ou sa clé de récupération correspondante. Créer un nouveau coffre-fort ne change pas ces identifiants. Pour confirmer, saisissez exactement les mots ci-dessous.
+reset-plainly = Mettre le coffre-fort de côté retire de myCarlos sur cet appareil tous vos documents, dossiers et profils de patients. Ils restent sur cet appareil, chiffrés. Ce coffre-fort peut toujours être ouvert avec sa phrase secrète d’origine ou sa clé de récupération correspondante. Créer un nouveau coffre-fort ne change pas ces identifiants. Pour confirmer, saisissez exactement les mots ci-dessous.
 
 reset-submit = Mettre le coffre-fort de côté
 
@@ -1332,7 +1340,7 @@ textSize-box = Taille du texte en pourcentage
 
 textSize-followsDevice = Ici, la taille du texte suit votre appareil : son propre réglage de taille du texte, ou le zoom du navigateur.
 
-textSize-help = Agrandit ou réduit tout le contenu de myCarlos, de { $min } % à { $max } %. myCarlos retient la taille sur cet ordinateur. Vous pouvez aussi maintenir la touche { $modifier } enfoncée et appuyer sur plus, moins ou 0.
+textSize-help = Agrandit ou réduit tout le contenu de myCarlos, de { $min } % à { $max } %. myCarlos retient la taille sur cet appareil. Vous pouvez aussi maintenir la touche { $modifier } enfoncée et appuyer sur plus, moins ou 0.
 
 textSize-key-command = Commande
 
@@ -1387,6 +1395,14 @@ personDetails-birthDate = Date de naissance
 personDetails-birthDateRequired = Saisissez la date de naissance ou indiquez que vous ne la connaissez pas.
 
 personDetails-birthDateUnknown = Je ne connais pas la date de naissance de cette personne
+
+personDetails-birthDay = Jour
+
+personDetails-birthMonth = Mois
+
+personDetails-birthMonthChoose = Choisir
+
+personDetails-birthYear = Année
 
 personDetails-cancel = Annuler
 
@@ -1479,6 +1495,8 @@ portal-copy = Copier le code de l’appareil
 portal-copyFailed = Sélectionnez le code entier de l’appareil et copiez-le.
 
 portal-dateNotRecorded = Date non consignée
+
+portal-defaultDeviceName = myCarlos sur { $platform }
 
 portal-deviceCode = Code de l’appareil
 
@@ -1649,6 +1667,10 @@ interface-history-event-backupSaved = Sauvegarde chiffrée enregistrée
 interface-history-event-copySaved = Copie lisible enregistrée
 
 interface-history-event-created = Coffre créé
+
+interface-history-event-deliveryRefusalsCleared = Nouvel essai demandé pour les documents non vérifiés de la clinique
+
+interface-history-event-deliveryRefused = Document de la clinique non vérifié
 
 interface-history-event-deliveryFiled = Document de la clinique enregistré
 
@@ -1829,6 +1851,16 @@ portal-codeSubmit = Confirmer le code
 
 portal-codeSubmitted = Code envoyé. En attente de la confirmation de cet appareil par votre clinique. S’il n’est pas confirmé d’ici 10 minutes, faites une nouvelle demande.
 
+portal-refusedDocuments =
+    { $count ->
+    [one] { $count } document de cette clinique n’a pas pu être vérifié. Demandez à la clinique de vous le renvoyer.
+    *[other] { $count } documents de cette clinique n’ont pas pu être vérifiés. Demandez à la clinique de vous les renvoyer.
+    }
+
+portal-tryAgain = Réessayer
+
+portal-tryAgainFor = Réessayer pour { $clinic }
+
 portal-linkAnother = Associer une autre clinique
 
 ai-summary-button = Résumé
@@ -1837,9 +1869,9 @@ ai-summary-title = Résumé en mots simples
 
 ai-explain-title = Expliquer un terme
 
-ai-notInstalled-title = L’assistant IA n’est pas encore sur cet ordinateur
+ai-notInstalled-title = L’assistant IA n’est pas encore sur cet appareil
 
-ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet ordinateur. Dans Paramètres, sous Assistant IA, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
+ai-notInstalled-body = Une fois installé, il vous explique vos documents en mots simples, avec un modèle d’IA qui fonctionne sur cet appareil. Dans Paramètres, sous Assistant IA, vous pouvez télécharger le modèle ou ajouter un fichier de modèle que vous avez déjà.
 
 ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
@@ -1849,7 +1881,11 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
 
-ai-summary-partial = Ce résumé ne couvre que le début du document : pages 1 à { $last }.
+ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
+
+ai-summary-showWhole = Voir tout le résumé
+
+ai-summary-partial = Ce résumé utilise seulement une partie du texte du document.
 
 ai-summary-tooLong =
     { $last ->
@@ -1857,14 +1893,26 @@ ai-summary-tooLong =
    *[other] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ les pages 1 à { $last } sur { $total }.
     }
 
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ la page 1 et la dernière page, la page { $tail }, sur { $total }.
+   *[other] Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il peut en lire environ les pages 1 à { $last } et la dernière page, la page { $tail }, sur { $total }.
+    }
+
 ai-summary-tooLongStart = Ce document est sans doute trop long pour que l’assistant IA le lise en une seule fois. Il ne peut en lire qu’environ le début de la page 1.
 
-ai-summary-tooLongAfter = Le résumé indiquera les pages lues.
+ai-summary-tooLongAfter = S’il ne peut pas tout lire, le résumé le dira.
 
 ai-summary-readPages =
     { $last ->
     [one] Résumer la page 1
    *[other] Résumer les pages 1 à { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Résumer la page 1 et la page { $tail }
+   *[other] Résumer les pages 1 à { $last } et la page { $tail }
     }
 
 ai-summary-readStart = Résumer le début de la page 1
@@ -1879,11 +1927,11 @@ ai-explain-submit = Expliquer
 
 ai-preferences-title = Assistant IA
 
-ai-preferences-body = Explique vos documents en termes simples avec un modèle d’IA qui fonctionne sur cet ordinateur. Téléchargez un des modèles ci-dessous ou ajoutez un fichier correspondant que vous possédez déjà. Les modèles restent sur cet ordinateur.
+ai-preferences-body = Explique vos documents en termes simples avec un modèle d’IA qui fonctionne sur cet appareil. Téléchargez un des modèles ci-dessous ou ajoutez un fichier correspondant que vous possédez déjà. Les modèles restent sur cet appareil.
 
 ai-preferences-notInstalled = Non installé
 
-ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet ordinateur
+ai-settings-subtitle = Le fonctionnement de l’assistant IA sur cet appareil
 
 ai-model-add = Ajouter un fichier de modèle…
 
@@ -1917,15 +1965,15 @@ ai-model-installed = Installé : { $name }
 
 ai-model-remove = Supprimer le modèle
 
-ai-model-removeConfirm = Supprimer le modèle de cet ordinateur ? Vous pourrez l’ajouter de nouveau plus tard.
+ai-model-removeConfirm = Supprimer le modèle de cet appareil ? Vous pourrez l’ajouter de nouveau plus tard.
 
 ai-model-damaged = Le fichier du modèle est endommagé ou a changé. Supprimez-le, puis ajoutez-le de nouveau.
 
-ai-model-unsupportedRam = Cet ordinateur n’a pas assez de mémoire pour l’assistant IA (il faut environ 8 Go).
+ai-model-unsupportedRam = Cet appareil n’a pas assez de mémoire pour l’assistant IA (il faut environ 8 Go).
 
-ai-model-unsupportedCpu = Le processeur de cet ordinateur n’est pas pris en charge par l’assistant IA.
+ai-model-unsupportedCpu = Le processeur de cet appareil n’est pas pris en charge par l’assistant IA.
 
-ai-model-unsupportedPlatform = L’assistant IA n’est pas encore disponible sur ce type d’ordinateur.
+ai-model-unsupportedPlatform = L’assistant IA n’est pas encore disponible sur ce type d’appareil.
 
 ai-model-refusedList = Ce fichier n’est pas accepté par myCarlos. Choisissez un des fichiers de modèle indiqués ci-dessus.
 
@@ -1933,9 +1981,9 @@ ai-model-refusedHash = Ce n’est pas le fichier attendu. Téléchargez-le de no
 
 ai-model-refusedIncomplete = Le fichier n’a pas pu être lu en entier. Vérifiez que le téléchargement est terminé, puis réessayez.
 
-ai-model-refusedDisk = Il n’y a pas assez d’espace libre sur cet ordinateur. Le modèle en demande environ 4 Go.
+ai-model-refusedDisk = Il n’y a pas assez d’espace libre sur cet appareil. Le modèle en demande environ 4 Go.
 
-ai-model-refusedStorage = Le modèle n’a pas pu être enregistré sur cet ordinateur.
+ai-model-refusedStorage = Le modèle n’a pas pu être enregistré sur cet appareil.
 
 ai-model-refusedBusy = L’assistant IA est en cours de travail. Réessayez quand il aura terminé.
 
@@ -1980,16 +2028,38 @@ ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA e
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
 
-ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet ordinateur. Réessayez. Si cela continue, supprimez le modèle dans Paramètres, sous Assistant IA, puis ajoutez-le de nouveau.
+ai-error-storage = Le modèle de l’assistant IA n’a pas pu être lu sur cet appareil. Réessayez. Si cela continue, supprimez le modèle dans Paramètres, sous Assistant IA, puis ajoutez-le de nouveau.
 
 ai-summary-pagesMissing = Certaines pages n’ont pas pu être lues en entier ; ce résumé peut donc en omettre des parties.
 
 ai-summary-noSource = Source introuvable
+
+ai-summary-englishOnly = Pour l’instant, les résumés sont rédigés en anglais. myCarlos ne vérifie les chiffres et les consignes « quand demander de l’aide » qu’en anglais : vérifiez-les dans le document lui-même.
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = Cela peut prendre quelques minutes. Vous pouvez continuer à lire la lettre.
+
+ai-summary-progress-reading = Lecture de la lettre…
+
+ai-summary-progress-writing = Rédaction du résumé…
+
+ai-summary-progress-checking = Vérification du résumé…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Moins d’une minute restante
+        [one] Environ { $minutes } minute restante
+       *[other] Environ { $minutes } minutes restantes
+    }
+
+ai-summary-progress-slower = Cela prend plus de temps que prévu.
+
 aiHelper-notice-title = À propos de l’assistant IA
 
-aiHelper-notice-introShare = myCarlos peut préparer le texte d’un document pour le service d’IA de votre choix. L’assistant IA n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet ordinateur au site de téléchargement.
+aiHelper-notice-introShare = myCarlos peut préparer le texte d’un document pour le service d’IA de votre choix. L’assistant IA n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet appareil au site de téléchargement.
 
-aiHelper-notice-intro = L’assistant IA explique un document en termes simples, ici sur cet appareil, et peut préparer le texte d’un document pour le service d’IA de votre choix. Il n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet ordinateur au site de téléchargement.
+aiHelper-notice-intro = L’assistant IA explique un document en termes simples, ici sur cet appareil, et peut préparer le texte d’un document pour le service d’IA de votre choix. Il n’envoie jamais par Internet vos documents ni rien à votre sujet. La seule chose qu’il récupère est son fichier de modèle, et seulement si vous choisissez de le télécharger. Son téléchargement montre l’adresse Internet de cet appareil au site de téléchargement.
 
 aiHelper-notice-testBuild = Cette version de développement est réservée aux fichiers fictifs. Ne l’utilisez pas avec de vraies informations de santé.
 
@@ -2200,7 +2270,7 @@ ai-keepFull = Ce document conserve déjà le nombre maximal de réponses de l’
 
 # Catalog model list (#276A).
 
-ai-models-title = Modèles sur cet ordinateur
+ai-models-title = Modèles sur cet appareil
 
 ai-models-group = Modèle utilisé
 
@@ -2232,3 +2302,12 @@ ai-models-starting = Démarrage du téléchargement…
 ai-models-picking = Choisissez un fichier de modèle à ajouter.
 
 ai-models-changed = Le modèle utilisé a été changé
+
+ai-summaryTooLarge = Le résumé complet est trop volumineux. Aucun nouveau résumé n’a été enregistré.
+
+personDetails-previousTitle = Anciens noms complets
+personDetails-previousHelp = Jusqu’à 16 anciens noms complets aident à repérer les renseignements identifiants. Un nom modifié est proposé ici ; retirez-le avant d’enregistrer si vous ne souhaitez pas le garder. Le retrait ne supprime que cette entrée ; d’autres dossiers et sauvegardes peuvent la conserver.
+personDetails-previousEntry = Ancien nom complet { $number }
+personDetails-previousRemove = Retirer l’ancien nom complet { $number }
+personDetails-previousAdd = Ajouter un ancien nom complet
+personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.

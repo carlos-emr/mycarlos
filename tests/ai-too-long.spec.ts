@@ -32,14 +32,22 @@ const en = (
 const LETTER = "FAKE Letter.pdf";
 // The helper's room for a catalogue model (local_model.rs Capacity::HELPER).
 const HELPER: FakeCapacity = { contextTokens: 8192, documentTokens: 6510 };
-// Three dense FAKE pages of 9,000 bytes: about 3,000 tokens each by the
-// estimate (capacity.ts), so pages 1 to 2 fit the room and page 3 does not.
-const LONG_PAGES = Array.from(
-  { length: FAKE_PAGE_COUNT },
-  (_, index) =>
-    `FAKE page ${["one", "two", "three"][index]} of a long letter.\n` +
-    "FAKE text of a long letter, written for this check only. ".repeat(160),
-);
+// Dense FAKE pages: 160 repeats are about 2,900 tokens by the estimate
+// (capacity.ts), 220 about 4,000.
+const fakePages = (repeats: number[]) =>
+  repeats.map(
+    (times, index) =>
+      `FAKE page ${["one", "two", "three"][index]} of a long letter.\n` +
+      "FAKE text of a long letter, written for this check only. ".repeat(times),
+  );
+// Pages 1 to 2 fit the room and page 3 does not; page 3 also takes more than
+// half the room (by the estimate and by the helper's own count), so it is
+// never read after a gap (fit_pages' tail page): the question names pages 1
+// to 2.
+const LONG_PAGES = fakePages([160, 160, 220]);
+// Three even pages: page 3 takes at most half the room, so the helper reads
+// page 1 and then page 3 (its tail page), and the question says so.
+const EVEN_PAGES = fakePages([160, 160, 160]);
 const SHOTS = process.env.AI_TOO_LONG_SHOTS;
 
 test.beforeEach(({}, testInfo) => {
@@ -54,12 +62,12 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false });
 }
 
-async function start(page: Page) {
+async function start(page: Page, pages = LONG_PAGES) {
   await fakeVaultWith(page, { start: "unlocked" });
   await fakeAiWith(page, {
     model: { state: "installed", model: FAKE_MODEL, capacity: HELPER },
     catalog: { capacity: HELPER },
-    documents: { [LETTER]: LONG_PAGES },
+    documents: { [LETTER]: pages },
     // As the helper's own count would: pages 1 to 2.
     readUpTo: 1,
   });
@@ -131,12 +139,38 @@ test("asks before summarizing a document too long to read at once, and summarize
   await page.keyboard.press("Enter");
   await expect(panel.getByText(QUESTION(), { exact: true })).toHaveCount(0);
   await expect(button(reader, en("ai.summary.button"))).toBeFocused();
-  // The answer says the pages the helper read, as before.
+  // The answer says the helper read only part of the text.
   await expect(
     panel.getByText(en("ai.summary.partial", { last: 2 }), { exact: true }),
   ).toBeVisible();
   expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(1);
   await shot(page, "3-reader-after-summarize-desktop");
+  await expectOnlyFakedCommands(page);
+});
+
+test("names the last page too when the helper will read it after a gap", async ({
+  page,
+}) => {
+  await start(page, EVEN_PAGES);
+  const reader = await openReader(page);
+  await openSummary(page, reader);
+  const panel = summaryPanel(reader);
+  const question = en("ai.summary.tooLongWithLast", {
+    last: 1,
+    tail: 3,
+    total: 3,
+  });
+  await expect(panel.getByText(question, { exact: true })).toBeVisible();
+  const read = button(
+    panel,
+    en("ai.summary.readPagesAndLast", { last: 1, tail: 3 }),
+  );
+  await expect(read).toBeFocused();
+  await expect(read).toHaveAccessibleDescription(
+    `${question} ${en("ai.summary.tooLongAfter")}`,
+  );
+  expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(0);
+  await shot(page, "1b-reader-question-last-page-desktop");
   await expectOnlyFakedCommands(page);
 });
 

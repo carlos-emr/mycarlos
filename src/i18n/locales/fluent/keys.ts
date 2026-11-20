@@ -71,8 +71,10 @@ export const MESSAGE_KEYS = [
   "interface.CameraDialog.useTheCamera",
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword",
+  "interface.DocumentReader.firstPage",
   "interface.DocumentReader.fitWidth",
   "interface.DocumentReader.larger",
+  "interface.DocumentReader.lastPage",
   "interface.DocumentReader.nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis",
   "interface.DocumentReader.open",
@@ -248,6 +250,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.page",
   "interface.reader.textFollows",
   "interface.reader.where",
+  "interface.reader.markedOnPage",
+  "interface.reader.markedInText",
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
@@ -608,6 +612,10 @@ export const MESSAGE_KEYS = [
   "personDetails.birthDate",
   "personDetails.birthDateRequired",
   "personDetails.birthDateUnknown",
+  "personDetails.birthDay",
+  "personDetails.birthMonth",
+  "personDetails.birthMonthChoose",
+  "personDetails.birthYear",
   "personDetails.cancel",
   "personDetails.edit",
   "personDetails.editFor",
@@ -649,6 +657,7 @@ export const MESSAGE_KEYS = [
   "portal.copy",
   "portal.copyFailed",
   "portal.dateNotRecorded",
+  "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
   "portal.deviceDetailsShow",
@@ -705,6 +714,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
   "interface.history.event.deliveryFiled",
   "interface.history.event.deliveryReceiptSettled",
   "interface.history.event.other",
@@ -810,6 +821,9 @@ export const MESSAGE_KEYS = [
   "portal.codeRefused",
   "portal.codeSubmit",
   "portal.codeSubmitted",
+  "portal.refusedDocuments",
+  "portal.tryAgain",
+  "portal.tryAgainFor",
   "portal.linkAnother",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
@@ -821,11 +835,15 @@ export const MESSAGE_KEYS = [
   "aiHelper.resultLabel",
   "ai.result.meta",
   "ai.summary.showInDocument",
+  "ai.summary.folded",
+  "ai.summary.showWhole",
   "ai.summary.partial",
   "ai.summary.tooLong",
+  "ai.summary.tooLongWithLast",
   "ai.summary.tooLongStart",
   "ai.summary.tooLongAfter",
   "ai.summary.readPages",
+  "ai.summary.readPagesAndLast",
   "ai.summary.readStart",
   "ai.summary.noText",
   "ai.explain.box",
@@ -845,6 +863,13 @@ export const MESSAGE_KEYS = [
   "ai.error.storage",
   "ai.summary.pagesMissing",
   "ai.summary.noSource",
+  "ai.summary.englishOnly",
+  "ai.summary.progress.before",
+  "ai.summary.progress.reading",
+  "ai.summary.progress.writing",
+  "ai.summary.progress.checking",
+  "ai.summary.progress.estimate",
+  "ai.summary.progress.slower",
   "aiHelper.notice.title",
   "aiHelper.notice.introShare",
   "aiHelper.notice.intro",
@@ -1019,6 +1044,13 @@ export const MESSAGE_KEYS = [
   "personDetails.reminder",
   "personDetails.notNow",
   "personDetails.notSaved",
+  "ai.summaryTooLarge",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1103,8 +1135,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword":
     "interface-DocumentReader-documentPassword",
+  "interface.DocumentReader.firstPage": "interface-DocumentReader-firstPage",
   "interface.DocumentReader.fitWidth": "interface-DocumentReader-fitWidth",
   "interface.DocumentReader.larger": "interface-DocumentReader-larger",
+  "interface.DocumentReader.lastPage": "interface-DocumentReader-lastPage",
   "interface.DocumentReader.nextPage": "interface-DocumentReader-nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis":
     "interface-DocumentReader-noTextCouldBeReadOnThis",
@@ -1371,6 +1405,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.page": "interface-reader-page",
   "interface.reader.textFollows": "interface-reader-textFollows",
   "interface.reader.where": "interface-reader-where",
+  "interface.reader.markedOnPage": "interface-reader-markedOnPage",
+  "interface.reader.markedInText": "interface-reader-markedInText",
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
@@ -1738,6 +1774,10 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.birthDate": "personDetails-birthDate",
   "personDetails.birthDateRequired": "personDetails-birthDateRequired",
   "personDetails.birthDateUnknown": "personDetails-birthDateUnknown",
+  "personDetails.birthDay": "personDetails-birthDay",
+  "personDetails.birthMonth": "personDetails-birthMonth",
+  "personDetails.birthMonthChoose": "personDetails-birthMonthChoose",
+  "personDetails.birthYear": "personDetails-birthYear",
   "personDetails.cancel": "personDetails-cancel",
   "personDetails.edit": "personDetails-edit",
   "personDetails.editFor": "personDetails-editFor",
@@ -1779,6 +1819,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.copy": "portal-copy",
   "portal.copyFailed": "portal-copyFailed",
   "portal.dateNotRecorded": "portal-dateNotRecorded",
+  "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
   "portal.deviceDetailsShow": "portal-deviceDetailsShow",
@@ -1838,6 +1879,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryRefusalsCleared":
+    "interface-history-event-deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused":
+    "interface-history-event-deliveryRefused",
   "interface.history.event.deliveryFiled":
     "interface-history-event-deliveryFiled",
   "interface.history.event.deliveryReceiptSettled":
@@ -1966,6 +2011,9 @@ const FLUENT_IDS_BY_KEY = {
   "portal.codeRefused": "portal-codeRefused",
   "portal.codeSubmit": "portal-codeSubmit",
   "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.refusedDocuments": "portal-refusedDocuments",
+  "portal.tryAgain": "portal-tryAgain",
+  "portal.tryAgainFor": "portal-tryAgainFor",
   "portal.linkAnother": "portal-linkAnother",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
@@ -1978,11 +2026,15 @@ const FLUENT_IDS_BY_KEY = {
   "aiHelper.resultLabel": "aiHelper-resultLabel",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.folded": "ai-summary-folded",
+  "ai.summary.showWhole": "ai-summary-showWhole",
   "ai.summary.partial": "ai-summary-partial",
   "ai.summary.tooLong": "ai-summary-tooLong",
+  "ai.summary.tooLongWithLast": "ai-summary-tooLongWithLast",
   "ai.summary.tooLongStart": "ai-summary-tooLongStart",
   "ai.summary.tooLongAfter": "ai-summary-tooLongAfter",
   "ai.summary.readPages": "ai-summary-readPages",
+  "ai.summary.readPagesAndLast": "ai-summary-readPagesAndLast",
   "ai.summary.readStart": "ai-summary-readStart",
   "ai.summary.noText": "ai-summary-noText",
   "ai.explain.box": "ai-explain-box",
@@ -2002,6 +2054,13 @@ const FLUENT_IDS_BY_KEY = {
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
   "ai.summary.noSource": "ai-summary-noSource",
+  "ai.summary.englishOnly": "ai-summary-englishOnly",
+  "ai.summary.progress.before": "ai-summary-progress-before",
+  "ai.summary.progress.reading": "ai-summary-progress-reading",
+  "ai.summary.progress.writing": "ai-summary-progress-writing",
+  "ai.summary.progress.checking": "ai-summary-progress-checking",
+  "ai.summary.progress.estimate": "ai-summary-progress-estimate",
+  "ai.summary.progress.slower": "ai-summary-progress-slower",
   "aiHelper.notice.title": "aiHelper-notice-title",
   "aiHelper.notice.introShare": "aiHelper-notice-introShare",
   "aiHelper.notice.intro": "aiHelper-notice-intro",
@@ -2235,6 +2294,13 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.reminder": "personDetails-reminder",
   "personDetails.notNow": "personDetails-notNow",
   "personDetails.notSaved": "personDetails-notSaved",
+  "ai.summaryTooLarge": "ai-summaryTooLarge",
+  "personDetails.previousTitle": "personDetails-previousTitle",
+  "personDetails.previousHelp": "personDetails-previousHelp",
+  "personDetails.previousEntry": "personDetails-previousEntry",
+  "personDetails.previousRemove": "personDetails-previousRemove",
+  "personDetails.previousAdd": "personDetails-previousAdd",
+  "personDetails.previousInvalid": "personDetails-previousInvalid",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2324,8 +2390,10 @@ export interface MessageArgsByKey {
   "interface.CameraDialog.useTheCamera": undefined;
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay": undefined;
   "interface.DocumentReader.documentPassword": undefined;
+  "interface.DocumentReader.firstPage": undefined;
   "interface.DocumentReader.fitWidth": undefined;
   "interface.DocumentReader.larger": undefined;
+  "interface.DocumentReader.lastPage": undefined;
   "interface.DocumentReader.nextPage": undefined;
   "interface.DocumentReader.noTextCouldBeReadOnThis": undefined;
   "interface.DocumentReader.open": undefined;
@@ -2523,6 +2591,8 @@ export interface MessageArgsByKey {
     total: FluentArgument;
   };
   "interface.reader.where": { page: FluentArgument; total: FluentArgument };
+  "interface.reader.markedOnPage": { page: FluentArgument };
+  "interface.reader.markedInText": { page: FluentArgument };
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
@@ -2931,6 +3001,10 @@ export interface MessageArgsByKey {
   "personDetails.birthDate": undefined;
   "personDetails.birthDateRequired": undefined;
   "personDetails.birthDateUnknown": undefined;
+  "personDetails.birthDay": undefined;
+  "personDetails.birthMonth": undefined;
+  "personDetails.birthMonthChoose": undefined;
+  "personDetails.birthYear": undefined;
   "personDetails.cancel": undefined;
   "personDetails.edit": undefined;
   "personDetails.editFor": { name: FluentArgument };
@@ -2975,6 +3049,7 @@ export interface MessageArgsByKey {
   "portal.copy": undefined;
   "portal.copyFailed": undefined;
   "portal.dateNotRecorded": undefined;
+  "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
   "portal.deviceDetailsShow": undefined;
@@ -3034,6 +3109,8 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryRefusalsCleared": undefined;
+  "interface.history.event.deliveryRefused": undefined;
   "interface.history.event.deliveryFiled": undefined;
   "interface.history.event.deliveryReceiptSettled": undefined;
   "interface.history.event.other": undefined;
@@ -3139,6 +3216,9 @@ export interface MessageArgsByKey {
   "portal.codeRefused": undefined;
   "portal.codeSubmit": undefined;
   "portal.codeSubmitted": undefined;
+  "portal.refusedDocuments": { count: FluentArgument };
+  "portal.tryAgain": undefined;
+  "portal.tryAgainFor": { clinic: FluentArgument };
   "portal.linkAnother": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
@@ -3154,11 +3234,19 @@ export interface MessageArgsByKey {
     tool: FluentArgument;
   };
   "ai.summary.showInDocument": undefined;
-  "ai.summary.partial": { last: FluentArgument };
+  "ai.summary.folded": undefined;
+  "ai.summary.showWhole": undefined;
+  "ai.summary.partial": undefined;
   "ai.summary.tooLong": { last: FluentArgument; total: FluentArgument };
+  "ai.summary.tooLongWithLast": {
+    last: FluentArgument;
+    tail: FluentArgument;
+    total: FluentArgument;
+  };
   "ai.summary.tooLongStart": undefined;
   "ai.summary.tooLongAfter": undefined;
   "ai.summary.readPages": { last: FluentArgument };
+  "ai.summary.readPagesAndLast": { last: FluentArgument; tail: FluentArgument };
   "ai.summary.readStart": undefined;
   "ai.summary.noText": undefined;
   "ai.explain.box": undefined;
@@ -3178,6 +3266,13 @@ export interface MessageArgsByKey {
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
   "ai.summary.noSource": undefined;
+  "ai.summary.englishOnly": undefined;
+  "ai.summary.progress.before": undefined;
+  "ai.summary.progress.reading": undefined;
+  "ai.summary.progress.writing": undefined;
+  "ai.summary.progress.checking": undefined;
+  "ai.summary.progress.estimate": { minutes: FluentArgument };
+  "ai.summary.progress.slower": undefined;
   "aiHelper.notice.title": undefined;
   "aiHelper.notice.introShare": undefined;
   "aiHelper.notice.intro": undefined;
@@ -3368,6 +3463,13 @@ export interface MessageArgsByKey {
   "personDetails.reminder": { name: FluentArgument };
   "personDetails.notNow": undefined;
   "personDetails.notSaved": undefined;
+  "ai.summaryTooLarge": undefined;
+  "personDetails.previousTitle": undefined;
+  "personDetails.previousHelp": undefined;
+  "personDetails.previousEntry": { number: FluentArgument };
+  "personDetails.previousRemove": { number: FluentArgument };
+  "personDetails.previousAdd": undefined;
+  "personDetails.previousInvalid": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

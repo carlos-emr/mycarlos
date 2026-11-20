@@ -48,7 +48,7 @@ checklist-notAName = 不是您的姓名
 
 checklist-notYet = ，尚未完成
 
-checklist-spaces = 可以使用空格，因此以几个不相关的词组成密码短语会更好。myCarlos 会在这部电脑上检查这些规则。
+checklist-spaces = 可以使用空格，因此以几个不相关的词组成密码短语会更好。myCarlos 会在这台设备上检查这些规则。
 
 comfort-autoLock-body = myCarlos 闲置这段时间后会自动锁定，避免他人看见您的记录。请选择 1 到 15 分钟。
 
@@ -78,7 +78,7 @@ create-stays = 您的保险库会留在此设备上。如果您在其他设备�
 
 create-submit = 创建保险库
 
-create-title = 在这部电脑上设置 myCarlos
+create-title = 在这台设备上设置 myCarlos
 
 error-checkBoxes = 请检查{ $boxes }，然后重试。
 
@@ -140,9 +140,13 @@ interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay = 手机会询问一�
 
 interface-DocumentReader-documentPassword = 文档密码
 
+interface-DocumentReader-firstPage = 第一页
+
 interface-DocumentReader-fitWidth = 符合宽度
 
 interface-DocumentReader-larger = 放大
+
+interface-DocumentReader-lastPage = 最后一页
 
 interface-DocumentReader-nextPage = 下一页
 
@@ -204,7 +208,7 @@ interface-RecordDetails-moveTo = 移至
 
 interface-RecordDetails-read = 阅读
 
-interface-RecordDetails-saveACopyToThisComputer = 将副本保存至此电脑
+interface-RecordDetails-saveACopyToThisComputer = 将副本保存至此设备
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = 文件会持续以加密形式保存在保险库中。只有在需要于 myCarlos 外部使用可读文件时，才保存副本。
 
@@ -311,7 +315,7 @@ interface-VaultLibrary-moveTheSelectedDocuments = 移动所选文档。
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = 您可以随时将它们移至自己的文件夹。
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos 无法将变更保存至此电脑。请释放存储空间或检查磁盘，然后锁定并重新解锁；能够写入时，保险库会自行修复。
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos 无法将变更保存至此设备。请释放存储空间或检查磁盘，然后锁定并重新解锁；能够写入时，保险库会自行修复。
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos 加密记录库
 
@@ -411,7 +415,7 @@ interface-notice-alreadyShared = { $name } 已在「与我分享」中。
 
 interface-notice-changesResumed = { $outcome } 保险库现在可接受变更。
 
-interface-notice-copySaved = 可读副本已保存至此电脑。
+interface-notice-copySaved = 可读副本已保存至此设备。
 
 interface-notice-damagedHidden = 已隐藏 { $count } 份损毁的文档。这些文档列于「已隐藏」。
 
@@ -461,7 +465,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = 旧工具包�
 
 interface-person-records = { $name } 的记录
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = 请检查电脑的相机隐私权设置，并允许 myCarlos 使用相机。
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = 请检查设备的相机隐私权设置，并允许 myCarlos 使用相机。
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = 在「系统设置」中，打开「隐私权与安全性」>「相机」，然后允许 myCarlos 使用相机。
 
@@ -492,6 +496,10 @@ interface-reader-page = 第 { $page } 页
 interface-reader-textFollows = 第 { $page } 页，共 { $total } 页。以下是该页文本。
 
 interface-reader-where = 第 { $page } 页，共 { $total } 页
+
+interface-reader-markedOnPage = 第 { $page } 页：引用的文字已在页面图像和「本页文本」中标出。
+
+interface-reader-markedInText = 第 { $page } 页：引用的文字已在「本页文本」中标出，但无法在页面图像上标出。
 
 interface-reader-zoom = { $percent }%
 
@@ -681,7 +689,7 @@ native-error-33 = myCarlos 无法在此系统上安全地显示文档。请另�
 
 native-error-34 = 保存空间不足，无法完成此作业。
 
-native-error-35 = myCarlos 无法在此电脑上读取或写入文件。请确认 myCarlos 所在磁盘已连接且有可用空间，然后重试。如果您刚才正在变更内容，请先查看记录确认变更是否已完成。
+native-error-35 = myCarlos 无法在此设备上读取或写入文件。请确认 myCarlos 所在磁盘已连接且有可用空间，然后重试。如果您刚才正在变更内容，请先查看记录确认变更是否已完成。
 
 native-error-36 = 作业因保险库已锁定而停止。
 
@@ -838,7 +846,7 @@ photo-zoomOut = 缩小
 
 photo-zoomed = 已放大至 { $percent }%。
 
-preferences-subtitle = 此电脑上 myCarlos 的外观
+preferences-subtitle = 此设备上 myCarlos 的外观
 
 readingAid-available = 您的诊所还为这份文档发送了阅读辅助。
 
@@ -1030,7 +1038,7 @@ restore-summary = 从备份还原
 
 restore-tooLong = 内容太长，请检查输入内容。
 
-secret-count-password = { $count } 个字符的密码
+secret-count-password = { $count } 个字符的密码短语
 
 secret-count-recoveryKey = { $count } 个字符的恢复密钥
 
@@ -1182,7 +1190,7 @@ textSize-box = 文本大小百分比
 
 textSize-followsDevice = 此处的文本大小会依照设备设置或浏览器缩放比例调整。
 
-textSize-help = 调整 myCarlos 中所有内容的大小，范围为 { $min }% 到 { $max }%。myCarlos 会记住这部电脑上的设置。您也可以按住 { $modifier }，再按加号、减号或 0。
+textSize-help = 调整 myCarlos 中所有内容的大小，范围为 { $min }% 到 { $max }%。myCarlos 会记住这台设备上的设置。您也可以按住 { $modifier }，再按加号、减号或 0。
 
 textSize-key-command = Command
 
@@ -1227,6 +1235,14 @@ personDetails-birthDate = 出生日期
 personDetails-birthDateRequired = 请输入出生日期，或选择出生日期不详。
 
 personDetails-birthDateUnknown = 我不知道此人的出生日期
+
+personDetails-birthDay = 日
+
+personDetails-birthMonth = 月
+
+personDetails-birthMonthChoose = 选择
+
+personDetails-birthYear = 年
 
 personDetails-cancel = 取消
 
@@ -1319,6 +1335,8 @@ portal-copy = 复制设备代码
 portal-copyFailed = 请选取完整的设备代码并复制。
 
 portal-dateNotRecorded = 未记录日期
+
+portal-defaultDeviceName = { $platform } 上的 myCarlos
 
 portal-deviceCode = 设备代码
 
@@ -1480,6 +1498,10 @@ interface-history-event-backupSaved = 加密备份已保存
 interface-history-event-copySaved = 可读副本已保存
 
 interface-history-event-created = 保险库已创建
+
+interface-history-event-deliveryRefusalsCleared = 已选择重试未通过验证的诊所文档
+
+interface-history-event-deliveryRefused = 诊所文档未通过验证
 
 interface-history-event-deliveryFiled = 已保存诊所文档
 
@@ -1645,6 +1667,12 @@ portal-codeSubmit = 确认验证码
 
 portal-codeSubmitted = 验证码已发送。正在等待诊所确认此设备。如果 10 分钟内仍未确认，请重新申请。
 
+portal-refusedDocuments = 此诊所有 { $count } 份文档无法验证。请诊所重新发送。
+
+portal-tryAgain = 重试
+
+portal-tryAgainFor = 重试：{ $clinic }
+
 portal-linkAnother = 关联另一家诊所
 
 ai-summary-button = 摘要
@@ -1653,9 +1681,9 @@ ai-summary-title = 通俗易懂的摘要
 
 ai-explain-title = 解释术语
 
-ai-notInstalled-title = 此电脑上尚未安装 AI 助手
+ai-notInstalled-title = 此设备上尚未安装 AI 助手
 
-ai-notInstalled-body = 安装后，它会使用在此电脑上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“设置”中的“AI 助手”里下载模型，或添加您已有的模型文件。
+ai-notInstalled-body = 安装后，它会使用在此设备上运行的 AI 模型，以通俗易懂的文字为您解释文档。您可以在“设置”中的“AI 助手”里下载模型，或添加您已有的模型文件。
 
 ai-notInstalled-openPreferences = 打开 AI 助手设置
 
@@ -1665,7 +1693,11 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文档中显示
 
-ai-summary-partial = 此摘要仅涵盖文档开头部分：第 1 页至第 { $last } 页。
+ai-summary-folded = 摘要已收起，以便为页面留出空间。
+
+ai-summary-showWhole = 显示完整摘要
+
+ai-summary-partial = 此摘要仅使用了文档的部分文本。
 
 ai-summary-tooLong =
     { $last ->
@@ -1673,14 +1705,26 @@ ai-summary-tooLong =
    *[other] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页至第 { $last } 页（共 { $total } 页）。
     }
 
+ai-summary-tooLongWithLast =
+    { $last ->
+    [1] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页和最后一页，即第 { $tail } 页（共 { $total } 页）。
+   *[other] 这份文档可能太长，AI 助手无法一次读完。它大约能读第 1 页至第 { $last } 页，以及最后一页，即第 { $tail } 页（共 { $total } 页）。
+    }
+
 ai-summary-tooLongStart = 这份文档可能太长，AI 助手无法一次读完。它大约只能读第 1 页的开头部分。
 
-ai-summary-tooLongAfter = 摘要会说明读了哪些页。
+ai-summary-tooLongAfter = 如果无法读完全部内容，摘要会注明。
 
 ai-summary-readPages =
     { $last ->
     [1] 为第 1 页生成摘要
    *[other] 为第 1 页至第 { $last } 页生成摘要
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [1] 为第 1 页和第 { $tail } 页生成摘要
+   *[other] 为第 1 页至第 { $last } 页和第 { $tail } 页生成摘要
     }
 
 ai-summary-readStart = 为第 1 页的开头部分生成摘要
@@ -1695,11 +1739,11 @@ ai-explain-submit = 解释
 
 ai-preferences-title = AI 助手
 
-ai-preferences-body = 使用在这台电脑上运行的 AI 模型，以通俗的语言解释你的文档。下载下列某个模型，或添加你已有的对应文件。模型保留在这台电脑上。
+ai-preferences-body = 使用在这台设备上运行的 AI 模型，以通俗的语言解释你的文档。下载下列某个模型，或添加你已有的对应文件。模型保留在这台设备上。
 
 ai-preferences-notInstalled = 未安装
 
-ai-settings-subtitle = AI 助手在此电脑上的运行方式
+ai-settings-subtitle = AI 助手在此设备上的运行方式
 
 ai-model-add = 添加模型文件…
 
@@ -1728,15 +1772,15 @@ ai-model-installed = 已安装：{ $name }
 
 ai-model-remove = 删除模型
 
-ai-model-removeConfirm = 要从此电脑删除模型吗？以后可以重新添加。
+ai-model-removeConfirm = 要从此设备删除模型吗？以后可以重新添加。
 
 ai-model-damaged = 模型文件已损坏或已被更改。请删除后重新添加。
 
-ai-model-unsupportedRam = 此电脑的内存不足以运行 AI 助手（需要约 8 GB）。
+ai-model-unsupportedRam = 此设备的内存不足以运行 AI 助手（需要约 8 GB）。
 
-ai-model-unsupportedCpu = 此电脑的处理器不支持 AI 助手。
+ai-model-unsupportedCpu = 此设备的处理器不支持 AI 助手。
 
-ai-model-unsupportedPlatform = 此类电脑暂不支持 AI 助手。
+ai-model-unsupportedPlatform = 此类设备暂不支持 AI 助手。
 
 ai-model-refusedList = myCarlos 不接受此文件。请选择上方列出的某个模型文件。
 
@@ -1744,9 +1788,9 @@ ai-model-refusedHash = 这不是预期的文件。请重新下载，然后添加
 
 ai-model-refusedIncomplete = 无法完整读取该文件。请确认下载已完成，然后重试。
 
-ai-model-refusedDisk = 此电脑的可用空间不足。模型大约需要 4 GB。
+ai-model-refusedDisk = 此设备的可用空间不足。模型大约需要 4 GB。
 
-ai-model-refusedStorage = 无法将模型保存到此电脑。
+ai-model-refusedStorage = 无法将模型保存到此设备。
 
 ai-model-refusedBusy = AI 助手正在工作。请在它完成后重试。
 
@@ -1786,16 +1830,37 @@ ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭�
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
 
-ai-error-storage = 无法从此电脑读取 AI 助手的模型。请重试。如果问题持续，请在“设置”中的“AI 助手”里删除模型，然后重新添加。
+ai-error-storage = 无法从此设备读取 AI 助手的模型。请重试。如果问题持续，请在“设置”中的“AI 助手”里删除模型，然后重新添加。
 
 ai-summary-pagesMissing = 部分页面未能完整读取，因此此摘要可能遗漏部分内容。
 
 ai-summary-noSource = 未找到来源
+
+ai-summary-englishOnly = 目前摘要以英文撰写。myCarlos 只对英文摘要核对数字和“何时就医”的提示，请在文档本身中核对这些内容。
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = 这可能需要几分钟。您可以继续阅读这封信。
+
+ai-summary-progress-reading = 正在阅读信件…
+
+ai-summary-progress-writing = 正在撰写摘要…
+
+ai-summary-progress-checking = 正在检查摘要…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] 剩余不到一分钟
+       *[other] 大约还剩 { $minutes } 分钟
+    }
+
+ai-summary-progress-slower = 耗时比预期更长。
+
 aiHelper-notice-title = 关于 AI 助手
 
-aiHelper-notice-introShare = myCarlos 可以为您选择的 AI 服务准备文档的文本。AI 助手绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台电脑的互联网地址。
+aiHelper-notice-introShare = myCarlos 可以为您选择的 AI 服务准备文档的文本。AI 助手绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台设备的互联网地址。
 
-aiHelper-notice-intro = AI 助手会在这台设备上用通俗易懂的文字解释文档，也可以为您选择的 AI 服务准备文档的文本。它绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台电脑的互联网地址。
+aiHelper-notice-intro = AI 助手会在这台设备上用通俗易懂的文字解释文档，也可以为您选择的 AI 服务准备文档的文本。它绝不会通过互联网发送您的文档或任何关于您的信息。它唯一会获取的是其模型文件，而且只有在您选择下载时才会获取。下载时，下载网站会看到这台设备的互联网地址。
 
 aiHelper-notice-testBuild = 此开发版本仅供合成（虚构）文件使用。请勿用于真实的健康信息。
 
@@ -2003,7 +2068,7 @@ ai-keepFull = 此文档保存的 AI 回答已达上限。新的回答会显示�
 
 # Catalog model list (#276A).
 
-ai-models-title = 这台电脑上的模型
+ai-models-title = 这台设备上的模型
 
 ai-models-group = 正在使用的模型
 
@@ -2035,3 +2100,12 @@ ai-models-starting = 正在开始下载…
 ai-models-picking = 请选择要添加的模型文件。
 
 ai-models-changed = 已更改正在使用的模型
+
+ai-summaryTooLarge = 完整摘要过大。未保存新的摘要。
+
+personDetails-previousTitle = 曾用全名
+personDetails-previousHelp = 最多可保存16个曾用全名，以帮助查找身份信息。更改姓名时，原姓名会在此处建议保留；如不想保留，请在保存前移除。移除仅影响此列表条目，其他记录和备份仍可能保留该姓名。
+personDetails-previousEntry = 曾用全名 { $number }
+personDetails-previousRemove = 移除曾用全名 { $number }
+personDetails-previousAdd = 添加曾用全名
+personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。

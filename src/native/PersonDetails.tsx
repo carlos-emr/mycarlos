@@ -19,6 +19,19 @@ export function detailsProblem(
   details: PersonDetails,
   birthDateUnknown = false,
 ): MessageKey | null {
+  const previous = details.previousFullNames;
+  if (
+    previous &&
+    (previous.length > 16 ||
+      previous.some(
+        (name) =>
+          !name.trim() ||
+          nameTooLong(name.trim()) ||
+          /[\u0000-\u001f\u007f-\u009f]/u.test(name),
+      ) ||
+      new Set(previous.map((name) => name.trim())).size !== previous.length)
+  )
+    return "personDetails.previousInvalid";
   if (!details.fullName?.trim()) return "personDetails.fullNameRequired";
   if (nameTooLong(details.fullName ?? "")) return "personDetails.nameTooLong";
   if (!details.birthDate && !birthDateUnknown)
@@ -41,8 +54,137 @@ export function trimmedDetails(details: PersonDetails): PersonDetails {
   return {
     ...(details.fullName?.trim() ? { fullName: details.fullName.trim() } : {}),
     ...(details.birthDate ? { birthDate: details.birthDate } : {}),
+    ...(details.previousFullNames !== undefined
+      ? {
+          previousFullNames: details.previousFullNames.map((name) =>
+            name.trim(),
+          ),
+        }
+      : {}),
   };
 }
+/** A birth date as the year, month and day a person types or chooses. A
+ * phone's own date picker opens on today's month, where the year is a small
+ * label to tap, so a date decades back is slow to reach. The value handed on is
+ * still the "YYYY-MM-DD" text the vault stores and `detailsProblem` checks; it
+ * is empty until the year, the month and the day are all given, and a year of
+ * fewer than four digits is a date `detailsProblem` refuses. */
+type BirthDateParts = { year: string; month: string; day: string };
+const NO_BIRTH_DATE: BirthDateParts = { year: "", month: "", day: "" };
+const MONTH_NUMBERS = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "12",
+] as const;
+export function splitBirthDate(value: string): BirthDateParts {
+  const found = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return found
+    ? { year: found[1], month: found[2], day: found[3] }
+    : NO_BIRTH_DATE;
+}
+export function joinBirthDate({ year, month, day }: BirthDateParts): string {
+  // A year of one to three digits with the month and day chosen is joined as
+  // it stands, so that `detailsProblem` says "not a valid date" (not "required",
+  // which a person who typed 85 would not understand).
+  if (!year || !month || !day) return "";
+  return `${year}-${month}-${day.padStart(2, "0")}`;
+}
+function BirthDateFields({
+  value,
+  unknown,
+  onChange,
+}: {
+  value: string;
+  unknown: boolean;
+  onChange: (birthDate: string) => void;
+}) {
+  const { locale, t } = useI18n();
+  const [parts, setParts] = useState(() => splitBirthDate(value));
+  // Show what is chosen from outside: a person's saved date when the form
+  // opens on it, and nothing once "I don't know" is ticked.
+  useEffect(() => {
+    setParts((current) =>
+      unknown
+        ? NO_BIRTH_DATE
+        : joinBirthDate(current) === value
+          ? current
+          : splitBirthDate(value),
+    );
+  }, [value, unknown]);
+  const monthNames = new Intl.DateTimeFormat(locale, {
+    month: "long",
+    timeZone: "UTC",
+  });
+  const change = (next: BirthDateParts) => {
+    setParts(next);
+    onChange(joinBirthDate(next));
+  };
+  return (
+    <fieldset className="native-birth-date" disabled={unknown}>
+      <legend>{t("personDetails.birthDate")}</legend>
+      <label className="native-birth-year">
+        {t("personDetails.birthYear")}
+        <input
+          inputMode="numeric"
+          autoComplete="bday-year"
+          maxLength={4}
+          required={!unknown}
+          value={parts.year}
+          onChange={(e) =>
+            change({
+              ...parts,
+              year: e.target.value.replace(/\D/g, "").slice(0, 4),
+            })
+          }
+        />
+      </label>
+      <label className="native-birth-month">
+        {t("personDetails.birthMonth")}
+        <select
+          autoComplete="bday-month"
+          required={!unknown}
+          value={parts.month}
+          onChange={(e) => change({ ...parts, month: e.target.value })}
+        >
+          <option value="">{t("personDetails.birthMonthChoose")}</option>
+          {MONTH_NUMBERS.map((month) => (
+            <option key={month} value={month}>
+              {monthNames.format(
+                new Date(Date.UTC(2000, Number(month) - 1, 1)),
+              )}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="native-birth-day">
+        {t("personDetails.birthDay")}
+        <input
+          inputMode="numeric"
+          autoComplete="bday-day"
+          maxLength={2}
+          required={!unknown}
+          value={parts.day}
+          onChange={(e) =>
+            change({
+              ...parts,
+              day: e.target.value.replace(/\D/g, "").slice(0, 2),
+            })
+          }
+        />
+      </label>
+    </fieldset>
+  );
+}
+
 export function PersonDetailsFields({
   details,
   onChange,
@@ -72,17 +214,11 @@ export function PersonDetailsFields({
           onChange={(e) => onChange({ ...details, fullName: e.target.value })}
         />
       </label>
-      <label>
-        {t("personDetails.birthDate")}
-        <input
-          type="date"
-          max={localDateText(new Date())}
-          required={!birthDateUnknown}
-          disabled={birthDateUnknown}
-          value={details.birthDate ?? ""}
-          onChange={(e) => onChange({ ...details, birthDate: e.target.value })}
-        />
-      </label>
+      <BirthDateFields
+        value={details.birthDate ?? ""}
+        unknown={birthDateUnknown}
+        onChange={(birthDate) => onChange({ ...details, birthDate })}
+      />
       <label className="native-person-date-unknown">
         <input
           type="checkbox"
@@ -99,6 +235,87 @@ export function PersonDetailsFields({
     </>
   );
 }
+function PreviousFullNames({
+  details,
+  onChange,
+}: {
+  details: PersonDetails;
+  onChange: (details: PersonDetails) => void;
+}) {
+  const { t } = useI18n();
+  const inputs = useRef<Array<HTMLInputElement | null>>([]);
+  const add = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<number | null>(null);
+  const names = details.previousFullNames ?? [];
+  useEffect(() => {
+    if (pendingFocus.current !== null) {
+      (inputs.current[pendingFocus.current] ?? add.current)?.focus();
+      pendingFocus.current = null;
+    }
+  }, [names]);
+  return (
+    <section
+      className="previous-full-names"
+      aria-label={t("personDetails.previousTitle")}
+    >
+      <h3>{t("personDetails.previousTitle")}</h3>
+      <p>{t("personDetails.previousHelp")}</p>
+      {names.map((name, index) => (
+        <div key={index}>
+          <label>
+            {t("personDetails.previousEntry", { number: index + 1 })}
+            <input
+              ref={(node) => {
+                inputs.current[index] = node;
+              }}
+              value={name}
+              required
+              maxLength={NAME_INPUT_MAX_LENGTH}
+              autoComplete="off"
+              onChange={(event) =>
+                onChange({
+                  ...details,
+                  previousFullNames: names.map((value, i) =>
+                    i === index ? event.target.value : value,
+                  ),
+                })
+              }
+            />
+          </label>
+          <button
+            className="button"
+            type="button"
+            aria-label={t("personDetails.previousRemove", {
+              number: index + 1,
+            })}
+            onClick={() => {
+              pendingFocus.current = index;
+              onChange({
+                ...details,
+                previousFullNames: names.filter((_, i) => i !== index),
+              });
+            }}
+          >
+            {t("personDetails.previousRemove", { number: index + 1 })}
+          </button>
+        </div>
+      ))}
+      <button
+        className="button"
+        type="button"
+        ref={add}
+        disabled={names.length >= 16}
+        onClick={() => {
+          pendingFocus.current = names.length;
+          onChange({ ...details, previousFullNames: [...names, ""] });
+        }}
+      >
+        {t("personDetails.previousAdd")}
+      </button>
+    </section>
+  );
+}
+
 /** A person's details where they can wait (#234, Ben's decision): at vault
  * creation and when a person is added. "Later" leaves them out; a reminder
  * then stays until they are added (`missingDetails`). */
@@ -281,6 +498,8 @@ export function PersonDetailsList({
     id: string;
     details: PersonDetails;
     birthDateUnknown: boolean;
+    originalFullName: string;
+    suggestionDismissed: boolean;
   } | null>(null);
   // Return to the Edit details button after closing, or to the person's
   // line if the vault became read-only while the dialog was open.
@@ -302,7 +521,13 @@ export function PersonDetailsList({
   const showEditFor = (person: PatientProfile) =>
     showEdit({
       id: person.id,
-      details: { fullName: person.fullName, birthDate: person.birthDate },
+      originalFullName: person.fullName?.trim() ?? "",
+      suggestionDismissed: false,
+      details: {
+        fullName: person.fullName,
+        birthDate: person.birthDate,
+        previousFullNames: [...(person.previousFullNames ?? [])],
+      },
       birthDateUnknown: !person.birthDate && Boolean(person.fullName),
     });
   // The library's reminder opens this person's Edit details dialog (#234),
@@ -323,6 +548,34 @@ export function PersonDetailsList({
   const editedPerson = editing
     ? people.find((person) => person.id === editing.id)
     : undefined;
+  const changeDetails = (details: PersonDetails) => {
+    setEditing((current) => {
+      if (!current) return current;
+      const original = current.originalFullName;
+      const dismissed =
+        current.suggestionDismissed ||
+        Boolean(
+          original &&
+            current.details.previousFullNames?.includes(original) &&
+            !details.previousFullNames?.includes(original),
+        );
+      const names = details.previousFullNames ?? [];
+      const suggest =
+        !dismissed &&
+        original &&
+        details.fullName?.trim() &&
+        details.fullName.trim() !== original &&
+        !names.includes(original);
+      return {
+        ...current,
+        details: suggest
+          ? { ...details, previousFullNames: [...names, original] }
+          : details,
+        suggestionDismissed: dismissed,
+      };
+    });
+    setRefused(false);
+  };
   const editDialog = editing && editedPerson && (
     <PersonDialog
       titleId="edit-person-details-title"
@@ -362,10 +615,7 @@ export function PersonDetailsList({
       <fieldset disabled={busy || readOnly}>
         <PersonDetailsFields
           details={editing.details}
-          onChange={(details) => {
-            setEditing((current) => current && { ...current, details });
-            setRefused(false);
-          }}
+          onChange={changeDetails}
           birthDateUnknown={editing.birthDateUnknown}
           // A tick is a change too: it clears a refusal, as typing does.
           onBirthDateUnknownChange={(birthDateUnknown) => {
@@ -375,6 +625,7 @@ export function PersonDetailsList({
             setRefused(false);
           }}
         />
+        <PreviousFullNames details={editing.details} onChange={changeDetails} />
       </fieldset>
     </PersonDialog>
   );

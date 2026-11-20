@@ -68,6 +68,10 @@ export function useModalFocus(
       a.form === b.form;
     const edge = (elements: HTMLElement[], reverse: boolean) =>
       elements[reverse ? elements.length - 1 : 0];
+    // Whether `a` comes before `b` in the page's order: an element comes
+    // before what it contains, as in a Tab sequence.
+    const precedes = (a: Node, b: Node) =>
+      (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     const atBoundary = (
       current: Element | null,
       elements: HTMLElement[],
@@ -145,7 +149,21 @@ export function useModalFocus(
       const current = document.activeElement;
       if (!controls.some((element) => element === current)) {
         event.preventDefault();
-        (event.shiftKey ? last : first).focus();
+        // The focus is on something Tab does not stop at: put there by the
+        // app (a heading, the marked words of Show in document) or the dialog
+        // itself. Tab goes on from there in the page's order, as a browser
+        // does, wrapping at either end; from outside the dialog it enters at
+        // the first control, or the last.
+        const from =
+          current instanceof Node && dialogRef.current?.contains(current)
+            ? current
+            : null;
+        const next = from
+          ? event.shiftKey
+            ? controls.filter((element) => precedes(element, from)).at(-1)
+            : controls.find((element) => precedes(from, element))
+          : undefined;
+        (next ?? (event.shiftKey ? last : first)).focus();
       } else if (event.shiftKey && atBoundary(current, controls, false)) {
         event.preventDefault();
         last.focus();

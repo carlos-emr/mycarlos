@@ -15,9 +15,16 @@ file or opens a connection. Modes, by argument:
   --read-all        reads every page (otherwise the first page only)
   --cut-first       reads only the start of the first page
   --last-page N     names page N as the last read, whatever was sent
+  --head-tail       reads the first page and the last one, named as read after a gap
+  --tail-page N     names page N as that last page, whatever was sent
   --quote-unread    adds a sentence quoting a page it did not read
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
+  --progress        says how far it is before answering, as the real helper does: reading
+                    1100 prompt tokens in three batches, then each sentence of the cap
+  --progress-line T writes line T, with ID replaced by the request's id, before the answer
+  --progress-other  writes a valid progress line of another request's id first
+  --progress-every S  writes a reading line every S seconds, forever (for the time limit)
 """
 import json
 import sys
@@ -52,6 +59,24 @@ for line in sys.stdin:
     request = json.loads(line)
     if slow:
         time.sleep(slow)
+    if "--progress-other" in args:
+        print(json.dumps({"id": request["id"] + 1000, "progress": "reading", "done": 1,
+                          "total": 1}), flush=True)
+    if "--progress-every" in args:
+        every = float(args[args.index("--progress-every") + 1])
+        done = 0
+        while True:
+            done += 1
+            print(json.dumps({"id": request["id"], "progress": "reading", "done": done,
+                              "total": 8000}), flush=True)
+            time.sleep(every)
+    if "--progress" in args:
+        for done in (512, 1024, 1100):
+            print(json.dumps({"id": request["id"], "progress": "reading", "done": done,
+                              "total": 1100}), flush=True)
+    if "--progress-line" in args:
+        template = args[args.index("--progress-line") + 1]
+        print(template.replace("ID", str(request["id"])), flush=True)
     if "--long-line" in args:
         print(json.dumps({"id": request["id"], "text": "x" * (5 * 1024 * 1024)}), flush=True)
         continue
@@ -62,7 +87,12 @@ for line in sys.stdin:
     if request.get("tool") == "summary":
         pages = request.get("pages", [])
         read = pages if "--read-all" in args else pages[:1]
-        text = "\n\n".join(page["text"] for page in read)
+        tail = None
+        if "--head-tail" in args and len(pages) > 1:
+            read, tail = pages[:1], pages[-1]["index"]
+            if "--tail-page" in args:
+                tail = int(args[args.index("--tail-page") + 1])
+        text = "\n\n".join(page["text"] for page in read + [p for p in pages[1:] if p["index"] == tail])
         last = read[-1]["index"] if read else 0
         if "--last-page" in args:
             last = int(args[args.index("--last-page") + 1])
@@ -74,10 +104,18 @@ for line in sys.stdin:
             if "--unlocated" in args:
                 quote = "FAKE words the document never says"
             answer.append({"text": f"In short: {sentence.rstrip('.')}.", "quote": quote})
+        if "--progress" in args:
+            cap = min(max(request.get("maxSentences", 5), 1), 10)
+            for done in range(1, len(answer) + 1):
+                print(json.dumps({"id": request["id"], "progress": "writing", "done": done,
+                                  "total": cap}), flush=True)
         if "--quote-unread" in args and len(pages) > 1:
             answer.append({"text": "In short: the clinic phoned.", "quote": pages[1]["text"][:20]})
-        print(json.dumps({"id": request["id"], "sentences": answer, "lastPage": last,
-                          "lastPageCut": "--cut-first" in args}), flush=True)
+        reply = {"id": request["id"], "sentences": answer, "lastPage": last,
+                 "lastPageCut": "--cut-first" in args}
+        if tail is not None:
+            reply["tailPage"] = tail
+        print(json.dumps(reply), flush=True)
     elif request.get("tool") == "explain":
         if "--read-fd" in args:
             import os

@@ -26,7 +26,7 @@ pub(super) const MAX_SHOWN_AI_RESULTS_PER_RECORD: usize = 32;
 /// whole vault (`MAX_MANIFEST_BYTES`), so this is kept to 3 per shown answer.
 pub(super) const MAX_HIDDEN_AI_RESULTS_PER_RECORD: usize = 96;
 /// The most an answer's bytes may be: a few sentences and their quotes.
-pub(super) const MAX_AI_RESULT_BYTES: u64 = 64 * 1024;
+pub(super) const MAX_AI_RESULT_BYTES: u64 = crate::summary_contract::MAX_BYTES as u64;
 const MAX_LANG_LEN: usize = 16;
 const MAX_TERM_CHARS: usize = 200;
 const MAX_MODEL_NAME_CHARS: usize = 120;
@@ -183,38 +183,7 @@ struct KeptModel {
     sha256: String,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct KeptSpan {
-    page: u32,
-    start: u32,
-    end: u32,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct KeptSentence {
-    text: String,
-    quote: String,
-    source: Option<KeptSpan>,
-}
-
-/// A summary as the reader keeps it (`SummaryResult` in src/ai/types.ts).
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct KeptSummary {
-    tool: AiTool,
-    sentences: Vec<KeptSentence>,
-    model: KeptModel,
-    lang: String,
-    #[allow(dead_code)]
-    created_at: u64,
-    #[allow(dead_code)]
-    partial: bool,
-    last_page: u32,
-    #[allow(dead_code)]
-    pages_missing: bool,
-}
+use crate::summary_contract::StoredSummary as KeptSummary;
 
 /// An explanation as the reader keeps it (`ExplainResult`).
 #[derive(Deserialize)]
@@ -235,9 +204,8 @@ fn within(text: &str, max_chars: usize) -> bool {
 }
 
 /// Refuses an answer to keep unless its bytes are a summary or an
-/// explanation as the reader writes them, within the helper's caps (its
-/// constants: `MAX_SENTENCES` sentences of `MAX_TEXT_CHARS` and quotes of
-/// `MAX_QUOTE_CHARS` each; an explanation within `MAX_SENTENCE_CHARS`), for the same tool, language and term as `input`,
+/// explanation as the reader writes them, under the shared final-summary byte contract
+/// (or the unchanged explanation limits), for the same tool, language and term as `input`,
 /// and from the model that last answered on this computer (`answered`: its
 /// name and hash). Page code chooses the bytes, so none of this is trusted.
 pub fn check_answer(
@@ -246,8 +214,14 @@ pub fn check_answer(
     answered: Option<(&str, &str)>,
 ) -> Result<(), VaultError> {
     use crate::local_runner::MAX_SENTENCE_CHARS;
-    use crate::model_helper::{MAX_QUOTE_CHARS, MAX_SENTENCES, MAX_TEXT_CHARS};
-    use crate::model_runtime::{MAX_CONTEXT_CHARS, MAX_PAGES, MAX_PAGE_BYTES};
+    use crate::model_runtime::MAX_CONTEXT_CHARS;
+    if content.len() > crate::summary_contract::MAX_BYTES {
+        return Err(if input.tool == AiTool::Summary {
+            VaultError::AiSummaryTooLarge
+        } else {
+            VaultError::Invalid
+        });
+    }
     let Some((name, sha256)) = answered else {
         return Err(VaultError::Invalid);
     };
@@ -260,22 +234,19 @@ pub fn check_answer(
             let Ok(summary) = serde_json::from_slice::<KeptSummary>(content) else {
                 return Err(VaultError::Invalid);
             };
-            input.term.is_none()
-                && summary.tool == AiTool::Summary
-                && summary.lang == input.lang
-                && same_model(&summary.model)
-                && (1..=MAX_SENTENCES).contains(&summary.sentences.len())
-                && summary.last_page as usize <= MAX_PAGES
-                && summary.sentences.iter().all(|sentence| {
-                    !sentence.text.trim().is_empty()
-                        && within(&sentence.text, MAX_TEXT_CHARS)
-                        && within(&sentence.quote, MAX_QUOTE_CHARS)
-                        && sentence.source.as_ref().is_none_or(|span| {
-                            (span.page as usize) < MAX_PAGES
-                                && span.start <= span.end
-                                && span.end as usize <= MAX_PAGE_BYTES
-                        })
-                })
+            if input.term.is_some()
+                || summary.tool != "summary"
+                || summary.lang != input.lang
+                || summary.model.name != name
+                || summary.model.sha256 != sha256
+            {
+                return Err(VaultError::Invalid);
+            }
+            crate::summary_contract::validate_stored(&summary).map_err(|error| match error {
+                crate::summary_contract::Error::TooLarge => VaultError::AiSummaryTooLarge,
+                crate::summary_contract::Error::Invalid => VaultError::Invalid,
+            })?;
+            true
         }
         AiTool::Explain => {
             let Ok(explained) = serde_json::from_slice::<KeptExplanation>(content) else {
@@ -360,6 +331,9 @@ impl VaultStore {
         content: &[u8],
         now_ms: u64,
     ) -> Result<AiResultInfo, VaultError> {
+        if content.len() as u64 > MAX_AI_RESULT_BYTES && input.tool == AiTool::Summary {
+            return Err(VaultError::AiSummaryTooLarge);
+        }
         if content.is_empty()
             || content.len() as u64 > MAX_AI_RESULT_BYTES
             || !valid_fields(
@@ -630,6 +604,21 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_summary_may_have_more_sentences_than_the_helper_writes_now() {
+        // Final cardinality is bounded by serialized bytes, independently of raw grammar.
+        let mut longest = kept_summary();
+        longest["sentences"] = serde_json::Value::Array(
+            (0..21)
+                .map(|_| serde_json::json!({"text": "FAKE.", "quote": "", "source": null}))
+                .collect(),
+        );
+        assert!(
+            longest["sentences"].as_array().unwrap().len() > crate::model_helper::MAX_SENTENCES
+        );
+        assert!(checked(&summary("en"), &longest).is_ok());
+    }
+
+    #[test]
     fn an_answer_no_model_gave_here_or_another_model_gave_is_refused() {
         let content = kept_summary().to_string();
         // No model has answered on this computer.
@@ -658,23 +647,20 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_outside_the_helpers_shape_or_caps_is_refused() {
+    fn an_answer_outside_the_final_shape_or_unchanged_explain_caps_is_refused() {
         let mut cases: Vec<(AiResultInput, serde_json::Value)> = Vec::new();
         let summary_with = |edit: &dyn Fn(&mut serde_json::Value)| {
             let mut value = kept_summary();
             edit(&mut value);
             (summary("en"), value)
         };
-        let seven = serde_json::Value::Array(
-            (0..7)
+        let too_many = serde_json::Value::Array(
+            (0..=crate::summary_contract::MAX_SOURCE_ELEMENTS)
                 .map(|_| serde_json::json!({"text": "FAKE.", "quote": "", "source": null}))
                 .collect(),
         );
-        cases.push(summary_with(&|v| v["sentences"] = seven.clone()));
+        cases.push(summary_with(&|v| v["sentences"] = too_many.clone()));
         cases.push(summary_with(&|v| v["sentences"] = serde_json::json!([])));
-        cases.push(summary_with(&|v| {
-            v["sentences"][0]["text"] = "x".repeat(301).into()
-        }));
         cases.push(summary_with(&|v| {
             v["sentences"][0]["quote"] = "x".repeat(241).into()
         }));
@@ -733,6 +719,124 @@ mod tests {
             Err(error) => assert_eq!(format!("{error:?}"), expected),
             Ok(info) => panic!("saved {info:?}, expected {expected}"),
         }
+    }
+
+    #[test]
+    fn complete_long_text_and_more_than_twenty_rules_round_trip_without_clipping() {
+        let (_temp, store, id) = fixture();
+        let mut value = kept_summary();
+        value["sentences"] = serde_json::Value::Array((0..22).map(|index| {
+            serde_json::json!({"text": format!("FAKE complete rule {index}: {}", "x".repeat(2001)),
+                "quote": "FAKE", "source": null})
+        }).collect());
+        let content = value.to_string();
+        check_answer(&summary("en"), content.as_bytes(), Some(ANSWERED)).unwrap();
+        let info = store
+            .save_ai_result(id, summary("en"), content.as_bytes(), 10)
+            .unwrap();
+        assert_eq!(
+            store.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+        assert_eq!(store.ai_results(id).unwrap(), vec![info]);
+    }
+
+    #[test]
+    fn a_parent_valid_exact_budget_legacy_answer_still_reads_unlocks_and_restores() {
+        let (temp, store, id) = fixture();
+        // Parent validator allowed 20 entries, text<=300 and quote<=240 scalars.
+        // Escaped control characters exercise encoded bytes without clinical data.
+        let mut legacy = kept_summary();
+        legacy["createdAt"] = 1_700_000_000_000_u64.into();
+        legacy["partial"] = false.into();
+        legacy["lastPage"] = 2.into();
+        legacy["sentences"] = serde_json::Value::Array(
+            (0..20)
+                .map(|_| {
+                    serde_json::json!({"text": "\u{0001}".repeat(300),
+                "quote": "\u{0001}".repeat(240), "source": null})
+                })
+                .collect(),
+        );
+        legacy["sentences"][19]["text"] =
+            format!("{}{}", "a".repeat(46), "\u{0001}".repeat(254)).into();
+        let content = legacy.to_string();
+        assert_eq!(content.len(), MAX_AI_RESULT_BYTES as usize);
+        let decoded: crate::summary_contract::StoredSummary =
+            serde_json::from_str(&content).unwrap();
+        assert_eq!(decoded.tool, "summary");
+        assert_eq!(decoded.lang, "en");
+        assert_eq!(decoded.model.name, ANSWERED.0);
+        assert_eq!(decoded.model.sha256, ANSWERED.1);
+        assert_eq!(decoded.sentences.len(), 20);
+        assert!(decoded.last_page <= crate::model_runtime::MAX_PAGES as u32);
+        assert!(decoded
+            .sentences
+            .iter()
+            .all(|line| !line.text.trim().is_empty()
+                && line.text.chars().count() <= 300
+                && line.quote.chars().count() <= 240
+                && line.source.is_none()));
+        // New admission reserves future citations; existing reads/restore do not.
+        assert!(matches!(
+            check_answer(&summary("en"), content.as_bytes(), Some(ANSWERED)),
+            Err(VaultError::AiSummaryTooLarge)
+        ));
+        let info = store
+            .save_ai_result(id, summary("en"), content.as_bytes(), 10)
+            .unwrap();
+        assert_eq!(
+            store.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+        let mut backup = Vec::new();
+        store.backup(&mut backup, 12).unwrap();
+        let restored = VaultStore::new(temp.path().join("restored"));
+        restored
+            .restore(
+                Cursor::new(backup),
+                RestoreCredential::Passphrase(PASSWORD),
+                false,
+            )
+            .unwrap();
+        restored.unlock(PASSWORD).unwrap();
+        assert_eq!(restored.ai_results(id).unwrap(), vec![info.clone()]);
+        assert_eq!(
+            restored.read_ai_result(id, info.id).unwrap(),
+            content.as_bytes()
+        );
+    }
+
+    #[test]
+    fn an_oversize_replacement_does_not_publish_objects_or_hide_the_previous_answer() {
+        let (_temp, store, id) = fixture();
+        let previous = store
+            .save_ai_result(id, summary("en"), b"{\"legacy\":true}", 10)
+            .unwrap();
+        let names = object_names(&store, id);
+        let history = store.history_view().unwrap();
+        let oversized = vec![b'x'; MAX_AI_RESULT_BYTES as usize + 1];
+        assert!(matches!(
+            check_answer(&summary("en"), &oversized, Some(ANSWERED)),
+            Err(VaultError::AiSummaryTooLarge)
+        ));
+        refused(
+            store.save_ai_result(id, summary("en"), &oversized, 11),
+            "AiSummaryTooLarge",
+        );
+        assert_eq!(object_names(&store, id), names);
+        assert_eq!(store.history_view().unwrap(), history);
+        assert_eq!(store.ai_results(id).unwrap(), vec![previous.clone()]);
+        assert_eq!(
+            store.read_ai_result(id, previous.id).unwrap(),
+            b"{\"legacy\":true}"
+        );
     }
 
     #[test]
@@ -931,7 +1035,7 @@ mod tests {
         let too_long = "x".repeat(MAX_AI_RESULT_BYTES as usize + 1);
         refused(
             store.save_ai_result(id, summary("fr"), too_long.as_bytes(), 1),
-            "Invalid",
+            "AiSummaryTooLarge",
         );
         refused(store.save_ai_result(id, summary("fr"), b"", 1), "Invalid");
         refused(

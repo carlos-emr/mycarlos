@@ -136,6 +136,33 @@ function NamedDialog({ name, close }: { name: string; close: () => void }) {
   );
 }
 
+/** A reader-like dialog where the app puts the focus on things Tab does not
+ * stop at: a heading, marked words in a text, a note after the last control. */
+function ScriptFocusDialog() {
+  const ref = useRef<HTMLElement>(null);
+  useModalFocus(true, ref, () => {});
+  return (
+    <section ref={ref} role="dialog" aria-modal="true" aria-label="Reader">
+      <button>Close</button>
+      <h2 tabIndex={-1}>Heading</h2>
+      <button>Before</button>
+      <p>
+        FAKE text with <mark tabIndex={-1}>marked words</mark> in it.
+      </p>
+      <label>
+        <input type="radio" name="kind" />
+        Plain
+      </label>
+      <label>
+        <input type="radio" name="kind" defaultChecked />
+        Chosen
+      </label>
+      <button>After</button>
+      <p tabIndex={-1}>Note after the last control</p>
+    </section>
+  );
+}
+
 describe("modal keyboard focus", () => {
   it.each(["first", "last"] as const)(
     "keeps a button between radio members reachable with %s selected",
@@ -158,6 +185,54 @@ describe("modal keyboard focus", () => {
       expect(selected).toHaveFocus();
     },
   );
+
+  it("goes on from words the app put the focus on, not back to the first control", async () => {
+    const user = userEvent.setup();
+    render(<ScriptFocusDialog />);
+    const marked = screen.getByText("marked words");
+    // As Show in document does: the marked words take the focus.
+    marked.focus();
+    await user.tab();
+    // The next stop after them: the radio group's chosen member.
+    expect(screen.getByLabelText("Chosen")).toHaveFocus();
+    marked.focus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Before" })).toHaveFocus();
+  });
+
+  it("goes on from a heading the app put the focus on, both ways", async () => {
+    const user = userEvent.setup();
+    render(<ScriptFocusDialog />);
+    const heading = screen.getByRole("heading", { name: "Heading" });
+    heading.focus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Before" })).toHaveFocus();
+    heading.focus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("wraps from after the last control, and from the dialog itself as before", async () => {
+    const user = userEvent.setup();
+    render(<ScriptFocusDialog />);
+    const note = screen.getByText("Note after the last control");
+    note.focus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    note.focus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+    // The dialog itself (where the focus goes when no control can take it):
+    // Tab enters at the first control, Shift+Tab at the last.
+    const dialog = screen.getByRole("dialog", { name: "Reader" });
+    dialog.tabIndex = -1;
+    dialog.focus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    dialog.focus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
+  });
 
   it("lets only the top dialog answer Escape and Tab, then gives the focus back below (#68)", async () => {
     const closeBelow = vi.fn();

@@ -48,7 +48,7 @@ checklist-notAName = 不是您的姓名
 
 checklist-notYet = ，尚未完成
 
-checklist-spaces = 可以使用空格，因此以幾個不相關的詞組成密語會更好。myCarlos 會在這部電腦上檢查這些規則。
+checklist-spaces = 可以使用空格，因此以幾個不相關的詞組成密語會更好。myCarlos 會在這台裝置上檢查這些規則。
 
 comfort-autoLock-body = myCarlos 閒置這段時間後會自動鎖定，避免他人看見您的紀錄。請選擇 1 到 15 分鐘。
 
@@ -78,7 +78,7 @@ create-stays = 您的保險庫會留在此裝置上。如果您在其他裝置�
 
 create-submit = 建立保險庫
 
-create-title = 在這部電腦上設定 myCarlos
+create-title = 在這台裝置上設定 myCarlos
 
 error-checkBoxes = 請檢查{ $boxes }，然後重試。
 
@@ -140,9 +140,13 @@ interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay = 手機會詢問一�
 
 interface-DocumentReader-documentPassword = 文件密碼
 
+interface-DocumentReader-firstPage = 第一頁
+
 interface-DocumentReader-fitWidth = 符合寬度
 
 interface-DocumentReader-larger = 放大
+
+interface-DocumentReader-lastPage = 最後一頁
 
 interface-DocumentReader-nextPage = 下一頁
 
@@ -204,7 +208,7 @@ interface-RecordDetails-moveTo = 移至
 
 interface-RecordDetails-read = 閱讀
 
-interface-RecordDetails-saveACopyToThisComputer = 將副本儲存至此電腦
+interface-RecordDetails-saveACopyToThisComputer = 將副本儲存至此裝置
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = 檔案會持續以加密形式保存在保險庫中。只有在需要於 myCarlos 外部使用可讀檔案時，才儲存副本。
 
@@ -311,7 +315,7 @@ interface-VaultLibrary-moveTheSelectedDocuments = 移動所選文件。
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = 您可以隨時將它們移至自己的資料夾。
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos 無法將變更儲存至此電腦。請釋出儲存空間或檢查磁碟，然後鎖定並重新解鎖；能夠寫入時，保險庫會自行修復。
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos 無法將變更儲存至此裝置。請釋出儲存空間或檢查磁碟，然後鎖定並重新解鎖；能夠寫入時，保險庫會自行修復。
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos 加密紀錄庫
 
@@ -411,7 +415,7 @@ interface-notice-alreadyShared = { $name } 已在「與我分享」中。
 
 interface-notice-changesResumed = { $outcome } 保險庫現在可接受變更。
 
-interface-notice-copySaved = 可讀副本已儲存至此電腦。
+interface-notice-copySaved = 可讀副本已儲存至此裝置。
 
 interface-notice-damagedHidden = 已隱藏 { $count } 份損毀的文件。這些文件列於「已隱藏」。
 
@@ -461,7 +465,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = 舊套件仍�
 
 interface-person-records = { $name } 的紀錄
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = 請檢查電腦的相機隱私權設定，並允許 myCarlos 使用相機。
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = 請檢查裝置的相機隱私權設定，並允許 myCarlos 使用相機。
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = 在「系統設定」中，開啟「隱私權與安全性」>「相機」，然後允許 myCarlos 使用相機。
 
@@ -492,6 +496,10 @@ interface-reader-page = 第 { $page } 頁
 interface-reader-textFollows = 第 { $page } 頁，共 { $total } 頁。以下是該頁文字。
 
 interface-reader-where = 第 { $page } 頁，共 { $total } 頁
+
+interface-reader-markedOnPage = 第 { $page } 頁：引用的文字已在頁面圖像和「本頁文字」中標出。
+
+interface-reader-markedInText = 第 { $page } 頁：引用的文字已在「本頁文字」中標出，但無法在頁面圖像上標出。
 
 interface-reader-zoom = { $percent }%
 
@@ -681,7 +689,7 @@ native-error-33 = myCarlos 無法在此系統上安全地顯示文件。請另�
 
 native-error-34 = 儲存空間不足，無法完成此作業。
 
-native-error-35 = myCarlos 無法在此電腦上讀取或寫入檔案。請確認 myCarlos 所在磁碟已連接且有可用空間，然後重試。如果您剛才正在變更內容，請先查看紀錄確認變更是否已完成。
+native-error-35 = myCarlos 無法在此裝置上讀取或寫入檔案。請確認 myCarlos 所在磁碟已連接且有可用空間，然後重試。如果您剛才正在變更內容，請先查看紀錄確認變更是否已完成。
 
 native-error-36 = 作業因保險庫已鎖定而停止。
 
@@ -838,7 +846,7 @@ photo-zoomOut = 縮小
 
 photo-zoomed = 已放大至 { $percent }%。
 
-preferences-subtitle = 此電腦上 myCarlos 的外觀
+preferences-subtitle = 此裝置上 myCarlos 的外觀
 
 readingAid-available = 您的診所也為這份文件傳送了閱讀輔助。
 
@@ -1030,7 +1038,7 @@ restore-summary = 從備份還原
 
 restore-tooLong = 內容太長，請檢查輸入內容。
 
-secret-count-password = { $count } 個字元的密碼
+secret-count-password = { $count } 個字元的密語
 
 secret-count-recoveryKey = { $count } 個字元的復原金鑰
 
@@ -1182,7 +1190,7 @@ textSize-box = 文字大小百分比
 
 textSize-followsDevice = 此處的文字大小會依照裝置設定或瀏覽器縮放比例調整。
 
-textSize-help = 調整 myCarlos 中所有內容的大小，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這部電腦上的設定。您也可以按住 { $modifier }，再按加號、減號或 0。
+textSize-help = 調整 myCarlos 中所有內容的大小，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。您也可以按住 { $modifier }，再按加號、減號或 0。
 
 textSize-key-command = Command
 
@@ -1227,6 +1235,14 @@ personDetails-birthDate = 出生日期
 personDetails-birthDateRequired = 請輸入出生日期，或選擇出生日期不詳。
 
 personDetails-birthDateUnknown = 我不知道此人的出生日期
+
+personDetails-birthDay = 日
+
+personDetails-birthMonth = 月
+
+personDetails-birthMonthChoose = 選擇
+
+personDetails-birthYear = 年
 
 personDetails-cancel = 取消
 
@@ -1319,6 +1335,8 @@ portal-copy = 複製裝置代碼
 portal-copyFailed = 請選取完整的裝置代碼並複製。
 
 portal-dateNotRecorded = 未記錄日期
+
+portal-defaultDeviceName = { $platform } 上的 myCarlos
 
 portal-deviceCode = 裝置代碼
 
@@ -1480,6 +1498,10 @@ interface-history-event-backupSaved = 加密備份已儲存
 interface-history-event-copySaved = 可讀副本已儲存
 
 interface-history-event-created = 保險庫已建立
+
+interface-history-event-deliveryRefusalsCleared = 已選擇重試未通過驗證的診所文件
+
+interface-history-event-deliveryRefused = 診所文件未通過驗證
 
 interface-history-event-deliveryFiled = 已儲存診所文件
 
@@ -1645,6 +1667,12 @@ portal-codeSubmit = 確認驗證碼
 
 portal-codeSubmitted = 驗證碼已送出。正在等待診所確認此裝置。如果 10 分鐘內仍未確認，請重新申請。
 
+portal-refusedDocuments = 此診所有 { $count } 份文件無法驗證。請診所重新傳送。
+
+portal-tryAgain = 重試
+
+portal-tryAgainFor = 重試：{ $clinic }
+
 portal-linkAnother = 連結另一家診所
 
 ai-summary-button = 摘要
@@ -1653,9 +1681,9 @@ ai-summary-title = 淺白易懂的摘要
 
 ai-explain-title = 解釋術語
 
-ai-notInstalled-title = 此電腦上尚未安裝 AI 助理
+ai-notInstalled-title = 此裝置上尚未安裝 AI 助理
 
-ai-notInstalled-body = 安裝後，它會使用在此電腦上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「設定」中的「AI 助理」裡下載模型，或新增您已有的模型檔案。
+ai-notInstalled-body = 安裝後，它會使用在此裝置上執行的 AI 模型，以淺白易懂的文字為您解釋文件。您可以在「設定」中的「AI 助理」裡下載模型，或新增您已有的模型檔案。
 
 ai-notInstalled-openPreferences = 開啟 AI 助理設定
 
@@ -1665,7 +1693,11 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文件中顯示
 
-ai-summary-partial = 此摘要僅涵蓋文件開頭部分：第 1 頁至第 { $last } 頁。
+ai-summary-folded = 摘要已收合，以便為頁面留出空間。
+
+ai-summary-showWhole = 顯示完整摘要
+
+ai-summary-partial = 此摘要僅使用了文件的部分文字。
 
 ai-summary-tooLong =
     { $last ->
@@ -1673,14 +1705,26 @@ ai-summary-tooLong =
    *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁（共 { $total } 頁）。
     }
 
+ai-summary-tooLongWithLast =
+    { $last ->
+    [1] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁和最後一頁，即第 { $tail } 頁（共 { $total } 頁）。
+   *[other] 這份文件可能太長，AI 助理無法一次讀完。它大約能讀第 1 頁至第 { $last } 頁，以及最後一頁，即第 { $tail } 頁（共 { $total } 頁）。
+    }
+
 ai-summary-tooLongStart = 這份文件可能太長，AI 助理無法一次讀完。它大約只能讀第 1 頁的開頭部分。
 
-ai-summary-tooLongAfter = 摘要會說明讀了哪些頁。
+ai-summary-tooLongAfter = 如果無法讀完全部內容，摘要會註明。
 
 ai-summary-readPages =
     { $last ->
     [1] 為第 1 頁產生摘要
    *[other] 為第 1 頁至第 { $last } 頁產生摘要
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [1] 為第 1 頁和第 { $tail } 頁產生摘要
+   *[other] 為第 1 頁至第 { $last } 頁和第 { $tail } 頁產生摘要
     }
 
 ai-summary-readStart = 為第 1 頁的開頭部分產生摘要
@@ -1695,11 +1739,11 @@ ai-explain-submit = 解釋
 
 ai-preferences-title = AI 助理
 
-ai-preferences-body = 使用在這台電腦上執行的 AI 模型，以淺白的語言解釋你的文件。下載下列某個模型，或新增你已有的對應檔案。模型保留在這台電腦上。
+ai-preferences-body = 使用在這台裝置上執行的 AI 模型，以淺白的語言解釋你的文件。下載下列某個模型，或新增你已有的對應檔案。模型保留在這台裝置上。
 
 ai-preferences-notInstalled = 未安裝
 
-ai-settings-subtitle = AI 助理在此電腦上的運作方式
+ai-settings-subtitle = AI 助理在此裝置上的運作方式
 
 ai-model-add = 新增模型檔案…
 
@@ -1728,15 +1772,15 @@ ai-model-installed = 已安裝：{ $name }
 
 ai-model-remove = 移除模型
 
-ai-model-removeConfirm = 要從此電腦移除模型嗎？之後可以重新新增。
+ai-model-removeConfirm = 要從此裝置移除模型嗎？之後可以重新新增。
 
 ai-model-damaged = 模型檔案已損毀或已被變更。請移除後重新新增。
 
-ai-model-unsupportedRam = 此電腦的記憶體不足以執行 AI 助理（需要約 8 GB）。
+ai-model-unsupportedRam = 此裝置的記憶體不足以執行 AI 助理（需要約 8 GB）。
 
-ai-model-unsupportedCpu = 此電腦的處理器不支援 AI 助理。
+ai-model-unsupportedCpu = 此裝置的處理器不支援 AI 助理。
 
-ai-model-unsupportedPlatform = 此類電腦暫不支援 AI 助理。
+ai-model-unsupportedPlatform = 此類裝置暫不支援 AI 助理。
 
 ai-model-refusedList = myCarlos 不接受此檔案。請選擇上方列出的某個模型檔案。
 
@@ -1744,9 +1788,9 @@ ai-model-refusedHash = 這不是預期的檔案。請重新下載，然後新增
 
 ai-model-refusedIncomplete = 無法完整讀取該檔案。請確認下載已完成，然後再試一次。
 
-ai-model-refusedDisk = 此電腦的可用空間不足。模型大約需要 4 GB。
+ai-model-refusedDisk = 此裝置的可用空間不足。模型大約需要 4 GB。
 
-ai-model-refusedStorage = 無法將模型儲存到此電腦。
+ai-model-refusedStorage = 無法將模型儲存到此裝置。
 
 ai-model-refusedBusy = AI 助理正在工作。請在它完成後再試一次。
 
@@ -1786,16 +1830,37 @@ ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關�
 
 ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
 
-ai-error-storage = 無法從此電腦讀取 AI 助理的模型。請重試。如果問題持續，請在「設定」中的「AI 助理」裡移除模型，然後重新新增。
+ai-error-storage = 無法從此裝置讀取 AI 助理的模型。請重試。如果問題持續，請在「設定」中的「AI 助理」裡移除模型，然後重新新增。
 
 ai-summary-pagesMissing = 部分頁面未能完整讀取，因此此摘要可能遺漏部分內容。
 
 ai-summary-noSource = 未找到來源
+
+ai-summary-englishOnly = 目前摘要以英文撰寫。myCarlos 只對英文摘要核對數字與「何時就醫」的提示，請在文件本身中核對這些內容。
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = 這可能需要幾分鐘。您可以繼續閱讀這封信。
+
+ai-summary-progress-reading = 正在閱讀信件…
+
+ai-summary-progress-writing = 正在撰寫摘要…
+
+ai-summary-progress-checking = 正在檢查摘要…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] 剩餘不到一分鐘
+       *[other] 大約還剩 { $minutes } 分鐘
+    }
+
+ai-summary-progress-slower = 耗時比預期更久。
+
 aiHelper-notice-title = 關於 AI 助理
 
-aiHelper-notice-introShare = myCarlos 可以為您選擇的 AI 服務準備文件的文字。AI 助理絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台電腦的網際網路位址。
+aiHelper-notice-introShare = myCarlos 可以為您選擇的 AI 服務準備文件的文字。AI 助理絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台裝置的網際網路位址。
 
-aiHelper-notice-intro = AI 助理會在這台裝置上用淺白的文字說明文件內容，也可以為您選擇的 AI 服務準備文件的文字。它絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台電腦的網際網路位址。
+aiHelper-notice-intro = AI 助理會在這台裝置上用淺白的文字說明文件內容，也可以為您選擇的 AI 服務準備文件的文字。它絕不會透過網際網路傳送您的文件或任何關於您的資訊。它唯一會取得的是其模型檔案，而且只有在您選擇下載時才會取得。下載時，下載網站會看到這台裝置的網際網路位址。
 
 aiHelper-notice-testBuild = 此開發版本僅供合成（虛構）檔案使用。請勿用於真實的健康資訊。
 
@@ -2003,7 +2068,7 @@ ai-keepFull = 此文件保存的 AI 回答已達上限。新的回答會顯示�
 
 # Catalog model list (#276A).
 
-ai-models-title = 這台電腦上的模型
+ai-models-title = 這台裝置上的模型
 
 ai-models-group = 正在使用的模型
 
@@ -2035,3 +2100,12 @@ ai-models-starting = 正在開始下載…
 ai-models-picking = 請選擇要新增的模型檔案。
 
 ai-models-changed = 已變更正在使用的模型
+
+ai-summaryTooLarge = 完整摘要過大。未儲存新的摘要。
+
+personDetails-previousTitle = 曾用全名
+personDetails-previousHelp = 最多可儲存16個曾用全名，以協助尋找身分資訊。變更姓名時，原姓名會在此處建議保留；如不想保留，請在儲存前移除。移除僅影響此清單項目，其他紀錄與備份仍可能保留該姓名。
+personDetails-previousEntry = 曾用全名 { $number }
+personDetails-previousRemove = 移除曾用全名 { $number }
+personDetails-previousAdd = 新增曾用全名
+personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。

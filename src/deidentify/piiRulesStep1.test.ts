@@ -14,7 +14,7 @@ describe("whole addresses, including the town after the comma", () => {
       "Patient lists home address 99 Fable Quay, Townsend, Ontario.",
       "Townsend",
     ],
-    ["Adresse : 18 allée des Érables, Ville-Exemple QC G1R 9Z9", "Érables"],
+    ["Adresse : 18 allée des Érables, Ville-Exemple QC H0Z 9Z7", "Érables"],
     ["Dirección: Calle Falsa 123, Testópolis", "Testópolis"],
     ["Endereço: Rua Fictícia 100, Testópolis - SP", "Fictícia"],
     ["Adres: ul. Przykładowa 5, Testowo", "Przykładowa"],

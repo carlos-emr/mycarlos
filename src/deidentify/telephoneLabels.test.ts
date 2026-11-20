@@ -63,14 +63,14 @@ describe("telephone fields beside other fields", () => {
   it("keeps mixed existing labels, international numbers and extensions protected", () => {
     const source =
       "Tel: 613-555-0100 ext. 42 · Fax: 555-0101\n" +
-      "Móvil: +34 655 908 117; Tel. kom. 512 330 908; Telefone: (31) 98877-1203";
+      "Móvil: +34 155 908 117; Tel. kom. 012 330 908; Telefone: (30) 98877-1203";
     const result = run(source);
     expect(result.onDevice.removed.map((part) => part.original)).toEqual([
       "613-555-0100 ext. 42",
       "555-0101",
-      "+34 655 908 117",
-      "512 330 908",
-      "(31) 98877-1203",
+      "+34 155 908 117",
+      "012 330 908",
+      "(30) 98877-1203",
     ]);
     expect(result.onDevice.removed.every((part) => part.kind === "phone")).toBe(
       true,

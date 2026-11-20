@@ -18,6 +18,11 @@ import { VaultLibrary } from "./VaultLibrary";
 import type { ModelStatus } from "../ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "../test/fakeLocalModel";
 
+// Explain is switched off in the UI (src/ai/features.ts). These tests keep
+// its code covered with the switch on; ReaderExplainOff.test.tsx checks the
+// reader as patients see it now.
+vi.mock("../ai/features", () => ({ AI_EXPLAIN_ENABLED: true }));
+
 // One fake native runtime: stamp and clone when data is captured, before delivery.
 let snapshotSequence = 1;
 function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
@@ -1179,7 +1184,7 @@ describe("Settings > AI helper (#72)", () => {
       }),
     ).toBeVisible();
     expect(
-      screen.getByText(humanText("How the AI helper works on this computer")),
+      screen.getByText(humanText("How the AI helper works on this device")),
     ).toBeVisible();
     // The model's row, as Preferences had it: not installed here.
     expect(await screen.findByText(humanText("Not installed"))).toBeVisible();
@@ -2098,6 +2103,9 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       [{ index: 0, text: pageText }],
       "en",
       { recordId: expect.any(String), ticket: expect.any(String) },
+      undefined,
+      // The reader's progress listener, for the progress bar.
+      expect.any(Function),
     );
     await waitFor(() =>
       expect(native.saveAiResult).toHaveBeenCalledWith(
@@ -2274,7 +2282,7 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     });
     expect(
       await within(panel).findByText(
-        humanText("The AI helper isn't on this computer yet"),
+        humanText("The AI helper isn't on this device yet"),
       ),
     ).toBeVisible();
     expect(notice()).toBeNull();
