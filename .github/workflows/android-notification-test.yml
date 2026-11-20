@@ -1,15 +1,30 @@
 name: Android notification test
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - ".github/workflows/android-notification-test.yml"
-      - "src-tauri/android-push/**"
-      - "src-tauri/src/android_push*.rs"
-      - "src-tauri/android_push_profile.rs"
-      - "src-tauri/src/vault/remote_notices.rs"
+      - "package.json"
+      - "package-lock.json"
+      - "rust-toolchain.toml"
+      - "scripts/configure-android-security*"
       - "scripts/*android-push*"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - "src-tauri/android-push/**"
+      - "src-tauri/android_push_profile.rs"
       - "src-tauri/build.rs"
+      - "src-tauri/capabilities/**"
+      - "src-tauri/tauri*.conf.json"
+      - "src-tauri/src/android_push*.rs"
+      - "src-tauri/src/document_notifications.rs"
+      - "src-tauri/src/document_push.rs"
+      - "src-tauri/src/lib.rs"
+      - "src-tauri/src/portal_client.rs"
+      - "src-tauri/src/vault.rs"
+      - "src-tauri/src/vault/remote_notices.rs"
 permissions:
   contents: read
 concurrency:
