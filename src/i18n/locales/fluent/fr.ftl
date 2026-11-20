@@ -1944,6 +1944,13 @@ ai-model-reads =
    *[other] Lit environ { $pages } pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
     }
 
+ai-model-readsEstimate = C’est une estimation, jusqu’à la prochaine utilisation de ce modèle.
+ai-model-loadCheck = Vérification du fonctionnement de ce modèle sur cet ordinateur…
+ai-model-loadCheckCannotRun = Cet ordinateur n’a pas pu faire fonctionner ce modèle. Réessayez plus tard ou choisissez un autre modèle.
+ai-model-loadCheckMemory = Il n’y a pas assez de mémoire libre pour essayer ce modèle en ce moment. Fermez d’autres programmes, puis réessayez.
+ai-model-loadCheckReady = Ce modèle a démarré sur cet ordinateur.
+ai-model-loadCheckRetry = Réessayer
+
 ai-model-where = Où obtenir le fichier
 
 ai-model-copy = Copier l’adresse

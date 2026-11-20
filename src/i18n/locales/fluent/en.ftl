@@ -1907,6 +1907,13 @@ ai-model-reads =
    *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
     }
 
+ai-model-readsEstimate = An estimate until you next use this model.
+ai-model-loadCheck = Checking that this model runs on this computer…
+ai-model-loadCheckCannotRun = This computer could not run this model. Try again later, or choose another model.
+ai-model-loadCheckMemory = There isn't enough free memory to try this model now. Close some other programs, then try again.
+ai-model-loadCheckReady = This model started on this computer.
+ai-model-loadCheckRetry = Try again
+
 ai-model-where = Where to get the file
 
 ai-model-copy = Copy address

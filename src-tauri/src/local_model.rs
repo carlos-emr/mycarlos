@@ -45,13 +45,20 @@ impl Capacity {
     /// 450 to 600 are used, by language and chat format), so this room is 150 to 300 tokens
     /// smaller than the helper's own. How many tokens a text takes is the renderer's estimate
     /// (`capacity.ts`), a separate matter.
-    pub(crate) const HELPER: Capacity = Capacity {
-        context_tokens: crate::model_helper::CONTEXT_TOKENS,
-        document_tokens: crate::model_helper::document_budget(
-            crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
-            crate::model_helper::SUMMARY_TOKENS,
-        ) as u32,
-    };
+    pub(crate) const HELPER: Capacity = Capacity::at(crate::model_helper::CONTEXT_TOKENS);
+
+    /// The room in a context of `context_tokens` (model limits: the context the helper made),
+    /// with the same reserve for the prompt and the same answer.
+    pub(crate) const fn at(context_tokens: u32) -> Capacity {
+        Capacity {
+            context_tokens,
+            document_tokens: crate::model_helper::document_budget_at(
+                context_tokens,
+                crate::local_runner::SUMMARY_PROMPT_TOKENS as usize,
+                crate::model_helper::SUMMARY_TOKENS,
+            ) as u32,
+        }
+    }
 }
 
 /// One accepted model. Swapping the model is a change to [`CATALOG`] only.
@@ -1011,7 +1018,8 @@ impl Store {
 
     /// As [`Self::verified_model`], reading free memory from `probe`. On
     /// Linux the sealed copy lives in memory beside the loaded weights, so
-    /// twice the size plus 1.5 GiB must be free before it is made; unknown
+    /// what a start needs (`model_runtime::needed_bytes`: twice the size
+    /// plus the working memory) must be free before it is made; unknown
     /// refuses.
     pub(crate) fn verified_model_with(
         &self,
@@ -1030,10 +1038,7 @@ impl Store {
             let path = self.dir.join(model.file_name);
             #[cfg(target_os = "linux")]
             {
-                let needed = model
-                    .size_bytes
-                    .saturating_mul(2)
-                    .saturating_add(1536 << 20);
+                let needed = crate::model_runtime::needed_bytes(model.size_bytes);
                 if probe.available_bytes().is_none_or(|free| free < needed) {
                     return Err(ModelError::Memory);
                 }
@@ -2157,6 +2162,13 @@ mod tests {
             }
         );
         store.verified_model_with(&Free(Some(4 << 30))).unwrap();
+        // The same figure as the runtime's start: one byte less refuses.
+        let needed = crate::model_runtime::needed_bytes(1 << 20);
+        assert_eq!(
+            store.verified_model_with(&Free(Some(needed - 1))).err(),
+            Some(ModelError::Memory)
+        );
+        store.verified_model_with(&Free(Some(needed))).unwrap();
     }
 
     /// A fake network: serves `bytes` (announcing `announce`), or refuses.
