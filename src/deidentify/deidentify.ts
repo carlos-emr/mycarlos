@@ -4772,6 +4772,20 @@ function build(
     const number = numberFor("date", "unclearDate", `date:${iso}`);
     if (earliest && iso === earliest[0]) earliestNumber = number;
   });
+  // A day and a month with no year ("Jan 28", "14 février", "2月14日") is numbered in month-and-day
+  // order after the dated ones, whichever the text names first, so "Jan 28" comes before "Feb 14".
+  // Nothing says which year each belongs to, so none is given and no gap is counted: the order
+  // among them is the calendar order within one year, and says nothing about the dated ones.
+  const yearless = [
+    ...new Set(
+      [...readings.values()]
+        .filter((reading) => reading.kind === "partial")
+        .map((reading) => reading.key)
+        .filter((key) => key.startsWith("md")),
+    ),
+  ].sort();
+  for (const key of yearless)
+    numberFor("date", "unclearDate", `partial:${key}`);
   const datePlaceholder = (reading: DateReading) => {
     if (reading.kind === "full") {
       const number = numberFor("date", "unclearDate", `date:${reading.iso}`);
