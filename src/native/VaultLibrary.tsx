@@ -53,6 +53,7 @@ import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
+import { IphoneDocumentReader } from "./IphoneDocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
 import type { ModelStatus } from "../ai/types";
 import { AnonymizePreview } from "./AnonymizePreview";
@@ -146,6 +147,7 @@ export function VaultLibrary({
   canPrint = false,
   keyboardHints = true,
   computer = true,
+  iphonePdfReader = false,
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
@@ -196,6 +198,8 @@ export function VaultLibrary({
   /** On a computer, not a phone: shared files come by being opened with
    * myCarlos there, not from another app's Share. */
   computer?: boolean;
+  /** iOS alone can present the native, bridge-free WebKit PDF reader. */
+  iphonePdfReader?: boolean;
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
   /** A dialog of the app's own is over the library (the warning before the
@@ -2808,6 +2812,20 @@ export function VaultLibrary({
                 }
               />
             )}
+          {readerRecord && iphonePdfReader && !readerShowsAid && (
+            <IphoneDocumentReader
+              record={readerRecord}
+              read={(id, closeLabel) =>
+                bridge.readNativePdf(id, closeLabel).catch((error: unknown) => {
+                  if (mountedRef.current && isLockedError(error))
+                    void lockAndConceal();
+                  throw error;
+                })
+              }
+              cancel={() => bridge.cancelView()}
+              onClose={() => setReaderRecordId(null)}
+            />
+          )}
           {anonymizeRecord && !aiNotice && (
             <AnonymizePreview
               record={anonymizeRecord}
@@ -2844,10 +2862,13 @@ export function VaultLibrary({
               onClose={() => setAnonymizeRecordId(null)}
             />
           )}
-          {readerRecord && (
+          {readerRecord && (!iphonePdfReader || readerShowsAid) && (
             <DocumentReader
               record={readerRecord}
               startWithAid={readerShowsAid}
+              onOpenOriginal={
+                iphonePdfReader ? () => setReaderShowsAid(false) : undefined
+              }
               viewPage={(page, width, password) =>
                 bridge
                   .viewPage(readerRecord.id, page, width, password)

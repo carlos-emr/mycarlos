@@ -1043,5 +1043,8 @@
   "personDetails.previousEntry",
   "personDetails.previousRemove",
   "personDetails.previousAdd",
-  "personDetails.previousInvalid"
+  "personDetails.previousInvalid",
+  "reader.iphone.failed",
+  "reader.iphone.opening",
+  "reader.iphone.tooLarge"
 ]

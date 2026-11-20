@@ -294,6 +294,28 @@ must separately approve intended use and data handling.
 - [NIST SP 800-63B authentication guidance](https://pages.nist.gov/800-63-4/sp800-63b.html)
 - [`glib` advisory GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g)
 
+### Draft iPhone PDF preview boundary
+
+The separate native WebKit preview is not the desktop PDF helper. Its view has no Tauri
+bridge, scripts or vault commands; JavaScript is disabled, storage is nonpersistent, and
+links, new windows, downloads and external context-menu actions are denied. The app passes
+at most 20 MiB in native memory and creates no plaintext temporary file. WebKit controls
+its PDF implementation and process placement, so desktop helper isolation guarantees
+above do not establish this path's parser isolation.
+
+The PDF crosses the plugin channel as base64. Rust wipes its owned document and encoded
+buffers, but serialization, Swift `Data`, and WebKit can hold additional plaintext copies
+that the app cannot reliably wipe. WebKit may retain copies for the web-content process's
+lifetime. The mobile SDK also retains per-read activity-channel bookkeeping until app exit;
+repeated-read memory growth and the largest allowed PDF still need physical-device profiling.
+
+Native backgrounding synchronously invalidates pending Rust reads, including a queued
+begin, and changes the native lifecycle epoch. Closing, locking, idle lock and replacement
+also invalidate queued presentation. Genuine native input updates both inactivity clocks
+only before the lock is owed; a stale or closed reader cannot keep the vault open. Native
+compilation and real iPhone lifecycle, navigation and accessibility validation remain
+required; browser tests are not proof of native behavior.
+
 ### Signed-PDF import analysis draft (#101)
 
 The import pipeline now invokes a bounded signature analysis without changing stored

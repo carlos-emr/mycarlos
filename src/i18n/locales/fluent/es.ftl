@@ -1802,6 +1802,11 @@ interface-history-to = Hasta
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos también conserva un historial: cuándo se abrió la bóveda; cuándo se configuró o cambió su frase de contraseña o clave de recuperación, y cuándo se guardó o restauró una copia de seguridad; cuándo se añadió cada perfil de paciente y se creó, cambió de nombre o movió cada carpeta; y cuándo se añadió, cambió de nombre, movió, ocultó, restauró o guardó fuera de myCarlos cada documento, y dónde se guardó. Se cifra junto con todo lo demás. Puede consultarlo aquí; myCarlos nunca lo modifica ni lo elimina.
 
+reader-iphone-failed = myCarlos no pudo mostrar este documento. Guarde una copia para leerlo en otra aplicación.
+
+reader-iphone-opening = Abriendo documento…
+
+reader-iphone-tooLarge = Este PDF supera los 20 MB. Guarde una copia para leerlo en otra aplicación.
 portal-checkAgain = Para buscar de nuevo, elija { $button }.
 
 portal-unlockCheckConsent = Después de cada desbloqueo, myCarlos se comunica con los portales de las clínicas vinculadas para consultar novedades sobre la aprobación y buscar documentos nuevos si la clínica ha aprobado el dispositivo o una solicitud de aprobación sigue abierta.

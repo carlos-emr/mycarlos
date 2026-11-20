@@ -216,6 +216,31 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
+    /// Genuine input in a native reader obeys the renderer's owed-lock rule:
+    /// once the user-facing delay elapsed, it cannot revive either deadline.
+    /// Check and touch share the mutex. The normal backstop keeps its margin.
+    #[cfg(any(target_os = "ios", test))]
+    pub fn touch_before_deadline(&self, now: impl Into<Now>) -> bool {
+        let now = now.into();
+        let mut state = self.state();
+        let held = state.holds.iter().map(|hold| hold.held_until(now));
+        let (mono, wall) = (
+            held.clone().map(|(mono, _)| mono).max(),
+            held.map(|(_, wall)| wall).max(),
+        );
+        let user_delay = state.delay.saturating_sub(MARGIN);
+        if !state.armed
+            || state.openings > 0
+            || state.mono.is_due(now.mono, mono, user_delay)
+            || state.wall.is_due(now.wall, wall, user_delay)
+        {
+            return false;
+        }
+        state.mono.touch(now.mono);
+        state.wall.touch(now.wall);
+        true
+    }
+
     /// Starts opening the files chosen for a transfer. A provider may download
     /// a whole document before the open returns, with no progress to report,
     /// so the deadline is not due until the opening ends.
@@ -408,6 +433,79 @@ mod tests {
         deadline.set_delay_minutes(5, start);
         deadline.arm(start);
         deadline
+    }
+
+    #[test]
+    fn native_reader_input_cannot_revive_an_owed_lock_on_either_clock() {
+        let start = Now {
+            mono: Instant::now(),
+            wall: SystemTime::now(),
+        };
+        for elapsed_on_wall in [false, true] {
+            let deadline = armed(start);
+            let early = Now {
+                mono: start.mono + MINUTE,
+                wall: start.wall + MINUTE,
+            };
+            assert!(deadline.touch_before_deadline(early));
+            let due = if elapsed_on_wall {
+                Now {
+                    mono: early.mono,
+                    wall: early.wall + 5 * MINUTE,
+                }
+            } else {
+                Now {
+                    mono: early.mono + 5 * MINUTE,
+                    wall: early.wall,
+                }
+            };
+            assert!(!deadline.touch_before_deadline(due));
+            assert!(!deadline.is_due(due), "normal backstop retains its margin");
+            assert!(deadline.is_due(Now {
+                mono: due.mono + MARGIN,
+                wall: due.wall + MARGIN
+            }));
+            deadline.disarm();
+            assert!(!deadline.touch_before_deadline(due));
+        }
+    }
+
+    #[test]
+    fn native_reader_input_respects_each_hold_cap_on_both_clocks() {
+        let start = Now {
+            mono: Instant::now(),
+            wall: SystemTime::now(),
+        };
+        let at = |elapsed| Now {
+            mono: start.mono + elapsed,
+            wall: start.wall + elapsed,
+        };
+        for elapsed_on_wall in [false, true] {
+            let deadline = armed(start);
+            deadline.hold_started(start, 2 * MINUTE);
+            deadline.hold_started(at(MINUTE), 4 * MINUTE);
+            // The first hold expired, but the second still counts as activity.
+            let early = at(4 * MINUTE);
+            assert!(deadline.touch_before_deadline(early));
+            // Keeping an expired hold registered must never make activity revive an owed lock.
+            let due = if elapsed_on_wall {
+                Now {
+                    mono: early.mono,
+                    wall: start.wall + 10 * MINUTE,
+                }
+            } else {
+                Now {
+                    mono: start.mono + 10 * MINUTE,
+                    wall: early.wall,
+                }
+            };
+            assert!(!deadline.touch_before_deadline(due));
+            assert!(!deadline.is_due(due), "the backstop retains its margin");
+            assert!(deadline.is_due(Now {
+                mono: due.mono + MARGIN,
+                wall: due.wall + MARGIN
+            }));
+        }
     }
 
     #[test]

@@ -1839,6 +1839,11 @@ interface-history-to = Do
 
 interface-SecuritySettings-myCarlosAlsoKeepsAHistoryWhenThe = myCarlos przechowuje też historię: kiedy otwarto sejf; kiedy ustawiono lub zmieniono hasło główne albo klucz odzyskiwania oraz kiedy zapisano lub przywrócono kopię zapasową; kiedy dodano każdy profil pacjenta i utworzono każdy folder, zmieniono jego nazwę lub go przeniesiono; a także kiedy dodano każdy dokument, zmieniono jego nazwę, przeniesiono go, ukryto, przywrócono lub zapisano poza myCarlos i gdzie. Historia jest zaszyfrowana wraz z całą resztą. Możesz ją tutaj przeglądać; myCarlos nigdy jej nie zmienia ani nie usuwa.
 
+reader-iphone-failed = myCarlos nie może wyświetlić tego dokumentu. Zapisz kopię, aby przeczytać go w innej aplikacji.
+
+reader-iphone-opening = Otwieranie dokumentu…
+
+reader-iphone-tooLarge = Ten plik PDF jest większy niż 20 MB. Zapisz kopię, aby przeczytać go w innej aplikacji.
 portal-checkAgain = Aby sprawdzić ponownie, proszę wybrać { $button }.
 
 portal-unlockCheckConsent = Po każdym odblokowaniu sejfu myCarlos łączy się z portalami połączonych przychodni, aby sprawdzić zmiany w zatwierdzeniu i nowe dokumenty, jeśli przychodnia zatwierdziła urządzenie lub prośba o zatwierdzenie nadal jest otwarta.

@@ -1,6 +1,6 @@
 import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
@@ -259,6 +259,9 @@ export interface ImportOutcome {
    * yet; this is never a Verified claim or a durable trust decision. */
   unverifiedSignatures?: { recordId: string; reason: unknown }[];
 }
+
+/** Genuine input in the separate native reader; no document data is carried. */
+export const NATIVE_READER_ACTIVITY_EVENT = "mycarlos-native-reader-activity";
 
 /** What adding the waiting files to Shared with me did (#61). */
 export interface ReceivedAcceptOutcome extends ImportOutcome {
@@ -580,6 +583,9 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** iOS only: native-memory PDF preview, with no document bytes in this bridge.
+   * Resolves when the native reader is dismissed. cancelView also stops it. */
+  readNativePdf(recordId: string, closeLabel: string): Promise<void>;
   /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
    * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
    * nothing: `rects` is empty, with the reason, when the helper cannot tie
@@ -1219,6 +1225,22 @@ export function createVaultBridge(): VaultBridge {
       invoke<string>("vault_ai_result_read", {
         request: { recordId, resultId },
       }),
+    readNativePdf: async (recordId, closeLabel) => {
+      const generation = viewGeneration;
+      if (pendingViewCancellation) {
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_native_pdf", {
+        request: { recordId, closeLabel },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>
