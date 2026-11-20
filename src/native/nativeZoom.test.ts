@@ -1,10 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startNativeZoom } from "./nativeZoom";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
+const runtimeInfo = vi.fn<() => Promise<{ platform: string }>>();
+const ipc = vi.fn<Parameters<typeof mockIPC>[0]>();
 
 const setZoom = vi.fn<(level: number) => Promise<void>>();
 
@@ -12,14 +11,25 @@ describe("native zoom startup", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.stubGlobal("__TAURI_INTERNALS__", {});
+    vi.stubGlobal("__TAURI_EVENT_PLUGIN_INTERNALS__", {});
     window.localStorage.clear();
-    vi.mocked(invoke).mockReset();
+    runtimeInfo.mockReset();
     setZoom.mockReset().mockResolvedValue(undefined);
-    vi.mocked(getCurrentWebview).mockReturnValue({
-      setZoom,
-    } as unknown as ReturnType<typeof getCurrentWebview>);
+    ipc.mockReset().mockImplementation((command, args) => {
+      if (command === "runtime_info") return runtimeInfo();
+      if (command === "plugin:webview|set_webview_zoom") {
+        const payload = args as { label: string; value: number };
+        if (payload.label !== "main")
+          throw new Error("Unexpected webview label");
+        return setZoom(payload.value);
+      }
+      throw new Error(`Unexpected Tauri command: ${command}`);
+    });
+    mockWindows("main");
+    mockIPC(ipc);
   });
   afterEach(() => {
+    clearMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     // Other test files share this storage.
@@ -28,7 +38,7 @@ describe("native zoom startup", () => {
 
   it("renders after the deadline if platform detection hangs, and installs the zoom when it answers", async () => {
     let finish!: (value: { platform: string }) => void;
-    vi.mocked(invoke).mockReturnValue(
+    runtimeInfo.mockReturnValue(
       new Promise((resolve) => {
         finish = resolve;
       }),
@@ -59,7 +69,7 @@ describe("native zoom startup", () => {
   it("keeps controls when applying the saved size outlasts the same startup deadline", async () => {
     let platform!: (value: { platform: string }) => void;
     let applied!: () => void;
-    vi.mocked(invoke).mockReturnValue(
+    runtimeInfo.mockReturnValue(
       new Promise((resolve) => {
         platform = resolve;
       }),
@@ -88,7 +98,7 @@ describe("native zoom startup", () => {
 
   it("holds the first render, within the startup wait, until the kept size is applied", async () => {
     let applied!: () => void;
-    vi.mocked(invoke).mockResolvedValue({ platform: "windows" });
+    runtimeInfo.mockResolvedValue({ platform: "windows" });
     setZoom.mockReturnValue(
       new Promise<void>((resolve) => {
         applied = resolve;
@@ -114,11 +124,14 @@ describe("native zoom startup", () => {
   });
 
   it("clears the deadline when startup finishes and leaves phones alone", async () => {
-    vi.mocked(invoke).mockResolvedValue({ platform: "ios" });
+    runtimeInfo.mockResolvedValue({ platform: "ios" });
     const { ready, installed } = startNativeZoom();
     expect(await ready).toBeNull();
     expect(await installed).toBeNull();
     expect(setZoom).not.toHaveBeenCalled();
+    expect(ipc.mock.calls.map(([command]) => command)).toEqual([
+      "runtime_info",
+    ]);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

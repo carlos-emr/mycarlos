@@ -14,9 +14,12 @@ production end-of-support schedule remain an owner decision and release gate.
 
 - Analytics, crash upload, remote logging and telemetry are disabled; their allow-list of fields
   permitted to leave the device is the empty set.
-- The only planned network use is pickup from the portal the patient links (carlos-portal #41).
-  The fields it may send are listed under [Portal pickup](#portal-pickup-what-may-leave-the-device);
-  nothing else may leave the device.
+- The planned network uses are pickup from the portal the patient links (carlos-portal #41) and
+  the AI helper's model download (#72, #219, on main). The fields pickup may send are listed
+  under [Portal pickup](#portal-pickup-what-may-leave-the-device); the download sends none
+  ([AI helper](#ai-helper-72-nothing-about-the-patient-leaves-the-device)); nothing else may leave the device.
+- The AI helper (#72) adds one host to the allow-list, for the model file only: its "cloud" way is
+  a text file the patient saves, and its model helper has no network.
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.
@@ -79,7 +82,10 @@ audit deliberately retains upstream package identities, so the original warning 
 advisories remain visible. Linux remains an unsupported compatibility monitor pending security,
 device, and release review. See [the patch record](src-tauri/vendor/README.md).
 GitHub Actions are commit pinned and checkout does not persist credentials. These are inventory
-and pull-request controls, not release provenance.
+and pull-request controls, not release provenance. The Windows and Linux evaluation builds link
+llama.cpp objects restored from a cache that only runs on `main` write (pull requests only read
+it), keyed on the runner image, the Rust toolchain and the dependency files; a supported release
+must build them afresh.
 
 Before a supported release, this repository must protect its release pipeline and bind each
 signed platform artifact to its source revision, lockfiles, SBOM, build identity and provenance
@@ -150,11 +156,148 @@ If a portal or a clinic key may be compromised, follow the incident steps above.
 revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
 was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
 
+## Tray notices (#230): the waiting key
+
+The myCarlos poller is planned in #230; its storage implementation is in #270
+([THREAT_MODEL](THREAT_MODEL.md) NET-04). The Portal contract is implemented in carlos-portal#88
+(for carlos-portal#87). With the tray (#206), closing the window locks the vault, and the device
+keys are inside it. A waiting key lets the locked app ask each linked portal one question:
+is anything waiting for this device?
+
+**What may leave the device:**
+
+- **Registering** (while unlocked, at link time): `POST /api/mycarlos/availability/waiting-keys`,
+  signed with the link's device key as any device request, carrying the waiting key's public half
+  and its `key_id`, with `alg: "ed25519"`. A key the link already had is replaced.
+- **Asking** (locked, in the tray): `POST /api/mycarlos/availability/waiting`, body `key_id` only,
+  with the `X-MyCarlos-Waiting-Assertion` header signed by the waiting key: `aud`
+  (`carlos-patient-portal-waiting-check`), `iss`, `kid`, `jti`, `iat`, `exp` (60 s or less) and
+  `request_hash`. Not more than once every 120 s per key (the portal answers `429` with
+  `Retry-After`), with jitter and back-off. The answer is yes or no, the same size either way.
+- Nothing else: no vault, record or person id, no document or patient detail, no device detail
+  beyond what the link already sent. The network still sees the IP address, the portal's host name
+  and the times of the checks.
+
+A yes shows one generic notice, in the last-used language, with no clinic, document, name or count,
+once until the next unlock. Clicking it opens the unlock screen; after unlock the normal document
+check takes over.
+
+New links retain link-time registration. Before tray checks resume for an older link, a restored
+backup or a key wiped when notices were disabled, the planned #230 integration must reconcile
+missing or unusable registrations at an authorized unlocked opportunity, respecting the patient's
+switches. A confirmed revoked key id requires a fresh key. This transition remains an activation
+requirement, not implemented enrollment or a new opt-in decision.
+
+**Revoking and wiping.** The local waiting key is wiped (its slot in `notice-keys.v1`; the OS item
+too when no key is left), and portal revocation is requested. It may remain pending while offline:
+
+- when the patient turns tray notices or the tray off, or unlinks the clinic while unlocked:
+  the device revokes it with the link's device key
+  (`DELETE /api/mycarlos/availability/waiting-keys/{key_id}`). If that cannot be sent, remote
+  revocation remains pending. The planned integration needs durable retry storage for these
+  waiting-key deletions; format 9's existing 64-entry push-destination queue does not yet define
+  their encoding. This is an open integration requirement, not a currently implemented retry;
+- when tray notices are turned off while locked, or the vault is reset, erased or set aside, or
+  another vault is opened: the device keys are unavailable while locked or may be gone after
+  reset, so the planned integration requests self-revocation
+  (`DELETE /api/mycarlos/availability/waiting`, signed by the waiting key), subject to the
+  authorization/retry handoff before local wiping described below;
+- when the portal answers `404`: the key was revoked there, the device was removed, or the portal
+  refused it for another reason it doesn't give. The device stops asking with that key. Open
+  (#230): whether it wipes the key at the first `404`, or only after a few, since a portal whose
+  notices are switched off may answer the same way. Before activation, #230 must also define the
+  user-visible unavailable state and safe authorized unlocked recovery/re-enrollment transition;
+  the wipe threshold and retry policy remain open.
+
+Local wiping does not confirm remote revocation. The locked self-revocation branch also needs
+a reviewed durable authorization/retry handoff before local wiping, or an accepted manual fallback,
+before activation;
+the mechanism remains open in #230. A generic `404` is not proof that revocation succeeded.
+
+**At the portal:** removing the device, by the patient or clinic staff through CARLOS, revokes
+its waiting keys immediately. That is the clinic's kill switch for a lost or offline device.
+Standalone staff key revocation and a device-unlink route remain follow-up work. A revoked key
+gets `404`, like any other refusal, so the answer doesn't say why.
+
+**If a device is lost or its OS account may be compromised:** remove the device in the portal
+(Account → Linked devices), or ask the clinic to. Whoever has the device's files and its OS account
+can learn which portals the vault is linked to and whether something is waiting at each, until
+then; they cannot read, list or pick up anything with the waiting key. Uninstalling on Windows
+should remove the Credential Manager item (`myCarlos/notice-keys/v1`); if it is left, delete it in
+Credential Manager by hand.
+
+## AI helper (#72): nothing about the patient leaves the device
+
+The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217), the model runtime (#218), the model download (#219) and kept answers (#212) ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided
+on 29 October 2026 that the helper uses no cloud provider, so:
+
+- **What may leave the device: nothing about the patient.** The model runs in a sandboxed helper
+  mode with no network (AI-07), and the webview's content policy is unchanged. The AI helper's one
+  connection is the model download below, which sends no document, field or identifier.
+- **The text source** is one read-only command, `vault_document_text` (AI-10). It works on
+  computers only, reuses the sandboxed PDF helper with no new helper message, caps the text at
+  50 pages and 1 MiB, lists the pages the helper refuses instead of dropping them, and adds no
+  network use.
+- **The export is a file save.** After the preview, the patient saves the anonymized text as a plain
+  text file through the system's save dialog (AI-01 to AI-03). Where it goes after that (a synced
+  folder, a cloud drive, an AI service) is the patient's choice, as for a readable copy, and what
+  that service learns or keeps is up to it (AI-09). Native code writes the file's first line
+  itself, in the app's language: it tells an AI to treat all of it as the document, not as
+  instructions (AI-02, AI-09); when the text was cut, the last line says so (AI-02, AI-10). The history
+  records it as `copySaved` with
+  `how: "anonymizedText"`: the document, where the file was saved (cut to 256 characters, and then
+  with a SHA-256 of the whole) and when; never the text or the removed details.
+  Security shows it with a label of its own; an older build shows "Readable copy saved".
+- **The model file** holds no patient data. It is kept in a `models` folder beside, not inside, the
+  vault folder, so it is not in myCarlos's encrypted backups (it is not yet marked to be left out of
+  system backups). That folder is a removal kind of its own (no patient data, so #71's rule that
+  nothing is deleted does not apply): a partial `.part` copy is removed at the next start, a file
+  that fails its check is marked damaged and offered for removal, and the patient can remove the
+  model. It is checked against a list built into the app (SHA-256 and size; part of the signed app
+  once releases are signed) when it is added and at every helper start (AI-04).
+- **How the model reaches the device (#219, on main):** **Download the default model**, or **Add
+  a model file…** for a file the patient already has (THREAT_MODEL D-10, AI-08). The download's
+  allow-list entry:
+
+  | Host | Why | What is sent | What the host learns |
+  | --- | --- | --- | --- |
+  | `huggingface.co`, at the catalogue entry's pinned address (`/<repo>/resolve/<commit>/<file>`) | The model file | An HTTPS GET with no cookies, credentials, referrer or identifier | The computer's IP address, the time, and which public file |
+  | Its CDN: `cdn-lfs.huggingface.co`, `cdn-lfs.hf.co`, `*.cdn.hf.co` (today one 302 to `us.aws.cdn.hf.co`) | Where the pinned address redirects | The same | The same |
+
+  Only on a click, after the disk and machine checks; native code only; HTTPS on 443 with TLS 1.2
+  or later and the platform's certificate verifier; no automatic redirects (each one is parsed and
+  checked against this list, and any other host ends the download); no proxy. The bytes are hashed
+  as they arrive and kept only if the size and SHA-256 match the catalogue entry. A change to the
+  host, the pinned commit or the CDN list is a change to this table and to AI-08, reviewed before
+  it ships.
+- **The model list is release material.** It changes only in a release, through the release supply
+  chain above. A model or runtime found unsafe is handled as a vulnerability (see
+  [Vulnerability intake and response](#vulnerability-intake-and-response)): a release removes its
+  entry, and the app then refuses that file. With no updater yet (MASVS CODE-2), that reaches only
+  patients who update.
+- **The automatic lock during an answer (D19, 6 November 2026):** while the model writes an
+  answer, the automatic lock waits (the renderer's deadline and the native one), for at most that
+  answer's own time limit, 5 to 20 minutes, from when the model is asked it (THREAT_MODEL AI-07,
+  UI-03); while the helper starts for it, at most 20 minutes. The delay then runs from the
+  answer's end. So a computer left during a summary stays unlocked for up to the answer's limit
+  plus the lock delay (at most 20 + 15 minutes, plus the start). **Lock now** still locks at once
+  and stops the model; hiding the app still locks it at once, which ends the answer.
+- **Advisories:** the runtime is llama.cpp through `llama-cpp-2` and `llama-cpp-sys-2`, pinned
+  =0.1.160 (#218). RustSec does not cover its C/C++ code, so ggml and llama.cpp advisories are
+  watched by hand; the vendored revision is recorded in DEPENDENCY_REVIEW.md, and the crates in the
+  SBOM.
+- **Licences:** each listed model's licence must allow the project to offer it to patients and
+  allow this use. It is recorded in `LICENSE_NOTES.md` when the model is picked.
+- **Canary drill:** the [synthetic canary drill](#synthetic-canary-drill) also covers the helper.
+  Identifying canaries in the vault's profiles and in synthetic documents must never appear in an
+  export, a log, or any file the helper leaves.
+
 ## Evaluating authenticated linking (#55)
 
-The future link implementation is built only with explicit native Cargo feature
-`portal-linking`; default builds refuse its command before any write or network
-use. The portal and CARLOS off switches remain separately required. A browser
+Every build includes the link implementation; no Cargo feature selects it. On
+Android its command still refuses before any write or network use, until the
+platform verifier is integrated (below). The portal and CARLOS off switches
+remain separately required. A browser
 mock or a setting in the renderer never supplies production clinic pins.
 
 The typed portal address must be HTTPS with no user information, query or
@@ -175,11 +318,11 @@ shown to the patient and recorded in encrypted history; the vault keeps private
 seeds, pins and recipient binding encrypted. Do not send a receipt or claim a
 portal delivery was filed merely because a link request succeeded.
 
-## Gated Windows send/delete evaluation
+## Windows send/delete evaluation
 
-Build with `npm run tauri -- build --features portal-linking` only in the isolated
-synthetic evaluation. Default builds remain OFF. `scripts/test-native-delivery.ps1`
-provides focused Windows checks and an optional feature-enabled installer build.
+Every build includes send/delete; use it only in the isolated synthetic
+evaluation. `scripts/test-native-delivery.ps1` provides focused Windows checks
+and an optional installer build.
 
 The explicit Check for new documents action uses only the saved HTTPS portal
 base. Native code signs fixed mailbox/receipt and first-device approval routes;

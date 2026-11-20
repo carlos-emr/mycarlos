@@ -30,7 +30,9 @@ type Step = "passphrase" | "key" | "check";
  * vault just created, the key made with it, to be set up before anything
  * else; for a vault unlocked without a recovery key, the offer of one. */
 export type OpeningRecoverySetup =
-  | { vault: "created"; key: string }
+  // `detailsNotSaved`: the first person's details, typed at setup, could not
+  // be saved. The dialog covers the library, so this is said with its result.
+  | { vault: "created"; key: string; detailsNotSaved?: boolean }
   | { vault: "unlocked" };
 
 // After this many wrong answers the check goes back to the key, so that the
@@ -123,8 +125,10 @@ export function RecoveryKeySetup({
         (found) => {
           if (current) setLabel(found);
         },
-        // Only the label is missing: the key and its kit still work.
-        () => undefined,
+        // A missing label does not stop setup; a locked vault does.
+        (failure: unknown) => {
+          if (current && isLockedError(failure)) onLocked();
+        },
       )
       .finally(() => {
         if (current) setLabelSettled(true);
@@ -265,6 +269,7 @@ export function RecoveryKeySetup({
       setKey(await bridge.beginRecoveryKey(secret));
       setStep("key");
     } catch (failure) {
+      if (!mountedRef.current) return;
       if (isLockedError(failure)) onLocked();
       else
         setError(

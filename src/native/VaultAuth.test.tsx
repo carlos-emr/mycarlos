@@ -1,4 +1,5 @@
 import { humanText } from "../test/humanText";
+import { birthDateGroup, enterBirthDate } from "../test/birthDate";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,144 @@ const restoreBridge = {
   inspectRestore: vi.fn(),
   restore: vi.fn(),
 };
+
+describe("CreateVault: the first person's details (#234)", () => {
+  const PASS = "river-azimuth-cobalt-sparrow-934";
+  const form = (onCreate = vi.fn().mockResolvedValue(undefined)) => {
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={onCreate}
+        askDetails
+      />,
+    );
+    fireEvent.change(
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
+      { target: { value: "FAKE Robin" } },
+    );
+    for (const field of screen.getAllByLabelText(humanText(/passphrase/i)))
+      fireEvent.change(field, { target: { value: PASS } });
+    return {
+      onCreate,
+      create: screen.getByRole("button", { name: humanText("Create vault") }),
+      fullName: () =>
+        screen.getByLabelText(humanText("Full name, as on clinic documents")),
+      birthDate: () => birthDateGroup(),
+    };
+  };
+
+  it("asks for them after whose records these are, and passes them on", () => {
+    const { onCreate, create, fullName, birthDate } = form();
+    expect(
+      screen.getByRole("group", {
+        name: humanText("Full name and date of birth"),
+      }),
+    ).toBeVisible();
+    // A full name and a date (or "unknown") are needed, unless later.
+    expect(create).toBeDisabled();
+    fireEvent.change(fullName(), {
+      target: { value: "  FAKE Robin Example " },
+    });
+    expect(create).toBeDisabled();
+    expect(
+      screen.getByText(
+        humanText("Enter a date of birth or choose that it is unknown."),
+      ),
+    ).toBeVisible();
+    enterBirthDate(birthDate(), "1980-04-12");
+    expect(create).toBeEnabled();
+    fireEvent.click(create);
+    expect(onCreate).toHaveBeenCalledWith("FAKE Robin", PASS, {
+      fullName: "FAKE Robin Example",
+      birthDate: "1980-04-12",
+    });
+  });
+
+  it("refuses a date in the future and takes an unknown one", () => {
+    const { onCreate, create, fullName, birthDate } = form();
+    fireEvent.change(fullName(), { target: { value: "FAKE Robin Example" } });
+    enterBirthDate(birthDate(), "2999-01-01");
+    expect(
+      screen.getByText(humanText("A birth date cannot be in the future.")),
+    ).toBeVisible();
+    expect(create).toBeDisabled();
+    fireEvent.click(
+      screen.getByLabelText(
+        humanText("I don't know this person's date of birth"),
+      ),
+    );
+    expect(create).toBeEnabled();
+    fireEvent.click(create);
+    expect(onCreate).toHaveBeenCalledWith("FAKE Robin", PASS, {
+      fullName: "FAKE Robin Example",
+    });
+  });
+
+  it("says nothing in red before the details are started, unless only they hold Create back", () => {
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+        askDetails
+      />,
+    );
+    const missing = () =>
+      screen.queryByText(humanText("Enter the person's full name."));
+    fireEvent.change(
+      screen.getByLabelText(humanText("Whose records will you keep here?")),
+      { target: { value: "FAKE Robin" } },
+    );
+    expect(missing()).toBeNull();
+    // Started on, then emptied: now it is said.
+    const fullName = screen.getByLabelText(
+      humanText("Full name, as on clinic documents"),
+    );
+    fireEvent.change(fullName, { target: { value: "F" } });
+    fireEvent.change(fullName, { target: { value: "" } });
+    expect(missing()).toBeVisible();
+  });
+
+  it("says what the details need once everything else is ready", () => {
+    form();
+    expect(
+      screen.getByText(humanText("Enter the person's full name.")),
+    ).toBeVisible();
+  });
+
+  it("can leave them for later: no fields, and none passed on", () => {
+    const { onCreate, create } = form();
+    fireEvent.click(screen.getByLabelText(humanText("Add them later")));
+    expect(
+      screen.queryByLabelText(humanText("Full name, as on clinic documents")),
+    ).toBeNull();
+    expect(create).toBeEnabled();
+    fireEvent.click(create);
+    expect(onCreate).toHaveBeenCalledWith("FAKE Robin", PASS);
+  });
+
+  it("does not ask where the vault cannot keep them", () => {
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("group", {
+        name: humanText("Full name and date of birth"),
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("CreateVault", () => {
   it("refuses a passphrase under the minimum as the vault counts it", () => {
@@ -114,7 +253,7 @@ describe("CreateVault", () => {
     expect(
       screen.getByLabelText(humanText("Passphrase")),
     ).toHaveHumanAccessibleDescription(
-      /^0 character password Your passphrase needs to be: At least 15 characters\s*, not yet/,
+      /^0 character passphrase Your passphrase needs to be: At least 15 characters\s*, not yet/,
     );
   });
 
@@ -321,6 +460,51 @@ describe("CreateVault passphrase help (#69)", () => {
     expect(rule("Not easy to guess")).toHaveAttribute("data-met", "false");
   });
 
+  it("drops stale passphrase rules when only the person's name changes", async () => {
+    vi.useFakeTimers();
+    let answerEarlier!: (rules: typeof allMet) => void;
+    const earlier = new Promise<typeof allMet>((resolve) => {
+      answerEarlier = resolve;
+    });
+    const checkRules = vi
+      .fn()
+      .mockReturnValueOnce(earlier)
+      .mockResolvedValueOnce({ ...allMet, notAName: false })
+      .mockResolvedValue(allMet);
+    const { onCreate } = renderCreate(checkRules);
+    try {
+      type("Whose records will you keep here?", "FAKE First");
+      type("Passphrase", strong);
+      type("Confirm passphrase", strong);
+      await pause();
+      expect(checkRules).toHaveBeenCalledExactlyOnceWith(strong, "FAKE First");
+
+      // The secret is unchanged; its assessment now belongs to a different
+      // name. The earlier allowed result must not approve that new pairing.
+      type("Whose records will you keep here?", "River");
+      await act(async () => answerEarlier(allMet));
+      expect(rule("Not your name")).toHaveAttribute("data-met", "false");
+      await pause();
+      expect(checkRules).toHaveBeenNthCalledWith(2, strong, "River");
+      const create = screen.getByRole("button", {
+        name: humanText("Create vault"),
+      });
+      expect(create).toBeDisabled();
+      expect(onCreate).not.toHaveBeenCalled();
+
+      type("Whose records will you keep here?", "FAKE Rowan");
+      await pause();
+      expect(checkRules).toHaveBeenNthCalledWith(3, strong, "FAKE Rowan");
+      expect(rule("Not your name")).toHaveAttribute("data-met", "true");
+      expect(create).toBeEnabled();
+      fireEvent.click(create);
+      expect(onCreate).toHaveBeenCalledExactlyOnceWith("FAKE Rowan", strong);
+      expect(checkRules).toHaveBeenCalledTimes(3);
+    } finally {
+      await act(async () => answerEarlier(allMet));
+    }
+  });
+
   it("never asks again once Create is pressed", async () => {
     vi.useFakeTimers();
     const { checkRules, onCreate } = renderCreate();
@@ -428,7 +612,7 @@ describe("UnlockVault", () => {
     expect(status).toBeEmptyDOMElement();
     expect(
       screen.getByLabelText(humanText("Passphrase")),
-    ).toHaveHumanAccessibleDescription("0 character password");
+    ).toHaveHumanAccessibleDescription("0 character passphrase");
 
     rerender(<UnlockVault {...props} notice="FAKE wrong passphrase." />);
     expect(screen.getAllByRole("status")[0]).toBe(status);
@@ -451,7 +635,7 @@ describe("UnlockVault", () => {
     const passphrase = screen.getByLabelText(humanText("Passphrase"));
     expect(passphrase).toHaveFocus();
     expect(passphrase).toHaveHumanAccessibleDescription(
-      "0 character password Vault locked.",
+      "0 character passphrase Vault locked.",
     );
   });
 
@@ -472,7 +656,7 @@ describe("UnlockVault", () => {
     });
     const replacement = screen.getByLabelText(humanText("New passphrase"));
     expect(replacement).toHaveHumanAccessibleDescription(
-      /^0 character password Use at least 15 characters\./,
+      /^0 character passphrase Use at least 15 characters\./,
     );
     fireEvent.change(replacement, {
       target: { value: "lantern-orbit-willow-cascade-572" },
@@ -501,7 +685,7 @@ describe("UnlockVault", () => {
     expect(forgotStatus).toHaveHumanTextContent("FAKE wrong recovery key.");
     expect(
       screen.getByLabelText(humanText("Passphrase")),
-    ).toHaveHumanAccessibleDescription("0 character password");
+    ).toHaveHumanAccessibleDescription("0 character passphrase");
     // The key is kept, so that a typo in it can be corrected.
     expect(screen.getByLabelText(humanText("Recovery key"))).toHaveValue(
       "abcd efgh jkmn pqrs tvwx yz01 2345",

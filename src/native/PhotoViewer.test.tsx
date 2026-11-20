@@ -115,6 +115,36 @@ describe("PhotoViewer (#73)", () => {
     });
     fireEvent.lostPointerCapture(frame, pointer);
     expect(frame).not.toHaveClass("dragging");
+    // The ended drag cannot move the photo, even if a held-button move follows.
+    fireEvent.pointerMove(frame, {
+      ...pointer,
+      buttons: 1,
+      clientX: 250,
+      clientY: 260,
+    });
+    expect([frame.scrollLeft, frame.scrollTop]).toEqual([200, 200]);
+    // A fresh press starts from the current view and can pan again.
+    fireEvent.pointerDown(frame, {
+      ...pointer,
+      buttons: 1,
+      clientX: 300,
+      clientY: 300,
+    });
+    fireEvent.pointerMove(frame, {
+      ...pointer,
+      buttons: 1,
+      clientX: 270,
+      clientY: 280,
+    });
+    expect(frame).toHaveClass("dragging");
+    expect([frame.scrollLeft, frame.scrollTop]).toEqual([230, 220]);
+    fireEvent.pointerUp(frame, {
+      ...pointer,
+      buttons: 0,
+      clientX: 270,
+      clientY: 280,
+    });
+    expect(frame).not.toHaveClass("dragging");
   });
 
   it("leaves a finger to pan as on any page, and does not drag at fitted size", async () => {

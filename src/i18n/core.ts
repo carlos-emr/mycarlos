@@ -182,6 +182,20 @@ export function formatPhotoName(
   return value;
 }
 
+/** The name a new clinic link gives this device until the patient changes
+ * it, such as "myCarlos on Windows". It is sent to the clinic's portal, so it
+ * is data: no bidi delimiters, and a formatter fault gives the app's name,
+ * never the fault text. */
+export function formatDeviceName(locale: Locale, platform: string): string {
+  const value = formatMessage(
+    locale,
+    "portal.defaultDeviceName",
+    { platform },
+    false,
+  );
+  return value === formattingFailure(locale) ? "myCarlos" : value;
+}
+
 function formatMessage(
   locale: Locale,
   key: MessageKey,
@@ -204,6 +218,24 @@ function formatMessage(
 /** Text in the language now in use. */
 export function t(key: MessageKey, params?: Params): string {
   return translate(getLocale(), key, params);
+}
+
+/** Text in the language now in use with no bidi isolation around the
+ * inserted values. For text that is stored or sent as data, such as the notes
+ * in the placeholders of an anonymized text, where an invisible formatter
+ * character would be refused (AI-01) and would stop a placeholder matching. */
+export function tPlain(key: MessageKey, params?: Params): string {
+  return formatMessage(getLocale(), key, params ?? {}, false);
+}
+
+/** `tPlain` in a given language: the placeholders of an anonymized text are
+ * written in the document's language, not the app's (#215). */
+export function translatePlain(
+  locale: Locale,
+  key: MessageKey,
+  params?: Params,
+): string {
+  return formatMessage(locale, key, params ?? {}, false);
 }
 
 // --- numbers and dates ----------------------------------------------------

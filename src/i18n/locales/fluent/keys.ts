@@ -71,8 +71,10 @@ export const MESSAGE_KEYS = [
   "interface.CameraDialog.useTheCamera",
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword",
+  "interface.DocumentReader.firstPage",
   "interface.DocumentReader.fitWidth",
   "interface.DocumentReader.larger",
+  "interface.DocumentReader.lastPage",
   "interface.DocumentReader.nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis",
   "interface.DocumentReader.open",
@@ -188,7 +190,6 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel",
-  "interface.VaultLibrary.unlockedLockNow",
   "interface.VaultLibrary.working",
   "interface.camera.denied",
   "interface.count.documents",
@@ -249,6 +250,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.page",
   "interface.reader.textFollows",
   "interface.reader.where",
+  "interface.reader.markedOnPage",
+  "interface.reader.markedInText",
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
@@ -293,6 +296,9 @@ export const MESSAGE_KEYS = [
   "library.folder.open",
   "library.folder.rename",
   "library.items",
+  "library.location.documents",
+  "library.location.summary",
+  "library.lock.unlocked",
   "library.noMatch.help",
   "library.noMatch.title",
   "library.rename",
@@ -412,8 +418,16 @@ export const MESSAGE_KEYS = [
   "photo.zoomOut",
   "photo.zoomed",
   "preferences.subtitle",
+  "readingAid.available",
+  "readingAid.checked",
+  "readingAid.evidence",
+  "readingAid.open",
+  "readingAid.openOriginal",
+  "readingAid.overview",
+  "readingAid.points",
+  "readingAid.title",
+  "readingAid.unavailable",
   "record.kind.document",
-  "record.source.manual",
   "recover.intro",
   "recover.key.format",
   "recover.key.label",
@@ -565,6 +579,7 @@ export const MESSAGE_KEYS = [
   "security.title",
   "sidebar.documents",
   "sidebar.folderCount",
+  "sidebar.folderOfPerson",
   "sidebar.label",
   "sidebar.myRecords",
   "sidebar.preferences",
@@ -597,6 +612,10 @@ export const MESSAGE_KEYS = [
   "personDetails.birthDate",
   "personDetails.birthDateRequired",
   "personDetails.birthDateUnknown",
+  "personDetails.birthDay",
+  "personDetails.birthMonth",
+  "personDetails.birthMonthChoose",
+  "personDetails.birthYear",
   "personDetails.cancel",
   "personDetails.edit",
   "personDetails.editFor",
@@ -638,15 +657,19 @@ export const MESSAGE_KEYS = [
   "portal.copy",
   "portal.copyFailed",
   "portal.dateNotRecorded",
+  "portal.defaultDeviceName",
   "portal.deviceCode",
   "portal.deviceName",
+  "portal.deviceDetailsShow",
+  "portal.deviceDetailsHide",
+  "portal.earlierShow",
+  "portal.earlierHide",
   "portal.errorAddress",
   "portal.errorCancelled",
   "portal.errorCode",
   "portal.errorCodeRejected",
   "portal.errorDamaged",
   "portal.errorDeviceName",
-  "portal.errorDisabled",
   "portal.errorExists",
   "portal.errorIncomplete",
   "portal.errorKeys",
@@ -666,7 +689,6 @@ export const MESSAGE_KEYS = [
   "portal.routing",
   "portal.serviceDate",
   "portal.serviceDateLabel",
-  "portal.sourceVerified",
   "portal.title",
   "rename.help.profile",
   "rename.label.profile",
@@ -676,6 +698,12 @@ export const MESSAGE_KEYS = [
   "rename.title.profile",
   "hidden.backToSecurity",
   "interface.history.appVersion",
+  "interface.history.approval.accepted",
+  "interface.history.approval.cancelled",
+  "interface.history.approval.challengeReady",
+  "interface.history.approval.expired",
+  "interface.history.approval.pending",
+  "interface.history.approval.refused",
   "interface.history.damaged",
   "interface.history.damagedAll",
   "interface.history.damagedBefore",
@@ -686,6 +714,16 @@ export const MESSAGE_KEYS = [
   "interface.history.event.backupSaved",
   "interface.history.event.copySaved",
   "interface.history.event.created",
+  "interface.history.event.deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused",
+  "interface.history.event.deliveryFiled",
+  "interface.history.event.deliveryReceiptSettled",
+  "interface.history.event.other",
+  "interface.history.how.personFolder",
+  "interface.history.event.deviceApprovalRequestRestarted",
+  "interface.history.event.deviceApprovalRequested",
+  "interface.history.event.deviceApprovalStatusChanged",
+  "interface.history.event.deviceApprovalVerified",
   "interface.history.event.folderCreated",
   "interface.history.event.folderMoved",
   "interface.history.event.folderRenamed",
@@ -694,7 +732,11 @@ export const MESSAGE_KEYS = [
   "interface.history.event.imported",
   "interface.history.event.moved",
   "interface.history.event.passphraseChanged",
+  "interface.history.event.portalLinkStarted",
+  "interface.history.event.portalLinked",
   "interface.history.event.profileCreated",
+  "interface.history.event.profileDetailsChanged",
+  "interface.history.event.readingAidFiled",
   "interface.history.event.recoveryKeySet",
   "interface.history.event.renamed",
   "interface.history.event.restored",
@@ -704,6 +746,7 @@ export const MESSAGE_KEYS = [
   "interface.history.from",
   "interface.history.gap",
   "interface.history.how",
+  "interface.history.how.aidReplaced",
   "interface.history.how.camera",
   "interface.history.how.damaged",
   "interface.history.how.importedShared",
@@ -722,14 +765,286 @@ export const MESSAGE_KEYS = [
   "interface.history.place",
   "interface.history.previousName",
   "interface.history.previousSession",
+  "interface.history.receipt.notFound",
+  "interface.history.receipt.pickedUp",
   "interface.history.rootFolder",
   "interface.history.scopeNote",
   "interface.history.sessionLockedAutomatically",
   "interface.history.sessionLockedByApp",
   "interface.history.sessionLockedByPerson",
   "interface.history.sessionNotRecorded",
+  "interface.history.status",
   "interface.history.title",
   "interface.history.to",
+  "portal.connectConsent",
+  "portal.connected",
+  "portal.connecting",
+  "portal.errorBusy",
+  "portal.linkedApprovalIssue",
+  "portal.retryApproval",
+  "portal.working",
+  "portal.approvalExpiredCard",
+  "portal.approvalPickedUp",
+  "portal.approvalReplyInvalid",
+  "portal.approvalStillOpen",
+  "portal.approvalTimeLeft",
+  "portal.approvalTimeOver",
+  "portal.approvalTimeOverRestart",
+  "portal.approvalTimeUp",
+  "portal.approvalUnanswered",
+  "portal.approvalUnreachable",
+  "portal.approvalWait",
+  "portal.autoChecking",
+  "portal.autoCheckStopped",
+  "portal.awaitingClinic",
+  "portal.deviceRemoved",
+  "portal.errorRateLimited",
+  "portal.checkAgain",
+  "portal.unlockCheckConsent",
+  "portal.unlockChecked",
+  "portal.unlockCheckIncomplete",
+  "portal.unlockCheckNotRun",
+  "portal.unlockCheckWaiting",
+  "portal.unlockRefused",
+  "library.source.clinic",
+  "library.source.manualImport",
+  "library.status.unverified",
+  "library.status.verified",
+  "portal.approvedByCode",
+  "portal.codeFormat",
+  "portal.codeHint",
+  "portal.codeLabel",
+  "portal.codeLocked",
+  "portal.codeMismatch",
+  "portal.codeNeeded",
+  "portal.codeNotOpen",
+  "portal.codeRefused",
+  "portal.codeSubmit",
+  "portal.codeSubmitted",
+  "portal.refusedDocuments",
+  "portal.tryAgain",
+  "portal.tryAgainFor",
+  "portal.linkAnother",
+  "interface.history.damagedStorageOnly",
+  "ai.summary.button",
+  "ai.summary.title",
+  "ai.explain.title",
+  "ai.notInstalled.title",
+  "ai.notInstalled.body",
+  "ai.notInstalled.openPreferences",
+  "aiHelper.resultLabel",
+  "ai.result.meta",
+  "ai.summary.showInDocument",
+  "ai.summary.folded",
+  "ai.summary.showWhole",
+  "ai.summary.partial",
+  "ai.summary.tooLong",
+  "ai.summary.tooLongWithLast",
+  "ai.summary.tooLongStart",
+  "ai.summary.tooLongAfter",
+  "ai.summary.readPages",
+  "ai.summary.readPagesAndLast",
+  "ai.summary.readStart",
+  "ai.summary.noText",
+  "ai.explain.box",
+  "ai.explain.hint",
+  "ai.explain.submit",
+  "ai.preferences.title",
+  "ai.preferences.body",
+  "ai.preferences.notInstalled",
+  "ai.working",
+  "ai.workingLong",
+  "ai.workingFor",
+  "ai.summary.ready",
+  "ai.explain.ready",
+  "ai.failed",
+  "ai.error.memory",
+  "ai.error.busy",
+  "ai.error.storage",
+  "ai.summary.pagesMissing",
+  "ai.summary.noSource",
+  "ai.summary.englishOnly",
+  "ai.summary.progress.before",
+  "ai.summary.progress.reading",
+  "ai.summary.progress.writing",
+  "ai.summary.progress.checking",
+  "ai.summary.progress.estimate",
+  "ai.summary.progress.slower",
+  "aiHelper.notice.title",
+  "aiHelper.notice.introShare",
+  "aiHelper.notice.intro",
+  "aiHelper.notice.testBuild",
+  "aiHelper.notice.shareHeading",
+  "aiHelper.notice.shareBody",
+  "aiHelper.notice.previewBody",
+  "aiHelper.notice.limitsBody",
+  "aiHelper.notice.fileBody",
+  "aiHelper.notice.serviceBody",
+  "aiHelper.notice.adviceBody",
+  "aiHelper.notice.modelHeading",
+  "aiHelper.notice.modelBody",
+  "aiHelper.notice.resultsBody",
+  "aiHelper.exportHeader",
+  "aiHelper.exportCut",
+  "aiHelper.exportFileName",
+  "interface.history.how.anonymizedText",
+  "interface.RecordDetails.anonymizeText",
+  "interface.AnonymizePreview.title",
+  "interface.AnonymizePreview.reading",
+  "interface.AnonymizePreview.readFailed",
+  "interface.AnonymizePreview.emptyPages",
+  "interface.AnonymizePreview.cutPages",
+  "interface.AnonymizePreview.failedPages",
+  "interface.AnonymizePreview.replaced",
+  "interface.AnonymizePreview.headerNote",
+  "interface.AnonymizePreview.howMarked",
+  "interface.AnonymizePreview.textRegion",
+  "interface.AnonymizePreview.removedKind",
+  "interface.AnonymizePreview.movedDate",
+  "interface.AnonymizePreview.kind.name",
+  "interface.AnonymizePreview.kind.doctor",
+  "interface.AnonymizePreview.kind.clinic",
+  "interface.AnonymizePreview.kind.healthCard",
+  "interface.AnonymizePreview.kind.recordNumber",
+  "interface.AnonymizePreview.kind.sin",
+  "interface.AnonymizePreview.kind.dateOfBirth",
+  "interface.AnonymizePreview.kind.age",
+  "interface.AnonymizePreview.kind.address",
+  "interface.AnonymizePreview.kind.postalCode",
+  "interface.AnonymizePreview.kind.phone",
+  "interface.AnonymizePreview.kind.email",
+  "interface.AnonymizePreview.kind.web",
+  "interface.AnonymizePreview.kind.unclearDate",
+  "interface.AnonymizePreview.kind.manual",
+  "interface.AnonymizePreview.placeholder.name",
+  "interface.AnonymizePreview.placeholder.doctor",
+  "interface.AnonymizePreview.placeholder.clinic",
+  "interface.AnonymizePreview.placeholder.healthCard",
+  "interface.AnonymizePreview.placeholder.recordNumber",
+  "interface.AnonymizePreview.placeholder.sin",
+  "interface.AnonymizePreview.placeholder.dateOfBirth",
+  "interface.AnonymizePreview.placeholder.age",
+  "interface.AnonymizePreview.placeholder.address",
+  "interface.AnonymizePreview.placeholder.postalCode",
+  "interface.AnonymizePreview.placeholder.phone",
+  "interface.AnonymizePreview.placeholder.email",
+  "interface.AnonymizePreview.placeholder.web",
+  "interface.AnonymizePreview.placeholder.unclearDate",
+  "interface.AnonymizePreview.placeholder.manual",
+  "interface.AnonymizePreview.possibleNames",
+  "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.removeSelected",
+  "interface.AnonymizePreview.selectFirst",
+  "interface.AnonymizePreview.phrase",
+  "interface.AnonymizePreview.removePhrase",
+  "interface.AnonymizePreview.phraseNotFound",
+  "interface.AnonymizePreview.removedPlaces",
+  "interface.AnonymizePreview.undo",
+  "interface.AnonymizePreview.save",
+  "interface.AnonymizePreview.confirmTitle",
+  "interface.AnonymizePreview.confirmBody",
+  "interface.AnonymizePreview.saved",
+  "interface.AnonymizePreview.saveCancelled",
+  "interface.AnonymizePreview.refused",
+  "interface.AnonymizePreview.close",
+  "interface.AiHelperNotice.continue",
+  "interface.AnonymizePreview.footerNote",
+  "interface.AnonymizePreview.note.daysAfter",
+  "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.pasteTitle",
+  "interface.AnonymizePreview.pasteHelp",
+  "interface.AnonymizePreview.pasteLabel",
+  "interface.AnonymizePreview.pasteButton",
+  "interface.AnonymizePreview.pasteResult",
+  "interface.AnonymizePreview.pasteFlagged",
+  "interface.AnonymizePreview.pasteAllMatched",
+  "interface.AnonymizePreview.pasteFlaggedSr",
+  "notifications.allow",
+  "notifications.blocked",
+  "notifications.error",
+  "notifications.help",
+  "notifications.title",
+  "notifications.unknown",
+  "notifications.unavailable",
+  "notifications.helpAutomatic",
+  "notifications.autoAllow",
+  "notifications.autoHelp",
+  "notifications.autoPaused",
+  "notifications.checkBusy",
+  "native.notice.arrival",
+  "ai.model.add",
+  "ai.model.accepted",
+  "ai.model.reads",
+  "ai.model.where",
+  "ai.model.copy",
+  "ai.model.copied",
+  "ai.model.checking",
+  "ai.model.added",
+  "ai.model.installed",
+  "ai.model.remove",
+  "ai.model.removeConfirm",
+  "ai.model.damaged",
+  "ai.model.unsupportedRam",
+  "ai.model.unsupportedCpu",
+  "ai.model.unsupportedPlatform",
+  "ai.model.refusedList",
+  "ai.model.refusedHash",
+  "ai.model.refusedIncomplete",
+  "ai.model.refusedDisk",
+  "ai.model.refusedStorage",
+  "ai.model.refusedBusy",
+  "ai.model.download",
+  "ai.model.downloadNote",
+  "ai.model.downloading",
+  "ai.model.refusedNetwork",
+  "ai.model.refusedUnavailable",
+  "native.filter.models",
+  "interface.history.event.aiResultSaved",
+  "interface.history.how.summary",
+  "interface.history.how.explain",
+  "ai.summary.again",
+  "ai.keepFailed",
+  "ai.keepFull",
+  "noticesStep.title",
+  "noticesStep.intro",
+  "noticesStep.later",
+  "noticesStep.done",
+  "noticesStep.notNow",
+  "notifications.autoNeedsNotices",
+  "ai.settings.subtitle",
+  "ai.model.progressName",
+  "ai.model.progressValue",
+  "ai.model.stillDownloading",
+  "ai.model.stillChecking",
+  "ai.models.title",
+  "ai.models.group",
+  "ai.models.inUse",
+  "ai.models.installed",
+  "ai.models.addedByYou",
+  "ai.models.notDownloaded",
+  "ai.models.downloading",
+  "ai.models.download",
+  "ai.models.remove",
+  "ai.models.help",
+  "ai.models.loading",
+  "ai.models.loadFailed",
+  "ai.models.retry",
+  "ai.models.starting",
+  "ai.models.picking",
+  "ai.models.changed",
+  "ai.models.installing",
+  "personDetails.setup",
+  "personDetails.later",
+  "personDetails.reminder",
+  "personDetails.notNow",
+  "personDetails.notSaved",
+  "ai.summaryTooLarge",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -814,8 +1129,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-CameraDialog-yourPhoneAsksOnceWhetherMyCarlosMay",
   "interface.DocumentReader.documentPassword":
     "interface-DocumentReader-documentPassword",
+  "interface.DocumentReader.firstPage": "interface-DocumentReader-firstPage",
   "interface.DocumentReader.fitWidth": "interface-DocumentReader-fitWidth",
   "interface.DocumentReader.larger": "interface-DocumentReader-larger",
+  "interface.DocumentReader.lastPage": "interface-DocumentReader-lastPage",
   "interface.DocumentReader.nextPage": "interface-DocumentReader-nextPage",
   "interface.DocumentReader.noTextCouldBeReadOnThis":
     "interface-DocumentReader-noTextCouldBeReadOnThis",
@@ -1008,8 +1325,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault":
     "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault",
   "interface.VaultLibrary.topLevel": "interface-VaultLibrary-topLevel",
-  "interface.VaultLibrary.unlockedLockNow":
-    "interface-VaultLibrary-unlockedLockNow",
   "interface.VaultLibrary.working": "interface-VaultLibrary-working",
   "interface.camera.denied": "interface-camera-denied",
   "interface.count.documents": "interface-count-documents",
@@ -1084,6 +1399,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.page": "interface-reader-page",
   "interface.reader.textFollows": "interface-reader-textFollows",
   "interface.reader.where": "interface-reader-where",
+  "interface.reader.markedOnPage": "interface-reader-markedOnPage",
+  "interface.reader.markedInText": "interface-reader-markedInText",
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
@@ -1133,6 +1450,9 @@ const FLUENT_IDS_BY_KEY = {
   "library.folder.open": "library-folder-open",
   "library.folder.rename": "library-folder-rename",
   "library.items": "library-items",
+  "library.location.documents": "library-location-documents",
+  "library.location.summary": "library-location-summary",
+  "library.lock.unlocked": "library-lock-unlocked",
   "library.noMatch.help": "library-noMatch-help",
   "library.noMatch.title": "library-noMatch-title",
   "library.rename": "library-rename",
@@ -1252,8 +1572,16 @@ const FLUENT_IDS_BY_KEY = {
   "photo.zoomOut": "photo-zoomOut",
   "photo.zoomed": "photo-zoomed",
   "preferences.subtitle": "preferences-subtitle",
+  "readingAid.available": "readingAid-available",
+  "readingAid.checked": "readingAid-checked",
+  "readingAid.evidence": "readingAid-evidence",
+  "readingAid.open": "readingAid-open",
+  "readingAid.openOriginal": "readingAid-openOriginal",
+  "readingAid.overview": "readingAid-overview",
+  "readingAid.points": "readingAid-points",
+  "readingAid.title": "readingAid-title",
+  "readingAid.unavailable": "readingAid-unavailable",
   "record.kind.document": "record-kind-document",
-  "record.source.manual": "record-source-manual",
   "recover.intro": "recover-intro",
   "recover.key.format": "recover-key-format",
   "recover.key.label": "recover-key-label",
@@ -1407,6 +1735,7 @@ const FLUENT_IDS_BY_KEY = {
   "security.title": "security-title",
   "sidebar.documents": "sidebar-documents",
   "sidebar.folderCount": "sidebar-folderCount",
+  "sidebar.folderOfPerson": "sidebar-folderOfPerson",
   "sidebar.label": "sidebar-label",
   "sidebar.myRecords": "sidebar-myRecords",
   "sidebar.preferences": "sidebar-preferences",
@@ -1439,6 +1768,10 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.birthDate": "personDetails-birthDate",
   "personDetails.birthDateRequired": "personDetails-birthDateRequired",
   "personDetails.birthDateUnknown": "personDetails-birthDateUnknown",
+  "personDetails.birthDay": "personDetails-birthDay",
+  "personDetails.birthMonth": "personDetails-birthMonth",
+  "personDetails.birthMonthChoose": "personDetails-birthMonthChoose",
+  "personDetails.birthYear": "personDetails-birthYear",
   "personDetails.cancel": "personDetails-cancel",
   "personDetails.edit": "personDetails-edit",
   "personDetails.editFor": "personDetails-editFor",
@@ -1480,15 +1813,19 @@ const FLUENT_IDS_BY_KEY = {
   "portal.copy": "portal-copy",
   "portal.copyFailed": "portal-copyFailed",
   "portal.dateNotRecorded": "portal-dateNotRecorded",
+  "portal.defaultDeviceName": "portal-defaultDeviceName",
   "portal.deviceCode": "portal-deviceCode",
   "portal.deviceName": "portal-deviceName",
+  "portal.deviceDetailsShow": "portal-deviceDetailsShow",
+  "portal.deviceDetailsHide": "portal-deviceDetailsHide",
+  "portal.earlierShow": "portal-earlierShow",
+  "portal.earlierHide": "portal-earlierHide",
   "portal.errorAddress": "portal-errorAddress",
   "portal.errorCancelled": "portal-errorCancelled",
   "portal.errorCode": "portal-errorCode",
   "portal.errorCodeRejected": "portal-errorCodeRejected",
   "portal.errorDamaged": "portal-errorDamaged",
   "portal.errorDeviceName": "portal-errorDeviceName",
-  "portal.errorDisabled": "portal-errorDisabled",
   "portal.errorExists": "portal-errorExists",
   "portal.errorIncomplete": "portal-errorIncomplete",
   "portal.errorKeys": "portal-errorKeys",
@@ -1508,7 +1845,6 @@ const FLUENT_IDS_BY_KEY = {
   "portal.routing": "portal-routing",
   "portal.serviceDate": "portal-serviceDate",
   "portal.serviceDateLabel": "portal-serviceDateLabel",
-  "portal.sourceVerified": "portal-sourceVerified",
   "portal.title": "portal-title",
   "rename.help.profile": "rename-help-profile",
   "rename.label.profile": "rename-label-profile",
@@ -1518,6 +1854,14 @@ const FLUENT_IDS_BY_KEY = {
   "rename.title.profile": "rename-title-profile",
   "hidden.backToSecurity": "hidden-backToSecurity",
   "interface.history.appVersion": "interface-history-appVersion",
+  "interface.history.approval.accepted": "interface-history-approval-accepted",
+  "interface.history.approval.cancelled":
+    "interface-history-approval-cancelled",
+  "interface.history.approval.challengeReady":
+    "interface-history-approval-challengeReady",
+  "interface.history.approval.expired": "interface-history-approval-expired",
+  "interface.history.approval.pending": "interface-history-approval-pending",
+  "interface.history.approval.refused": "interface-history-approval-refused",
   "interface.history.damaged": "interface-history-damaged",
   "interface.history.damagedAll": "interface-history-damagedAll",
   "interface.history.damagedBefore": "interface-history-damagedBefore",
@@ -1529,6 +1873,24 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.backupSaved": "interface-history-event-backupSaved",
   "interface.history.event.copySaved": "interface-history-event-copySaved",
   "interface.history.event.created": "interface-history-event-created",
+  "interface.history.event.deliveryRefusalsCleared":
+    "interface-history-event-deliveryRefusalsCleared",
+  "interface.history.event.deliveryRefused":
+    "interface-history-event-deliveryRefused",
+  "interface.history.event.deliveryFiled":
+    "interface-history-event-deliveryFiled",
+  "interface.history.event.deliveryReceiptSettled":
+    "interface-history-event-deliveryReceiptSettled",
+  "interface.history.event.other": "interface-history-event-other",
+  "interface.history.how.personFolder": "interface-history-how-personFolder",
+  "interface.history.event.deviceApprovalRequestRestarted":
+    "interface-history-event-deviceApprovalRequestRestarted",
+  "interface.history.event.deviceApprovalRequested":
+    "interface-history-event-deviceApprovalRequested",
+  "interface.history.event.deviceApprovalStatusChanged":
+    "interface-history-event-deviceApprovalStatusChanged",
+  "interface.history.event.deviceApprovalVerified":
+    "interface-history-event-deviceApprovalVerified",
   "interface.history.event.folderCreated":
     "interface-history-event-folderCreated",
   "interface.history.event.folderMoved": "interface-history-event-folderMoved",
@@ -1541,8 +1903,16 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.event.moved": "interface-history-event-moved",
   "interface.history.event.passphraseChanged":
     "interface-history-event-passphraseChanged",
+  "interface.history.event.portalLinkStarted":
+    "interface-history-event-portalLinkStarted",
+  "interface.history.event.portalLinked":
+    "interface-history-event-portalLinked",
   "interface.history.event.profileCreated":
     "interface-history-event-profileCreated",
+  "interface.history.event.profileDetailsChanged":
+    "interface-history-event-profileDetailsChanged",
+  "interface.history.event.readingAidFiled":
+    "interface-history-event-readingAidFiled",
   "interface.history.event.recoveryKeySet":
     "interface-history-event-recoveryKeySet",
   "interface.history.event.renamed": "interface-history-event-renamed",
@@ -1553,6 +1923,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.from": "interface-history-from",
   "interface.history.gap": "interface-history-gap",
   "interface.history.how": "interface-history-how",
+  "interface.history.how.aidReplaced": "interface-history-how-aidReplaced",
   "interface.history.how.camera": "interface-history-how-camera",
   "interface.history.how.damaged": "interface-history-how-damaged",
   "interface.history.how.importedShared":
@@ -1574,6 +1945,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.place": "interface-history-place",
   "interface.history.previousName": "interface-history-previousName",
   "interface.history.previousSession": "interface-history-previousSession",
+  "interface.history.receipt.notFound": "interface-history-receipt-notFound",
+  "interface.history.receipt.pickedUp": "interface-history-receipt-pickedUp",
   "interface.history.rootFolder": "interface-history-rootFolder",
   "interface.history.scopeNote": "interface-history-scopeNote",
   "interface.history.sessionLockedAutomatically":
@@ -1584,8 +1957,338 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-sessionLockedByPerson",
   "interface.history.sessionNotRecorded":
     "interface-history-sessionNotRecorded",
+  "interface.history.status": "interface-history-status",
   "interface.history.title": "interface-history-title",
   "interface.history.to": "interface-history-to",
+  "portal.connectConsent": "portal-connectConsent",
+  "portal.connected": "portal-connected",
+  "portal.connecting": "portal-connecting",
+  "portal.errorBusy": "portal-errorBusy",
+  "portal.linkedApprovalIssue": "portal-linkedApprovalIssue",
+  "portal.retryApproval": "portal-retryApproval",
+  "portal.working": "portal-working",
+  "portal.approvalExpiredCard": "portal-approvalExpiredCard",
+  "portal.approvalPickedUp": "portal-approvalPickedUp",
+  "portal.approvalReplyInvalid": "portal-approvalReplyInvalid",
+  "portal.approvalStillOpen": "portal-approvalStillOpen",
+  "portal.approvalTimeLeft": "portal-approvalTimeLeft",
+  "portal.approvalTimeOver": "portal-approvalTimeOver",
+  "portal.approvalTimeOverRestart": "portal-approvalTimeOverRestart",
+  "portal.approvalTimeUp": "portal-approvalTimeUp",
+  "portal.approvalUnanswered": "portal-approvalUnanswered",
+  "portal.approvalUnreachable": "portal-approvalUnreachable",
+  "portal.approvalWait": "portal-approvalWait",
+  "portal.autoChecking": "portal-autoChecking",
+  "portal.autoCheckStopped": "portal-autoCheckStopped",
+  "portal.awaitingClinic": "portal-awaitingClinic",
+  "portal.deviceRemoved": "portal-deviceRemoved",
+  "portal.errorRateLimited": "portal-errorRateLimited",
+  "portal.checkAgain": "portal-checkAgain",
+  "portal.unlockCheckConsent": "portal-unlockCheckConsent",
+  "portal.unlockChecked": "portal-unlockChecked",
+  "portal.unlockCheckIncomplete": "portal-unlockCheckIncomplete",
+  "portal.unlockCheckNotRun": "portal-unlockCheckNotRun",
+  "portal.unlockCheckWaiting": "portal-unlockCheckWaiting",
+  "portal.unlockRefused": "portal-unlockRefused",
+  "library.source.clinic": "library-source-clinic",
+  "library.source.manualImport": "library-source-manualImport",
+  "library.status.unverified": "library-status-unverified",
+  "library.status.verified": "library-status-verified",
+  "portal.approvedByCode": "portal-approvedByCode",
+  "portal.codeFormat": "portal-codeFormat",
+  "portal.codeHint": "portal-codeHint",
+  "portal.codeLabel": "portal-codeLabel",
+  "portal.codeLocked": "portal-codeLocked",
+  "portal.codeMismatch": "portal-codeMismatch",
+  "portal.codeNeeded": "portal-codeNeeded",
+  "portal.codeNotOpen": "portal-codeNotOpen",
+  "portal.codeRefused": "portal-codeRefused",
+  "portal.codeSubmit": "portal-codeSubmit",
+  "portal.codeSubmitted": "portal-codeSubmitted",
+  "portal.refusedDocuments": "portal-refusedDocuments",
+  "portal.tryAgain": "portal-tryAgain",
+  "portal.tryAgainFor": "portal-tryAgainFor",
+  "portal.linkAnother": "portal-linkAnother",
+  "interface.history.damagedStorageOnly":
+    "interface-history-damagedStorageOnly",
+  "ai.summary.button": "ai-summary-button",
+  "ai.summary.title": "ai-summary-title",
+  "ai.explain.title": "ai-explain-title",
+  "ai.notInstalled.title": "ai-notInstalled-title",
+  "ai.notInstalled.body": "ai-notInstalled-body",
+  "ai.notInstalled.openPreferences": "ai-notInstalled-openPreferences",
+  "aiHelper.resultLabel": "aiHelper-resultLabel",
+  "ai.result.meta": "ai-result-meta",
+  "ai.summary.showInDocument": "ai-summary-showInDocument",
+  "ai.summary.folded": "ai-summary-folded",
+  "ai.summary.showWhole": "ai-summary-showWhole",
+  "ai.summary.partial": "ai-summary-partial",
+  "ai.summary.tooLong": "ai-summary-tooLong",
+  "ai.summary.tooLongWithLast": "ai-summary-tooLongWithLast",
+  "ai.summary.tooLongStart": "ai-summary-tooLongStart",
+  "ai.summary.tooLongAfter": "ai-summary-tooLongAfter",
+  "ai.summary.readPages": "ai-summary-readPages",
+  "ai.summary.readPagesAndLast": "ai-summary-readPagesAndLast",
+  "ai.summary.readStart": "ai-summary-readStart",
+  "ai.summary.noText": "ai-summary-noText",
+  "ai.explain.box": "ai-explain-box",
+  "ai.explain.hint": "ai-explain-hint",
+  "ai.explain.submit": "ai-explain-submit",
+  "ai.preferences.title": "ai-preferences-title",
+  "ai.preferences.body": "ai-preferences-body",
+  "ai.preferences.notInstalled": "ai-preferences-notInstalled",
+  "ai.working": "ai-working",
+  "ai.workingLong": "ai-workingLong",
+  "ai.workingFor": "ai-workingFor",
+  "ai.summary.ready": "ai-summary-ready",
+  "ai.explain.ready": "ai-explain-ready",
+  "ai.failed": "ai-failed",
+  "ai.error.memory": "ai-error-memory",
+  "ai.error.busy": "ai-error-busy",
+  "ai.error.storage": "ai-error-storage",
+  "ai.summary.pagesMissing": "ai-summary-pagesMissing",
+  "ai.summary.noSource": "ai-summary-noSource",
+  "ai.summary.englishOnly": "ai-summary-englishOnly",
+  "ai.summary.progress.before": "ai-summary-progress-before",
+  "ai.summary.progress.reading": "ai-summary-progress-reading",
+  "ai.summary.progress.writing": "ai-summary-progress-writing",
+  "ai.summary.progress.checking": "ai-summary-progress-checking",
+  "ai.summary.progress.estimate": "ai-summary-progress-estimate",
+  "ai.summary.progress.slower": "ai-summary-progress-slower",
+  "aiHelper.notice.title": "aiHelper-notice-title",
+  "aiHelper.notice.introShare": "aiHelper-notice-introShare",
+  "aiHelper.notice.intro": "aiHelper-notice-intro",
+  "aiHelper.notice.testBuild": "aiHelper-notice-testBuild",
+  "aiHelper.notice.shareHeading": "aiHelper-notice-shareHeading",
+  "aiHelper.notice.shareBody": "aiHelper-notice-shareBody",
+  "aiHelper.notice.previewBody": "aiHelper-notice-previewBody",
+  "aiHelper.notice.limitsBody": "aiHelper-notice-limitsBody",
+  "aiHelper.notice.fileBody": "aiHelper-notice-fileBody",
+  "aiHelper.notice.serviceBody": "aiHelper-notice-serviceBody",
+  "aiHelper.notice.adviceBody": "aiHelper-notice-adviceBody",
+  "aiHelper.notice.modelHeading": "aiHelper-notice-modelHeading",
+  "aiHelper.notice.modelBody": "aiHelper-notice-modelBody",
+  "aiHelper.notice.resultsBody": "aiHelper-notice-resultsBody",
+  "aiHelper.exportHeader": "aiHelper-exportHeader",
+  "aiHelper.exportCut": "aiHelper-exportCut",
+  "aiHelper.exportFileName": "aiHelper-exportFileName",
+  "interface.history.how.anonymizedText":
+    "interface-history-how-anonymizedText",
+  "interface.RecordDetails.anonymizeText":
+    "interface-RecordDetails-anonymizeText",
+  "interface.AnonymizePreview.title": "interface-AnonymizePreview-title",
+  "interface.AnonymizePreview.reading": "interface-AnonymizePreview-reading",
+  "interface.AnonymizePreview.readFailed":
+    "interface-AnonymizePreview-readFailed",
+  "interface.AnonymizePreview.emptyPages":
+    "interface-AnonymizePreview-emptyPages",
+  "interface.AnonymizePreview.cutPages": "interface-AnonymizePreview-cutPages",
+  "interface.AnonymizePreview.failedPages":
+    "interface-AnonymizePreview-failedPages",
+  "interface.AnonymizePreview.replaced": "interface-AnonymizePreview-replaced",
+  "interface.AnonymizePreview.headerNote":
+    "interface-AnonymizePreview-headerNote",
+  "interface.AnonymizePreview.howMarked":
+    "interface-AnonymizePreview-howMarked",
+  "interface.AnonymizePreview.textRegion":
+    "interface-AnonymizePreview-textRegion",
+  "interface.AnonymizePreview.removedKind":
+    "interface-AnonymizePreview-removedKind",
+  "interface.AnonymizePreview.movedDate":
+    "interface-AnonymizePreview-movedDate",
+  "interface.AnonymizePreview.kind.name":
+    "interface-AnonymizePreview-kind-name",
+  "interface.AnonymizePreview.kind.doctor":
+    "interface-AnonymizePreview-kind-doctor",
+  "interface.AnonymizePreview.kind.clinic":
+    "interface-AnonymizePreview-kind-clinic",
+  "interface.AnonymizePreview.kind.healthCard":
+    "interface-AnonymizePreview-kind-healthCard",
+  "interface.AnonymizePreview.kind.recordNumber":
+    "interface-AnonymizePreview-kind-recordNumber",
+  "interface.AnonymizePreview.kind.sin": "interface-AnonymizePreview-kind-sin",
+  "interface.AnonymizePreview.kind.dateOfBirth":
+    "interface-AnonymizePreview-kind-dateOfBirth",
+  "interface.AnonymizePreview.kind.age": "interface-AnonymizePreview-kind-age",
+  "interface.AnonymizePreview.kind.address":
+    "interface-AnonymizePreview-kind-address",
+  "interface.AnonymizePreview.kind.postalCode":
+    "interface-AnonymizePreview-kind-postalCode",
+  "interface.AnonymizePreview.kind.phone":
+    "interface-AnonymizePreview-kind-phone",
+  "interface.AnonymizePreview.kind.email":
+    "interface-AnonymizePreview-kind-email",
+  "interface.AnonymizePreview.kind.web": "interface-AnonymizePreview-kind-web",
+  "interface.AnonymizePreview.kind.unclearDate":
+    "interface-AnonymizePreview-kind-unclearDate",
+  "interface.AnonymizePreview.kind.manual":
+    "interface-AnonymizePreview-kind-manual",
+  "interface.AnonymizePreview.placeholder.name":
+    "interface-AnonymizePreview-placeholder-name",
+  "interface.AnonymizePreview.placeholder.doctor":
+    "interface-AnonymizePreview-placeholder-doctor",
+  "interface.AnonymizePreview.placeholder.clinic":
+    "interface-AnonymizePreview-placeholder-clinic",
+  "interface.AnonymizePreview.placeholder.healthCard":
+    "interface-AnonymizePreview-placeholder-healthCard",
+  "interface.AnonymizePreview.placeholder.recordNumber":
+    "interface-AnonymizePreview-placeholder-recordNumber",
+  "interface.AnonymizePreview.placeholder.sin":
+    "interface-AnonymizePreview-placeholder-sin",
+  "interface.AnonymizePreview.placeholder.dateOfBirth":
+    "interface-AnonymizePreview-placeholder-dateOfBirth",
+  "interface.AnonymizePreview.placeholder.age":
+    "interface-AnonymizePreview-placeholder-age",
+  "interface.AnonymizePreview.placeholder.address":
+    "interface-AnonymizePreview-placeholder-address",
+  "interface.AnonymizePreview.placeholder.postalCode":
+    "interface-AnonymizePreview-placeholder-postalCode",
+  "interface.AnonymizePreview.placeholder.phone":
+    "interface-AnonymizePreview-placeholder-phone",
+  "interface.AnonymizePreview.placeholder.email":
+    "interface-AnonymizePreview-placeholder-email",
+  "interface.AnonymizePreview.placeholder.web":
+    "interface-AnonymizePreview-placeholder-web",
+  "interface.AnonymizePreview.placeholder.unclearDate":
+    "interface-AnonymizePreview-placeholder-unclearDate",
+  "interface.AnonymizePreview.placeholder.manual":
+    "interface-AnonymizePreview-placeholder-manual",
+  "interface.AnonymizePreview.possibleNames":
+    "interface-AnonymizePreview-possibleNames",
+  "interface.AnonymizePreview.removeWord":
+    "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.removeSelected":
+    "interface-AnonymizePreview-removeSelected",
+  "interface.AnonymizePreview.selectFirst":
+    "interface-AnonymizePreview-selectFirst",
+  "interface.AnonymizePreview.phrase": "interface-AnonymizePreview-phrase",
+  "interface.AnonymizePreview.removePhrase":
+    "interface-AnonymizePreview-removePhrase",
+  "interface.AnonymizePreview.phraseNotFound":
+    "interface-AnonymizePreview-phraseNotFound",
+  "interface.AnonymizePreview.removedPlaces":
+    "interface-AnonymizePreview-removedPlaces",
+  "interface.AnonymizePreview.undo": "interface-AnonymizePreview-undo",
+  "interface.AnonymizePreview.save": "interface-AnonymizePreview-save",
+  "interface.AnonymizePreview.confirmTitle":
+    "interface-AnonymizePreview-confirmTitle",
+  "interface.AnonymizePreview.confirmBody":
+    "interface-AnonymizePreview-confirmBody",
+  "interface.AnonymizePreview.saved": "interface-AnonymizePreview-saved",
+  "interface.AnonymizePreview.saveCancelled":
+    "interface-AnonymizePreview-saveCancelled",
+  "interface.AnonymizePreview.refused": "interface-AnonymizePreview-refused",
+  "interface.AnonymizePreview.close": "interface-AnonymizePreview-close",
+  "interface.AiHelperNotice.continue": "interface-AiHelperNotice-continue",
+  "interface.AnonymizePreview.footerNote":
+    "interface-AnonymizePreview-footerNote",
+  "interface.AnonymizePreview.note.daysAfter":
+    "interface-AnonymizePreview-note-daysAfter",
+  "interface.AnonymizePreview.note.ageOver90":
+    "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.pasteTitle":
+    "interface-AnonymizePreview-pasteTitle",
+  "interface.AnonymizePreview.pasteHelp":
+    "interface-AnonymizePreview-pasteHelp",
+  "interface.AnonymizePreview.pasteLabel":
+    "interface-AnonymizePreview-pasteLabel",
+  "interface.AnonymizePreview.pasteButton":
+    "interface-AnonymizePreview-pasteButton",
+  "interface.AnonymizePreview.pasteResult":
+    "interface-AnonymizePreview-pasteResult",
+  "interface.AnonymizePreview.pasteFlagged":
+    "interface-AnonymizePreview-pasteFlagged",
+  "interface.AnonymizePreview.pasteAllMatched":
+    "interface-AnonymizePreview-pasteAllMatched",
+  "interface.AnonymizePreview.pasteFlaggedSr":
+    "interface-AnonymizePreview-pasteFlaggedSr",
+  "notifications.allow": "notifications-allow",
+  "notifications.blocked": "notifications-blocked",
+  "notifications.error": "notifications-error",
+  "notifications.help": "notifications-help",
+  "notifications.title": "notifications-title",
+  "notifications.unknown": "notifications-unknown",
+  "notifications.unavailable": "notifications-unavailable",
+  "notifications.helpAutomatic": "notifications-helpAutomatic",
+  "notifications.autoAllow": "notifications-autoAllow",
+  "notifications.autoHelp": "notifications-autoHelp",
+  "notifications.autoPaused": "notifications-autoPaused",
+  "notifications.checkBusy": "notifications-checkBusy",
+  "native.notice.arrival": "native-notice-arrival",
+  "ai.model.add": "ai-model-add",
+  "ai.model.accepted": "ai-model-accepted",
+  "ai.model.reads": "ai-model-reads",
+  "ai.model.where": "ai-model-where",
+  "ai.model.copy": "ai-model-copy",
+  "ai.model.copied": "ai-model-copied",
+  "ai.model.checking": "ai-model-checking",
+  "ai.model.added": "ai-model-added",
+  "ai.model.installed": "ai-model-installed",
+  "ai.model.remove": "ai-model-remove",
+  "ai.model.removeConfirm": "ai-model-removeConfirm",
+  "ai.model.damaged": "ai-model-damaged",
+  "ai.model.unsupportedRam": "ai-model-unsupportedRam",
+  "ai.model.unsupportedCpu": "ai-model-unsupportedCpu",
+  "ai.model.unsupportedPlatform": "ai-model-unsupportedPlatform",
+  "ai.model.refusedList": "ai-model-refusedList",
+  "ai.model.refusedHash": "ai-model-refusedHash",
+  "ai.model.refusedIncomplete": "ai-model-refusedIncomplete",
+  "ai.model.refusedDisk": "ai-model-refusedDisk",
+  "ai.model.refusedStorage": "ai-model-refusedStorage",
+  "ai.model.refusedBusy": "ai-model-refusedBusy",
+  "ai.model.download": "ai-model-download",
+  "ai.model.downloadNote": "ai-model-downloadNote",
+  "ai.model.downloading": "ai-model-downloading",
+  "ai.model.refusedNetwork": "ai-model-refusedNetwork",
+  "ai.model.refusedUnavailable": "ai-model-refusedUnavailable",
+  "native.filter.models": "native-filter-models",
+  "interface.history.event.aiResultSaved":
+    "interface-history-event-aiResultSaved",
+  "interface.history.how.summary": "interface-history-how-summary",
+  "interface.history.how.explain": "interface-history-how-explain",
+  "ai.summary.again": "ai-summary-again",
+  "ai.keepFailed": "ai-keepFailed",
+  "ai.keepFull": "ai-keepFull",
+  "noticesStep.title": "noticesStep-title",
+  "noticesStep.intro": "noticesStep-intro",
+  "noticesStep.later": "noticesStep-later",
+  "noticesStep.done": "noticesStep-done",
+  "noticesStep.notNow": "noticesStep-notNow",
+  "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
+  "ai.settings.subtitle": "ai-settings-subtitle",
+  "ai.model.progressName": "ai-model-progressName",
+  "ai.model.progressValue": "ai-model-progressValue",
+  "ai.model.stillDownloading": "ai-model-stillDownloading",
+  "ai.model.stillChecking": "ai-model-stillChecking",
+  "ai.models.title": "ai-models-title",
+  "ai.models.group": "ai-models-group",
+  "ai.models.inUse": "ai-models-inUse",
+  "ai.models.installed": "ai-models-installed",
+  "ai.models.addedByYou": "ai-models-addedByYou",
+  "ai.models.notDownloaded": "ai-models-notDownloaded",
+  "ai.models.downloading": "ai-models-downloading",
+  "ai.models.download": "ai-models-download",
+  "ai.models.remove": "ai-models-remove",
+  "ai.models.help": "ai-models-help",
+  "ai.models.loading": "ai-models-loading",
+  "ai.models.loadFailed": "ai-models-loadFailed",
+  "ai.models.retry": "ai-models-retry",
+  "ai.models.starting": "ai-models-starting",
+  "ai.models.picking": "ai-models-picking",
+  "ai.models.changed": "ai-models-changed",
+  "ai.models.installing": "ai-models-installing",
+  "personDetails.setup": "personDetails-setup",
+  "personDetails.later": "personDetails-later",
+  "personDetails.reminder": "personDetails-reminder",
+  "personDetails.notNow": "personDetails-notNow",
+  "personDetails.notSaved": "personDetails-notSaved",
+  "ai.summaryTooLarge": "ai-summaryTooLarge",
+  "personDetails.previousTitle": "personDetails-previousTitle",
+  "personDetails.previousHelp": "personDetails-previousHelp",
+  "personDetails.previousEntry": "personDetails-previousEntry",
+  "personDetails.previousRemove": "personDetails-previousRemove",
+  "personDetails.previousAdd": "personDetails-previousAdd",
+  "personDetails.previousInvalid": "personDetails-previousInvalid",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -1675,8 +2378,10 @@ export interface MessageArgsByKey {
   "interface.CameraDialog.useTheCamera": undefined;
   "interface.CameraDialog.yourPhoneAsksOnceWhetherMyCarlosMay": undefined;
   "interface.DocumentReader.documentPassword": undefined;
+  "interface.DocumentReader.firstPage": undefined;
   "interface.DocumentReader.fitWidth": undefined;
   "interface.DocumentReader.larger": undefined;
+  "interface.DocumentReader.lastPage": undefined;
   "interface.DocumentReader.nextPage": undefined;
   "interface.DocumentReader.noTextCouldBeReadOnThis": undefined;
   "interface.DocumentReader.open": undefined;
@@ -1792,7 +2497,6 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.theyAreInNoOnesRecordsUntil": undefined;
   "interface.VaultLibrary.thisPhotoIsAlreadyInTheVault": undefined;
   "interface.VaultLibrary.topLevel": undefined;
-  "interface.VaultLibrary.unlockedLockNow": undefined;
   "interface.VaultLibrary.working": undefined;
   "interface.camera.denied": { help: FluentArgument };
   "interface.count.documents": { count: FluentArgument };
@@ -1875,6 +2579,8 @@ export interface MessageArgsByKey {
     total: FluentArgument;
   };
   "interface.reader.where": { page: FluentArgument; total: FluentArgument };
+  "interface.reader.markedOnPage": { page: FluentArgument };
+  "interface.reader.markedInText": { page: FluentArgument };
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
@@ -1930,6 +2636,16 @@ export interface MessageArgsByKey {
   "library.folder.open": { name: FluentArgument };
   "library.folder.rename": { name: FluentArgument };
   "library.items": { count: FluentArgument };
+  "library.location.documents": {
+    documents: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.location.summary": {
+    documents: FluentArgument;
+    folders: FluentArgument;
+    place: FluentArgument;
+  };
+  "library.lock.unlocked": undefined;
   "library.noMatch.help": undefined;
   "library.noMatch.title": undefined;
   "library.rename": undefined;
@@ -2062,8 +2778,16 @@ export interface MessageArgsByKey {
   "photo.zoomOut": undefined;
   "photo.zoomed": { percent: FluentArgument };
   "preferences.subtitle": undefined;
+  "readingAid.available": undefined;
+  "readingAid.checked": { date: FluentArgument };
+  "readingAid.evidence": undefined;
+  "readingAid.open": undefined;
+  "readingAid.openOriginal": undefined;
+  "readingAid.overview": undefined;
+  "readingAid.points": undefined;
+  "readingAid.title": undefined;
+  "readingAid.unavailable": undefined;
   "record.kind.document": undefined;
-  "record.source.manual": undefined;
   "recover.intro": undefined;
   "recover.key.format": undefined;
   "recover.key.label": undefined;
@@ -2228,6 +2952,7 @@ export interface MessageArgsByKey {
   "security.title": undefined;
   "sidebar.documents": { count: FluentArgument };
   "sidebar.folderCount": { count: FluentArgument };
+  "sidebar.folderOfPerson": { folder: FluentArgument; person: FluentArgument };
   "sidebar.label": undefined;
   "sidebar.myRecords": undefined;
   "sidebar.preferences": undefined;
@@ -2264,6 +2989,10 @@ export interface MessageArgsByKey {
   "personDetails.birthDate": undefined;
   "personDetails.birthDateRequired": undefined;
   "personDetails.birthDateUnknown": undefined;
+  "personDetails.birthDay": undefined;
+  "personDetails.birthMonth": undefined;
+  "personDetails.birthMonthChoose": undefined;
+  "personDetails.birthYear": undefined;
   "personDetails.cancel": undefined;
   "personDetails.edit": undefined;
   "personDetails.editFor": { name: FluentArgument };
@@ -2308,15 +3037,19 @@ export interface MessageArgsByKey {
   "portal.copy": undefined;
   "portal.copyFailed": undefined;
   "portal.dateNotRecorded": undefined;
+  "portal.defaultDeviceName": { platform: FluentArgument };
   "portal.deviceCode": undefined;
   "portal.deviceName": undefined;
+  "portal.deviceDetailsShow": undefined;
+  "portal.deviceDetailsHide": undefined;
+  "portal.earlierShow": { count: FluentArgument };
+  "portal.earlierHide": undefined;
   "portal.errorAddress": undefined;
   "portal.errorCancelled": undefined;
   "portal.errorCode": undefined;
   "portal.errorCodeRejected": undefined;
   "portal.errorDamaged": undefined;
   "portal.errorDeviceName": undefined;
-  "portal.errorDisabled": undefined;
   "portal.errorExists": undefined;
   "portal.errorIncomplete": undefined;
   "portal.errorKeys": undefined;
@@ -2336,7 +3069,6 @@ export interface MessageArgsByKey {
   "portal.routing": undefined;
   "portal.serviceDate": { date: FluentArgument };
   "portal.serviceDateLabel": undefined;
-  "portal.sourceVerified": { clinic: FluentArgument };
   "portal.title": undefined;
   "rename.help.profile": undefined;
   "rename.label.profile": undefined;
@@ -2346,6 +3078,12 @@ export interface MessageArgsByKey {
   "rename.title.profile": undefined;
   "hidden.backToSecurity": undefined;
   "interface.history.appVersion": undefined;
+  "interface.history.approval.accepted": undefined;
+  "interface.history.approval.cancelled": undefined;
+  "interface.history.approval.challengeReady": undefined;
+  "interface.history.approval.expired": undefined;
+  "interface.history.approval.pending": undefined;
+  "interface.history.approval.refused": undefined;
   "interface.history.damaged": { date: FluentArgument };
   "interface.history.damagedAll": undefined;
   "interface.history.damagedBefore": { date: FluentArgument };
@@ -2359,6 +3097,16 @@ export interface MessageArgsByKey {
   "interface.history.event.backupSaved": undefined;
   "interface.history.event.copySaved": undefined;
   "interface.history.event.created": undefined;
+  "interface.history.event.deliveryRefusalsCleared": undefined;
+  "interface.history.event.deliveryRefused": undefined;
+  "interface.history.event.deliveryFiled": undefined;
+  "interface.history.event.deliveryReceiptSettled": undefined;
+  "interface.history.event.other": undefined;
+  "interface.history.how.personFolder": undefined;
+  "interface.history.event.deviceApprovalRequestRestarted": undefined;
+  "interface.history.event.deviceApprovalRequested": undefined;
+  "interface.history.event.deviceApprovalStatusChanged": undefined;
+  "interface.history.event.deviceApprovalVerified": undefined;
   "interface.history.event.folderCreated": undefined;
   "interface.history.event.folderMoved": undefined;
   "interface.history.event.folderRenamed": undefined;
@@ -2367,7 +3115,11 @@ export interface MessageArgsByKey {
   "interface.history.event.imported": undefined;
   "interface.history.event.moved": undefined;
   "interface.history.event.passphraseChanged": undefined;
+  "interface.history.event.portalLinkStarted": undefined;
+  "interface.history.event.portalLinked": undefined;
   "interface.history.event.profileCreated": undefined;
+  "interface.history.event.profileDetailsChanged": undefined;
+  "interface.history.event.readingAidFiled": undefined;
   "interface.history.event.recoveryKeySet": undefined;
   "interface.history.event.renamed": undefined;
   "interface.history.event.restored": undefined;
@@ -2377,6 +3129,7 @@ export interface MessageArgsByKey {
   "interface.history.from": undefined;
   "interface.history.gap": undefined;
   "interface.history.how": undefined;
+  "interface.history.how.aidReplaced": undefined;
   "interface.history.how.camera": undefined;
   "interface.history.how.damaged": undefined;
   "interface.history.how.importedShared": undefined;
@@ -2395,14 +3148,310 @@ export interface MessageArgsByKey {
   "interface.history.place": undefined;
   "interface.history.previousName": undefined;
   "interface.history.previousSession": undefined;
+  "interface.history.receipt.notFound": undefined;
+  "interface.history.receipt.pickedUp": undefined;
   "interface.history.rootFolder": undefined;
   "interface.history.scopeNote": undefined;
   "interface.history.sessionLockedAutomatically": { date: FluentArgument };
   "interface.history.sessionLockedByApp": { date: FluentArgument };
   "interface.history.sessionLockedByPerson": { date: FluentArgument };
   "interface.history.sessionNotRecorded": undefined;
+  "interface.history.status": undefined;
   "interface.history.title": undefined;
   "interface.history.to": undefined;
+  "portal.connectConsent": undefined;
+  "portal.connected": undefined;
+  "portal.connecting": undefined;
+  "portal.errorBusy": undefined;
+  "portal.linkedApprovalIssue": undefined;
+  "portal.retryApproval": undefined;
+  "portal.working": undefined;
+  "portal.approvalExpiredCard": undefined;
+  "portal.approvalPickedUp": undefined;
+  "portal.approvalReplyInvalid": undefined;
+  "portal.approvalStillOpen": undefined;
+  "portal.approvalTimeLeft": { count: FluentArgument };
+  "portal.approvalTimeOver": undefined;
+  "portal.approvalTimeOverRestart": { button: FluentArgument };
+  "portal.approvalTimeUp": undefined;
+  "portal.approvalUnanswered": undefined;
+  "portal.approvalUnreachable": undefined;
+  "portal.approvalWait": undefined;
+  "portal.autoChecking": undefined;
+  "portal.autoCheckStopped": { button: FluentArgument };
+  "portal.awaitingClinic": undefined;
+  "portal.deviceRemoved": undefined;
+  "portal.errorRateLimited": undefined;
+  "portal.checkAgain": { button: FluentArgument };
+  "portal.unlockCheckConsent": undefined;
+  "portal.unlockChecked": undefined;
+  "portal.unlockCheckIncomplete": undefined;
+  "portal.unlockCheckNotRun": undefined;
+  "portal.unlockCheckWaiting": undefined;
+  "portal.unlockRefused": { count: FluentArgument };
+  "library.source.clinic": { clinic: FluentArgument };
+  "library.source.manualImport": undefined;
+  "library.status.unverified": undefined;
+  "library.status.verified": undefined;
+  "portal.approvedByCode": undefined;
+  "portal.codeFormat": undefined;
+  "portal.codeHint": undefined;
+  "portal.codeLabel": undefined;
+  "portal.codeLocked": undefined;
+  "portal.codeMismatch": undefined;
+  "portal.codeNeeded": undefined;
+  "portal.codeNotOpen": undefined;
+  "portal.codeRefused": undefined;
+  "portal.codeSubmit": undefined;
+  "portal.codeSubmitted": undefined;
+  "portal.refusedDocuments": { count: FluentArgument };
+  "portal.tryAgain": undefined;
+  "portal.tryAgainFor": { clinic: FluentArgument };
+  "portal.linkAnother": undefined;
+  "interface.history.damagedStorageOnly": undefined;
+  "ai.summary.button": undefined;
+  "ai.summary.title": undefined;
+  "ai.explain.title": undefined;
+  "ai.notInstalled.title": undefined;
+  "ai.notInstalled.body": undefined;
+  "ai.notInstalled.openPreferences": undefined;
+  "aiHelper.resultLabel": undefined;
+  "ai.result.meta": {
+    date: FluentArgument;
+    model: FluentArgument;
+    tool: FluentArgument;
+  };
+  "ai.summary.showInDocument": undefined;
+  "ai.summary.folded": undefined;
+  "ai.summary.showWhole": undefined;
+  "ai.summary.partial": undefined;
+  "ai.summary.tooLong": { last: FluentArgument; total: FluentArgument };
+  "ai.summary.tooLongWithLast": {
+    last: FluentArgument;
+    tail: FluentArgument;
+    total: FluentArgument;
+  };
+  "ai.summary.tooLongStart": undefined;
+  "ai.summary.tooLongAfter": undefined;
+  "ai.summary.readPages": { last: FluentArgument };
+  "ai.summary.readPagesAndLast": { last: FluentArgument; tail: FluentArgument };
+  "ai.summary.readStart": undefined;
+  "ai.summary.noText": undefined;
+  "ai.explain.box": undefined;
+  "ai.explain.hint": undefined;
+  "ai.explain.submit": undefined;
+  "ai.preferences.title": undefined;
+  "ai.preferences.body": undefined;
+  "ai.preferences.notInstalled": undefined;
+  "ai.working": undefined;
+  "ai.workingLong": undefined;
+  "ai.workingFor": { minutes: FluentArgument };
+  "ai.summary.ready": undefined;
+  "ai.explain.ready": undefined;
+  "ai.failed": undefined;
+  "ai.error.memory": undefined;
+  "ai.error.busy": undefined;
+  "ai.error.storage": undefined;
+  "ai.summary.pagesMissing": undefined;
+  "ai.summary.noSource": undefined;
+  "ai.summary.englishOnly": undefined;
+  "ai.summary.progress.before": undefined;
+  "ai.summary.progress.reading": undefined;
+  "ai.summary.progress.writing": undefined;
+  "ai.summary.progress.checking": undefined;
+  "ai.summary.progress.estimate": { minutes: FluentArgument };
+  "ai.summary.progress.slower": undefined;
+  "aiHelper.notice.title": undefined;
+  "aiHelper.notice.introShare": undefined;
+  "aiHelper.notice.intro": undefined;
+  "aiHelper.notice.testBuild": undefined;
+  "aiHelper.notice.shareHeading": undefined;
+  "aiHelper.notice.shareBody": undefined;
+  "aiHelper.notice.previewBody": undefined;
+  "aiHelper.notice.limitsBody": undefined;
+  "aiHelper.notice.fileBody": undefined;
+  "aiHelper.notice.serviceBody": undefined;
+  "aiHelper.notice.adviceBody": undefined;
+  "aiHelper.notice.modelHeading": undefined;
+  "aiHelper.notice.modelBody": undefined;
+  "aiHelper.notice.resultsBody": undefined;
+  "aiHelper.exportHeader": undefined;
+  "aiHelper.exportCut": { page: FluentArgument };
+  "aiHelper.exportFileName": undefined;
+  "interface.history.how.anonymizedText": undefined;
+  "interface.RecordDetails.anonymizeText": undefined;
+  "interface.AnonymizePreview.title": undefined;
+  "interface.AnonymizePreview.reading": undefined;
+  "interface.AnonymizePreview.readFailed": undefined;
+  "interface.AnonymizePreview.emptyPages": { pages: FluentArgument };
+  "interface.AnonymizePreview.cutPages": { pages: FluentArgument };
+  "interface.AnonymizePreview.failedPages": { pages: FluentArgument };
+  "interface.AnonymizePreview.replaced": { count: FluentArgument };
+  "interface.AnonymizePreview.headerNote": undefined;
+  "interface.AnonymizePreview.howMarked": undefined;
+  "interface.AnonymizePreview.textRegion": undefined;
+  "interface.AnonymizePreview.removedKind": { kind: FluentArgument };
+  "interface.AnonymizePreview.movedDate": undefined;
+  "interface.AnonymizePreview.kind.name": undefined;
+  "interface.AnonymizePreview.kind.doctor": undefined;
+  "interface.AnonymizePreview.kind.clinic": undefined;
+  "interface.AnonymizePreview.kind.healthCard": undefined;
+  "interface.AnonymizePreview.kind.recordNumber": undefined;
+  "interface.AnonymizePreview.kind.sin": undefined;
+  "interface.AnonymizePreview.kind.dateOfBirth": undefined;
+  "interface.AnonymizePreview.kind.age": undefined;
+  "interface.AnonymizePreview.kind.address": undefined;
+  "interface.AnonymizePreview.kind.postalCode": undefined;
+  "interface.AnonymizePreview.kind.phone": undefined;
+  "interface.AnonymizePreview.kind.email": undefined;
+  "interface.AnonymizePreview.kind.web": undefined;
+  "interface.AnonymizePreview.kind.unclearDate": undefined;
+  "interface.AnonymizePreview.kind.manual": undefined;
+  "interface.AnonymizePreview.placeholder.name": undefined;
+  "interface.AnonymizePreview.placeholder.doctor": undefined;
+  "interface.AnonymizePreview.placeholder.clinic": undefined;
+  "interface.AnonymizePreview.placeholder.healthCard": undefined;
+  "interface.AnonymizePreview.placeholder.recordNumber": undefined;
+  "interface.AnonymizePreview.placeholder.sin": undefined;
+  "interface.AnonymizePreview.placeholder.dateOfBirth": undefined;
+  "interface.AnonymizePreview.placeholder.age": undefined;
+  "interface.AnonymizePreview.placeholder.address": undefined;
+  "interface.AnonymizePreview.placeholder.postalCode": undefined;
+  "interface.AnonymizePreview.placeholder.phone": undefined;
+  "interface.AnonymizePreview.placeholder.email": undefined;
+  "interface.AnonymizePreview.placeholder.web": undefined;
+  "interface.AnonymizePreview.placeholder.unclearDate": undefined;
+  "interface.AnonymizePreview.placeholder.manual": undefined;
+  "interface.AnonymizePreview.possibleNames": undefined;
+  "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.removeSelected": undefined;
+  "interface.AnonymizePreview.selectFirst": undefined;
+  "interface.AnonymizePreview.phrase": undefined;
+  "interface.AnonymizePreview.removePhrase": undefined;
+  "interface.AnonymizePreview.phraseNotFound": undefined;
+  "interface.AnonymizePreview.removedPlaces": { count: FluentArgument };
+  "interface.AnonymizePreview.undo": undefined;
+  "interface.AnonymizePreview.save": undefined;
+  "interface.AnonymizePreview.confirmTitle": undefined;
+  "interface.AnonymizePreview.confirmBody": undefined;
+  "interface.AnonymizePreview.saved": undefined;
+  "interface.AnonymizePreview.saveCancelled": undefined;
+  "interface.AnonymizePreview.refused": { count: FluentArgument };
+  "interface.AnonymizePreview.close": undefined;
+  "interface.AiHelperNotice.continue": undefined;
+  "interface.AnonymizePreview.footerNote": undefined;
+  "interface.AnonymizePreview.note.daysAfter": {
+    days: FluentArgument;
+    label: FluentArgument;
+    number: FluentArgument;
+  };
+  "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.pasteTitle": undefined;
+  "interface.AnonymizePreview.pasteHelp": undefined;
+  "interface.AnonymizePreview.pasteLabel": undefined;
+  "interface.AnonymizePreview.pasteButton": undefined;
+  "interface.AnonymizePreview.pasteResult": undefined;
+  "interface.AnonymizePreview.pasteFlagged": { count: FluentArgument };
+  "interface.AnonymizePreview.pasteAllMatched": undefined;
+  "interface.AnonymizePreview.pasteFlaggedSr": undefined;
+  "notifications.allow": undefined;
+  "notifications.blocked": undefined;
+  "notifications.error": undefined;
+  "notifications.help": undefined;
+  "notifications.title": undefined;
+  "notifications.unknown": undefined;
+  "notifications.unavailable": undefined;
+  "notifications.helpAutomatic": undefined;
+  "notifications.autoAllow": undefined;
+  "notifications.autoHelp": undefined;
+  "notifications.autoPaused": undefined;
+  "notifications.checkBusy": undefined;
+  "native.notice.arrival": undefined;
+  "ai.model.add": undefined;
+  "ai.model.accepted": {
+    licence: FluentArgument;
+    name: FluentArgument;
+    size: FluentArgument;
+  };
+  "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
+  "ai.model.where": undefined;
+  "ai.model.copy": undefined;
+  "ai.model.copied": undefined;
+  "ai.model.checking": { done: FluentArgument; total: FluentArgument };
+  "ai.model.added": undefined;
+  "ai.model.installed": { name: FluentArgument };
+  "ai.model.remove": undefined;
+  "ai.model.removeConfirm": undefined;
+  "ai.model.damaged": undefined;
+  "ai.model.unsupportedRam": undefined;
+  "ai.model.unsupportedCpu": undefined;
+  "ai.model.unsupportedPlatform": undefined;
+  "ai.model.refusedList": undefined;
+  "ai.model.refusedHash": undefined;
+  "ai.model.refusedIncomplete": undefined;
+  "ai.model.refusedDisk": undefined;
+  "ai.model.refusedStorage": undefined;
+  "ai.model.refusedBusy": undefined;
+  "ai.model.download": undefined;
+  "ai.model.downloadNote": { host: FluentArgument; size: FluentArgument };
+  "ai.model.downloading": { done: FluentArgument; total: FluentArgument };
+  "ai.model.refusedNetwork": undefined;
+  "ai.model.refusedUnavailable": undefined;
+  "native.filter.models": undefined;
+  "interface.history.event.aiResultSaved": undefined;
+  "interface.history.how.summary": undefined;
+  "interface.history.how.explain": undefined;
+  "ai.summary.again": undefined;
+  "ai.keepFailed": undefined;
+  "ai.keepFull": undefined;
+  "noticesStep.title": undefined;
+  "noticesStep.intro": undefined;
+  "noticesStep.later": {
+    notices: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
+  "noticesStep.done": undefined;
+  "noticesStep.notNow": undefined;
+  "notifications.autoNeedsNotices": undefined;
+  "ai.settings.subtitle": undefined;
+  "ai.model.progressName": undefined;
+  "ai.model.progressValue": {
+    done: FluentArgument;
+    percent: FluentArgument;
+    total: FluentArgument;
+  };
+  "ai.model.stillDownloading": undefined;
+  "ai.model.stillChecking": undefined;
+  "ai.models.title": undefined;
+  "ai.models.group": undefined;
+  "ai.models.inUse": undefined;
+  "ai.models.installed": undefined;
+  "ai.models.addedByYou": undefined;
+  "ai.models.notDownloaded": undefined;
+  "ai.models.downloading": undefined;
+  "ai.models.download": undefined;
+  "ai.models.remove": undefined;
+  "ai.models.help": undefined;
+  "ai.models.loading": undefined;
+  "ai.models.loadFailed": undefined;
+  "ai.models.retry": undefined;
+  "ai.models.starting": undefined;
+  "ai.models.picking": undefined;
+  "ai.models.changed": undefined;
+  "ai.models.installing": undefined;
+  "personDetails.setup": undefined;
+  "personDetails.later": undefined;
+  "personDetails.reminder": { name: FluentArgument };
+  "personDetails.notNow": undefined;
+  "personDetails.notSaved": undefined;
+  "ai.summaryTooLarge": undefined;
+  "personDetails.previousTitle": undefined;
+  "personDetails.previousHelp": undefined;
+  "personDetails.previousEntry": { number: FluentArgument };
+  "personDetails.previousRemove": { number: FluentArgument };
+  "personDetails.previousAdd": undefined;
+  "personDetails.previousInvalid": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

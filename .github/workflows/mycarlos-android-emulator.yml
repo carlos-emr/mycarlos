@@ -1,0 +1,79 @@
+name: myCarlos Android emulator smoke test
+
+# Builds the Android debug app for an x86_64 emulator, starts it on a hosted Linux
+# runner, and checks that it installs, opens and does not crash, with a screenshot
+# of its first screen. It is separate from mycarlos.yml so that ordinary pull requests
+# are not slowed: it runs by hand, and on pull requests that touch only this file or
+# the Android scripts.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/mycarlos-android-emulator.yml"
+      - "scripts/android-emulator-smoke.sh"
+      - "scripts/configure-android-security.mjs"
+      - "scripts/configure-android-security.test.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mycarlos-android-emulator-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  emulator:
+    name: Android emulator smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Configure hosted Android NDK
+        run: |
+          test -d "$ANDROID_NDK_LATEST_HOME"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - name: Install pinned Rust toolchain and Android target
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --target x86_64-linux-android
+      - run: npm ci
+      - run: npm run tauri android init -- --ci
+      - name: Disable Android cloud and device-transfer backup
+        run: npm run android:secure
+      # The emulator is x86_64 only, so only that ABI is built (the evaluation build in
+      # mycarlos.yml builds both and takes longer).
+      - run: npm run tauri android build -- --debug --apk --target x86_64 --ci
+      - name: Allow the emulator to use hardware acceleration (KVM)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+      - name: Start an emulator and run the smoke test
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/android-emulator-smoke.sh emulator-out
+      - name: Keep the screenshot, the log and the check output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: myCarlos-Android-Emulator-Smoke
+          path: emulator-out/
+          if-no-files-found: warn
+          retention-days: 14

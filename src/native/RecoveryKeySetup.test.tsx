@@ -6,9 +6,22 @@ import type { VaultSnapshot } from "../vault";
 import { printedDate } from "./KeyLabel";
 import { RecoveryKeySetup } from "./RecoveryKeySetup";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
 const GROUPS = KEY.split("-");
 const snapshot: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [],
   folders: [],
   records: [],
@@ -28,7 +41,9 @@ function setUp(
 ) {
   const bridge = {
     beginRecoveryKey: vi.fn().mockResolvedValue(KEY),
-    confirmRecoveryKey: vi.fn().mockResolvedValue(snapshot),
+    confirmRecoveryKey: vi
+      .fn()
+      .mockImplementation(async () => captureSnapshot(snapshot)),
     saveRecoveryKit: vi.fn().mockResolvedValue(true),
     recoveryKeyLabel: vi.fn().mockResolvedValue("7F3A"),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
@@ -164,6 +179,26 @@ describe("RecoveryKeySetup", () => {
     );
   });
 
+  it("hands an active locked key-generation result to the app", async () => {
+    const user = userEvent.setup();
+    const { bridge, onLocked } = setUp(
+      {},
+      {
+        beginRecoveryKey: vi.fn().mockRejectedValue({
+          code: "locked",
+          message: "FAKE key generation found the vault locked.",
+        }),
+      },
+    );
+    await user.type(screen.getByLabelText("Passphrase"), "FAKE current secret");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await vi.waitFor(() => expect(onLocked).toHaveBeenCalledOnce());
+    expect(bridge.beginRecoveryKey).toHaveBeenCalledExactlyOnceWith(
+      "FAKE current secret",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("saves the kit and says so", async () => {
     const user = userEvent.setup();
     const { bridge } = setUp({ initialKey: KEY });
@@ -179,18 +214,19 @@ describe("RecoveryKeySetup", () => {
   });
 
   it("shows the key's label with the key", async () => {
-    const { bridge } = setUp({ initialKey: KEY });
+    const { bridge, onLocked } = setUp({ initialKey: KEY });
     expect(await screen.findByText("7F3A")).toBeVisible();
     expect(bridge.recoveryKeyLabel).toHaveBeenCalledOnce();
+    expect(onLocked).not.toHaveBeenCalled();
   });
 
   it("shows the key without its label when the label cannot be had", async () => {
     const user = userEvent.setup();
     const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
     onTestFinished(() => print.mockRestore());
-    setUp(
+    const { onLocked } = setUp(
       { initialKey: KEY, canPrint: true },
-      { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "locked" }) },
+      { recoveryKeyLabel: vi.fn().mockRejectedValue({ code: "storage" }) },
     );
     expect(await screen.findByText(GROUPS[0])).toBeVisible();
     expect(screen.queryByText(/Key label/)).toBeNull();
@@ -205,6 +241,7 @@ describe("RecoveryKeySetup", () => {
     expect(kit).not.toHaveTextContent(/label/i);
     // The date still tells it from other kits.
     expect(kit).toHaveTextContent(`Printed ${printedDate(new Date())}`);
+    expect(onLocked).not.toHaveBeenCalled();
   });
 
   it("offers Print only where the platform can print", () => {
@@ -291,7 +328,10 @@ describe("RecoveryKeySetup", () => {
     expect(bridge.confirmRecoveryKey).toHaveBeenCalledWith(
       GROUPS.map((group, index) => ({ index, value: group.toLowerCase() })),
     );
-    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: false });
+    expect(onDone).toHaveBeenCalledWith(
+      await vi.mocked(bridge.confirmRecoveryKey).mock.results.at(-1)!.value,
+      { exposed: false },
+    );
   });
 
   it("reads other punctuation between groups as a separator", async () => {
@@ -597,7 +637,7 @@ describe("RecoveryKeySetup", () => {
         confirmRecoveryKey: vi
           .fn()
           .mockResolvedValueOnce(null)
-          .mockResolvedValue(snapshot),
+          .mockImplementation(async () => captureSnapshot(snapshot)),
       },
     );
     await user.click(
@@ -620,7 +660,10 @@ describe("RecoveryKeySetup", () => {
     expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
     // The key typed is still there, and agreeing the second time saves it.
     await user.click(screen.getByRole("button", { name: "Check and save" }));
-    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: false });
+    expect(onDone).toHaveBeenCalledWith(
+      await vi.mocked(bridge.confirmRecoveryKey).mock.results.at(-1)!.value,
+      { exposed: false },
+    );
   });
 
   it("says when it replaces an existing key", () => {
@@ -662,7 +705,10 @@ describe("RecoveryKeySetup", () => {
     );
     await typeKey(user, KEY);
     await user.click(screen.getByRole("button", { name: "Check and save" }));
-    expect(onDone).toHaveBeenCalledWith(snapshot, { exposed: true });
+    expect(onDone).toHaveBeenCalledWith(
+      await vi.mocked(bridge.confirmRecoveryKey).mock.results.at(-1)!.value,
+      { exposed: true },
+    );
   });
 
   it("asks no reason when a first key is set up", () => {

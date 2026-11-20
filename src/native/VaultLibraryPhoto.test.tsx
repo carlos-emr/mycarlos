@@ -18,6 +18,18 @@ import {
 } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
+// One fake native runtime: stamp and clone when data is captured, before delivery.
+let snapshotSequence = 1;
+function captureSnapshot(snapshot: VaultSnapshot): VaultSnapshot {
+  return {
+    ...structuredClone(snapshot),
+    capture: {
+      epoch: "00000000-0000-4000-8000-000000000185",
+      sequence: ++snapshotSequence,
+    },
+  };
+}
+
 const NAME = /^Photo, [A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}\.\d{2} [AP]M\.jpg$/;
 const PHOTO_URL = "data:image/jpeg;base64,/9j/FAKE";
 
@@ -35,6 +47,7 @@ const record = (id: string, displayName: string, folderIds: string[] = []) =>
   }) satisfies VaultRecord;
 
 const base: VaultSnapshot = {
+  capture: { epoch: "00000000-0000-4000-8000-000000000185", sequence: 1 },
   profiles: [{ id: "profile-1", displayName: "FAKE Patient", createdAtMs: 1 }],
   folders: [
     {
@@ -79,6 +92,7 @@ function renderLibrary(
   bridgeOverrides: Partial<VaultBridge> = {},
   cameraPlatform: string | null = "windows",
   initialNotice = "",
+  trackBusy = false,
 ) {
   let current = initial;
   const bridge = {
@@ -98,25 +112,31 @@ function renderLibrary(
     isPhoto: vi.fn(async () => true),
     isLockedPdf: vi.fn(async () => false),
     viewPhoto: vi.fn(async () => PHOTO_URL),
-    snapshot: vi.fn(async () => current),
+    snapshot: vi.fn(async () => captureSnapshot(current)),
     ...bridgeOverrides,
   } as unknown as VaultBridge;
+  const runFailure = vi.fn<(failure: unknown) => void>();
   function Harness() {
     const [snapshot, setSnapshot] = useState(initial);
     const [notice, setNotice] = useTextState(initialNotice);
+    const [busy, setBusy] = useState(false);
     return (
       <VaultLibrary
         bridge={bridge}
         snapshot={snapshot}
-        busy={false}
+        busy={busy}
         notice={notice}
         setNotice={setNotice}
         // As VaultApp's: a failure is reported as the notice.
         run={async (operation) => {
+          if (trackBusy) setBusy(true);
           try {
             await operation();
           } catch (error) {
+            runFailure(error);
             setNotice(vaultErrorMessage(error));
+          } finally {
+            if (trackBusy) setBusy(false);
           }
         }}
         refresh={async () => {
@@ -131,7 +151,7 @@ function renderLibrary(
     );
   }
   render(<Harness />);
-  return bridge;
+  return Object.assign(bridge, { runFailure });
 }
 
 describe("taking a photo from the library", () => {
@@ -390,6 +410,160 @@ describe("viewing a photo", () => {
     );
     return screen.getByRole("dialog", { name });
   };
+
+  it.each([
+    ["a different record", "FAKE results.pdf"],
+    ["the same record reopened", "FAKE insurance card"],
+  ])(
+    "keeps details for %s when an earlier photo request finishes",
+    async (_case, target) => {
+      let finish!: (url: string) => void;
+      const viewPhoto = vi
+        .fn<(id: string) => Promise<string>>()
+        .mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              finish = resolve;
+            }),
+        )
+        .mockResolvedValue(PHOTO_URL);
+      renderLibrary(withRecords, { viewPhoto }, "windows", "", true);
+      const original = openDetails("FAKE insurance card");
+      const view = await within(original).findByRole("button", {
+        name: humanText("View photo"),
+      });
+      fireEvent.click(view);
+      expect(view).toBeDisabled();
+      const close = within(original).getByRole("button", {
+        name: humanText("Close document details"),
+      });
+      expect(close).toBeEnabled();
+      fireEvent.click(close);
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      // Metadata remains readable while the previous native read is busy.
+      expect(
+        screen.getByRole("button", {
+          name: humanText(`Details for ${target}`),
+        }),
+      ).toBeEnabled();
+      const reopened = openDetails(target);
+      expect(reopened).toHaveAttribute(
+        "aria-describedby",
+        "native-record-about",
+      );
+      await act(async () => finish(PHOTO_URL));
+
+      expect(screen.getByRole("dialog", { name: target })).toBe(reopened);
+      expect(reopened).toHaveAttribute(
+        "aria-describedby",
+        "native-record-about",
+      );
+      expect(
+        screen.queryByRole("img", { name: humanText(/^Photo:/) }),
+      ).toBeNull();
+      expect(viewPhoto).toHaveBeenCalledExactlyOnceWith("card");
+      expect(
+        within(reopened).getByRole("button", {
+          name: humanText("Close document details"),
+        }),
+      ).toHaveFocus();
+      let detailsToClose = reopened;
+      if (target === "FAKE insurance card") {
+        // Discarding the old request must not disable a new, explicit view intent.
+        const viewAgain = await within(reopened).findByRole("button", {
+          name: humanText("View photo"),
+        });
+        expect(viewAgain).toBeEnabled();
+        fireEvent.click(viewAgain);
+        const photo = await screen.findByRole("img", {
+          name: humanText("Photo: FAKE insurance card"),
+        });
+        expect(viewPhoto).toHaveBeenNthCalledWith(2, "card");
+        fireEvent.click(
+          within(photo.closest<HTMLElement>('[role="dialog"]')!).getByRole(
+            "button",
+            { name: humanText("Close") },
+          ),
+        );
+        detailsToClose = screen.getByRole("dialog", { name: target });
+        expect(detailsToClose).toHaveAttribute(
+          "aria-describedby",
+          "native-record-about",
+        );
+      }
+      fireEvent.click(
+        within(detailsToClose).getByRole("button", {
+          name: humanText("Close document details"),
+        }),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        screen
+          .getByRole("button", {
+            name: humanText("Details for FAKE insurance card"),
+          })
+          .closest("[inert]"),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    ["not_a_photo", false],
+    ["locked", true],
+    ["cancelled", true],
+    ["missing", true],
+  ] as const)(
+    "handles a dismissed photo's %s failure without losing application state signals",
+    async (code, delegated) => {
+      let reject!: (failure: unknown) => void;
+      const viewPhoto = vi.fn(
+        (_id: string) =>
+          new Promise<string>((_resolve, rejectRead) => {
+            reject = rejectRead;
+          }),
+      );
+      const bridge = renderLibrary(
+        withRecords,
+        { viewPhoto },
+        "windows",
+        "",
+        true,
+      );
+      const original = openDetails("FAKE insurance card");
+      fireEvent.click(
+        await within(original).findByRole("button", {
+          name: humanText("View photo"),
+        }),
+      );
+      fireEvent.click(
+        within(original).getByRole("button", {
+          name: humanText("Close document details"),
+        }),
+      );
+      const current = openDetails("FAKE results.pdf");
+      const failure = { code, message: "FAKE dismissed photo read failed" };
+      await act(async () => reject(failure));
+
+      if (delegated) {
+        // The real VaultApp runner owns native auto-lock/missing-vault transitions.
+        // This harness observes delegation; it does not simulate those transitions.
+        expect(bridge.runFailure).toHaveBeenCalledExactlyOnceWith(failure);
+      } else {
+        expect(bridge.runFailure).not.toHaveBeenCalled();
+        expect(screen.getByRole("dialog", { name: "FAKE results.pdf" })).toBe(
+          current,
+        );
+        expect(within(current).getByRole("status")).toBeEmptyDOMElement();
+        expect(
+          within(current).getByRole("button", {
+            name: humanText("Close document details"),
+          }),
+        ).toHaveFocus();
+      }
+      expect(viewPhoto).toHaveBeenCalledExactlyOnceWith("card");
+    },
+  );
 
   it("is offered when the vault says the file is a JPEG, whatever its name, and fetched only to be shown", async () => {
     const bridge = renderLibrary(withRecords);

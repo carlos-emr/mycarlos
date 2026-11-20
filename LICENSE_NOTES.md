@@ -41,6 +41,12 @@ libraries, nor tools used only to build (such as `target-lexicon`, under Apache-
 exception), and it has to be checked again when dependencies change. The licences stay recorded in
 the packages and in the generated SBOMs; see [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md).
 
+The Windows and Linux builds also contain llama.cpp and ggml (MIT, "The ggml authors"), built from
+source by `llama-cpp-sys-2` for the AI helper's model helper (#72). Their MIT notice must go with
+those builds, as the other MIT libraries' do. The AI model a patient adds is not part of myCarlos;
+its own licence and any notice it requires are shown with the accepted-model list (the install
+step, D201).
+
 ## Code from CARLOS
 
 The application was written in the CARLOS repository by its author, Ben Heerema, who relicensed it
@@ -49,6 +55,15 @@ on 2026-09-29, and declared there `GPL-2.0-or-later`. Copies already published u
 been checked line by line. Any that is would keep its own terms: under GPL-2.0-or-later it can be
 taken under version 3 and combined with the AGPL, which section 13 of the AGPL and of GPL version 3
 allow, and would carry the GPL version 3 text; under GPL version 2 alone it could not be. This is part of the review below.
+
+## The app icon (the CARLOS logo)
+
+The app icon on every platform is the CARLOS EMR project's logo (the "birdman"), used here with the
+CARLOS project's permission. It is the project's mark and is **not covered by the code's open
+licence**: the AGPL does not grant any right to it. Anyone who forks or redistributes myCarlos under
+another name replaces it (the files are listed in [src-tauri/icons/source/README.md](src-tauri/icons/source/README.md):
+`src-tauri/icons/`, including `android/` and `ios/`, and the copy kept under `source/`). Its origin is the
+CARLOS GitHub organisation's picture, 460 px (`src-tauri/icons/source/carlos-logo-460.jpg`).
 
 ## Open: app stores
 
@@ -75,3 +90,7 @@ same review.
   declaration, is gone.
 
 This file records what the project declares. It is not legal advice.
+
+## Anonymizer gazetteers (src/deidentify/gazetteers)
+
+Contains information licensed under the Open Government Licence – Canada (https://open.canada.ca/en/open-government-licence-canada): Statistics Canada, Open Database of Healthcare Facilities, version 1.1; and Statistics Canada, Standard Geographical Classification (SGC) 2021. The names were tidied and filtered for use as an on-device list; Statistics Canada does not endorse this product.
