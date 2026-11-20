@@ -286,6 +286,43 @@ impl VaultStore {
         }
     }
 
+    /// An opaque Android message can prompt a signed check. Only a document actually added
+    /// to the current vault can prompt a local foreground notice. Hold the session guard
+    /// across display so an opt-out, lock or vault switch cannot interleave after the check.
+    #[cfg(any(test, all(target_os = "android", feature = "android-push")))]
+    pub(crate) fn android_notice_received(
+        &self,
+        token: &NoticeToken,
+        check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
+        display: impl FnOnce(),
+    ) -> PushOutcome {
+        let mut arrival_session = None;
+        let outcome = self.push_received(token.as_str(), |session| {
+            let result = check(session)?;
+            if result.added > 0 {
+                arrival_session = Some(session);
+            }
+            Ok(result)
+        });
+        if let Some(session) = arrival_session {
+            let guard = self.session();
+            if self.portal_link_ticket() == session
+                && guard.as_ref().is_some_and(|open| {
+                    let notices = &open.manifest.remote_notices;
+                    open.recovery.is_none()
+                        && notices.opted_in()
+                        && notices.active().iter().any(|d| {
+                            d.platform() == crate::document_notifications::Platform::AndroidFcm
+                                && d.subscription_id().is_some()
+                        })
+                })
+            {
+                display();
+            }
+        }
+        outcome
+    }
+
     /// The patient opened a remote notice. Navigation only: it unlocks nothing.
     pub(crate) fn push_activated(&self, token: &str) -> Option<Activation> {
         NoticeToken::parse(token).ok()?;
@@ -432,6 +469,66 @@ mod tests {
     }
 
     /// Every file's bytes under `root`, but the open store's lock file: it is empty, and on
+    #[test]
+    fn android_only_displays_new_authenticated_arrivals_for_current_consent() {
+        let (_temp, store, _) = store_with_links();
+        let source = FakePushSource {
+            platform: crate::document_notifications::Platform::AndroidFcm,
+            permission: std::sync::Mutex::new(Permission::Granted),
+        };
+        let session = store.portal_link_ticket();
+        let token = |n: u8| NoticeToken::parse(&format!("{n:022}")).unwrap();
+        let result = |added| {
+            Ok(crate::portal_pickup::CheckResult {
+                added,
+                refused: 0,
+                receipts_pending: 0,
+                issues: vec![],
+            })
+        };
+        let never = || panic!("unexpected local display");
+        assert_eq!(
+            store.android_notice_received(&token(0), |_| panic!("no consent"), never),
+            PushOutcome::Ignored
+        );
+        let seen = RefCell::new(Vec::new());
+        let exchange = portal(&seen, |_| None);
+        store
+            .set_remote_notices(true, &source, session, &exchange)
+            .unwrap();
+        assert_eq!(
+            store.android_notice_received(&token(1), |_| result(0), never),
+            PushOutcome::Checked
+        );
+        let displayed = std::cell::Cell::new(0);
+        assert_eq!(
+            store.android_notice_received(
+                &token(2),
+                |_| result(1),
+                || displayed.set(displayed.get() + 1)
+            ),
+            PushOutcome::Checked
+        );
+        assert_eq!(displayed.get(), 1);
+        assert_eq!(
+            store.android_notice_received(&token(2), |_| panic!("duplicate"), never),
+            PushOutcome::Ignored
+        );
+        assert_eq!(
+            store.android_notice_received(
+                &token(3),
+                |_| {
+                    store
+                        .set_remote_notices(false, &source, session, &exchange)
+                        .unwrap();
+                    result(1)
+                },
+                never
+            ),
+            PushOutcome::Checked
+        );
+    }
+
     /// Windows its byte-range lock refuses a read while the store is open (OS error 33).
     fn files_under(root: &Path) -> Vec<Vec<u8>> {
         let mut found = Vec::new();

@@ -1,3 +1,10 @@
+#[cfg(all(target_os = "android", feature = "android-push"))]
+pub mod android_push;
+#[cfg(feature = "android-push")]
+pub mod android_push_owner;
+#[cfg(test)]
+#[path = "../android_push_profile.rs"]
+mod android_push_profile;
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
 mod ui_text;
@@ -5432,7 +5439,10 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(all(target_os = "android", feature = "android-push"))]
+    let builder = builder.plugin(android_push::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
@@ -5508,6 +5518,8 @@ pub fn run() {
             );
             #[cfg(windows)]
             store.start_document_collection()?;
+            #[cfg(all(target_os = "android", feature = "android-push"))]
+            android_push::listen(app.handle(), Arc::clone(&store))?;
             app.manage(store);
             // Wrong tries at a secret, counted beside the vault in
             // `attempts.json`, and read only when needed, not here.

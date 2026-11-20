@@ -2109,3 +2109,5 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 添加曾用全名
 personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。
+
+notification-android-newDocument = myCarlos 中有一份新文档。

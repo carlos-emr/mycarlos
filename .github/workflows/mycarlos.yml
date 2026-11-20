@@ -116,6 +116,7 @@ jobs:
       - run: npm test
       - run: npm run test:dev-hmr
       - run: npm run test:dev-data
+      - run: npm run test:android-push
       - run: npm run test:android-security
       # Playwright's webServer builds dist/ before starting the preview.
       - run: npm run test:e2e
@@ -189,7 +190,7 @@ jobs:
         env:
           CARGO_BUILD_JOBS: "2"
         run: cargo test --manifest-path security-tests/glib-variant/Cargo.toml --release --locked
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub -- --test-threads=1
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked --features ai-helper-stub,android-push -- --test-threads=1
       - run: npm run tauri build -- --debug --bundles deb
       - name: Save the llama.cpp build (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.llama-restore.outputs.cache-hit != 'true'

@@ -2357,3 +2357,5 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+notification-android-newDocument = W myCarlos jest nowy dokument.

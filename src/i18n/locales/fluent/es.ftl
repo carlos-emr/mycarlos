@@ -2311,3 +2311,5 @@ personDetails-previousEntry = Nombre completo anterior { $number }
 personDetails-previousRemove = Quitar nombre completo anterior { $number }
 personDetails-previousAdd = Añadir nombre completo anterior
 personDetails-previousInvalid = Use hasta 16 nombres distintos y no vacíos, de hasta 120 caracteres cada uno, sin caracteres de control.
+
+notification-android-newDocument = Hay un documento nuevo en myCarlos.
