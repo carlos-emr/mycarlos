@@ -1214,6 +1214,23 @@ p {
   color: var(--ink);
   font-weight: 700;
 }
+/* "Don't show this again" and the short tag's info button sit beside the warning, 44px high. */
+.native-reader-ai .ai-label-hide,
+.native-reader-ai .ai-label-info {
+  margin-inline-start: 4px;
+  min-height: 44px;
+  font-weight: 600;
+}
+.native-reader-ai .ai-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.native-reader-ai .ai-label-row .ai-label,
+.native-reader-ai .ai-label-short .ai-label {
+  margin: 0;
+}
 .native-reader-ai .ai-meta {
   color: var(--ink-soft);
   font-size: 0.875rem;
