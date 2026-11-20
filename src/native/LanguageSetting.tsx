@@ -26,7 +26,16 @@ export function languageName(locale: Locale): string {
   return LANGUAGES.find(([code]) => code === locale)?.[1] ?? locale;
 }
 
-export function LanguageSetting({ compact = false }: { compact?: boolean }) {
+/** `showTitle` (compact only) is for a screen that has no heading of its own;
+ * the language dialog's title already says it, so it passes false and the
+ * list does not repeat it. The group stays named for a screen reader. */
+export function LanguageSetting({
+  compact = false,
+  showTitle = true,
+}: {
+  compact?: boolean;
+  showTitle?: boolean;
+}) {
   const state = useSyncExternalStore(subscribeLocale, getLanguagePreference);
   const { t } = useI18n();
   const id = useId();
@@ -38,7 +47,9 @@ export function LanguageSetting({ compact = false }: { compact?: boolean }) {
     >
       <div>
         {compact ? (
-          <span className="language-title">{t("language.title")}</span>
+          showTitle && (
+            <span className="language-title">{t("language.title")}</span>
+          )
         ) : (
           <h2>{t("language.title")}</h2>
         )}

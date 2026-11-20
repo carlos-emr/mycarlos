@@ -151,6 +151,17 @@ describe("saved app language", () => {
     expect(document.documentElement.lang).toBe("fr");
   });
 
+  it("shows its own title in the compact list, unless the screen already has one", () => {
+    const { container, rerender } = render(<LanguageSetting compact />);
+    expect(container.querySelector(".language-title")).toHaveTextContent(
+      "Language",
+    );
+    rerender(<LanguageSetting compact showTitle={false} />);
+    expect(container.querySelector(".language-title")).toBeNull();
+    // Either way the options are one group named for a screen reader.
+    expect(screen.getByRole("group", { name: "Language" })).toBeInTheDocument();
+  });
+
   it("shows an unreadable saved preference while keeping System usable", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");

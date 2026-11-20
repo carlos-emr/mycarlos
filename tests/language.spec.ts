@@ -219,3 +219,48 @@ test("the unlock screen has a globe and language button that opens the list, wit
   await expect(page.getByRole("button", { name: /^Español \(/ })).toBeFocused();
   await expectOnlyFakedCommands(page);
 });
+
+for (const width of [320, 412, 1100]) {
+  test(`the language dialog insets its list like its title and does not repeat the heading, at ${width}px`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width, height: 760 });
+    await fakeVault(page, "locked");
+    await page.goto("/");
+    await page.getByRole("button", { name: /^English \(Language\)$/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Language" });
+    await expect(dialog).toBeVisible();
+    // The word is the dialog's title only: no second visible heading above the list, and
+    // the list is still a named group.
+    await expect(dialog.getByRole("heading", { name: "Language" })).toHaveCount(
+      1,
+    );
+    await expect(dialog.locator(".language-title")).toHaveCount(0);
+    await expect(dialog.getByRole("group", { name: "Language" })).toBeVisible();
+    // The options line up with the title (and the Close button): inset from the dialog's
+    // edge by the same padding, not flush against it.
+    const box = (await dialog.boundingBox())!;
+    const title = (await dialog
+      .getByRole("heading", { name: "Language" })
+      .boundingBox())!;
+    const firstOption = (await dialog
+      .getByRole("radio")
+      .first()
+      .boundingBox())!;
+    const close = (await dialog
+      .getByRole("button", { name: "Close" })
+      .boundingBox())!;
+    expect(title.x - box.x).toBeGreaterThanOrEqual(16);
+    expect(firstOption.x - box.x).toBeGreaterThanOrEqual(16);
+    expect(Math.abs(firstOption.x - title.x)).toBeLessThan(2);
+    expect(Math.abs(close.x - title.x)).toBeLessThan(2);
+    // Nothing runs out of the dialog sideways.
+    expect(
+      await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: info.outputPath(`language-dialog-${width}.png`),
+    });
+    await expectOnlyFakedCommands(page);
+  });
+}

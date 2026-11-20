@@ -4547,6 +4547,9 @@ button:disabled,
 .language-button .icon {
   flex: none;
 }
+/* In the language dialog the list lines up with the title above it and the
+   Close button below it: the same 20px as .dialog-head. */
 .native-language-dialog .language-compact {
   margin: 0;
+  padding: 14px 20px 6px;
 }
