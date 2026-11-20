@@ -473,6 +473,23 @@ mod tests {
     }
 
     #[test]
+    fn given_a_capital_after_the_first_word_when_explained_then_it_is_still_matched_only_as_written(
+    ) {
+        check("a_capital_after_the_first_word_is_still_matched_only_as_written");
+    }
+
+    #[test]
+    fn given_a_sentence_starting_with_an_abbreviation_in_the_wrong_case_when_explained_then_it_is_not_matched(
+    ) {
+        check("a_sentence_initial_abbreviation_in_the_wrong_case_is_not_matched");
+    }
+
+    #[test]
+    fn given_hemoglobin_a1c_at_the_start_of_a_sentence_when_explained_then_it_is_one_term() {
+        check("a_hemoglobin_a1c_at_the_start_of_a_sentence_is_one_term");
+    }
+
+    #[test]
     fn given_ldl_and_hdl_when_explained_then_each_has_its_own_meaning() {
         check("ldl_and_hdl_have_distinct_explanations");
     }

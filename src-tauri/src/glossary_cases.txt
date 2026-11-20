@@ -291,3 +291,18 @@ name: ttg_iga_in_french
 lang: fr-CA
 sentence: Le taux de tTG-IgA est élevé.
 expect: Le taux de tTG-IgA (un anticorps dont le taux sanguin est souvent élevé dans la maladie cœliaque) est élevé.
+===
+name: a_capital_after_the_first_word_is_still_matched_only_as_written
+lang: en
+sentence: The Tissue transglutaminase IgA was high.
+expect: The Tissue transglutaminase IgA (a kind of antibody in the blood) was high.
+===
+name: a_sentence_initial_abbreviation_in_the_wrong_case_is_not_matched
+lang: en
+sentence: TTG-IgA was high.
+expect: TTG-IgA was high.
+===
+name: a_hemoglobin_a1c_at_the_start_of_a_sentence_is_one_term
+lang: en
+sentence: Hemoglobin A1c was 7.5%.
+expect: Hemoglobin A1c (a protein with sugar attached in red blood cells, measured to track average blood sugar over the past few months) was 7.5%.
