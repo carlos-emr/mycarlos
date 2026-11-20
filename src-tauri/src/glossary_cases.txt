@@ -35,12 +35,12 @@ expect: Take it PO (by mouth) twice a day; the po box is closed.
 name: only_the_first_use_in_a_sentence
 lang: en
 sentence: The CRP was 30 and the CRP will be repeated.
-expect: The CRP (a blood test for inflammation) was 30 and the CRP will be repeated.
+expect: The CRP (a protein in the blood that rises with inflammation) was 30 and the CRP will be repeated.
 ===
 name: each_glossary_line_gets_its_own
 lang: en
 sentence: ALT and AST are high.
-expect: ALT (a liver blood test) and AST (a liver blood test) are high.
+expect: ALT (an enzyme found mainly in the liver, measured to check the liver) and AST (an enzyme found in the liver, heart and muscles, measured to check the liver) are high.
 ===
 name: two_spellings_of_one_line
 lang: en
@@ -110,7 +110,7 @@ expect: Her LDL-C was 2.1 mmol/L.
 name: ttg_iga_as_one_term
 lang: en
 sentence: The tTG-IgA was high.
-expect: The tTG-IgA (a blood test for celiac disease) was high.
+expect: The tTG-IgA (an antibody in the blood that is often elevated in celiac disease) was high.
 ===
 name: ckd_epi_is_left_alone
 lang: en
@@ -165,7 +165,7 @@ expect: She has ocular hypertension.
 name: gastric_erosions
 lang: en
 sentence: The gastroscopy showed gastric erosions.
-expect: The gastroscopy (a camera test of the stomach) showed gastric erosions (small areas where a surface is worn away).
+expect: The gastroscopy (a look inside the food pipe, stomach and start of the bowel with a thin camera tube) showed gastric erosions (small areas where a surface is worn away).
 ===
 name: acr_eular_criteria
 lang: en
@@ -180,12 +180,12 @@ expect: Insulin glargine 300 U/mL at bedtime.
 name: glycated_hemoglobin
 lang: en
 sentence: The glycated hemoglobin was 7.5%.
-expect: The glycated hemoglobin (a blood test of the average blood sugar over the past few months) was 7.5%.
+expect: The glycated hemoglobin (a protein with sugar attached in red blood cells, measured to track average blood sugar over the past few months) was 7.5%.
 ===
 name: hemoglobine_a1c_in_french
 lang: fr
 sentence: L'hémoglobine A1c est à 8 %.
-expect: L'hémoglobine A1c (une analyse de sang qui mesure le sucre moyen des derniers mois) est à 8 %.
+expect: L'hémoglobine A1c (une protéine des globules rouges à laquelle du sucre est fixé, mesurée pour connaître la glycémie moyenne des derniers mois) est à 8 %.
 ===
 name: recalled_is_not_called
 lang: en
@@ -215,7 +215,7 @@ expect: The CRP, the white count and the lactate (a blood substance that can go 
 name: a_lab_value_in_units_per_millilitre
 lang: en
 sentence: The tTG-IgA was 86 U/mL.
-expect: The tTG-IgA (a blood test for celiac disease) was 86 U/mL.
+expect: The tTG-IgA (an antibody in the blood that is often elevated in celiac disease) was 86 U/mL.
 ===
 name: an_insulin_brand_strength
 lang: en
@@ -235,7 +235,7 @@ expect: The potassium was 5.3 mmol/L and the sugar 8.4 mmol/L.
 name: a_unit_with_a_lower_case_l
 lang: en
 sentence: The CRP was 22 mg/l.
-expect: The CRP (a blood test for inflammation) was 22 mg/l.
+expect: The CRP (a protein in the blood that rises with inflammation) was 22 mg/l.
 ===
 name: a_french_cell_count_is_not_grams
 lang: fr
@@ -266,3 +266,28 @@ name: a_list_inside_brackets
 lang: en
 sentence: Have a blood test (creatinine, potassium) in 1 week.
 expect: Have a blood test (creatinine, a waste product in the blood that shows how well the kidneys work, potassium) in 1 week.
+===
+name: sentence_initial_tissue_transglutaminase
+lang: en
+sentence: Tissue transglutaminase IgA is elevated.
+expect: Tissue transglutaminase IgA (an antibody in the blood that is often elevated in celiac disease) is elevated.
+===
+name: bare_tissue_transglutaminase
+lang: en
+sentence: Tissue transglutaminase was measured.
+expect: Tissue transglutaminase was measured.
+===
+name: capitalization_inside_iga_is_exact
+lang: en
+sentence: Tissue transglutaminase IGA was measured.
+expect: Tissue transglutaminase IGA was measured.
+===
+name: ldl_and_hdl_have_distinct_explanations
+lang: en
+sentence: LDL is high and HDL is low.
+expect: LDL (a particle carrying cholesterol that can build up in artery walls) is high and HDL (a particle that carries extra cholesterol back to the liver) is low.
+===
+name: ttg_iga_in_french
+lang: fr-CA
+sentence: Le taux de tTG-IgA est élevé.
+expect: Le taux de tTG-IgA (un anticorps dont le taux sanguin est souvent élevé dans la maladie cœliaque) est élevé.

@@ -20,8 +20,9 @@
 //!   words, any case);
 //! - longer terms first, never overlapping; a "plain" phrase ("LDL-C", "Ringer's lactate",
 //!   "pulmonary hypertension") keeps a shorter term inside it unexplained;
-//! - a unit, or a term with an upper-case letter, matches only as written ("EGFR" is not
-//!   "eGFR"); any other all-lower-case term matches in any case;
+//! - a unit, or a term with an upper-case letter, matches as written ("EGFR" is not "eGFR").
+//!   A multiword term may capitalize its listed lowercase initial at the start of a sentence.
+//!   Other all-lower-case terms match in any case;
 //! - a term needs a non-letter, non-digit on both sides (a unit may follow a digit), and a hyphen
 //!   or slash joining it to a letter or digit is no break ("LDL-C", "albumin/creatinine");
 //! - nothing is inserted when the term is already explained: a bracket right after it; ", a",
@@ -215,6 +216,7 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
     for (term, index, spelling) in variants {
         let unit = glossary[index].unit;
         let cased = unit || term.iter().any(|c| c.is_uppercase());
+        let allow_initial_capital = cased && !unit && term[0].is_lowercase() && term.contains(&' ');
         let key = if unit { spelling } else { usize::MAX };
         let m = term.len();
         if m > n {
@@ -235,7 +237,14 @@ pub(crate) fn explain(sentence: &str, lang: &str) -> Option<(String, Vec<(String
                 || (!chars[j].is_alphanumeric()
                     && (unit
                         || !(joined(j) && chars.get(j + 1).is_some_and(|c| c.is_alphanumeric()))));
-            if !starts || !ends || !(0..m).all(|k| same(chars[i + k], term[k], cased)) {
+            if !starts || !ends {
+                continue;
+            }
+            let matches_term = (0..m).all(|k| {
+                let exact = cased && !(allow_initial_capital && i == 0 && k == 0);
+                same(chars[i + k], term[k], exact)
+            });
+            if !matches_term {
                 continue;
             }
             if claimed[i..j].iter().any(|c| *c) {
@@ -454,6 +463,23 @@ mod tests {
     #[test]
     fn given_a_term_inside_a_longer_term_when_explained_then_the_longer_term_wins() {
         check("the_longest_term_first");
+    }
+
+    #[test]
+    fn given_sentence_initial_tissue_transglutaminase_iga_when_explained_then_it_is_one_term() {
+        check("sentence_initial_tissue_transglutaminase");
+        check("bare_tissue_transglutaminase");
+        check("capitalization_inside_iga_is_exact");
+    }
+
+    #[test]
+    fn given_ldl_and_hdl_when_explained_then_each_has_its_own_meaning() {
+        check("ldl_and_hdl_have_distinct_explanations");
+    }
+
+    #[test]
+    fn given_ttg_iga_in_french_when_explained_then_it_describes_the_antibody() {
+        check("ttg_iga_in_french");
     }
 
     #[test]
