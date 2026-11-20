@@ -17,12 +17,16 @@ import {
   type FakeAiSetup,
 } from "./support/aiFake";
 import { translate } from "./support/fluent";
+import { AI_EXPLAIN_ENABLED } from "../src/ai/features";
 import {
   FAKE_PAGE_COUNT,
   fakeVaultWith,
   myRecords,
   openDetails,
 } from "./support/vaultFake";
+
+const EXPLAIN_OFF =
+  "Explain is switched off in the UI (src/ai/features.ts); this test runs again when it is switched on";
 
 // The AI helper's new screens (#72) for people who use a keyboard, a screen
 // reader or large text: the reader's Summary and Explain panel, the notice
@@ -168,6 +172,7 @@ test("the reader's Summary by keyboard: the notice takes and gives back the focu
 test("Explain by keyboard: the box is labelled, Enter asks, and the answer is read out", async ({
   page,
 }) => {
+  test.skip(!AI_EXPLAIN_ENABLED, EXPLAIN_OFF);
   await openLibrary(page, {
     model: INSTALLED,
     explanation: "FAKE: a word from the letter, in plain words.",
@@ -350,8 +355,11 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
     ).click();
     await expect(reader).toContainText(en("aiHelper.resultLabel"));
     await expectReflow(page, "the reader with a summary");
-    await button(reader, en("ai.explain.title")).click();
-    await expectReflow(page, "the reader's Explain");
+    // Explain's panel, only while it is offered (src/ai/features.ts).
+    if (AI_EXPLAIN_ENABLED) {
+      await button(reader, en("ai.explain.title")).click();
+      await expectReflow(page, "the reader's Explain");
+    }
     await button(reader, en("photo.close")).click();
 
     // The row, with the model's real-length address and a refusal shown,

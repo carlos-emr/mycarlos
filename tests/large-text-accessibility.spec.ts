@@ -256,6 +256,17 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         sourceLabel: "Manual import — unverified",
       },
     ];
+    const fakeModel = {
+      name: "FAKE test model",
+      fileName: "FAKE-test-model.gguf",
+      sizeBytes: 2_500_000_000,
+      sha256: "test-only",
+      licence: "FAKE licence",
+      notices: [] as string[],
+      sourceUrl: "https://example.invalid/FAKE-test-model.gguf",
+      // No capacity in the catalogue (as from a native side that predates it): the
+      // reading line below can then only come from the ai_model_limits answer.
+    };
     Reflect.set(window, "__unexpectedIpc", []);
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
@@ -286,8 +297,34 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "runtime_info") return { platform: "windows" };
         // Preferences on a computer asks whether an AI model is installed (#72).
         if (command === "ai_model_status") return { state: "notInstalled" };
-        if (command === "ai_model_catalog") return [];
-        if (command === "ai_models") return [];
+        // One FAKE catalogue model, so the AI helper row is on screen and says how much
+        // it reads at a time (model limits): the app asks ai_model_limits for it, and the
+        // 200% text walk below looks at that line too.
+        if (command === "ai_model_catalog") return [fakeModel];
+        if (command === "ai_models")
+          return [
+            {
+              index: 0,
+              model: fakeModel,
+              state: "notDownloaded",
+              addedByYou: false,
+              inUse: false,
+            },
+          ];
+        if (command === "ai_model_limits")
+          return [
+            {
+              index: 0,
+              capacity: { contextTokens: 8192, documentTokens: 6510 },
+              confirmed: false,
+              trainedContext: null,
+              parameters: null,
+              fileBytes: fakeModel.sizeBytes,
+              neededBytes: 0,
+            },
+          ];
+        // No model in use to check (D218).
+        if (command === "ai_model_check") return "skipped";
         // No add or download running when the row opens (#275).
         if (command === "ai_model_add_active") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
@@ -359,7 +396,7 @@ async function walkTheVault(large: LargeText) {
   await expectNoViolations(create, "comfort settings", large.cutOff);
   await create.getByRole("button", { name: "Continue" }).click();
   await expect(
-    create.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    create.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await expectNoViolations(create, "create the vault", large.cutOff);
   await expectOnlyMockedCommands(create);
@@ -429,6 +466,11 @@ async function walkTheVault(large: LargeText) {
     page.getByRole("heading", { name: "AI helper", level: 1 }),
   ).toBeVisible();
   await expect(page.getByText("Not installed", { exact: true })).toBeVisible();
+  // The row says how much the model reads at a time: the answer to ai_model_limits (model limits).
+  // The page number comes wrapped in invisible direction marks (Fluent), so match it as one word.
+  await expect(
+    page.getByText(/Reads about \S+ pages? at a time/),
+  ).toBeVisible();
   await expectNoViolations(page, "AI helper, the model's row", large.cutOff);
   await expectOnlyMockedCommands(page);
 }

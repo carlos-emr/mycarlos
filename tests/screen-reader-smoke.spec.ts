@@ -40,7 +40,7 @@ test("first setup is named and ordered for a screen reader", async ({
   await screenReaderSmoke(page, "comfort settings");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(
-    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    page.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await screenReaderSmoke(page, "create the vault");
 
@@ -82,7 +82,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await screenReaderSmoke(page, "library");
 
   // Files arriving: an import's result.
-  await page.getByRole("button", { name: "Choose files to import" }).click();
+  await page.getByRole("button", { name: "New", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();

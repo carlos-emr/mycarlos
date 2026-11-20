@@ -187,6 +187,9 @@ export interface FakeVaultSetup {
   /** The service date the clinic's document from a check carries, as the
    * clinic sent it ("" = not recorded). Default: none. */
   clinicServiceDate?: string;
+  /** With the clinic approved: how many of its documents failed their
+   * checks and are remembered as refused (#143); Try again forgets them. */
+  refusedDeliveries?: number;
   /** With a clinic linked ("linked" only; anything else is refused by
    * fakeVaultWith) but not approved: the current approval request's state,
    * and whether a new request may be started (natively: an expired or
@@ -208,7 +211,12 @@ export interface FakeVaultSetup {
    * missing, so changes are paused until they are hidden as damaged. */
   missingFiles?: string[];
   /** More people in the vault, with the details clinic documents carry. */
-  people?: { displayName: string; fullName?: string; birthDate?: string }[];
+  people?: {
+    displayName: string;
+    fullName?: string;
+    birthDate?: string;
+    previousFullNames?: string[];
+  }[];
   /** Files another app shared to myCarlos, waiting to be added (#61). */
   received?: string[];
   /** What the vault finds on a shared document, by its name: the name and
@@ -223,6 +231,14 @@ export interface FakeVaultSetup {
   /** What runtime_info reports: "windows" (default), "macos", "linux",
    * "android" or "ios". A computer has the app's own zoom; a phone has not. */
   platform?: string;
+  /** Pages drawn as a FAKE letter (#292), one entry per page: a letterhead
+   * drawn as shapes, then `lines` from `top` (a fraction of the page's
+   * height) down. A line ending in a space runs on into the next one in the
+   * page's text, as a sentence wrapped on the page does. The page's text is
+   * these lines, and vault_page_boxes measures where a quote is drawn. */
+  drawnPages?: { top: number; lines: string[] }[];
+  /** vault_page_boxes answers no box, for this reason (#292). */
+  boxesAbsent?: string;
 }
 
 // The refusals the fake makes itself, by message key, in English as the
@@ -296,6 +312,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalStatus: string | null;
         approvalReason?: string | null;
         approvalCanRestart?: boolean;
+        refusedDeliveries?: number;
       };
       type Snapshot = {
         profiles: {
@@ -304,6 +321,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           createdAtMs: number;
           fullName?: string;
           birthDate?: string;
+          previousFullNames?: string[];
         }[];
         folders: {
           id: string;
@@ -395,7 +413,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         profileId?: string | null;
         currentPassphrase?: string;
         displayName?: string;
-        details?: { fullName?: string; birthDate?: string };
+        details?: {
+          fullName?: string;
+          birthDate?: string;
+          previousFullNames?: string[];
+        };
         confirmed?: string[];
         pickId?: string;
         replace?: boolean;
@@ -577,7 +599,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                           approval.canRestart ??
                           ["expired", "cancelled"].includes(approval.status),
                       }
-                    : link(1, "https://fake-clinic.example.com", true),
+                    : {
+                        ...link(1, "https://fake-clinic.example.com", true),
+                        ...(setup.refusedDeliveries
+                          ? { refusedDeliveries: setup.refusedDeliveries }
+                          : {}),
+                      },
                 ]
               : [];
         }
@@ -588,6 +615,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             createdAtMs: 3 + index,
             ...(person.fullName ? { fullName: person.fullName } : {}),
             ...(person.birthDate ? { birthDate: person.birthDate } : {}),
+            ...(person.previousFullNames
+              ? { previousFullNames: [...person.previousFullNames] }
+              : {}),
           });
         }
         const history: HistoryEntry[] = [
@@ -689,6 +719,93 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           .replace(/[IL]/g, "1")
           .replace(/O/g, "0");
       // A page's picture: drawn here, small; the reader scales it.
+      // A FAKE letter page (#292): a letterhead in shapes, then text lines.
+      // Sizes are fractions of the page's width, so any width draws the same
+      // page, and drawnBoxes measures what drawPage drew.
+      const LETTER_ASPECT = 11 / 8.5;
+      type Drawn = { top: number; lines: string[] };
+      const FONT = 0.021;
+      const LEFT = 0.1;
+      const LEADING = 1.55;
+      const fontAt = (width: number) =>
+        `${Math.round(width * FONT * 100) / 100}px Arial, Helvetica, sans-serif`;
+      const drawnText = (drawn: Drawn) =>
+        drawn.lines
+          .map((line) => (line.endsWith(" ") ? line : `${line}\n`))
+          .join("")
+          .replace(/\n$/, "");
+      const baseline = (drawn: Drawn, index: number, width: number) =>
+        drawn.top * width * LETTER_ASPECT + index * width * FONT * LEADING;
+      const drawPage = (drawn: Drawn, width: number) => {
+        const height = Math.round(width * LETTER_ASPECT);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = "#b9c4cf";
+        context.fillRect(
+          width * LEFT,
+          height * 0.05,
+          width * 0.12,
+          width * 0.12,
+        );
+        context.fillRect(
+          width * 0.26,
+          height * 0.06,
+          width * 0.5,
+          width * 0.018,
+        );
+        context.fillRect(
+          width * 0.26,
+          height * 0.085,
+          width * 0.34,
+          width * 0.014,
+        );
+        context.fillStyle = "#1f2328";
+        context.font = fontAt(width);
+        drawn.lines.forEach((line, index) =>
+          context.fillText(line, width * LEFT, baseline(drawn, index, width)),
+        );
+        return canvas.toDataURL("image/png");
+      };
+      const drawnBoxes = (
+        drawn: Drawn,
+        start: number,
+        end: number,
+        quoted: string,
+      ) => {
+        const text = drawnText(drawn);
+        if (start >= end || text.slice(start, end) !== quoted)
+          return { rects: [], absent: "textDiffers" };
+        const width = 1000;
+        const height = width * LETTER_ASPECT;
+        const context = document.createElement("canvas").getContext("2d")!;
+        context.font = fontAt(width);
+        const measure = (part: string) => context.measureText(part).width;
+        const rects: [number, number, number, number][] = [];
+        let at = 0;
+        drawn.lines.forEach((line, index) => {
+          const from = Math.max(start, at) - at;
+          const to = Math.min(end, at + line.length) - at;
+          at += line.length + (line.endsWith(" ") ? 0 : 1);
+          if (from >= to || !line.slice(from, to).trim()) return;
+          const lead =
+            line.slice(from, to).length -
+            line.slice(from, to).trimStart().length;
+          const tail =
+            line.slice(from, to).length - line.slice(from, to).trimEnd().length;
+          const y = baseline(drawn, index, width);
+          rects.push([
+            (width * LEFT + measure(line.slice(0, from + lead))) / width,
+            (y - width * FONT * 0.8) / height,
+            (width * LEFT + measure(line.slice(0, to - tail))) / width,
+            (y + width * FONT * 0.25) / height,
+          ]);
+        });
+        return rects.length ? { rects } : { rects: [], absent: "empty" };
+      };
       const picture = () => {
         const canvas = document.createElement("canvas");
         canvas.width = 60;
@@ -901,7 +1018,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { state: "notInstalled" };
           case "ai_models":
           case "ai_model_catalog":
+          case "ai_model_limits":
             return [];
+          // No model in use to check (D218).
+          case "ai_model_check":
+            return "skipped";
           // No add or download running when the row opens (#275).
           case "ai_model_add_active":
             return null;
@@ -1177,6 +1298,18 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               if (request.password !== password)
                 throw refuse("pdf_wrong_password", "native.error.26");
             }
+            const drawn = setup.drawnPages?.[Number(request.page)];
+            if (drawn) {
+              const width = Math.min(4096, Number(request.width));
+              return {
+                pageCount: setup.pageCount,
+                width,
+                height: Math.round(width * LETTER_ASPECT),
+                image: drawPage(drawn, width),
+                text: drawnText(drawn),
+                readableText: drawnText(drawn),
+              };
+            }
             const text = setup.pageText
               .replace("{page}", String(Number(request.page) + 1))
               .replace("{name}", record.displayName);
@@ -1193,6 +1326,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_view_cancel":
             cancelViews();
             return;
+          case "vault_page_boxes": {
+            // Where the helper would find a quote on the picture (#292):
+            // here, where drawPage drew it. No drawn page, no box.
+            recordById(request.recordId);
+            if (setup.boxesAbsent)
+              return { rects: [], absent: setup.boxesAbsent };
+            const drawn = setup.drawnPages?.[Number(request.page)];
+            if (!drawn) return { rects: [], absent: "noText" };
+            return drawnBoxes(
+              drawn,
+              Number(request.start),
+              Number(request.end),
+              String(request.quoted ?? ""),
+            );
+          }
           case "vault_export_pick":
             refuseLocked();
             return makePick("export", { recordId: request.recordId });
@@ -1336,6 +1484,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               recovery: false,
             };
           }
+          case "vault_forget_refused_deliveries": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            found.refusedDeliveries = 0;
+            return;
+          }
           case "vault_check_documents":
             state.checks += 1;
             if (state.checks > 1)
@@ -1461,6 +1617,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               person.fullName = request.details.fullName;
             if (request.details?.birthDate)
               person.birthDate = request.details.birthDate;
+            if (request.details?.previousFullNames !== undefined)
+              person.previousFullNames = [...request.details.previousFullNames];
             return;
           }
           case "vault_move_to_person": {
@@ -1678,6 +1836,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       pageCount: FAKE_PAGE_COUNT,
       portal: setup.portal ?? null,
       clinicServiceDate: setup.clinicServiceDate ?? null,
+      refusedDeliveries: setup.refusedDeliveries ?? 0,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],
@@ -1687,6 +1846,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       damagedHistory: setup.damagedHistory ?? false,
       photos: setup.photos ?? [],
       platform: setup.platform ?? "windows",
+      drawnPages: setup.drawnPages ?? null,
+      boxesAbsent: setup.boxesAbsent ?? null,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
       resetPhrase: translate("en", "native.reset.phrase"),
@@ -1725,7 +1886,7 @@ export async function fakeCalls(
     .map((call) => call.args);
 }
 
-/** The FAKE files the next "Choose files to import" picker chooses. */
+/** The FAKE files the next import picker (the library's "New") chooses. */
 export async function fakePickFiles(page: Page, names: string[]) {
   await page.evaluate(
     (names) =>

@@ -13,6 +13,7 @@ export type {
   SourceSpan,
 } from "../documentText";
 import type { DocumentText, SourceSpan } from "../documentText";
+import type { SummaryProgressEvent } from "./summaryProgress";
 
 export type AiTool = "summary" | "explain";
 
@@ -22,10 +23,24 @@ export interface ModelInfo {
   sha256: string;
 }
 
+/** How much of a document one summary reads (#301), in the model's tokens:
+ * the context the helper runs it with, and the room left for the document's
+ * text (`capacity.ts` turns it into about so many pages). */
+export interface ModelCapacity {
+  contextTokens: number;
+  documentTokens: number;
+}
+
 /** What `ai_model_status` says about the model on this computer. */
 export type ModelStatus =
   | { state: "notInstalled" }
-  | { state: "installed"; model: ModelInfo }
+  | {
+      state: "installed";
+      model: ModelInfo;
+      /** How much of a document it reads at a time; null or absent when
+       * not known, and the reader then starts as before. */
+      capacity?: ModelCapacity | null;
+    }
   /** The model cannot run here: too little memory in all, a processor
    * without the instructions it needs, or a system it does not run on yet
    * (macOS, for now). */
@@ -73,7 +88,36 @@ export interface AcceptedModel {
   licence: string;
   notices: string[];
   sourceUrl: string;
+  /** How much of a document it reads at a time (#301). Absent from a native
+   * side that predates it. */
+  capacity?: ModelCapacity;
 }
+
+/** One model's limits for the AI helper settings (`ai_model_limits`, model
+ * limits): how much of a document it reads at a time, the file's size and the
+ * free memory a start needs. `confirmed` once the helper has made its context
+ * for this model in this session; `trainedContext` and `parameters` are then
+ * what the file says, claims to quote, never promises. */
+export interface ModelLimits {
+  index: number;
+  capacity: ModelCapacity;
+  confirmed: boolean;
+  trainedContext: number | null;
+  parameters: number | null;
+  fileBytes: number;
+  neededBytes: number;
+}
+
+/** What loading the model in use once said (`ai_model_check`, D218): it runs
+ * on this computer, it cannot run here, there is not enough free memory to try
+ * it now, or its file is damaged. `skipped` says nothing: an answer was being
+ * written, or the model changed meanwhile; its first use then tells. */
+export type LoadCheck =
+  | "ready"
+  | "cannotRun"
+  | "memory"
+  | "damaged"
+  | "skipped";
 
 /** One native catalog row, keyed by its stable catalog index (#276A). */
 export interface ModelRow {
@@ -155,6 +199,8 @@ export interface LocalModel {
     document: DocumentText,
     lang: string,
     keepFor?: string,
+    /** Told how far the run is, as the helper reports it (counts only). */
+    onProgress?: (event: SummaryProgressEvent) => void,
   ): Promise<ModelSummary>;
   explain(
     term: string,
@@ -170,7 +216,7 @@ export interface LocalModel {
  * file fails its check: either way the patient is led to Preferences. */
 export class ModelNotInstalled extends Error {
   constructor() {
-    super("No AI model is installed on this computer.");
+    super("No AI model is installed on this device.");
     this.name = "ModelNotInstalled";
   }
 }

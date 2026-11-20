@@ -15,6 +15,8 @@
   --teal-line: #b9dcd7;
   --amber: #9a5b00;
   --amber-soft: #fdf1de;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #1f6b3a;
   --green-soft: #e6f4ea;
   --red: #a4232b;
@@ -33,7 +35,6 @@
   --auth-end: #e8efed;
   --warning-line: #eccf9d;
   --warning-ink: #6f4300;
-  --window-dot: #c8d5d2;
   --green-line: #bfe0ca;
   --on-accent: #fff;
   --danger-line: #e6bcbc;
@@ -80,6 +81,8 @@
   --teal-line: #3c786c;
   --amber: #f1c47c;
   --amber-soft: #3b2c16;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #8cd9a6;
   --green-soft: #183c26;
   --red: #ffadb2;
@@ -95,7 +98,6 @@
   --auth-end: #1a3028;
   --warning-line: #906824;
   --warning-ink: #f3d9aa;
-  --window-dot: #71877e;
   --green-line: #4b805c;
   --on-accent: #082e26;
   --danger-line: #996169;
@@ -141,6 +143,8 @@
   --teal-line: #ffff00;
   --amber: #ffff00;
   --amber-soft: #000;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --warning-ink: #fff;
   --warning-line: #ffff00;
   --green: #aaffaa;
@@ -168,7 +172,6 @@
   --auth-start: #000;
   --auth-middle: #000;
   --auth-end: #000;
-  --window-dot: #fff;
   --shadow: none;
   --shadow-sm: none;
   --thumb-shadow: none;
@@ -198,6 +201,7 @@
      hides what overflows it, and cut off the Create button. */
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
+  align-content: center;
   padding: 24px;
   background: linear-gradient(
     145deg,
@@ -487,17 +491,6 @@ p {
   padding: 9px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--canvas-2);
-}
-.window-dots {
-  display: flex;
-  gap: 6px;
-}
-.window-dots i {
-  display: block;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--window-dot);
 }
 .window-title {
   color: var(--ink-faint);
@@ -861,6 +854,7 @@ p {
   width: min(1100px, 100%);
   max-width: none;
   height: 92vh;
+  container: native-reader / inline-size;
 }
 /* #135: the status and source line, and the service date, run under the title and Close across
    the whole header, so that Close does not squeeze the status into a narrow column. Two classes,
@@ -877,9 +871,14 @@ p {
 .native-reader-head > div > * {
   grid-column: 1 / -1;
 }
-.native-reader-head h2 {
+/* #311: a long document name wraps instead of being cut short, so it never pushes Close off the
+   header's end edge. Two classes, so that this wins over .dialog-head h2's single cut line, which
+   comes later. */
+.dialog-head.native-reader-head h2 {
   grid-column: 1;
   grid-row: 1;
+  white-space: normal;
+  overflow: visible;
   overflow-wrap: anywhere;
 }
 .native-reader-head-actions {
@@ -900,11 +899,33 @@ p {
     grid-template-columns: minmax(0, 1fr);
     padding-inline: 12px;
   }
+  /* #312: on a phone the reader's header is a wrapping row. A short title keeps Close (and the
+     reading-aid button) on its own line, at the header's end edge (the right, or the left in a
+     right-to-left language); a title too long for that line keeps the whole width and wraps, and
+     the actions move to their own row under it, still at the end edge with Close last (#311). The
+     status and source line and the date stay full rows after both. Only the reader's header has
+     this class: the anonymize preview shares the other header classes but keeps its layout. */
+  .dialog-head.native-reader-head.native-reader-head-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0 12px;
+  }
+  .native-reader-head-flow > div > * {
+    flex: 1 0 100%;
+    order: 1;
+  }
+  /* The title asks for its whole width first, so the actions join its line only when it fits. */
+  .dialog-head.native-reader-head-flow h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+    order: 0;
+    margin-block-end: 6px;
+  }
   .native-reader-head-actions {
-    grid-column: 1;
-    grid-row: 2;
-    justify-content: flex-start;
-    margin-block: 6px;
+    justify-content: flex-end;
+    margin-block: 0 6px;
+    margin-inline-start: auto;
   }
 }
 .native-reader-head p {
@@ -920,23 +941,116 @@ p {
   padding: 8px 20px;
   border-bottom: 1px solid var(--line);
 }
+/* Digits of one width: the count keeps its width from page to page until the number gains a digit. */
 .native-reader-where {
   min-width: 7em;
   text-align: center;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .native-reader-zoom {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+}
+/* D144: the page buttons in a bar at the reader's foot. When large text makes the reader scroll,
+   the bar stays in view at its bottom edge. One row, centred; a webview without container
+   queries wraps the row instead of using the grid below. */
+.native-reader-pages {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+/* aria-disabled keeps the focus (DocumentReader.tsx); hovering does not make it look usable. */
+.native-reader .button[aria-disabled="true"],
+.native-reader .button[aria-disabled="true"]:hover {
+  cursor: not-allowed;
+  background: var(--disabled-bg);
+}
+/* A narrow reader (a phone, a window about 560px wide, or large text; Ben, 10 Nov): the reader's
+   buttons in centred rows on one centre line, each at least 44px tall. In em, so that it follows
+   the text size; measured on the reader, which stops growing at 1100px, not on the window. */
+@container native-reader (max-width: 52em) {
+  /* The page bar: the count on top, then Previous | Next, the two used most, then First | Last.
+     The order read out and tabbed through stays First, Previous, the count, Next, Last. */
+  .native-reader-pages {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 11em));
+    justify-content: center;
+    grid-template-areas:
+      "where where"
+      "previous next"
+      "first last";
+    padding-inline: 12px;
+  }
+  /* The size buttons, then the AI helper's: centred rows of buttons at their own width. A row with
+     no room for its buttons wraps. */
+  .native-reader-controls {
+    display: grid;
+    justify-items: center;
+    padding-inline: 12px;
+  }
+  .native-reader-controls .native-reader-zoom,
+  .native-reader-controls .native-reader-ai-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .native-reader-controls .button,
+  .native-reader-pages .button {
+    min-height: 44px;
+    padding-inline: 8px;
+    /* A word too long for its button breaks with a hyphen where the system can, and is never
+       cut. */
+    hyphens: auto;
+    overflow-wrap: anywhere;
+  }
+  .native-reader-pages .button {
+    width: 100%;
+  }
+  /* The percentage keeps one width from 50% to 400%, so the buttons beside it never move. */
+  .native-reader-zoom > span {
+    align-self: center;
+    min-width: 4ch;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .native-reader-first {
+    grid-area: first;
+  }
+  .native-reader-previous {
+    grid-area: previous;
+  }
+  .native-reader-pages .native-reader-where {
+    grid-area: where;
+    min-width: 0;
+  }
+  .native-reader-next {
+    grid-area: next;
+  }
+  .native-reader-last {
+    grid-area: last;
+  }
+  .native-reader-pages.one-page {
+    display: flex;
+  }
 }
 /* The gutter is kept, so that a page fitted to the width does not scroll sideways once a tall page
-   brings a classic scrollbar. */
+   brings a classic scrollbar. D144: the page keeps room to be read; when the text is large for
+   the window, the reader scrolls instead, with the page bar kept at its foot. */
 .native-reader-page {
   flex: 1;
-  min-height: 0;
+  min-height: min(16em, 40vh);
   overflow: auto;
   scrollbar-gutter: stable;
   padding: 12px;
@@ -950,9 +1064,11 @@ p {
   box-shadow: var(--shadow-sm);
   background: var(--paper);
 }
+/* "Text on this page" keeps its height in a reader too short for everything (large text on a
+   phone), and the reader scrolls instead. Its text scrolls in a box of its own (below), so the
+   details box does not shrink by itself either; flex-shrink: 0 keeps it that way. */
 .native-reader-text {
-  max-height: 30vh;
-  overflow: auto;
+  flex-shrink: 0;
   padding: 8px 20px 14px;
   border-top: 1px solid var(--line);
 }
@@ -960,7 +1076,10 @@ p {
   cursor: pointer;
   font-weight: 700;
 }
+/* The text scrolls in its own box, which takes the focus (DocumentReader.tsx). */
 .native-reader-text div {
+  max-height: 30vh;
+  overflow: auto;
   margin-top: 6px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -970,11 +1089,67 @@ p {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* The marked words: outlined too, so not by colour alone (#292). */
 .native-reader-text mark {
   background: var(--amber-soft);
   color: var(--ink);
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
+/* The page picture, and the quoted words' boxes over it (#292). A box is a
+   fraction of the picture, so it stays on its words at every zoom. The picture
+   is always white paper, so every theme gives the boxes the same colours: an
+   outline with at least 3:1 against white paper and black ink, and a light
+   fill the ink shows through. Forced colours use Highlight. */
+.native-reader-picture {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+}
+/* The wrapper takes the picture's own size: the boxes cover it exactly. */
+.native-reader-picture img {
+  display: block;
+}
+.native-reader-boxes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.native-reader-boxes > span {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 3px solid var(--page-mark-line);
+  outline-offset: 1px;
+  border-radius: 2px;
+  background: var(--page-mark-fill);
+  mix-blend-mode: multiply;
+}
+@media (forced-colors: active) {
+  .native-reader-boxes > span {
+    mix-blend-mode: normal;
+  }
+}
+/* While Show in document marks a quote, the text and the AI panel give the
+   picture room, so that a short or narrow window keeps the words in view in
+   both places (#292). */
+/* The text box scrolls in its own region; capping the details around it only
+   let the text run over the summary below (#292). */
+.native-reader-highlighting .native-reader-text div {
+  max-height: max(5em, 16vh);
+}
+.native-reader-highlighting .native-reader-ai {
+  max-height: 25vh;
+}
+/* The summary panel is never squeezed away. In a column that is too short
+   for everything it used to shrink to its padding (13px at 560x800), which
+   hid the summary and the button that unfolds it. Now it keeps its own
+   height (up to the cap, with its own scroll), and what gives way is, in
+   this order: the page picture, down to its own minimum above; then the
+   reader itself scrolls, with the page bar kept at its foot (D144), as it
+   does for "Text on this page". */
 .native-reader-ai {
+  flex-shrink: 0;
   max-height: 40vh;
   overflow: auto;
   padding: 8px 20px 14px;
@@ -988,9 +1163,32 @@ p {
   max-width: 70ch;
   margin: 4px 0;
 }
+/* On a narrow or short window (browser zoom included), while a quote is
+   shown, the summary folds to one line with a button that unfolds it, so the
+   page picture keeps room (#292). */
+.native-reader-ai.native-reader-ai-folded {
+  padding-block: 6px;
+}
+.native-reader-ai-fold {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.native-reader-ai .native-reader-ai-fold p {
+  flex: 1 1 14em;
+  margin: 0;
+}
 .native-reader-ai .native-reader-ai-wait {
   color: var(--ink-soft);
   font-size: 0.875rem;
+}
+/* #301: the choice before summarizing a document too long to read at once. */
+.native-reader-ai-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
 }
 .native-reader-ai-explain {
   display: grid;
@@ -1639,6 +1837,11 @@ p {
 .audit-history-entry dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+/* Beside an error or a damaged, empty history the status line is empty: no room. */
+.audit-history .status-line:empty {
+  min-height: 0;
+  margin-bottom: 0;
 }
 .old-backups-guide {
   margin-top: 10px;
@@ -2390,6 +2593,7 @@ p {
     .button,
     .side-nav button,
     .unlock-pill,
+    .native-lock-button,
     .breadcrumb,
     .main-head p,
     .name-copy strong,
@@ -2418,6 +2622,7 @@ p {
     .button,
     .side-nav button,
     .unlock-pill,
+    .native-lock-button,
     .native-rename-button,
     .bulkbar button,
     .native-dialog-actions select,
@@ -2606,8 +2811,16 @@ p {
     flex-wrap: wrap;
     row-gap: 6px;
   }
-  .native-vault-page .titlebar .native-lock-button {
+  .native-vault-page .titlebar .native-lock-pill {
     margin-left: 0;
+    /* Issue 149: the state and the button are two parts of the pill; on a narrow
+       window they wrap inside it, as the one button's words used to. */
+    flex-wrap: wrap;
+    row-gap: 2px;
+    max-width: 100%;
+  }
+  .native-vault-page .titlebar .native-lock-button {
+    text-align: start;
   }
 }
 
@@ -2669,6 +2882,22 @@ p {
 .native-lock-button {
   cursor: pointer;
   font: inherit;
+}
+/* #149: the state is text beside the button inside the pill; the button keeps
+   the pill's look, but only the button's words ("Lock now") are the click
+   target: the icon and the state text are not. The pill takes the title
+   bar's font, as it did when the pill was the button (font: inherit below). */
+.unlock-pill.native-lock-pill {
+  font: inherit;
+}
+.unlock-pill .native-lock-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .native-lock-button:disabled {
   cursor: default;
@@ -3691,6 +3920,8 @@ button:disabled,
     --teal-line: ButtonBorder;
     --amber: CanvasText;
     --amber-soft: Canvas;
+    --page-mark-line: Highlight;
+    --page-mark-fill: transparent;
     --warning-ink: CanvasText;
     --warning-line: ButtonBorder;
     --green: CanvasText;
@@ -3867,6 +4098,26 @@ button:disabled,
   border: 1px solid var(--line);
   border-radius: 0.5rem;
 }
+/* #124 review: "Clinic documents" is a Security section like the others, so
+   its heading has their size (.setting-row h2), and a clinic's name in its
+   card is no larger than that heading. */
+.portal-documents > h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.portal-link h3 {
+  margin: 0 0 0.5rem;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+/* #143: the "Try again" button keeps the card's usual gap below the line. */
+.portal-refused .button {
+  margin-block-start: 0.5rem;
+}
 .portal-documents label {
   display: grid;
   gap: 0.35rem;
@@ -3998,9 +4249,15 @@ button:disabled,
    form, box or buttons that follow: one rule for every such section (Clinic
    documents, and the AI helper in Security and on its own page). After the
    rules above, so the gap also replaces the inline form's pull-up margin. */
-:where(h1, h2, h3):has(+ .section-intro) { margin-block-end: 0; }
-.section-intro { margin-block-start: 4px; }
-.section-intro + * { margin-block-start: 14px; }
+:where(h1, h2, h3):has(+ .section-intro) {
+  margin-block-end: 0;
+}
+.section-intro {
+  margin-block-start: 4px;
+}
+.section-intro + * {
+  margin-block-start: 14px;
+}
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact {
   display: grid;
@@ -4185,6 +4442,62 @@ button:disabled,
   flex: 1 1 16rem;
   margin: 0;
 }
+/* A birth date as year, month and day: the year first, typed, and the month
+   from a list, in one row that wraps on a narrow screen (a phone's calendar
+   makes a date decades back slow to reach). */
+.native-birth-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.native-birth-date legend {
+  padding: 0;
+  margin-bottom: 5px;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+.native-birth-date label {
+  min-width: 0;
+}
+/* Year, month and day share one row on a narrow phone (about 254 px): the
+ * year and day are as wide as their digits need, the month takes the rest.
+ * At a larger text size the three no longer fit and the row wraps there. */
+.native-birth-year {
+  flex: 0 0 4.75rem;
+}
+.native-birth-month {
+  flex: 1 1 5rem;
+  min-width: 0;
+}
+.native-birth-day {
+  flex: 0 0 3.5rem;
+}
+.native-birth-date select,
+.native-birth-date input {
+  width: 100%;
+  min-width: 0;
+}
+.native-birth-date select {
+  min-height: 44px;
+  padding: 8px 3px 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.native-birth-date select:focus {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+}
+.native-birth-date:disabled {
+  opacity: 0.6;
+}
 .native-person-details-setup {
   display: grid;
   gap: 10px;
@@ -4218,4 +4531,65 @@ button:disabled,
 .native-person-details-setup label,
 .native-person-details-setup input {
   min-width: 0;
+}
+/* The polite line for a missing name or date is on the page from the start, so that its text is
+   read out when it appears (#149). Empty, it must not add a row and a gap to the grid: it leaves
+   the flow instead of using display: none, which would take it out of the accessibility tree
+   and with it the live region. */
+.native-person-details-setup p[aria-live]:empty,
+.native-rename-fields p[aria-live]:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+}
+/* Previous full names in Edit details: each name and its Remove button stay
+   in one column at any width and text size. */
+.previous-full-names,
+.previous-full-names > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.previous-full-names input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.previous-full-names button {
+  white-space: normal;
+  min-height: 44px;
+}
+
+/* The way to another language from the unlock and set-up screens: a globe and
+ * the current language's own name, in the top corner above the card, so the
+ * passphrase field does not move when a language is chosen. */
+.language-corner {
+  display: flex;
+  justify-content: flex-end;
+  /* As wide as the card below it, so the button sits over the card's right
+     corner. */
+  width: min(100%, 470px);
+  margin-bottom: 8px;
+}
+.language-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.language-button .icon {
+  flex: none;
+}
+.native-language-dialog .language-compact {
+  margin: 0;
 }

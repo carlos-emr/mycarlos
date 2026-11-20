@@ -49,7 +49,7 @@ test("first setup works from the keyboard alone", async ({ page }) => {
   await page.getByRole("button", { name: "Continue" }).focus();
   await page.keyboard.press("Enter");
   await expect(
-    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    page.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await walk(page, "create the vault");
 
@@ -132,6 +132,9 @@ test("a vault without a recovery key offers one, and Escape puts it off", async 
 test("the library works from the keyboard alone: open, move and search", async ({
   page,
 }) => {
+  // The longest journey here: with the screen-reader pass's checks at each
+  // stop (#149) it runs close to the default 90 s on a busy machine.
+  test.slow();
   await fakeVault(page, "unlocked");
   await recordAnnouncements(page);
   await page.goto("/");
@@ -159,7 +162,7 @@ test("the library works from the keyboard alone: open, move and search", async (
   await page.keyboard.press("Enter");
   const letterDetails = page.getByRole("dialog", { name: "FAKE Letter.pdf" });
   await letterDetails
-    .getByRole("button", { name: "Save a copy to this computer" })
+    .getByRole("button", { name: "Save a copy to this device" })
     .focus();
   await page.keyboard.press("Enter");
   const confirm = page.getByRole("alertdialog", {
@@ -207,9 +210,12 @@ test("the library works from the keyboard alone: open, move and search", async (
     })
     .focus();
   await page.keyboard.press("Enter");
+  // Opening a place moves focus to its heading (#121), a moment after the
+  // place is drawn: wait for that before the next key, or the key lands on
+  // the heading instead of the control the test focused.
   await expect(
     page.getByRole("heading", { name: "FAKE Results", level: 1 }),
-  ).toBeVisible();
+  ).toBeFocused();
   await page
     .getByRole("button", {
       name: translate("en", "library.select", { name: "FAKE Bloodwork.pdf" }),
@@ -242,7 +248,7 @@ test("the library works from the keyboard alone: open, move and search", async (
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "My records", level: 1 }),
-  ).toBeVisible();
+  ).toBeFocused();
   await page.getByText("Move a folder with the keyboard").focus();
   await page.keyboard.press("Enter");
   await walk(page, "library, folder move shown");
@@ -292,14 +298,14 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
   await after("unlocking", heading);
 
-  await page.getByRole("button", { name: "Choose files to import" }).focus();
+  await page.getByRole("button", { name: "New", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
   await after(
     "an import",
-    page.getByRole("button", { name: "Choose files to import" }),
+    page.getByRole("button", { name: "New", exact: true }),
   );
 
   await page

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
+import { fillBirthDate } from "./support/birthDate";
 import {
   FAKE_IDS,
   fakeUuid,
@@ -63,9 +64,7 @@ test("a person is added with their details in Security, their details are edited
   await addProfile
     .getByLabel(en("personDetails.fullName"), { exact: true })
     .fill(CHILD_FULL_NAME);
-  await addProfile
-    .getByLabel(en("personDetails.birthDate"), { exact: true })
-    .fill(CHILD_BIRTH_DATE);
+  await fillBirthDate(addProfile, CHILD_BIRTH_DATE);
   await addProfile
     .getByRole("button", { name: en("security.profiles.add"), exact: true })
     .click();
@@ -122,7 +121,7 @@ test("a person is added with their details in Security, their details are edited
   ).toEqual({
     request: {
       profileId: fakeUuid(202),
-      details: { fullName: CHILD_FULL_NAME },
+      details: { fullName: CHILD_FULL_NAME, previousFullNames: [] },
       today: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     },
   });

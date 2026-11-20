@@ -1698,28 +1698,29 @@ export function VaultLibrary({
                 recoverySetup,
             )}
           >
-            <span className="window-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
             <span className="window-title">myCarlos</span>
-            <button
-              className="unlock-pill native-lock-button"
-              type="button"
-              onClick={() => void lockAndConceal()}
-            >
+            {/* The pill shows the vault's state, then the button. The button
+                shows exactly the words it is named by, "Lock now", so voice
+                control's "click Lock now" works in every language and the
+                visible label is the whole name (WCAG 2.5.3); the state is
+                plain text beside it, not part of the button (#121, #149). */}
+            <span className="unlock-pill native-lock-pill">
               <Icon name="lock-open" />
-              {/* Named by its words "Lock now", so voice control's "click
-                  Lock now" works in every language (WCAG 2.5.3); the state
-                  before them is not read out with the button (#121). */}
-              <span>
-                <span aria-hidden="true">
-                  {translateNow("library.lock.unlocked")} ·{" "}
-                </span>
-                {translateNow("security.lockNow")}
+              <span className="native-lock-state">
+                {translateNow("library.lock.unlocked")}
+                {/* The trailing space keeps the pill's text "Unlocked · Lock
+                    now" for anything that reads it whole; the flex gap
+                    draws the visible space. */}
+                <span aria-hidden="true">{" · "}</span>
               </span>
-            </button>
+              <button
+                className="native-lock-button"
+                type="button"
+                onClick={() => void lockAndConceal()}
+              >
+                {translateNow("security.lockNow")}
+              </button>
+            </span>
           </header>
 
           {/* On narrow windows, where the sidebar is hidden: a row of
@@ -2069,9 +2070,10 @@ export function VaultLibrary({
                         type="button"
                         disabled={busy || readOnly || !profileId}
                         onClick={() => void importFiles()}
-                        aria-label={translateNow(
-                          "interface.VaultApp.chooseFilesToImport",
-                        )}
+                        // The name is the visible word ("New"); what it does
+                        // is the description, so voice control still finds it
+                        // by what it shows (WCAG 2.5.3).
+                        aria-describedby="native-import-hint"
                       >
                         <Icon name="plus" />
                         <span>
@@ -2080,6 +2082,9 @@ export function VaultLibrary({
                             : translateNow("interface.VaultLibrary.new")}
                         </span>
                       </button>
+                      <span id="native-import-hint" hidden>
+                        {translateNow("interface.VaultApp.chooseFilesToImport")}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -2863,6 +2868,12 @@ export function VaultLibrary({
                   })
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
+              pageBoxes={
+                computer && bridge.pageBoxes
+                  ? (page, span, password) =>
+                      bridge.pageBoxes!(readerRecord.id, page, span, password)
+                  : undefined
+              }
               onClose={() => setReaderRecordId(null)}
               ai={
                 computer

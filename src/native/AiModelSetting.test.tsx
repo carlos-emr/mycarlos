@@ -4,8 +4,13 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
 import { humanText, visibleText } from "../test/humanText";
-import type { AcceptedModel, ModelRow, ModelStatus } from "../ai/types";
-import { AiModelSetting } from "./AiModelSetting";
+import type {
+  AcceptedModel,
+  LoadCheck,
+  ModelRow,
+  ModelStatus,
+} from "../ai/types";
+import { AiModelSetting, forgetLoadChecks } from "./AiModelSetting";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -192,6 +197,124 @@ describe("Add a model file", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["zh-CN", "zh-TW"] as const)(
+    "puts no space between the reads line and its estimate note in %s",
+    async (locale) => {
+      setLocaleOverride(locale);
+      answer({
+        ai_model_catalog: [
+          { ...fake, capacity: { contextTokens: 8192, documentTokens: 6510 } },
+        ],
+      });
+      render(
+        <AiModelSetting
+          status={{ state: "notInstalled" }}
+          onStatus={vi.fn()}
+        />,
+      );
+      const line = await screen.findByText(/在下次使用此模型之前/);
+      expect(line.textContent).toMatch(/。在下次使用此模型之前/);
+    },
+  );
+
+  it("says how much of a document each model reads at a time, pages first (#301)", async () => {
+    answer({
+      ai_model_catalog: [
+        { ...fake, capacity: { contextTokens: 8192, documentTokens: 6510 } },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    // Until the model has started in this session, the catalogue's figure: an
+    // estimate, and said to be one (model limits).
+    const reads = humanText(
+      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until you next use this model.",
+    );
+    const line = await screen.findByText(reads);
+    expect(line).toBeVisible();
+    // Choosing a model hears it too: after the name, size and licence, before
+    // the row's state.
+    const describedBy = screen
+      .getByRole("radio", { name: humanText("FAKE model") })
+      .getAttribute("aria-describedby")
+      ?.split(" ");
+    expect(describedBy).toHaveLength(3);
+    expect(describedBy?.[1]).toBe(line.id);
+  });
+
+  it("says what the model reads in the context the helper made, once it has run here (model limits)", async () => {
+    const capacity = { contextTokens: 8192, documentTokens: 6510 };
+    answer({
+      ai_model_catalog: [{ ...fake, capacity }],
+      // The helper made a smaller context for it: 4,096 tokens, 2,414 for the
+      // document, about 7,242 bytes, so 2 pages and 7,000 characters.
+      ai_model_limits: [
+        {
+          index: 0,
+          capacity: { contextTokens: 4096, documentTokens: 2414 },
+          confirmed: true,
+          trainedContext: 262144,
+          parameters: 4330000000,
+          fileBytes: fake.sizeBytes,
+          neededBytes: 7000000000,
+        },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Reads about 2 pages at a time (about 7,000 characters of English text). Less for tables and some languages.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/An estimate until/)).toBeNull();
+    // No memory figure, and none of the file's claims, are shown.
+    expect(screen.queryByText(/7,000,000,000|6\.5 GB|262,144|4\.3/)).toBeNull();
+  });
+
+  it("keeps saying it is an estimate while the limits are not confirmed", async () => {
+    const capacity = { contextTokens: 8192, documentTokens: 6510 };
+    answer({
+      ai_model_catalog: [{ ...fake, capacity }],
+      ai_model_limits: [
+        {
+          index: 0,
+          capacity,
+          confirmed: false,
+          trainedContext: null,
+          parameters: null,
+          fileBytes: fake.sizeBytes,
+          neededBytes: 7000000000,
+        },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages. An estimate until you next use this model.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("says nothing of a model's reading capacity the native side did not give", async () => {
+    answer({ ai_model_catalog: [fake] });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await screen.findByText(
+      humanText("FAKE model, 2,500 MB. Licence: Apache-2.0."),
+    );
+    expect(screen.queryByText(/Reads about/)).toBeNull();
+  });
+
   it("adds a file, reports the new status and says so", async () => {
     answer({
       ai_model_catalog: [fake],
@@ -260,14 +383,14 @@ describe("Add a model file", () => {
     ],
     [
       "noDisk",
-      "There is not enough free space on this computer. The model needs about 4 GB.",
+      "There is not enough free space on this device. The model needs about 4 GB.",
     ],
     [
       "incomplete",
       "The file could not be read completely. Check that it finished downloading, then try again.",
     ],
     ["busy", "The AI helper is working. Try again when it has finished."],
-    ["storage", "The model could not be saved on this computer."],
+    ["storage", "The model could not be saved on this device."],
   ])("explains a refusal: %s", async (outcome, text) => {
     answer({
       ai_model_catalog: [fake],
@@ -1044,13 +1167,10 @@ describe("A computer that cannot run the helper", () => {
   it.each([
     [
       "ram",
-      "This computer does not have enough memory for the AI helper (it needs about 8 GB).",
+      "This device does not have enough memory for the AI helper (it needs about 8 GB).",
     ],
-    ["cpu", "This computer’s processor is not supported by the AI helper."],
-    [
-      "platform",
-      "The AI helper is not available on this kind of computer yet.",
-    ],
+    ["cpu", "This device’s processor is not supported by the AI helper."],
+    ["platform", "The AI helper is not available on this kind of device yet."],
   ] as const)("says why (%s) and offers nothing", async (reason, text) => {
     answer({ ai_model_catalog: [fake] });
     render(
@@ -1820,5 +1940,304 @@ describe("Catalog copy focus and global picker ownership", () => {
     await screen.findByRole("button", { name: "Remove FAKE model" });
     expect(onStatus).toHaveBeenCalledWith(installed);
     expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+});
+
+describe("Loading the chosen model once (D218)", () => {
+  const first: AcceptedModel = {
+    ...fake,
+    name: "FAKE first",
+    sha256: "2".repeat(64),
+  };
+  const other: AcceptedModel = {
+    ...fake,
+    name: "FAKE other",
+    fileName: "FAKE-other.gguf",
+    sha256: "3".repeat(64),
+    sourceUrl: "https://example.invalid/FAKE-other.gguf",
+  };
+  const firstInUse: ModelStatus = {
+    state: "installed",
+    model: { name: first.name, sha256: first.sha256 },
+  };
+  const usedOther: ModelStatus = {
+    state: "installed",
+    model: { name: other.name, sha256: other.sha256 },
+  };
+  const rows = (
+    otherState: ModelRow["state"] = "installed",
+    otherInUse = false,
+  ): ModelRow[] => [
+    {
+      index: 0,
+      model: first,
+      state: "installed",
+      inUse: !otherInUse,
+      addedByYou: false,
+    },
+    {
+      index: 1,
+      model: other,
+      state: otherState,
+      inUse: otherInUse,
+      addedByYou: false,
+    },
+  ];
+  const limitsFor = (confirmed: boolean) =>
+    [first, other].map((model, index) => ({
+      index,
+      capacity: { contextTokens: 8192, documentTokens: 6510 },
+      confirmed,
+      trainedContext: null,
+      parameters: null,
+      fileBytes: model.sizeBytes,
+      neededBytes: 0,
+    }));
+  const checks = () =>
+    native.invoke.mock.calls.filter(
+      ([command]) => command === "ai_model_check",
+    );
+  const row = (name: string) => screen.getByRole("region", { name });
+  const pickOther = async () => {
+    render(<AiModelSetting status={firstInUse} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("radio", { name: other.name }),
+    );
+  };
+  const ready = "This model started on this computer.";
+  const checking = "Checking that this model runs on this computer…";
+  // What a check said is kept for the app session: each case starts with none.
+  beforeEach(() => forgetLoadChecks());
+
+  it("loads a chosen model once, says when this computer cannot run it, and Try again checks again", async () => {
+    const outcomes: LoadCheck[] = ["cannotRun", "ready"];
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: () => Promise.resolve(outcomes.shift()),
+    });
+    await pickOther();
+    const alert = await within(row(other.name)).findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "This computer could not run this model. Try again later, or choose another model.",
+    );
+    expect(checks()).toEqual([["ai_model_check", { request: { index: 1 } }]]);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
+    expect(screen.queryByText(checking)).toBeNull();
+    expect(screen.queryByText(ready)).toBeNull();
+    expect(within(row(first.name)).queryByRole("alert")).toBeNull();
+    await userEvent.click(
+      within(row(other.name)).getByRole("button", { name: "Try again" }),
+    );
+    await waitFor(() => expect(checks()).toHaveLength(2));
+    await waitFor(() =>
+      expect(within(row(other.name)).queryByRole("alert")).toBeNull(),
+    );
+    expect(await screen.findByText(ready)).toHaveAttribute(
+      "aria-live",
+      "polite",
+    );
+  });
+
+  it("says it is checking after the change, keeps Remove for later, then says the model runs and confirms what it reads", async () => {
+    let finish!: (outcome: LoadCheck) => void;
+    let limitsAsked = 0;
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: () =>
+        new Promise<LoadCheck>((resolve) => {
+          finish = resolve;
+        }),
+      ai_model_limits: () => {
+        limitsAsked += 1;
+        return Promise.resolve([]);
+      },
+    });
+    await pickOther();
+    // In a live line of its own, after the change, never in its place.
+    expect(await screen.findByText(checking)).toHaveAttribute(
+      "aria-live",
+      "polite",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
+    // Not removed while it is being checked.
+    expect(
+      within(row(other.name)).getByRole("button", {
+        name: `Remove ${other.name}`,
+      }),
+    ).toHaveAttribute("aria-disabled", "true");
+    const before = limitsAsked;
+    await act(async () => finish("ready"));
+    await waitFor(() => expect(screen.queryByText(checking)).toBeNull());
+    // Said for screen readers too, in the same live line.
+    expect(screen.getByText(ready)).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Model in use changed",
+    );
+    // Its card now confirms what it reads: the limits are asked again.
+    await waitFor(() => expect(limitsAsked).toBeGreaterThan(before));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      within(row(other.name)).getByRole("button", {
+        name: `Remove ${other.name}`,
+      }),
+    ).toHaveAttribute("aria-disabled", "false");
+    expect(checks()).toHaveLength(1);
+  });
+
+  it("says there is not enough free memory now, with no figure, and Try again checks again", async () => {
+    const outcomes: LoadCheck[] = ["memory", "ready"];
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: () => Promise.resolve(outcomes.shift()),
+    });
+    await pickOther();
+    const alert = await within(row(other.name)).findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "There isn't enough free memory to try this model now. Close some other programs, then try again.",
+    );
+    expect(alert.textContent).not.toMatch(/\d/);
+    await userEvent.click(
+      within(row(other.name)).getByRole("button", { name: "Try again" }),
+    );
+    await waitFor(() => expect(checks()).toHaveLength(2));
+    await waitFor(() =>
+      expect(within(row(other.name)).queryByRole("alert")).toBeNull(),
+    );
+    expect(
+      within(row(other.name)).queryByRole("button", { name: "Try again" }),
+    ).toBeNull();
+  });
+
+  it("drops a note once the model's limits are confirmed later, as it has started since", async () => {
+    let confirmed = false;
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: "memory",
+      ai_model_limits: () => Promise.resolve(limitsFor(confirmed)),
+    });
+    await pickOther();
+    await within(row(other.name)).findByRole("alert");
+    // A summary has since started it: a later reading confirms its limits.
+    confirmed = true;
+    await act(async () => {
+      // The settings' own signal to read the rows again (MUTATION_SETTLED).
+      window.dispatchEvent(new Event("mycarlos-model-mutation-settled"));
+    });
+    await waitFor(() =>
+      expect(within(row(other.name)).queryByRole("alert")).toBeNull(),
+    );
+    expect(checks()).toHaveLength(1);
+  });
+
+  it("shows a damaged file as damaged, as before, with no note of its own", async () => {
+    let used = false;
+    let damaged = false;
+    answer({
+      ai_models: () =>
+        Promise.resolve(
+          rows(damaged ? "damaged" : "installed", used).map((entry) => ({
+            ...entry,
+          })),
+        ),
+      ai_model_status: () =>
+        Promise.resolve(
+          damaged ? { state: "damaged" } : used ? usedOther : firstInUse,
+        ),
+      ai_model_use: () => {
+        used = true;
+        return Promise.resolve(usedOther);
+      },
+      ai_model_check: () => {
+        damaged = true;
+        return Promise.resolve("damaged");
+      },
+    });
+    await pickOther();
+    await waitFor(() =>
+      expect(row(other.name)).toHaveTextContent(
+        "The model file is damaged or has changed. Remove it, then add it again.",
+      ),
+    );
+    expect(checks()).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("says nothing when the check was skipped, as an answer was being written", async () => {
+    answer({
+      ai_models: rows(),
+      ai_model_use: usedOther,
+      ai_model_check: "skipped",
+    });
+    await pickOther();
+    await waitFor(() => expect(checks()).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByText(checking)).toBeNull());
+    expect(screen.queryByText(ready)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("checks a download that becomes the model in use, and not one beside the model in use", async () => {
+    answer(
+      {
+        ai_model_download: { outcome: "added", status: installed },
+        ai_model_check: "ready",
+      },
+      { state: "notInstalled" },
+    );
+    const { unmount } = render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Download FAKE model" }),
+    );
+    await waitFor(() =>
+      expect(checks()).toEqual([["ai_model_check", { request: { index: 0 } }]]),
+    );
+    unmount();
+
+    native.invoke.mockReset();
+    answer({
+      ai_models: rows("notDownloaded"),
+      ai_model_download: { outcome: "added", status: firstInUse },
+      ai_model_check: "ready",
+    });
+    render(<AiModelSetting status={firstInUse} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Download FAKE other" }),
+    );
+    await waitFor(() => expect(row(other.name)).toHaveTextContent("Installed"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Model added"),
+    );
+    expect(checks()).toEqual([]);
+  });
+
+  it("checks a download another view started once it ends here and becomes the model in use", async () => {
+    answer({ ai_model_check: "ready" }, { state: "notInstalled" });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await screen.findByRole("button", { name: "Download FAKE model" });
+    await waitFor(() =>
+      expect(native.listeners["ai-model-add-ended"]).toBeDefined(),
+    );
+    // Its end reaches this view, which did not start it.
+    await act(async () =>
+      native.listeners["ai-model-add-ended"]({
+        payload: { outcome: "added", status: installed },
+      }),
+    );
+    await waitFor(() =>
+      expect(checks()).toEqual([["ai_model_check", { request: { index: 0 } }]]),
+    );
   });
 });

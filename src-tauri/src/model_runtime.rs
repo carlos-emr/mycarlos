@@ -8,15 +8,16 @@
 //! their sizes, the term and its sentence, and the language.
 
 use crate::local_runner::{
-    self, check_budget, AnswerLimit, AnswerWatch, Budget, MemoryProbe, ModelInfo, Page, Runner,
-    RunnerConfig, RunnerError, Sentence, SummaryRequest,
+    self, check_budget, AnswerLimit, AnswerWatch, Budget, CheckStop, MemoryProbe, ModelInfo, Page,
+    Progress, Runner, RunnerConfig, RunnerError, RunnerStatus, Sentence, SummaryRequest,
 };
 use crate::model_helper;
 use crate::vault::{AiResultInput, AiTool};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// At most this many pages, each at most this many bytes, all at most this many: the reader's
 /// own caps (`documentText.ts`, `pdf_view`).
@@ -29,7 +30,7 @@ pub(crate) const MAX_CONTEXT_CHARS: usize = 2_000;
 /// The longest wait for the helper's hello once started: loading 2 to 4 GB.
 pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long one answer may take (#72), scaled to its prompt: the prompt read at about 6.7
-/// tokens a second and an answer of up to 400 tokens for a summary (an explanation's 220-token
+/// tokens a second and an answer of up to 600 tokens for a summary (an explanation's 220-token
 /// cap) at about 1.7 a second, after 30 s. Never under 5 minutes, never over 20. Measured on a
 /// 4-core test computer with other builds running (5 Nov 2026), Qwen3.5 4B read 8.5 to 12
 /// prompt tokens a second and wrote 2.1 to 3.0; the prompt estimate also runs long, so the
@@ -41,8 +42,11 @@ pub(crate) const ANSWER_LIMIT: AnswerLimit = AnswerLimit {
     floor: Duration::from_secs(5 * 60),
     ceiling: Duration::from_secs(20 * 60),
 };
-/// Above the model's own size: its cache at the context used, and the runtime's memory.
-const WORKING_BYTES: u64 = 3 * 512 * 1024 * 1024;
+/// Above the model's own size: its cache at the context used, and the runtime's memory. The
+/// helper's measured peak above the file was 508 to 626 MiB for Qwen3.5 4B, the larger listed
+/// model, at the full 8,192 context and prompts of up to 7,155 tokens (11 Nov 2026); 1 GiB keeps
+/// about 400 MiB over the highest.
+const WORKING_BYTES: u64 = 1024 * 1024 * 1024;
 /// The helper's memory limit above the model's size.
 const LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
@@ -111,6 +115,11 @@ pub(crate) struct SummarizeRequest {
     pub(crate) record_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub(crate) ticket: Option<uuid::Uuid>,
+    /// The document's page count, as its text read found it (`vault_document_text`), when the
+    /// renderer gives it: with a last page read after a gap, the result says whether that is the
+    /// document's own last page (E4b). A kept answer's text ticket gives it instead.
+    #[serde(default)]
+    pub(crate) page_count: Option<u32>,
 }
 
 /// An explain request from the renderer.
@@ -135,6 +144,31 @@ pub(crate) struct SourceSpan {
     pub(crate) end: u32,
 }
 
+/// Exact page identities read by a summary: the sent prefix through its head,
+/// plus only the explicitly reported later tail. Missing or unread gap pages stay out.
+pub(crate) fn summary_read_pages(
+    sent: &[u32],
+    last_head: u32,
+    tail: Option<u32>,
+) -> Option<Vec<u32>> {
+    if sent.is_empty()
+        || sent.len() > MAX_PAGES
+        || sent.iter().any(|&page| page as usize >= MAX_PAGES)
+        || !sent.windows(2).all(|pair| pair[0] < pair[1])
+    {
+        return None;
+    }
+    let head_at = sent.iter().position(|&page| page == last_head)?;
+    let mut read = sent[..=head_at].to_vec();
+    if let Some(tail) = tail {
+        if !sent[head_at + 1..].contains(&tail) {
+            return None;
+        }
+        read.push(tail);
+    }
+    Some(read)
+}
+
 /// An answer as the runtime gave it, kept natively for the document's save (#212). The save
 /// names it by document, tool, language and term; page code adds only a summary's source
 /// places, so the words, the model and the flags the vault keeps are the runtime's own.
@@ -144,8 +178,8 @@ pub(crate) enum KeptAnswer {
         sentences: Vec<Sentence>,
         /// The last page read, by its number from 1 (0 when none was), as the reader says it.
         last_page: u32,
-        /// The index (from 0) of the last page the model read: no source lies past it.
-        last_index: u32,
+        /// Exact indexes the model read: its sent head prefix and optional tail, never the gap.
+        read_pages: Vec<u32>,
         /// The summary covers only part of the document: pages were left out of the text,
         /// the model read fewer than were sent, or only the start of the last one.
         partial: bool,
@@ -174,39 +208,53 @@ impl KeptAnswer {
     /// them), with `sources` for a summary's sentences. None when the sources do not fit the
     /// answer: a summary needs one per sentence (a place or none), each on a page the model
     /// read; an explanation takes none.
+    #[cfg(test)]
     pub(crate) fn content(
         &self,
         sources: Option<&[Option<SourceSpan>]>,
     ) -> Option<(AiResultInput, String)> {
-        let (input, value) = match self {
+        self.checked_content(sources).ok().flatten()
+    }
+
+    pub(crate) fn checked_content(
+        &self,
+        sources: Option<&[Option<SourceSpan>]>,
+    ) -> Result<Option<(AiResultInput, String)>, crate::summary_contract::Error> {
+        match self {
             KeptAnswer::Summary {
                 sentences,
                 last_page,
-                last_index,
+                read_pages,
                 partial,
                 pages_missing,
                 model,
                 lang,
                 created_at,
             } => {
-                let sources = sources?;
+                let Some(sources) = sources else {
+                    return Ok(None);
+                };
                 if sources.len() != sentences.len()
-                    || sources.iter().flatten().any(|span| span.page > *last_index)
-                {
-                    return None;
-                }
-                let sentences: Vec<_> = sentences
-                    .iter()
-                    .zip(sources)
-                    .map(|(sentence, source)| {
-                        serde_json::json!({
-                            "text": sentence.text,
-                            "quote": sentence.quote,
-                            "source": source,
-                        })
+                    || sources.iter().flatten().any(|span| {
+                        !read_pages.contains(&span.page)
+                            || !crate::summary_contract::source_valid(span)
                     })
-                    .collect();
-                (
+                {
+                    return Ok(None);
+                }
+                let content = crate::summary_contract::serialize_summary(
+                    sentences,
+                    model,
+                    lang,
+                    crate::summary_contract::Metadata {
+                        created_at: *created_at,
+                        partial: *partial,
+                        last_page: *last_page,
+                        pages_missing: *pages_missing,
+                    },
+                    sources,
+                )?;
+                Ok(Some((
                     AiResultInput {
                         tool: AiTool::Summary,
                         lang: lang.clone(),
@@ -214,17 +262,8 @@ impl KeptAnswer {
                         model_name: model.name.clone(),
                         model_sha256: model.sha256.clone(),
                     },
-                    serde_json::json!({
-                        "tool": "summary",
-                        "sentences": sentences,
-                        "model": model,
-                        "lang": lang,
-                        "createdAt": created_at,
-                        "partial": partial,
-                        "lastPage": last_page,
-                        "pagesMissing": pages_missing,
-                    }),
-                )
+                    content,
+                )))
             }
             KeptAnswer::Explain {
                 term,
@@ -235,9 +274,12 @@ impl KeptAnswer {
                 created_at,
             } => {
                 if sources.is_some() {
-                    return None;
+                    return Ok(None);
                 }
-                (
+                let value = serde_json::json!({ "tool": "explain", "term": term, "context": context,
+                    "text": text, "model": model, "lang": lang, "createdAt": created_at });
+                let content = value.to_string();
+                Ok(Some((
                     AiResultInput {
                         tool: AiTool::Explain,
                         lang: lang.clone(),
@@ -245,19 +287,10 @@ impl KeptAnswer {
                         model_name: model.name.clone(),
                         model_sha256: model.sha256.clone(),
                     },
-                    serde_json::json!({
-                        "tool": "explain",
-                        "term": term,
-                        "context": context,
-                        "text": text,
-                        "model": model,
-                        "lang": lang,
-                        "createdAt": created_at,
-                    }),
-                )
+                    content,
+                )))
             }
-        };
-        Some((input, value.to_string()))
+        }
     }
 }
 
@@ -268,12 +301,56 @@ pub(crate) struct SummaryResult {
     pub(crate) model: ModelInfo,
     pub(crate) last_page: u32,
     pub(crate) last_page_cut: bool,
+    /// The document's last page, read after a gap (left out when there was none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_page: Option<u32>,
+    /// With a tail page and the document's page count: whether the tail is the document's own
+    /// last page, or only the last page of the text read (its 50-page or 1 MiB cap, or a last
+    /// page that was blank or refused), so the reader can say "the last page" only when it is.
+    /// Left out when either is unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_is_last_page: Option<bool>,
+}
+
+/// Whether `tail_page` is the document's last page, when both are known.
+pub(crate) fn tail_is_last_page(tail_page: Option<u32>, page_count: Option<u32>) -> Option<bool> {
+    Some(tail_page?.checked_add(1)? == page_count?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ExplainResult {
     pub(crate) text: String,
     pub(crate) model: ModelInfo,
+}
+
+/// What loading the model in use once says (D218), as the settings are told: it runs here, it
+/// cannot run here, there is not enough free memory to try it now, or its file is damaged.
+/// `Skipped` loads nothing and says nothing: an answer is asked or being written (its own start
+/// then tells, as before), another check runs, the model is being added or removed, or the
+/// vault locked meanwhile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum LoadCheck {
+    Ready,
+    CannotRun,
+    Memory,
+    Damaged,
+    Skipped,
+}
+
+impl From<AiError> for LoadCheck {
+    fn from(error: AiError) -> Self {
+        match error {
+            AiError::Failed => Self::CannotRun,
+            AiError::Memory => Self::Memory,
+            AiError::Damaged => Self::Damaged,
+            AiError::NotInstalled
+            | AiError::Busy
+            | AiError::Storage
+            | AiError::SummaryTooLarge
+            | AiError::Cancelled => Self::Skipped,
+        }
+    }
 }
 
 /// Why a run gave nothing, as the renderer is told (`code`).
@@ -287,6 +364,8 @@ pub(crate) enum AiError {
     Busy,
     /// The model's file could not be read from this computer's disk.
     Storage,
+    /// The complete postprocessed summary cannot fit its saved-answer budget.
+    SummaryTooLarge,
     /// The vault locked, or the reader left: nothing to show.
     Cancelled,
     /// Anything else: the helper could not start, answer, or answer in time, or the request
@@ -302,6 +381,7 @@ impl AiError {
             Self::Memory => "aiMemory",
             Self::Busy => "aiBusy",
             Self::Storage => "aiStorage",
+            Self::SummaryTooLarge => "aiSummaryTooLarge",
             Self::Cancelled => "aiCancelled",
             Self::Failed => "aiFailed",
         }
@@ -344,6 +424,9 @@ pub(crate) fn check_summary(request: &SummarizeRequest) -> Result<(), AiError> {
             .all(|page| (page.index as usize) < MAX_PAGES && page.text.len() <= MAX_PAGE_BYTES)
         && total <= MAX_TEXT_BYTES
         && pages.iter().any(|page| !page.text.trim().is_empty())
+        && request
+            .page_count
+            .is_none_or(|count| pages.last().is_some_and(|last| last.index < count))
         && model_helper::language_name(&request.lang).is_some();
     valid.then_some(()).ok_or(AiError::Failed)
 }
@@ -368,6 +451,46 @@ pub(crate) struct ModelRuntime {
     /// The model the last answer here came from: the vault keeps an answer
     /// only under the model that gave one (#212).
     answered: Mutex<Option<ModelInfo>>,
+    /// The claim of the last answer asked, until it ends: while it is current, a load check
+    /// loads nothing (D218). Taken with the claim itself, so a check never misses an answer.
+    /// An answer whose worker never runs (its hold ended first: a lock, a newer answer) is
+    /// cleared by nothing here, but its claim is no longer current by then, so it holds no
+    /// check back.
+    answering: Mutex<Option<crate::local_runner::Ticket>>,
+    /// A load check is running: a second one is not queued behind it.
+    checking: AtomicBool,
+}
+
+/// Ends an answer's claim on the load check, however the answer ends.
+struct AnswerEnds<'a> {
+    answering: &'a Mutex<Option<crate::local_runner::Ticket>>,
+    ticket: crate::local_runner::Ticket,
+}
+
+impl Drop for AnswerEnds<'_> {
+    fn drop(&mut self) {
+        let mut answering = self
+            .answering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *answering == Some(self.ticket) {
+            *answering = None;
+        }
+    }
+}
+
+/// How often, and how far apart, a load check tries to stop its model while something holds
+/// the process for a moment.
+const CHECK_STOP_TRIES: usize = 50;
+const CHECK_STOP_WAIT: Duration = Duration::from_millis(20);
+
+/// Lets the next load check run, however this one ends.
+struct CheckEnds<'a>(&'a AtomicBool);
+
+impl Drop for CheckEnds<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 impl ModelRuntime {
@@ -382,6 +505,8 @@ impl ModelRuntime {
             probe,
             launch,
             answered: Mutex::new(None),
+            answering: Mutex::new(None),
+            checking: AtomicBool::new(false),
         }
     }
 
@@ -455,39 +580,150 @@ impl ModelRuntime {
         request: SummarizeRequest,
         watch: AnswerWatch,
     ) -> Result<SummaryResult, AiError> {
-        self.summarize_for(self.reserve_answer(), request, watch)
+        self.summarize_for(self.reserve_answer(), request, watch, &mut |_, _| ())
     }
 
     pub(crate) fn reserve_answer(&self) -> crate::local_runner::Ticket {
-        self.runner.ticket()
+        let mut answering = self.answers();
+        let ticket = self.runner.ticket();
+        *answering = Some(ticket);
+        ticket
     }
 
+    fn answers(&self) -> std::sync::MutexGuard<'_, Option<crate::local_runner::Ticket>> {
+        self.answering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn answer_ends(&self, ticket: crate::local_runner::Ticket) -> AnswerEnds<'_> {
+        AnswerEnds {
+            answering: &self.answering,
+            ticket,
+        }
+    }
+
+    /// The claim a load check runs under (D218): the one in force now, ending none, unless an
+    /// answer is asked or being written, when there is none and the check loads nothing. The
+    /// command reads it before it checks that the vault is unlocked, so a lock in between ends
+    /// the check.
+    pub(crate) fn load_check_claim(&self) -> Option<crate::local_runner::Ticket> {
+        let answering = self.answers();
+        if answering.is_some_and(|answer| self.runner.is_current(answer)) {
+            return None;
+        }
+        Some(self.runner.current_ticket())
+    }
+
+    /// Loads the model in use once under `claim` ([`Self::load_check_claim`]), to say now
+    /// whether it runs on this computer, then stops it: no model stays loaded for a check
+    /// (D218). It goes through an answer's own start (the memory, the model verified again,
+    /// the helper's hello and card), so a model that passes starts the same way for its first
+    /// answer, and its card confirms what the settings say it reads. It never waits behind an
+    /// answer and never cancels one: an answer asked while it loads ends the check (`Skipped`)
+    /// and loads the model itself, and one asked after the hello keeps the loaded model. A
+    /// model an earlier answer loaded is `Ready` and stays loaded, as it would have. One check
+    /// at a time.
+    pub(crate) fn check_load(&self, claim: crate::local_runner::Ticket) -> LoadCheck {
+        self.check_load_with(claim, || ())
+    }
+
+    /// [`Self::check_load`], with `loaded` run between the load and the stop (tests: an answer
+    /// asked then).
+    fn check_load_with(
+        &self,
+        claim: crate::local_runner::Ticket,
+        loaded: impl FnOnce(),
+    ) -> LoadCheck {
+        if !self.runner.is_current(claim) || self.checking.swap(true, Ordering::SeqCst) {
+            return LoadCheck::Skipped;
+        }
+        let _ends = CheckEnds(&self.checking);
+        match self.runner.is_running_for(claim) {
+            Some(true) => return LoadCheck::Ready,
+            Some(false) => (),
+            None => return LoadCheck::Skipped,
+        }
+        let outcome = match self.start(claim) {
+            Ok(()) => LoadCheck::Ready,
+            Err(error) => LoadCheck::from(error),
+        };
+        loaded();
+        // Decided under the answers' lock: an answer asked before has a newer claim and keeps
+        // the model; one asked after finds none and starts its own. That lock goes before the
+        // helper is waited for, so an answer's admission (which holds the vault's and the idle
+        // lock's) never waits for a model to exit. A stale request still leaving its start may
+        // hold the process for a moment: tried again, never past about a second.
+        for _ in 0..CHECK_STOP_TRIES {
+            let answers = self.answers();
+            match self.runner.stop_if_current(claim, move || drop(answers)) {
+                CheckStop::Held => std::thread::sleep(CHECK_STOP_WAIT),
+                CheckStop::Stopped | CheckStop::Claimed => break,
+            }
+        }
+        outcome
+    }
+
+    /// `progress` is told how far it is, with the time left in seconds when there is a number
+    /// (`summary_progress`): counts and seconds only.
     pub(crate) fn summarize_for(
         &self,
         ticket: crate::local_runner::Ticket,
         request: SummarizeRequest,
         watch: AnswerWatch,
+        progress: &mut dyn FnMut(Progress, Option<u32>),
     ) -> Result<SummaryResult, AiError> {
+        let _ends = self.answer_ends(ticket);
         check_summary(&request)?;
-        self.runner.watch_answer(ticket, watch);
+        let page_count = request.page_count;
+        // The request is written to the helper when its watch is told its limit: the reading,
+        // and this run's speeds, start there (after the helper's start, if it had to start).
+        let written_at = Arc::new(OnceLock::new());
+        let mark = Arc::clone(&written_at);
+        self.runner.watch_answer(
+            ticket,
+            Box::new(move |limit| {
+                let _ = mark.set(Instant::now());
+                watch(limit);
+            }),
+        );
         self.start(ticket)?;
+        let kept = match self.runner.status() {
+            RunnerStatus::Ready { model }
+            | RunnerStatus::Working { model }
+            | RunnerStatus::Installed { model } => crate::summary_progress::kept(&model.sha256),
+            _ => None,
+        };
+        let mut estimate = crate::summary_progress::Estimate::new(kept, Instant::now());
         let summary = self
             .runner
-            .summarize(
+            .summarize_with_progress(
                 ticket,
                 &SummaryRequest {
                     lang: request.lang,
                     pages: request.pages,
                     max_sentences: model_helper::MAX_SENTENCES,
                 },
+                &mut |step| {
+                    if let Some(at) = written_at.get() {
+                        estimate.start_at(*at);
+                    }
+                    progress(step, estimate.after(step, Instant::now()));
+                },
             )
             .map_err(|error| from_runner(&error))?;
+        // Finished: its speed is the next estimate's start. A cancelled or failed one is not kept.
+        if let Some(stats) = &summary.stats {
+            crate::summary_progress::record(&summary.model.sha256, stats);
+        }
         self.answered_by(&summary.model);
         Ok(SummaryResult {
             sentences: summary.sentences,
             model: summary.model,
             last_page: summary.last_page,
             last_page_cut: summary.last_page_cut,
+            tail_page: summary.tail_page,
+            tail_is_last_page: tail_is_last_page(summary.tail_page, page_count),
         })
     }
 
@@ -499,6 +735,7 @@ impl ModelRuntime {
         request: ExplainRequest,
         watch: AnswerWatch,
     ) -> Result<ExplainResult, AiError> {
+        let _ends = self.answer_ends(ticket);
         check_explain(&request)?;
         self.runner.watch_answer(ticket, watch);
         self.start(ticket)?;
@@ -526,6 +763,7 @@ fn from_runner(error: &RunnerError) -> AiError {
     match error {
         RunnerError::Budget { .. } => AiError::Memory,
         RunnerError::Cancelled => AiError::Cancelled,
+        RunnerError::SummaryTooLarge => AiError::SummaryTooLarge,
         RunnerError::Start(_)
         | RunnerError::NotRunning
         | RunnerError::Timeout
@@ -659,7 +897,25 @@ mod tests {
             lang: lang.to_owned(),
             record_id: None,
             ticket: None,
+            page_count: None,
         }
+    }
+
+    #[test]
+    fn summary_size_error_survives_runner_and_owned_save_boundaries() {
+        assert_eq!(
+            from_runner(&RunnerError::SummaryTooLarge),
+            AiError::SummaryTooLarge
+        );
+        assert_eq!(AiError::SummaryTooLarge.code(), "aiSummaryTooLarge");
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { sentences, .. } = &mut answer {
+            sentences[0].text = "x".repeat(crate::summary_contract::MAX_BYTES);
+        }
+        assert!(matches!(
+            answer.checked_content(Some(&[None, None])),
+            Err(crate::summary_contract::Error::TooLarge)
+        ));
     }
 
     #[test]
@@ -691,6 +947,37 @@ mod tests {
         for request in refused {
             assert_eq!(check_summary(&request), Err(AiError::Failed));
         }
+        // A page count, when given, is past the last page sent (E4b).
+        let counted = |count| SummarizeRequest {
+            page_count: Some(count),
+            ..summary(vec![page(0, "a"), page(3, "b")], "en")
+        };
+        assert_eq!(check_summary(&counted(4)), Ok(()));
+        assert_eq!(check_summary(&counted(70)), Ok(()));
+        assert_eq!(check_summary(&counted(3)), Err(AiError::Failed));
+        assert_eq!(check_summary(&counted(0)), Err(AiError::Failed));
+        // The renderer may send it.
+        let sent: SummarizeRequest = serde_json::from_value(serde_json::json!({
+            "pages": [{"index": 0, "text": "FAKE text"}],
+            "lang": "en",
+            "pageCount": 12,
+        }))
+        .unwrap();
+        assert_eq!(sent.page_count, Some(12));
+    }
+
+    #[test]
+    fn a_tail_page_is_the_last_page_only_when_the_document_ends_there() {
+        // The document's last page (index 11 of 12) read after a gap.
+        assert_eq!(tail_is_last_page(Some(11), Some(12)), Some(true));
+        // Only the text read's last page: a 70-page document cut at 50 pages, or a last page
+        // that was blank or refused.
+        assert_eq!(tail_is_last_page(Some(49), Some(70)), Some(false));
+        assert_eq!(tail_is_last_page(Some(10), Some(12)), Some(false));
+        // Unknown either way: left out.
+        assert_eq!(tail_is_last_page(None, Some(12)), None);
+        assert_eq!(tail_is_last_page(Some(11), None), None);
+        assert_eq!(tail_is_last_page(Some(u32::MAX), Some(0)), None);
     }
 
     #[test]
@@ -763,7 +1050,7 @@ mod tests {
                 },
             ],
             last_page: 2,
-            last_index: 1,
+            read_pages: vec![0, 1],
             partial: true,
             pages_missing: false,
             model: ModelInfo {
@@ -812,6 +1099,72 @@ mod tests {
             Some(("FAKE model", &"0".repeat(64)))
         )
         .is_ok());
+    }
+
+    #[test]
+    fn summary_read_pages_preserves_sparse_head_and_only_the_reported_tail() {
+        assert_eq!(summary_read_pages(&[0, 1, 2], 0, Some(2)), Some(vec![0, 2]));
+        assert_eq!(
+            summary_read_pages(&[0, 2, 3, 4], 2, Some(4)),
+            Some(vec![0, 2, 4])
+        );
+        assert_eq!(summary_read_pages(&[0, 2, 4], 2, None), Some(vec![0, 2]));
+        assert_eq!(summary_read_pages(&[0, 2, 4], 4, None), Some(vec![0, 2, 4]));
+        for (sent, head, tail) in [
+            (vec![], 0, None),
+            (vec![0, 2], 1, None),
+            (vec![0, 2], 0, Some(1)),
+            (vec![0, 2], 2, Some(0)),
+            (vec![0, 2], 2, Some(2)),
+            (vec![0, 0], 0, None),
+            (vec![2, 0], 0, None),
+            (vec![MAX_PAGES as u32], MAX_PAGES as u32, None),
+        ] {
+            assert!(summary_read_pages(&sent, head, tail).is_none());
+        }
+    }
+
+    #[test]
+    fn kept_tail_source_passes_the_save_contract_but_an_unread_gap_does_not() {
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { read_pages, .. } = &mut answer {
+            *read_pages = summary_read_pages(&[0, 1, 2], 0, Some(2)).unwrap();
+        }
+        let source = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        let (input, content) = answer.content(Some(&[Some(source(2)), None])).unwrap();
+        assert!(crate::vault::check_ai_answer(
+            &input,
+            content.as_bytes(),
+            Some(("FAKE model", &"0".repeat(64)))
+        )
+        .is_ok());
+        assert!(answer.content(Some(&[Some(source(0)), None])).is_some());
+        assert!(answer.content(Some(&[Some(source(1)), None])).is_none());
+        assert!(answer.content(Some(&[Some(source(3)), None])).is_none());
+        assert!(answer.content(Some(&[None, None])).is_some());
+    }
+
+    #[test]
+    fn kept_sources_refuse_absent_pages_inside_the_head_prefix_too() {
+        let mut answer = kept_summary();
+        if let KeptAnswer::Summary { read_pages, .. } = &mut answer {
+            *read_pages = summary_read_pages(&[0, 2, 3, 4], 2, Some(4)).unwrap();
+        }
+        let source = |page| SourceSpan {
+            page,
+            start: 0,
+            end: 1,
+        };
+        for page in [0, 2, 4] {
+            assert!(answer.content(Some(&[Some(source(page)), None])).is_some());
+        }
+        for page in [1, 3, 5] {
+            assert!(answer.content(Some(&[Some(source(page)), None])).is_none());
+        }
     }
 
     #[test]
@@ -890,6 +1243,8 @@ mod tests {
                 model: model.clone(),
                 last_page: 3,
                 last_page_cut: false,
+                tail_page: None,
+                tail_is_last_page: None,
             })
             .unwrap(),
             serde_json::json!({
@@ -897,6 +1252,29 @@ mod tests {
                 "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
                 "lastPage": 3,
                 "lastPageCut": false
+            })
+        );
+        // A last page read after a gap is named; without one the shape is unchanged.
+        assert_eq!(
+            serde_json::to_value(SummaryResult {
+                sentences: vec![Sentence {
+                    text: "t".to_owned(),
+                    quote: String::new()
+                }],
+                model: model.clone(),
+                last_page: 3,
+                last_page_cut: false,
+                tail_page: Some(9),
+                tail_is_last_page: Some(false),
+            })
+            .unwrap(),
+            serde_json::json!({
+                "sentences": [{"text": "t", "quote": ""}],
+                "model": {"name": "FAKE model", "sha256": "0".repeat(64)},
+                "lastPage": 3,
+                "lastPageCut": false,
+                "tailPage": 9,
+                "tailIsLastPage": false
             })
         );
         assert_eq!(
@@ -947,6 +1325,19 @@ mod tests {
         // Checked again once the copy exists: it is not counted a second time.
         assert_eq!(needed_after_verifying(size), size + WORKING_BYTES);
         assert!(needed_after_verifying(size) <= needed_bytes(size));
+    }
+
+    #[test]
+    fn a_start_asks_for_the_model_and_1_gib_above_it() {
+        // Qwen3.5 4B's listed size.
+        let size = 3_013_027_808;
+        assert_eq!(needed_after_verifying(size), 4_086_769_632);
+        let expected = if cfg!(target_os = "linux") {
+            7_099_797_440
+        } else {
+            4_086_769_632
+        };
+        assert_eq!(needed_bytes(size), expected);
     }
 
     struct Fixed(Option<u64>);
@@ -1061,6 +1452,259 @@ mod tests {
             .summarize(summary(vec![page(0, "FAKE text")], "en"), Box::new(|_| ()))
             .is_err());
         assert_eq!(runtime.answered_model(), None);
+    }
+
+    /// A load check as the command makes one: the claim first, then the check.
+    fn check(runtime: &ModelRuntime) -> LoadCheck {
+        runtime
+            .load_check_claim()
+            .map_or(LoadCheck::Skipped, |claim| runtime.check_load(claim))
+    }
+
+    #[test]
+    fn a_load_check_says_why_a_model_cannot_start_here_or_not_now() {
+        // A start the app cannot build: this computer cannot run it.
+        let (source, asked) = fake(Some(GIB), Ok(()));
+        assert_eq!(
+            check(&runtime(source, Some(64 * GIB))),
+            LoadCheck::CannotRun
+        );
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // Too little free memory: not even verified, and no figure is given.
+        let (source, asked) = fake(Some(4 * GIB), Ok(()));
+        assert_eq!(check(&runtime(source, Some(GIB))), LoadCheck::Memory);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+        for (reason, outcome) in [
+            (Unavailable::Damaged, LoadCheck::Damaged),
+            (Unavailable::Unsupported, LoadCheck::CannotRun),
+            (Unavailable::Memory, LoadCheck::Memory),
+            (Unavailable::Busy, LoadCheck::Skipped),
+            (Unavailable::Storage, LoadCheck::Skipped),
+            (Unavailable::NotInstalled, LoadCheck::Skipped),
+        ] {
+            let (source, _) = fake(Some(GIB), Err(reason));
+            assert_eq!(
+                check(&runtime(source, Some(64 * GIB))),
+                outcome,
+                "{reason:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_load_check_loads_nothing_while_an_answer_is_asked_and_never_ends_it() {
+        let (source, asked) = fake(Some(GIB), Ok(()));
+        let runtime = runtime(source, Some(64 * GIB));
+        let answer = runtime.reserve_answer();
+        assert_eq!(check(&runtime), LoadCheck::Skipped);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(runtime.runner.is_current(answer));
+        // Once that answer has ended (here, refused at its start), a check loads again.
+        assert_eq!(
+            runtime.summarize_for(
+                answer,
+                summary(vec![page(0, "FAKE text")], "en"),
+                Box::new(|_| ()),
+                &mut |_, _| (),
+            ),
+            Err(AiError::Failed)
+        );
+        assert_eq!(check(&runtime), LoadCheck::CannotRun);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
+        // A lock between the claim and the check ends the check: nothing is loaded.
+        let claim = runtime.load_check_claim().unwrap();
+        runtime.cancel();
+        assert_eq!(runtime.check_load(claim), LoadCheck::Skipped);
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
+        // An answer that never ran because the vault locked holds nothing back either.
+        let _never_run = runtime.reserve_answer();
+        runtime.cancel();
+        assert_eq!(check(&runtime), LoadCheck::CannotRun);
+    }
+
+    #[test]
+    fn the_load_check_outcomes_have_the_shape_the_settings_read() {
+        for (outcome, word) in [
+            (LoadCheck::Ready, "ready"),
+            (LoadCheck::CannotRun, "cannotRun"),
+            (LoadCheck::Memory, "memory"),
+            (LoadCheck::Damaged, "damaged"),
+            (LoadCheck::Skipped, "skipped"),
+        ] {
+            assert_eq!(serde_json::to_value(outcome).unwrap(), word);
+        }
+    }
+
+    /// The fake model of `local_runner`'s tests, through the Python on the test machine: it
+    /// greets as the helper does, unsandboxed, and any hello is accepted.
+    #[cfg(unix)]
+    mod with_the_fake_model {
+        use super::*;
+        use crate::local_runner::RunnerStatus;
+        use std::sync::atomic::Ordering::SeqCst;
+
+        fn fake_model(args: &[&str], start_timeout: Duration) -> RunnerConfig {
+            let path = std::env::var_os("PATH").expect("PATH");
+            let python3 = std::env::split_paths(&path)
+                .map(|dir| dir.join("python3"))
+                .find(|candidate| candidate.is_file())
+                .expect("python3 on PATH");
+            let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/local-runner/fake-model.py");
+            let mut all = vec![script.into_os_string()];
+            all.extend(args.iter().map(std::ffi::OsString::from));
+            RunnerConfig {
+                command: python3,
+                args: all,
+                needed_bytes: 0,
+                start_timeout,
+                answer_limit: crate::local_runner::AnswerLimit::fixed(Duration::from_secs(10)),
+                memory_limit_bytes: None,
+                expected_model: None,
+                model_file: None,
+                sandboxed: false,
+                generation_threads: None,
+            }
+        }
+
+        fn greets(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&[], Duration::from_secs(10)))
+        }
+
+        fn never_greets(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&["--mute"], Duration::from_secs(1)))
+        }
+
+        fn greets_late(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&["--greet-after", "2"], Duration::from_secs(10)))
+        }
+
+        fn answers_slowly(_: &Verified) -> Result<RunnerConfig, AiError> {
+            Ok(fake_model(&["--slow", "2"], Duration::from_secs(10)))
+        }
+
+        fn with(
+            launch: fn(&Verified) -> Result<RunnerConfig, AiError>,
+        ) -> (ModelRuntime, Arc<std::sync::atomic::AtomicUsize>) {
+            let (source, asked) = fake(Some(GIB), Ok(()));
+            (
+                ModelRuntime::new(Box::new(source), Box::new(Fixed(Some(64 * GIB))), launch),
+                asked,
+            )
+        }
+
+        #[test]
+        fn a_load_check_starts_the_model_once_and_stops_it_again() {
+            let (runtime, asked) = with(greets);
+            assert_eq!(check(&runtime), LoadCheck::Ready);
+            assert_eq!(asked.load(SeqCst), 1);
+            assert!(!runtime.runner.is_running());
+            assert!(matches!(
+                runtime.runner.status(),
+                RunnerStatus::Installed { .. }
+            ));
+        }
+
+        #[test]
+        fn an_answer_asked_while_the_check_loads_ends_the_check_and_loads_once_itself() {
+            let (runtime, asked) = with(greets_late);
+            let runtime = Arc::new(runtime);
+            let claim = runtime.load_check_claim().unwrap();
+            let checker = {
+                let runtime = Arc::clone(&runtime);
+                std::thread::spawn(move || runtime.check_load(claim))
+            };
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !matches!(runtime.runner.status(), RunnerStatus::Starting) {
+                assert!(std::time::Instant::now() < deadline, "never loading");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            let answer = runtime.reserve_answer();
+            assert_eq!(checker.join().unwrap(), LoadCheck::Skipped);
+            // Nothing is left from the check, and the answer's claim stands.
+            assert!(!runtime.runner.is_running());
+            assert!(runtime.runner.is_current(answer));
+            assert_eq!(asked.load(SeqCst), 1);
+            // The answer loads the model once, itself.
+            assert!(runtime
+                .summarize_for(
+                    answer,
+                    summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
+                    Box::new(|_| ()),
+                    &mut |_, _| (),
+                )
+                .is_ok());
+            assert_eq!(asked.load(SeqCst), 2);
+            assert!(runtime.runner.is_running());
+            runtime.stop();
+        }
+
+        #[test]
+        fn an_answer_asked_after_the_hello_and_before_the_stop_keeps_the_model() {
+            let (runtime, asked) = with(greets);
+            let claim = runtime.load_check_claim().unwrap();
+            let mut answer = None;
+            assert_eq!(
+                runtime.check_load_with(claim, || answer = Some(runtime.reserve_answer())),
+                LoadCheck::Ready
+            );
+            let answer = answer.unwrap();
+            assert!(runtime.runner.is_running());
+            assert!(runtime.runner.is_current(answer));
+            // The answer uses the model the check loaded: no second load.
+            assert!(runtime
+                .summarize_for(
+                    answer,
+                    summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
+                    Box::new(|_| ()),
+                    &mut |_, _| (),
+                )
+                .is_ok());
+            assert_eq!(asked.load(SeqCst), 1);
+            runtime.stop();
+        }
+
+        #[test]
+        fn a_model_that_never_greets_within_the_start_limit_cannot_run_here() {
+            let (runtime, _) = with(never_greets);
+            assert_eq!(check(&runtime), LoadCheck::CannotRun);
+            assert!(!runtime.runner.is_running());
+        }
+
+        #[test]
+        fn a_load_check_while_an_answer_is_written_loads_nothing_and_keeps_its_model() {
+            let (runtime, asked) = with(answers_slowly);
+            let runtime = Arc::new(runtime);
+            let prior_check = runtime.load_check_claim().unwrap();
+            let ticket = runtime.reserve_answer();
+            let writer = {
+                let runtime = Arc::clone(&runtime);
+                std::thread::spawn(move || {
+                    runtime.summarize_for(
+                        ticket,
+                        summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
+                        Box::new(|_| ()),
+                        &mut |_, _| (),
+                    )
+                })
+            };
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !matches!(runtime.runner.status(), RunnerStatus::Working { .. }) {
+                assert!(std::time::Instant::now() < deadline, "never answering");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert_eq!(runtime.check_load(prior_check), LoadCheck::Skipped);
+            assert_eq!(check(&runtime), LoadCheck::Skipped);
+            assert!(writer.join().unwrap().is_ok());
+            // One load, the answer's; its model stays loaded, as before.
+            assert_eq!(asked.load(SeqCst), 1);
+            assert!(runtime.runner.is_running());
+            // A check now finds it loaded: it runs here, and it stays.
+            assert_eq!(check(&runtime), LoadCheck::Ready);
+            assert!(runtime.runner.is_running());
+            assert_eq!(asked.load(SeqCst), 1);
+            runtime.stop();
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -1232,8 +1876,108 @@ pub mod engine_testing {
 
     pub struct ModelRunner {
         runner: Arc<Runner>,
-        /// The quotes the last summary had that were not in the pages read.
+        /// Original model quotes rejected before post-steps, for diagnostics;
+        /// final measured sentences separately report their current source location.
         unlocated: std::sync::Mutex<Vec<String>>,
+        /// The model file's SHA-256 as it was handed over, and its size.
+        model_sha256: String,
+        model_bytes: u64,
+    }
+
+    /// A summary with what a measurement needs (the evaluation run in tests/model_engine.rs).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Measured {
+        pub sentences: Vec<MeasuredSentence>,
+        /// The index of the last page read, and whether only its start fitted.
+        pub last_page: u32,
+        pub last_page_cut: bool,
+        /// The document's last page, read after a gap.
+        pub tail_page: Option<u32>,
+        /// The answer's `Stats` as the helper reports them: counts and times, never words.
+        pub stats: Option<serde_json::Value>,
+        /// The time limit the runner gave this answer.
+        pub answer_limit_ms: u64,
+        /// K17: the post-step's name, and every sentence it rewrote (before and after).
+        pub post_step: &'static str,
+        pub rewrites: Vec<MeasuredRewrite>,
+        /// K19: the glossary's name, and every sentence it explained (before and after).
+        pub glossary: &'static str,
+        pub explained: Vec<MeasuredExplained>,
+        /// K20: the safety checks' name, and every fallback (before: none when a quote was added).
+        pub safety: &'static str,
+        pub fallbacks: Vec<MeasuredFallback>,
+    }
+
+    /// K20: one fallback of the safety checks (`safety`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredFallback {
+        pub check: &'static str,
+        pub index: usize,
+        pub before: Option<String>,
+        pub after: String,
+    }
+
+    /// K19: one sentence the glossary step explained (`glossary`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredExplained {
+        pub index: usize,
+        pub before: String,
+        pub after: String,
+        pub terms: Vec<String>,
+    }
+
+    /// K17: one sentence the post-step rewrote (`addressee`): its place, the rewrite's kind, and
+    /// the words before and after.
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredRewrite {
+        pub index: usize,
+        pub kind: &'static str,
+        pub before: String,
+        pub after: String,
+    }
+
+    /// One summary sentence: its words, the quote the model wrote, and whether that quote was
+    /// found in the pages read (the app shows "No source found" when it was not).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MeasuredSentence {
+        pub text: String,
+        pub quote: String,
+        pub located: bool,
+    }
+
+    /// What a summary is made under in this build, for telling measurements apart: the system
+    /// text, the summary request and grammar for `lang`, the caps, and a SHA-256 over all of them.
+    pub fn summary_build(lang: &str) -> Result<serde_json::Value, String> {
+        let language =
+            model_helper::language_name(lang).ok_or_else(|| format!("unknown language {lang}"))?;
+        let prompt = model_helper::summary_prompt(language, model_helper::MAX_SENTENCES);
+        let grammar = model_helper::summary_grammar(model_helper::MAX_SENTENCES);
+        let caps = serde_json::json!({
+            "maxSentences": model_helper::MAX_SENTENCES,
+            "summaryTokens": model_helper::SUMMARY_TOKENS,
+            "contextTokens": model_helper::CONTEXT_TOKENS,
+            "maxTextChars": model_helper::MAX_TEXT_CHARS,
+            "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,
+        });
+        let caps_text = caps.to_string();
+        let system = model_helper::summary_system_prompt();
+        let mut hash = Sha256::new();
+        for part in [system.as_str(), &prompt, &grammar, &caps_text] {
+            hash.update((part.len() as u64).to_le_bytes());
+            hash.update(part.as_bytes());
+        }
+        Ok(serde_json::json!({
+            "fingerprint": format!("{:x}", hash.finalize()),
+            "systemPrompt": system,
+            "summaryPrompt": prompt,
+            "grammar": grammar,
+            "caps": caps,
+        }))
     }
 
     impl ModelRunner {
@@ -1256,6 +2000,7 @@ pub mod engine_testing {
                 other => return Err(format!("unknown chat format {other}")),
             };
             let (file, sha256, size_bytes) = handed_over(path)?;
+            let model_sha256 = sha256.clone();
             let verified = Verified {
                 file,
                 path: path.to_owned(),
@@ -1281,6 +2026,114 @@ pub mod engine_testing {
             Ok(Self {
                 runner,
                 unlocated: std::sync::Mutex::default(),
+                model_sha256,
+                model_bytes: size_bytes,
+            })
+        }
+
+        /// The model file's SHA-256, taken while it was read for the helper, and its size.
+        pub fn model_file(&self) -> (String, u64) {
+            (self.model_sha256.clone(), self.model_bytes)
+        }
+
+        /// A summary of `pages` (index, text) in `lang`, as the app asks for one, with each
+        /// sentence's own quote (also one that was not found), the fit, the stats and the limit.
+        pub fn summarize_measured(
+            &self,
+            lang: &str,
+            pages: &[(u32, &str)],
+        ) -> Result<Measured, String> {
+            let request = SummaryRequest {
+                lang: lang.to_owned(),
+                pages: pages
+                    .iter()
+                    .map(|(index, text)| Page {
+                        index: *index,
+                        text: (*text).to_owned(),
+                    })
+                    .collect(),
+                max_sentences: model_helper::MAX_SENTENCES,
+            };
+            let text_bytes = pages.iter().map(|(_, text)| text.len()).sum();
+            let (prompt, answer) = crate::local_runner::summary_request_size(text_bytes);
+            let answer_limit_ms = ANSWER_LIMIT.for_request(prompt, answer).as_millis() as u64;
+            let summary = self
+                .runner
+                .summarize(self.runner.ticket(), &request)
+                .map_err(|error| format!("{error:?}"))?;
+            let fallbacks = summary
+                .fallbacks
+                .into_iter()
+                .map(|f| MeasuredFallback {
+                    check: f.check,
+                    index: f.index,
+                    before: f.before,
+                    after: f.after,
+                })
+                .collect();
+            let explained = summary
+                .explained
+                .into_iter()
+                .map(|e| MeasuredExplained {
+                    index: e.index,
+                    before: e.before,
+                    after: e.after,
+                    terms: e.terms,
+                })
+                .collect();
+            let rewrites = summary
+                .rewrites
+                .into_iter()
+                .map(|rewrite| MeasuredRewrite {
+                    index: rewrite.index,
+                    kind: rewrite.kind.name(),
+                    before: rewrite.before,
+                    after: rewrite.after,
+                })
+                .collect();
+            // Post-steps can repair an unfound model quote. Original missing quotes stay
+            // keyed to their sentence, so a repair cannot shift the next sentence's quote.
+            let missing = summary.unlocated_quotes;
+            let sentences = summary
+                .sentences
+                .into_iter()
+                .enumerate()
+                .map(|(index, sentence)| {
+                    let (quote, located) = missing.for_measurement(index, sentence.quote);
+                    MeasuredSentence {
+                        text: sentence.text,
+                        quote,
+                        located,
+                    }
+                })
+                .collect();
+            Ok(Measured {
+                sentences,
+                last_page: summary.last_page,
+                last_page_cut: summary.last_page_cut,
+                tail_page: summary.tail_page,
+                stats: self
+                    .runner
+                    .last_stats()
+                    .and_then(|stats| serde_json::to_value(stats).ok()),
+                answer_limit_ms,
+                post_step: crate::addressee::NAME,
+                rewrites,
+                glossary: crate::glossary::NAME,
+                explained,
+                safety: crate::safety::NAME,
+                fallbacks,
+            })
+        }
+
+        /// What the helper said it found in the model file (model limits), as JSON, and why
+        /// the app did not keep it, when it did not.
+        pub fn card(&self) -> Option<(serde_json::Value, Option<String>)> {
+            self.runner.last_card().map(|(card, rejected)| {
+                (
+                    serde_json::to_value(card).unwrap_or_default(),
+                    rejected.map(|why| format!("{why:?}")),
+                )
             })
         }
 
@@ -1304,7 +2157,7 @@ pub mod engine_testing {
             self.runner
                 .summarize(self.runner.ticket(), &request)
                 .map(|summary| {
-                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes;
+                    *self.unlocated.lock().unwrap() = summary.unlocated_quotes.into_quotes();
                     (
                         summary
                             .sentences
@@ -1317,7 +2170,7 @@ pub mod engine_testing {
                 .map_err(|error| format!("{error:?}"))
         }
 
-        /// What the last summary's quotes said where they were not in the pages read.
+        /// Original rejected model quotes, including any source later repaired.
         pub fn last_unlocated(&self) -> Vec<String> {
             self.unlocated.lock().unwrap().clone()
         }
@@ -1367,7 +2220,7 @@ pub mod engine_testing {
         }
 
         /// Answers are written on `threads` threads from now on, whatever the computer's load;
-        /// `None` chooses from the load again.
+        /// `None` goes back to the app's own number.
         pub fn override_threads(&self, threads: Option<u32>) {
             self.runner.override_threads(threads);
         }

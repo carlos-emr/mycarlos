@@ -25,14 +25,31 @@ mod idle;
 // some platforms.
 #[allow(dead_code)]
 mod local_model;
+// K17 (evaluation only): the post-step on summary sentences (pure std; tested on its own).
+mod addressee;
+// K19 (evaluation only): the glossary post-step (pure std; tested on its own).
+mod glossary;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// Where a model's quote is in the pages: the one rule the runner, addressee and safety share
+// with the reader's `src/ai/locateQuote.ts`.
+mod quote_locate;
+mod quote_provenance;
+// K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod safety;
+mod summary_contract;
+mod summary_progress;
 // The model download runs on computers only (no AI helper on a phone).
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
+mod model_limits;
 mod model_runtime;
+mod notice_key;
+#[cfg(windows)]
+mod notice_store_windows;
+mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
@@ -448,6 +465,10 @@ impl From<VaultError> for PublicText {
             VaultError::Invalid => Self {
                 code: "invalid",
                 message_key: "native.error.19",
+            },
+            VaultError::AiSummaryTooLarge => Self {
+                code: "aiSummaryTooLarge",
+                message_key: "ai.summaryTooLarge",
             },
             // The reader says it on this code: the answer is shown, not kept.
             VaultError::AiResultsFull => Self {
@@ -1283,6 +1304,9 @@ struct TextTicket {
     pages_missing: bool,
     /// The index (from 0) of the last page the text holds.
     last_index: Option<u32>,
+    /// The document's page count, as the text read found it: a summary's last page read after a
+    /// gap is the document's own last page only if it is the last of these (E4b).
+    page_count: u32,
     /// What the pages said (`pages_digest`): a summary kept for this document must be of them.
     pages_digest: [u8; 32],
 }
@@ -1640,7 +1664,7 @@ struct RecordIdRequest {
 struct SaveAiResultRequest {
     record_id: Uuid,
     kept_id: Uuid,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "summary_contract::deserialize_sources")]
     sources: Option<Vec<Option<model_runtime::SourceSpan>>>,
 }
 
@@ -1738,7 +1762,21 @@ fn ai_model_catalog() -> Vec<local_model::Accepted> {
 /// why: not installed, this computer cannot run it, or the file is damaged.
 #[tauri::command]
 fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
-    models.status(&local_model::Here)
+    match models.status(&local_model::Here) {
+        // Once the helper has made this model's context, the reader's question reads from it,
+        // as the settings do (model limits).
+        local_model::ModelStatus::Installed {
+            model,
+            capacity: Some(capacity),
+        } => {
+            let card = model_runtime::app().runner().card_for(&model.sha256);
+            local_model::ModelStatus::Installed {
+                capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
+                model,
+            }
+        }
+        status => status,
+    }
 }
 
 /// Every model the app offers, and any other accepted one on this computer, with its state,
@@ -1746,6 +1784,29 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
 #[tauri::command]
 fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
     models.models()
+}
+
+/// Each model's limits, for the AI helper settings (model limits): how much of a document it
+/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
+/// helper has run a model in this session, its room follows the context the helper made, and
+/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// the model file: the helper's checked card does (`model_limits`).
+#[tauri::command]
+fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
+    let runner = model_runtime::app().runner();
+    models
+        .models()
+        .into_iter()
+        .map(|row| {
+            let card = runner.card_for(row.model.sha256);
+            model_limits::limits(
+                row.index,
+                &row.model,
+                card.as_ref(),
+                model_runtime::needed_bytes(row.model.size_bytes),
+            )
+        })
+        .collect()
 }
 
 /// Which catalog entry a model command is about (`ai_models`' `index`).
@@ -1770,6 +1831,39 @@ async fn ai_model_use(
     })
     .await
     .map_err(|_| local_model::ModelError::Storage)?
+}
+
+/// Loads the model in use once, right after the patient picks it or its download or file is
+/// added (D218), to say now whether it runs on this computer; it is stopped again at once.
+/// Only for the row in use and only while the vault is unlocked; otherwise, and while an answer
+/// is asked or written, nothing is loaded (`skipped`).
+#[tauri::command]
+async fn ai_model_check(
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    use model_runtime::LoadCheck;
+    if !cfg!(desktop) {
+        return Ok(LoadCheck::Skipped);
+    }
+    let runtime = model_runtime::app();
+    // The claim first: a lock after this point ends the check rather than loading while locked.
+    let Some(claim) = runtime.load_check_claim() else {
+        return Ok(LoadCheck::Skipped);
+    };
+    let in_use = models
+        .models()
+        .iter()
+        .any(|row| row.index == request.index && row.in_use);
+    if !in_use || store.answer_origin().is_none() {
+        return Ok(LoadCheck::Skipped);
+    }
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || runtime.check_load(claim))
+            .await
+            .unwrap_or(LoadCheck::Skipped),
+    )
 }
 
 /// Why adding or removing a model was refused, as a word for the renderer.
@@ -2110,7 +2204,7 @@ async fn ai_summarize(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::SummarizeRequest,
+    mut request: model_runtime::SummarizeRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
     // Capture the actual unlocked session before validation can yield.
@@ -2131,19 +2225,36 @@ async fn ai_summarize(
             if sent != text.pages_digest {
                 return Err(ai_error(model_runtime::AiError::Failed));
             }
+            // The text read's own page count, not the renderer's (E4b).
+            request.page_count = Some(text.page_count);
             Some((record_id, text))
         }
         (None, None) => None,
         _ => return Err(ai_error(model_runtime::AiError::Failed)),
     };
+    let sent_page_indices: Vec<_> = request.pages.iter().map(|page| page.index).collect();
     let lang = request.lang.clone();
+    let mut report = report_progress(app.clone(), answer_id);
     let result = run_ai(
         store.inner(),
         origin,
         announce_answer(app, answer_id),
-        move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch),
+        move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch, &mut report),
     )
     .await?;
+    let read_pages =
+        model_runtime::summary_read_pages(&sent_page_indices, result.last_page, result.tail_page)
+            .ok_or_else(|| ai_error(model_runtime::AiError::Failed))?;
+    summary_contract::reserve(
+        result
+            .sentences
+            .iter()
+            .map(|s| (s.text.as_str(), s.quote.as_str())),
+        &result.model.name,
+        &result.model.sha256,
+        &lang,
+    )
+    .map_err(summary_error)?;
     let kept_id = kept_for.map(|(record_id, text)| {
         picks.keep_ai_answer(
             session,
@@ -2156,7 +2267,7 @@ async fn ai_summarize(
                 } else {
                     0
                 },
-                last_index: result.last_page,
+                read_pages,
                 partial: text.partial(result.last_page, result.last_page_cut),
                 pages_missing: text.pages_missing,
                 model: result.model.clone(),
@@ -2314,6 +2425,119 @@ fn announce_answer(
     }
 }
 
+/// How far a summary is, for the page (#72): its stage, counts, and the time left when there is
+/// a number, keyed by the answer's id as `ai-answer-started` is, so that the page drops an
+/// abandoned answer's. Counts and seconds only, never a word. No event before the helper
+/// reads (the page's own "before" stage); checking is one event, 1 of 1.
+const AI_ANSWER_PROGRESS: &str = "ai-answer-progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiAnswerProgress {
+    answer_id: Uuid,
+    stage: &'static str,
+    done: u32,
+    total: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimate_seconds: Option<u32>,
+}
+
+impl AiAnswerProgress {
+    fn new(
+        answer_id: Uuid,
+        progress: local_runner::Progress,
+        estimate_seconds: Option<u32>,
+    ) -> Self {
+        use local_runner::Stage;
+        Self {
+            answer_id,
+            stage: match progress.stage {
+                Stage::Reading => "reading",
+                Stage::Writing => "writing",
+                Stage::Checking => "checking",
+            },
+            done: progress.done,
+            total: progress.total,
+            estimate_seconds,
+        }
+    }
+}
+
+fn report_progress(
+    app: tauri::AppHandle,
+    answer_id: Uuid,
+) -> impl FnMut(local_runner::Progress, Option<u32>) + Send + 'static {
+    move |progress, estimate_seconds| {
+        use tauri::Emitter;
+        let _ = app.emit(
+            AI_ANSWER_PROGRESS,
+            AiAnswerProgress::new(answer_id, progress, estimate_seconds),
+        );
+    }
+}
+
+#[cfg(test)]
+mod answer_progress_event_tests {
+    use super::*;
+    use local_runner::{Progress, Stage};
+
+    #[test]
+    fn the_progress_event_carries_counts_seconds_and_the_answers_id_only() {
+        let answer_id = Uuid::from_u128(7);
+        let reading = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Reading,
+                done: 512,
+                total: 1148,
+            },
+            Some(123),
+        ))
+        .unwrap();
+        assert_eq!(
+            reading,
+            serde_json::json!({
+                "answerId": answer_id.to_string(),
+                "stage": "reading",
+                "done": 512,
+                "total": 1148,
+                "estimateSeconds": 123,
+            })
+        );
+        // No number yet: no key. Checking is one step.
+        let checking = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Checking,
+                done: 1,
+                total: 1,
+            },
+            None,
+        ))
+        .unwrap();
+        assert_eq!(
+            checking,
+            serde_json::json!({
+                "answerId": answer_id.to_string(),
+                "stage": "checking",
+                "done": 1,
+                "total": 1,
+            })
+        );
+        let writing = serde_json::to_value(AiAnswerProgress::new(
+            answer_id,
+            Progress {
+                stage: Stage::Writing,
+                done: 3,
+                total: 10,
+            },
+            None,
+        ))
+        .unwrap();
+        assert_eq!(writing["stage"], "writing");
+    }
+}
+
 /// Runs an AI answer's `work` off the IPC thread as activity for the idle lock (D19): touched
 /// when it starts and when it ends, and held in between, however it ends (an answer, an
 /// error, a cancel, the limit). Until the answer is asked (the helper may be starting), for
@@ -2338,6 +2562,13 @@ async fn held_for_answer<T: Send + 'static>(
     result
 }
 
+fn summary_error(error: summary_contract::Error) -> PublicError {
+    ai_error(match error {
+        summary_contract::Error::TooLarge => model_runtime::AiError::SummaryTooLarge,
+        summary_contract::Error::Invalid => model_runtime::AiError::Failed,
+    })
+}
+
 /// An AI run's failure for the renderer: its code says which; the words are the panel's.
 fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
@@ -2346,6 +2577,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         AiError::Memory => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
+        AiError::SummaryTooLarge => "ai.summaryTooLarge",
         AiError::Cancelled | AiError::Failed => "ai.failed",
     };
     PublicError {
@@ -2556,7 +2788,13 @@ async fn vault_unlock(
 /// asked for) runs in the background, so opening never waits on the network.
 fn after_open(store: &Arc<VaultStore>) {
     let store = Arc::clone(store);
-    tauri::async_runtime::spawn_blocking(move || store.after_open());
+    tauri::async_runtime::spawn_blocking(move || {
+        // Notice keys of any other vault go (#230).
+        if let Some(vault_id) = store.open_vault_id() {
+            notice_key::after_open(vault_id);
+        }
+        store.after_open();
+    });
 }
 
 #[tauri::command]
@@ -2939,6 +3177,20 @@ async fn vault_restart_device_approval(
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.inner());
     tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+/// Try again (#143): forgets a clinic's remembered refusals, so that the next
+/// check downloads and checks its documents again.
+#[tauri::command]
+async fn vault_forget_refused_deliveries(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map_err(Into::into)
@@ -4224,6 +4476,123 @@ fn vault_view_cancel() {
     pdf_view::cancel_views();
 }
 
+/// Where a quoted span of a page's text is on the page picture (#292).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageBoxesRequest {
+    record_id: Uuid,
+    page: u32,
+    /// The span, in UTF-16 units of the page's readable text.
+    start: u32,
+    end: u32,
+    /// The text the span holds, as the reader read it: the helper checks it is the same.
+    quoted: String,
+    /// The document's own password, when it is locked with one. Not the vault passphrase.
+    password: Option<String>,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for PageBoxesRequest {
+    fn drop(&mut self) {
+        if let Some(password) = self.password.as_mut() {
+            password.zeroize();
+        }
+    }
+}
+
+/// The quote's rectangles on the page picture, one per line run, as fractions of its width
+/// and height from the top left ([left, top, right, bottom]); none, and why, when the helper
+/// cannot place every word of it exactly.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct PageBoxesAnswer {
+    rects: Vec<[f64; 4]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    absent: Option<&'static str>,
+}
+
+impl PageBoxesAnswer {
+    fn from_outcome(outcome: pdf_view::BoxesOutcome, given: bool) -> Result<Self, VaultError> {
+        use pdf_unlock::Refusal;
+        use pdf_view::BoxesOutcome;
+        match outcome {
+            BoxesOutcome::Found(rects) => Ok(Self {
+                rects: rects
+                    .into_iter()
+                    .map(|rect| rect.map(|side| f64::from(side) / page_boxes::UNIT))
+                    .collect(),
+                absent: None,
+            }),
+            BoxesOutcome::Absent(absent) => Ok(Self {
+                rects: Vec::new(),
+                absent: Some(absent.name()),
+            }),
+            BoxesOutcome::Refused(Refusal::WrongPassword) if given => {
+                Err(VaultError::PdfWrongPassword)
+            }
+            BoxesOutcome::Refused(Refusal::WrongPassword) => Err(VaultError::PdfLocked),
+            BoxesOutcome::Refused(Refusal::TooLarge) => Err(VaultError::PdfTooLarge),
+            BoxesOutcome::Refused(Refusal::NoSuchPage) => Err(VaultError::Invalid),
+            BoxesOutcome::Unavailable => Err(VaultError::PdfViewUnavailable),
+            BoxesOutcome::NoSandbox => Err(VaultError::PdfViewNoSandbox),
+            BoxesOutcome::Cancelled => Err(VaultError::Cancelled),
+            BoxesOutcome::Refused(_) | BoxesOutcome::Failed => Err(VaultError::PdfViewFailed),
+        }
+    }
+}
+
+/// Where a quote from a page's text is on the page picture, for Show in document (#292). The
+/// record is decrypted into memory only and handed to the PDF helper, as for a page view
+/// (`pdf_view::boxes_in_helper`). A newer such request, a lock or the reader closing stops it;
+/// a page request does not.
+#[tauri::command]
+async fn vault_page_boxes(
+    store: State<'_, Arc<VaultStore>>,
+    mut request: PageBoxesRequest,
+) -> CommandResult<PageBoxesAnswer> {
+    if request
+        .password
+        .as_ref()
+        .is_some_and(|password| password.len() > pdf_unlock::MAX_PASSWORD_BYTES)
+        || request.quoted.len() > page_boxes::MAX_SPAN_TEXT_BYTES
+    {
+        return Err(VaultError::Invalid.into());
+    }
+    let (record_id, page) = (request.record_id, request.page);
+    let span = (request.start, request.end);
+    let quoted = std::mem::take(&mut request.quoted);
+    let given = request.password.is_some();
+    let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
+    drop(request);
+    let ticket = pdf_view::ViewTicket::boxes();
+    let result = run_blocking(store.inner(), move |store| {
+        let size = store
+            .snapshot()?
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?
+            .plaintext_size;
+        if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
+            return Err(VaultError::PdfTooLarge);
+        }
+        if !ticket.is_current() {
+            return Err(VaultError::Cancelled);
+        }
+        let mut document = zeroize::Zeroizing::new(Vec::with_capacity(size as usize));
+        store.read_for_view(record_id, &mut *document)?;
+        PageBoxesAnswer::from_outcome(
+            pdf_view::boxes_in_helper(&document, &password, page, span, &quoted, &ticket),
+            given,
+        )
+    })
+    .await;
+    if !ticket.is_current() {
+        return Err(VaultError::Cancelled.into());
+    }
+    result
+}
+
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -4440,6 +4809,7 @@ async fn vault_document_text(
                 && text.cut_pages.is_empty()
                 && text.failed_pages.is_empty()),
             last_index: text.pages.last().map(|page| page.index),
+            page_count: text.page_count,
             pages_digest: pages_digest(
                 text.pages
                     .iter()
@@ -4832,7 +5202,8 @@ async fn vault_ai_result_save(
         .kept_ai_answer(request.kept_id, request.record_id)
         .ok_or(vault::VaultError::Invalid)?;
     let (input, content) = answer
-        .content(request.sources.as_deref())
+        .checked_content(request.sources.as_deref())
+        .map_err(summary_error)?
         .ok_or(vault::VaultError::Invalid)?;
     // Still checked as the reader's answers are: the caps, and the model that
     // last answered here.
@@ -4957,6 +5328,8 @@ async fn vault_reset(
     }
     picks.clear();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    // Its notice keys go with it (#230).
+    let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner()).await;
     Ok(true)
@@ -5144,6 +5517,9 @@ pub fn run() {
                     .join("vault-home")
                     .join("attempts.json"),
             ))));
+            // Notice keys (#230) live beside `vault-home` too, so no vault
+            // backup holds them.
+            notice_key::install(&app.path().app_local_data_dir()?);
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.
@@ -5192,6 +5568,8 @@ pub fn run() {
             ai_model_catalog,
             ai_model_status,
             ai_models,
+            ai_model_limits,
+            ai_model_check,
             ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
@@ -5214,6 +5592,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
             vault_set_automatic_document_checks,
@@ -5249,6 +5628,7 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_page_boxes,
             vault_document_text,
             vault_document_text_cancel,
             vault_record_known_details,
@@ -5726,7 +6106,11 @@ mod tests {
             ),
             (
                 "async fn vault_reset(",
-                "VaultStore::reset).await?; forget_vault(throttle.inner()).await; Ok(true)",
+                concat!(
+                    "VaultStore::reset).await?; ",
+                    "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
+                    "forget_vault(throttle.inner()).await; Ok(true)",
+                ),
             ),
             (
                 "async fn vault_restore(",
@@ -5984,6 +6368,7 @@ mod tests {
             truncated,
             pages_missing: false,
             last_index,
+            page_count: 4,
             pages_digest: [0; 32],
         };
         assert!(!ticket(false, Some(3)).partial(3, false));
@@ -6000,12 +6385,17 @@ mod tests {
             (
                 AiError::NotInstalled,
                 "aiNotInstalled",
-                "isn't on this computer",
+                "isn't on this device",
             ),
-            (AiError::Damaged, "aiDamaged", "isn't on this computer"),
+            (AiError::Damaged, "aiDamaged", "isn't on this device"),
             (AiError::Memory, "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
+            (
+                AiError::SummaryTooLarge,
+                "aiSummaryTooLarge",
+                "complete summary is too large",
+            ),
             (AiError::Cancelled, "aiCancelled", "could not finish"),
             (AiError::Failed, "aiFailed", "could not finish"),
         ] {
@@ -7103,7 +7493,32 @@ mod tests {
         let library = include_str!("lib.rs");
         let build_script = include_str!("../build.rs");
         let command_marker = ["#[tauri", "::command]"].concat();
-        assert_eq!(permissions.len(), library.matches(&command_marker).count());
+        // A command whose feature is switched off in the screens stays declared, compiled and
+        // tested, but is granted only while its flag in src/ai/features.ts is on (with
+        // removeUnusedCommands, Tauri then leaves it out of the handler). The flag and the grant
+        // change together.
+        // Each switched-off command with the flag in features.ts that switches it on.
+        const SWITCHABLE: &[(&str, &str)] = &[("ai_explain", "AI_EXPLAIN_ENABLED")];
+        let features = include_str!("../../src/ai/features.ts");
+        let mut not_granted = 0;
+        for &(command, flag) in SWITCHABLE {
+            let on = features.contains(&format!("export const {flag}: boolean = true;"));
+            let off = features.contains(&format!("export const {flag}: boolean = false;"));
+            assert!(on != off, "{flag} must be a plain true or false constant");
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            let granted = permissions.contains(&grant.as_str());
+            assert_eq!(
+                granted, on,
+                "{grant} must be granted exactly when {flag} is on"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += usize::from(!granted);
+        }
+        assert_eq!(
+            permissions.len() + not_granted,
+            library.matches(&command_marker).count()
+        );
         for permission in permissions {
             assert!(!permission.contains(':'));
             let command = permission.strip_prefix("allow-").unwrap().replace('-', "_");
@@ -7366,6 +7781,7 @@ mod historical_identifier_export_tests {
                 truncated: false,
                 pages_missing: false,
                 last_index: Some(0),
+                page_count: 1,
                 pages_digest: pages_digest([(0, "Zorvana")]),
             },
         );
@@ -7399,6 +7815,132 @@ mod historical_identifier_export_tests {
         assert!(!outcome.saved);
         assert_eq!(outcome.hits.len(), 1);
         assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn profile_details_ipc_distinguishes_omission_clear_and_invalid_null() {
+        let profile = Uuid::new_v4();
+        let request = |details| serde_json::json!({"profileId":profile,"details":details,"today":"2026-11-09"});
+        let omitted: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({}))).unwrap();
+        assert!(omitted.details.previous_full_names.is_none());
+        let cleared: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({"previousFullNames":[]}))).unwrap();
+        assert_eq!(cleared.details.previous_full_names, Some(vec![]));
+        assert!(serde_json::from_value::<ProfileDetailsRequest>(request(
+            serde_json::json!({"previousFullNames":null})
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn native_text_export_refuses_a_previous_full_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        // The baseline uses every authoritative current, historical and delivery
+        // source. This canary must depend only on the explicit previous-name list.
+        let baseline = store.known_identifiers(record).unwrap();
+        assert!(
+            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        assert!(
+            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        let now = 1_792_713_600_000;
+        store
+            .update_profile_details(
+                profile,
+                vault::ProfileDetails {
+                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
+                    ..Default::default()
+                },
+                &vault::utc_date_text(now),
+                now,
+            )
+            .unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "Velorina")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Velorina".to_owned(),
+        };
+        let with_previous = store.known_identifiers(record).unwrap();
+        let hits = text_recheck::identifier_hits(
+            "Velorina",
+            &with_previous.names,
+            &with_previous.birth_dates,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].start, hits[0].end), (0, 8));
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
         assert!(!destination.exists());
 
         // Only this disposable synthetic vault is damaged. The audit view may
@@ -8398,6 +8940,7 @@ mod native_localization_tests {
             VaultError::NotFound,
             VaultError::Invalid,
             VaultError::AiResultsFull,
+            VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
@@ -8542,6 +9085,7 @@ mod event_permission_ipc_tests {
             "ai-model-add-progress",
             "ai-model-add-ended",
             "ai-answer-started",
+            "ai-answer-progress",
         ] {
             let id = tauri::test::get_ipc_response(&main, listen(event))
                 .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))
@@ -8795,3 +9339,93 @@ mod audit_history_ipc_tests {
         assert_eq!(locked["code"], "locked");
     }
 }
+
+#[cfg(test)]
+mod page_boxes_command_tests {
+    use super::*;
+    use pdf_unlock::Refusal;
+    use pdf_view::BoxesOutcome;
+
+    #[test]
+    fn the_answer_gives_fractions_or_none_with_why_and_refusals_as_for_a_page() {
+        assert_eq!(
+            PageBoxesAnswer::from_outcome(
+                BoxesOutcome::Found(vec![[0, 6_553, 65_535, 13_107]]),
+                false
+            )
+            .unwrap(),
+            PageBoxesAnswer {
+                rects: vec![[0.0, 6_553.0 / 65_535.0, 1.0, 13_107.0 / 65_535.0]],
+                absent: None,
+            }
+        );
+        let absent =
+            PageBoxesAnswer::from_outcome(BoxesOutcome::Absent(page_boxes::Absent::Skewed), false)
+                .unwrap();
+        assert!(absent.rects.is_empty());
+        assert_eq!(
+            serde_json::to_value(&absent).unwrap(),
+            serde_json::json!({"rects": [], "absent": "skewed"})
+        );
+        assert_eq!(
+            serde_json::to_value(
+                PageBoxesAnswer::from_outcome(BoxesOutcome::Found(vec![[1, 2, 3, 4]]), false)
+                    .unwrap()
+            )
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+            ["rects"]
+        );
+        for (outcome, given, error) in [
+            (
+                BoxesOutcome::Refused(Refusal::WrongPassword),
+                true,
+                VaultError::PdfWrongPassword,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::WrongPassword),
+                false,
+                VaultError::PdfLocked,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::NoSuchPage),
+                false,
+                VaultError::Invalid,
+            ),
+            (
+                BoxesOutcome::Refused(Refusal::Damaged),
+                false,
+                VaultError::PdfViewFailed,
+            ),
+            (BoxesOutcome::Cancelled, false, VaultError::Cancelled),
+            (BoxesOutcome::NoSandbox, false, VaultError::PdfViewNoSandbox),
+            (BoxesOutcome::Failed, false, VaultError::PdfViewFailed),
+        ] {
+            assert_eq!(
+                std::mem::discriminant(&PageBoxesAnswer::from_outcome(outcome, given).unwrap_err()),
+                std::mem::discriminant(&error)
+            );
+        }
+    }
+
+    #[test]
+    fn the_boxes_command_wipes_the_password_and_runs_off_the_main_thread() {
+        let source = include_str!("lib.rs");
+        let body = |name: &str| {
+            let start = source.find(name).unwrap();
+            &source[start..start + source[start..].find("\n}\n").unwrap()]
+        };
+        let command = body("async fn vault_page_boxes(");
+        assert!(command.contains("run_blocking("));
+        assert!(command.contains("pdf_view::ViewTicket::boxes()"));
+        assert!(command.contains("pdf_view::boxes_in_helper("));
+        assert!(body("impl Drop for PageBoxesRequest").contains("password.zeroize()"));
+        assert!(source.contains("            vault_page_boxes,\n"));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod extraction_acceptance_tests;

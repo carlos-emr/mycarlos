@@ -99,6 +99,93 @@ describe("locateQuote", () => {
     expect(locateQuote(doc, "结节")).toBeNull();
   });
 
+  // A FAKE letter as a PDF's text layer gives it: ligature characters (U+FB01,
+  // U+FB03), a comma at the start of a wrapped line, a micro sign (U+00B5), and
+  // the Bloods line before the Diagnosis line. quote_locate.rs (the Rust
+  // runner's gate) has the same cases.
+  const pdfLetter = fakeDocumentText([
+    "Bloods (3 November 2026): hemoglobin 101 g/L, ferritin 5 \u{b5}g/L\n" +
+      "Diagnosis\nCeliac disease, con\u{fb01}rmed by biopsy\n" +
+      ", with iron de\u{fb01}ciency anemia\n" +
+      "Referral to our clinic dietitian, Robin FAKE-Dietwell; " +
+      "the dietitian's o\u{fb03}ce\nwill call within 2\nweeks.",
+  ]);
+  const pdfText = pdfLetter.pages[0].text;
+  const pdfQuoted = (quote: string) => {
+    const span = locateQuote(pdfLetter, quote);
+    expect(span, quote).not.toBeNull();
+    return pdfText.slice(span!.start, span!.end);
+  };
+
+  it("finds quotes typed with letters where the PDF has ligatures, and the other way", () => {
+    expect(pdfQuoted("iron deficiency anemia")).toBe(
+      "iron de\u{fb01}ciency anemia",
+    );
+    expect(pdfQuoted("the dietitian's office will call within 2 weeks")).toBe(
+      "the dietitian's o\u{fb03}ce\nwill call within 2\nweeks",
+    );
+    const plain = fakeDocumentText(["Celiac disease, confirmed by biopsy."]);
+    expect(
+      locateQuote(plain, "Celiac disease, con\u{fb01}rmed by biopsy"),
+    ).not.toBeNull();
+  });
+
+  it("treats the micro sign and the Greek mu as one letter, and curly and straight apostrophes alike", () => {
+    expect(pdfQuoted("ferritin 5 \u{3bc}g/L")).toBe("ferritin 5 \u{b5}g/L");
+    expect(pdfQuoted("the dietitian\u{2019}s office will call")).toBe(
+      "the dietitian's o\u{fb03}ce\nwill call",
+    );
+  });
+
+  it("drops a space before a comma on both sides", () => {
+    expect(
+      pdfQuoted("Celiac disease, confirmed by biopsy, with iron deficiency"),
+    ).toBe(
+      "Celiac disease, con\u{fb01}rmed by biopsy\n, with iron de\u{fb01}ciency",
+    );
+    // A model that copies the stray space is found as well.
+    expect(
+      pdfQuoted("Celiac disease, confirmed by biopsy , with iron deficiency"),
+    ).toContain("biopsy\n, with");
+  });
+
+  it("finds a quote of parts joined by dots in order, and not out of order", () => {
+    expect(
+      locateQuote(
+        pdfLetter,
+        "hemoglobin 101 g/L, ferritin 5 \u{3bc}g/L ... Celiac disease, confirmed by biopsy",
+      ),
+    ).not.toBeNull();
+    // The Bloods line comes first in this letter.
+    expect(
+      locateQuote(
+        pdfLetter,
+        "Celiac disease, confirmed by biopsy ... hemoglobin 101 g/L, ferritin 5 \u{3bc}g/L",
+      ),
+    ).toBeNull();
+  });
+
+  it("finds a quote over two lines only when nothing but white space is between them", () => {
+    expect(
+      locateQuote(pdfLetter, "Diagnosis Celiac disease, confirmed by biopsy"),
+    ).not.toBeNull();
+    expect(
+      locateQuote(pdfLetter, "Bloods (3 November 2026) Celiac disease"),
+    ).toBeNull();
+  });
+
+  it("does not find words the letter does not have", () => {
+    expect(
+      locateQuote(
+        pdfLetter,
+        "the dietitian's office will phone within 2 weeks",
+      ),
+    ).toBeNull();
+    expect(
+      locateQuote(pdfLetter, "Celiac disease, confirmed by colonoscopy"),
+    ).toBeNull();
+  });
+
   it("skips pages with no text", () => {
     const doc = fakeDocumentText(["", "Heart size normal."]);
     expect(locateQuote(doc, "Heart size normal")?.page).toBe(1);

@@ -17,6 +17,7 @@ import {
 } from "./PersonDetails";
 import type { PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
+import { SpokenCount } from "./SpokenCount";
 import {
   useEffect,
   useRef,
@@ -386,7 +387,7 @@ export function SecuritySettings({
               <Icon name="hidden" />
               <span className="hidden-entry-copy">
                 {translateNow("interface.HiddenDocuments.hidden")}{" "}
-                <span className="nav-count">{formatNumber(hiddenCount)}</span>{" "}
+                <SpokenCount count={hiddenCount} />{" "}
                 <span className="hidden-entry-scope">{hiddenScopeName}</span>
               </span>
             </button>

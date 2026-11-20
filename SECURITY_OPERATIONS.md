@@ -156,6 +156,76 @@ If a portal or a clinic key may be compromised, follow the incident steps above.
 revokes its key in CARLOS (carlos-emr/carlos#4691), myCarlos refuses packages signed by a key that
 was not active in the key list it pinned at linking (it does not yet learn of a later revocation), and patients can remove a device under Account → Linked devices in the portal.
 
+## Tray notices (#230): the waiting key
+
+The myCarlos poller is planned in #230; its storage implementation is in #270
+([THREAT_MODEL](THREAT_MODEL.md) NET-04). The Portal contract is implemented in carlos-portal#88
+(for carlos-portal#87). With the tray (#206), closing the window locks the vault, and the device
+keys are inside it. A waiting key lets the locked app ask each linked portal one question:
+is anything waiting for this device?
+
+**What may leave the device:**
+
+- **Registering** (while unlocked, at link time): `POST /api/mycarlos/availability/waiting-keys`,
+  signed with the link's device key as any device request, carrying the waiting key's public half
+  and its `key_id`, with `alg: "ed25519"`. A key the link already had is replaced.
+- **Asking** (locked, in the tray): `POST /api/mycarlos/availability/waiting`, body `key_id` only,
+  with the `X-MyCarlos-Waiting-Assertion` header signed by the waiting key: `aud`
+  (`carlos-patient-portal-waiting-check`), `iss`, `kid`, `jti`, `iat`, `exp` (60 s or less) and
+  `request_hash`. Not more than once every 120 s per key (the portal answers `429` with
+  `Retry-After`), with jitter and back-off. The answer is yes or no, the same size either way.
+- Nothing else: no vault, record or person id, no document or patient detail, no device detail
+  beyond what the link already sent. The network still sees the IP address, the portal's host name
+  and the times of the checks.
+
+A yes shows one generic notice, in the last-used language, with no clinic, document, name or count,
+once until the next unlock. Clicking it opens the unlock screen; after unlock the normal document
+check takes over.
+
+New links retain link-time registration. Before tray checks resume for an older link, a restored
+backup or a key wiped when notices were disabled, the planned #230 integration must reconcile
+missing or unusable registrations at an authorized unlocked opportunity, respecting the patient's
+switches. A confirmed revoked key id requires a fresh key. This transition remains an activation
+requirement, not implemented enrollment or a new opt-in decision.
+
+**Revoking and wiping.** The local waiting key is wiped (its slot in `notice-keys.v1`; the OS item
+too when no key is left), and portal revocation is requested. It may remain pending while offline:
+
+- when the patient turns tray notices or the tray off, or unlinks the clinic while unlocked:
+  the device revokes it with the link's device key
+  (`DELETE /api/mycarlos/availability/waiting-keys/{key_id}`). If that cannot be sent, remote
+  revocation remains pending. The planned integration needs durable retry storage for these
+  waiting-key deletions; format 9's existing 64-entry push-destination queue does not yet define
+  their encoding. This is an open integration requirement, not a currently implemented retry;
+- when tray notices are turned off while locked, or the vault is reset, erased or set aside, or
+  another vault is opened: the device keys are unavailable while locked or may be gone after
+  reset, so the planned integration requests self-revocation
+  (`DELETE /api/mycarlos/availability/waiting`, signed by the waiting key), subject to the
+  authorization/retry handoff before local wiping described below;
+- when the portal answers `404`: the key was revoked there, the device was removed, or the portal
+  refused it for another reason it doesn't give. The device stops asking with that key. Open
+  (#230): whether it wipes the key at the first `404`, or only after a few, since a portal whose
+  notices are switched off may answer the same way. Before activation, #230 must also define the
+  user-visible unavailable state and safe authorized unlocked recovery/re-enrollment transition;
+  the wipe threshold and retry policy remain open.
+
+Local wiping does not confirm remote revocation. The locked self-revocation branch also needs
+a reviewed durable authorization/retry handoff before local wiping, or an accepted manual fallback,
+before activation;
+the mechanism remains open in #230. A generic `404` is not proof that revocation succeeded.
+
+**At the portal:** removing the device, by the patient or clinic staff through CARLOS, revokes
+its waiting keys immediately. That is the clinic's kill switch for a lost or offline device.
+Standalone staff key revocation and a device-unlink route remain follow-up work. A revoked key
+gets `404`, like any other refusal, so the answer doesn't say why.
+
+**If a device is lost or its OS account may be compromised:** remove the device in the portal
+(Account → Linked devices), or ask the clinic to. Whoever has the device's files and its OS account
+can learn which portals the vault is linked to and whether something is waiting at each, until
+then; they cannot read, list or pick up anything with the waiting key. Uninstalling on Windows
+should remove the Credential Manager item (`myCarlos/notice-keys/v1`); if it is left, delete it in
+Credential Manager by hand.
+
 ## AI helper (#72): nothing about the patient leaves the device
 
 The anonymized text export (part B) is built on main (#171, computers only), and so are the reader's Summary and Explain behind the notice (#217), the model runtime (#218), the model download (#219) and kept answers (#212) ([THREAT_MODEL](THREAT_MODEL.md) AI-01 to AI-10). Ben decided

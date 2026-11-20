@@ -70,7 +70,7 @@ test("first setup fits its window at 200% default text", async ({
   expect(await cutOffAtTheSides(page), "comfort: cut off").toEqual([]);
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(
-    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    page.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   expect(await cutOffAtTheSides(page), "cut off at the window's side").toEqual(
     [],

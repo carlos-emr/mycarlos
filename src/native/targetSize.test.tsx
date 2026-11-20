@@ -260,7 +260,7 @@ describe("targets and text sizes in the app (#67)", () => {
         press("Rename document");
         expectComfortable("rename document");
         press("Cancel");
-        press("Save a copy to this computer");
+        press("Save a copy to this device");
         expectComfortable("confirm save a copy");
         press("Cancel");
         press("Close document details");

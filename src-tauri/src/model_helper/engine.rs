@@ -5,9 +5,11 @@ use super::{
     answer_hash, document_budget, explain_prompt, explain_system_prompt, fit_pages,
     gemma4_conversation, language_name, read_explanation, read_summary, summary_grammar,
     summary_prompt, summary_system_prompt, thinking_off, without_slot, ChatFormat, Fit, ModelFile,
-    Page, Sentence, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS, CONTEXT_TOKENS,
-    EXPLAIN_TOKENS, MAX_SENTENCES, SLOT, SUMMARY_TOKENS,
+    Page, Sentence, SentenceCount, Settings, Stats, ANSWER_HASH_START, BATCH_TOKENS,
+    CONTEXT_TOKENS, EXPLAIN_TOKENS, MAX_SENTENCES, PROGRESS_READING, PROGRESS_WRITING, SLOT,
+    SUMMARY_TOKENS,
 };
+
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -20,6 +22,9 @@ use llama_cpp_2::token::data_array::LlamaTokenDataArray;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use std::num::NonZeroU32;
+
+/// Told how far a summary is (`progress_line`): a stage, a count done and its total.
+pub(super) type Report<'a> = &'a mut dyn FnMut(&'static str, u32, u32);
 
 /// Whether the weights are mapped from the file rather than read into the helper's memory.
 /// Linux: read, so that the sealed copy (shared memory) can be closed once loaded and is not
@@ -53,7 +58,8 @@ pub(super) struct Engine {
 /// words: those are always parts, read after the prefix (see [`assemble`]). Each answer starts
 /// from a cleared, zeroed cache; when its prefix is one read before, word for word, that state
 /// is put back instead of reading the prefix again. Kept in the helper's memory only, until it
-/// stops (at lock).
+/// stops (at lock), also when the context is made again for other answer threads (see
+/// [`kept_across_threads`]).
 struct Prefix {
     tokens: Vec<LlamaToken>,
     state: SeqState,
@@ -63,6 +69,15 @@ struct Prefix {
 const KEPT_PREFIXES: usize = 2;
 /// A prefix state larger than this is not kept.
 const MAX_PREFIX_BYTES: usize = 128 * 1024 * 1024;
+
+/// Whether a kept prefix of `len` tokens still fits a context made again for other answer
+/// threads. Its state is plain bytes, read in [`BATCH_TOKENS`] batches on the prompt's threads,
+/// which never change: put back, it is what the new context would read itself. Except when its
+/// last batch is a single token: llama.cpp reads a one-token batch on the answer threads, and
+/// its sums (one-token attention over a long cache) depend on how many there are.
+fn kept_across_threads(len: usize) -> bool {
+    len % BATCH_TOKENS as usize != 1
+}
 
 /// A prompt's tokens from its templated text: each piece between [`SLOT`]s read with control
 /// tokens (the first with the model's start token), each part (a document's, a term's or a
@@ -102,6 +117,14 @@ fn context_params(threads: i32, batch_threads: i32) -> LlamaContextParams {
         .with_n_threads_batch(batch_threads)
 }
 
+/// Whether a number as llama.cpp writes out the model file's value fits llama.cpp's `int32_t`
+/// accessors, which turn a larger one negative.
+fn fits_int32(value: Option<&str>) -> bool {
+    value
+        .and_then(|value| value.trim().parse::<i32>().ok())
+        .is_some_and(|value| value >= 0)
+}
+
 /// Why a request got no answer, as the helper's error line says it: short, fixed words.
 type Failure = String;
 
@@ -110,6 +133,48 @@ fn failed(what: &str) -> Failure {
 }
 
 impl Engine {
+    /// What llama.cpp found in the file it loaded, and the context it made, for the hello
+    /// (model limits). From llama.cpp's own accessors: nothing here parses the file again. The
+    /// architecture is cut to its plain characters; the parent checks every field's range.
+    pub(super) fn card(&self) -> crate::model_limits::ModelCard {
+        let architecture = self
+            .model
+            .meta_val_str("general.architecture")
+            .unwrap_or_default();
+        crate::model_limits::ModelCard {
+            architecture: crate::model_limits::clean_architecture(&architecture),
+            trained_context: self.trained_context(&architecture),
+            context_made: self.context.as_ref().map_or(0, |context| context.n_ctx()),
+            parameters: self.model.n_params(),
+            // llama-cpp-2 unwraps llama.cpp's int32_t here, which cannot fail: llama.cpp refuses
+            // to load a file of more than 512 blocks (LLAMA_MAX_LAYERS), and its extra
+            // prediction layers are never more than its blocks.
+            layers: self.model.n_layer(),
+            vocabulary: u32::try_from(self.model.n_vocab()).unwrap_or(0),
+            recurrent: self.model.is_recurrent(),
+            hybrid: self.model.is_hybrid(),
+        }
+    }
+
+    /// The context the model was trained for, or 0 when the file's number does not fit an
+    /// `int32_t`. llama.cpp hands that number back as one, and llama-cpp-2's `n_ctx_train`
+    /// panics on a negative one: a file claiming 2^31 or more would end the helper before its
+    /// hello. llama.cpp takes the number as it stands in the file's
+    /// `<architecture>.context_length`, so the helper reads that first, through llama.cpp too,
+    /// and asks only when it fits. The parent refuses 0 (TrainedContext), so the card is
+    /// dropped, and the model runs as before.
+    fn trained_context(&self, architecture: &str) -> u32 {
+        let claimed = self
+            .model
+            .meta_val_str(&format!("{architecture}.context_length"))
+            .ok();
+        if fits_int32(claimed.as_deref()) {
+            self.model.n_ctx_train()
+        } else {
+            0
+        }
+    }
+
     /// Loads the model the settings name, with its context. Runs inside the load sandbox.
     pub(super) fn load(settings: &Settings) -> Result<Self, Failure> {
         let mut backend = LlamaBackend::init().map_err(|_| failed("backend"))?;
@@ -153,9 +218,11 @@ impl Engine {
     }
 
     /// Answers from now on are written on `threads` threads (between one and the prompt's),
-    /// as the app chose from the computer's load; none keeps them as they are. Prompts are
+    /// as the app chose (`local_runner::answer_threads`); none keeps them as they are. Prompts are
     /// always read on all of the helper's. The context is made again when the number changes:
-    /// each answer starts from an empty cache, so only the time to make it is spent.
+    /// each answer starts from an empty cache, so only the time to make it is spent, and the
+    /// kept prefixes stay (see [`kept_across_threads`]), so a busy computer does not also read
+    /// the instructions again.
     pub(super) fn use_threads(&mut self, threads: Option<u32>) -> Result<(), Failure> {
         let Some(threads) = threads else {
             return Ok(());
@@ -167,8 +234,10 @@ impl Engine {
             return Ok(());
         }
         // The old context goes first: with the real model's weights, two at once would not fit
-        // the helper's memory cap. Its kept prefixes go with it.
-        self.prefixes.clear();
+        // the helper's memory cap. The kept prefixes are copies of its state, not part of it:
+        // they stay, unless the new threads would have read them differently.
+        self.prefixes
+            .retain(|kept| kept_across_threads(kept.tokens.len()));
         // Zeroed, then dropped: nothing of the last answer stays in the memory it frees.
         if let Some(context) = self.context.as_mut() {
             context.clear_kv_cache();
@@ -286,12 +355,17 @@ impl Engine {
     /// Reads `tokens`, then writes at most `max` tokens, under `grammar` if given. Returns what
     /// it wrote and whether it stopped at `max`. The first `prefix_len` tokens are the
     /// instruction prefix: read once, then put back (see [`Prefix`]).
+    ///
+    /// With `progress` (a summary: its report and its sentence cap), it is told after each
+    /// batch read and each sentence closed, between the model's steps: what the model reads
+    /// and writes, and how, is the same with it or without it.
     fn generate(
         &mut self,
         tokens: &[LlamaToken],
         prefix_len: usize,
         max: usize,
         grammar: Option<&str>,
+        progress: Option<(Report<'_>, u32)>,
     ) -> Result<(String, bool), Failure> {
         if tokens.is_empty() || tokens.len() + max > CONTEXT_TOKENS as usize {
             return Err(failed("too long"));
@@ -325,20 +399,46 @@ impl Engine {
         let batch_size = BATCH_TOKENS as usize;
         let mut batch = LlamaBatch::new(batch_size, 1);
         let last = tokens.len() - 1;
+        let (mut report, sentence_cap) = match progress {
+            Some((report, cap)) => (Some(report), cap),
+            None => (None, 0),
+        };
+        let restored = prefix_len > 0 && self.restore_prefix(&tokens[..prefix_len]);
+        // What this answer reads: a prefix put back is not read.
+        let to_read = (if restored {
+            tokens.len() - prefix_len
+        } else {
+            tokens.len()
+        }) as u32;
+        let mut read_so_far = 0;
+        let mut after_batch = |read: usize| {
+            read_so_far += read as u32;
+            if let Some(report) = report.as_mut() {
+                report(PROGRESS_READING, read_so_far, to_read);
+            }
+        };
         if prefix_len > 0 {
-            if self.restore_prefix(&tokens[..prefix_len]) {
+            if restored {
                 self.stats.cache_hit = true;
             } else {
                 // Read on its own, as when it is put back, so both ways do the same sums.
-                self.read(&mut batch, &tokens[..prefix_len], 0, last)?;
+                self.read(&mut batch, &tokens[..prefix_len], 0, last, &mut after_batch)?;
                 self.keep_prefix(&tokens[..prefix_len]);
             }
         }
-        self.read(&mut batch, &tokens[prefix_len..], prefix_len, last)?;
+        self.read(
+            &mut batch,
+            &tokens[prefix_len..],
+            prefix_len,
+            last,
+            &mut after_batch,
+        )?;
         let read = std::time::Instant::now();
         self.stats.prompt_ms = (read - started).as_millis() as u64;
         let vocab = self.model.vocab();
         let mut written = Vec::new();
+        let mut sentences = SentenceCount::default();
+        let mut closed = 0;
         for position in (tokens.len()..).take(max) {
             let (token, scanned) = self.pick(batch.n_tokens() - 1, grammar.as_mut());
             self.stats.grammar_scans += u32::from(scanned);
@@ -351,7 +451,15 @@ impl Engine {
             if let Some(grammar) = grammar.as_mut() {
                 grammar.accept(token);
             }
+            let before = written.len();
             vocab.token_to_piece_into(token, &mut written, false, None);
+            if let Some(report) = report.as_mut() {
+                let now = sentences.feed(&written[before..]);
+                if now > closed && now <= sentence_cap as usize {
+                    closed = now;
+                    report(PROGRESS_WRITING, closed as u32, sentence_cap);
+                }
+            }
             batch.clear();
             batch
                 .add(token, position as i32, &[0], true)
@@ -366,12 +474,14 @@ impl Engine {
     }
 
     /// Reads `tokens` from `start` on, in batches; the token at `last` gets its scores.
+    /// `after_batch` is told each batch's length once it is read.
     fn read(
         &mut self,
         batch: &mut LlamaBatch,
         tokens: &[LlamaToken],
         start: usize,
         last: usize,
+        after_batch: &mut dyn FnMut(usize),
     ) -> Result<(), Failure> {
         let batch_size = BATCH_TOKENS as usize;
         for (chunk_index, chunk) in tokens.chunks(batch_size).enumerate() {
@@ -383,6 +493,7 @@ impl Engine {
                     .map_err(|_| failed("batch"))?;
             }
             self.ctx_mut().decode(batch).map_err(|_| failed("decode"))?;
+            after_batch(chunk.len());
         }
         Ok(())
     }
@@ -469,11 +580,13 @@ impl Engine {
     }
 
     /// A summary of the pages that fit, in `lang`, with the fit it read.
+    /// `report` is told how far it is (see [`Engine::generate`]).
     pub(super) fn summarize(
         &mut self,
         lang: &str,
         pages: &[Page],
         max_sentences: usize,
+        report: Report<'_>,
     ) -> Result<(Vec<Sentence>, Fit), Failure> {
         let language = language_name(lang).ok_or_else(|| failed("language"))?;
         let max_sentences = max_sentences.clamp(1, MAX_SENTENCES);
@@ -497,8 +610,13 @@ impl Engine {
         .ok_or_else(|| failed("no room"))?;
         let (tokens, prefix_len) = self.prompt_tokens(&system, &user, &[&fit.text])?;
         let grammar = summary_grammar(max_sentences);
-        let (written, capped) =
-            self.generate(&tokens, prefix_len, SUMMARY_TOKENS, Some(&grammar))?;
+        let (written, capped) = self.generate(
+            &tokens,
+            prefix_len,
+            SUMMARY_TOKENS,
+            Some(&grammar),
+            Some((report, max_sentences as u32)),
+        )?;
         let sentences = read_summary(&written, capped).ok_or_else(|| failed("unreadable"))?;
         Ok((sentences, fit))
     }
@@ -515,7 +633,7 @@ impl Engine {
         let user = explain_prompt(language);
         let (term, context) = (without_slot(term), without_slot(context));
         let (tokens, prefix_len) = self.prompt_tokens(&system, &user, &[&term, &context])?;
-        let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None)?;
+        let (written, capped) = self.generate(&tokens, prefix_len, EXPLAIN_TOKENS, None, None)?;
         read_explanation(&written, capped).ok_or_else(|| failed("empty"))
     }
 }
@@ -545,6 +663,18 @@ mod tests {
     }
 
     const MARKER: &str = "FAKE-MARKER-Q7 Rowan Testwood 148/88";
+
+    #[test]
+    fn a_trained_context_is_asked_for_only_when_it_fits_llama_cpp_s_int32() {
+        for fits in ["0", "4096", "8192", "262144", "2147483647", " 8192 "] {
+            assert!(fits_int32(Some(fits)), "{fits}");
+        }
+        // 2^31 and more come back negative (llama-cpp-2 would panic); no number, or none read.
+        for refused in ["2147483648", "4294967295", "-1", "", "8k", "8192.0", "1e5"] {
+            assert!(!fits_int32(Some(refused)), "{refused}");
+        }
+        assert!(!fits_int32(None));
+    }
 
     #[test]
     fn the_instruction_prefix_never_holds_a_document_a_term_or_a_sentence() {
@@ -585,5 +715,18 @@ mod tests {
         // A prompt whose slots don't match its parts is refused.
         assert!(assemble(&summary, &[], by_character).is_none());
         assert!(assemble(&summary, &["a", "b"], by_character).is_none());
+    }
+
+    #[test]
+    fn a_prefix_is_kept_across_threads_unless_its_last_batch_is_one_token() {
+        let batch = BATCH_TOKENS as usize;
+        // Read in batches of more than one token, on the prompt's threads only: kept.
+        for len in [2, 43, batch - 1, batch, batch + 2, batch + 43, 2 * batch] {
+            assert!(kept_across_threads(len), "{len}");
+        }
+        // A last batch of one token is read on the answer threads: not kept.
+        for len in [1, batch + 1, 2 * batch + 1] {
+            assert!(!kept_across_threads(len), "{len}");
+        }
     }
 }

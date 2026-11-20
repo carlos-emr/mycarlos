@@ -30,6 +30,10 @@ export const AI_COMMANDS = {
   // Adding and removing the model (root-4a's side of the agreement).
   catalog: "ai_model_catalog",
   models: "ai_models",
+  // Each model's limits for the settings (model limits).
+  limits: "ai_model_limits",
+  // Loading the model in use once, when it is chosen or added (D218).
+  check: "ai_model_check",
   use: "ai_model_use",
   addPicked: "ai_model_add_picked",
   download: "ai_model_download",
@@ -53,9 +57,19 @@ type AiCommand = (typeof AI_COMMANDS)[keyof typeof AI_COMMANDS];
 /** The model the fake has, when one is installed. */
 export const FAKE_MODEL = { name: "FAKE test model", sha256: "test-only" };
 
+/** How much of a document a model reads at a time (#301), as the native side
+ * says it. */
+export interface FakeCapacity {
+  contextTokens: number;
+  documentTokens: number;
+}
 export type FakeModelStatus =
   | { state: "notInstalled" }
-  | { state: "installed"; model: { name: string; sha256: string } }
+  | {
+      state: "installed";
+      model: { name: string; sha256: string };
+      capacity?: FakeCapacity | null;
+    }
   | { state: "unsupported"; reason: "ram" | "cpu" | "platform" }
   | { state: "damaged" };
 
@@ -104,6 +118,15 @@ export interface FakeAiSetup {
   };
   /** What the model says it explains a term as. */
   explanation?: string;
+  /** The last page a summary reads, by its index, as the helper's own fit
+   * would (#301). Default: every page. */
+  readUpTo?: number;
+  /** Whether the helper has run the models in this session, so their limits
+   * are confirmed (model limits). Default: not yet. */
+  limitsConfirmed?: boolean;
+  /** What loading the model in use once says when it is chosen or added
+   * (D218). Default: it runs, and its limits are then confirmed. */
+  loadCheck?: "ready" | "cannotRun" | "memory" | "damaged" | "skipped";
   /** The one accepted model, as ai_model_catalog lists it: by default a
    * FAKE entry; a spec can give the real model's name, size and licence. */
   catalog?: Partial<FakeCatalogEntry>;
@@ -118,6 +141,8 @@ export interface FakeCatalogEntry {
   licence: string;
   notices: string[];
   sourceUrl: string;
+  /** How much of a document it reads at a time (#301). */
+  capacity?: FakeCapacity;
 }
 
 /** How the PDF helper read a document's text (see `FakeAiSetup.readAs`). */
@@ -191,6 +216,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             : {
                 state: "installed",
                 model: { name: chosen.model.name, sha256: chosen.model.sha256 },
+                // As native: the in-use catalogue entry's capacity (#301).
+                ...(chosen.model.capacity
+                  ? { capacity: structuredClone(chosen.model.capacity) }
+                  : {}),
               };
         persistModels();
         return model;
@@ -216,6 +245,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       const cancelled: { command: string; by: string }[] = [];
       const holds = new Set<string>();
       let held: Held[] = [];
+      // The rows a load check found running in this window (D218).
+      const checkedRows = new Set<number>();
       let tickets = 0;
       const refusal = (code: string, messageKey: string) => ({
         code,
@@ -360,6 +391,20 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         switch (command) {
           case c.modelStatus:
             return structuredClone(modelStatus());
+          // As native: the catalogue's capacity per offered row, not confirmed
+          // until the helper has run it; no memory figure is ever shown.
+          case c.limits:
+            return modelRows
+              .filter((row) => row.offered !== false && row.model.capacity)
+              .map((row) => ({
+                index: row.index,
+                capacity: structuredClone(row.model.capacity),
+                confirmed: setup.limitsConfirmed || checkedRows.has(row.index),
+                trainedContext: null,
+                parameters: null,
+                fileBytes: row.model.sizeBytes,
+                neededBytes: 0,
+              }));
           case c.catalog:
             return modelRows
               .filter((row) => row.offered !== false)
@@ -370,6 +415,25 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                 (row) => row.offered !== false || row.state !== "notDownloaded",
               )
               .map(({ offered: _offered, ...row }) => structuredClone(row));
+          // As native: only the row in use, nothing while an answer is asked;
+          // a model that runs has made its context, so its limits are
+          // confirmed (D218).
+          case c.check: {
+            const row = modelRows.find(
+              (entry) => entry.index === request.index,
+            );
+            if (
+              !row?.inUse ||
+              row.state !== "installed" ||
+              held.some(
+                (entry) =>
+                  entry.command === c.summarize || entry.command === c.explain,
+              )
+            )
+              return "skipped";
+            if (setup.loadCheck === "ready") checkedRows.add(row.index);
+            return setup.loadCheck;
+          }
           case c.use: {
             const row = modelRows.find(
               (entry) => entry.index === request.index,
@@ -541,9 +605,13 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
               index: number;
               text: string;
             }[];
-            // One sentence per page with text, quoting its first line.
+            // One sentence per page with text it read, quoting its first line.
             const sentences = pages
-              .filter((page) => page.text.trim())
+              .filter(
+                (page) =>
+                  page.text.trim() &&
+                  (setup.readUpTo === null || page.index <= setup.readUpTo),
+              )
               .map((page) => {
                 const line = page.text.trim().split("\n")[0].trim();
                 return {
@@ -551,10 +619,11 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                   quote: line,
                 };
               });
+            const last = pages.at(-1)?.index ?? 0;
             return {
               sentences,
               model: structuredClone(model.model),
-              lastPage: pages.at(-1)?.index ?? 0,
+              lastPage: Math.min(last, setup.readUpTo ?? last),
               lastPageCut: false,
             };
           }
@@ -589,6 +658,9 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
           (answers[command] ??= []).push(value),
         listening: (event: string) =>
           listeners.filter((each) => each.event === event).length,
+        // An event as the app's native side would send it (progress of a
+        // run, for example), to the screens that listen for it.
+        emit: (event: string, payload: unknown) => emit(event, payload),
         release: (command: string) => {
           const entry = held.find((each) => each.command === command);
           if (!entry) throw new Error(`Nothing held for ${command}`);
@@ -785,6 +857,9 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       ),
       knownDetails: setup.knownDetails ?? {},
       explanation: setup.explanation ?? null,
+      readUpTo: setup.readUpTo ?? null,
+      limitsConfirmed: setup.limitsConfirmed ?? false,
+      loadCheck: setup.loadCheck ?? "ready",
       pickId: fakeUuid(1100),
       progressEvent: "ai-model-add-progress",
       // As ai_model_catalog lists the one accepted model. FAKE: no file.

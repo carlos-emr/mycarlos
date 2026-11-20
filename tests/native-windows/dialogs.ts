@@ -180,7 +180,7 @@ export async function testNativeDialogs(
           .click();
         await expect(
           page.getByRole("heading", {
-            name: "Set up myCarlos on this computer",
+            name: "Set up myCarlos on this device",
             exact: true,
           }),
         ).toBeVisible();
@@ -395,7 +395,7 @@ export async function testNativeDialogs(
         const imported = await Promise.allSettled([
           page
             .getByRole("button", {
-              name: translate("en", "interface.VaultApp.chooseFilesToImport"),
+              name: translate("en", "interface.VaultLibrary.new"),
               exact: true,
             })
             .click(),
@@ -738,7 +738,7 @@ export async function testNativeDialogs(
         const importedSpaced = await Promise.allSettled([
           page
             .getByRole("button", {
-              name: translate("en", "interface.VaultApp.chooseFilesToImport"),
+              name: translate("en", "interface.VaultLibrary.new"),
               exact: true,
             })
             .click(),

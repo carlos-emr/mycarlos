@@ -165,7 +165,8 @@ test("Hide takes a document out of view, Security > Hidden keeps it across a rel
   const entry = (count: number) =>
     page.getByRole("button", {
       name: new RegExp(
-        `^${escapeRegExp(hiddenLabel)}\\s+${count}\\s+${escapeRegExp(en("sidebar.myRecords"))}$`,
+        // The count is spoken with its unit (#149): "Hidden ⁨1⁩ document My records".
+        `^${escapeRegExp(hiddenLabel)}\\s+${escapeRegExp(en("sidebar.documents", { count }))}\\s+${escapeRegExp(en("sidebar.myRecords"))}$`,
       ),
     });
   await entry(1).click();
