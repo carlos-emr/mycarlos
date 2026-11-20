@@ -120,10 +120,16 @@ test("the language is chosen on the first screen only, and the set-up form follo
       labels.every((label) => {
         const box = label.getBoundingClientRect();
         const span = label.querySelector("span")!;
+        // 36px for a mouse, 44px for a finger.
+        const minimum = matchMedia(
+          "(pointer: fine) and (not (any-pointer: coarse))",
+        ).matches
+          ? 36
+          : 44;
         return (
           box.left >= 0 &&
           box.right <= innerWidth &&
-          box.height >= 44 &&
+          box.height >= minimum &&
           span.scrollWidth <= span.clientWidth + 1
         );
       }),
@@ -219,3 +225,120 @@ test("the unlock screen has a globe and language button that opens the list, wit
   await expect(page.getByRole("button", { name: /^Español \(/ })).toBeFocused();
   await expectOnlyFakedCommands(page);
 });
+
+for (const width of [320, 412, 1100]) {
+  test(`the language dialog insets its list like its title and does not repeat the heading, at ${width}px`, async ({
+    page,
+  }, info) => {
+    await page.setViewportSize({ width, height: 760 });
+    await fakeVault(page, "locked");
+    await page.goto("/");
+    await page.getByRole("button", { name: /^English \(Language\)$/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Language" });
+    await expect(dialog).toBeVisible();
+    // The word is the dialog's title only: no second visible heading above the list, and
+    // the list is still a named group.
+    await expect(dialog.getByRole("heading", { name: "Language" })).toHaveCount(
+      1,
+    );
+    await expect(dialog.locator(".language-title")).toHaveCount(0);
+    await expect(dialog.getByRole("group", { name: "Language" })).toBeVisible();
+    // The options line up with the title: inset from the dialog's edge by the same padding,
+    // not flush against it.
+    const box = (await dialog.boundingBox())!;
+    const title = (await dialog
+      .getByRole("heading", { name: "Language" })
+      .boundingBox())!;
+    const firstOption = (await dialog
+      .getByRole("radio")
+      .first()
+      .boundingBox())!;
+    const close = (await dialog
+      .getByRole("button", { name: "Close" })
+      .boundingBox())!;
+    expect(title.x - box.x).toBeGreaterThanOrEqual(16);
+    expect(firstOption.x - box.x).toBeGreaterThanOrEqual(16);
+    expect(Math.abs(firstOption.x - title.x)).toBeLessThan(2);
+    // Close is the dialog's own button, inside the dialog.
+    expect(close.x).toBeGreaterThanOrEqual(box.x - 1);
+    expect(close.x + close.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    // Nothing runs out of the dialog sideways.
+    expect(
+      await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: info.outputPath(`language-dialog-${width}.png`),
+    });
+    await expectOnlyFakedCommands(page);
+  });
+}
+
+// The language list in Preferences is a grid of real radio buttons: one column in a narrow
+// space or with enlarged text, two in a medium one, three in a wide one. The breakpoints are
+// the grid's own width in rem (22rem and 40rem), so enlarged text goes to fewer columns.
+for (const [width, zoom] of [
+  [320, ""],
+  [412, ""],
+  [1100, ""],
+  [1100, "200%"],
+  [320, "200%"],
+] as const) {
+  test(`Preferences lays the language buttons out by the room they have at ${width}px${zoom ? " with text at " + zoom : ""}`, async ({
+    page,
+  }, info) => {
+    test.skip(
+      info.project.name === "phone" && width > 500,
+      "a wide window is measured on the desktop project",
+    );
+    await fakeVault(page, "unlocked");
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+    await preferences(page);
+    if (zoom)
+      await page.locator("html").evaluate((element, size) => {
+        element.style.fontSize = size;
+      }, zoom);
+    const group = page.getByRole("group", { name: "Language" });
+    await expect(group.getByRole("radio")).toHaveCount(8);
+    const layout = await group.evaluate((fieldset) => {
+      const labels = [...fieldset.querySelectorAll("label")];
+      const rem = parseFloat(
+        getComputedStyle(document.documentElement).fontSize,
+      );
+      const room = fieldset.getBoundingClientRect().width / rem;
+      const minimum = matchMedia(
+        "(pointer: fine) and (not (any-pointer: coarse))",
+      ).matches
+        ? 36
+        : 44;
+      return {
+        room,
+        columns: new Set(
+          labels.map((l) => Math.round(l.getBoundingClientRect().left)),
+        ).size,
+        inside: labels.every((l) => {
+          const box = l.getBoundingClientRect();
+          return box.left >= 0 && box.right <= innerWidth;
+        }),
+        tallEnough: labels.every(
+          (l) => l.getBoundingClientRect().height >= minimum,
+        ),
+        sideways: document.documentElement.scrollWidth <= innerWidth,
+      };
+    });
+    expect(layout.columns).toBe(
+      layout.room >= 40 ? 3 : layout.room >= 22 ? 2 : 1,
+    );
+    if (width === 320) expect(layout.columns).toBe(1);
+    if (width === 1100 && !zoom) expect(layout.columns).toBe(3);
+    if (zoom) expect(layout.columns).toBeLessThan(3);
+    expect(layout.inside).toBe(true);
+    expect(layout.tallEnough).toBe(true);
+    expect(layout.sideways).toBe(true);
+    // The chosen one is set, and a name stays in its own script.
+    await expect(
+      group.getByRole("radio", { name: "System default" }),
+    ).toBeChecked();
+    await expect(group.locator('[lang="zh-CN"]')).toHaveText("简体中文");
+  });
+}
