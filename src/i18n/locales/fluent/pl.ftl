@@ -691,7 +691,7 @@ library-folder-items =
 
 library-folder-label = Folder { $name }
 
-library-folder-open = Otwórz { $name }
+library-folder-open = { $name }, otwórz folder
 
 library-folder-rename = Zmień nazwę folderu { $name }
 

@@ -355,9 +355,17 @@ describe("required profile identity details", () => {
     });
 
     act(() => setLocaleOverride("pl"));
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    // What is missing is said politely, on a line kept on the page, and as
+    // the description of the box it is about (#149): never an alert.
+    const missing = screen.getByText(
       "Proszę wpisać imię i nazwisko tej osoby.",
     );
+    expect(missing).toHaveAttribute("aria-live", "polite");
+    expect(name).toHaveAccessibleDescription(
+      "Proszę wpisać imię i nazwisko tej osoby.",
+    );
+    expect(date).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Zapisz dane" })).toBeDisabled();
     const draft = "  FAKE אבג { $name }  ";
     fireEvent.change(name, { target: { value: draft } });
@@ -369,19 +377,33 @@ describe("required profile identity details", () => {
     expect(name).toHaveValue(draft);
     expect(name).toHaveFocus();
     expect(birthDateValue(date)).toBe("2000-02-29");
-    expect(screen.queryByRole("alert")).toBeNull();
+    // Nothing is missing now: the line is empty and describes no box.
+    expect(missing).toBeEmptyDOMElement();
+    expect(name).not.toHaveAttribute("aria-describedby");
+    expect(date).not.toHaveAttribute("aria-describedby");
 
     enterBirthDate(date, "");
     act(() => setLocaleOverride("pl"));
     expect(birthDateGroup(document.body, "Data urodzenia")).toBe(date);
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    // The same line now says what the date needs, and describes the date
+    // group and the "unknown" choice instead of the name.
+    expect(missing).toHaveTextContent(
       "Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.",
     );
+    for (const box of [date, unknown])
+      expect(box).toHaveAccessibleDescription(
+        "Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.",
+      );
+    expect(name).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Zapisz dane" })).toBeDisabled();
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(unknown);
     expect(date).toBeDisabled();
-    expect(screen.queryByRole("alert")).toBeNull();
+    // Answered by "unknown": the line is empty again and describes nothing.
+    expect(missing).toBeEmptyDOMElement();
+    for (const box of [name, date, unknown])
+      expect(box).not.toHaveAttribute("aria-describedby");
 
     act(() => setLocaleOverride("pt-BR"));
     expect(unknown).toBeChecked();

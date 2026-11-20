@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { LOCALES, setLocaleOverride } from "../i18n";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { LibrarySidebar } from "./LibrarySidebar";
 
 function sidebarProps(): ComponentProps<typeof LibrarySidebar> {
@@ -61,9 +61,11 @@ describe("localized folder labels on a mounted sidebar", () => {
       act(() => setLocaleOverride(locale));
       const folder = `\u2068${folderName}\u2069`;
       const person = `\u2068${personName}\u2069`;
+      // The count is said with its unit ("0 documents").
+      const documents = translate(locale, "sidebar.documents", { count: 0 });
       const expected = locale.startsWith("zh-")
-        ? `${folder}（${person}） 0`
-        : `${folder} (${person}) 0`;
+        ? `${folder}（${person}） ${documents}`
+        : `${folder} (${person}) ${documents}`;
       expect(button).toHaveAttribute("aria-label", expected);
       expect(button).toHaveAccessibleName(expected);
       expect(screen.getByRole("button", { current: "page" })).toBe(button);
@@ -89,12 +91,14 @@ describe("localized folder labels on a mounted sidebar", () => {
     button.focus();
     expect(button).toHaveAttribute(
       "aria-label",
-      "\u2068FAKE Results\u2069（\u2068FAKE Avery\u2069） 0",
+      `\u2068FAKE Results\u2069（\u2068FAKE Avery\u2069） ${translate("zh-TW", "sidebar.documents", { count: 0 })}`,
     );
 
     rerender(<LibrarySidebar {...props} people={[props.people[0]]} />);
     expect(button).not.toHaveAttribute("aria-label");
-    expect(button).toHaveAccessibleName("FAKE Results 0");
+    expect(button).toHaveAccessibleName(
+      `FAKE Results ${translate("zh-TW", "sidebar.documents", { count: 0 })}`,
+    );
     expect(button).toHaveFocus();
 
     act(() => setLocaleOverride("pl"));
@@ -111,7 +115,7 @@ describe("localized folder labels on a mounted sidebar", () => {
     expect(screen.getByRole("button", { current: "page" })).toBe(button);
     expect(button).toHaveAttribute(
       "aria-label",
-      "\u2068FAKE Renamed folder\u2069 (\u2068FAKE Renamed person\u2069) 0",
+      `\u2068FAKE Renamed folder\u2069 (\u2068FAKE Renamed person\u2069) ${translate("pl", "sidebar.documents", { count: 0 })}`,
     );
     expect(button).toHaveFocus();
     expect(button).not.toHaveAccessibleName(/FAKE Avery|FAKE Results/);
