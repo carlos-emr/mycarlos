@@ -1900,7 +1900,9 @@ describe("Show me in document also marks the page picture (#292)", () => {
     }));
     const { user } = await show({ pageBoxes });
     await waitFor(() => expect(overlay()).not.toBeNull());
-    await user.click(screen.getByRole("button", { name: "Show me in document" }));
+    await user.click(
+      screen.getByRole("button", { name: "Show me in document" }),
+    );
     await waitFor(() => expect(overlay()).not.toBeNull());
     expect(pageBoxes).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("button", { name: "Previous page" }));
@@ -1981,7 +1983,9 @@ describe("Show me in document also marks the page picture (#292)", () => {
         // Unfolded: the whole summary, with its label, and the focus back on
         // the sentence whose words are shown.
         await user.click(unfold);
-        const shown = screen.getByRole("button", { name: "Show me in document" });
+        const shown = screen.getByRole("button", {
+          name: "Show me in document",
+        });
         await waitFor(() => expect(shown).toHaveFocus());
         expect(unfoldButton()).toBeNull();
         expect(
