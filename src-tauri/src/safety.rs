@@ -680,6 +680,64 @@ fn quoted(text: &str) -> String {
     format!("{QUOTE_MARK}\u{201C}{text}\u{201D}")
 }
 
+/// The surnames (as lower-case word lists) of the doctors a sentence names: "Dr." or "Doctor",
+/// then capitalised words ("Dr. Henrietta Fakeham", "Doctor Ian Sampleton's", "Dr. M. O'Neil"):
+/// the last full word is the surname; initials alone do not count. A name with a hyphen is its
+/// parts ("Smith-Jones" is "smith", "jones"), a possessive's "'s" goes.
+fn doctor_surnames(text: &str) -> Vec<Vec<String>> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        let title = words[i]
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        if title != "dr" && title != "doctor" {
+            i += 1;
+            continue;
+        }
+        let mut surname: Option<&str> = None;
+        let mut j = i + 1;
+        while j < words.len() && j <= i + 3 {
+            let bare = words[j].trim_matches(|c: char| !c.is_alphanumeric());
+            let bare = bare
+                .strip_suffix("\u{2019}s")
+                .or_else(|| bare.strip_suffix("'s"))
+                .unwrap_or(bare);
+            if !bare.chars().next().is_some_and(char::is_uppercase) {
+                break;
+            }
+            if bare.chars().count() >= 2 {
+                surname = Some(bare);
+            }
+            // A sentence-ending or other punctuation after the word ends the name.
+            if words[j].ends_with([',', ';', ':', '.', '!', '?']) && bare.chars().count() >= 2 {
+                break;
+            }
+            j += 1;
+        }
+        if let Some(name) = surname {
+            let parts: Vec<String> = tokens(name).into_iter().map(|t| t.0).collect();
+            if !parts.is_empty() {
+                out.push(parts);
+            }
+        }
+        i = j.max(i + 1);
+    }
+    out
+}
+
+/// Whether the sentence names a doctor that its source sentence in the letter does not: the
+/// sentence was written from the model's reading of the whole letter, and a name taken from the
+/// signature or the greeting puts the wrong doctor in a request (a referral's "please see them"
+/// is the receiving doctor's, not the writer's).
+fn names_a_doctor_the_source_lacks(sentence: &str, source: &str) -> bool {
+    let have: std::collections::HashSet<String> = tokens(source).into_iter().map(|t| t.0).collect();
+    doctor_surnames(sentence)
+        .iter()
+        .any(|parts| !parts.iter().all(|p| have.contains(p)))
+}
+
 fn flat(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -787,16 +845,25 @@ pub(crate) fn check_guarded<E>(
     let have = page_numbers(pages);
     for index in 0..lines.len() {
         let line = &lines[index];
-        let missing = numbers(&line.text).iter().any(|(_, d)| !have.contains(d));
-        if !missing || line.quote.is_empty() {
+        if line.quote.is_empty() || line.text.starts_with(QUOTE_MARK) {
             continue;
         }
+        let missing = numbers(&line.text).iter().any(|(_, d)| !have.contains(d));
         if let Some((start, end)) = find_folded(pages, &line.quote) {
-            let after = quoted(&flat(source_sentence(pages, start, end)));
+            let source = source_sentence(pages, start, end);
+            // A number the pages lack, or a doctor the quote's own sentence does not name.
+            let check = if missing {
+                "numbers"
+            } else if names_a_doctor_the_source_lacks(&line.text, source) {
+                "doctor-name"
+            } else {
+                continue;
+            };
+            let after = quoted(&flat(source));
             guard(lines, Some(index), &after, &line.quote)?;
             let before = std::mem::replace(&mut lines[index].text, after.clone());
             log.push(Fallback {
-                check: "numbers",
+                check,
                 index,
                 before: Some(before),
                 after,
@@ -1386,4 +1453,77 @@ mod tests {
         assert!(check(BULLETED_RULES, &mut lines).is_empty());
         assert_eq!(lines.len(), 1);
     }
+
+    #[test]
+    fn given_the_writer_named_as_the_doctor_to_see_the_patient_when_checked_then_the_letters_sentence_is_quoted(
+    ) {
+        check_case("the_writer_named_as_the_doctor_asked_to_see_the_patient");
+    }
+
+    #[test]
+    fn given_a_doctor_the_quoted_sentence_names_when_checked_then_nothing_changes() {
+        check_case("a_doctor_named_in_the_quoted_sentence_stays");
+    }
+
+    #[test]
+    fn given_a_possessive_doctor_name_in_the_quote_when_checked_then_nothing_changes() {
+        check_case("a_possessive_doctor_name_found_in_the_quote");
+    }
+
+    #[test]
+    fn given_a_doctor_named_from_elsewhere_in_the_letter_when_checked_then_the_sentence_is_quoted()
+    {
+        check_case("a_doctor_named_from_elsewhere_in_the_letter");
+    }
+
+    #[test]
+    fn given_no_doctor_name_when_checked_then_the_name_check_leaves_the_sentence() {
+        check_case("a_sentence_with_no_doctor_name_is_left_alone");
+    }
+
+    #[test]
+    fn given_a_sentence_without_a_found_quote_when_checked_then_the_name_check_leaves_it() {
+        check_case("a_sentence_without_a_found_quote_is_left_alone");
+    }
+
+    #[test]
+    fn given_doctor_titles_when_names_are_read_then_the_surnames_are_the_last_full_words() {
+        let names = |t: &str| doctor_surnames(t);
+        assert_eq!(
+            names("Dr. Henrietta Fakeham will see you"),
+            vec![vec!["fakeham"]]
+        );
+        assert_eq!(
+            names("See Doctor Ian Sampleton\u{2019}s clinic."),
+            vec![vec!["sampleton"]]
+        );
+        assert_eq!(names("Dr. M. O'Neil, MD"), vec![vec!["o", "neil"]]);
+        assert_eq!(names("Dr Smith-Jones called"), vec![vec!["smith", "jones"]]);
+        assert_eq!(
+            names("Dr. Chen and Dr. Park"),
+            vec![vec!["chen"], vec!["park"]]
+        );
+        // No name after the title, a lower-case word, or initials only: nothing to check.
+        assert!(names("Ask the doctor about it").is_empty());
+        assert!(names("Dr. M. will call").is_empty());
+        assert!(names("a dr. who film").is_empty());
+    }
+
+    #[test]
+    fn given_the_first_check_fires_when_the_log_is_read_then_it_names_the_doctor_check() {
+        let pages = "Dear Dr. Sampleton,\nI would be grateful if they could be seen within 4 weeks.\nDr. Henrietta Fakeham";
+        let mut lines = vec![Line {
+            text: "They must be seen by Dr. Henrietta Fakeham within 4 weeks.".to_owned(),
+            quote: "they could be seen within 4 weeks".to_owned(),
+        }];
+        let log = check(pages, &mut lines);
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].check, "doctor-name");
+        assert_eq!(log[0].index, 0);
+        assert_eq!(
+            log[0].before.as_deref(),
+            Some("They must be seen by Dr. Henrietta Fakeham within 4 weeks.")
+        );
+    }
+
 }

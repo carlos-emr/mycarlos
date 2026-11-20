@@ -486,3 +486,69 @@ summary:
 Drink 1500 mL a day. || Drink 1,500 mL a day
 expect:
 The document says: “Drink 1,500 mL a day.”
+===
+name: the_writer_named_as_the_doctor_asked_to_see_the_patient
+pages:
+Dear Dr. Sampleton,
+Questions
+Should they keep eating gluten until the biopsy, and for how long?
+I have asked them to keep eating gluten for now and not to start a gluten-free diet before
+your assessment. I would be grateful if they could be seen within the next 4 to 6 weeks.
+Sincerely,
+Dr. Henrietta Fakeham, MD (FAKE)
+summary:
+The patient must be seen by Dr. Henrietta Fakeham within the next 4 to 6 weeks. || they could be seen within the next 4 to 6 weeks
+expect:
+The document says: “I would be grateful if they could be seen within the next 4 to 6 weeks.”
+===
+name: a_doctor_named_in_the_quoted_sentence_stays
+pages:
+Plan
+Follow-up with Dr. Ian Sampleton in 6 weeks.
+Sincerely,
+Dr. Henrietta Fakeham, MD (FAKE)
+summary:
+You must see Dr. Ian Sampleton in 6 weeks. || Follow-up with Dr. Ian Sampleton in 6 weeks
+You must see Dr. Sampleton in 6 weeks. || Follow-up with Dr. Ian Sampleton in 6 weeks
+expect:
+You must see Dr. Ian Sampleton in 6 weeks.
+You must see Dr. Sampleton in 6 weeks.
+===
+name: a_possessive_doctor_name_found_in_the_quote
+pages:
+Going home
+Call Dr. Sampleton’s office at 555-0147 to change the visit.
+summary:
+You must call Dr. Sampleton's office at 555-0147 to change the visit. || Call Dr. Sampleton’s office at 555-0147 to change the visit
+expect:
+You must call Dr. Sampleton's office at 555-0147 to change the visit.
+===
+name: a_doctor_named_from_elsewhere_in_the_letter
+pages:
+Going home
+Dr. Chen will see you again.
+Come back in 6 weeks with your blood tests.
+summary:
+You must come back to Dr. Chen in 6 weeks with your blood tests. || Come back in 6 weeks with your blood tests
+expect:
+The document says: “Come back in 6 weeks with your blood tests.”
+===
+name: a_sentence_with_no_doctor_name_is_left_alone
+pages:
+Going home
+Come back in 6 weeks with your blood tests.
+Sincerely,
+Dr. Henrietta Fakeham, MD (FAKE)
+summary:
+You must come back in 6 weeks with your blood tests. || Come back in 6 weeks with your blood tests
+expect:
+You must come back in 6 weeks with your blood tests.
+===
+name: a_sentence_without_a_found_quote_is_left_alone
+pages:
+Going home
+Come back in 6 weeks with your blood tests.
+summary:
+You must see Dr. Chen in 6 weeks. ||
+expect:
+You must see Dr. Chen in 6 weeks.
