@@ -2357,3 +2357,11 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+interface-received-confirmTitleOne = Zaimportować { $name } do Udostępnione mi?
+
+interface-received-confirmTitleMany = Zaimportować dokumenty ({ $count }) do Udostępnione mi?
+
+interface-received-confirmBody = Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Anulowanie nie zostawia niczego.
+
+interface-received-import = Importuj

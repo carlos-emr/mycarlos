@@ -24,8 +24,9 @@ def file_contents(directory):
 
 def verify():
     entries = json.loads((VENDOR / "upstream.json").read_text())
-    if len(entries) != 1 or entries[0]["name"] != "glib":
-        raise ValueError("The reviewed glib dependency must be present exactly once")
+    reviewed = {"glib": "0.18.5", "tauri-plugin-single-instance": "2.4.0"}
+    if len(entries) != len(reviewed) or {e["name"]: e["version"] for e in entries} != reviewed:
+        raise ValueError("Each reviewed native dependency must be present exactly once")
     # Anything else under vendor/ would be unreviewed source that no check covers.
     allowed = {"README.md", "upstream.json"} | {
         item for entry in entries for item in (entry["name"], f"{entry['name']}.patch")
@@ -36,7 +37,7 @@ def verify():
         raise ValueError(f"Unexpected entries in vendor/: {', '.join(unexpected)}")
     for entry in entries:
         name, version = entry["name"], entry["version"]
-        if name != "glib":
+        if name not in reviewed:
             raise ValueError(f"Unexpected local dependency: {name}")
         with tempfile.TemporaryDirectory(prefix="mycarlos-vendor-") as temporary:
             temporary = Path(temporary)

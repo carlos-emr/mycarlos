@@ -1049,5 +1049,9 @@
   "personDetails.previousEntry",
   "personDetails.previousRemove",
   "personDetails.previousAdd",
-  "personDetails.previousInvalid"
+  "personDetails.previousInvalid",
+  "interface.received.confirmTitleOne",
+  "interface.received.confirmTitleMany",
+  "interface.received.confirmBody",
+  "interface.received.import"
 ]

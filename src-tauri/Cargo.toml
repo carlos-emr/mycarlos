@@ -88,11 +88,14 @@ seccompiler = "=0.5.0"
 # Win32_System_Diagnostics_Debug and Win32_System_Kernel turn crash reports off in the AI
 # helper's model process (src/model_helper/confine.rs).
 [target.'cfg(windows)'.dependencies]
+# Reviewed Windows transport delta and upstream provenance: vendor/README.md.
+tauri-plugin-single-instance = "=2.4.0"
 webview2-com = "=0.38.2"
 windows = { version = "=0.61.3", features = [
     "Data_Xml_Dom",
     "UI_Notifications",
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Security",
     "Win32_Security_Authorization",
     # Credential Manager, for the notice keys' wrap key (#230).
@@ -187,6 +190,7 @@ opt-level = 1
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
+tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
 
 [[test]]
 name = "model_helper"

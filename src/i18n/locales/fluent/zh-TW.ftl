@@ -2109,3 +2109,11 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+
+interface-received-confirmTitleOne = 要將 { $name } 匯入「與我分享」嗎？
+
+interface-received-confirmTitleMany = 要將 { $count } 份文件匯入「與我分享」嗎？
+
+interface-received-confirmBody = 在您選擇「匯入」之前不會新增任何內容。取消不會留下任何內容。
+
+interface-received-import = 匯入

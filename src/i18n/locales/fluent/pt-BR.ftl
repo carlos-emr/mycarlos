@@ -2311,3 +2311,11 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+interface-received-confirmTitleOne = Importar { $name } para Compartilhados comigo?
+
+interface-received-confirmTitleMany = Importar { $count } documentos para Compartilhados comigo?
+
+interface-received-confirmBody = Nada é adicionado até você escolher Importar. Cancelar não deixa nada.
+
+interface-received-import = Importar
