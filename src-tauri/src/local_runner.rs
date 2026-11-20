@@ -1471,10 +1471,9 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
                 // Its output closed: it has ended, or is ending. Its exit code says why.
                 let code = sidecar.process.exit_code_within(EXIT_WAIT);
                 sidecar.stop();
-                return Err(code.map_or_else(
-                    || RunnerError::Start("ended before its hello".to_owned()),
-                    |error| error,
-                ));
+                return Err(
+                    code.unwrap_or_else(|| RunnerError::Start("ended before its hello".to_owned()))
+                );
             }
         }
     };

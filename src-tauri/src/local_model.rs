@@ -2214,7 +2214,7 @@ mod tests {
             ModelError::TooBig
         );
         // 8 GiB (sparse): more than this computer's 7 GiB could ever hold for a run.
-        fs::remove_file(&big).unwrap();
+        remove_model_file(&big).unwrap();
         let mut file = File::create(&big).unwrap();
         file.write_all(&GGUF_MAGIC).unwrap();
         file.set_len(8 << 30).unwrap();
@@ -2225,7 +2225,7 @@ mod tests {
                 .unwrap_err(),
             ModelError::Memory
         );
-        fs::remove_file(&big).unwrap();
+        remove_model_file(&big).unwrap();
         let no_disk = Fixed(good().0, Some(1 << 20));
         assert_eq!(
             refused("FAKE.gguf", &mine, &no_disk),

@@ -1731,7 +1731,11 @@ mod tests {
         *runtime.resident.lock().unwrap() = Some((model.clone(), false));
         let request = || summary(vec![page(0, "FAKE test.")], "en");
         assert!(runtime
-            .summarize_approved(request(), runtime.reserve_answer(), &[model.sha256.clone()])
+            .summarize_approved(
+                request(),
+                runtime.reserve_answer(),
+                std::slice::from_ref(&model.sha256)
+            )
             .is_ok());
         assert_eq!(
             runtime.summarize_approved(request(), runtime.reserve_answer(), &[]),
