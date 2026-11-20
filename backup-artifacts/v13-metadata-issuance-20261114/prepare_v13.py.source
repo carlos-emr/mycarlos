@@ -1,0 +1,182 @@
+"""Root-only V13 metadata issuance. Never launches any generated command."""
+import argparse
+import ast
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shlex
+import signal
+import stat
+import sys
+import time
+from types import SimpleNamespace
+
+R = Path('/workspace/codex-root-pr-window-20261113')
+T = Path('/root/supervisor/handoff/agent2-v13-attempt13-a1-UNISSUED-prep-20261114')
+P = Path('/root/supervisor/handoff/agent1-literal6595-coordinator-20261113-v13helper-affinity-scope')
+H = Path('/workspace/codex-astra-prompt0929-finalizer-source-20261113/finalize_h10.py')
+PACKAGE_SHA = 'c2cde8d8e47942f233c08392c5a1b8783e29815886011d18aca032437d7fa7c2'
+HELPERS_SHA = '08857a80d12d3b05fb031e95c6979f16336cd4e1a75512b20a62b830d4e0d560'
+PREP_SHA = '61e2f450d64b5a05efc164cdf390beae7cc8f44b784217f3b74b1b70355b6db9'
+OWNER_SHA = 'a5a7dfeba2e8b3cacbc26d304fac4d504c672a00d62d78747d130461f6d2cb8b'
+LEGS = ('A1', 'B1', 'B2', 'A2')
+MARGIN = 120  # In addition to all four complete 600-second phases and owner's 20s reserve.
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--endproof-sha256', required=True)
+    parser.add_argument('--tiny-qualification', required=True)
+    parser.add_argument('--tiny-qualification-sha256', required=True)
+    parser.add_argument('--owner-sha256', required=True)
+    parser.add_argument('--root-issue-metadata-only', action='store_true', required=True)
+    args = parser.parse_args()
+    started_wall, started_boot = time.time(), time.clock_gettime(time.CLOCK_BOOTTIME)
+    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError('90s issuance cap')))
+    signal.setitimer(signal.ITIMER_REAL, 90)
+    if hashlib.sha256(H.read_bytes()).hexdigest() != HELPERS_SHA:
+        raise RuntimeError('previously reviewed metadata helper source changed')
+    spec = importlib.util.spec_from_file_location('root_metadata_helpers_v13', H)
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)  # Definitions only; its __main__ issuance is never called.
+    need, checked, ref, write = helper.need, helper.checked, helper.ref, helper.write
+    owner_ref = {'path': str(R / 'attempt8-global-independent-admission.json'), 'sha256': args.owner_sha256}
+    need(args.owner_sha256 == OWNER_SHA, 'only existing fixed attempt8 owner is supported')
+    owner = checked(owner_ref)
+    wall, boot_end = owner['fixed_expiry_epoch'] - 20, owner['fixed_expiry_boot'] - 20
+    def remaining():
+        need(owner['HOLD_unchanged'] is True and wall - time.time() > 4 * 600 + MARGIN
+             and boot_end - time.clock_gettime(time.CLOCK_BOOTTIME) > 4 * 600 + MARGIN,
+             'full fresh ABBA plus120s margin does not fit fixed owner8; do not shorten or renew')
+    remaining()
+    prep = checked({'path': str(T / 'PREPARATION.json'), 'sha256': PREP_SHA})
+    package = checked(prep['source_package'])
+    need(prep['source_package'] == {'path': str(P / 'source-manifest.json'), 'sha256': PACKAGE_SHA}
+         and set(package['files']) == {p.name for p in P.glob('*.py')}, 'exact full V13 package required')
+    for name, digest in package['files'].items():
+        need(helper.sha(P / name) == digest, 'V13 source changed: ' + name)
+    sys.path.insert(0, str(P))
+    import safety
+    import phase
+    import profile2
+    clock = safety.budget(80, min(started_wall + 90, time.time() + 80),
+                          min(started_boot + 90, safety.boot() + 80))
+    end_ref = {'path': str(R / 'prompt0929-H10-a1-actual-independent-endproof.json'), 'sha256': args.endproof_sha256}
+    end = checked(end_ref)
+    need(end['schema'] == 'candidate0929-root-phase-verification-v1'
+         and end['candidate_head'] == '0929f4ac398bfb027021379a9dff448eb2814c21'
+         and end['candidate_tree'] == 'f63dd22faae241e3836b4fed6069e8421066567e'
+         and end['candidate_label'] == 'M2prompt0929-astra_prompt0929_a1-H10' and end['stage'] == 'H10'
+         and end['runtime_approval'] == {'path': str(R / 'candidate0929-runtime-approval-H10-a1-ISSUED.json'),
+             'sha256': '9660bacecf56bc1e0fe79249f64fd0d8783cb331c4b52649dbe5d6d9a9029867'}
+         and set(end['checks']) == profile2.H10_PROOF_CHECKS and all(v is True for v in end['checks'].values())
+         and all(end[k] is True for k in ('independently_root_verified', 'kernel_no_children',
+             'no_unbound_children', 'original_Bash_no_children', 'same_original_TTY', 'HOLD_unchanged'))
+         and all(type(end[k]) is int and end[k] == 0 for k in
+             ('actual_exit_code', 'guard_exit_code', 'coordinator_exit_code')), 'actual independently closed315 required')
+    completion = checked(end['completion'])
+    need(completion['candidate_label'] == end['candidate_label'] and completion['run'] == end['run'],
+         'actual315 completion/run differs from Root closure proof')
+    tiny_ref = {'path': args.tiny_qualification, 'sha256': args.tiny_qualification_sha256}
+    checked(tiny_ref)
+    grants = {leg: checked(prep['grants'][leg]) for leg in LEGS}
+    probe = SimpleNamespace(grant={**grants['A1'], 'helper_affinity_qualification': tiny_ref,
+                                  'helper_affinity_at_exec_authorized': True}, clock=clock)
+    phase.require_helper_affinity_qualification(probe)  # Actual exact-source Python fixture only.
+    runtime = checked(prep['runtime'])
+    origin = checked(prep['baseline_qualified_runtime'])
+    need(runtime['helper'] == origin['helper'] and runtime['harness'] == origin['harness']
+         and runtime['model'] == origin['model'] and runtime['expected_build'] == origin['expected_build'],
+         'retain exact qualified6595 ELF/model and full baseline build identities')
+    for item in origin['actual_qualification_artifacts']:
+        need(helper.sha(item['path']) == item['sha256'], 'historical native/readiness evidence changed')
+    inventory = checked(runtime['source_inventory'])
+    need(len(inventory['files']) == 656, 'baseline source inventory incomplete')
+    for item in inventory['files']:
+        need(helper.sha(item['path']) == item['sha256'], 'baseline source changed')
+    for role in ('helper', 'harness', 'model'):
+        item = runtime[role]
+        need(helper.sha(item['path']) == item['sha256'], 'baseline executable/model changed')
+        info = Path(item['path']).lstat()
+        need(info.st_size == item['bytes'] and all(getattr(info, field) == item[key] for key, field in
+             (('device', 'st_dev'), ('inode', 'st_ino'), ('nlink', 'st_nlink'), ('mtime_ns', 'st_mtime_ns'))
+             if key in item), 'baseline executable/model instance changed')
+        if role != 'model':
+            need(stat.S_IMODE(info.st_mode) == 0o500, 'baseline ELF must remain0500')
+    observer = checked(prep['observer_rebind'])
+    original_observer = checked(observer['qualification_origin'])
+    old_phase = Path(original_observer['phase_source']['path'])
+    need(original_observer['root_accepted'] is True and original_observer['actual_exit_code'] == 0
+         and helper.sha(old_phase) == original_observer['phase_source']['sha256'], 'actual accepted V9 origin changed')
+    old_package = old_phase.parent
+    for name in ('exec_observer.py', 'guard_support.py'):
+        need((old_package / name).read_bytes() == (P / name).read_bytes(), 'V9 observer/support bytes changed')
+    def definitions(path):
+        return {n.name: ast.dump(n, include_attributes=False) for n in ast.parse(path.read_bytes()).body
+                if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
+    a, b = definitions(old_phase), definitions(P / 'phase.py')
+    need(all(a[name] == b[name] for name in ('DiagnosticExecObserver', 'spawn_gated', 'parent_death',
+         'parent_role', 'observe_helper_argv', 'wait_exec_ready', 'exec_bootstrap_gate')),
+         'original actual observer/ownership callbacks changed')
+    for item in observer['actual_artifacts']:
+        need(helper.sha(item['path']) == item['sha256'], 'original V9 observer artifact changed')
+    remaining()
+    prefix = 'V13-attempt13_a1-'
+    observer.update(root_accepted=True, root_accepted_epoch=time.time(), state='ROOT_ACCEPTED_V13_OBSERVER_REBIND',
+                    root_acceptance_scope='Original actual V9 module/callback identity; actual V13 tiny functions separately accepted. No full production/native/model live qualification transferred.')
+    observer['actual_artifacts'].append(tiny_ref)
+    observer_ref = write(R / (prefix + 'observer-ISSUED.json'), observer)
+    fresh = write(R / (prefix + 'fresh-native-model-source.json'), dict(checked_epoch=time.time(),
+        runtime_origin=prep['baseline_qualified_runtime'], helper=runtime['helper'], harness=runtime['harness'],
+        model=runtime['model'], source_files_verified=656, coordinator_source=prep['source_package'], model_executed=False))
+    runtime.update(independently_root_verified=True, issued_epoch=time.time(), fresh_model_file_hash=fresh,
+                   model_inference_authorized=False, summary_build_actually_observed=False, state='ROOT_VERIFIED_V13_BASELINE_RUNTIME_MODEL_GRANTS_SEPARATE')
+    runtime['kernel_exec_observer']['actual_qualification'] = observer_ref
+    runtime['actual_qualification_artifacts'] += [observer_ref, tiny_ref, fresh, end_ref]
+    runtime_ref = write(R / (prefix + 'runtime-ISSUED.json'), runtime)
+    plan = checked(prep['plan'])
+    holder = {key: owner['holder'][key] for key in ('pid', 'start')}
+    holder.update(fd=owner['lock']['fd'], lock_device=owner['lock']['device'], lock_inode=owner['lock']['inode'])
+    plan.update(runtime_approval=runtime_ref, helper_affinity_qualification=tiny_ref,
+        helper_affinity_at_exec_authorized=True, holder=holder, owner_issued_at_epoch=time.time(),
+        owner_absolute_expiry_epoch=wall, owner_boot_deadline=boot_end, state='ROOT_ISSUED_FRESH_ABBA_DIAGNOSTIC_ONLY')
+    need(plan['experiment'] == 'attempt13_a1' and all(not Path(path).exists() for path in plan['outputs'].values()),
+         'all four new attempt13 outputs required; no priorA1 reuse')
+    plan_ref = write(R / (prefix + 'plan-ISSUED.json'), plan)
+    old_grant = checked({'path': str(R / 'model-grant-literal6595-H10-v9task-exit-a1-ISSUED-20261113.json'),
+        'sha256': '3a0b3f31454d2e745267626bcce6e64d79d21c73733eb88fa5cbb265edc67a73'})
+    issued, commands = {}, {}
+    for leg in LEGS:
+        g = grants[leg]
+        g.update(runtime_approval=runtime_ref, profile_plan=plan_ref, helper_affinity_qualification=tiny_ref,
+            holder=holder, retained_hold=old_grant['retained_hold'], root_fresh_admission=owner_ref,
+            issued_at_epoch=time.time(), absolute_expiry_epoch=wall, boot_deadline=boot_end,
+            boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(), model_execution_authorized=True,
+            own_descendant_ptrace_authorized=True, helper_affinity_at_exec_authorized=True,
+            state='ROOT_ISSUED_ONE_FRESH_' + leg + '_ONLY_NO_AUTOMATIC_LAUNCH')
+        preview = SimpleNamespace(grant=g, clock=clock, profile_plan=plan)
+        if leg == 'A1':
+            approval, _, _ = safety.runtime_approval(preview)
+            phase.require_helper_exec_observer(preview, approval)
+            phase.roster(preview, 'P2')
+            phase.m8_gate(preview)  # Keeps normal baseline6595 H10 proof, without a quality claim.
+        issued[leg] = write(R / (prefix + leg + '-grant-ISSUED.json'), g)
+        safety.Authority(issued[leg], clock, wall, boot_end, prep['source_package']).check()
+        argv = ['/usr/bin/taskset', '-c', '0', '/usr/bin/python3', '-I', '-B', str(P / 'entry.py'),
+            'phase', '--stage', 'P2', '--grant', issued[leg]['path'], '--grant-sha256', issued[leg]['sha256'],
+            '--package-manifest', str(P / 'source-manifest.json'), '--package-manifest-sha256', PACKAGE_SHA,
+            '--absolute-expiry-epoch', str(wall), '--boot-deadline', str(boot_end), '--out', g['output_directory']]
+        commands[leg] = shlex.join(argv)
+    remaining()
+    receipt = write(R / (prefix + 'ISSUANCE.json'), dict(runtime=runtime_ref, plan=plan_ref,
+        grants=issued, commands=commands, owner=owner_ref, closed315=end_ref, tiny=tiny_ref,
+        model_launched=False, sequence=list(LEGS), all_four_remaining_caps_plus_margin_checked=True,
+        root_delivery='Deliver A1 only first. Root independently verifies each completed leg and owned cleanup before B1, B2, then A2. No automatic retry, shortened cap, deadline renewal or priorA1 reuse.'))
+    print(json.dumps(receipt))
+    clock.disarm()
+
+
+if __name__ == '__main__':
+    main()
