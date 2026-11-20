@@ -75,6 +75,7 @@
     "allow-vault-record-known-details",
     "allow-vault-export-text-pick",
     "allow-vault-export-text-picked",
+    "allow-vault-export-text-copy",
     "allow-vault-export-pick",
     "allow-vault-export-picked",
     "allow-vault-save-photo",

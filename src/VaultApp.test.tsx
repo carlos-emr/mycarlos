@@ -205,6 +205,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     }),
     pickTextExportDestination: vi.fn().mockResolvedValue(null),
     exportTextToPicked: vi.fn().mockResolvedValue({ saved: false, hits: [] }),
+    copyTextExport: vi.fn().mockResolvedValue({ approved: null, hits: [] }),
     saveAiResult: vi
       .fn()
       .mockRejectedValue(new Error("FAKE: not in this test")),

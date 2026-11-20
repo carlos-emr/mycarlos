@@ -25,6 +25,7 @@ import {
   vaultErrorMessage,
   type KnownIdentifiers,
   type PatientProfile,
+  type TextCopyOutcome,
   type TextSaveOutcome,
   type VaultRecord,
 } from "../vault";
@@ -135,6 +136,7 @@ export function AnonymizePreview({
   knownDetails,
   pickDestination,
   saveText,
+  copyText,
   exportHeader,
   onClose,
 }: {
@@ -153,6 +155,9 @@ export function AnonymizePreview({
     ticket: string,
     text: string,
   ) => Promise<TextSaveOutcome>;
+  /** The native re-check a save runs, for a copy: the file text approved to put on the
+   * clipboard, or a refusal with the ranges still holding a detail. */
+  copyText: (ticket: string, text: string) => Promise<TextCopyOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   onClose: () => void;
@@ -377,37 +382,37 @@ export function AnonymizePreview({
     setNotice("");
   };
 
-  /** Exactly what Save would write: the fixed first line, a blank line, the text, the line that
-   * says where a long document was cut (when it was), and a last newline. This is the rule of the
-   * native save (`vault_export_text_picked`); the isolation marks Fluent puts round a number are
-   * not part of it. */
-  const fileText = () => {
-    const plain = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
-    let content = `${plain(exportHeader)}\n\n${current?.toSend ?? ""}`;
-    if (text && text.truncated && text.pages.length > 0)
-      content += `\n\n${plain(
-        translateNow("aiHelper.exportCut", {
-          page: text.pages[text.pages.length - 1].index + 1,
-        }),
-      )}`;
-    return `${content}\n`;
-  };
-
-  /** Copies the same text, for a person who pastes it into an AI by hand. The clipboard is the web
-   * one: the app has no clipboard plugin and gains no permission for this. */
-  const copyText = async () => {
-    if (!current) return;
+  /** Copies the text, for a person who pastes it into an AI by hand. Copy is never weaker than
+   * Save: the native side runs the same re-check on the same text and returns the file Save would
+   * write (first line, cut line, final newline); only what it returns reaches the clipboard. A
+   * refusal is handled as Save's is: the details it found are taken out, for the patient to
+   * check. The clipboard is the web one: the app has no clipboard plugin and gains no
+   * permission for this. */
+  const copyTheText = async () => {
+    if (!current || !ticket) return;
+    setSaving(true);
     try {
-      await navigator.clipboard.writeText(fileText());
-      setNotice(
-        deferredText(() => translateNow("interface.AnonymizePreview.copied")),
-      );
-    } catch {
-      setNotice(
-        deferredText(() =>
-          translateNow("interface.AnonymizePreview.copyFailed"),
-        ),
-      );
+      const outcome = await copyText(ticket, current.toSend);
+      if (outcome.approved === null) {
+        refuse(outcome.hits);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(outcome.approved);
+        setNotice(
+          deferredText(() => translateNow("interface.AnonymizePreview.copied")),
+        );
+      } catch {
+        setNotice(
+          deferredText(() =>
+            translateNow("interface.AnonymizePreview.copyFailed"),
+          ),
+        );
+      }
+    } catch (failure) {
+      setError(deferredText(() => vaultErrorMessage(failure)));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -415,6 +420,28 @@ export function AnonymizePreview({
     if (!current) return;
     const result = restoreChecked(pasted, current);
     setPutBack({ parts: result.parts, flagged: result.flagged.length });
+  };
+
+  /** What native code still found, for a save or a copy: taken out, placeholders and moved
+   * dates whole, for the patient to check and try again. */
+  const refuse = (hits: { start: number; end: number }[]) => {
+    if (!current) return;
+    let step = current;
+    for (const hit of [...hits].sort((a, b) => b.start - a.start)) {
+      try {
+        step = removeMore(step, hit.start, hit.end, { over: true });
+      } catch {
+        // Out of the text: nothing to do.
+      }
+    }
+    setHistory((steps) => [...steps, step]);
+    setNotice(
+      deferredText(() =>
+        translateNow("interface.AnonymizePreview.refused", {
+          count: hits.length,
+        }),
+      ),
+    );
   };
 
   const save = async () => {
@@ -441,24 +468,7 @@ export function AnonymizePreview({
         );
         return;
       }
-      // What native code still found: taken out, placeholders and moved
-      // dates whole, for the patient to check and save again.
-      let step = current;
-      for (const hit of [...outcome.hits].sort((a, b) => b.start - a.start)) {
-        try {
-          step = removeMore(step, hit.start, hit.end, { over: true });
-        } catch {
-          // Out of the text: nothing to do.
-        }
-      }
-      setHistory((steps) => [...steps, step]);
-      setNotice(
-        deferredText(() =>
-          translateNow("interface.AnonymizePreview.refused", {
-            count: outcome.hits.length,
-          }),
-        ),
-      );
+      refuse(outcome.hits);
     } catch (failure) {
       setError(deferredText(() => vaultErrorMessage(failure)));
     } finally {
@@ -876,8 +886,8 @@ export function AnonymizePreview({
               <button
                 className="button"
                 type="button"
-                disabled={busy}
-                onClick={() => void copyText()}
+                disabled={busy || !ticket}
+                onClick={() => void copyTheText()}
               >
                 {translateNow("interface.AnonymizePreview.copy")}
               </button>

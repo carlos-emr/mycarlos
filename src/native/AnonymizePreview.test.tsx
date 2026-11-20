@@ -9,6 +9,7 @@ import { joinPages, type DocumentText } from "../documentText";
 import type {
   KnownIdentifiers,
   PatientProfile,
+  TextCopyOutcome,
   TextSaveOutcome,
   VaultRecord,
 } from "../vault";
@@ -75,6 +76,14 @@ function renderPreview({
     }),
   ),
   pickDestination = vi.fn(async (_ticket: string) => "pick-1" as string | null),
+  // The native copy: the same file a save writes, here "FAKE header line", a blank line, the
+  // text and a newline, or a refusal.
+  copyText = vi.fn(
+    async (_ticket: string, text: string): Promise<TextCopyOutcome> => ({
+      approved: `FAKE header line\n\n${text}\n`,
+      hits: [],
+    }),
+  ),
 } = {}) {
   const onClose = vi.fn();
   const cancelRead = vi.fn();
@@ -88,11 +97,19 @@ function renderPreview({
       knownDetails={async () => known}
       pickDestination={pickDestination}
       saveText={saveText}
+      copyText={copyText}
       exportHeader="FAKE header line"
       onClose={onClose}
     />,
   );
-  return { readText, saveText, pickDestination, onClose, cancelRead };
+  return {
+    readText,
+    saveText,
+    copyText,
+    pickDestination,
+    onClose,
+    cancelRead,
+  };
 }
 
 const shownText = () =>
@@ -493,14 +510,14 @@ describe("the anonymize preview (#72 part B)", () => {
     ).toHaveHumanTextContent(/^Removing details is never perfect/);
   });
 
-  it("copies exactly the text Save would write, warns about the clipboard, and says when it cannot copy", async () => {
+  it("copies only what the native check returns, which is the text Save would write, and warns about the clipboard", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async (_value: string) => undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText },
     });
-    const { saveText } = renderPreview();
+    const { saveText, copyText } = renderPreview();
     await screen.findByRole("region", {
       name: humanText("The text that will be saved"),
     });
@@ -516,9 +533,18 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(
       await screen.findByText(humanText("The text was copied.")),
     ).toBeInTheDocument();
+    // The check ran on the shown text with the ticket, and the clipboard got what it returned.
+    expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString());
     expect(writeText).toHaveBeenCalledTimes(1);
     const copied = writeText.mock.calls[0][0];
-    // The same file Save writes: the first line, a blank line, the text, a last newline.
+    // A clipboard that refuses says so (a copy does not use up the ticket).
+    writeText.mockRejectedValueOnce(new Error("FAKE: blocked"));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(
+      await screen.findByText(humanText("The text could not be copied.")),
+    ).toBeInTheDocument();
     await user.click(
       screen.getByRole("button", { name: humanText("Save the text…") }),
     );
@@ -529,38 +555,40 @@ describe("the anonymize preview (#72 part B)", () => {
     );
     await screen.findByText(humanText("The text was saved."));
     const [, , saved] = saveText.mock.calls[0];
+    // The same text went to both checks, and the copy is the file built from it.
+    expect(saved).toBe(copyText.mock.calls[0][1]);
     expect(copied).toBe(`FAKE header line\n\n${saved}\n`);
     expect(copied).not.toMatch(/Avery|Example|1961/);
-    // A clipboard that refuses says so.
-    writeText.mockRejectedValueOnce(new Error("FAKE: blocked"));
-    await user.click(
-      screen.getByRole("button", { name: humanText("Copy text") }),
-    );
-    expect(
-      await screen.findByText(humanText("The text could not be copied.")),
-    ).toBeInTheDocument();
   });
 
-  it("puts the line about where a long document was cut at the end of the copy, as Save does", async () => {
+  it("copies nothing when the native check refuses, and takes out what it found, as Save does", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async (_value: string) => undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText },
     });
-    renderPreview({ text: documentText({ truncated: true }) });
+    // The check finds "Ward" (offsets in the shown text) still standing.
+    const { copyText } = renderPreview({
+      copyText: vi.fn(async (_ticket: string, text: string) => {
+        const at = text.indexOf("ward");
+        return { approved: null, hits: [{ start: at, end: at + 4 }] };
+      }),
+    });
     await screen.findByRole("region", {
       name: humanText("The text that will be saved"),
     });
+    expect(shownString()).toContain("Admitted to the ward on day 3.");
     await user.click(
       screen.getByRole("button", { name: humanText("Copy text") }),
     );
-    const cut = visibleText(
-      translate("en", "aiHelper.exportCut", { page: 1 }),
-    ).replace(/[\u2066-\u2069]/g, "");
-    expect(writeText.mock.calls[0][0]).toMatch(
-      new RegExp(`\\n\\n${cut.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n$`),
-    );
+    expect(copyText).toHaveBeenCalledTimes(1);
+    // Nothing reached the clipboard; the refused range is taken out for the patient to check.
+    expect(writeText).not.toHaveBeenCalled();
+    expect(shownString()).toContain("Admitted to the [REMOVED 1] on day 3.");
+    expect(
+      await screen.findByText(humanText(/were still in the text/)),
+    ).toBeInTheDocument();
   });
 
   it("saves exactly the words with or without the flags: they are decoration only", async () => {
