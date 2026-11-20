@@ -17473,9 +17473,10 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS,
             // Their hidden answers capped apart, format 11.
             MANIFEST_FORMAT_AI_HIDDEN_CAP,
-            // Remembered refusals (#143), format 12: the last before previous
-            // full names (13).
+            // Remembered refusals (#143), format 12.
             MANIFEST_FORMAT_REFUSED,
+            // Previous full names (#297), format 13.
+            MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =
@@ -20279,6 +20280,8 @@ mod tests {
         manifest.format_version = 11;
         manifest.profiles[0].previous_full_names = Some(vec!["FAKE Zorvana".into()]);
         assert!(validate_manifest_structure(&manifest, id).is_err());
+        manifest.format_version = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+        assert!(validate_manifest_structure(&manifest, id).is_ok());
         manifest.format_version = VAULT_FORMAT;
         assert!(validate_manifest_structure(&manifest, id).is_ok());
         for invalid in [
