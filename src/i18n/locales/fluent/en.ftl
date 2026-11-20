@@ -2269,3 +2269,11 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+interface-received-confirmTitleOne = Import { $name } into Shared with me?
+
+interface-received-confirmTitleMany = Import { $count } documents into Shared with me?
+
+interface-received-confirmBody = Nothing is added until you choose Import. Cancel leaves nothing behind.
+
+interface-received-import = Import

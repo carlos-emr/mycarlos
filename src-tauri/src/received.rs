@@ -181,6 +181,9 @@ pub(crate) struct ReceivedSummary {
     pub(crate) name: String,
     /// The label the document will carry once added.
     pub(crate) source_label: &'static str,
+    /// The file was named by a program started with its path (Open with, Send to, a second launch)
+    /// rather than shared by another app: the renderer asks the patient before it is added.
+    pub(crate) needs_confirm: bool,
 }
 
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
@@ -263,8 +266,19 @@ impl ReceivedFiles {
                 id: *id,
                 name: file.name.clone(),
                 source_label: MANUAL_IMPORT_LABEL,
+                needs_confirm: matches!(file.source, ReceivedSource::Path(_)),
             })
             .collect()
+    }
+
+    /// Forgets exactly the waiting files named (the patient said Cancel): nothing was stored, and
+    /// a file that arrived since, or one an import has taken, is not touched. Unknown ids are
+    /// ignored. Returns how many were forgotten.
+    pub(crate) fn discard(&self, ids: &[Uuid]) -> usize {
+        let mut waiting = self.waiting();
+        let before = waiting.files.len();
+        waiting.files.retain(|(id, _)| !ids.contains(id));
+        before - waiting.files.len()
     }
 
     /// Removes and returns exactly the files named, in arrival order, or nothing at all when
@@ -618,5 +632,70 @@ mod tests {
         );
         assert_eq!(files.take_notice(), ReceiveNotice::default());
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn a_file_named_by_a_path_needs_a_confirmation_and_a_shared_one_does_not() {
+        let files = ReceivedFiles::default();
+        let path = std::env::temp_dir().join("FAKE opened.pdf");
+        let shared = Url::parse("content://provider/FAKE%20shared.pdf").unwrap();
+        files.add_share(vec![ReceivedSource::Path(path)]).unwrap();
+        files
+            .add_share(vec![ReceivedSource::ContentUri(shared)])
+            .unwrap();
+        let listed = files.list();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|file| file.needs_confirm)
+                .collect::<Vec<_>>(),
+            [true, false]
+        );
+    }
+
+    #[test]
+    fn cancel_forgets_exactly_the_files_shown_and_stores_nothing() {
+        let files = ReceivedFiles::default();
+        let first = std::env::temp_dir().join("FAKE first.pdf");
+        let second = std::env::temp_dir().join("FAKE second.pdf");
+        let shown = files.add_share(vec![ReceivedSource::Path(first)]).unwrap();
+        // One that arrived while the question was open is not part of it.
+        let later = files.add_share(vec![ReceivedSource::Path(second)]).unwrap();
+        assert_eq!(files.discard(&shown), 1);
+        assert_eq!(
+            files.list().iter().map(|file| file.id).collect::<Vec<_>>(),
+            later
+        );
+        // A repeat, or ids that are unknown, forget nothing more.
+        assert_eq!(files.discard(&shown), 0);
+        assert_eq!(files.discard(&[Uuid::new_v4()]), 0);
+        // Files an import has taken are not waiting, so cancelling cannot reach them.
+        let taken = files.take(&later).unwrap();
+        assert_eq!(files.discard(&later), 0);
+        files.finish(&taken);
+    }
+
+    #[test]
+    fn only_the_confirmed_files_can_be_taken_for_an_import() {
+        let files = ReceivedFiles::default();
+        let shown = files
+            .add_share(vec![ReceivedSource::Path(
+                std::env::temp_dir().join("FAKE a.pdf"),
+            )])
+            .unwrap();
+        let unshown = files
+            .add_share(vec![ReceivedSource::Path(
+                std::env::temp_dir().join("FAKE b.pdf"),
+            )])
+            .unwrap();
+        let taken = files.take(&shown).unwrap();
+        assert_eq!(taken.len(), 1);
+        // The one that arrived after the question stays waiting for its own.
+        assert_eq!(
+            files.list().iter().map(|file| file.id).collect::<Vec<_>>(),
+            unshown
+        );
+        // An id that is not waiting takes nothing at all.
+        assert!(files.take(&[Uuid::new_v4()]).is_none());
     }
 }

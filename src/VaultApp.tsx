@@ -42,6 +42,7 @@ import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
 import { ComfortSetup } from "./native/ComfortSetup";
 
+import { ConfirmDialog } from "./native/ConfirmDialog";
 import { VaultLibrary } from "./native/VaultLibrary";
 import type { OpeningRecoverySetup } from "./native/RecoveryKeySetup";
 import { recordRecoveryOffer, recoveryOfferDue } from "./native/recoveryOffer";
@@ -185,7 +186,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // here: `acceptShared` takes one at a time and asks again once it is done, so
   // a pending import never holds back a later list, including a new session's.
   const [received, setReceived] = useState<ReceivedFile[]>([]);
-  const acceptSharedRef = useRef<() => Promise<void>>(async () => undefined);
+  const acceptSharedRef = useRef<(ids?: string[]) => Promise<void>>(
+    async () => undefined,
+  );
+  // Files named by a program started with their path (Open with, a second launch) wait here for
+  // the patient's answer before anything is stored (#133). Cancel forgets them.
+  const [confirmReceived, setConfirmReceived] = useState<ReceivedFile[] | null>(
+    null,
+  );
   const receiveGeneration = useRef(0);
   const refreshReceivedRef = useRef<() => Promise<void>>(async () => undefined);
   const refreshReceived = useCallback(() => refreshReceivedRef.current(), []);
@@ -212,7 +220,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               const text = receiveNoticeText(missed);
               if (text)
                 setNotice(deferredText(() => receiveNoticeText(missed)));
-              if (files.length) void acceptSharedRef.current();
+              const ask = files.filter((file) => file.needsConfirm);
+              if (ask.length) {
+                setConfirmReceived(ask);
+                // Anything shared from another app is added as it arrives, as before.
+                const shared = files.filter((file) => !file.needsConfirm);
+                if (shared.length)
+                  void acceptSharedRef.current(shared.map((file) => file.id));
+              } else if (files.length) void acceptSharedRef.current();
             } catch {
               // No automatic retry. A later arrival/focus/unlock asks again.
             }
@@ -1545,7 +1560,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // One that is not a PDF is not added and is named; anything else keeps them
   // all waiting for the next ask.
   const accepting = useRef<number | null>(null);
-  acceptSharedRef.current = async () => {
+  acceptSharedRef.current = async (ids?: string[]) => {
     const generation = receiveGeneration.current;
     if (
       status !== "unlocked" ||
@@ -1563,7 +1578,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     accepting.current = generation;
     let accepted = false;
     try {
-      const outcome = await bridge.acceptReceived();
+      const outcome = await bridge.acceptReceived(ids);
       accepted = true;
       if (!current()) return;
       setReceived([]);
@@ -1636,6 +1651,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     if (status === "unlocked") void refreshReceived();
     else setSharedNew(0);
   }, [refreshReceived, status]);
+  // A lock takes the question away: nothing was stored, and the files ask again after an unlock.
+  useEffect(() => {
+    if (status !== "unlocked") setConfirmReceived(null);
+  }, [status]);
 
   // A restored vault is locked: it opens with its own passphrase or key.
   const restored = () => {
@@ -1904,6 +1923,48 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
 
   return (
     <>
+      {confirmReceived && status === "unlocked" && (
+        <ConfirmDialog
+          title={
+            confirmReceived.length === 1
+              ? t("interface.received.confirmTitleOne", {
+                  name: confirmReceived[0].name,
+                })
+              : t("interface.received.confirmTitleMany", {
+                  count: confirmReceived.length,
+                })
+          }
+          confirmLabel={t("interface.received.import")}
+          details={
+            confirmReceived.length > 1 ? (
+              <ul>
+                {confirmReceived.map((file) => (
+                  <li key={file.id}>{file.name}</li>
+                ))}
+              </ul>
+            ) : undefined
+          }
+          onConfirm={() => {
+            const ids = confirmReceived.map((file) => file.id);
+            setConfirmReceived(null);
+            void acceptSharedRef.current(ids);
+          }}
+          onCancel={() => {
+            const ids = confirmReceived.map((file) => file.id);
+            setConfirmReceived(null);
+            void bridge
+              .discardReceived(ids)
+              .then(() =>
+                setReceived((waiting) =>
+                  waiting.filter((file) => !ids.includes(file.id)),
+                ),
+              )
+              .catch(() => undefined);
+          }}
+        >
+          <p>{t("interface.received.confirmBody")}</p>
+        </ConfirmDialog>
+      )}
       <VaultLibrary
         bridge={trackedBridge}
         snapshot={snapshot}

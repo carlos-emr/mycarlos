@@ -4223,6 +4223,30 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
     }
 }
 
+/// The files the patient confirmed adding (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedAcceptRequest {
+    ids: Vec<Uuid>,
+}
+
+/// The files the patient said No to (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedDiscardRequest {
+    ids: Vec<Uuid>,
+}
+
+/// Forgets the waiting files the patient cancelled: nothing was stored, so nothing is left. A file
+/// that arrived since, or one an import has taken, is not touched.
+#[tauri::command]
+fn received_discard(
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedDiscardRequest,
+) -> usize {
+    received.discard(&request.ids)
+}
+
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
 /// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
 /// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
@@ -4231,8 +4255,14 @@ async fn received_accept(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     received: State<'_, Arc<ReceivedFiles>>,
+    request: Option<ReceivedAcceptRequest>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
-    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    // With `ids`, exactly the files the patient confirmed (a file that arrived since waits for its
+    // own question); without, every waiting file, as for files shared from another app.
+    let ids: Vec<Uuid> = match request {
+        Some(request) => request.ids,
+        None => received.list().into_iter().map(|file| file.id).collect(),
+    };
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
             imported: Vec::new(),
@@ -5612,6 +5642,7 @@ pub fn run() {
             vault_import_picked,
             received_list,
             received_accept,
+            received_discard,
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,

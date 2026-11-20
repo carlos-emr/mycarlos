@@ -2102,3 +2102,11 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 添加曾用全名
 personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。
+
+interface-received-confirmTitleOne = 要将 { $name } 导入“与我分享”吗？
+
+interface-received-confirmTitleMany = 要将 { $count } 份文档导入“与我分享”吗？
+
+interface-received-confirmBody = 在您选择“导入”之前不会添加任何内容。取消不会留下任何内容。
+
+interface-received-import = 导入

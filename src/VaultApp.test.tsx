@@ -168,6 +168,7 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .mockRejectedValue({ code: "not_a_photo", message: "FAKE not a photo." }),
     hideRecord: vi.fn().mockResolvedValue(undefined),
     unhideRecord: vi.fn().mockResolvedValue(undefined),
+    discardReceived: vi.fn().mockResolvedValue(0),
     hideUnavailableRecords: vi.fn().mockResolvedValue([]),
     listReceived: vi.fn().mockResolvedValue({
       files: [],
@@ -1658,6 +1659,123 @@ describe("durable vault UI", () => {
       ).not.toBeInTheDocument();
     },
   );
+
+  /** Files named by a program started with their path (Open with, a second launch): the patient is
+   * asked before anything is stored (#133). */
+  function openedWithVault(names: string[], shared: string[] = []) {
+    const made = sharedVault(["Jamie"], [...names, ...shared]);
+    const waiting = new Set(names);
+    const list = vi.mocked(made.bridge.listReceived).getMockImplementation()!;
+    let forgotten: string[] = [];
+    vi.mocked(made.bridge.listReceived).mockImplementation(async () => {
+      const listed = await list();
+      return {
+        ...listed,
+        files: listed.files
+          .filter((file) => !forgotten.includes(file.id))
+          .map((file) => ({ ...file, needsConfirm: waiting.has(file.name) })),
+      };
+    });
+    vi.mocked(made.bridge.discardReceived).mockImplementation(async (ids) => {
+      forgotten = [...forgotten, ...ids];
+      return ids.length;
+    });
+    return made;
+  }
+
+  it("asks before adding a file Open with named, stores nothing until Import, and adds exactly that file (#133)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = openedWithVault(["FAKE_Opened.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+    });
+    // Nothing was stored while the question is open.
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Import") }),
+    );
+    await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+    expect(bridge.acceptReceived).toHaveBeenCalledWith(["shared-1"]);
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(
+        humanText("A shared file was added to Shared with me."),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("Cancel forgets the opened files and stores nothing, and the question does not come back (#133)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = openedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    // Several files: one dialog that lists them.
+    expect(within(dialog).getByText(humanText("FAKE_One.pdf"))).toBeVisible();
+    expect(within(dialog).getByText(humanText("FAKE_Two.pdf"))).toBeVisible();
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    );
+    await waitFor(() =>
+      expect(bridge.discardReceived).toHaveBeenCalledWith([
+        "shared-1",
+        "shared-2",
+      ]),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    // Asked again (a focus, a new arrival): nothing is waiting, so nothing is asked or added.
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+  });
+
+  it("keeps opened files waiting while locked, with only a count and no question, and asks after the unlock (#133)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    // Locked, as before: a count, no names, no question, nothing added.
+    expect(
+      await screen.findByText(
+        humanText(
+          "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(humanText("FAKE_Opened.pdf"))).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    await unlockWith(user);
+    await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+    });
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+  });
+
+  it("still adds a file shared from another app as it arrives, while asking only about the opened one (#133)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(
+      ["FAKE_Opened.pdf"],
+      ["FAKE_Shared.pdf"],
+    );
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+    });
+    // Only the shared file was taken, by its id; the opened one waits for the answer.
+    await waitFor(() => expect(bridge.acceptReceived).toHaveBeenCalledOnce());
+    expect(bridge.acceptReceived).toHaveBeenCalledWith(["shared-2"]);
+  });
 
   it("with several people, keeps Shared with me outside everyone's records and moves the selected to one person (#61)", async () => {
     const user = userEvent.setup();

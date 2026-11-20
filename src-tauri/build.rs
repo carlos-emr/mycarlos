@@ -148,6 +148,7 @@ fn main() {
             "vault_import_picked",
             "received_list",
             "received_accept",
+            "received_discard",
             "vault_move_to_person",
             "vault_is_locked_pdf",
             "vault_unlock_pdf",
