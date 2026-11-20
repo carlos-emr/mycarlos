@@ -1843,7 +1843,7 @@ aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Show me in document
+ai-summary-showInDocument = Show me in the document
 
 ai-summary-folded = The summary is folded so the page has room.
 

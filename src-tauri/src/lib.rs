@@ -4541,7 +4541,7 @@ impl PageBoxesAnswer {
     }
 }
 
-/// Where a quote from a page's text is on the page picture, for Show me in document (#292). The
+/// Where a quote from a page's text is on the page picture, for Show me in the document (#292). The
 /// record is decrypted into memory only and handed to the PDF helper, as for a page view
 /// (`pdf_view::boxes_in_helper`). A newer such request, a lock or the reader closing stops it;
 /// a page request does not.

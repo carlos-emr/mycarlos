@@ -135,7 +135,7 @@ describe("the reader with Explain switched off", () => {
     ).toBeVisible();
     expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
     expect(
-      within(panel).getAllByRole("button", { name: "Show me in document" }),
+      within(panel).getAllByRole("button", { name: "Show me in the document" }),
     ).toHaveLength(1);
     expect(model.calls).toEqual([
       expect.objectContaining({ tool: "summary", lang: "en" }),

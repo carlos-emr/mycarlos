@@ -154,7 +154,7 @@ type DocumentReaderProps = {
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
   /** Where a quoted span of a page's text is on its picture (#292), exactly
-   * or not at all. Without it, Show me in document marks the text only. */
+   * or not at all. Without it, Show me in the document marks the text only. */
   pageBoxes?: (
     page: number,
     span: { start: number; end: number; quoted: string },
@@ -530,7 +530,7 @@ function ReadingDocument({
           end: Math.max(0, Math.min(shownText.length, highlight.end - lead)),
         }
       : null;
-  // Each "Show me in document" brings the words into view and focus, even
+  // Each "Show me in the document" brings the words into view and focus, even
   // the same words again: the highlight is a new object each time. Only the
   // text box scrolls to them: the focus stays on the marked words, the
   // version a screen reader reads, and the picture keeps its own scroll.

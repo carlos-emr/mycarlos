@@ -1130,7 +1130,7 @@ p {
     mix-blend-mode: normal;
   }
 }
-/* While Show me in document marks a quote, the text and the AI panel give the
+/* While Show me in the document marks a quote, the text and the AI panel give the
    picture room, so that a short or narrow window keeps the words in view in
    both places (#292). */
 /* The text box scrolls in its own region; capping the details around it only
