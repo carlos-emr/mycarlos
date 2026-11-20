@@ -1,4 +1,10 @@
-import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
+import {
+  readFile,
+  writeFile,
+  mkdir,
+  copyFile,
+  readdir,
+} from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -150,6 +156,15 @@ export async function configureAndroidPush(appDir, firebaseConfig) {
     join(res, "drawable/mycarlos_push.xml"),
     '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M4,3h12l4,4v14H4zM7,10v2h10v-2zM7,15v2h10v-2z" /></vector>\n',
   );
+  // The notice's words, one file per language (values, values-es, ...), the same as its Fluent
+  // message: the system picks the one for the phone's language.
+  for (const dir of await readdir(join(source, "res"))) {
+    await mkdir(join(res, dir), { recursive: true });
+    await copyFile(
+      join(source, "res", dir, "mycarlos_push_strings.xml"),
+      join(res, dir, "mycarlos_push_strings.xml"),
+    );
+  }
   await writeFile(projectPath, project);
   await writeFile(gradlePath, gradle);
   await writeFile(manifestPath, manifest);

@@ -20,3 +20,5 @@ The regular build has the Cargo feature off. A generated push build requires `an
 ## Live integration still required
 
 Portal signs and scopes the device's enrollment and revocation requests. Its subscription route accepts a device-generated destination UUID and consent fields. Neither route accepts an FCM registration token. The sender expects an injected destination-to-provider-handle resolver. The app's separate provider-handle reservation code has no deployed matching binding endpoint. The Android Portal client also fails closed until its native certificate verifier is integrated. The evaluation build therefore does not expose a remote enrollment switch. End-to-end delivery, rotation, opt-out, background receipt and cold taps need a coordinated deployment and device validation.
+
+The notice text is an Android string resource (`res/values*/mycarlos_push_strings.xml`, one per portal language, equal to the Fluent message `notification-android-newDocument`; `scripts/configure-android-push.test.mjs` keeps them equal). The title stays "myCarlos".
