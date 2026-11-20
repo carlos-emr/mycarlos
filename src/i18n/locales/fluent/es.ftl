@@ -2219,6 +2219,10 @@ interface-AnonymizePreview-toCheckHelp = Se resaltan las palabras que empiezan c
 
 interface-AnonymizePreview-checkPicked = “{ $word }” puede identificar a alguien.
 
+interface-AnonymizePreview-savedFileNote = El archivo guardado no está protegido por myCarlos. No tiene nombres, pero contiene los detalles médicos. Elimínelo cuando termine.
+
+interface-AnonymizePreview-pasteWhereNote = El lugar donde lo pegue decide qué se conserva: un servicio de chat puede guardarlo o aprender de él, según la configuración de su cuenta.
+
 interface-AnonymizePreview-removeSelected = Eliminar el texto seleccionado
 
 interface-AnonymizePreview-selectFirst = Primero seleccione una parte del texto.

@@ -545,7 +545,8 @@ export function AnonymizePreview({
           {!closeAtBottom && closeButton}
         </header>
         <div className="native-anonymize-notes">
-          <p id="anonymize-how">
+          {/* "Removing details is never perfect": kept prominent, as the first thing read. */}
+          <p id="anonymize-how" className="native-anonymize-warning">
             {translateNow("aiHelper.notice.limitsBody")}{" "}
             {translateNow("interface.AnonymizePreview.howMarked")}
           </p>
@@ -814,6 +815,10 @@ export function AnonymizePreview({
                 {notice}
               </p>
             )}
+            <div className="native-anonymize-advice">
+              <p>{translateNow("interface.AnonymizePreview.pasteWhereNote")}</p>
+              <p>{translateNow("interface.AnonymizePreview.savedFileNote")}</p>
+            </div>
             <footer className="native-dialog-actions">
               <button
                 className="button primary"

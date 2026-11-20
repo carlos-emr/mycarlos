@@ -2267,6 +2267,10 @@ interface-AnonymizePreview-toCheckHelp = Podświetlone są słowa pisane wielką
 
 interface-AnonymizePreview-checkPicked = „{ $word }” może kogoś identyfikować.
 
+interface-AnonymizePreview-savedFileNote = Zapisany plik nie jest chroniony przez myCarlos. Nie ma w nim imion i nazwisk, ale zawiera dane medyczne. Usuń go, gdy skończysz.
+
+interface-AnonymizePreview-pasteWhereNote = To, gdzie to wkleisz, decyduje o tym, co zostanie zachowane: usługa czatu może to przechowywać lub się na tym uczyć, zależnie od ustawień Twojego konta.
+
 interface-AnonymizePreview-removeSelected = Usuń zaznaczony tekst
 
 interface-AnonymizePreview-selectFirst = Najpierw zaznacz fragment tekstu.

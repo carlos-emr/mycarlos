@@ -2014,6 +2014,10 @@ interface-AnonymizePreview-toCheckHelp = 句子中間以大寫字母開頭的詞
 
 interface-AnonymizePreview-checkPicked = 「{ $word }」可能識別出某個人。
 
+interface-AnonymizePreview-savedFileNote = 儲存的檔案不受 myCarlos 保護。其中沒有姓名，但包含醫療詳情。用完後請將其刪除。
+
+interface-AnonymizePreview-pasteWhereNote = 您把它貼到哪裡，決定了什麼會被保留：聊天服務可能會保存它，或依您的帳戶設定從中學習。
+
 interface-AnonymizePreview-removeSelected = 移除選取的文字
 
 interface-AnonymizePreview-selectFirst = 請先選取一部分文字。

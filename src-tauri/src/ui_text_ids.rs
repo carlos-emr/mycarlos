@@ -211,6 +211,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewPasteLabel,
     InterfaceAnonymizePreviewPasteResult,
     InterfaceAnonymizePreviewPasteTitle,
+    InterfaceAnonymizePreviewPasteWhereNote,
     InterfaceAnonymizePreviewPhrase,
     InterfaceAnonymizePreviewPhraseNotFound,
     InterfaceAnonymizePreviewPlaceholderAddress,
@@ -244,6 +245,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewSave,
     InterfaceAnonymizePreviewSaveCancelled,
     InterfaceAnonymizePreviewSaved,
+    InterfaceAnonymizePreviewSavedFileNote,
     InterfaceAnonymizePreviewSelectFirst,
     InterfaceAnonymizePreviewTextRegion,
     InterfaceAnonymizePreviewTitle,
@@ -1266,6 +1268,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewPasteLabel,
         Self::InterfaceAnonymizePreviewPasteResult,
         Self::InterfaceAnonymizePreviewPasteTitle,
+        Self::InterfaceAnonymizePreviewPasteWhereNote,
         Self::InterfaceAnonymizePreviewPhrase,
         Self::InterfaceAnonymizePreviewPhraseNotFound,
         Self::InterfaceAnonymizePreviewPlaceholderAddress,
@@ -1299,6 +1302,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewSave,
         Self::InterfaceAnonymizePreviewSaveCancelled,
         Self::InterfaceAnonymizePreviewSaved,
+        Self::InterfaceAnonymizePreviewSavedFileNote,
         Self::InterfaceAnonymizePreviewSelectFirst,
         Self::InterfaceAnonymizePreviewTextRegion,
         Self::InterfaceAnonymizePreviewTitle,
@@ -2343,6 +2347,9 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
             Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
             Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
+            Self::InterfaceAnonymizePreviewPasteWhereNote => {
+                "interface-AnonymizePreview-pasteWhereNote"
+            }
             Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
             Self::InterfaceAnonymizePreviewPhraseNotFound => {
                 "interface-AnonymizePreview-phraseNotFound"
@@ -2424,6 +2431,9 @@ impl MessageId {
                 "interface-AnonymizePreview-saveCancelled"
             }
             Self::InterfaceAnonymizePreviewSaved => "interface-AnonymizePreview-saved",
+            Self::InterfaceAnonymizePreviewSavedFileNote => {
+                "interface-AnonymizePreview-savedFileNote"
+            }
             Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
             Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
             Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
@@ -4739,6 +4749,12 @@ impl MessageId {
             }
             "interface.AnonymizePreview.checkPicked" => {
                 Some(Self::InterfaceAnonymizePreviewCheckPicked)
+            }
+            "interface.AnonymizePreview.savedFileNote" => {
+                Some(Self::InterfaceAnonymizePreviewSavedFileNote)
+            }
+            "interface.AnonymizePreview.pasteWhereNote" => {
+                Some(Self::InterfaceAnonymizePreviewPasteWhereNote)
             }
             "interface.AnonymizePreview.removeSelected" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveSelected)

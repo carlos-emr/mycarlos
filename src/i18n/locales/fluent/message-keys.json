@@ -938,6 +938,8 @@
   "interface.AnonymizePreview.toCheck",
   "interface.AnonymizePreview.toCheckHelp",
   "interface.AnonymizePreview.checkPicked",
+  "interface.AnonymizePreview.savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote",
   "interface.AnonymizePreview.removeSelected",
   "interface.AnonymizePreview.selectFirst",
   "interface.AnonymizePreview.phrase",

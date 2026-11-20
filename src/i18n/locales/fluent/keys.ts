@@ -939,6 +939,8 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.toCheck",
   "interface.AnonymizePreview.toCheckHelp",
   "interface.AnonymizePreview.checkPicked",
+  "interface.AnonymizePreview.savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote",
   "interface.AnonymizePreview.removeSelected",
   "interface.AnonymizePreview.selectFirst",
   "interface.AnonymizePreview.phrase",
@@ -2174,6 +2176,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-toCheckHelp",
   "interface.AnonymizePreview.checkPicked":
     "interface-AnonymizePreview-checkPicked",
+  "interface.AnonymizePreview.savedFileNote":
+    "interface-AnonymizePreview-savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote":
+    "interface-AnonymizePreview-pasteWhereNote",
   "interface.AnonymizePreview.removeSelected":
     "interface-AnonymizePreview-removeSelected",
   "interface.AnonymizePreview.selectFirst":
@@ -3350,6 +3356,8 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.toCheck": { count: FluentArgument };
   "interface.AnonymizePreview.toCheckHelp": undefined;
   "interface.AnonymizePreview.checkPicked": { word: FluentArgument };
+  "interface.AnonymizePreview.savedFileNote": undefined;
+  "interface.AnonymizePreview.pasteWhereNote": undefined;
   "interface.AnonymizePreview.removeSelected": undefined;
   "interface.AnonymizePreview.selectFirst": undefined;
   "interface.AnonymizePreview.phrase": undefined;

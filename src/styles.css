@@ -1245,6 +1245,26 @@ p {
 .native-anonymize-notes p {
   margin: 0;
 }
+/* "Removing details is never perfect": the warning a patient must not skip. */
+.native-anonymize-notes .native-anonymize-warning {
+  padding: 8px 12px;
+  border: 1px solid var(--warning-line);
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: var(--warning-ink);
+  font-weight: 700;
+}
+/* Beside Save: where to paste, and what the saved file is. */
+.native-anonymize-advice {
+  display: grid;
+  gap: 6px;
+  padding: 8px 20px 0;
+}
+.native-anonymize-advice p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+}
 .native-anonymize-header {
   margin: 0;
   padding: 8px 20px;

@@ -47,7 +47,7 @@ async function fakeVault(page: Page) {
     const pages = [
       {
         index: 0,
-        text: "Patient: Avery Example\nDOB: 1961-04-17\nSeen 2026-10-08 by Dr. Ward for chest pain.\nRamipril 5 mg daily.",
+        text: "Patient: Avery Example\nDOB: 1961-04-17\nSeen 2026-10-08 by Dr. Ward for chest pain.\nRamipril 5 mg daily.\nSeen with Blake at room 214.",
       },
     ];
     const calls: SaveCall[] = [];
@@ -278,6 +278,23 @@ test("on a wide window Close is the last button in the action row, at the bottom
       dialogBox.x + dialogBox.width - (closeBox.x + closeBox.width),
     ).toBeLessThan(32);
     expect(closeBox.height).toBeGreaterThanOrEqual(44);
+    // What was removed, by kind, is said at the top; what is still in the text and may identify
+    // someone is highlighted and counted once; the two plain notes are beside Save.
+    await expect(preview.locator(".native-anonymize-summary")).toContainText(
+      /^Removed: .*name.*: .*1/, // Fluent isolates each value with invisible marks
+    );
+    await expect(preview.locator("mark[data-check]")).toHaveText([
+      "Blake",
+      "214",
+    ]);
+    await expect(preview.getByText(/2.*words to check/)).toBeVisible();
+    await expect(
+      preview.getByText("The saved file is not protected by myCarlos."),
+    ).toBeVisible();
+    await expect(
+      preview.getByText("Where you paste this decides what is kept"),
+    ).toBeVisible();
+    await page.screenshot({ path: info.outputPath("anonymize-wide.png") });
     // Escape still closes it.
     await page.keyboard.press("Escape");
     await expect(preview).toBeHidden();

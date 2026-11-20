@@ -2219,6 +2219,10 @@ interface-AnonymizePreview-toCheckHelp = Les mots qui commencent par une majuscu
 
 interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
 
+interface-AnonymizePreview-savedFileNote = Le fichier enregistré n’est pas protégé par myCarlos. Il ne contient aucun nom, mais il contient les détails médicaux. Supprimez-le lorsque vous avez terminé.
+
+interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez décide de ce qui est conservé : un service de clavardage peut le garder ou s’en servir pour apprendre, selon les paramètres de votre compte.
+
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 
 interface-AnonymizePreview-selectFirst = Sélectionnez d'abord une partie du texte.

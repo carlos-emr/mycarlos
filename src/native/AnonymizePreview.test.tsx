@@ -465,6 +465,30 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(document.querySelector(".native-anonymize-checks")).toBeNull();
   });
 
+  it("tells the patient where the pasted text goes and what the saved file is, beside Save", async () => {
+    renderPreview();
+    const save = await screen.findByRole("button", {
+      name: humanText("Save the text…"),
+    });
+    const advice = document.querySelector<HTMLElement>(
+      ".native-anonymize-advice",
+    )!;
+    expect(advice).toHaveHumanTextContent(
+      "Where you paste this decides what is kept: a chat service may keep it or learn from it, depending on your account settings.",
+    );
+    expect(advice).toHaveHumanTextContent(
+      "The saved file is not protected by myCarlos. It has no names, but it holds the medical details. Delete it when you are done.",
+    );
+    // Above the action row that holds Save.
+    expect(
+      advice.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // "Removing details is never perfect" is the first, prominent note.
+    expect(
+      document.querySelector(".native-anonymize-warning"),
+    ).toHaveHumanTextContent(/^Removing details is never perfect/);
+  });
+
   it("says at the top what was removed, by kind, and follows each removal and undo", async () => {
     const user = userEvent.setup();
     renderPreview();
