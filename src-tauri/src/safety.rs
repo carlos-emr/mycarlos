@@ -738,6 +738,55 @@ fn names_a_doctor_the_source_lacks(sentence: &str, source: &str) -> bool {
         .any(|parts| !parts.iter().all(|p| have.contains(p)))
 }
 
+/// How a sentence says that the document does NOT say something. The model is told to leave out
+/// a sentence it has no quote for; one about an absence has no true quote, so it gets one that is
+/// not in the letter, and the runner then keeps the sentence without a source. Lower-case text,
+/// one space between words.
+const ABSENCE_PHRASES: &[&str] = &[
+    "the document does not",
+    "the document doesn't",
+    "the document did not",
+    "the document gives no",
+    "the document has no",
+    "the document contains no",
+    "the document lists no",
+    "the document mentions no",
+    "the document says nothing",
+    "the document is silent",
+    "the letter does not",
+    "the letter doesn't",
+    "the letter did not",
+    "the letter gives no",
+    "the letter has no",
+    "the letter says nothing",
+    "the report does not",
+    "the report doesn't",
+    "the report gives no",
+    "the report has no",
+    "there is no mention",
+    "no information is given",
+    "no instructions are given",
+    "nothing is said about",
+];
+
+/// Whether an English summary sentence reports what the document does not say ("The document
+/// does not give instructions for taking medicine."). Such a sentence has no source of its own;
+/// the runner drops it when its quote is not in the letter (`local_runner`), never when it is.
+pub(crate) fn is_absence_sentence(text: &str) -> bool {
+    // Words only: an apostrophe goes ("doesn't" is "doesnt"), so both spellings of it match.
+    let words = |t: &str| {
+        tokens(&t.replace(['\'', '\u{2019}'], ""))
+            .into_iter()
+            .map(|w| w.0)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let line = format!(" {} ", words(text));
+    ABSENCE_PHRASES
+        .iter()
+        .any(|phrase| line.contains(&format!(" {} ", words(phrase))))
+}
+
 fn flat(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -1524,6 +1573,27 @@ mod tests {
             log[0].before.as_deref(),
             Some("They must be seen by Dr. Henrietta Fakeham within 4 weeks.")
         );
+    }
+
+    #[test]
+    fn given_absence_sentences_when_read_then_only_those_that_say_the_document_lacks_something_match(
+    ) {
+        for yes in [
+            "The document does not give instructions for taking medicine.",
+            "The document doesn\u{2019}t say when to come back.",
+            "You may continue your current medicines as the document does not tell you to change them.",
+            "The letter gives no phone number.",
+            "There is no mention of allergies.",
+        ] {
+            assert!(is_absence_sentence(yes), "{yes}");
+        }
+        for no in [
+            "You must take Vitamin D3 2,000 units by mouth once a day.",
+            "The document says you must stop taking iron after the infusion.",
+            "The documents are in the folder.",
+        ] {
+            assert!(!is_absence_sentence(no), "{no}");
+        }
     }
 
 }
