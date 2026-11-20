@@ -110,6 +110,19 @@ test("Security: clinic documents, profiles and the open section are named and re
     name: "Full name, as on clinic documents",
   });
   await expect(fullName).toHaveAccessibleDescription(/full name/i);
+  // The polite line is on the page from the start, so its text is read out when it appears.
+  // When it has nothing to say it must stay a live region in the accessibility tree (not
+  // display: none) but add no row and gap to the grid: so it is out of the flow. (This
+  // profile has no birth date yet, so the line has text: empty it to see the empty rule.)
+  const live = details.locator("p[aria-live=polite]");
+  await expect(live).toHaveCount(1);
+  expect(
+    await live.evaluate((node) => {
+      node.textContent = "";
+      const style = getComputedStyle(node);
+      return [style.display, style.position];
+    }),
+  ).toEqual(["block", "absolute"]);
   await fullName.fill("FAKE Avery Example");
   await expectAnnounced(page, "Enter a date of birth");
   // The dialog is modal: close it before going on with Security.

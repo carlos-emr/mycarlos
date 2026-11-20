@@ -4532,6 +4532,18 @@ button:disabled,
 .native-person-details-setup input {
   min-width: 0;
 }
+/* The polite line for a missing name or date is on the page from the start, so that its text is
+   read out when it appears (#149). Empty, it must not add a row and a gap to the grid: it leaves
+   the flow instead of using display: none, which would take it out of the accessibility tree
+   and with it the live region. */
+.native-person-details-setup p[aria-live]:empty,
+.native-rename-fields p[aria-live]:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+}
 /* Previous full names in Edit details: each name and its Remove button stay
    in one column at any width and text size. */
 .previous-full-names,
