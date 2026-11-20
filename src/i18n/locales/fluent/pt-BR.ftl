@@ -48,7 +48,7 @@ checklist-notAName = Diferente do seu nome
 
 checklist-notYet = , ainda não
 
-checklist-spaces = Espaços são permitidos, então algumas palavras sem relação entre si formam uma boa frase secreta. O myCarlos verifica essas regras neste computador.
+checklist-spaces = Espaços são permitidos, então algumas palavras sem relação entre si formam uma boa frase secreta. O myCarlos verifica essas regras neste dispositivo.
 
 comfort-autoLock-body = O myCarlos se bloqueia sozinho quando fica sem uso por esse tempo, para que ninguém mais veja seus documentos. Escolha de 1 a 15 minutos.
 
@@ -78,7 +78,7 @@ create-stays = Seu cofre fica neste dispositivo. Se você criou um em outro disp
 
 create-submit = Criar cofre
 
-create-title = Configure o myCarlos neste computador
+create-title = Configure o myCarlos neste dispositivo
 
 error-checkBoxes = Verifique { $boxes } e tente de novo.
 
@@ -188,9 +188,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Senha do documento
 
+interface-DocumentReader-firstPage = Primeira página
+
 interface-DocumentReader-fitWidth = Ajustar à largura
 
 interface-DocumentReader-larger = Aumentar
+
+interface-DocumentReader-lastPage = Última página
 
 interface-DocumentReader-nextPage = Próxima página
 
@@ -247,7 +251,7 @@ interface-notice-alreadyShared = { $name } já estava em Compartilhados comigo.
 
 interface-notice-changesResumed = { $outcome } O cofre aceita alterações de novo.
 
-interface-notice-copySaved = Uma cópia legível foi salva neste computador.
+interface-notice-copySaved = Uma cópia legível foi salva neste dispositivo.
 
 interface-notice-damagedHidden =
     { $count ->
@@ -327,7 +331,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = Seu kit antigo
 
 interface-person-records = Documentos de { $name }
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = Verifique as configurações de privacidade da câmera do computador e permita que o myCarlos use a câmera.
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = Verifique as configurações de privacidade da câmera do dispositivo e permita que o myCarlos use a câmera.
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = Nos Ajustes do Sistema, abra Privacidade e Segurança, depois Câmera, e ative o myCarlos.
 
@@ -358,6 +362,10 @@ interface-reader-page = Página { $page }
 interface-reader-textFollows = Página { $page } de { $total }. O texto da página vem a seguir.
 
 interface-reader-where = Página { $page } de { $total }
+
+interface-reader-markedOnPage = Página { $page }: as palavras citadas estão marcadas na imagem da página e no texto desta página.
+
+interface-reader-markedInText = Página { $page }: as palavras citadas estão marcadas no texto desta página. Não foi possível marcá-las na imagem da página.
 
 interface-reader-zoom = { $percent }%
 
@@ -403,7 +411,7 @@ interface-RecordDetails-moveTo = Mover para
 
 interface-RecordDetails-read = Ler
 
-interface-RecordDetails-saveACopyToThisComputer = Salvar uma cópia neste computador
+interface-RecordDetails-saveACopyToThisComputer = Salvar uma cópia neste dispositivo
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = O arquivo continua criptografado no cofre. Salve uma cópia só quando precisar de um arquivo legível fora do myCarlos.
 
@@ -554,7 +562,7 @@ interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Mova-os para suas pa
 
 interface-VaultLibrary-moveTheSelectedDocuments = Mover os documentos selecionados.
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = O myCarlos não conseguiu salvar uma alteração neste computador. Libere espaço ou verifique o disco e depois bloqueie e desbloqueie o cofre; ele se repara quando consegue gravar.
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = O myCarlos não conseguiu salvar uma alteração neste dispositivo. Libere espaço ou verifique o disco e depois bloqueie e desbloqueie o cofre; ele se repara quando consegue gravar.
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos criptografados do myCarlos
 
@@ -786,7 +794,7 @@ native-error-33 = O myCarlos não consegue mostrar documentos com segurança nes
 
 native-error-34 = Não há espaço de armazenamento suficiente para concluir esta operação.
 
-native-error-35 = O myCarlos não conseguiu ler ou gravar seus arquivos neste computador. Verifique se a unidade que contém o myCarlos está conectada e tem espaço livre, depois tente de novo. Se você estava fazendo uma alteração, primeiro confira seus documentos para ver se ela foi feita.
+native-error-35 = O myCarlos não conseguiu ler ou gravar seus arquivos neste dispositivo. Verifique se a unidade que contém o myCarlos está conectada e tem espaço livre, depois tente de novo. Se você estava fazendo uma alteração, primeiro confira seus documentos para ver se ela foi feita.
 
 native-error-36 = A operação parou porque o cofre foi bloqueado.
 
@@ -953,7 +961,7 @@ photo-zoomIn = Aumentar zoom
 
 photo-zoomOut = Diminuir zoom
 
-preferences-subtitle = Como o myCarlos aparece neste computador
+preferences-subtitle = Como o myCarlos aparece neste dispositivo
 
 readingAid-available = Sua clínica também enviou um auxílio de leitura para este documento.
 
@@ -1096,7 +1104,7 @@ rename-tooLong = Este nome é longo demais. Encurte-o para salvar.
 
 rename-unsafe = Nomes de documentos não podem conter { $characters } nem caracteres de controle invisíveis, nem terminar com ponto.
 
-reset-plainly = Deixar o cofre de lado tira do myCarlos neste computador todos os seus documentos, pastas e perfis de paciente. Eles ficam neste computador, criptografados. Esse cofre ainda pode ser aberto com sua frase secreta original ou a chave de recuperação correspondente. Criar um novo cofre não muda essas credenciais. Para confirmar, digite exatamente as palavras abaixo.
+reset-plainly = Deixar o cofre de lado tira do myCarlos neste dispositivo todos os seus documentos, pastas e perfis de paciente. Eles ficam neste dispositivo, criptografados. Esse cofre ainda pode ser aberto com sua frase secreta original ou a chave de recuperação correspondente. Criar um novo cofre não muda essas credenciais. Para confirmar, digite exatamente as palavras abaixo.
 
 reset-submit = Deixar o cofre de lado
 
@@ -1332,7 +1340,7 @@ textSize-box = Tamanho do texto em porcentagem
 
 textSize-followsDevice = Aqui, o tamanho do texto segue o seu dispositivo: o ajuste de tamanho do texto dele ou o zoom do navegador.
 
-textSize-help = Aumenta ou diminui tudo no myCarlos, de { $min }% a { $max }%. O myCarlos lembra o tamanho neste computador. Você também pode manter a tecla { $modifier } pressionada e pressionar mais, menos ou 0.
+textSize-help = Aumenta ou diminui tudo no myCarlos, de { $min }% a { $max }%. O myCarlos lembra o tamanho neste dispositivo. Você também pode manter a tecla { $modifier } pressionada e pressionar mais, menos ou 0.
 
 textSize-key-command = Comando
 
@@ -1387,6 +1395,14 @@ personDetails-birthDate = Data de nascimento
 personDetails-birthDateRequired = Digite a data de nascimento ou indique que não a conhece.
 
 personDetails-birthDateUnknown = Não sei a data de nascimento desta pessoa
+
+personDetails-birthDay = Dia
+
+personDetails-birthMonth = Mês
+
+personDetails-birthMonthChoose = Escolher
+
+personDetails-birthYear = Ano
 
 personDetails-cancel = Cancelar
 
@@ -1479,6 +1495,8 @@ portal-copy = Copiar código do dispositivo
 portal-copyFailed = Selecione todo o código do dispositivo e copie.
 
 portal-dateNotRecorded = Data não registrada
+
+portal-defaultDeviceName = myCarlos no { $platform }
 
 portal-deviceCode = Código do dispositivo
 
@@ -1649,6 +1667,10 @@ interface-history-event-backupSaved = Backup criptografado salvo
 interface-history-event-copySaved = Cópia legível salva
 
 interface-history-event-created = Cofre criado
+
+interface-history-event-deliveryRefusalsCleared = Nova tentativa solicitada para os documentos não verificados da clínica
+
+interface-history-event-deliveryRefused = Documento da clínica não verificado
 
 interface-history-event-deliveryFiled = Documento da clínica salvo
 
@@ -1829,6 +1851,16 @@ portal-codeSubmit = Confirmar código
 
 portal-codeSubmitted = Código enviado. Aguardando sua clínica confirmar este dispositivo. Se ele não for confirmado em 10 minutos, peça novamente.
 
+portal-refusedDocuments =
+    { $count ->
+    [one] Não foi possível verificar { $count } documento desta clínica. Peça à clínica que o envie novamente.
+    *[other] Não foi possível verificar { $count } documentos desta clínica. Peça à clínica que os envie novamente.
+    }
+
+portal-tryAgain = Tentar de novo
+
+portal-tryAgainFor = Tentar de novo para { $clinic }
+
 portal-linkAnother = Vincular outra clínica
 
 ai-summary-button = Resumo
@@ -1837,9 +1869,9 @@ ai-summary-title = Resumo em palavras simples
 
 ai-explain-title = Explicar um termo
 
-ai-notInstalled-title = O assistente de IA ainda não está neste computador
+ai-notInstalled-title = O assistente de IA ainda não está neste dispositivo
 
-ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste computador. Em Configurações, em Assistente de IA, você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha.
+ai-notInstalled-body = Quando estiver instalado, ele explica os seus documentos em palavras simples, com um modelo de IA que funciona neste dispositivo. Em Configurações, em Assistente de IA, você pode baixar o modelo ou adicionar um arquivo de modelo que já tenha.
 
 ai-notInstalled-openPreferences = Abrir as configurações do assistente de IA
 
@@ -1849,7 +1881,41 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver no documento
 
-ai-summary-partial = Este resumo cobre apenas o início do documento: páginas 1 a { $last }.
+ai-summary-folded = O resumo está recolhido para dar espaço à página.
+
+ai-summary-showWhole = Ver o resumo inteiro
+
+ai-summary-partial = Este resumo usa apenas parte do texto do documento.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente a página 1 de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente as páginas 1 a { $last } de { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente a página 1 e a última página, a página { $tail }, de { $total }.
+   *[other] Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler aproximadamente as páginas 1 a { $last } e a última página, a página { $tail }, de { $total }.
+    }
+
+ai-summary-tooLongStart = Este documento provavelmente é longo demais para o assistente de IA ler de uma só vez. Ele consegue ler apenas aproximadamente o início da página 1.
+
+ai-summary-tooLongAfter = Se não conseguir ler tudo, o resumo avisará.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Resumir a página 1
+   *[other] Resumir as páginas 1 a { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Resumir a página 1 e a página { $tail }
+   *[other] Resumir as páginas 1 a { $last } e a página { $tail }
+    }
+
+ai-summary-readStart = Resumir o início da página 1
 
 ai-summary-noText = O myCarlos não conseguiu ler nenhum texto neste documento, então não pode resumi-lo. Ele pode ser uma digitalização.
 
@@ -1861,15 +1927,22 @@ ai-explain-submit = Explicar
 
 ai-preferences-title = Assistente de IA
 
-ai-preferences-body = Explica seus documentos em palavras simples com um modelo de IA que funciona neste computador. Baixe um dos modelos abaixo ou adicione um arquivo correspondente que você já tenha. Os modelos ficam neste computador.
+ai-preferences-body = Explica seus documentos em palavras simples com um modelo de IA que funciona neste dispositivo. Baixe um dos modelos abaixo ou adicione um arquivo correspondente que você já tenha. Os modelos ficam neste dispositivo.
 
 ai-preferences-notInstalled = Não instalado
 
-ai-settings-subtitle = Como o assistente de IA funciona neste computador
+ai-settings-subtitle = Como o assistente de IA funciona neste dispositivo
 
 ai-model-add = Adicionar um arquivo de modelo…
 
 ai-model-accepted = { $name }, { $size } MB. Licença: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Lê cerca de { $pages } página por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+    [many] Lê cerca de { $pages } de páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+   *[other] Lê cerca de { $pages } páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
+    }
 
 ai-model-where = Onde obter o arquivo
 
@@ -1885,15 +1958,15 @@ ai-model-installed = Instalado: { $name }
 
 ai-model-remove = Remover o modelo
 
-ai-model-removeConfirm = Remover o modelo deste computador? Você poderá adicioná-lo novamente depois.
+ai-model-removeConfirm = Remover o modelo deste dispositivo? Você poderá adicioná-lo novamente depois.
 
 ai-model-damaged = O arquivo do modelo está danificado ou foi alterado. Remova-o e adicione-o novamente.
 
-ai-model-unsupportedRam = Este computador não tem memória suficiente para o assistente de IA (são necessários cerca de 8 GB).
+ai-model-unsupportedRam = Este dispositivo não tem memória suficiente para o assistente de IA (são necessários cerca de 8 GB).
 
-ai-model-unsupportedCpu = O processador deste computador não é compatível com o assistente de IA.
+ai-model-unsupportedCpu = O processador deste dispositivo não é compatível com o assistente de IA.
 
-ai-model-unsupportedPlatform = O assistente de IA ainda não está disponível neste tipo de computador.
+ai-model-unsupportedPlatform = O assistente de IA ainda não está disponível neste tipo de dispositivo.
 
 ai-model-refusedList = Este não é um arquivo aceito pelo myCarlos. Escolha um dos arquivos de modelo listados acima.
 
@@ -1901,9 +1974,9 @@ ai-model-refusedHash = Este não é o arquivo esperado. Baixe-o novamente e adic
 
 ai-model-refusedIncomplete = Não foi possível ler o arquivo por completo. Verifique se o download terminou e tente novamente.
 
-ai-model-refusedDisk = Não há espaço livre suficiente neste computador. O modelo precisa de cerca de 4 GB.
+ai-model-refusedDisk = Não há espaço livre suficiente neste dispositivo. O modelo precisa de cerca de 4 GB.
 
-ai-model-refusedStorage = Não foi possível salvar o modelo neste computador.
+ai-model-refusedStorage = Não foi possível salvar o modelo neste dispositivo.
 
 ai-model-refusedBusy = O assistente de IA está trabalhando. Tente novamente quando ele terminar.
 
@@ -1948,16 +2021,38 @@ ai-error-memory = Não há memória livre suficiente para o assistente de IA ago
 
 ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
 
-ai-error-storage = Não foi possível ler o modelo do assistente de IA neste computador. Tente de novo. Se continuar acontecendo, remova o modelo em Configurações, em Assistente de IA, e adicione-o de novo.
+ai-error-storage = Não foi possível ler o modelo do assistente de IA neste dispositivo. Tente de novo. Se continuar acontecendo, remova o modelo em Configurações, em Assistente de IA, e adicione-o de novo.
 
 ai-summary-pagesMissing = Algumas páginas não puderam ser lidas por completo, então este resumo pode deixar partes de fora.
 
 ai-summary-noSource = Fonte não encontrada
+
+ai-summary-englishOnly = Por enquanto, os resumos são escritos em inglês. O myCarlos só verifica números e orientações de “quando buscar ajuda” em inglês; confira-os no próprio documento.
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = Isso pode levar alguns minutos. Você pode continuar lendo a carta.
+
+ai-summary-progress-reading = Lendo a carta…
+
+ai-summary-progress-writing = Escrevendo o resumo…
+
+ai-summary-progress-checking = Verificando o resumo…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Falta menos de um minuto
+        [one] Falta cerca de { $minutes } minuto
+       *[other] Faltam cerca de { $minutes } minutos
+    }
+
+ai-summary-progress-slower = Está demorando mais do que o esperado.
+
 aiHelper-notice-title = Sobre o assistente de IA
 
-aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste computador.
+aiHelper-notice-introShare = O myCarlos pode preparar o texto de um documento para o serviço de IA que você escolher. O assistente de IA nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste dispositivo.
 
-aiHelper-notice-intro = O assistente de IA explica um documento em palavras simples, aqui neste dispositivo, e pode preparar o texto de um documento para o serviço de IA que você escolher. Ele nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste computador.
+aiHelper-notice-intro = O assistente de IA explica um documento em palavras simples, aqui neste dispositivo, e pode preparar o texto de um documento para o serviço de IA que você escolher. Ele nunca envia pela internet os seus documentos nem nada sobre você. A única coisa que ele busca é o seu arquivo de modelo, e somente se você escolher baixá-lo. Ao baixá-lo, o site de download vê o endereço de internet deste dispositivo.
 
 aiHelper-notice-testBuild = Esta versão de desenvolvimento é só para arquivos fictícios. Não a use com informações de saúde reais.
 
@@ -2168,7 +2263,7 @@ ai-keepFull = Este documento já guarda o máximo de respostas da IA. As respost
 
 # Catalog model list (#276A).
 
-ai-models-title = Modelos neste computador
+ai-models-title = Modelos neste dispositivo
 
 ai-models-group = Modelo em uso
 
@@ -2200,3 +2295,12 @@ ai-models-starting = Iniciando o download…
 ai-models-picking = Escolha um arquivo de modelo para adicionar.
 
 ai-models-changed = Modelo em uso alterado
+
+ai-summaryTooLarge = O resumo completo é grande demais. Nenhum novo resumo foi salvo.
+
+personDetails-previousTitle = Nomes completos anteriores
+personDetails-previousHelp = Até 16 nomes completos anteriores ajudam a encontrar dados de identificação. Um nome alterado é sugerido aqui; remova-o antes de salvar se não quiser guardá-lo. A remoção afeta apenas esta entrada; outros registros e backups podem mantê-lo.
+personDetails-previousEntry = Nome completo anterior { $number }
+personDetails-previousRemove = Remover nome completo anterior { $number }
+personDetails-previousAdd = Adicionar nome completo anterior
+personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.

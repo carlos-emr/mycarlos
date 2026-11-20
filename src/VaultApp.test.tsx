@@ -1,4 +1,5 @@
 import { humanText, humanValue } from "./test/humanText";
+import { birthDateGroup, enterBirthDate } from "./test/birthDate";
 import {
   act,
   fireEvent,
@@ -235,7 +236,7 @@ async function startExport() {
   await act(async () => {
     fireEvent.click(
       screen.getByRole("button", {
-        name: humanText("Save a copy to this computer"),
+        name: humanText("Save a copy to this device"),
       }),
     );
   });
@@ -428,9 +429,7 @@ describe("the first person's details at setup (#234)", () => {
       screen.getByLabelText(humanText("Full name, as on clinic documents")),
       "FAKE Patient Example",
     );
-    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
-      target: { value: "1980-04-12" },
-    });
+    enterBirthDate(birthDateGroup(), "1980-04-12");
     await user.type(
       screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
@@ -791,7 +790,7 @@ describe("durable vault UI", () => {
     );
     await continuePastComfort();
     await screen.findByRole("heading", {
-      name: humanText("Set up myCarlos on this computer"),
+      name: humanText("Set up myCarlos on this device"),
     });
     expect(
       screen.getByText(humanText(/stays on this device/)),
@@ -828,7 +827,7 @@ describe("durable vault UI", () => {
       screen.getByRole("button", { name: humanText("Continue") }),
     );
     await screen.findByRole("heading", {
-      name: humanText("Set up myCarlos on this computer"),
+      name: humanText("Set up myCarlos on this device"),
     });
     // The focus goes on to the first box, not nowhere; the choice was
     // said where it was made, not again here.
@@ -860,7 +859,7 @@ describe("durable vault UI", () => {
 
     await continuePastComfort();
     await screen.findByRole("heading", {
-      name: humanText("Set up myCarlos on this computer"),
+      name: humanText("Set up myCarlos on this device"),
     });
     fireEvent.change(
       screen.getByLabelText(humanText("Whose records will you keep here?")),
@@ -976,7 +975,7 @@ describe("durable vault UI", () => {
     await continuePastComfort();
     expect(
       await screen.findByRole("heading", {
-        name: humanText("Set up myCarlos on this computer"),
+        name: humanText("Set up myCarlos on this device"),
       }),
     ).toBeInTheDocument();
     expect(
@@ -3516,7 +3515,7 @@ describe("durable vault UI", () => {
     const shim = tauriConfirmShim();
     await user.click(
       screen.getByRole("button", {
-        name: humanText("Save a copy to this computer"),
+        name: humanText("Save a copy to this device"),
       }),
     );
     const warning = screen.getByRole("alertdialog", {
@@ -3534,7 +3533,7 @@ describe("durable vault UI", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: humanText("Save a copy to this computer"),
+        name: humanText("Save a copy to this device"),
       }),
     );
     await user.click(
@@ -3868,7 +3867,7 @@ describe("durable vault UI", () => {
       await act(async () => {
         fireEvent.click(
           screen.getByRole("button", {
-            name: humanText("Save a copy to this computer"),
+            name: humanText("Save a copy to this device"),
           }),
         );
       });
@@ -4006,9 +4005,7 @@ describe("durable vault UI", () => {
       screen.getByLabelText(humanText("Full name, as on clinic documents")),
       "FAKE Patient Example",
     );
-    fireEvent.change(screen.getByLabelText(humanText("Date of birth")), {
-      target: { value: "1980-04-12" },
-    });
+    enterBirthDate(birthDateGroup(), "1980-04-12");
     await user.type(
       screen.getByLabelText(humanText("Passphrase")),
       "river-azimuth-cobalt-sparrow-934",
@@ -4419,7 +4416,7 @@ describe("durable vault UI", () => {
     render(<VaultApp bridge={bridge} />);
     await continuePastComfort();
     await screen.findByRole("heading", {
-      name: humanText("Set up myCarlos on this computer"),
+      name: humanText("Set up myCarlos on this device"),
     });
     fireEvent.change(
       screen.getByLabelText(humanText("Whose records will you keep here?")),
@@ -4567,7 +4564,7 @@ describe("durable vault UI", () => {
     expect(
       screen.getByLabelText(humanText("Passphrase")),
     ).toHaveHumanAccessibleDescription(
-      /^0 character password Backup restored\./,
+      /^0 character passphrase Backup restored\./,
     );
   });
 
@@ -6512,7 +6509,7 @@ describe("durable vault UI", () => {
       expect(
         screen.getByLabelText(humanText("Passphrase")),
       ).toHaveHumanAccessibleDescription(
-        "0 character password Locked because myCarlos was minimized or sent to the background.",
+        "0 character passphrase Locked because myCarlos was minimized or sent to the background.",
       );
     } finally {
       visibility.mockRestore();
@@ -7929,7 +7926,7 @@ describe("durable vault UI", () => {
       await user.click(await screen.findByText(humanText("FAKE_Results.pdf")));
       await user.click(
         screen.getByRole("button", {
-          name: humanText("Save a copy to this computer"),
+          name: humanText("Save a copy to this device"),
         }),
       );
       await user.click(
@@ -8185,7 +8182,7 @@ describe("durable vault UI", () => {
         );
         await user.click(
           screen.getByRole("button", {
-            name: humanText("Save a copy to this computer"),
+            name: humanText("Save a copy to this device"),
           }),
         );
         await user.click(
@@ -8258,7 +8255,7 @@ describe("durable vault UI", () => {
         );
         await user.click(
           screen.getByRole("button", {
-            name: humanText("Save a copy to this computer"),
+            name: humanText("Save a copy to this device"),
           }),
         );
         await user.click(
@@ -9219,7 +9216,7 @@ describe("durable vault UI", () => {
     await user.click(await screen.findByText(humanText("FAKE_Copy.pdf")));
     await user.click(
       screen.getByRole("button", {
-        name: humanText("Save a copy to this computer"),
+        name: humanText("Save a copy to this device"),
       }),
     );
     await user.click(
@@ -9826,7 +9823,10 @@ describe("durable vault UI", () => {
     const notice = (await screen.findByText(humanText(english))).closest(
       '[role="status"]',
     )!;
-    expect(update).toHaveBeenCalledExactlyOnceWith("profile-1", { fullName });
+    expect(update).toHaveBeenCalledExactlyOnceWith("profile-1", {
+      fullName,
+      previousFullNames: ["FAKE Earlier Name"],
+    });
     expect(
       screen.queryByRole("form", {
         name: humanText(
@@ -10092,7 +10092,10 @@ describe("durable vault UI", () => {
     await screen.findByText(humanText("Details for FAKE Existing saved."));
     expect(bridge.updateProfileDetails).toHaveBeenCalledExactlyOnceWith(
       "profile-1",
-      { fullName: "FAKE Unsaved Person" },
+      {
+        fullName: "FAKE Unsaved Person",
+        previousFullNames: ["FAKE Original Person"],
+      },
     );
   });
 
@@ -10266,7 +10269,7 @@ describe("durable vault UI", () => {
     await user.tab({ shift: true });
     expect(
       screen.getByRole("button", {
-        name: humanText("Save a copy to this computer"),
+        name: humanText("Save a copy to this device"),
       }),
     ).toHaveFocus();
     await user.tab();
@@ -10561,7 +10564,7 @@ describe("durable vault UI", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: humanText("Save a copy to this computer"),
+        name: humanText("Save a copy to this device"),
       }),
     ).toBeDisabled();
   });
@@ -10825,7 +10828,7 @@ describe("durable vault UI", () => {
     ).not.toHaveHumanTextContent(/accepts changes/);
     expect(
       screen.getByText(
-        humanText(/myCarlos could not save a change to this computer/),
+        humanText(/myCarlos could not save a change to this device/),
       ),
     ).toBeVisible();
   });
@@ -11359,9 +11362,7 @@ describe("durable vault UI", () => {
     });
     // The copy was already written when the cancel arrived.
     await act(async () => finishExport());
-    await expectOutcomeAfterUnlock(
-      "A readable copy was saved to this computer.",
-    );
+    await expectOutcomeAfterUnlock("A readable copy was saved to this device.");
   });
 
   // A provider export cut off by the native deadline fails as a partial copy,
@@ -11619,7 +11620,7 @@ describe("the warning before the automatic lock (#68)", () => {
     await act(async () => {
       fireEvent.click(
         screen.getByRole("button", {
-          name: humanText("Save a copy to this computer"),
+          name: humanText("Save a copy to this device"),
         }),
       );
     });

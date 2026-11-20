@@ -9,6 +9,11 @@ import {
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
+import {
+  birthDateGroup,
+  birthDateValue,
+  enterBirthDate,
+} from "../test/birthDate";
 import type { VaultBridge, VaultSnapshot, FoundIdentity } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
@@ -409,14 +414,14 @@ describe("shared PDF suggestions use explicit Move", () => {
       }
       // FAKE Mom has no details yet, so the date box starts open.
       expect(unknown).not.toBeChecked();
-      expect(within(form).getByLabelText("Date of birth")).toBeEnabled();
+      expect(birthDateGroup(form)).toBeEnabled();
       unknown.focus();
       await userEvent.keyboard(" ");
       expect(unknown).toBeChecked();
-      expect(within(form).getByLabelText("Date of birth")).toBeDisabled();
+      expect(birthDateGroup(form)).toBeDisabled();
       await userEvent.keyboard(" ");
       expect(unknown).not.toBeChecked();
-      expect(within(form).getByLabelText("Date of birth")).toBeEnabled();
+      expect(birthDateGroup(form)).toBeEnabled();
     } finally {
       document.documentElement.style.fontSize = "";
     }
@@ -471,9 +476,7 @@ describe("shared PDF suggestions use explicit Move", () => {
       screen.getByLabelText("Full name, as on clinic documents"),
       { target: { value: " FAKE Riley Example " } },
     );
-    fireEvent.change(screen.getByLabelText("Date of birth"), {
-      target: { value: "2012-06-02" },
-    });
+    enterBirthDate(birthDateGroup(), "2012-06-02");
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Add profile" }),
     );
@@ -504,13 +507,13 @@ describe("shared PDF suggestions use explicit Move", () => {
       { target: { value: " FAKE Riley Example " } },
     );
     expect(add).toBeDisabled();
-    const date = screen.getByLabelText("Date of birth");
-    fireEvent.change(date, { target: { value: "2012-06-02" } });
+    const date = birthDateGroup();
+    enterBirthDate(date, "2012-06-02");
     const unknown = screen.getByRole("checkbox", {
       name: "I don't know this person's date of birth",
     });
     fireEvent.click(unknown);
-    expect(date).toHaveValue("");
+    expect(birthDateValue(date)).toBe("");
     expect(date).toBeDisabled();
     fireEvent.click(unknown);
     expect(add).toBeDisabled();

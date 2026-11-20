@@ -776,6 +776,31 @@ state, described in the recovery-key sections above.
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
 
+**Waiting keys for tray notices (myCarlos integration planned in #230; Portal contract in carlos-portal#88).** To let a
+locked myCarlos in the tray ask a linked portal "is anything waiting?", the planned integration
+creates each link's waiting key at clinic-link time, independently of later notice opt-in.
+It is kept outside the vault so that it works while the vault is locked.
+It is not a preference and is not in the webview's storage:
+
+- `notice-keys.v1`, beside the settings: 16 slots of the same size, sealed with
+  XChaCha20-Poly1305, so its size never shows how many links have a key. Each used slot holds the
+  portal's normalized base URL, including any configured path, the link id, the vault id,
+  the key id and the key's private half.
+- The file's 32-byte wrap key is in the OS credential store of the patient's OS account (Windows
+  Credential Manager adapter in #270; Linux Secret Service and macOS Keychain adapters
+  come later). Tray checks require an implemented myCarlos adapter for the OS store; there is no
+  plain-file fallback.
+
+Anyone who runs as the patient's OS account can decrypt the stored portal addresses and count
+the populated waiting-key slots, and use a waiting key to ask each of those portals whether
+something is waiting (Ben's decision, 5 November 2026). The keys are wiped on unlink,
+when notices or the tray are turned off,
+on vault reset or set-aside, and when a different vault is opened. Each wipe also requests portal
+revocation, which may wait while the device is offline ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
+"Tray notices"). The file and the OS item are not in myCarlos portable backups. OS/device backup
+behavior is a separate platform property; restoring a myCarlos portable backup restores no
+waiting key. The integration must create and register a new key before tray checks resume.
+
 ## Known limits before release
 
 - Rollback across an externally restored pair of otherwise valid manifest slots is not detected.
@@ -1048,9 +1073,13 @@ which is intended.
 Format 9 adds one optional manifest field, `remoteNotices` (#192): whether the
 patient turned on notices while myCarlos is closed, the push destinations this
 vault holds, and the revocations still to send. It is kept in the manifest, so it
-is encrypted like everything else there. Nothing outside the vault, including the
-plain notice file beside the settings, says which clinics a vault is linked to,
-or how many.
+is encrypted like everything else there. The plain notice file beside the settings
+does not contain clinic addresses or a linked-clinic count. The planned tray-notice
+exception (#230) keeps each stored waiting key's portal address in the sealed waiting-key
+file, whose wrap key is in the OS credential store ("Settings kept outside the vault").
+Fixed padding hides its populated-slot count from ciphertext size; someone who can use
+the OS account to decrypt it can see those stored addresses and count their entries.
+That count is of stored waiting keys, not necessarily every clinic linked inside the vault.
 
 - `optedIn`: the patient's own choice. It is set only by that choice, never at
   startup or by a timer. The OS notification permission is observed in each run
@@ -1136,3 +1165,63 @@ A format 1–10 vault is upgraded to format 11 at its next writable unlock, in a
 commit of its own, with nothing else changed. An older myCarlos then refuses
 the vault as newer rather than reading a record with more than 32 answers as
 damaged. Header and object formats are unchanged.
+
+#### Format 12: clinic documents that failed their checks (#143)
+
+Format 12 adds one manifest list, `refusedDeliveries`. It follows formats 10 and 11
+(the AI helper's answers and their caps, #212 and #250). When a clinic delivery
+fails its checks (it does not decrypt or open, its signed PDF is not verified for
+this link, what the PDF says differs from its envelope, or a delivery already
+filed is listed again with another hash), the vault remembers what the portal's
+listing said of it: `linkId`, `deliveryId`, `ciphertextSha256`, `refusedAtMs`
+and the delivery's own `expiresAt` (seconds; however far off the portal sets it,
+no later than 8 days after the refusal: a delivery's 7 days and the day's grace
+after them). Nothing from inside the document is kept, and
+the portal is not told: the refusal stays on this device (Ben, 29 Oct).
+
+A check for new documents, and the check after unlocking, skip a listed delivery
+whose link, id and hash match a remembered refusal that has not expired, without
+downloading it. So the patient is told once, and the clinic's card says how many
+of its documents could not be verified. The same id with another hash is a
+different document and is checked again. Try again (`vault_forget_refused_deliveries`)
+forgets a clinic's refusals, so the next check checks them again. A refusal is
+dropped once its delivery has expired. A check that could not be made, such as a
+missing or failed PDF helper, a cancelled check, bytes that do not match the
+listing (which may be a damaged download), or a package version newer than this
+build reads (which an update may open), is not remembered: that delivery is
+tried again next time, as before.
+
+The list is kept apart from `portalLinks`, so that the link a check is working
+from stays as saved while refusals are added. It holds at most 100 refusals per
+link. Those kept stay until they expire or Try again; a further refusal is not
+remembered (dropping a kept one would only have it downloaded and refused again).
+Forgetting expired refusals at the start of a check is only tidying: if it cannot
+be written, the check goes on. Each remembered refusal and each Try again is recorded
+in the history (`deliveryRefused`, `deliveryRefusalsCleared`) in the same commit. A
+manifest below format 12 that holds refusals is corrupt, as is a refusal for no
+saved link, a second refusal for one delivery, more than 100 for a link, or a
+malformed id, hash or expiry.
+
+Rule for any code that removes a clinic link: **it must forget that link's remembered
+refusals in the same write; a refusal whose link is gone makes the vault read as
+damaged.** The check that enforces it is the "for a saved link" test in
+`validate_manifest_structure` (a refusal whose `linkId` is in no `portalLinks` entry
+is `Corrupt`). The vault has no unlink today (linking again adds a second link with a
+new id, and the old link keeps its refusals), so nothing breaks yet.
+
+A format 1–11 vault opens with no refusals and is upgraded at its next writable
+unlock to the newest format this build writes (a build with only this change writes
+12; a build that also has previous full names writes 13), in a commit of its own, as
+for every earlier format. An older
+myCarlos then refuses the vault as newer: there is no downgrade. Header/object
+formats and the delivery wire format are unchanged.
+
+## Format 13: previous full names
+
+This build understands manifest formats 1–13. Format 12 (remembered refusals, #143, above) is a real format: a vault at 12 upgrades to 13 at its next writable unlock, in a commit of its own, like any older one. A format newer than 13 is refused as newer without being rewritten or interpreted; the parked model-file draft (#298) takes the next number, 14, when it merges. Format numbers are taken at merge (above): this one is 13 because it merges after #143's 12. Header, object and backup container formats do not change.
+
+A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 13 rather than read/drop this field.
+
+The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
+
+Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.

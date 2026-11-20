@@ -1,20 +1,20 @@
 DOCUMENT D'ESSAI SYNTHÉTIQUE - DONNÉES FICTIVES SEULEMENT
 
-Clinique médicale Saint-Laurent
-1234, rue Sherbrooke Est, app. 5
-Montréal (Québec) H2X 1A1
+Clinique médicale Saint-Fictif
+1234, rue Imaginaire Est, app. 5
+Montréal (Québec) H0Z 9Z9
 Tél. : 514 555-0123   Téléc. : 5145550124
 
 Le 3 octobre 2026
 
 Dre Émilie Tremblay
 Centre hospitalier de Fictiveville
-88, boul. René-Lévesque Ouest
-Fictiveville, QC G1R 9Z9
+88, boul. Émile-Exemple Ouest
+Fictiveville, QC H0Z 9Z8
 
 Objet : Patiente : Renée Côté
 Date de naissance : 1958/03/02
-RAMQ : COTR 5803 0299
+RAMQ : COTR 5863 0299
 Dossier no : 0077123
 
 Docteure Tremblay,

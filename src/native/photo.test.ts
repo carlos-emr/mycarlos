@@ -360,7 +360,7 @@ describe("camera failures", () => {
     );
     expect(humanValue(cameraFailureMessage("denied", "linux"))).toBe(
       humanValue(
-        "myCarlos can't use the camera. Check your computer's camera privacy settings and let myCarlos use the camera. Then choose Try again.",
+        "myCarlos can't use the camera. Check your device's camera privacy settings and let myCarlos use the camera. Then choose Try again.",
       ),
     );
     expect(humanValue(cameraFailureMessage("missing", "windows"))).toBe(

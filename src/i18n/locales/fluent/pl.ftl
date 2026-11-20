@@ -48,7 +48,7 @@ checklist-notAName = Inne niż imię i nazwisko
 
 checklist-notYet = , jeszcze nie
 
-checklist-spaces = Spacje są dozwolone, więc kilka niezwiązanych ze sobą słów to dobre hasło główne. myCarlos sprawdza te zasady na tym komputerze.
+checklist-spaces = Spacje są dozwolone, więc kilka niezwiązanych ze sobą słów to dobre hasło główne. myCarlos sprawdza te zasady na tym urządzeniu.
 
 comfort-autoLock-body = myCarlos blokuje się sam, gdy nie jest używany przez ten czas, aby nikt inny nie zobaczył dokumentów. Proszę wybrać od 1 do 15 minut.
 
@@ -78,7 +78,7 @@ create-stays = Sejf pozostaje na tym urządzeniu. Jeśli został utworzony na in
 
 create-submit = Utwórz sejf
 
-create-title = Skonfiguruj myCarlos na tym komputerze
+create-title = Skonfiguruj myCarlos na tym urządzeniu
 
 error-checkBoxes = Proszę sprawdzić { $boxes }, a potem spróbować ponownie.
 
@@ -194,9 +194,13 @@ interface-count-selected =
 
 interface-DocumentReader-documentPassword = Hasło dokumentu
 
+interface-DocumentReader-firstPage = Pierwsza strona
+
 interface-DocumentReader-fitWidth = Dopasuj do szerokości
 
 interface-DocumentReader-larger = Powiększ
+
+interface-DocumentReader-lastPage = Ostatnia strona
 
 interface-DocumentReader-nextPage = Następna strona
 
@@ -254,7 +258,7 @@ interface-notice-alreadyShared = { $name } był już w sekcji Udostępnione mi.
 
 interface-notice-changesResumed = { $outcome } W sejfie znów można wprowadzać zmiany.
 
-interface-notice-copySaved = Zapisano czytelną kopię na tym komputerze.
+interface-notice-copySaved = Zapisano czytelną kopię na tym urządzeniu.
 
 interface-notice-damagedHidden =
     { $count ->
@@ -340,7 +344,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = Stary zestaw n
 
 interface-person-records = Dokumenty osoby { $name }
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = Proszę sprawdzić ustawienia prywatności aparatu na komputerze i zezwolić myCarlos na jego używanie.
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = Proszę sprawdzić ustawienia prywatności aparatu na urządzeniu i zezwolić myCarlos na jego używanie.
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = W Ustawieniach systemowych proszę otworzyć Prywatność i ochrona, następnie Aparat i włączyć myCarlos.
 
@@ -371,6 +375,10 @@ interface-reader-page = Strona { $page }
 interface-reader-textFollows = Strona { $page } z { $total }. Poniżej znajduje się tekst strony.
 
 interface-reader-where = Strona { $page } z { $total }
+
+interface-reader-markedOnPage = Strona { $page }: cytowane słowa są zaznaczone na obrazie strony i w sekcji „Tekst na tej stronie”.
+
+interface-reader-markedInText = Strona { $page }: cytowane słowa są zaznaczone w sekcji „Tekst na tej stronie”. Nie udało się ich zaznaczyć na obrazie strony.
 
 interface-reader-zoom = { $percent }%
 
@@ -418,7 +426,7 @@ interface-RecordDetails-moveTo = Przenieś do
 
 interface-RecordDetails-read = Czytaj
 
-interface-RecordDetails-saveACopyToThisComputer = Zapisz kopię na tym komputerze
+interface-RecordDetails-saveACopyToThisComputer = Zapisz kopię na tym urządzeniu
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = Plik pozostaje zaszyfrowany w sejfie. Proszę zapisywać kopię tylko wtedy, gdy potrzebny jest czytelny plik poza myCarlos.
 
@@ -571,7 +579,7 @@ interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Można je przenieś�
 
 interface-VaultLibrary-moveTheSelectedDocuments = Przenieś wybrane dokumenty.
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos nie mógł zapisać zmiany na tym komputerze. Proszę zwolnić miejsce lub sprawdzić dysk, a następnie zablokować i odblokować sejf; naprawi się on sam, gdy będzie mógł zapisywać.
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos nie mógł zapisać zmiany na tym urządzeniu. Proszę zwolnić miejsce lub sprawdzić dysk, a następnie zablokować i odblokować sejf; naprawi się on sam, gdy będzie mógł zapisywać.
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteka zaszyfrowanych dokumentów myCarlos
 
@@ -807,7 +815,7 @@ native-error-33 = myCarlos nie może bezpiecznie wyświetlać dokumentów w tym 
 
 native-error-34 = Brakuje miejsca, aby ukończyć tę operację.
 
-native-error-35 = myCarlos nie mógł odczytać lub zapisać swoich plików na tym komputerze. Proszę sprawdzić, czy dysk z myCarlos jest podłączony i ma wolne miejsce, a następnie spróbować ponownie. Jeśli wprowadzano zmianę, proszę najpierw sprawdzić w dokumentach, czy została zapisana.
+native-error-35 = myCarlos nie mógł odczytać lub zapisać swoich plików na tym urządzeniu. Proszę sprawdzić, czy dysk z myCarlos jest podłączony i ma wolne miejsce, a następnie spróbować ponownie. Jeśli wprowadzano zmianę, proszę najpierw sprawdzić w dokumentach, czy została zapisana.
 
 native-error-36 = Operacja została przerwana, ponieważ sejf został zablokowany.
 
@@ -976,7 +984,7 @@ photo-zoomIn = Powiększ
 
 photo-zoomOut = Pomniejsz
 
-preferences-subtitle = Wygląd myCarlos na tym komputerze
+preferences-subtitle = Wygląd myCarlos na tym urządzeniu
 
 readingAid-available = Twoja przychodnia wysłała też pomoc w czytaniu tego dokumentu.
 
@@ -1120,7 +1128,7 @@ rename-tooLong = Ta nazwa jest zbyt długa. Proszę ją skrócić, aby zapisać.
 
 rename-unsafe = Nazwy dokumentów nie mogą zawierać znaków { $characters } ani niewidocznych znaków sterujących ani kończyć się kropką.
 
-reset-plainly = Odłożenie sejfu usuwa z myCarlos na tym komputerze wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym komputerze, zaszyfrowane. Ten sejf nadal można otworzyć jego pierwotnym hasłem głównym lub pasującym kluczem odzyskiwania. Utworzenie nowego sejfu nie zmienia tych danych dostępu. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.
+reset-plainly = Odłożenie sejfu usuwa z myCarlos na tym urządzeniu wszystkie dokumenty, foldery i profile pacjentów. Pozostają one na tym urządzeniu, zaszyfrowane. Ten sejf nadal można otworzyć jego pierwotnym hasłem głównym lub pasującym kluczem odzyskiwania. Utworzenie nowego sejfu nie zmienia tych danych dostępu. Aby potwierdzić, proszę wpisać dokładnie poniższe słowa.
 
 reset-submit = Odłóż sejf
 
@@ -1362,7 +1370,7 @@ textSize-box = Rozmiar tekstu w procentach
 
 textSize-followsDevice = Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.
 
-textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym komputerze. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
+textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym urządzeniu. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
 
 textSize-key-command = Command
 
@@ -1419,6 +1427,14 @@ personDetails-birthDate = Data urodzenia
 personDetails-birthDateRequired = Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.
 
 personDetails-birthDateUnknown = Nie znam daty urodzenia tej osoby
+
+personDetails-birthDay = Dzień
+
+personDetails-birthMonth = Miesiąc
+
+personDetails-birthMonthChoose = Wybierz
+
+personDetails-birthYear = Rok
 
 personDetails-cancel = Anuluj
 
@@ -1511,6 +1527,8 @@ portal-copy = Kopiuj kod urządzenia
 portal-copyFailed = Zaznacz cały kod urządzenia i skopiuj go.
 
 portal-dateNotRecorded = Data nie została zapisana
+
+portal-defaultDeviceName = myCarlos na { $platform }
 
 portal-deviceCode = Kod urządzenia
 
@@ -1684,6 +1702,10 @@ interface-history-event-backupSaved = Zapisano zaszyfrowaną kopię zapasową
 interface-history-event-copySaved = Zapisano czytelną kopię
 
 interface-history-event-created = Utworzono sejf
+
+interface-history-event-deliveryRefusalsCleared = Wybrano „Spróbuj ponownie” dla niezweryfikowanych dokumentów z przychodni
+
+interface-history-event-deliveryRefused = Nie zweryfikowano dokumentu z przychodni
 
 interface-history-event-deliveryFiled = Zapisano dokument z przychodni
 
@@ -1867,6 +1889,18 @@ portal-codeSubmit = Potwierdź kod
 
 portal-codeSubmitted = Kod wysłany. Oczekiwanie na potwierdzenie tego urządzenia przez przychodnię. Jeśli nie zostanie potwierdzone w ciągu 10 minut, proszę ponowić prośbę.
 
+portal-refusedDocuments =
+    { $count ->
+    [one] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [few] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    [many] Nie udało się zweryfikować { $count } dokumentów z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    *[other] Nie udało się zweryfikować { $count } dokumentu z tej przychodni. Proszę zwrócić się do przychodni o ponowne wysłanie.
+    }
+
+portal-tryAgain = Spróbuj ponownie
+
+portal-tryAgainFor = Spróbuj ponownie: { $clinic }
+
 portal-linkAnother = Połącz z inną przychodnią
 
 ai-summary-button = Podsumowanie
@@ -1875,9 +1909,9 @@ ai-summary-title = Podsumowanie prostymi słowami
 
 ai-explain-title = Wyjaśnij termin
 
-ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym komputerze
+ai-notInstalled-title = Asystenta AI nie ma jeszcze na tym urządzeniu
 
-ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. W Ustawieniach, w sekcji Asystent AI, można pobrać model albo dodać posiadany plik modelu.
+ai-notInstalled-body = Po zainstalowaniu wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym urządzeniu. W Ustawieniach, w sekcji Asystent AI, można pobrać model albo dodać posiadany plik modelu.
 
 ai-notInstalled-openPreferences = Otwórz ustawienia asystenta AI
 
@@ -1887,7 +1921,41 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
 
-ai-summary-partial = To podsumowanie obejmuje tylko początek dokumentu: strony od 1 do { $last }.
+ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
+
+ai-summary-showWhole = Pokaż całe podsumowanie
+
+ai-summary-partial = To podsumowanie wykorzystuje tylko część tekstu dokumentu.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } z { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej stronę 1 i ostatnią stronę, stronę { $tail }, z { $total }.
+   *[other] Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej strony od 1 do { $last } oraz ostatnią stronę, stronę { $tail }, z { $total }.
+    }
+
+ai-summary-tooLongStart = Ten dokument jest prawdopodobnie zbyt długi, aby asystent AI mógł przeczytać go za jednym razem. Może przeczytać mniej więcej tylko początek strony 1.
+
+ai-summary-tooLongAfter = Jeśli nie zdoła przeczytać całości, podsumowanie o tym poinformuje.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Podsumuj stronę 1
+   *[other] Podsumuj strony od 1 do { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Podsumuj stronę 1 i stronę { $tail }
+   *[other] Podsumuj strony od 1 do { $last } i stronę { $tail }
+    }
+
+ai-summary-readStart = Podsumuj początek strony 1
 
 ai-summary-noText = Nie udało się odczytać żadnego tekstu w tym dokumencie, więc nie można go podsumować. To może być skan.
 
@@ -1899,15 +1967,23 @@ ai-explain-submit = Wyjaśnij
 
 ai-preferences-title = Asystent AI
 
-ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym komputerze. Pobierz jeden z poniższych modeli lub dodaj pasujący plik, który już masz. Modele pozostają na tym komputerze.
+ai-preferences-body = Wyjaśnia dokumenty prostymi słowami za pomocą modelu AI działającego na tym urządzeniu. Pobierz jeden z poniższych modeli lub dodaj pasujący plik, który już masz. Modele pozostają na tym urządzeniu.
 
 ai-preferences-notInstalled = Nie zainstalowano
 
-ai-settings-subtitle = Działanie asystenta AI na tym komputerze
+ai-settings-subtitle = Działanie asystenta AI na tym urządzeniu
 
 ai-model-add = Dodaj plik modelu…
 
 ai-model-accepted = { $name }, { $size } MB. Licencja: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Czyta naraz około { $pages } strony (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [few] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    [many] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+   *[other] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
+    }
 
 ai-model-where = Gdzie pobrać plik
 
@@ -1923,15 +1999,15 @@ ai-model-installed = Zainstalowano: { $name }
 
 ai-model-remove = Usuń model
 
-ai-model-removeConfirm = Usunąć model z tego komputera? Można go później dodać ponownie.
+ai-model-removeConfirm = Usunąć model z tego urządzenia? Można go później dodać ponownie.
 
 ai-model-damaged = Plik modelu jest uszkodzony lub został zmieniony. Proszę go usunąć i dodać ponownie.
 
-ai-model-unsupportedRam = Ten komputer nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba około 8 GB).
+ai-model-unsupportedRam = To urządzenie nie ma wystarczająco dużo pamięci dla asystenta AI (potrzeba około 8 GB).
 
-ai-model-unsupportedCpu = Procesor tego komputera nie jest obsługiwany przez asystenta AI.
+ai-model-unsupportedCpu = Procesor tego urządzenia nie jest obsługiwany przez asystenta AI.
 
-ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju komputera.
+ai-model-unsupportedPlatform = Asystent AI nie jest jeszcze dostępny na tym rodzaju urządzenia.
 
 ai-model-refusedList = myCarlos nie akceptuje tego pliku. Wybierz jeden z plików modeli wymienionych powyżej.
 
@@ -1939,15 +2015,15 @@ ai-model-refusedHash = To nie jest oczekiwany plik. Proszę pobrać go ponownie 
 
 ai-model-refusedIncomplete = Nie udało się wczytać całego pliku. Proszę sprawdzić, czy pobieranie się zakończyło, i spróbować ponownie.
 
-ai-model-refusedDisk = Na tym komputerze brakuje wolnego miejsca. Model potrzebuje około 4 GB.
+ai-model-refusedDisk = Na tym urządzeniu brakuje wolnego miejsca. Model potrzebuje około 4 GB.
 
-ai-model-refusedStorage = Nie udało się zapisać modelu na tym komputerze.
+ai-model-refusedStorage = Nie udało się zapisać modelu na tym urządzeniu.
 
 ai-model-refusedBusy = Asystent AI pracuje. Proszę spróbować ponownie, gdy skończy.
 
 ai-model-download = Pobierz model domyślny
 
-ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o użytkowniku ani o jego dokumentach nie jest wysyłane. Strona, z której następuje pobieranie, widzi adres internetowy tego komputera, jak przy każdym pobieraniu.
+ai-model-downloadNote = Pobiera jeden plik ({ $size } MB), jednorazowo, z { $host }, tylko po kliknięciu. Nic o użytkowniku ani o jego dokumentach nie jest wysyłane. Strona, z której następuje pobieranie, widzi adres internetowy tego urządzenia, jak przy każdym pobieraniu.
 
 ai-model-downloading = Pobieranie i sprawdzanie… { $done } z { $total } MB
 
@@ -1987,16 +2063,40 @@ ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamkną
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
 
-ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego komputera. Można spróbować ponownie. Jeśli to się powtarza, można usunąć model w Ustawieniach, w sekcji Asystent AI, i dodać go ponownie.
+ai-error-storage = Nie udało się odczytać modelu asystenta AI z tego urządzenia. Można spróbować ponownie. Jeśli to się powtarza, można usunąć model w Ustawieniach, w sekcji Asystent AI, i dodać go ponownie.
 
 ai-summary-pagesMissing = Nie udało się w całości odczytać niektórych stron, więc w tym podsumowaniu może czegoś brakować.
 
 ai-summary-noSource = Nie znaleziono źródła
+
+ai-summary-englishOnly = Na razie podsumowania są pisane po angielsku. myCarlos sprawdza liczby i zasady „kiedy szukać pomocy” tylko po angielsku, więc sprawdź je w samym dokumencie.
+
+## DRAFT: agent translation of the summary progress texts, not reviewed (18 Nov).
+
+ai-summary-progress-before = To może potrwać kilka minut. Możesz czytać dalej list.
+
+ai-summary-progress-reading = Czytanie listu…
+
+ai-summary-progress-writing = Pisanie podsumowania…
+
+ai-summary-progress-checking = Sprawdzanie podsumowania…
+
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Zostało mniej niż minuta
+        [one] Zostało około { $minutes } minuty
+        [few] Zostały około { $minutes } minuty
+        [many] Zostało około { $minutes } minut
+       *[other] Zostało około { $minutes } minut
+    }
+
+ai-summary-progress-slower = To trwa dłużej, niż oczekiwano.
+
 aiHelper-notice-title = O asystencie AI
 
-aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
+aiHelper-notice-introShare = myCarlos może przygotować tekst dokumentu dla wybranej usługi AI. Asystent AI nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego urządzenia stronie, z której następuje pobieranie.
 
-aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego komputera stronie, z której następuje pobieranie.
+aiHelper-notice-intro = Asystent AI wyjaśnia dokument prostymi słowami, tutaj, na tym urządzeniu, i może przygotować tekst dokumentu dla wybranej usługi AI. Nigdy nie wysyła przez internet dokumentów użytkownika ani niczego o użytkowniku. Pobiera tylko plik modelu, i to wyłącznie wtedy, gdy użytkownik zdecyduje się go pobrać. Pobranie go ujawnia adres internetowy tego urządzenia stronie, z której następuje pobieranie.
 
 aiHelper-notice-testBuild = Ta wersja rozwojowa jest przeznaczona do użytku wyłącznie z fikcyjnymi plikami. Nie używaj jej z prawdziwymi informacjami o zdrowiu.
 
@@ -2209,7 +2309,7 @@ ai-keepFull = Ten dokument przechowuje już maksymalną liczbę odpowiedzi AI. N
 
 # Catalog model list (#276A).
 
-ai-models-title = Modele na tym komputerze
+ai-models-title = Modele na tym urządzeniu
 
 ai-models-group = Używany model
 
@@ -2241,3 +2341,12 @@ ai-models-starting = Rozpoczynanie pobierania…
 ai-models-picking = Wybierz plik modelu do dodania.
 
 ai-models-changed = Zmieniono używany model
+
+ai-summaryTooLarge = Pełne podsumowanie jest zbyt duże. Nie zapisano nowego podsumowania.
+
+personDetails-previousTitle = Poprzednie pełne imiona i nazwiska
+personDetails-previousHelp = Do 16 poprzednich pełnych imion i nazwisk pomaga wykrywać dane identyfikujące. Zmienione dane są tu proponowane; usuń je przed zapisaniem, jeśli nie chcesz ich zachować. Usunięcie dotyczy tylko tej listy; inne dokumenty i kopie zapasowe mogą je zachować.
+personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
+personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
+personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
+personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
