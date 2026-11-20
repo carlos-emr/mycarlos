@@ -8,6 +8,7 @@ import {
   firebaseResources,
   patchManifest,
   patchGradle,
+  patchKotlinCompiler,
 } from "./configure-android-push.mjs";
 const config = {
   project_info: { project_number: "123", project_id: "synthetic-only" },
@@ -50,9 +51,14 @@ test("manifest is idempotent, disables collection, and refuses unmanaged messagi
   );
 });
 test("generated project receives service/resources/dependency once; invalid config leaves it unchanged", async () => {
-  const root = await mkdtemp(join(tmpdir(), "mycarlos-push-"));
+  const project = await mkdtemp(join(tmpdir(), "mycarlos-push-"));
+  const root = join(project, "app");
   try {
     await mkdir(join(root, "src/main"), { recursive: true });
+    await writeFile(
+      join(project, "build.gradle.kts"),
+      'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")',
+    );
     const manifest =
       '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application></application></manifest>';
     await writeFile(join(root, "src/main/AndroidManifest.xml"), manifest);
@@ -67,6 +73,7 @@ test("generated project receives service/resources/dependency once; invalid conf
     await writeFile(path, JSON.stringify(config));
     await configureAndroidPush(root, path);
     const outputs = [
+      "../build.gradle.kts",
       "src/main/AndroidManifest.xml",
       "build.gradle.kts",
       "src/main/res/values/mycarlos_firebase.xml",
@@ -108,7 +115,7 @@ test("generated project receives service/resources/dependency once; invalid conf
       /override fun onNewToken/,
     );
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(project, { recursive: true, force: true });
   }
 });
 
@@ -129,4 +136,14 @@ test("unmanaged Gradle messaging dependencies fail before touching the project",
     assert.throws(() => patchGradle(dependency));
   const managed = patchGradle("plugins {}\n");
   assert.equal(patchGradle(managed), managed);
+});
+
+test("push compiler matches Firebase Kotlin metadata and refuses unknown compilers", () => {
+  const original =
+    'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")';
+  const result = patchKotlinCompiler(original);
+  assert.match(result, /kotlin-gradle-plugin:2.1.21/);
+  assert.equal(patchKotlinCompiler(result), result);
+  assert.throws(() => patchKotlinCompiler(original.replace("1.9.25", "2.0.0")));
+  assert.throws(() => patchKotlinCompiler(original + original));
 });

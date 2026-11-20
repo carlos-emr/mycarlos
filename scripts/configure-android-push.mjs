@@ -103,6 +103,23 @@ export function patchGradle(gradle) {
     '\n// MYCARLOS_PUSH_BEGIN\ndependencies.add("implementation", "com.google.firebase:firebase-messaging:26.0.1")\n// MYCARLOS_PUSH_END\n'
   );
 }
+// Firebase Messaging 26.0.1 brings Kotlin 2.1 metadata. Match its compiler only
+// in the generated feature-on project. Refuse a changed template for review.
+export function patchKotlinCompiler(project) {
+  const original =
+    'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")';
+  const selected =
+    'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21")';
+  if (
+    project.split("org.jetbrains.kotlin:kotlin-gradle-plugin:").length !== 2 ||
+    (!project.includes(original) && !project.includes(selected))
+  ) {
+    throw new Error(
+      "Unexpected Kotlin compiler in the generated Android project",
+    );
+  }
+  return project.replace(original, selected);
+}
 export async function configureAndroidPush(appDir, firebaseConfig) {
   // Validate all inputs before touching generated output. No network or account setup.
   const resources = firebaseResources(
@@ -114,6 +131,8 @@ export async function configureAndroidPush(appDir, firebaseConfig) {
   const manifest = patchManifest(await readFile(manifestPath, "utf8"));
   const gradlePath = join(appDir, "build.gradle.kts");
   const gradle = patchGradle(await readFile(gradlePath, "utf8"));
+  const projectPath = join(appDir, "..", "build.gradle.kts");
+  const project = patchKotlinCompiler(await readFile(projectPath, "utf8"));
   const kotlin = join(appDir, "src/main/java/ca/carlos/mycarlos/push");
   await mkdir(kotlin, { recursive: true });
   for (const file of [
@@ -131,6 +150,7 @@ export async function configureAndroidPush(appDir, firebaseConfig) {
     join(res, "drawable/mycarlos_push.xml"),
     '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"><path android:fillColor="#FFFFFFFF" android:pathData="M4,3h12l4,4v14H4zM7,10v2h10v-2zM7,15v2h10v-2z" /></vector>\n',
   );
+  await writeFile(projectPath, project);
   await writeFile(gradlePath, gradle);
   await writeFile(manifestPath, manifest);
 }
