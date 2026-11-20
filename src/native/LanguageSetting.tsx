@@ -6,6 +6,7 @@ import {
   useI18n,
   type Locale,
 } from "../i18n";
+import { ChoiceCheck } from "./ChoiceCheck";
 
 // Autonyms remain recognizable after an accidental language change. Most
 // Mandarin speakers write Simplified Chinese: the English word lets someone
@@ -42,7 +43,9 @@ export function LanguageSetting({
   return (
     <section
       className={
-        compact ? "language-compact" : "setting-row native-setting-form"
+        compact
+          ? "language-compact"
+          : "setting-row native-setting-form choice-row"
       }
     >
       <div>
@@ -58,7 +61,7 @@ export function LanguageSetting({
         </p>
       </div>
       <fieldset
-        className={`appearance-choice language-choice${compact ? " language-choices-compact" : ""}`}
+        className={`appearance-choice choice-grid language-choice${compact ? " language-choices-compact" : ""}`}
         aria-describedby={`${id}-help${state.error ? ` ${id}-error` : ""}`}
       >
         <legend className="sr-only">{t("language.title")}</legend>
@@ -70,7 +73,10 @@ export function LanguageSetting({
             checked={state.choice === null}
             onChange={() => rememberLocale(null)}
           />
-          <span>{t("language.system")}</span>
+          <span>
+            <ChoiceCheck />
+            <span>{t("language.system")}</span>
+          </span>
         </label>
         {LANGUAGES.map(([locale, label, hint]) => (
           <label className="appearance-option" key={locale}>
@@ -82,13 +88,18 @@ export function LanguageSetting({
               onChange={() => rememberLocale(locale)}
             />
             <span>
-              <span lang={locale}>{label}</span>
-              {hint && (
-                <>
-                  {" "}
-                  <span lang="en">({hint})</span>
-                </>
-              )}
+              <ChoiceCheck />
+              <span>
+                <span lang={locale}>{label}</span>
+                {hint && (
+                  <>
+                    {" "}
+                    <span lang="en" className="choice-hint">
+                      ({hint})
+                    </span>
+                  </>
+                )}
+              </span>
             </span>
           </label>
         ))}

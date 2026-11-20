@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -205,5 +212,126 @@ describe("saved app language", () => {
     } finally {
       stop();
     }
+  });
+});
+
+// The list is a grid of real radio buttons: one, two or three columns by the
+// room it has, each name in its own script, the chosen one marked by a fill and
+// a check mark.
+describe("Language drawn as a grid of buttons", () => {
+  function renderIn(width: number, compact = false) {
+    render(
+      <div style={{ width }}>
+        <LanguageSetting compact={compact} />
+      </div>,
+    );
+    const group = screen.getByRole("group", { name: "Language" });
+    const labels = within(group)
+      .getAllByRole("radio")
+      .map((radio) => radio.closest("label") as HTMLElement);
+    return { group, labels };
+  }
+  const columns = (labels: HTMLElement[]) =>
+    new Set(
+      labels.map((label) => Math.round(label.getBoundingClientRect().left)),
+    ).size;
+
+  it("is real radio buttons in one named group, System default first, one checked", () => {
+    const { group, labels } = renderIn(700);
+    expect(group.tagName).toBe("FIELDSET");
+    const radios = within(group).getAllByRole("radio");
+    expect(radios).toHaveLength(8);
+    expect(radios[0]).toHaveAccessibleName("System default");
+    expect(
+      radios.filter((radio) => (radio as HTMLInputElement).checked),
+    ).toHaveLength(1);
+    expect(radios[0]).toBeChecked();
+    // Each name stays in its own script, and the check mark is for the eye only.
+    expect(labels[2].querySelector('[lang="fr"]')).toHaveTextContent(
+      "Français",
+    );
+    for (const label of labels)
+      expect(label.querySelector(".choice-check")).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
+  });
+
+  it("puts a hint on a smaller second line and keeps it in the name", () => {
+    const { labels } = renderIn(700);
+    const mandarin = screen.getByRole("radio", { name: "简体中文 (Mandarin)" });
+    const label = mandarin.closest("label")!;
+    expect(labels).toContain(label);
+    const hint = label.querySelector<HTMLElement>(".choice-hint")!;
+    expect(getComputedStyle(hint).display).toBe("block");
+    const name = label.querySelector<HTMLElement>('[lang="zh-CN"]')!;
+    expect(hint.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      name.getBoundingClientRect().bottom - 1,
+    );
+    expect(parseFloat(getComputedStyle(hint).fontSize)).toBeLessThan(
+      parseFloat(getComputedStyle(name).fontSize),
+    );
+    expect(parseFloat(getComputedStyle(hint).fontSize)).toBeGreaterThanOrEqual(
+      14,
+    );
+  });
+
+  it("has three columns when wide, two when medium and one when narrow", () => {
+    const wide = renderIn(760);
+    expect(columns(wide.labels)).toBe(3);
+    cleanup();
+    const medium = renderIn(480);
+    expect(columns(medium.labels)).toBe(2);
+    cleanup();
+    const narrow = renderIn(300);
+    expect(columns(narrow.labels)).toBe(1);
+    for (const label of narrow.labels) {
+      expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(310);
+      expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth + 1);
+    }
+  });
+
+  it("goes to one column when the text is enlarged, as at 200% zoom", () => {
+    document.documentElement.style.fontSize = "200%";
+    try {
+      const { labels } = renderIn(480);
+      expect(columns(labels)).toBe(1);
+    } finally {
+      document.documentElement.style.fontSize = "";
+    }
+  });
+
+  it("uses the same grid in the compact list of the first screen and the dialog", () => {
+    const { labels } = renderIn(480, true);
+    expect(columns(labels)).toBe(2);
+    cleanup();
+    expect(columns(renderIn(300, true).labels)).toBe(1);
+  });
+
+  it("marks the chosen language with a check mark and moves with the arrow keys", async () => {
+    const user = userEvent.setup();
+    const { group, labels } = renderIn(760);
+    const visible = () =>
+      labels.map(
+        (label) =>
+          getComputedStyle(label.querySelector(".choice-check")!).visibility,
+      );
+    expect(visible()).toEqual(["visible", ...Array(7).fill("hidden")]);
+    within(group).getByRole("radio", { name: "English" }).focus();
+    await user.keyboard("{ArrowDown}");
+    expect(
+      within(group).getByRole("radio", { name: "Français" }),
+    ).toBeChecked();
+    expect(visible()[2]).toBe("visible");
+    expect(visible().filter((value) => value === "visible")).toHaveLength(1);
+  });
+
+  it("is 36px tall with a mouse and 44px otherwise", () => {
+    const { labels } = renderIn(760);
+    const fine = window.matchMedia("(pointer: fine)").matches;
+    for (const label of labels)
+      expect(
+        Math.round(label.getBoundingClientRect().height),
+      ).toBeGreaterThanOrEqual(fine ? 36 : 44);
   });
 });

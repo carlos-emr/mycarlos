@@ -503,13 +503,15 @@ test("manual high contrast choice wraps at 320px with enlarged text", async ({
       left: box.left,
       right: box.right,
       height: box.height,
+      // 36px for a mouse, 44px for a finger.
+      minimum: matchMedia("(pointer: fine)").matches ? 36 : 44,
       width: innerWidth,
       textFits: span.scrollWidth <= span.clientWidth,
     };
   });
   expect(bounds.left).toBeGreaterThanOrEqual(0);
   expect(bounds.right).toBeLessThanOrEqual(bounds.width);
-  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(bounds.height).toBeGreaterThanOrEqual(bounds.minimum);
   expect(bounds.textFits).toBe(true);
   expect(
     await page.evaluate(
@@ -940,3 +942,53 @@ test("dark mode has no light panels on any section", async ({ page }, info) => {
   }
   expect(light).toEqual([]);
 });
+
+// The four Appearance choices are real radio buttons drawn as a row of buttons: one row of
+// four with room, two by two in a narrow space or with enlarged text.
+for (const [width, zoom, rows] of [
+  [1100, "", 1],
+  [320, "", 2],
+  [1100, "200%", 2],
+] as const) {
+  test(`Preferences draws Appearance as ${rows === 1 ? "one row" : "two rows"} at ${width}px${zoom ? " with text at " + zoom : ""}`, async ({
+    page,
+  }, info) => {
+    test.skip(
+      info.project.name === "phone" && width > 500,
+      "a wide window is measured on the desktop project",
+    );
+    await fakeVault(page, info.project.name === "phone" ? "ios" : "windows");
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+    await section(page, info, "preferences");
+    if (zoom)
+      await page.locator("html").evaluate((element, size) => {
+        element.style.fontSize = size;
+      }, zoom);
+    const { system, light, dark, highContrast } = appearanceChoices(page);
+    for (const choice of [system, light, dark, highContrast])
+      await expect(choice).toBeVisible();
+    const tops = await page
+      .getByRole("group", { name: "Appearance" })
+      .locator("label")
+      .evaluateAll((labels) =>
+        labels.map((l) => Math.round(l.getBoundingClientRect().top)),
+      );
+    expect(new Set(tops).size).toBe(rows);
+    if (rows === 2) {
+      expect(tops[0]).toBe(tops[1]);
+      expect(tops[2]).toBe(tops[3]);
+    }
+    // Choosing keeps the group's own keyboard: arrow keys move and choose, with a focus ring.
+    await system.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(light).toBeChecked();
+    await expect(light).toBeFocused();
+    await expect(light).toHaveCSS("outline-style", "solid");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
