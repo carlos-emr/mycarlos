@@ -2309,7 +2309,8 @@ mod tests {
         assert_eq!(
             store.status(&good()),
             ModelStatus::Installed {
-                model: info.clone()
+                model: info.clone(),
+                capacity: None,
             }
         );
         let mut verified = store.verified_model().unwrap();
@@ -2461,18 +2462,18 @@ mod tests {
             runner.is_current(old),
             "adding an inactive file keeps the answer"
         );
-        store.remove(Some(1)).unwrap();
+        store.remove(Some(&Which::Listed(1))).unwrap();
         assert!(
             runner.is_current(old),
             "removing an inactive file keeps the answer"
         );
         store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
-        store.use_model(0).unwrap();
+        store.use_model(&Which::Listed(0)).unwrap();
         assert!(
             runner.is_current(old),
             "reselecting In use keeps the answer"
         );
-        store.use_model(1).unwrap();
+        store.use_model(&Which::Listed(1)).unwrap();
         assert!(
             !runner.is_current(old),
             "switching cancels the previous answer"
@@ -2487,14 +2488,14 @@ mod tests {
             Err(RunnerError::Cancelled)
         ));
         let next = runner.ticket();
-        store.remove(Some(0)).unwrap();
+        store.remove(Some(&Which::Listed(0))).unwrap();
         assert!(
             runner.is_current(next),
             "old-file removal cannot cancel the new answer"
         );
         assert!(!runner.is_running());
         assert_eq!(runner.last_stats(), None);
-        store.remove(Some(1)).unwrap();
+        store.remove(Some(&Which::Listed(1))).unwrap();
         assert!(
             !runner.is_current(next),
             "removing In use cancels its answer"
@@ -2511,7 +2512,7 @@ mod tests {
         let (temp, a, b, store) = two(true);
         store.add(&source(&temp, &a), &good(), |_, _| {}).unwrap();
         store.add(&source(&temp, &b), &good(), |_, _| {}).unwrap();
-        store.use_model(1).unwrap();
+        store.use_model(&Which::Listed(1)).unwrap();
         let mut changed = b;
         changed[0] ^= 1;
         fs::write(store.dir.join("b.gguf"), changed).unwrap();
@@ -2520,7 +2521,7 @@ mod tests {
         assert_eq!(row(&store, 1), (RowState::Damaged, true, true));
         assert_eq!(row(&store, 0), (RowState::Installed, true, false));
         assert!(store.installed_size().is_some());
-        store.use_model(0).unwrap();
+        store.use_model(&Which::Listed(0)).unwrap();
         let mut verified = store.verified_model().unwrap();
         let mut bytes = vec![];
         verified.file.read_to_end(&mut bytes).unwrap();

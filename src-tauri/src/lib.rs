@@ -1918,7 +1918,6 @@ struct ModelAddReport<'a> {
     kind: &'static str,
     index: Option<usize>,
     reported: bool,
-    index: Option<usize>,
 }
 
 impl<'a> ModelAddReport<'a> {
@@ -1928,7 +1927,6 @@ impl<'a> ModelAddReport<'a> {
             kind,
             index: None,
             reported: false,
-            index: None,
         }
     }
     fn progress(&mut self, done: u64, total: u64) {
@@ -7129,7 +7127,7 @@ mod tests {
         async move {
             let origin = origin.ok_or(model_runtime::AiError::Cancelled)?;
             let (hold, ()) = idle
-                .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, |_| ())
+                .admit_answer(origin, model_runtime::ANSWER_LIMIT.ceiling, || ())
                 .ok_or(model_runtime::AiError::Cancelled)?;
             held_for_answer(hold, announce, work).await
         }
@@ -7957,7 +7955,6 @@ mod tests {
                     active.get(),
                     Some(ModelAddNow {
                         kind: "check",
-                        index: None,
                         done: 2,
                         total: 20,
                         index: None,
