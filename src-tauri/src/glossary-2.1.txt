@@ -8,8 +8,8 @@
 # not a test.
 # Each line: kind | terms (";"-separated) | English | French [| block: words (";"-separated) that, anywhere in the
 # sentence as whole words in any case, stop this line's explanation]
-# Matching: a unit, or a term with an upper-case letter, matches only as written; an all-lower-case term that is not
-# a unit matches in any case.
+# Matching: a unit, or a term with an upper-case letter, matches as written. At the start of a sentence,
+# a multiword term may capitalize its listed lowercase initial. Other all-lower-case terms match in any case.
 # kind: test, unit, diagnosis, germ, term, or plain ("-": a phrase reviewers count as plain, or a phrase whose words
 # mean something else there, which keeps a shorter term inside it from being explained).
 plain | LDL cholesterol; HDL cholesterol; non-HDL cholesterol; non-HDL; LDL-C; HDL-C; cholestérol LDL; cholestérol HDL; cholestérol non-HDL; heart failure; heart attack; liver enzymes; insuffisance cardiaque; crise cardiaque; enzymes hépatiques; enzymes du foie | - | -
@@ -18,35 +18,37 @@ plain | urea breath test; urea cream; test respiratoire à l'urée; crème à l'
 plain | pulmonary hypertension; portal hypertension; intracranial hypertension; ocular hypertension; hypertension pulmonaire; hypertension portale; hypertension intracrânienne; hypertension oculaire | - | -
 plain | EGFR mutation; ACR/EULAR; CKD-EPI | - | -
 plain | transferrin saturation; iron saturation; saturation de la transferrine; coefficient de saturation | - | -
+plain | tissue transglutaminase; transglutaminase tissulaire; transglutaminase | - | -
 test | creatinine; créatinine | a waste product in the blood that shows how well the kidneys work | un déchet du sang qui montre si les reins fonctionnent bien
 test | urine creatinine; créatinine urinaire | a waste product in the urine that shows how well the kidneys work | un déchet de l'urine qui montre si les reins fonctionnent bien
 test | estimated glomerular filtration rate; glomerular filtration rate; débit de filtration glomérulaire estimé; débit de filtration glomérulaire; eGFR; GFR; DFGe; DFG; TFGe; TFG | an estimate of how well the kidneys filter the blood | une estimation de la capacité des reins à filtrer le sang
-test | C-reactive protein; protéine C réactive; protéine C-réactive; CRP | a blood test for inflammation | une analyse de sang qui mesure l'inflammation
+test | C-reactive protein; protéine C réactive; protéine C-réactive; CRP | a protein in the blood that rises with inflammation | une protéine dont le taux sanguin augmente en cas d'inflammation
 test | complete blood count; formule sanguine complète; CBC; FSC | a count of the cells in the blood | un compte des cellules du sang
-test | ALT | a liver blood test | une analyse de sang pour le foie
-test | AST | a liver blood test | une analyse de sang pour le foie
-test | GGT | a liver blood test | une analyse de sang pour le foie
-test | hemoglobin A1c; haemoglobin A1c; glycated hemoglobin; glycosylated hemoglobin; glycated haemoglobin; hémoglobine A1c; hémoglobine glyquée; hémoglobine glycosylée; HbA1c; A1c | a blood test of the average blood sugar over the past few months | une analyse de sang qui mesure le sucre moyen des derniers mois
-test | NT-proBNP; BNP | a blood test whose level goes up when the heart is under strain | une analyse de sang dont le taux monte quand le cœur est surchargé
+test | ALT | an enzyme found mainly in the liver, measured to check the liver | une enzyme surtout présente dans le foie, mesurée pour vérifier le foie
+test | AST | an enzyme found in the liver, heart and muscles, measured to check the liver | une enzyme présente dans le foie, le cœur et les muscles, mesurée pour vérifier le foie
+test | GGT | an enzyme found mainly in the liver and bile ducts, measured to check the liver | une enzyme surtout présente dans le foie et les voies biliaires, mesurée pour vérifier le foie
+test | hemoglobin A1c; haemoglobin A1c; glycated hemoglobin; glycosylated hemoglobin; glycated haemoglobin; hémoglobine A1c; hémoglobine glyquée; hémoglobine glycosylée; HbA1c; A1c | a protein with sugar attached in red blood cells, measured to track average blood sugar over the past few months | une protéine des globules rouges à laquelle du sucre est fixé, mesurée pour connaître la glycémie moyenne des derniers mois
+test | NT-proBNP; BNP | a protein whose level in the blood can rise when the heart is working harder | une protéine dont le taux sanguin peut augmenter quand le cœur travaille plus fort
 test | hemoglobin; haemoglobin; hémoglobine | the part of the red blood cells that carries oxygen | la partie des globules rouges qui transporte l'oxygène
 test | ferritin; ferritine | a protein that stores iron in the body | une protéine qui stocke le fer dans le corps
-test | tissue transglutaminase IgA; tissue transglutaminase; transglutaminase tissulaire; transglutaminase; tTG-IgA; anti-tTG; tTG IgA; tTG | a blood test for celiac disease | une analyse de sang pour la maladie cœliaque
+test | tissue transglutaminase IgA; tTG-IgA; anti-tTG; tTG IgA; tTG | an antibody in the blood that is often elevated in celiac disease | un anticorps dont le taux sanguin est souvent élevé dans la maladie cœliaque
 test | IgA | a kind of antibody in the blood | un type d'anticorps du sang
 test | triglycerides; triglycéride; triglycérides; triglyceride | a kind of fat in the blood | un type de graisse dans le sang
-test | LDL; HDL | a kind of cholesterol in the blood | un type de cholestérol dans le sang
-test | TSH | a blood test of the thyroid | une analyse de sang pour la thyroïde
+test | LDL | a particle carrying cholesterol that can build up in artery walls | une particule qui transporte du cholestérol pouvant s'accumuler dans la paroi des artères
+test | HDL | a particle that carries extra cholesterol back to the liver | une particule qui ramène l'excès de cholestérol vers le foie
+test | TSH | a hormone from a gland in the brain that tells the thyroid how hard to work | une hormone produite par une glande du cerveau qui règle l'activité de la thyroïde
 test | MCV; VGM | the average size of the red blood cells | la taille moyenne des globules rouges
 test | polynucléaires neutrophiles; neutrophils; neutrophil; neutrophiles; neutrophile | a kind of white blood cell that fights infection | un type de globule blanc qui combat les infections
 test | lactate | a blood substance that can go up in serious illness | une substance du sang qui peut monter en cas de maladie grave
 test | urea; urée | a waste product the kidneys clear from the blood | un déchet que les reins enlèvent du sang
-test | anti-CCP; CCP | a blood test used to look for one kind of arthritis | une analyse de sang qui aide à chercher un type d'arthrite
-test | rheumatoid factor; facteur rhumatoïde | a blood test used to look for one kind of arthritis | une analyse de sang qui aide à chercher un type d'arthrite
+test | anti-CCP; CCP | an antibody in the blood often found in one kind of arthritis | un anticorps du sang souvent présent dans un type d'arthrite
+test | rheumatoid factor; facteur rhumatoïde | an antibody in the blood that can be elevated in one kind of arthritis and in some other conditions | un anticorps dont le taux sanguin peut être élevé dans un type d'arthrite et dans certaines autres maladies
 test | urine albumin-to-creatinine ratio; albumin-to-creatinine ratio; albumin to creatinine ratio; albumin/creatinine ratio; protein-to-creatinine ratio; protein/creatinine ratio; rapport albumine/créatinine; rapport albumine-créatinine; ratio albumine/créatinine; urine albumin; urine ACR; uACR; RAC | a urine test for protein leaking from the kidneys | une analyse d'urine qui mesure les protéines que les reins laissent fuir
 test | electrocardiogram; électrocardiogramme; ECG; EKG | a heart tracing | un tracé du cœur
 test | echocardiogram; echocardiography; échocardiographie; échocardiogramme; échographie cardiaque | an ultrasound of the heart | une échographie du cœur
 test | ejection fraction; fraction d'éjection; LVEF; EF | the share of blood the heart pumps out with each beat | la part du sang que le cœur pousse à chaque battement
 test | coronary angiogram; angiogram; angiography; coronarographie; angiographie | pictures of blood vessels taken with dye | des images des vaisseaux sanguins prises avec un colorant
-test | gastroscopy; gastroscopie | a camera test of the stomach | un examen de l'estomac avec une caméra
+test | gastroscopy; gastroscopie | a look inside the food pipe, stomach and start of the bowel with a thin camera tube | un examen de l'œsophage, de l'estomac et du début de l'intestin avec un tube muni d'une caméra
 test | duodenal biopsies; duodenal biopsy | small samples from the first part of the bowel | de petits prélèvements du début de l'intestin
 diagnosis | sepsis; septicémie | a serious body-wide reaction to an infection | une réaction grave de tout le corps à une infection
 germ | Escherichia coli; E. coli | a common germ | un microbe courant
@@ -59,7 +61,7 @@ diagnosis | rheumatoid arthritis; polyarthrite rhumatoïde | a disease in which 
 term | seropositive; séropositive; séropositif | with a positive antibody blood test | avec une analyse de sang positive pour des anticorps
 term | erosions; erosion; érosions; érosion | small areas where a surface is worn away | de petites zones où une surface est usée
 term | sinus rhythm; rythme sinusal | the heart's own natural rhythm | le rythme naturel du cœur
-term | ST depression; sous-décalage ST | a change seen on a heart tracing | un changement vu sur un tracé du cœur
+term | ST depression; sous-décalage ST | a dip on the heart's electrical tracing that can have several causes | un creux sur le tracé électrique du cœur qui peut avoir plusieurs causes
 diagnosis | iron deficiency anemia; iron deficiency anaemia; anémie ferriprive | too few red blood cells from a lack of iron | trop peu de globules rouges par manque de fer
 diagnosis | anemia; anaemia; anémie | too few red blood cells | trop peu de globules rouges
 diagnosis | hypertension | high blood pressure | une pression artérielle trop haute
