@@ -1504,7 +1504,8 @@ mod tests {
             runtime.summarize_for(
                 answer,
                 summary(vec![page(0, "FAKE text")], "en"),
-                Box::new(|_| ())
+                Box::new(|_| ()),
+                &mut |_, _| (),
             ),
             Err(AiError::Failed)
         );
@@ -1630,6 +1631,7 @@ mod tests {
                     answer,
                     summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
                     Box::new(|_| ()),
+                    &mut |_, _| (),
                 )
                 .is_ok());
             assert_eq!(asked.load(SeqCst), 2);
@@ -1655,6 +1657,7 @@ mod tests {
                     answer,
                     summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
                     Box::new(|_| ()),
+                    &mut |_, _| (),
                 )
                 .is_ok());
             assert_eq!(asked.load(SeqCst), 1);
@@ -1681,6 +1684,7 @@ mod tests {
                         ticket,
                         summary(vec![page(0, "FAKE text. The FAKE clinic phoned.")], "en"),
                         Box::new(|_| ()),
+                        &mut |_, _| (),
                     )
                 })
             };
