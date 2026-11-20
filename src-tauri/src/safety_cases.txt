@@ -643,7 +643,7 @@ The document says: “Take 50 mg every day.” || Take 5 mg every day
 expect:
 The document says: “Take 5 mg every day.”
 ===
-name: a_quote_line_is_not_a_doctor_name_or_time_limit_case
+name: a_quote_line_naming_a_doctor_the_quote_lacks_is_replaced
 pages:
 Going home
 Dear Dr. Sampleton, rest until the biopsy.
@@ -652,7 +652,7 @@ Dr. Henrietta Fakeham MD
 summary:
 The document says: “The patient must be seen by Dr. Fakeham until the biopsy.” || rest until the biopsy
 expect:
-The document says: “The patient must be seen by Dr. Fakeham until the biopsy.”
+The document says: “Dear Dr. Sampleton, rest until the biopsy.”
 ===
 name: a_doctor_with_credentials_is_found_by_surname
 pages:
@@ -717,3 +717,64 @@ Come back in six weeks. || Come back
 expect:
 Come back in six weeks.
 The document says: “Don’t take FAKEDRUG tablets with food.”
+===
+name: a_quote_line_with_a_time_limit_the_quote_lacks_is_replaced
+pages:
+Questions
+Should they keep eating gluten until the biopsy?
+I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.
+summary:
+The document says: “The patient must keep eating gluten until the biopsy.” || keep eating gluten for now
+expect:
+The document says: “I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.”
+===
+name: keep_taking_does_not_carry_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must keep taking FAKEDRUG tablets after the infusion. ||
+expect:
+You must keep taking FAKEDRUG tablets after the infusion.
+The document says: “Stop taking FAKEDRUG tablets after the infusion.”
+===
+name: stop_taking_carries_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must stop taking FAKEDRUG tablets after the infusion. ||
+expect:
+You must stop taking FAKEDRUG tablets after the infusion.
+===
+name: a_question_without_a_question_mark_is_not_an_instruction
+pages:
+Questions
+Please advise whether she should stop taking the FAKEDRUG tablets.
+(Would it help to stop taking the FAKEDRUGB tablets?)
+She was told to stop taking the FAKEDRUGC tablets in 2019.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: keep_taking_other_medicines_is_added_unless_the_summary_says_keep
+pages:
+Going home
+Keep taking your other medicines as usual.
+summary:
+Come back in six weeks. || Come back
+Take your medicines with food. ||
+expect:
+Come back in six weeks.
+Take your medicines with food.
+The document says: “Keep taking your other medicines as usual.”
+===
+name: keep_taking_other_medicines_carried_by_a_keep_sentence
+pages:
+Going home
+Keep taking your other medicines as usual.
+summary:
+You must keep taking your other medicines. ||
+expect:
+You must keep taking your other medicines.
