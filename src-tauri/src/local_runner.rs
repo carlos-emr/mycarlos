@@ -1095,6 +1095,7 @@ impl Runner {
     }
 
     /// Whether a model process is running now (ordinary callers may wait for it).
+    #[allow(dead_code)] // Tests and optional engine-testing callers.
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
