@@ -37,7 +37,14 @@
 //!   "lang":…}` is answered by `{"id":n,"text":…}`;
 //! - `{"id":n,"error":…}` says the model could not answer. Its text is cut
 //!   to [`MAX_ERROR_CHARS`] and is the model's own words: shown on its own,
-//!   never beside the document's text, and never written anywhere.
+//!   never beside the document's text, and never written anywhere;
+//! - before a summary's answer, the model may say how far it is, counts only:
+//!   `{"id":n,"progress":"reading","done":d,"total":t}` (prompt tokens read of
+//!   those to read) and then `{"id":n,"progress":"writing","done":d,"total":k}`
+//!   (sentences closed of the request's cap). Checked strictly ([`ProgressCheck`]):
+//!   exactly those keys, whole numbers, counts that only go up, reading before
+//!   writing; a line that breaks this is a protocol error, as a malformed answer
+//!   is. Another request's progress is ignored, as its answer would be.
 //!
 //! A request in flight is cancelled by the vault locking ([`on_lock`], which
 //! also stops the installed runner's process) or by the reader leaving the
@@ -120,12 +127,21 @@ fn prompt_tokens(fixed: u32, text_bytes: usize) -> u32 {
 
 /// The helper's own words around a summary's pages, and around a term and its sentence, in
 /// tokens, with room to spare (about 450 and 300 today).
-const SUMMARY_PROMPT_TOKENS: u32 = 750;
+pub(crate) const SUMMARY_PROMPT_TOKENS: u32 = 750;
 const EXPLAIN_PROMPT_TOKENS: u32 = 400;
 /// The answer a summary's limit allows for: about 53 tokens a sentence were measured (5 Nov
-/// 2026), so six sentences run to about 320; its cap (`SUMMARY_TOKENS`) stops it anyway,
-/// keeping the sentences it finished.
-const SUMMARY_ANSWER_TOKENS: u32 = 400;
+/// 2026), so ten sentences (`MAX_SENTENCES`) run to about 530; its cap (`SUMMARY_TOKENS`, 900)
+/// stops it anyway, keeping the sentences it finished.
+const SUMMARY_ANSWER_TOKENS: u32 = 600;
+
+/// The size a summary's limit is reckoned from, for `text_bytes` of pages: its prompt's
+/// estimated tokens and the answer tokens it allows (`AnswerLimit::for_request`).
+pub(crate) fn summary_request_size(text_bytes: usize) -> (u32, u32) {
+    (
+        prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
+        SUMMARY_ANSWER_TOKENS,
+    )
+}
 
 /// What a runner starts and how much it may use.
 #[derive(Debug, Clone)]
@@ -161,12 +177,32 @@ pub(crate) struct RunnerConfig {
     /// caps its memory at `memory_limit_bytes`); on unix the helper sandboxes itself.
     pub(crate) sandboxed: bool,
     /// The most threads the model writes an answer on (the helper's `--threads`). With it, each
-    /// answer is sent with a number chosen from the computer's load at the time
-    /// ([`generation_threads`]); `None` sends none (fakes, and the stub's tests).
+    /// answer is sent with [`answer_threads`] of them; `None` sends none (fakes, and the stub's
+    /// tests).
     pub(crate) generation_threads: Option<u32>,
 }
 
-// --- Threads from the computer's load --------------------------------------------------
+// --- Threads an answer is written on ----------------------------------------------------
+
+/// Answers are written on this many threads, or on all of the helper's when it has fewer,
+/// whatever the computer's load. The words a model writes depend on the number of threads it
+/// writes them on (measured 17 Nov 2026: one long FAKE letter came out as three different
+/// summaries on 1, 2 and 3 threads), so a number chosen from the load at the time made the same
+/// computer word the same letter differently when it was busy. Fixed, the same computer always
+/// writes the same summary; the cost is speed on a busy computer, where threads that share
+/// cores wait for each other (2 to 4 times slower, measured 5 Nov 2026). The helper never
+/// writes on more threads than it reads prompts on (one core left for myCarlos), so this never
+/// asks for more threads than the computer has. `None` chooses from the load again
+/// ([`generation_threads`]).
+const FIXED_ANSWER_THREADS: Option<u32> = Some(3);
+
+/// The threads an answer is sent with when the helper has `most`: [`FIXED_ANSWER_THREADS`], at
+/// most `most`; `None` when they are chosen from the load instead.
+pub(crate) fn answer_threads(most: u32) -> Option<u32> {
+    FIXED_ANSWER_THREADS.map(|fixed| fixed.min(most).max(1))
+}
+
+// --- Threads from the computer's load (when not fixed) ---------------------------------
 
 /// How long the computer's processor use is sampled before an answer.
 const LOAD_SAMPLE: Duration = Duration::from_millis(250);
@@ -377,6 +413,8 @@ pub(crate) enum RunnerError {
     Timeout,
     /// The model answered, but not as the contract says.
     Protocol(String),
+    /// The complete postprocessed answer cannot fit the shared save budget.
+    SummaryTooLarge,
     /// The model said it could not answer: its own words, cut short, to be
     /// shown on their own and never beside the document's text.
     Model(String),
@@ -406,6 +444,104 @@ pub(crate) struct Sentence {
     pub(crate) quote: String,
 }
 
+/// The stages of a summary as the reader is told them: the helper reads the prompt, then
+/// writes the sentences; then the app checks the answer (the runner's own stage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stage {
+    Reading,
+    Writing,
+    Checking,
+}
+
+/// How far a summary is: `done` of `total` in its stage. Reading counts prompt tokens, writing
+/// sentences of the request's cap; checking is one step (1 of 1). Counts only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Progress {
+    pub(crate) stage: Stage,
+    pub(crate) done: u32,
+    pub(crate) total: u32,
+}
+
+/// A progress line as the helper writes it (`model_helper::progress_line`): these four keys and
+/// no other, the counts as whole numbers.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProgressLine {
+    id: u64,
+    progress: String,
+    done: u32,
+    total: u32,
+}
+
+/// What a summary's progress lines may say, in order. A line that says anything else is a
+/// protocol error: never ignored, never passed on.
+#[derive(Debug)]
+struct ProgressCheck {
+    /// The request's sentence cap, as the helper bounds it: writing's total.
+    sentences: u32,
+    /// Reading: the total, which never changes, and the count so far.
+    reading: Option<(u32, u32)>,
+    /// Writing: the sentences closed so far.
+    written: Option<u32>,
+}
+
+impl ProgressCheck {
+    fn new(max_sentences: usize) -> Self {
+        Self {
+            sentences: max_sentences.clamp(1, crate::model_helper::MAX_SENTENCES) as u32,
+            reading: None,
+            written: None,
+        }
+    }
+
+    fn take(&mut self, stage: &str, done: u32, total: u32) -> Result<Progress, RunnerError> {
+        let refuse = |what: &str| Err(RunnerError::Protocol(format!("progress: {what}")));
+        if done > total {
+            return refuse("more done than in all");
+        }
+        if stage == crate::model_helper::PROGRESS_READING {
+            if self.written.is_some() {
+                return refuse("reading after writing");
+            }
+            if total == 0 || total > crate::model_helper::CONTEXT_TOKENS {
+                return refuse("reading total out of bounds");
+            }
+            if let Some((was_total, was_done)) = self.reading {
+                if total != was_total {
+                    return refuse("reading total changed");
+                }
+                if done <= was_done {
+                    return refuse("reading count not going up");
+                }
+            }
+            self.reading = Some((total, done));
+            Ok(Progress {
+                stage: Stage::Reading,
+                done,
+                total,
+            })
+        } else if stage == crate::model_helper::PROGRESS_WRITING {
+            if !self.reading.is_some_and(|(total, done)| done == total) {
+                return refuse("writing before reading ended");
+            }
+            if total != self.sentences {
+                return refuse("writing total is not the cap");
+            }
+            if self.written.is_some_and(|was| done <= was) {
+                return refuse("writing count not going up");
+            }
+            self.written = Some(done);
+            Ok(Progress {
+                stage: Stage::Writing,
+                done,
+                total,
+            })
+        } else {
+            refuse("unknown stage")
+        }
+    }
+}
+
 /// A summary as given back. A sentence whose quote is not in the pages read keeps its words,
 /// with an empty quote: the reader then says no source was found (AI-05).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -416,11 +552,28 @@ pub(crate) struct Summary {
     pub(crate) last_page: u32,
     /// Only the start of that page fitted.
     pub(crate) last_page_cut: bool,
-    /// How many quotes were not in the pages read, and were emptied.
+    /// The document's last page, when the model read it after a gap: the pages it read are the
+    /// first ones up to `last_page`, then this one.
+    pub(crate) tail_page: Option<u32>,
+    /// How many original model quotes were rejected before post-steps. This is a
+    /// model-quoting diagnostic; a repaired final source may now be located.
     pub(crate) unlocated: usize,
-    /// What those quotes said, for measuring a model's quoting (tests print them); never shown.
+    /// Original rejected model quotes, keyed by sentence index even after a source
+    /// repair. Measurements use each final source's located flag; never shown.
     #[allow(dead_code)]
-    pub(crate) unlocated_quotes: Vec<String>,
+    pub(crate) unlocated_quotes: crate::quote_provenance::UnlocatedQuotes,
+    /// K17: the sentences the post-step rewrote (`addressee`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) rewrites: Vec<crate::addressee::Rewrite>,
+    /// K19: the sentences the glossary step explained (`glossary`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) explained: Vec<crate::glossary::Explained>,
+    /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
+    #[allow(dead_code)]
+    pub(crate) fallbacks: Vec<crate::safety::Fallback>,
+    /// How the helper made this answer, when it said (counts and times only): the measured
+    /// speed the next estimate starts from (`summary_progress`).
+    pub(crate) stats: Option<crate::model_helper::Stats>,
 }
 
 // --- Cancellation -------------------------------------------------------
@@ -563,6 +716,9 @@ struct Answer {
     last_page: Option<u32>,
     #[serde(default)]
     last_page_cut: bool,
+    /// The document's last page, read after a gap.
+    #[serde(default)]
+    tail_page: Option<u32>,
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
@@ -601,7 +757,7 @@ impl Runner {
     }
 
     /// Answers are written on `threads` threads from now on, whatever the computer's load;
-    /// `None` chooses from the load again. For measuring by hand.
+    /// `None` goes back to the app's own number ([`answer_threads`]). For measuring by hand.
     #[allow(dead_code)] // `engine_testing` only.
     pub(crate) fn override_threads(&self, threads: Option<u32>) {
         *self
@@ -821,18 +977,36 @@ impl Runner {
         ticket: Ticket,
         request: &SummaryRequest,
     ) -> Result<Summary, RunnerError> {
+        self.summarize_with_progress(ticket, request, &mut |_| ())
+    }
+
+    /// [`Runner::summarize`], telling `progress` how far it is: the helper's reading and
+    /// writing as it reports them (checked strictly, see [`ProgressCheck`]), then the checks
+    /// once the answer is in (1 of 1). Counts only; the answer is the same without it.
+    pub(crate) fn summarize_with_progress(
+        &self,
+        ticket: Ticket,
+        request: &SummaryRequest,
+        progress: &mut dyn FnMut(Progress),
+    ) -> Result<Summary, RunnerError> {
         let request_json = serde_json::to_value(request)
             .map_err(|error| RunnerError::Protocol(error.to_string()))?;
         let text_bytes = request.pages.iter().map(|page| page.text.len()).sum();
-        let (answer, model) = self.ask(
+        let mut check = ProgressCheck::new(request.max_sentences);
+        let (answer, model) = self.ask_with_sampler(
             ticket,
             "summary",
             request_json,
-            (
-                prompt_tokens(SUMMARY_PROMPT_TOKENS, text_bytes),
-                SUMMARY_ANSWER_TOKENS,
-            ),
+            summary_request_size(text_bytes),
+            sample_busy_share,
+            Some((&mut check, &mut *progress)),
         )?;
+        progress(Progress {
+            stage: Stage::Checking,
+            done: 1,
+            total: 1,
+        });
+        let stats = answer.stats;
         let Some(sentences) = answer.sentences else {
             return Err(RunnerError::Protocol("no sentences".to_owned()));
         };
@@ -855,29 +1029,179 @@ impl Runner {
         else {
             return Err(RunnerError::Protocol("last page not sent".to_owned()));
         };
-        let text = request.pages[..=read]
+        let mut read_pages: Vec<&Page> = request.pages[..=read].iter().collect();
+        if let Some(tail_page) = answer.tail_page {
+            let Some(tail) = request.pages[read + 1..]
+                .iter()
+                .find(|page| page.index == tail_page)
+            else {
+                return Err(RunnerError::Protocol("tail page not sent".to_owned()));
+            };
+            read_pages.push(tail);
+        }
+        let text = read_pages
             .iter()
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = Vec::new();
-        let sentences = sentences
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
+        let mut sentences: Vec<Sentence> = sentences
             .into_iter()
             .take(request.max_sentences)
-            .map(|mut sentence| {
+            .enumerate()
+            .map(|(index, mut sentence)| {
                 if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.push(std::mem::take(&mut sentence.quote));
+                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
                 }
                 sentence
             })
             .collect();
+        // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
+        // as the patient's own says who the line is for (`addressee`). English summaries only,
+        // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
+        // in `rewrites` for measuring, never into a log.
+        let contract_error = |error| match error {
+            crate::summary_contract::Error::TooLarge => RunnerError::SummaryTooLarge,
+            crate::summary_contract::Error::Invalid => {
+                RunnerError::Protocol("invalid final summary".to_owned())
+            }
+        };
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
+        let mut rewrites = Vec::new();
+        if request.lang == "en" {
+            for index in 0..sentences.len() {
+                let sentence = &sentences[index];
+                if sentence.quote.is_empty() {
+                    continue;
+                }
+                if let Some((kind, after)) =
+                    crate::addressee::rewrite(&text, &sentence.text, &sentence.quote)
+                {
+                    crate::summary_contract::reserve_edit(
+                        sentences
+                            .iter()
+                            .map(|s| (s.text.as_str(), s.quote.as_str())),
+                        Some(index),
+                        &after,
+                        &sentence.quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                    .map_err(contract_error)?;
+                    let before = std::mem::replace(&mut sentences[index].text, after.clone());
+                    rewrites.push(crate::addressee::Rewrite {
+                        index,
+                        kind,
+                        before,
+                        after,
+                    });
+                }
+            }
+        }
+        // K20 (evaluation only): the safety checks after the addressee step: a number not in the
+        // pages, or a get-help rule not carried whole, falls back to the document's own sentence,
+        // quoted (`safety`); the words go in `fallbacks` for measuring, never into a log.
+        let mut fallbacks = Vec::new();
+        if request.lang == "en" {
+            let mut lines: Vec<crate::safety::Line> = sentences
+                .iter()
+                .map(|s| crate::safety::Line {
+                    text: s.text.clone(),
+                    quote: s.quote.clone(),
+                })
+                .collect();
+            fallbacks =
+                crate::safety::check_guarded(&text, &mut lines, |lines, replace, after, quote| {
+                    crate::summary_contract::reserve_edit(
+                        lines.iter().map(|s| (s.text.as_str(), s.quote.as_str())),
+                        replace,
+                        after,
+                        quote,
+                        &model.name,
+                        &model.sha256,
+                        &request.lang,
+                    )
+                })
+                .map_err(contract_error)?;
+            if !fallbacks.is_empty() {
+                sentences = lines
+                    .into_iter()
+                    .map(|line| Sentence {
+                        text: line.text,
+                        quote: line.quote,
+                    })
+                    .collect();
+                // A rule put in between two sentences moves the ones after it: the unfound
+                // quotes and the rewrites, recorded by index before the checks, move with them.
+                let moved = crate::safety::moved_to(&fallbacks, sentences.len());
+                unlocated_quotes.remap(&moved);
+                for rewrite in &mut rewrites {
+                    rewrite.index = moved[rewrite.index];
+                }
+            }
+        }
+        // K19 (evaluation only): after the addressee step, a short plain explanation beside the
+        // first use of each medical word, germ, test or unit (`glossary`); it only inserts, and
+        // the words go in `explained` for measuring, never into a log. A fallback quote is the
+        // document's own words and stays as it is.
+        let mut explained = Vec::new();
+        for index in 0..sentences.len() {
+            let sentence = &sentences[index];
+            if sentence.text.starts_with(crate::safety::QUOTE_MARK) {
+                continue;
+            }
+            if let Some((after, terms)) = crate::glossary::explain(&sentence.text, &request.lang) {
+                crate::summary_contract::reserve_edit(
+                    sentences
+                        .iter()
+                        .map(|s| (s.text.as_str(), s.quote.as_str())),
+                    Some(index),
+                    &after,
+                    &sentence.quote,
+                    &model.name,
+                    &model.sha256,
+                    &request.lang,
+                )
+                .map_err(contract_error)?;
+                let before = std::mem::replace(&mut sentences[index].text, after.clone());
+                explained.push(crate::glossary::Explained {
+                    index,
+                    before,
+                    after,
+                    terms: terms.into_iter().map(|(term, _)| term).collect(),
+                });
+            }
+        }
+        crate::summary_contract::reserve(
+            sentences
+                .iter()
+                .map(|s| (s.text.as_str(), s.quote.as_str())),
+            &model.name,
+            &model.sha256,
+            &request.lang,
+        )
+        .map_err(contract_error)?;
         Ok(Summary {
             sentences,
             model,
             last_page,
             last_page_cut: answer.last_page_cut,
+            tail_page: answer.tail_page,
             unlocated: unlocated_quotes.len(),
             unlocated_quotes,
+            rewrites,
+            explained,
+            fallbacks,
+            stats,
         })
     }
 
@@ -928,11 +1252,13 @@ impl Runner {
         request: serde_json::Value,
         size: (u32, u32),
     ) -> Result<(Answer, ModelInfo), RunnerError> {
-        self.ask_with_sampler(ticket, tool, request, size, sample_busy_share)
+        self.ask_with_sampler(ticket, tool, request, size, sample_busy_share, None)
     }
 
     /// Keep sampling outside the process lock; a per-call sampler also lets tests
-    /// control cancellation during that interval without a shared timing hook.
+    /// control cancellation during that interval without a shared timing hook. With
+    /// `progress`, this request's progress lines are checked and passed on; without, a
+    /// progress line for it is a protocol error.
     fn ask_with_sampler(
         &self,
         ticket: Ticket,
@@ -940,6 +1266,7 @@ impl Runner {
         mut request: serde_json::Value,
         size: (u32, u32),
         sample: impl FnOnce() -> Option<f64>,
+        progress: Option<(&mut ProgressCheck, &mut dyn FnMut(Progress))>,
     ) -> Result<(Answer, ModelInfo), RunnerError> {
         if !self.is_current(ticket) {
             return Err(RunnerError::Cancelled);
@@ -952,6 +1279,7 @@ impl Runner {
             .unwrap_or_else(|e| e.into_inner());
         let chooses = matches!(tool, "summary" | "explain")
             && forced.is_none()
+            && FIXED_ANSWER_THREADS.is_none()
             && self
                 .sidecar
                 .lock()
@@ -975,9 +1303,9 @@ impl Runner {
         if let Some(object) = request.as_object_mut() {
             object.insert("id".to_owned(), serde_json::json!(id));
             object.insert("tool".to_owned(), serde_json::json!(tool));
-            // The threads to write this answer on, from the computer's load now.
+            // The threads to write this answer on: fixed, else from the computer's load now.
             if let (Some(most), "summary" | "explain") = (running.generation_threads, tool) {
-                let threads = forced.unwrap_or_else(|| {
+                let threads = forced.or_else(|| answer_threads(most)).unwrap_or_else(|| {
                     let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
                     generation_threads(most, cores, busy)
                 });
@@ -1009,6 +1337,7 @@ impl Runner {
             &request,
             answer_timeout,
             id,
+            progress,
         );
         // Cancelled while the answer was already in: the reader has left,
         // and the answer belongs to nobody.
@@ -1279,13 +1608,15 @@ fn read_lines(output: Box<dyn Read + Send>, sender: &mpsc::Sender<std::io::Resul
 }
 
 /// Writes the request and waits for its answer, looking at the ticket every
-/// `CANCEL_POLL`.
+/// `CANCEL_POLL`. Progress lines on the way (see the contract above) go to `progress`, checked;
+/// they change neither the time limit nor the cancel.
 fn exchange(
     running: &mut Sidecar,
     current: impl Fn() -> bool,
     request: &serde_json::Value,
     timeout: Duration,
     id: u64,
+    mut progress: Option<(&mut ProgressCheck, &mut dyn FnMut(Progress))>,
 ) -> Result<Answer, RunnerError> {
     let mut line =
         serde_json::to_string(request).map_err(|error| RunnerError::Protocol(error.to_string()))?;
@@ -1306,7 +1637,23 @@ fn exchange(
         }
         match running.lines.recv_timeout(CANCEL_POLL.min(deadline - now)) {
             Ok(Ok(text)) => {
-                let answer: Answer = serde_json::from_str(&text)
+                let line: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|_| RunnerError::Protocol("answer not understood".to_owned()))?;
+                if line.get("progress").is_some() {
+                    // From the text itself, so that a key given twice is refused too.
+                    let line: ProgressLine = serde_json::from_str(&text)
+                        .map_err(|_| RunnerError::Protocol("progress not understood".to_owned()))?;
+                    if line.id != id {
+                        // An earlier, abandoned request's: not this one's.
+                        continue;
+                    }
+                    let Some((check, report)) = progress.as_mut() else {
+                        return Err(RunnerError::Protocol("progress not asked for".to_owned()));
+                    };
+                    report(check.take(&line.progress, line.done, line.total)?);
+                    continue;
+                }
+                let answer: Answer = serde_json::from_value(line)
                     .map_err(|_| RunnerError::Protocol("answer not understood".to_owned()))?;
                 if answer.sentences.is_none() && answer.text.is_none() && answer.error.is_none() {
                     return Err(RunnerError::Protocol("empty answer".to_owned()));
@@ -1334,21 +1681,15 @@ fn cut(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
 
-/// What a quote may start or end with that is not part of it, as the reader
-/// trims it (`locateQuote`): quotation marks, straight or curly, and `.,;:`.
-const QUOTE_ENDS: &[char] = &[
-    '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
-];
-
-/// Whether the document contains the quote, word for word, as the reader
-/// matches one (`locateQuote`): whitespace runs count as one, case does not
-/// count, and spaces and [`QUOTE_ENDS`] at either end of the quote are not
-/// part of it. A model often copies the colon of a "Label: value" line
-/// (": Admitted: 2026-10-01"). The renderer places it exactly; here a quote
-/// that is not there at all is enough to empty it.
+/// Whether the pages contain the quote as the reader matches one (`locateQuote.ts`, shared as
+/// `quote_locate`): white space runs count as one, case, accents and ligatures do not count, a
+/// curly quote is a straight one, the space before a comma is not there, and spaces and `.,;:`
+/// and quote marks at either end of the quote are not part of it (a model often copies the colon
+/// of a "Label: value" line, ": Admitted: 2026-10-01"). A quote may be parts joined by "..."
+/// that are found in order, and each part must be worth finding. The renderer places it exactly;
+/// here a quote that is not there at all is enough to empty it.
 fn quote_in(text: &str, quote: &str) -> bool {
-    let quote = folded(quote);
-    !quote.is_empty() && fold(text).contains(&quote)
+    crate::quote_locate::is_located(text, quote)
 }
 
 /// At most this many words make a heading (see [`quote_is_heading`]).
@@ -1364,17 +1705,17 @@ const HEADING_WORDS: usize = 4;
 /// "Allergies: none") is no heading, nor is a line with a value in it ("Admitted:
 /// 2026-10-01") or a sentence ("Hypertension is treated.").
 fn quote_is_heading(text: &str, quote: &str) -> bool {
-    let quote = folded(quote);
-    if quote.is_empty()
-        || quote.split(' ').count() > HEADING_WORDS
-        || quote.chars().any(char::is_numeric)
-    {
+    // A quote joined from parts is no line of its own.
+    let Some(quote) = crate::quote_locate::single_part(quote) else {
+        return false;
+    };
+    if quote.split(' ').count() > HEADING_WORDS || quote.chars().any(char::is_numeric) {
         return false;
     }
     let lines: Vec<&str> = text.lines().collect();
     lines.iter().enumerate().any(|(at, line)| {
         let next = lines[at + 1..].iter().find(|next| !next.trim().is_empty());
-        folded(line) == quote && reads_as_heading(line, next.copied())
+        crate::quote_locate::folded_line(line) == quote && reads_as_heading(line, next.copied())
     })
 }
 
@@ -1389,8 +1730,9 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
         // A sentence on a line of its own says something.
         return false;
     }
-    let in_capitals =
-        line.chars().any(char::is_alphabetic) && !line.chars().any(char::is_lowercase);
+    // Capitals need an upper-case letter: a script with no case (Chinese, Japanese, Korean,
+    // Arabic, Hebrew) has none, so a sentence in it on a line of its own is no heading by this.
+    let in_capitals = line.chars().any(char::is_uppercase) && !line.chars().any(char::is_lowercase);
     let over_a_list = next.is_some_and(|next| {
         let item = next.trim_start();
         let numbered = item
@@ -1406,23 +1748,32 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
     line.ends_with(':') || in_capitals || over_a_list
 }
 
-/// Whitespace runs as one space, in lower case.
-fn fold(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
-/// A quote, or a line, as quotes are compared: folded, without [`QUOTE_ENDS`] or spaces at
-/// either end.
-fn folded(text: &str) -> String {
-    fold(text.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_summary_is_sized_as_the_call_sized_it_inline_before_the_extraction() {
+        // The words around the pages (750), then three bytes a token of the pages, at most the
+        // context; the answer's 600 (this candidate's answer allowance, raised from 400). The same
+        // values the summary call built in place before `summary_request_size` was taken out of it.
+        assert_eq!(summary_request_size(0), (750, 600));
+        assert_eq!(summary_request_size(3), (751, 600));
+        assert_eq!(summary_request_size(3_001), (1_751, 600));
+        assert_eq!(
+            summary_request_size(1_000_000),
+            (crate::model_helper::CONTEXT_TOKENS, 600)
+        );
+        for bytes in [1, 2, 4, 100, 9_999, 22_326] {
+            assert_eq!(
+                summary_request_size(bytes),
+                (
+                    prompt_tokens(SUMMARY_PROMPT_TOKENS, bytes),
+                    SUMMARY_ANSWER_TOKENS
+                )
+            );
+        }
+    }
 
     struct Fixed(Option<u64>);
 
@@ -1517,6 +1868,51 @@ mod tests {
     }
 
     #[test]
+    fn a_quote_is_found_in_a_pdfs_text_as_the_reader_finds_it() {
+        // A FAKE letter as a PDF's text layer gives it: ligature characters (U+FB01, U+FB03), a
+        // comma at the start of a wrapped line, a micro sign (U+00B5), the Bloods line before
+        // the Diagnosis line. The reader links each of these quotes; the gate must keep them.
+        let letter = "Bloods (3 November 2026): hemoglobin 101 g/L, ferritin 5 \u{b5}g/L\n\
+            Diagnosis\nCeliac disease, con\u{fb01}rmed by biopsy\n, with iron de\u{fb01}ciency anemia\n\
+            Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's o\u{fb03}ce\n\
+            will call within 2\nweeks.";
+        for quote in [
+            "Celiac disease, confirmed by biopsy, with iron deficiency anemia",
+            "Celiac disease, con\u{fb01}rmed by biopsy , with iron de\u{fb01}ciency anemia",
+            "hemoglobin 101 g/L, ferritin 5 \u{3bc}g/L",
+            "the dietitian\u{2019}s office will call within 2 weeks",
+            "Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's office will call within 2 weeks.",
+            // Parts joined by dots, found in order (the Bloods line is first in this letter).
+            "hemoglobin 101 g/L, ferritin 5 \u{b5}g/L ... Celiac disease, confirmed by biopsy",
+            "hemoglobin 101 g/L\u{2026}Celiac disease, confirmed by biopsy",
+        ] {
+            assert!(quote_in(letter, quote), "{quote}");
+            assert!(!quote_is_heading(letter, quote), "{quote}");
+        }
+        // Still not found: a word that is not in the letter, parts out of order, a part that is
+        // too short to mean one place, a made-up quote.
+        for quote in [
+            "Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's office will phone within 2 weeks.",
+            "Celiac disease, confirmed by biopsy ... hemoglobin 101 g/L, ferritin 5 \u{b5}g/L",
+            "hemoglobin ... Celiac disease, confirmed by biopsy",
+            "The patient must start steroids immediately.",
+        ] {
+            assert!(!quote_in(letter, quote), "{quote}");
+        }
+    }
+
+    #[test]
+    fn a_heading_is_a_heading_whatever_its_ligatures_and_a_joined_quote_is_none() {
+        let letter = "De\u{fb01}nite plan:\nBlood tests in 1 week.\nFollow-up in this clinic.";
+        assert!(quote_is_heading(letter, "Definite plan"));
+        assert!(quote_is_heading(letter, "\"Definite plan:\""));
+        assert!(!quote_is_heading(
+            letter,
+            "Definite plan ... Follow-up in this clinic"
+        ));
+    }
+
+    #[test]
     fn a_quote_that_is_only_a_heading_is_one_and_a_line_with_a_value_is_not() {
         let summary = "DISCHARGE SUMMARY\n\nMedications at discharge\n\n  Ticagrelor  90 mg twice daily  NEW\n\
                        Follow-up:\nBlood tests in 1 week.\nAdmitted: 2026-10-01\n\
@@ -1550,6 +1946,50 @@ mod tests {
         ] {
             assert!(!quote_is_heading(summary, content), "{content}");
         }
+    }
+
+    #[test]
+    fn a_sentence_in_a_script_without_case_on_a_line_of_its_own_keeps_its_quote() {
+        // FAKE sentences, each with no ASCII digit, on a line of their own under a title line.
+        // Such a line has no lower-case letter, but no upper-case one either: it is no heading
+        // "in capitals", so its sentence keeps its quote (and with it its source and its checks).
+        for (title, sentence) in [
+            ("\u{51FA}\u{9662}\u{987B}\u{77E5}", "\u{8BF7}\u{5728}\u{5BB6}\u{4F11}\u{606F}\u{FF0C}\u{591A}\u{559D}\u{6C34}\u{3002}"),
+            ("\u{9000}\u{9662}\u{6642}\u{306E}\u{6CE8}\u{610F}", "\u{81EA}\u{5B85}\u{3067}\u{5B89}\u{9759}\u{306B}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}"),
+            // Korean, Arabic, Hebrew.
+            ("\u{D1F4}\u{C6D0} \u{C548}\u{B0B4}", "\u{C9D1}\u{C5D0}\u{C11C} \u{C26C}\u{C138}\u{C694}"),
+            ("\u{62A}\u{639}\u{644}\u{64A}\u{645}\u{627}\u{62A} \u{627}\u{644}\u{62E}\u{631}\u{648}\u{62C}", "\u{627}\u{633}\u{62A}\u{631}\u{62D} \u{641}\u{64A} \u{627}\u{644}\u{645}\u{646}\u{632}\u{644}"),
+            ("\u{5D4}\u{5D5}\u{5E8}\u{5D0}\u{5D5}\u{5EA} \u{5E9}\u{5D7}\u{5E8}\u{5D5}\u{5E8}", "\u{5E0}\u{5D5}\u{5D7}\u{5D5} \u{5D1}\u{5D1}\u{5D9}\u{5EA}"),
+        ] {
+            let letter = format!("{title}\n{sentence}\nFAKE end.");
+            assert!(!quote_is_heading(&letter, sentence), "{sentence}");
+            assert!(quote_in(&letter, sentence), "{sentence}");
+            assert!(!reads_as_heading(sentence, Some("FAKE end.")), "{sentence}");
+        }
+    }
+
+    #[test]
+    fn a_line_in_real_capitals_is_still_a_heading_and_a_line_of_symbols_is_not() {
+        let letter = "DISCHARGE SUMMARY\nBlood tests in 1 week.\nSORTIE DE L'H\u{D4}PITAL\nRepos \u{E0} la maison.\n\u{412}\u{42B}\u{41F}\u{418}\u{421}\u{41A}\u{410}\nFAKE text.\n***\nFAKE more text.";
+        for heading in [
+            "Discharge summary",
+            "Sortie de l'h\u{F4}pital",
+            "\u{432}\u{44B}\u{43F}\u{438}\u{441}\u{43A}\u{430}",
+        ] {
+            assert!(quote_is_heading(letter, heading), "{heading}");
+        }
+        // Capitals with a digit are not a heading (as before); neither is a line with no letter.
+        assert!(!quote_is_heading("DISCHARGE 2026\nFAKE.", "Discharge 2026"));
+        assert!(!reads_as_heading("***", None));
+        assert!(!reads_as_heading("12 / 34 - 56", None));
+        assert!(reads_as_heading("DISCHARGE SUMMARY", None));
+        // A mixed-case line is not capitals; a colon or a list under it still makes a heading.
+        assert!(!reads_as_heading("Discharge Summary", None));
+        assert!(reads_as_heading("\u{51FA}\u{9662}\u{987B}\u{77E5}:", None));
+        assert!(reads_as_heading(
+            "\u{51FA}\u{9662}\u{987B}\u{77E5}",
+            Some("- FAKE item")
+        ));
     }
 
     #[test]
@@ -1681,6 +2121,17 @@ mod tests {
         assert_eq!(generation_threads(1, 2, Some(0.95)), 1);
         assert_eq!(generation_threads(4, 6, Some(-1.0)), 4);
         assert_eq!(generation_threads(4, 6, Some(7.0)), 2);
+    }
+
+    #[test]
+    fn answers_are_written_on_three_threads_or_all_of_a_smaller_helpers() {
+        assert_eq!(FIXED_ANSWER_THREADS, Some(3));
+        // Six or more cores (helper 4), four (3), three (2), two (1): never more than the helper.
+        assert_eq!(answer_threads(4), Some(3));
+        assert_eq!(answer_threads(3), Some(3));
+        assert_eq!(answer_threads(2), Some(2));
+        assert_eq!(answer_threads(1), Some(1));
+        assert_eq!(answer_threads(0), Some(1));
     }
 
     fn idle_config() -> RunnerConfig {
@@ -1850,6 +2301,199 @@ mod tests {
             );
         }
 
+        fn step(stage: Stage, done: u32, total: u32) -> Progress {
+            Progress { stage, done, total }
+        }
+
+        #[test]
+        fn a_summarys_progress_comes_in_order_and_the_answer_is_the_same_without_it() {
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            let without = plain.summarize(plain.ticket(), &request()).unwrap();
+            // Another request's progress line comes first: ignored, as its answer would be.
+            let runner = Runner::new(config(&["--progress", "--progress-other"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut seen = Vec::new();
+            let with = runner
+                .summarize_with_progress(runner.ticket(), &request(), &mut |p| seen.push(p))
+                .unwrap();
+            assert_eq!(with, without);
+            assert_eq!(
+                seen,
+                [
+                    step(Stage::Reading, 512, 1100),
+                    step(Stage::Reading, 1024, 1100),
+                    step(Stage::Reading, 1100, 1100),
+                    // Of the request's cap (5), not of the sentences written (3).
+                    step(Stage::Writing, 1, 5),
+                    step(Stage::Writing, 2, 5),
+                    step(Stage::Writing, 3, 5),
+                    step(Stage::Checking, 1, 1),
+                ]
+            );
+            // Asked without a listener, the same lines are taken and the same answer given.
+            assert_eq!(
+                runner.summarize(runner.ticket(), &request()).unwrap(),
+                without
+            );
+            // A model that says nothing of its progress is answered as before: checking only.
+            let mut quiet = Vec::new();
+            let again = plain
+                .summarize_with_progress(plain.ticket(), &request(), &mut |p| quiet.push(p))
+                .unwrap();
+            assert_eq!(again, without);
+            assert_eq!(quiet, [step(Stage::Checking, 1, 1)]);
+        }
+
+        #[test]
+        fn a_progress_line_that_breaks_the_contract_is_a_protocol_error_and_stops_the_model() {
+            // (after the fake's own valid reading lines, ID: the request's id, line)
+            let cases = [
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1,"total":2,"text":"FAKE"}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1,"total":2,"id":ID}"#,
+                ),
+                (false, r#"{"id":ID,"progress":"reading","done":1}"#),
+                (false, r#"{"progress":"reading","done":1,"total":2}"#),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1.5,"total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":-1,"total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":"1","total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":3,"total":2}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":0,"total":0}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"reading","done":1,"total":9000}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"checking","done":1,"total":1}"#,
+                ),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"thinking","done":1,"total":1}"#,
+                ),
+                (false, r#"{"id":ID,"progress":1,"done":1,"total":1}"#),
+                (false, r#"{"id":ID,"progress":null,"done":1,"total":1}"#),
+                (
+                    false,
+                    r#"{"id":ID,"progress":"writing","done":1,"total":5}"#,
+                ),
+                (
+                    true,
+                    r#"{"id":ID,"progress":"reading","done":1100,"total":1100}"#,
+                ),
+                (
+                    true,
+                    r#"{"id":ID,"progress":"reading","done":1101,"total":1200}"#,
+                ),
+                (
+                    true,
+                    r#"{"id":ID,"progress":"writing","done":1,"total":10}"#,
+                ),
+                (true, r#"{"id":ID,"progress":"writing","done":6,"total":5}"#),
+                (
+                    true,
+                    "{\"id\":ID,\"progress\":\"writing\",\"done\":2,\"total\":5}\n\
+                     {\"id\":ID,\"progress\":\"writing\",\"done\":2,\"total\":5}",
+                ),
+                (
+                    true,
+                    "{\"id\":ID,\"progress\":\"writing\",\"done\":1,\"total\":5}\n\
+                     {\"id\":ID,\"progress\":\"reading\",\"done\":1100,\"total\":1100}",
+                ),
+            ];
+            for (after_reading, line) in cases {
+                let mut args = vec!["--progress-line", line];
+                if after_reading {
+                    args.insert(0, "--progress");
+                }
+                let runner = Runner::new(config(&args, GIB));
+                runner.start(&Fixed(Some(8 * GIB))).unwrap();
+                let mut seen = Vec::new();
+                let outcome =
+                    runner.summarize_with_progress(runner.ticket(), &request(), &mut |p| {
+                        seen.push(p)
+                    });
+                assert!(
+                    matches!(outcome, Err(RunnerError::Protocol(_))),
+                    "{line}: {outcome:?}"
+                );
+                assert!(!runner.is_running(), "{line}");
+                // Nothing after the reading the fake did right, and never the checks.
+                assert!(
+                    seen.iter().all(|p| p.stage != Stage::Checking),
+                    "{line}: {seen:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn an_explanation_takes_no_progress_line() {
+            let runner = Runner::new(config(&["--progress"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let outcome = runner.explain(runner.ticket(), "tablet", TEXT, "en");
+            assert_eq!(
+                outcome,
+                Err(RunnerError::Protocol("progress not asked for".to_owned()))
+            );
+        }
+
+        #[test]
+        fn progress_neither_extends_the_time_limit_nor_holds_off_a_cancel() {
+            // Reading lines every 0.1 s, forever, and no answer.
+            let timed = Runner::new(RunnerConfig {
+                answer_limit: AnswerLimit::fixed(Duration::from_millis(800)),
+                ..config(&["--progress-every", "0.1"], GIB)
+            });
+            timed.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut seen = 0;
+            let began = Instant::now();
+            let outcome =
+                timed.summarize_with_progress(timed.ticket(), &request(), &mut |_| seen += 1);
+            assert_eq!(outcome, Err(RunnerError::Timeout));
+            assert!(seen >= 2, "{seen}");
+            assert!(began.elapsed() < Duration::from_secs(5));
+            assert!(!timed.is_running());
+
+            let runner = Arc::new(Runner::new(config(&["--progress-every", "0.1"], GIB)));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let ticket = runner.ticket();
+            let canceller = {
+                let runner = Arc::clone(&runner);
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(400));
+                    runner.cancel_all();
+                })
+            };
+            let mut seen = 0;
+            let began = Instant::now();
+            let outcome = runner.summarize_with_progress(ticket, &request(), &mut |_| seen += 1);
+            canceller.join().unwrap();
+            assert_eq!(outcome, Err(RunnerError::Cancelled));
+            assert!(seen >= 1, "{seen}");
+            assert!(began.elapsed() < Duration::from_secs(5));
+            assert!(!runner.is_running());
+        }
+
         #[test]
         fn ownership_an_admitted_old_worker_cannot_change_a_new_answers_helper() {
             // Pause A after admission, before start, then admit B either in
@@ -1921,9 +2565,80 @@ mod tests {
         }
 
         #[test]
+        fn every_answer_is_sent_with_the_fixed_threads_and_the_load_is_never_sampled() {
+            /// Keeps a copy of every byte written to the helper.
+            struct Copy {
+                input: Box<dyn Write + Send>,
+                bytes: Arc<Mutex<Vec<u8>>>,
+            }
+
+            impl Write for Copy {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    let written = self.input.write(bytes)?;
+                    self.bytes
+                        .lock()
+                        .unwrap()
+                        .extend_from_slice(&bytes[..written]);
+                    Ok(written)
+                }
+
+                fn flush(&mut self) -> std::io::Result<()> {
+                    self.input.flush()
+                }
+            }
+
+            for (most, sent) in [(4, 3), (2, 2)] {
+                let mut fixed = config(&[], GIB);
+                fixed.generation_threads = Some(most);
+                let runner = Runner::new(fixed);
+                runner.start(&Fixed(Some(8 * GIB))).unwrap();
+                let bytes = Arc::new(Mutex::new(Vec::new()));
+                {
+                    let mut slot = runner.sidecar.lock().unwrap();
+                    let running = slot.as_mut().unwrap();
+                    let input = std::mem::replace(&mut running.input, Box::new(std::io::sink()));
+                    running.input = Box::new(Copy {
+                        input,
+                        bytes: Arc::clone(&bytes),
+                    });
+                }
+                for _ in 0..2 {
+                    runner
+                        .ask_with_sampler(
+                            runner.ticket(),
+                            "explain",
+                            serde_json::json!({ "term": "tablet", "context": TEXT, "lang": "en" }),
+                            (
+                                prompt_tokens(EXPLAIN_PROMPT_TOKENS, "tablet".len() + TEXT.len()),
+                                crate::model_helper::EXPLAIN_TOKENS as u32,
+                            ),
+                            || panic!("the load must not be sampled"),
+                            None,
+                        )
+                        .unwrap();
+                }
+                let written = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+                let lines: Vec<serde_json::Value> = written
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                assert_eq!(lines.len(), 2, "helper {most}");
+                for line in lines {
+                    assert_eq!(line["threads"], serde_json::json!(sent), "helper {most}");
+                }
+                runner.stop();
+            }
+        }
+
+        #[test]
         fn a_ticket_cancelled_while_sampling_leaves_the_newer_requests_helper_alone() {
             use std::sync::atomic::AtomicUsize;
             use std::sync::mpsc;
+            // Nothing is sampled while answers are written on fixed threads; this guards the
+            // load-chosen path for when `FIXED_ANSWER_THREADS` is `None` again.
+            if FIXED_ANSWER_THREADS.is_some() {
+                return;
+            }
 
             struct CountWrites {
                 input: Box<dyn Write + Send>,
@@ -1983,6 +2698,7 @@ mod tests {
                             release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
                             Some(0.0)
                         },
+                        None,
                     )
                 });
                 // Both requests must actually enter the adaptive sampling path.
@@ -2269,6 +2985,29 @@ mod tests {
             let summary = runner.summarize(runner.ticket(), &request()).unwrap();
             assert_eq!(summary.last_page, 0);
             assert_eq!(summary.unlocated, 1);
+        }
+
+        #[test]
+        fn a_last_page_read_after_a_gap_comes_back_and_its_quotes_are_located() {
+            let runner = Runner::new(config(&["--head-tail"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!((summary.last_page, summary.tail_page), (0, Some(2)));
+            // The quote from page 3 (index 2) is found in what was read.
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|sentence| sentence.quote.contains("FAKE page three")));
+            assert_eq!(summary.unlocated, 0);
+            for tail in ["1", "0"] {
+                let wrong = Runner::new(config(&["--head-tail", "--tail-page", tail], GIB));
+                wrong.start(&Fixed(Some(8 * GIB))).unwrap();
+                assert_eq!(
+                    wrong.summarize(wrong.ticket(), &request()),
+                    Err(RunnerError::Protocol("tail page not sent".to_owned())),
+                    "tail page {tail}"
+                );
+            }
         }
 
         #[test]

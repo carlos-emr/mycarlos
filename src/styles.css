@@ -15,6 +15,8 @@
   --teal-line: #b9dcd7;
   --amber: #9a5b00;
   --amber-soft: #fdf1de;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #1f6b3a;
   --green-soft: #e6f4ea;
   --red: #a4232b;
@@ -33,7 +35,6 @@
   --auth-end: #e8efed;
   --warning-line: #eccf9d;
   --warning-ink: #6f4300;
-  --window-dot: #c8d5d2;
   --green-line: #bfe0ca;
   --on-accent: #fff;
   --danger-line: #e6bcbc;
@@ -80,6 +81,8 @@
   --teal-line: #3c786c;
   --amber: #f1c47c;
   --amber-soft: #3b2c16;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --green: #8cd9a6;
   --green-soft: #183c26;
   --red: #ffadb2;
@@ -95,7 +98,6 @@
   --auth-end: #1a3028;
   --warning-line: #906824;
   --warning-ink: #f3d9aa;
-  --window-dot: #71877e;
   --green-line: #4b805c;
   --on-accent: #082e26;
   --danger-line: #996169;
@@ -141,6 +143,8 @@
   --teal-line: #ffff00;
   --amber: #ffff00;
   --amber-soft: #000;
+  --page-mark-line: #9a5b00;
+  --page-mark-fill: rgb(255 196 0 / 0.35);
   --warning-ink: #fff;
   --warning-line: #ffff00;
   --green: #aaffaa;
@@ -168,7 +172,6 @@
   --auth-start: #000;
   --auth-middle: #000;
   --auth-end: #000;
-  --window-dot: #fff;
   --shadow: none;
   --shadow-sm: none;
   --thumb-shadow: none;
@@ -198,6 +201,7 @@
      hides what overflows it, and cut off the Create button. */
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
+  align-content: center;
   padding: 24px;
   background: linear-gradient(
     145deg,
@@ -487,17 +491,6 @@ p {
   padding: 9px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--canvas-2);
-}
-.window-dots {
-  display: flex;
-  gap: 6px;
-}
-.window-dots i {
-  display: block;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--window-dot);
 }
 .window-title {
   color: var(--ink-faint);
@@ -1096,11 +1089,67 @@ p {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* The marked words: outlined too, so not by colour alone (#292). */
 .native-reader-text mark {
   background: var(--amber-soft);
   color: var(--ink);
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+  border-radius: 2px;
 }
+/* The page picture, and the quoted words' boxes over it (#292). A box is a
+   fraction of the picture, so it stays on its words at every zoom. The picture
+   is always white paper, so every theme gives the boxes the same colours: an
+   outline with at least 3:1 against white paper and black ink, and a light
+   fill the ink shows through. Forced colours use Highlight. */
+.native-reader-picture {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+}
+/* The wrapper takes the picture's own size: the boxes cover it exactly. */
+.native-reader-picture img {
+  display: block;
+}
+.native-reader-boxes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.native-reader-boxes > span {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 3px solid var(--page-mark-line);
+  outline-offset: 1px;
+  border-radius: 2px;
+  background: var(--page-mark-fill);
+  mix-blend-mode: multiply;
+}
+@media (forced-colors: active) {
+  .native-reader-boxes > span {
+    mix-blend-mode: normal;
+  }
+}
+/* While Show in document marks a quote, the text and the AI panel give the
+   picture room, so that a short or narrow window keeps the words in view in
+   both places (#292). */
+/* The text box scrolls in its own region; capping the details around it only
+   let the text run over the summary below (#292). */
+.native-reader-highlighting .native-reader-text div {
+  max-height: max(5em, 16vh);
+}
+.native-reader-highlighting .native-reader-ai {
+  max-height: 25vh;
+}
+/* The summary panel is never squeezed away. In a column that is too short
+   for everything it used to shrink to its padding (13px at 560x800), which
+   hid the summary and the button that unfolds it. Now it keeps its own
+   height (up to the cap, with its own scroll), and what gives way is, in
+   this order: the page picture, down to its own minimum above; then the
+   reader itself scrolls, with the page bar kept at its foot (D144), as it
+   does for "Text on this page". */
 .native-reader-ai {
+  flex-shrink: 0;
   max-height: 40vh;
   overflow: auto;
   padding: 8px 20px 14px;
@@ -1114,9 +1163,32 @@ p {
   max-width: 70ch;
   margin: 4px 0;
 }
+/* On a narrow or short window (browser zoom included), while a quote is
+   shown, the summary folds to one line with a button that unfolds it, so the
+   page picture keeps room (#292). */
+.native-reader-ai.native-reader-ai-folded {
+  padding-block: 6px;
+}
+.native-reader-ai-fold {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.native-reader-ai .native-reader-ai-fold p {
+  flex: 1 1 14em;
+  margin: 0;
+}
 .native-reader-ai .native-reader-ai-wait {
   color: var(--ink-soft);
   font-size: 0.875rem;
+}
+/* #301: the choice before summarizing a document too long to read at once. */
+.native-reader-ai-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
 }
 .native-reader-ai-explain {
   display: grid;
@@ -3848,6 +3920,8 @@ button:disabled,
     --teal-line: ButtonBorder;
     --amber: CanvasText;
     --amber-soft: Canvas;
+    --page-mark-line: Highlight;
+    --page-mark-fill: transparent;
     --warning-ink: CanvasText;
     --warning-line: ButtonBorder;
     --green: CanvasText;
@@ -4040,6 +4114,10 @@ button:disabled,
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+/* #143: the "Try again" button keeps the card's usual gap below the line. */
+.portal-refused .button {
+  margin-block-start: 0.5rem;
+}
 .portal-documents label {
   display: grid;
   gap: 0.35rem;
@@ -4171,9 +4249,15 @@ button:disabled,
    form, box or buttons that follow: one rule for every such section (Clinic
    documents, and the AI helper in Security and on its own page). After the
    rules above, so the gap also replaces the inline form's pull-up margin. */
-:where(h1, h2, h3):has(+ .section-intro) { margin-block-end: 0; }
-.section-intro { margin-block-start: 4px; }
-.section-intro + * { margin-block-start: 14px; }
+:where(h1, h2, h3):has(+ .section-intro) {
+  margin-block-end: 0;
+}
+.section-intro {
+  margin-block-start: 4px;
+}
+.section-intro + * {
+  margin-block-start: 14px;
+}
 /* Visible choices before opening a vault, wrapping instead of a dropdown. */
 .language-compact {
   display: grid;
@@ -4358,6 +4442,62 @@ button:disabled,
   flex: 1 1 16rem;
   margin: 0;
 }
+/* A birth date as year, month and day: the year first, typed, and the month
+   from a list, in one row that wraps on a narrow screen (a phone's calendar
+   makes a date decades back slow to reach). */
+.native-birth-date {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.native-birth-date legend {
+  padding: 0;
+  margin-bottom: 5px;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+.native-birth-date label {
+  min-width: 0;
+}
+/* Year, month and day share one row on a narrow phone (about 254 px): the
+ * year and day are as wide as their digits need, the month takes the rest.
+ * At a larger text size the three no longer fit and the row wraps there. */
+.native-birth-year {
+  flex: 0 0 4.75rem;
+}
+.native-birth-month {
+  flex: 1 1 5rem;
+  min-width: 0;
+}
+.native-birth-day {
+  flex: 0 0 3.5rem;
+}
+.native-birth-date select,
+.native-birth-date input {
+  width: 100%;
+  min-width: 0;
+}
+.native-birth-date select {
+  min-height: 44px;
+  padding: 8px 3px 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.native-birth-date select:focus {
+  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+}
+.native-birth-date:disabled {
+  opacity: 0.6;
+}
 .native-person-details-setup {
   display: grid;
   gap: 10px;
@@ -4391,4 +4531,53 @@ button:disabled,
 .native-person-details-setup label,
 .native-person-details-setup input {
   min-width: 0;
+}
+/* Previous full names in Edit details: each name and its Remove button stay
+   in one column at any width and text size. */
+.previous-full-names,
+.previous-full-names > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.previous-full-names input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.previous-full-names button {
+  white-space: normal;
+  min-height: 44px;
+}
+
+/* The way to another language from the unlock and set-up screens: a globe and
+ * the current language's own name, in the top corner above the card, so the
+ * passphrase field does not move when a language is chosen. */
+.language-corner {
+  display: flex;
+  justify-content: flex-end;
+  /* As wide as the card below it, so the button sits over the card's right
+     corner. */
+  width: min(100%, 470px);
+  margin-bottom: 8px;
+}
+.language-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.language-button .icon {
+  flex: none;
+}
+.native-language-dialog .language-compact {
+  margin: 0;
 }

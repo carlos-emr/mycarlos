@@ -1698,11 +1698,6 @@ export function VaultLibrary({
                 recoverySetup,
             )}
           >
-            <span className="window-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
             <span className="window-title">myCarlos</span>
             {/* The pill shows the vault's state, then the button. The button
                 shows exactly the words it is named by, "Lock now", so voice
@@ -2873,6 +2868,12 @@ export function VaultLibrary({
                   })
               }
               cancelView={() => void bridge.cancelView().catch(() => undefined)}
+              pageBoxes={
+                computer && bridge.pageBoxes
+                  ? (page, span, password) =>
+                      bridge.pageBoxes!(readerRecord.id, page, span, password)
+                  : undefined
+              }
               onClose={() => setReaderRecordId(null)}
               ai={
                 computer

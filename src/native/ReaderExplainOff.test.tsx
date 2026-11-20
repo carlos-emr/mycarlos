@@ -153,9 +153,7 @@ describe("the reader with Explain switched off", () => {
       name: "Summary in plain words",
     });
     expect(
-      await within(panel).findByText(
-        "The AI helper isn't on this computer yet",
-      ),
+      await within(panel).findByText("The AI helper isn't on this device yet"),
     ).toBeVisible();
     await userEvent
       .setup()

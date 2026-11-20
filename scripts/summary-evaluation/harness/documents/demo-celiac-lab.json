@@ -1,0 +1,164 @@
+{
+ "id": "demo-celiac-lab",
+ "title": "FAKE lab report (celiac and iron tests)",
+ "lang": "en",
+ "synthetic": true,
+ "source": "myCarlos demo documents, 6 Nov 2026 (FAKE-6002-02)",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE DEMONSTRATION ONLY\nCommunity Test Laboratories (FAKE)\n300 Specimen Street, Testville ON · Tel 555-0199\nAccession: FAKE-LAB-6003\nPatient\tFAKE-WINDOWS-FIRST-DEVICE, FAKE-NewWindows\nDOB\t1 January 1990\tSex\tO\tHealth card\t9999996003 (FAKE)\nCollected\t3 November 2026, 08:20\tReported\t3 November 2026, 16:05\nOrdered by\tDr. Ian Sampleton (copy to Dr. Henrietta Fakeham, FAKE-send-delete Family Practice)\nResults\nTest\tResult\tFlag\tReference range\tUnits\nHemoglobin\t101\tL\t120–160\tg/L\nMCV\t73\tL\t80–100\tfL\nWhite cells\t6.1\t\t4.0–11.0\t×10⁹/L\nPlatelets\t412\tH\t150–400\t×10⁹/L\nFerritin\t5\tL\t15–200\tµg/L\nTransferrin saturation\t6\tL\t20–50\t%\nTissue transglutaminase IgA\t92\tH\t<15\tU/mL\nTotal IgA\t2.1\t\t0.7–4.0\tg/L\nVitamin B12\t198\t\t148–600\tpmol/L\nFolate\t9.8\t\t>7.0\tnmol/L\n25-hydroxy vitamin D\t41\tL\t75–250\tnmol/L\nAlbumin\t38\t\t35–50\tg/L\nALT\t52\tH\t<50\tU/L\nCreatinine\t68\t\t45–110\tµmol/L\nTSH\t2.3\t\t0.4–4.0\tmU/L\nComments\n\nThe anemia is small-celled with very low iron stores, as before, despite oral iron since August 2026.\n\nThe tissue transglutaminase IgA of 92 U/mL is more than six times the upper limit, with a normal total IgA. This strongly suggests celiac disease; a duodenal biopsy is usually needed to confirm it.\n\nVitamin D is low. ALT is mildly high, which can be seen with untreated celiac disease; suggest repeating it once treatment has started.\n\nVerified by: Dr. Quentin Labwell, Medical Biochemist (FAKE) · This report is synthetic and was generated for software testing.\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "iron_deficiency_anemia",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "The anemia is small-celled with very low iron stores, as before, despite oral iron since August 2026.",
+   "approved_statements": [
+    "There is anemia with small red cells and very low iron stores, despite oral iron."
+   ],
+   "anchors": [
+    "anaemi",
+    "anemi",
+    "iron"
+   ],
+   "match": [
+    [
+     "anemi",
+     "anaemi",
+     "iron"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "ttg_high_suggests_celiac",
+   "category": "result",
+   "required": true,
+   "critical": true,
+   "source_evidence": "The tissue transglutaminase IgA of 92 U/mL is more than six times the upper limit, with a normal total IgA.",
+   "approved_statements": [
+    "The tissue transglutaminase IgA is 92 U/mL, more than six times the upper limit."
+   ],
+   "anchors": [
+    "92",
+    "celiac",
+    "coeliac",
+    "transglutaminase",
+    "ttg"
+   ],
+   "match": [
+    [
+     "celiac",
+     "coeliac",
+     "92",
+     "transglutaminase",
+     "ttg"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "(?:transglutaminase|tTG)[^0-9]{0,40}(\\d+(?:[.,]\\d+)?)\\s*(U/mL)",
+    "value": "92",
+    "unit": "U/mL"
+   }
+  },
+  {
+   "id": "biopsy_to_confirm",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "a duodenal biopsy is usually needed to confirm it.",
+   "approved_statements": [
+    "A biopsy is usually needed to confirm celiac disease."
+   ],
+   "anchors": [
+    "biops"
+   ],
+   "match": [
+    [
+     "biops"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "vitamin_d_low",
+   "category": "result",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Vitamin D is low.",
+   "approved_statements": [
+    "Vitamin D is low."
+   ],
+   "anchors": [
+    "vitamin d"
+   ],
+   "match": [
+    [
+     "vitamin d"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "alt_high_repeat",
+   "category": "follow_up",
+   "required": true,
+   "critical": false,
+   "source_evidence": "ALT is mildly high, which can be seen with untreated celiac disease; suggest repeating it once treatment has started.",
+   "approved_statements": [
+    "ALT is mildly high and should be repeated once treatment has started."
+   ],
+   "anchors": [
+    "alt",
+    "liver"
+   ],
+   "match": [
+    [
+     "alt",
+     "liver"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "others_normal",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "Vitamin B12\t198\t\t148–600\tpmol/L",
+   "approved_statements": [
+    "B12, folate, kidney and thyroid results are in the normal range."
+   ],
+   "anchors": [
+    "b12",
+    "creatinine",
+    "folate",
+    "kidney",
+    "thyroid",
+    "tsh"
+   ],
+   "match": [
+    [
+     "b12",
+     "folate",
+     "thyroid",
+     "tsh",
+     "kidney",
+     "creatinine"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "calling B12, folate, creatinine or TSH abnormal",
+  "saying celiac disease is confirmed",
+  "treatment advice not in the report"
+ ],
+ "notes": ""
+}

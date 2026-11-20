@@ -192,6 +192,41 @@ describe("Add a model file", () => {
     vi.unstubAllGlobals();
   });
 
+  it("says how much of a document each model reads at a time, pages first (#301)", async () => {
+    answer({
+      ai_model_catalog: [
+        { ...fake, capacity: { contextTokens: 8192, documentTokens: 6510 } },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    const reads = humanText(
+      "Reads about 6 pages at a time (about 19,000 characters of English text). Less for tables and some languages.",
+    );
+    const line = await screen.findByText(reads);
+    expect(line).toBeVisible();
+    // Choosing a model hears it too: after the name, size and licence, before
+    // the row's state.
+    const describedBy = screen
+      .getByRole("radio", { name: humanText("FAKE model") })
+      .getAttribute("aria-describedby")
+      ?.split(" ");
+    expect(describedBy).toHaveLength(3);
+    expect(describedBy?.[1]).toBe(line.id);
+  });
+
+  it("says nothing of a model's reading capacity the native side did not give", async () => {
+    answer({ ai_model_catalog: [fake] });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await screen.findByText(
+      humanText("FAKE model, 2,500 MB. Licence: Apache-2.0."),
+    );
+    expect(screen.queryByText(/Reads about/)).toBeNull();
+  });
+
   it("adds a file, reports the new status and says so", async () => {
     answer({
       ai_model_catalog: [fake],
@@ -260,14 +295,14 @@ describe("Add a model file", () => {
     ],
     [
       "noDisk",
-      "There is not enough free space on this computer. The model needs about 4 GB.",
+      "There is not enough free space on this device. The model needs about 4 GB.",
     ],
     [
       "incomplete",
       "The file could not be read completely. Check that it finished downloading, then try again.",
     ],
     ["busy", "The AI helper is working. Try again when it has finished."],
-    ["storage", "The model could not be saved on this computer."],
+    ["storage", "The model could not be saved on this device."],
   ])("explains a refusal: %s", async (outcome, text) => {
     answer({
       ai_model_catalog: [fake],
@@ -1044,13 +1079,10 @@ describe("A computer that cannot run the helper", () => {
   it.each([
     [
       "ram",
-      "This computer does not have enough memory for the AI helper (it needs about 8 GB).",
+      "This device does not have enough memory for the AI helper (it needs about 8 GB).",
     ],
-    ["cpu", "This computer’s processor is not supported by the AI helper."],
-    [
-      "platform",
-      "The AI helper is not available on this kind of computer yet.",
-    ],
+    ["cpu", "This device’s processor is not supported by the AI helper."],
+    ["platform", "The AI helper is not available on this kind of device yet."],
   ] as const)("says why (%s) and offers nothing", async (reason, text) => {
     answer({ ai_model_catalog: [fake] });
     render(

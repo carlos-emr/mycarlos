@@ -1,0 +1,271 @@
+{
+ "id": "new-rheumatology-letter",
+ "title": "New: rheumatology letter, instructions at the end",
+ "lang": "en",
+ "synthetic": true,
+ "source": "written for the evaluation harness, 10 Nov 2026",
+ "pages": [
+  {
+   "index": 0,
+   "text": "SYNTHETIC / FAKE TEST DOCUMENT — NOT A REAL PATIENT — FOR SOFTWARE TESTING ONLY\nRiverbend Test Rheumatology Clinic (FAKE)\n42 Placeholder Lane, Testville ON  Z9Z 9Z9 · Tel 555-0170 · Fax 555-0171\n\nNovember 4, 2026\n\nDr. Henrietta Fakeham (FAKE)\nMaple Test Family Health Team\n\nRe: Jordan FAKE-Rivers · DOB: 3 March 1979 · Health card: 9999990117 (FAKE)\n\nDear Dr. Fakeham,\n\nThank you for asking me to see Jordan FAKE-Rivers, a 47-year-old teacher, about painful, swollen hands. I saw them in clinic today.\n\nHistory\nFor about five months they have had pain and swelling in the small joints of both hands and both wrists, with morning stiffness lasting about two hours. Climbing stairs is now hard because both knees are sore. They have had no rash, no mouth ulcers, no dry eyes and no change in bowel habit. Their mother has hypothyroidism. They do not smoke and drink alcohol rarely, about two drinks a month.\n\nExamination\nWeight 71 kg. Eight swollen joints: the second and third knuckles of both hands, both wrists and the right knee. Twelve tender joints in total. Skin, nails, heart and lungs were normal.\n\nInvestigations\nBlood tests on 28 October 2026: rheumatoid factor 64 IU/mL (normal below 14), anti-CCP antibodies 212 U/mL (normal below 20), CRP 18 mg/L, ESR 34 mm/h. Hemoglobin 124 g/L, ALT 22 U/L, creatinine 71 µmol/L. Hepatitis B and C tests were negative, and the chest X-ray was clear.\nHand X-rays show early erosions at the right second knuckle.\n\nImpression\nSeropositive rheumatoid arthritis with high disease activity and early erosions.\n\nPlan\n1. Methotrexate 15 mg by mouth once a week, on the same day each week, increasing to 20 mg weekly after 4 weeks if blood tests are fine.\n2. Folic acid 5 mg by mouth once a week, taken the day after the methotrexate.\n3. Prednisone 10 mg daily for 2 weeks, then 5 mg daily for 2 weeks, then stop.\n4. Naproxen may continue for now at 500 mg twice daily with food; we will try to stop it once the methotrexate works.\n5. I have sent a referral to the clinic's physiotherapist and occupational therapist.\n\nI went through the following with Jordan before they left, and gave them a printed sheet. Methotrexate is taken once a week, never daily. They should not drink alcohol while on it, and must not get pregnant or father a child while on it and for 3 months after stopping. They should have blood tests (CBC, ALT, creatinine) every 2 weeks for the first 2 months, then monthly, and call the clinic at once if they get a fever, a cough with shortness of breath, or mouth sores. They will be seen again here in 6 weeks, in mid-December 2026.\n\nSincerely,\n\nDr. Priya FAKE-Okonjo, MD, FRCPC (FAKE)\nRheumatology, Riverbend Test Rheumatology Clinic\n\ncc: Jordan FAKE-Rivers (patient copy)\n"
+  }
+ ],
+ "facts": [
+  {
+   "id": "ra_diagnosis",
+   "category": "finding",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Seropositive rheumatoid arthritis with high disease activity and early erosions.",
+   "approved_statements": [
+    "They have rheumatoid arthritis with high disease activity and early joint erosions."
+   ],
+   "anchors": [
+    "arthritis",
+    "rheumatoid"
+   ],
+   "match": [
+    [
+     "rheumatoid",
+     "arthritis"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "joint_symptoms",
+   "category": "finding",
+   "required": true,
+   "critical": false,
+   "source_evidence": "For about five months they have had pain and swelling in the small joints of both hands and both wrists, with morning stiffness lasting about two hours.",
+   "approved_statements": [
+    "For five months they have had painful, swollen joints in both hands and wrists, with two hours of morning stiffness."
+   ],
+   "anchors": [
+    "hand",
+    "joint",
+    "stiff",
+    "wrist"
+   ],
+   "match": [
+    [
+     "joint",
+     "hand",
+     "wrist",
+     "stiff"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "antibodies",
+   "category": "result",
+   "required": false,
+   "critical": false,
+   "source_evidence": "rheumatoid factor 64 IU/mL (normal below 14), anti-CCP antibodies 212 U/mL (normal below 20)",
+   "approved_statements": [
+    "Rheumatoid factor (64 IU/mL) and anti-CCP antibodies (212 U/mL) are high."
+   ],
+   "anchors": [
+    "antibod",
+    "ccp",
+    "rheumatoid factor"
+   ],
+   "match": [
+    [
+     "rheumatoid factor",
+     "ccp",
+     "antibod"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "methotrexate_weekly",
+   "category": "medication",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Methotrexate 15 mg by mouth once a week, on the same day each week, increasing to 20 mg weekly after 4 weeks if blood tests are fine.",
+   "approved_statements": [
+    "Start methotrexate 15 mg once a week, increasing to 20 mg after 4 weeks if blood tests are fine."
+   ],
+   "anchors": [
+    "methotrexate"
+   ],
+   "match": [
+    [
+     "methotrexate"
+    ]
+   ],
+   "expected_attributes": {},
+   "quantity_check": {
+    "pattern": "methotrexate\\D{0,20}(\\d+(?:[.,]\\d+)?)\\s*(mg)",
+    "value": "15",
+    "unit": "mg"
+   }
+  },
+  {
+   "id": "folic_acid",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Folic acid 5 mg by mouth once a week, taken the day after the methotrexate.",
+   "approved_statements": [
+    "Take folic acid 5 mg once a week, the day after the methotrexate."
+   ],
+   "anchors": [
+    "folic"
+   ],
+   "match": [
+    [
+     "folic"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "prednisone_taper",
+   "category": "medication",
+   "required": true,
+   "critical": false,
+   "source_evidence": "Prednisone 10 mg daily for 2 weeks, then 5 mg daily for 2 weeks, then stop.",
+   "approved_statements": [
+    "Take prednisone 10 mg daily for 2 weeks, then 5 mg daily for 2 weeks, then stop."
+   ],
+   "anchors": [
+    "prednisone"
+   ],
+   "match": [
+    [
+     "prednisone"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "once_a_week_never_daily",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "Methotrexate is taken once a week, never daily.",
+   "approved_statements": [
+    "Methotrexate is taken once a week, never daily."
+   ],
+   "anchors": [
+    "methotrexate",
+    "week"
+   ],
+   "match": [
+    [
+     "methotrexate"
+    ],
+    [
+     "week"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "no_alcohol_no_pregnancy",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "They should not drink alcohol while on it, and must not get pregnant or father a child while on it and for 3 months after stopping.",
+   "approved_statements": [
+    "Do not drink alcohol, and do not get pregnant or father a child while on methotrexate and for 3 months after."
+   ],
+   "anchors": [
+    "alcohol",
+    "pregnan"
+   ],
+   "match": [
+    [
+     "alcohol",
+     "pregnan"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "blood_tests_every_2_weeks",
+   "category": "follow_up",
+   "required": true,
+   "critical": true,
+   "source_evidence": "They should have blood tests (CBC, ALT, creatinine) every 2 weeks for the first 2 months, then monthly",
+   "approved_statements": [
+    "Have blood tests every 2 weeks for the first 2 months, then monthly."
+   ],
+   "anchors": [
+    "2 weeks",
+    "blood",
+    "every",
+    "two weeks"
+   ],
+   "match": [
+    [
+     "blood"
+    ],
+    [
+     "2 weeks",
+     "two weeks",
+     "every"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "call_for_fever",
+   "category": "instruction",
+   "required": true,
+   "critical": true,
+   "source_evidence": "call the clinic at once if they get a fever, a cough with shortness of breath, or mouth sores.",
+   "approved_statements": [
+    "Call the clinic at once for a fever, a cough with shortness of breath, or mouth sores."
+   ],
+   "anchors": [
+    "breath",
+    "cough",
+    "fever",
+    "mouth sore"
+   ],
+   "match": [
+    [
+     "fever",
+     "cough",
+     "mouth sore",
+     "breath"
+    ]
+   ],
+   "expected_attributes": {}
+  },
+  {
+   "id": "seen_in_6_weeks",
+   "category": "timing",
+   "required": true,
+   "critical": true,
+   "source_evidence": "They will be seen again here in 6 weeks, in mid-December 2026.",
+   "approved_statements": [
+    "They will be seen again in 6 weeks, in mid-December 2026."
+   ],
+   "anchors": [
+    "6 weeks",
+    "december",
+    "six weeks"
+   ],
+   "match": [
+    [
+     "6 weeks",
+     "six weeks",
+     "december"
+    ]
+   ],
+   "expected_attributes": {}
+  }
+ ],
+ "traps": [
+  "saying methotrexate is taken daily",
+  "saying to stop naproxen now (it may continue for now)",
+  "wrong doses"
+ ],
+ "notes": ""
+}

@@ -40,7 +40,7 @@ test("first setup is named and ordered for a screen reader", async ({
   await screenReaderSmoke(page, "comfort settings");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(
-    page.getByRole("heading", { name: "Set up myCarlos on this computer" }),
+    page.getByRole("heading", { name: "Set up myCarlos on this device" }),
   ).toBeVisible();
   await screenReaderSmoke(page, "create the vault");
 

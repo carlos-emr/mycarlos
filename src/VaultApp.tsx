@@ -724,9 +724,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         transfer(() => bridge.importPickedFiles(pickId, profileId, folderIds)),
       exportToPicked: (pickId, recordId) =>
         transfer(() => bridge.exportToPicked(pickId, recordId)),
-      aiSummarize: (pages, lang, keep) =>
+      // The answer's own id comes from `answering` (it owns the lock hold);
+      // progress events are matched to it by the bridge.
+      aiSummarize: (pages, lang, keep, _answerId, onProgress) =>
         answering((answerId) =>
-          bridge.aiSummarize(pages, lang, keep, answerId),
+          bridge.aiSummarize(pages, lang, keep, answerId, onProgress),
         ),
       aiExplain: (term, context, lang, recordId) =>
         answering((answerId) =>

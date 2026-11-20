@@ -48,7 +48,7 @@ checklist-notAName = Not your name
 
 checklist-notYet = , not yet
 
-checklist-spaces = Spaces are allowed, so a few unrelated words make a good one. myCarlos checks these rules on this computer.
+checklist-spaces = Spaces are allowed, so a few unrelated words make a good one. myCarlos checks these rules on this device.
 
 comfort-autoLock-body = myCarlos locks itself when it has not been used for this long, so that nobody else can see your records. Choose from 1 to 15 minutes.
 
@@ -78,7 +78,7 @@ create-stays = Your vault stays on this device. If you created one on another de
 
 create-submit = Create vault
 
-create-title = Set up myCarlos on this computer
+create-title = Set up myCarlos on this device
 
 error-checkBoxes = Check { $boxes }, then try again.
 
@@ -244,7 +244,7 @@ interface-notice-alreadyShared = { $name } was already in Shared with me.
 
 interface-notice-changesResumed = { $outcome } The vault accepts changes again.
 
-interface-notice-copySaved = A readable copy was saved to this computer.
+interface-notice-copySaved = A readable copy was saved to this device.
 
 interface-notice-damagedHidden =
     { $count ->
@@ -318,7 +318,7 @@ interface-oldBackups-yourOldKitCouldStillOpenBackupsAlternative = Your old kit c
 
 interface-person-records = { $name }'s records
 
-interface-photo-checkYourComputersCameraPrivacySettingsAnd = Check your computer's camera privacy settings and let myCarlos use the camera.
+interface-photo-checkYourComputersCameraPrivacySettingsAnd = Check your device's camera privacy settings and let myCarlos use the camera.
 
 interface-photo-inSystemSettingsOpenPrivacySecurityThen = In System Settings, open Privacy & Security, then Camera, and turn on myCarlos.
 
@@ -349,6 +349,10 @@ interface-reader-page = Page { $page }
 interface-reader-textFollows = Page { $page } of { $total }. The page's text follows.
 
 interface-reader-where = Page { $page } of { $total }
+
+interface-reader-markedOnPage = Page { $page }: the quoted words are marked on the page picture and in Text on this page.
+
+interface-reader-markedInText = Page { $page }: the quoted words are marked in Text on this page. They could not be marked on the page picture.
 
 interface-reader-zoom = { $percent }%
 
@@ -392,7 +396,7 @@ interface-RecordDetails-moveTo = Move to
 
 interface-RecordDetails-read = Read
 
-interface-RecordDetails-saveACopyToThisComputer = Save a copy to this computer
+interface-RecordDetails-saveACopyToThisComputer = Save a copy to this device
 
 interface-RecordDetails-theFileStaysEncryptedInTheVault = The file stays encrypted in the vault. Save a copy only when you need a readable file outside myCarlos.
 
@@ -541,7 +545,7 @@ interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Move them into your 
 
 interface-VaultLibrary-moveTheSelectedDocuments = Move the selected documents.
 
-interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos could not save a change to this computer. Free up storage or check the disk, then lock and unlock again; the vault repairs itself when it can write.
+interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos could not save a change to this device. Free up storage or check the disk, then lock and unlock again; the vault repairs itself when it can write.
 
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos encrypted record library
 
@@ -769,7 +773,7 @@ native-error-33 = myCarlos cannot show documents safely on this system. Save a c
 
 native-error-34 = There is not enough storage to complete this operation.
 
-native-error-35 = myCarlos couldn't read or write its files on this computer. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.
+native-error-35 = myCarlos couldn't read or write its files on this device. Check that the drive holding myCarlos is connected and has free space, then try again. If you were changing something, first look at your records to see whether the change was made.
 
 native-error-36 = The operation stopped because the vault was locked.
 
@@ -934,7 +938,7 @@ photo-zoomIn = Zoom in
 
 photo-zoomOut = Zoom out
 
-preferences-subtitle = How myCarlos looks on this computer
+preferences-subtitle = How myCarlos looks on this device
 
 readingAid-available = Your clinic also sent a reading aid for this document.
 
@@ -1076,7 +1080,7 @@ rename-tooLong = This name is too long. Shorten it to save.
 
 rename-unsafe = Document names cannot contain { $characters } or invisible control characters, or end with a dot.
 
-reset-plainly = Setting the vault aside takes all your documents, folders and patient profiles out of myCarlos on this computer. They stay on this computer, encrypted. That vault can still be opened with its original passphrase or matching recovery key. Starting a new vault does not change those credentials. To be sure, type the words below exactly.
+reset-plainly = Setting the vault aside takes all your documents, folders and patient profiles out of myCarlos on this device. They stay on this device, encrypted. That vault can still be opened with its original passphrase or matching recovery key. Starting a new vault does not change those credentials. To be sure, type the words below exactly.
 
 reset-submit = Set vault aside
 
@@ -1136,8 +1140,8 @@ restore-tooLong = This is too long. Check what you typed.
 
 secret-count-password =
     { $count ->
-    [one] { $count } character password
-    *[other] { $count } character password
+    [one] { $count } character passphrase
+    *[other] { $count } character passphrase
     }
 
 secret-count-recoveryKey =
@@ -1306,7 +1310,7 @@ textSize-box = Text size in percent
 
 textSize-followsDevice = Here, text size follows your device: its own text size setting, or the browser's zoom.
 
-textSize-help = Makes everything in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers the size on this computer. You can also hold { $modifier } and press plus, minus or 0.
+textSize-help = Makes everything in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers the size on this device. You can also hold { $modifier } and press plus, minus or 0.
 
 textSize-key-command = Command
 
@@ -1359,6 +1363,14 @@ personDetails-birthDate = Date of birth
 personDetails-birthDateRequired = Enter a date of birth or choose that it is unknown.
 
 personDetails-birthDateUnknown = I don't know this person's date of birth
+
+personDetails-birthDay = Day
+
+personDetails-birthMonth = Month
+
+personDetails-birthMonthChoose = Choose
+
+personDetails-birthYear = Year
 
 personDetails-cancel = Cancel
 
@@ -1623,6 +1635,10 @@ interface-history-event-copySaved = Readable copy saved
 
 interface-history-event-created = Vault created
 
+interface-history-event-deliveryRefusalsCleared = “Try again” chosen for unverified clinic documents
+
+interface-history-event-deliveryRefused = Clinic document not verified
+
 interface-history-event-deliveryFiled = Clinic document saved
 
 interface-history-event-deliveryReceiptSettled = Pickup receipt closed
@@ -1799,6 +1815,16 @@ portal-codeSubmit = Confirm code
 
 portal-codeSubmitted = Code sent. Waiting for your clinic to confirm this device. If it isn't confirmed within 10 minutes, ask again.
 
+portal-refusedDocuments =
+    { $count ->
+    [one] { $count } document from this clinic could not be verified. Ask the clinic to send it again.
+    *[other] { $count } documents from this clinic could not be verified. Ask the clinic to send them again.
+    }
+
+portal-tryAgain = Try again
+
+portal-tryAgainFor = Try again for { $clinic }
+
 portal-linkAnother = Link another clinic
 
 ai-summary-button = Summary
@@ -1807,9 +1833,9 @@ ai-summary-title = Summary in plain words
 
 ai-explain-title = Explain a term
 
-ai-notInstalled-title = The AI helper isn't on this computer yet
+ai-notInstalled-title = The AI helper isn't on this device yet
 
-ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this computer. In Settings, under AI helper, you can download the model or add a model file you already have.
+ai-notInstalled-body = When it's installed, it explains your documents in plain words with an AI model that runs on this device. In Settings, under AI helper, you can download the model or add a model file you already have.
 
 ai-notInstalled-openPreferences = Open AI helper settings
 
@@ -1819,7 +1845,41 @@ ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document
 
-ai-summary-partial = This summary covers only the start of the document: pages 1 to { $last }.
+ai-summary-folded = The summary is folded so the page has room.
+
+ai-summary-showWhole = Show the whole summary
+
+ai-summary-partial = This summary uses only part of the document’s text.
+
+ai-summary-tooLong =
+    { $last ->
+    [one] This document is probably too long for the AI helper to read at once. It can read about page 1 of { $total }.
+   *[other] This document is probably too long for the AI helper to read at once. It can read about pages 1 to { $last } of { $total }.
+    }
+
+ai-summary-tooLongWithLast =
+    { $last ->
+    [one] This document is probably too long for the AI helper to read at once. It can read about page 1 and the last page, page { $tail }, of { $total }.
+   *[other] This document is probably too long for the AI helper to read at once. It can read about pages 1 to { $last } and the last page, page { $tail }, of { $total }.
+    }
+
+ai-summary-tooLongStart = This document is probably too long for the AI helper to read at once. It can read only about the start of page 1.
+
+ai-summary-tooLongAfter = If it cannot read all of it, the summary will say so.
+
+ai-summary-readPages =
+    { $last ->
+    [one] Summarize page 1
+   *[other] Summarize pages 1 to { $last }
+    }
+
+ai-summary-readPagesAndLast =
+    { $last ->
+    [one] Summarize page 1 and page { $tail }
+   *[other] Summarize pages 1 to { $last } and page { $tail }
+    }
+
+ai-summary-readStart = Summarize the start of page 1
 
 ai-summary-noText = myCarlos could not read any text in this document, so it can't summarize it. It may be a scan.
 
@@ -1831,15 +1891,21 @@ ai-explain-submit = Explain
 
 ai-preferences-title = AI helper
 
-ai-preferences-body = Explains your documents in plain words with an AI model that runs on this computer. Download one of the models below, or add a matching file you already have. Models stay on this computer.
+ai-preferences-body = Explains your documents in plain words with an AI model that runs on this device. Download one of the models below, or add a matching file you already have. Models stay on this device.
 
 ai-preferences-notInstalled = Not installed
 
-ai-settings-subtitle = How the AI helper works on this computer
+ai-settings-subtitle = How the AI helper works on this device
 
 ai-model-add = Add a model file…
 
 ai-model-accepted = { $name }, { $size } MB. Licence: { $licence }.
+
+ai-model-reads =
+    { $pages ->
+    [one] Reads about { $pages } page at a time (about { $characters } characters of English text). Less for tables and some languages.
+   *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
+    }
 
 ai-model-where = Where to get the file
 
@@ -1855,15 +1921,15 @@ ai-model-installed = Installed: { $name }
 
 ai-model-remove = Remove the model
 
-ai-model-removeConfirm = Remove the model from this computer? You can add it again later.
+ai-model-removeConfirm = Remove the model from this device? You can add it again later.
 
 ai-model-damaged = The model file is damaged or has changed. Remove it, then add it again.
 
-ai-model-unsupportedRam = This computer does not have enough memory for the AI helper (it needs about 8 GB).
+ai-model-unsupportedRam = This device does not have enough memory for the AI helper (it needs about 8 GB).
 
-ai-model-unsupportedCpu = This computer’s processor is not supported by the AI helper.
+ai-model-unsupportedCpu = This device’s processor is not supported by the AI helper.
 
-ai-model-unsupportedPlatform = The AI helper is not available on this kind of computer yet.
+ai-model-unsupportedPlatform = The AI helper is not available on this kind of device yet.
 
 ai-model-refusedList = This is not a file myCarlos accepts. Choose one of the model files listed above.
 
@@ -1871,9 +1937,9 @@ ai-model-refusedHash = This is not the file we expect. Download it again and add
 
 ai-model-refusedIncomplete = The file could not be read completely. Check that it finished downloading, then try again.
 
-ai-model-refusedDisk = There is not enough free space on this computer. The model needs about 4 GB.
+ai-model-refusedDisk = There is not enough free space on this device. The model needs about 4 GB.
 
-ai-model-refusedStorage = The model could not be saved on this computer.
+ai-model-refusedStorage = The model could not be saved on this device.
 
 ai-model-refusedBusy = The AI helper is working. Try again when it has finished.
 
@@ -1917,16 +1983,41 @@ ai-error-memory = There isn't enough free memory for the AI helper right now. Cl
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 
-ai-error-storage = The AI helper's model could not be read from this computer. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.
+ai-error-storage = The AI helper's model could not be read from this device. Try again. If it keeps happening, remove the model in Settings, under AI helper, and add it again.
 
 ai-summary-pagesMissing = Some pages could not be read in full, so this summary may leave parts out.
 
 ai-summary-noSource = No source found
+
+ai-summary-englishOnly = For now, summaries are written in English. myCarlos checks numbers and “when to get help” rules only in English, so check those in the document itself.
+
+## PROVISIONAL: English wording for Ben's approval (summary progress, 18 Nov).
+
+ai-summary-progress-before = This can take a few minutes. You can keep reading the letter.
+
+ai-summary-progress-reading = Reading the letter…
+
+ai-summary-progress-writing = Writing the summary…
+
+ai-summary-progress-checking = Checking the summary…
+
+# Translators: the time is rounded up, so "0" (less than a minute) and 2 or more
+# are what the app says; "About 1 minute" is kept only for languages whose plural
+# rules need the singular form.
+ai-summary-progress-estimate =
+    { $minutes ->
+        [0] Less than a minute left
+        [one] About { $minutes } minute left
+       *[other] About { $minutes } minutes left
+    }
+
+ai-summary-progress-slower = This is taking longer than expected.
+
 aiHelper-notice-title = About the AI helper
 
-aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
+aiHelper-notice-introShare = myCarlos can prepare a document's text for an AI service you choose. The AI helper never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this device’s internet address to the download site.
 
-aiHelper-notice-intro = The AI helper explains a document in plain words, here on this device, and can prepare a document's text for an AI service you choose. It never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this computer’s internet address to the download site.
+aiHelper-notice-intro = The AI helper explains a document in plain words, here on this device, and can prepare a document's text for an AI service you choose. It never sends your documents, or anything about you, over the internet. The only thing it fetches is its model file, and only if you choose to download it. Fetching it shows this device’s internet address to the download site.
 
 aiHelper-notice-testBuild = This development build is for synthetic (made-up) files only. Do not use it with real health information.
 
@@ -2137,7 +2228,7 @@ ai-keepFull = This document already keeps the most AI answers it can. New answer
 
 # Catalog model list (#276A).
 
-ai-models-title = Models on this computer
+ai-models-title = Models on this device
 
 ai-models-group = Model in use
 
@@ -2169,3 +2260,12 @@ ai-models-starting = Starting the download…
 ai-models-picking = Choose a model file to add.
 
 ai-models-changed = Model in use changed
+
+ai-summaryTooLarge = The complete summary is too large. No new summary was saved.
+
+personDetails-previousTitle = Previous full names
+personDetails-previousHelp = Up to 16 previous full names help find identifying details. A changed name is suggested here; remove it before saving if you do not want to keep it. Removing a saved name only removes this list entry; other records and backups may retain it.
+personDetails-previousEntry = Previous full name { $number }
+personDetails-previousRemove = Remove previous full name { $number }
+personDetails-previousAdd = Add previous full name
+personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
