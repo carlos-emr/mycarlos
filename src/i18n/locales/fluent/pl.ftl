@@ -2236,6 +2236,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = inna forma { $n }
 
 interface-AnonymizePreview-pasteTitle = Przywróć dane
 
