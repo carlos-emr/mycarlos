@@ -1886,7 +1886,7 @@ export async function fakeCalls(
     .map((call) => call.args);
 }
 
-/** The FAKE files the next "Choose files to import" picker chooses. */
+/** The FAKE files the next import picker (the library's "New") chooses. */
 export async function fakePickFiles(page: Page, names: string[]) {
   await page.evaluate(
     (names) =>
