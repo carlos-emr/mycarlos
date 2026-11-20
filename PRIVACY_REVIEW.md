@@ -462,6 +462,16 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
 
+### Reading a stored PDF on Android (#358)
+
+On Android the document is read in a separate native window. The letter is decrypted only into the
+app's memory and an anonymous in-memory file that no other app can open; nothing is written to the
+app's storage or to shared storage. Screenshots and the recent-apps picture are allowed, as everywhere
+else in the app (owner decision, 20 Nov 2026: the patient's choice). Android's backup is
+already off. The reader closes when the app goes to the background, when the vault locks, and when
+the person closes it. Pages are shown as pictures, so a screen reader cannot read the letter's text
+there; this is a stated gap, not a privacy trade.
+
 ## 11. The AI helper (#72)
 
 The text export (part B) is built on main (#171) and works on computers only; it is hidden on

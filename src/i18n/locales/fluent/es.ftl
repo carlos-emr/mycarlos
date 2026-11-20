@@ -2311,3 +2311,23 @@ personDetails-previousEntry = Nombre completo anterior { $number }
 personDetails-previousRemove = Quitar nombre completo anterior { $number }
 personDetails-previousAdd = Añadir nombre completo anterior
 personDetails-previousInvalid = Use hasta 16 nombres distintos y no vacíos, de hasta 120 caracteres cada uno, sin caracteres de control.
+
+reader-android-opening = Abriendo el documento…
+
+reader-android-failed = myCarlos no pudo mostrar este documento. Guarde una copia para leerlo en otra aplicación.
+
+reader-android-tooLarge = Este PDF pesa más de 20 MB. Guarde una copia para leerlo en otra aplicación.
+
+reader-android-unavailable = Este dispositivo no permite que myCarlos abra documentos aquí. Guarde una copia para leerlo en otra aplicación.
+
+reader-android-page = Página { $page } de { $total }, imagen de la carta
+
+reader-android-pageStatus = Página { $page } de { $total }
+
+reader-android-previous = Página anterior
+
+reader-android-next = Página siguiente
+
+reader-android-zoomIn = Acercar
+
+reader-android-zoomOut = Alejar
