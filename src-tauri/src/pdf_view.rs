@@ -286,27 +286,24 @@ fn readable_page_text(pdf: &[u8], index: u32, legacy: &str) -> String {
     positioned_page_text(pdf, index).unwrap_or_else(|| legacy.to_owned())
 }
 
-/// Whether every `q ... Q` block of a page's drawing holds no text object and every `cm` is
-/// inside such a block, and the transform keeps horizontal text horizontal (no rotation or
-/// skew). Then none of them can change how the page's text lines are read.
+/// Whether no `q ... Q` block of a page's drawing holds text, and every `cm` is inside such a
+/// block. A block with no text cannot change how any text is read, so nothing here depends on
+/// the transform; a `cm` that is not a plain scale and move is refused only to stay
+/// conservative. One pass, linear in the operations: each `q` remembers how many text
+/// operators (`BT`, `Tj`, `TJ`, `'`, `"`) came before it, and its `Q` compares.
 fn graphics_state_wraps_no_text(operations: &[lopdf::content::Operation]) -> bool {
-    let mut open: Vec<usize> = Vec::new();
-    for (at, operation) in operations.iter().enumerate() {
+    let mut text_before: Vec<usize> = Vec::new();
+    let mut text = 0usize;
+    for operation in operations {
         match operation.operator.as_str() {
-            "q" => open.push(at),
-            "Q" => {
-                let Some(start) = open.pop() else {
-                    return false;
-                };
-                if operations[start..at]
-                    .iter()
-                    .any(|inner| inner.operator == "BT")
-                {
-                    return false;
-                }
-            }
+            "BT" | "Tj" | "TJ" | "'" | "\"" => text += 1,
+            "q" => text_before.push(text),
+            "Q" => match text_before.pop() {
+                Some(before) if before == text => {}
+                _ => return false,
+            },
             "cm" => {
-                let plain = open.last().is_some()
+                let plain = !text_before.is_empty()
                     && operation.operands.len() == 6
                     && operation.operands[1].as_float().is_ok_and(|b| b == 0.0)
                     && operation.operands[2].as_float().is_ok_and(|c| c == 0.0)
@@ -319,7 +316,7 @@ fn graphics_state_wraps_no_text(operations: &[lopdf::content::Operation]) -> boo
             _ => {}
         }
     }
-    open.is_empty()
+    text_before.is_empty()
 }
 
 fn positioned_page_text(pdf: &[u8], index: u32) -> Option<String> {
@@ -1120,6 +1117,33 @@ mod tests {
                 "{operators}"
             );
         }
+    }
+
+    #[test]
+    fn deeply_nested_graphics_state_is_checked_in_linear_time() {
+        // A hostile page: 300,000 nested q ... Q around a form object, then text. The check must
+        // finish at once, not rescan the block at every Q.
+        let depth = 300_000;
+        let operators = format!(
+            "{}/Fm0 Do {}BT /F1 11 Tf 72 740 Td (Range) Tj 0 -24 Td (The patient) Tj ET",
+            "q ".repeat(depth),
+            "Q ".repeat(depth)
+        );
+        let content = lopdf::content::Content::decode(operators.as_bytes()).unwrap();
+        let started = std::time::Instant::now();
+        assert!(graphics_state_wraps_no_text(&content.operations));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        // Text inside the innermost block is still refused, at any depth.
+        let around = format!(
+            "{}BT /F1 11 Tf (A) Tj ET {}",
+            "q ".repeat(depth),
+            "Q ".repeat(depth)
+        );
+        let content = lopdf::content::Content::decode(around.as_bytes()).unwrap();
+        assert!(!graphics_state_wraps_no_text(&content.operations));
+        // A show operator without its own BT counts as text too.
+        let content = lopdf::content::Content::decode(b"q (A) Tj Q").unwrap();
+        assert!(!graphics_state_wraps_no_text(&content.operations));
     }
 
     #[test]
