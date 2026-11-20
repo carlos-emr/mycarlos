@@ -1919,7 +1919,7 @@ aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skons
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Pokaż w dokumencie
+ai-summary-showInDocument = Pokaż mi w dokumencie
 
 ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
 
@@ -2256,6 +2256,145 @@ interface-AnonymizePreview-pasteFlaggedSr = (sprawdź z oryginałem)
 interface-AnonymizePreview-possibleNames = Słowa, które mogą być nazwiskami
 
 interface-AnonymizePreview-removeWord = Usuń „{ $word }”
+
+interface-AnonymizePreview-removedSummary = Usunięto: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Jeszcze nic nie usunięto.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } imię i nazwisko
+    [few] { $count } imiona i nazwiska
+    [many] { $count } imion i nazwisk
+   *[other] { $count } imienia i nazwiska
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } lekarz
+    [few] { $count } lekarze
+    [many] { $count } lekarzy
+   *[other] { $count } lekarza
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } przychodnia
+    [few] { $count } przychodnie
+    [many] { $count } przychodni
+   *[other] { $count } przychodni
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numer karty zdrowia
+    [few] { $count } numery kart zdrowia
+    [many] { $count } numerów kart zdrowia
+   *[other] { $count } numeru karty zdrowia
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numer dokumentacji
+    [few] { $count } numery dokumentacji
+    [many] { $count } numerów dokumentacji
+   *[other] { $count } numeru dokumentacji
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numer ubezpieczenia społecznego
+    [few] { $count } numery ubezpieczenia społecznego
+    [many] { $count } numerów ubezpieczenia społecznego
+   *[other] { $count } numeru ubezpieczenia społecznego
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } data urodzenia
+    [few] { $count } daty urodzenia
+    [many] { $count } dat urodzenia
+   *[other] { $count } daty urodzenia
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } wiek
+    [few] { $count } wieki
+    [many] { $count } wieków
+   *[other] { $count } wieku
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adres
+    [few] { $count } adresy
+    [many] { $count } adresów
+   *[other] { $count } adresu
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } kod pocztowy
+    [few] { $count } kody pocztowe
+    [many] { $count } kodów pocztowych
+   *[other] { $count } kodu pocztowego
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numer telefonu
+    [few] { $count } numery telefonów
+    [many] { $count } numerów telefonów
+   *[other] { $count } numeru telefonu
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adres e-mail
+    [few] { $count } adresy e-mail
+    [many] { $count } adresów e-mail
+   *[other] { $count } adresu e-mail
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adres strony internetowej
+    [few] { $count } adresy stron internetowych
+    [many] { $count } adresów stron internetowych
+   *[other] { $count } adresu strony internetowej
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } niejednoznaczna data
+    [few] { $count } niejednoznaczne daty
+    [many] { $count } niejednoznacznych dat
+   *[other] { $count } niejednoznacznej daty
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } usunięte przez Ciebie
+    [few] { $count } usunięte przez Ciebie
+    [many] { $count } usunięte przez Ciebie
+   *[other] { $count } usunięte przez Ciebie
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } data zastąpiona
+    [few] { $count } daty zastąpione
+    [many] { $count } dat zastąpionych
+   *[other] { $count } daty zastąpionej
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } słowo do sprawdzenia
+    [few] { $count } słowa do sprawdzenia
+    [many] { $count } słów do sprawdzenia
+   *[other] { $count } słowa do sprawdzenia
+}
+
+interface-AnonymizePreview-toCheckHelp = Podświetlone są słowa pisane wielką literą w środku zdania oraz liczby co najmniej trzycyfrowe: mogą kogoś identyfikować. Wybierz jedno, a potem Usuń.
+
+interface-AnonymizePreview-checkPicked = „{ $word }” może kogoś identyfikować.
+
+interface-AnonymizePreview-savedFileNote = Zapisany plik nie jest chroniony przez myCarlos. Nie ma w nim imion i nazwisk, ale zawiera dane medyczne. Usuń go, gdy skończysz.
+
+interface-AnonymizePreview-pasteWhereNote = To, gdzie to wkleisz, decyduje o tym, co zostanie zachowane: usługa czatu może to przechowywać lub się na tym uczyć, zależnie od ustawień Twojego konta.
+
+interface-AnonymizePreview-copy = Kopiuj tekst
+
+interface-AnonymizePreview-copied = Tekst został skopiowany.
+
+interface-AnonymizePreview-copyFailed = Nie udało się skopiować tekstu.
+
+interface-AnonymizePreview-copyWarning = Skopiowany tekst może pozostać na tym urządzeniu: historia schowka w systemie Windows i synchronizacja schowka między urządzeniami mogą zachować jego kopię.
 
 interface-AnonymizePreview-removeSelected = Usuń zaznaczony tekst
 

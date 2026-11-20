@@ -1843,7 +1843,7 @@ aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Show in document
+ai-summary-showInDocument = Show me in the document
 
 ai-summary-folded = The summary is folded so the page has room.
 
@@ -2175,6 +2175,111 @@ interface-AnonymizePreview-pasteFlaggedSr = (check against the original)
 interface-AnonymizePreview-possibleNames = Words that may be names
 
 interface-AnonymizePreview-removeWord = Remove “{ $word }”
+
+interface-AnonymizePreview-removedSummary = Removed: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } name
+   *[other] { $count } names
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } doctor
+   *[other] { $count } doctors
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinic
+   *[other] { $count } clinics
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } health card number
+   *[other] { $count } health card numbers
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } record number
+   *[other] { $count } record numbers
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } social insurance number
+   *[other] { $count } social insurance numbers
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date of birth
+   *[other] { $count } dates of birth
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } age
+   *[other] { $count } ages
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } address
+   *[other] { $count } addresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } postal code
+   *[other] { $count } postal codes
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } phone number
+   *[other] { $count } phone numbers
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } email address
+   *[other] { $count } email addresses
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } web address
+   *[other] { $count } web addresses
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } unclear date
+   *[other] { $count } unclear dates
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removed by you
+   *[other] { $count } removed by you
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date replaced
+   *[other] { $count } dates replaced
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } word to check
+   *[other] { $count } words to check
+}
+
+interface-AnonymizePreview-toCheckHelp = Words that start with a capital letter inside a sentence, and numbers with three or more digits, are highlighted: they may identify someone. Select one, then choose Remove.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” may identify someone.
+
+interface-AnonymizePreview-savedFileNote = The saved file is not protected by myCarlos. It has no names, but it holds the medical details. Delete it when you are done.
+
+interface-AnonymizePreview-pasteWhereNote = Where you paste this decides what is kept: a chat service may keep it or learn from it, depending on your account settings.
+
+interface-AnonymizePreview-copy = Copy text
+
+interface-AnonymizePreview-copied = The text was copied.
+
+interface-AnonymizePreview-copyFailed = The text could not be copied.
+
+interface-AnonymizePreview-copyWarning = Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.
 
 interface-AnonymizePreview-removeSelected = Remove the selected text
 

@@ -1691,7 +1691,7 @@ aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認�
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = 在文件中顯示
+ai-summary-showInDocument = 在文件中指給我看
 
 ai-summary-folded = 摘要已收合，以便為頁面留出空間。
 
@@ -2008,6 +2008,60 @@ interface-AnonymizePreview-pasteFlaggedSr = （請與原文核對）
 interface-AnonymizePreview-possibleNames = 可能是姓名的詞
 
 interface-AnonymizePreview-removeWord = 移除「{ $word }」
+
+interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
+
+interface-AnonymizePreview-removedSummaryNone = 尚未移除任何內容。
+
+interface-AnonymizePreview-removedCount-name = { $count } 個姓名
+
+interface-AnonymizePreview-removedCount-doctor = { $count } 位醫生
+
+interface-AnonymizePreview-removedCount-clinic = { $count } 家診所
+
+interface-AnonymizePreview-removedCount-healthCard = { $count } 個健保卡號
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count } 個病歷號
+
+interface-AnonymizePreview-removedCount-sin = { $count } 個社會保險號
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count } 個出生日期
+
+interface-AnonymizePreview-removedCount-age = { $count } 個年齡
+
+interface-AnonymizePreview-removedCount-address = { $count } 個地址
+
+interface-AnonymizePreview-removedCount-postalCode = { $count } 個郵遞區號
+
+interface-AnonymizePreview-removedCount-phone = { $count } 個電話號碼
+
+interface-AnonymizePreview-removedCount-email = { $count } 個電子郵件地址
+
+interface-AnonymizePreview-removedCount-web = { $count } 個網址
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count } 個不明確的日期
+
+interface-AnonymizePreview-removedCount-manual = { $count } 項由您移除的內容
+
+interface-AnonymizePreview-removedCount-date = { $count } 個已替換的日期
+
+interface-AnonymizePreview-toCheck = { $count } 個詞需要檢查
+
+interface-AnonymizePreview-toCheckHelp = 句子中間以大寫字母開頭的詞，以及三位或更多位的數字會被醒目標示：它們可能識別出某個人。請選擇其一，然後選擇「移除」。
+
+interface-AnonymizePreview-checkPicked = 「{ $word }」可能識別出某個人。
+
+interface-AnonymizePreview-savedFileNote = 儲存的檔案不受 myCarlos 保護。其中沒有姓名，但包含醫療詳情。用完後請將其刪除。
+
+interface-AnonymizePreview-pasteWhereNote = 您把它貼到哪裡，決定了什麼會被保留：聊天服務可能會保存它，或依您的帳戶設定從中學習。
+
+interface-AnonymizePreview-copy = 複製文字
+
+interface-AnonymizePreview-copied = 文字已複製。
+
+interface-AnonymizePreview-copyFailed = 無法複製文字。
+
+interface-AnonymizePreview-copyWarning = 複製的文字可能會留在此裝置上：Windows 剪貼簿歷程記錄和裝置之間的剪貼簿同步可能會保留一份複本。
 
 interface-AnonymizePreview-removeSelected = 移除選取的文字
 

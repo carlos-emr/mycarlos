@@ -17,6 +17,8 @@ import {
   type FormEvent,
 } from "react";
 import { useModalFocus } from "../useModalFocus";
+import { useMediaMatch } from "./smallWindow";
+import { removalCounts, wordsToCheck } from "./anonymizeReview";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   hasVaultErrorCode,
@@ -111,6 +113,9 @@ function placeholderLanguages(text: string): {
   };
 }
 
+/** Narrower than this, Close stays in the header (the same 40em as the reader
+ * header's phone layout in styles.css). */
+const NARROW_DIALOG = "(max-width: 40em)";
 const pageList = (pages: number[]) =>
   pages.map((page) => String(page + 1)).join(", ");
 
@@ -167,6 +172,10 @@ export function AnonymizePreview({
   const [notice, setNotice] = useTextState();
   const [phrase, setPhrase] = useState("");
   const [confirming, setConfirming] = useState(false);
+  // A highlighted word the patient selected, to offer "Remove" for it.
+  const [picked, setPicked] = useState<{ start: number; word: string } | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [ticket, setTicket] = useState<string | null>(null);
   // After a save: the AI's answer pasted back, and what it came to. The list
@@ -183,6 +192,10 @@ export function AnonymizePreview({
     onClose();
   }, [cancelRead, onClose]);
   useModalFocus(true, dialogRef, close, closeRef);
+  // Close is at the bottom right of the dialog, last in its action row, on a
+  // wide window; on a narrow one it stays in the header, where it is within
+  // reach without scrolling (the header's own phone layout, 40em).
+  const closeAtBottom = !useMediaMatch(NARROW_DIALOG);
 
   const read = useCallback(
     async (password?: string) => {
@@ -364,6 +377,40 @@ export function AnonymizePreview({
     setNotice("");
   };
 
+  /** Exactly what Save would write: the fixed first line, a blank line, the text, the line that
+   * says where a long document was cut (when it was), and a last newline. This is the rule of the
+   * native save (`vault_export_text_picked`); the isolation marks Fluent puts round a number are
+   * not part of it. */
+  const fileText = () => {
+    const plain = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
+    let content = `${plain(exportHeader)}\n\n${current?.toSend ?? ""}`;
+    if (text && text.truncated && text.pages.length > 0)
+      content += `\n\n${plain(
+        translateNow("aiHelper.exportCut", {
+          page: text.pages[text.pages.length - 1].index + 1,
+        }),
+      )}`;
+    return `${content}\n`;
+  };
+
+  /** Copies the same text, for a person who pastes it into an AI by hand. The clipboard is the web
+   * one: the app has no clipboard plugin and gains no permission for this. */
+  const copyText = async () => {
+    if (!current) return;
+    try {
+      await navigator.clipboard.writeText(fileText());
+      setNotice(
+        deferredText(() => translateNow("interface.AnonymizePreview.copied")),
+      );
+    } catch {
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.AnonymizePreview.copyFailed"),
+        ),
+      );
+    }
+  };
+
   const putDetailsBack = () => {
     if (!current) return;
     const result = restoreChecked(pasted, current);
@@ -420,8 +467,12 @@ export function AnonymizePreview({
   };
 
   /** The shown text as runs: plain text, and each removal as a mark. */
-  const runs: { start: number; text: string; kind?: RemovedKind | "date" }[] =
-    [];
+  const runs: {
+    start: number;
+    text: string;
+    kind?: RemovedKind | "date";
+    check?: boolean;
+  }[] = [];
   if (current) {
     let at = 0;
     for (const part of current.onDevice.removed) {
@@ -441,8 +492,74 @@ export function AnonymizePreview({
       runs.push({ start: at, text: current.toSend.slice(at) });
   }
   const possibleNames = current?.onDevice.possibleNames ?? [];
+  // Capitalised words and long numbers still in the text: highlighted for the patient to look
+  // at, never removed by themselves.
+  const checks = current
+    ? wordsToCheck(current.toSend, current.onDevice.removed, possibleNames)
+    : [];
+  const pickedCheck = picked
+    ? (checks.find(
+        (found) => found.start === picked.start && found.word === picked.word,
+      ) ?? null)
+    : null;
+  // The plain runs, cut where a word to check stands.
+  const shownRuns = runs.flatMap((run) => {
+    if (run.kind || !current) return [run];
+    const pieces: typeof runs = [];
+    const end = run.start + run.text.length;
+    let at = run.start;
+    for (const found of checks) {
+      if (found.start < at || found.end > end) continue;
+      if (found.start > at)
+        pieces.push({
+          start: at,
+          text: current.toSend.slice(at, found.start),
+        });
+      pieces.push({
+        start: found.start,
+        text: current.toSend.slice(found.start, found.end),
+        check: true,
+      });
+      at = found.end;
+    }
+    if (at < end)
+      pieces.push({ start: at, text: current.toSend.slice(at, end) });
+    return pieces;
+  });
+  // What has been taken out so far, by kind: from the result itself, so it follows each
+  // removal the patient makes and each undo.
+  const removalSummary = (() => {
+    if (!current) return "";
+    const counts = removalCounts(current.onDevice.removed);
+    if (counts.length === 0)
+      return translateNow("interface.AnonymizePreview.removedSummaryNone");
+    // Each kind says its own count with the language's plural forms: "1 name, 2 phone numbers".
+    const items = counts.map(({ kind, count }) =>
+      translateNow(
+        `interface.AnonymizePreview.removedCount.${kind}` as MessageKey,
+        { count },
+      ),
+    );
+    let list = items.join(", ");
+    try {
+      list = new Intl.ListFormat(getLocale(), { type: "unit" }).format(items);
+    } catch {
+      // An older engine: a plain comma list.
+    }
+    return translateNow("interface.AnonymizePreview.removedSummary", { list });
+  })();
   const busy = !current || saving;
 
+  const closeButton = (
+    <button
+      ref={closeRef}
+      className="button native-anonymize-close"
+      type="button"
+      onClick={close}
+    >
+      {translateNow("interface.AnonymizePreview.close")}
+    </button>
+  );
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -460,17 +577,11 @@ export function AnonymizePreview({
             </h2>
             <p>{record.displayName}</p>
           </div>
-          <button
-            ref={closeRef}
-            className="button"
-            type="button"
-            onClick={close}
-          >
-            {translateNow("interface.AnonymizePreview.close")}
-          </button>
+          {!closeAtBottom && closeButton}
         </header>
         <div className="native-anonymize-notes">
-          <p id="anonymize-how">
+          {/* "Removing details is never perfect": kept prominent, as the first thing read. */}
+          <p id="anonymize-how" className="native-anonymize-warning">
             {translateNow("aiHelper.notice.limitsBody")}{" "}
             {translateNow("interface.AnonymizePreview.howMarked")}
           </p>
@@ -551,6 +662,7 @@ export function AnonymizePreview({
         )}
         {current && (
           <>
+            <p className="native-anonymize-summary">{removalSummary}</p>
             <p className="native-anonymize-header">
               <span>
                 {translateNow("interface.AnonymizePreview.headerNote")}
@@ -564,8 +676,32 @@ export function AnonymizePreview({
               role="region"
               aria-label={translateNow("interface.AnonymizePreview.textRegion")}
             >
-              {runs.map((run) =>
-                run.kind ? (
+              {shownRuns.map((run) =>
+                run.check ? (
+                  // A decorated span, like any other plain text: the words, their offsets
+                  // (`data-start`) and the saved file are the same with or without the flag.
+                  // A screen reader is given the count below, not a stop at each word; a click
+                  // offers Remove (keyboard: the list below the text).
+                  <span
+                    key={run.start}
+                    data-start={run.start}
+                    data-check=""
+                    className={
+                      picked?.start === run.start
+                        ? "native-anonymize-check native-anonymize-check-picked"
+                        : "native-anonymize-check"
+                    }
+                    onClick={() =>
+                      setPicked((now) =>
+                        now?.start === run.start
+                          ? null
+                          : { start: run.start, word: run.text },
+                      )
+                    }
+                  >
+                    {run.text}
+                  </span>
+                ) : run.kind ? (
                   <mark
                     key={run.start}
                     data-start={run.start}
@@ -604,6 +740,54 @@ export function AnonymizePreview({
                 </span>
               </p>
             )}
+            {checks.length > 0 && (
+              <details className="native-anonymize-checks">
+                <summary>
+                  {translateNow("interface.AnonymizePreview.toCheck", {
+                    count: checks.length,
+                  })}
+                </summary>
+                <p>{translateNow("interface.AnonymizePreview.toCheckHelp")}</p>
+                <ul>
+                  {checks.map((found) => (
+                    <li key={found.start}>
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => remove(found.start, found.end)}
+                      >
+                        {translateNow("interface.AnonymizePreview.removeWord", {
+                          word: found.word,
+                        })}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {pickedCheck && (
+              <p className="native-anonymize-picked">
+                <span>
+                  {translateNow("interface.AnonymizePreview.checkPicked", {
+                    word: pickedCheck.word,
+                  })}
+                </span>{" "}
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    remove(pickedCheck.start, pickedCheck.end);
+                    setPicked(null);
+                  }}
+                >
+                  {translateNow("interface.AnonymizePreview.removeWord", {
+                    word: pickedCheck.word,
+                  })}
+                </button>
+              </p>
+            )}
             {possibleNames.length > 0 && (
               <div className="native-anonymize-possible">
                 <h3>
@@ -630,43 +814,56 @@ export function AnonymizePreview({
               </div>
             )}
             <form className="native-anonymize-tools" onSubmit={removePhrase}>
-              <button
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={removeSelected}
-              >
-                {translateNow("interface.AnonymizePreview.removeSelected")}
-              </button>
-              <label htmlFor="anonymize-phrase">
-                {translateNow("interface.AnonymizePreview.phrase")}
-              </label>
-              <input
-                id="anonymize-phrase"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={phrase}
-                disabled={busy}
-                onChange={(event) => setPhrase(event.target.value)}
-              />
-              <button className="button" disabled={busy || !phrase.trim()}>
-                {translateNow("interface.AnonymizePreview.removePhrase")}
-              </button>
-              <button
-                className="button"
-                type="button"
-                disabled={busy || history.length < 2}
-                onClick={undo}
-              >
-                {translateNow("interface.AnonymizePreview.undo")}
-              </button>
+              {/* Two groups, each with its own row: what is selected, and a word or phrase to
+                  remove everywhere (its label above its field, its buttons below). */}
+              <div className="native-anonymize-tool-row">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={removeSelected}
+                >
+                  {translateNow("interface.AnonymizePreview.removeSelected")}
+                </button>
+              </div>
+              <div className="native-anonymize-phrase">
+                <label htmlFor="anonymize-phrase">
+                  {translateNow("interface.AnonymizePreview.phrase")}
+                </label>
+                <input
+                  id="anonymize-phrase"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={phrase}
+                  disabled={busy}
+                  onChange={(event) => setPhrase(event.target.value)}
+                />
+                <div className="native-anonymize-tool-row">
+                  <button className="button" disabled={busy || !phrase.trim()}>
+                    {translateNow("interface.AnonymizePreview.removePhrase")}
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy || history.length < 2}
+                    onClick={undo}
+                  >
+                    {translateNow("interface.AnonymizePreview.undo")}
+                  </button>
+                </div>
+              </div>
             </form>
             {notice && (
               <p className="native-dialog-status" role="status">
                 {notice}
               </p>
             )}
+            <div className="native-anonymize-advice">
+              <p>{translateNow("interface.AnonymizePreview.pasteWhereNote")}</p>
+              <p>{translateNow("interface.AnonymizePreview.savedFileNote")}</p>
+              <p>{translateNow("interface.AnonymizePreview.copyWarning")}</p>
+            </div>
             <footer className="native-dialog-actions">
               <button
                 className="button primary"
@@ -676,6 +873,15 @@ export function AnonymizePreview({
               >
                 {translateNow("interface.AnonymizePreview.save")}
               </button>
+              <button
+                className="button"
+                type="button"
+                disabled={busy}
+                onClick={() => void copyText()}
+              >
+                {translateNow("interface.AnonymizePreview.copy")}
+              </button>
+              {closeAtBottom && closeButton}
             </footer>
             {saved && (
               <section
@@ -757,6 +963,11 @@ export function AnonymizePreview({
               </section>
             )}
           </>
+        )}
+        {/* Before the text is shown (reading, a password, an error) there is no
+            Save: Close still has its row. */}
+        {!current && closeAtBottom && (
+          <footer className="native-dialog-actions">{closeButton}</footer>
         )}
       </section>
       {confirming && (

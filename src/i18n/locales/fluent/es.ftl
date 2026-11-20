@@ -1879,7 +1879,7 @@ aiHelper-resultLabel = Escrito por IA; puede contener errores. Consulte con su m
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Ver en el documento
+ai-summary-showInDocument = Mostrarme en el documento
 
 ai-summary-folded = El resumen está plegado para dejar espacio a la página.
 
@@ -2210,6 +2210,111 @@ interface-AnonymizePreview-pasteFlaggedSr = (compruébelo con el original)
 interface-AnonymizePreview-possibleNames = Palabras que podrían ser nombres
 
 interface-AnonymizePreview-removeWord = Eliminar “{ $word }”
+
+interface-AnonymizePreview-removedSummary = Eliminado: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Todavía no se ha eliminado nada.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nombre
+   *[other] { $count } nombres
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médico
+   *[other] { $count } médicos
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clínica
+   *[other] { $count } clínicas
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } número de tarjeta sanitaria
+   *[other] { $count } números de tarjeta sanitaria
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } número de expediente
+   *[other] { $count } números de expediente
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } número de seguro social
+   *[other] { $count } números de seguro social
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } fecha de nacimiento
+   *[other] { $count } fechas de nacimiento
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } edad
+   *[other] { $count } edades
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } dirección
+   *[other] { $count } direcciones
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } código postal
+   *[other] { $count } códigos postales
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } número de teléfono
+   *[other] { $count } números de teléfono
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } dirección de correo electrónico
+   *[other] { $count } direcciones de correo electrónico
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } dirección web
+   *[other] { $count } direcciones web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } fecha ambigua
+   *[other] { $count } fechas ambiguas
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } eliminado por usted
+   *[other] { $count } eliminados por usted
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } fecha sustituida
+   *[other] { $count } fechas sustituidas
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } palabra por revisar
+   *[other] { $count } palabras por revisar
+}
+
+interface-AnonymizePreview-toCheckHelp = Se resaltan las palabras que empiezan con mayúscula dentro de una frase y los números de tres o más cifras: pueden identificar a alguien. Seleccione una y elija Eliminar.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” puede identificar a alguien.
+
+interface-AnonymizePreview-savedFileNote = El archivo guardado no está protegido por myCarlos. No tiene nombres, pero contiene los detalles médicos. Elimínelo cuando termine.
+
+interface-AnonymizePreview-pasteWhereNote = El lugar donde lo pegue decide qué se conserva: un servicio de chat puede guardarlo o aprender de él, según la configuración de su cuenta.
+
+interface-AnonymizePreview-copy = Copiar el texto
+
+interface-AnonymizePreview-copied = El texto se copió.
+
+interface-AnonymizePreview-copyFailed = No se pudo copiar el texto.
+
+interface-AnonymizePreview-copyWarning = El texto copiado puede quedarse en este dispositivo: el historial del portapapeles de Windows y la sincronización del portapapeles entre dispositivos pueden conservar una copia.
 
 interface-AnonymizePreview-removeSelected = Eliminar el texto seleccionado
 

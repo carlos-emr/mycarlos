@@ -1879,7 +1879,7 @@ aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Voir dans le document
+ai-summary-showInDocument = Me montrer dans le document
 
 ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
 
@@ -2210,6 +2210,111 @@ interface-AnonymizePreview-pasteFlaggedSr = (à vérifier avec l’original)
 interface-AnonymizePreview-possibleNames = Mots qui pourraient être des noms
 
 interface-AnonymizePreview-removeWord = Retirer « { $word } »
+
+interface-AnonymizePreview-removedSummary = Retiré : { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Rien n’a encore été retiré.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nom
+   *[other] { $count } noms
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médecin
+   *[other] { $count } médecins
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinique
+   *[other] { $count } cliniques
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numéro de carte santé
+   *[other] { $count } numéros de carte santé
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numéro de dossier
+   *[other] { $count } numéros de dossier
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numéro d'assurance sociale
+   *[other] { $count } numéros d'assurance sociale
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date de naissance
+   *[other] { $count } dates de naissance
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } âge
+   *[other] { $count } âges
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adresse
+   *[other] { $count } adresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } code postal
+   *[other] { $count } codes postaux
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numéro de téléphone
+   *[other] { $count } numéros de téléphone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adresse courriel
+   *[other] { $count } adresses courriel
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adresse web
+   *[other] { $count } adresses web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } date ambiguë
+   *[other] { $count } dates ambiguës
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } retiré par vous
+   *[other] { $count } retirés par vous
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date remplacée
+   *[other] { $count } dates remplacées
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } mot à vérifier
+   *[other] { $count } mots à vérifier
+}
+
+interface-AnonymizePreview-toCheckHelp = Les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus sont surlignés : ils peuvent identifier quelqu’un. Sélectionnez-en un, puis choisissez Retirer.
+
+interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
+
+interface-AnonymizePreview-savedFileNote = Le fichier enregistré n’est pas protégé par myCarlos. Il ne contient aucun nom, mais il contient les détails médicaux. Supprimez-le lorsque vous avez terminé.
+
+interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez décide de ce qui est conservé : un service de clavardage peut le garder ou s’en servir pour apprendre, selon les paramètres de votre compte.
+
+interface-AnonymizePreview-copy = Copier le texte
+
+interface-AnonymizePreview-copied = Le texte a été copié.
+
+interface-AnonymizePreview-copyFailed = Le texte n’a pas pu être copié.
+
+interface-AnonymizePreview-copyWarning = Le texte copié peut rester sur cet appareil : l’historique du presse-papiers de Windows et la synchronisation du presse-papiers entre appareils peuvent en garder une copie.
 
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 

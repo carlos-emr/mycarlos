@@ -1130,7 +1130,7 @@ p {
     mix-blend-mode: normal;
   }
 }
-/* While Show in document marks a quote, the text and the AI panel give the
+/* While Show me in the document marks a quote, the text and the AI panel give the
    picture room, so that a short or narrow window keeps the words in view in
    both places (#292). */
 /* The text box scrolls in its own region; capping the details around it only
@@ -1245,6 +1245,26 @@ p {
 .native-anonymize-notes p {
   margin: 0;
 }
+/* "Removing details is never perfect": the warning a patient must not skip. */
+.native-anonymize-notes .native-anonymize-warning {
+  padding: 8px 12px;
+  border: 1px solid var(--warning-line);
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: var(--warning-ink);
+  font-weight: 700;
+}
+/* Beside Save: where to paste, and what the saved file is. */
+.native-anonymize-advice {
+  display: grid;
+  gap: 6px;
+  padding: 8px 20px 0;
+}
+.native-anonymize-advice p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+}
 .native-anonymize-header {
   margin: 0;
   padding: 8px 20px;
@@ -1285,6 +1305,47 @@ p {
   text-decoration: underline;
   text-decoration-style: dotted;
 }
+/* A word still in the text that may identify someone ("check this"): outlined, like the flags on
+   an answer pasted back, and a pointer, since a click offers Remove. */
+.native-anonymize-text .native-anonymize-check {
+  padding: 0 2px;
+  background: transparent;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  color: inherit;
+  text-decoration: underline wavy;
+  cursor: pointer;
+}
+.native-anonymize-text .native-anonymize-check-picked {
+  background: var(--teal-soft);
+}
+.native-anonymize-checks {
+  padding: 8px 20px 0;
+}
+.native-anonymize-checks summary {
+  min-height: 44px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.native-anonymize-checks p {
+  margin: 4px 0 8px;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.native-anonymize-checks ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.native-anonymize-picked {
+  margin: 0;
+  padding: 8px 20px 0;
+  font-size: 0.875rem;
+}
 .native-anonymize-text mark.native-anonymize-flagged {
   background: transparent;
   border: 2px solid currentColor;
@@ -1324,6 +1385,14 @@ p {
 .native-anonymize-paste .native-anonymize-text {
   margin: 0;
 }
+/* What has been removed, by kind, above the text it is marked in. */
+.native-anonymize-summary {
+  margin: 0;
+  padding: 8px 20px 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
 .native-anonymize-possible {
   padding: 8px 20px 0;
 }
@@ -1340,23 +1409,29 @@ p {
   list-style: none;
 }
 .native-anonymize-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px;
+  display: grid;
+  gap: 14px;
   padding: 10px 20px;
 }
-.native-anonymize-tools label {
+/* Each group has a row of its own, its buttons side by side and wrapping. */
+.native-anonymize-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.native-anonymize-phrase {
   display: grid;
-  gap: 5px;
-  flex: 1;
-  min-width: 12em;
+  gap: 6px;
+  min-width: 0;
+}
+.native-anonymize-tools label {
   color: var(--ink-soft);
   font-size: 0.875rem;
   font-weight: 700;
 }
 .native-anonymize-tools input {
   width: 100%;
+  max-width: 36em;
   min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -1366,8 +1441,17 @@ p {
   font: inherit;
 }
 .native-anonymize .native-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
   padding: 10px 20px 16px;
+}
+/* On a wide window Close is the last button of the action row, at its end
+   edge (bottom right; bottom left in a right-to-left language), 44px tall
+   like Save. */
+.native-anonymize .native-dialog-actions .button {
+  min-height: 44px;
 }
 
 .filelist {
