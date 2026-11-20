@@ -816,3 +816,12 @@ summary:
 Your FAKEDRUG tablets after the infusion are the usual ones. ||
 expect:
 Your FAKEDRUG tablets after the infusion are the usual ones.
+===
+name: an_until_date_carries_a_then_stop
+pages:
+Plan
+FAKEDRUG 875 mg by mouth twice daily until 31 October 2026, then stop.
+summary:
+You must take FAKEDRUG 875 mg by mouth twice daily until 31 October 2026. ||
+expect:
+You must take FAKEDRUG 875 mg by mouth twice daily until 31 October 2026.

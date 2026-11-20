@@ -869,7 +869,9 @@ fn directions_of(text: &str) -> Vec<Direction> {
     };
     for (i, (word, ..)) in toks.iter().enumerate() {
         let word = word.as_str();
-        let direction = if ["stop", "stops", "stopped", "stopping"].contains(&word) {
+        // "until <date>" ends a course: "take X until 31 October" says when to stop.
+        let direction = if ["stop", "stops", "stopped", "stopping", "until", "till"].contains(&word)
+        {
             Direction::Stop
         } else if ["keep", "keeps", "continue", "continues", "resume"].contains(&word) {
             Direction::Keep
@@ -2425,7 +2427,16 @@ mod tests {
             directions_of("Your ramipril was reviewed."),
             Vec::<Direction>::new()
         );
+        assert_eq!(
+            directions_of("Take it twice daily until 31 October."),
+            vec![Direction::Stop]
+        );
         let both = directions_of("Keep taking the first and stop taking the second.");
         assert!(both.contains(&Direction::Keep) && both.contains(&Direction::Stop));
+    }
+
+    #[test]
+    fn given_an_until_date_when_checked_then_it_carries_a_then_stop() {
+        check_case("an_until_date_carries_a_then_stop");
     }
 }
