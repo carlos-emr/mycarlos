@@ -34,9 +34,9 @@ grep -F "$package" "$RUNNER_TEMP/notice-list" | grep -F 'mycarlos-ready'
 adb shell cmd statusbar expand-notifications
 sleep 1
 adb exec-out screencap -p > push-download/test-notice.png
-adb shell uiautomator dump /sdcard/notice-test.xml >/dev/null
-adb shell cat /sdcard/notice-test.xml > "$RUNNER_TEMP/notice-panel.xml"
-grep -Fq 'A new document is available in myCarlos.' "$RUNNER_TEMP/notice-panel.xml"
+# Check the OS notification record itself, including text System UI may truncate.
+adb shell dumpsys notification --noredact > "$RUNNER_TEMP/notice-record"
+grep -Fq 'A new document is available in myCarlos.' "$RUNNER_TEMP/notice-record"
 adb shell cmd statusbar collapse
 adb shell pm revoke "$package" android.permission.POST_NOTIFICATIONS
 adb shell cmd notification list > "$RUNNER_TEMP/notice-list"
