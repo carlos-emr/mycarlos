@@ -673,7 +673,7 @@ library-folder-items =
 
 library-folder-label = Dossier { $name }
 
-library-folder-open = Ouvrir { $name }
+library-folder-open = { $name }, ouvrir le dossier
 
 library-folder-rename = Renommer le dossier { $name }
 
@@ -894,7 +894,7 @@ notice-created = Coffre-fort chiffré créé. Configurez une clé de récupérat
 
 notice-createdThenLocked = Votre coffre-fort a été créé, puis verrouillé avant que sa clé de récupération puisse être créée. Déverrouillez-le pour en configurer une.
 
-notice-dropRefused = Pour importer des PDF, déverrouillez votre coffre-fort et utilisez { $button }. Le glisser-déposer déplace les documents déjà dans myCarlos.
+notice-dropRefused = Pour importer des PDF, déverrouillez votre coffre-fort et utilisez « { $button } ». Le glisser-déposer déplace les documents déjà dans myCarlos.
 
 notice-eraseCancelled = Rien n’a changé : le coffre-fort n’a pas été mis de côté.
 
@@ -1943,6 +1943,13 @@ ai-model-reads =
     [many] Lit environ { $pages } de pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
    *[other] Lit environ { $pages } pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
     }
+
+ai-model-readsEstimate = C’est une estimation, jusqu’à la prochaine utilisation de ce modèle.
+ai-model-loadCheck = Vérification du fonctionnement de ce modèle sur cet ordinateur…
+ai-model-loadCheckCannotRun = Cet ordinateur n’a pas pu faire fonctionner ce modèle. Réessayez plus tard ou choisissez un autre modèle.
+ai-model-loadCheckMemory = Il n’y a pas assez de mémoire libre pour essayer ce modèle en ce moment. Fermez d’autres programmes, puis réessayez.
+ai-model-loadCheckReady = Ce modèle a démarré sur cet ordinateur.
+ai-model-loadCheckRetry = Réessayer
 
 ai-model-where = Où obtenir le fichier
 

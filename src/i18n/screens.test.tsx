@@ -286,19 +286,21 @@ describe("the person-folder sidebar in each language", () => {
       // Chinese).
       const folder = within(nav).getByRole("button", {
         name: humanText(
-          `${tr("sidebar.folderOfPerson", { folder: "FAKE Results", person: "FAKE Blake" })} 0`,
+          `${tr("sidebar.folderOfPerson", { folder: "FAKE Results", person: "FAKE Blake" })} ${tr("sidebar.documents", { count: 0 })}`,
         ),
       });
       // Pinned as written, so a catalogue change back to ASCII brackets fails.
       if (locale === "zh-CN")
         expect(visibleText(folder.getAttribute("aria-label")!)).toBe(
-          "FAKE Results（FAKE Blake） 0",
+          "FAKE Results（FAKE Blake） 0 份文档",
         );
       expect(folder).not.toHaveAttribute("draggable", "true");
       await user.click(folder);
       expect(props.onOpenFolder).toHaveBeenCalledWith("p2", "folder-p2");
       await user.click(
-        within(nav).getByRole("button", { name: "FAKE Blake 1" }),
+        within(nav).getByRole("button", {
+          name: `FAKE Blake ${tr("sidebar.documents", { count: 1 })}`,
+        }),
       );
       expect(props.onOpenPerson).toHaveBeenCalledWith("p2");
       expect(screen.getByText(tr("sidebar.settings"))).toBeVisible();
@@ -318,7 +320,9 @@ describe("the person-folder sidebar in each language", () => {
         />,
       );
       expect(
-        screen.getByRole("button", { name: `${tr("sidebar.myRecords")} 2` }),
+        screen.getByRole("button", {
+          name: `${tr("sidebar.myRecords")} ${tr("sidebar.documents", { count: 2 })}`,
+        }),
       ).toHaveAttribute("aria-current", "page");
       expect(shown.container.querySelector(".storage small")).toHaveTextContent(
         `${tr("sidebar.documents", { count: 2 })} · ${tr("sidebar.folderCount", { count: 1 })}`,
@@ -659,6 +663,11 @@ describe("the library list and grid in each language", () => {
           name: tr("library.folder.open", { name }),
         }),
       ).toHaveAccessibleDescription(tr("library.folder.items", { count: 3 }));
+      // WCAG 2.5.3: the folder's name, the words the tile shows, leads the
+      // button's name in every language (Chinese puts "，" after it).
+      expect(visibleText(tr("library.folder.open", { name }))).toMatch(
+        new RegExp(`^${name}[,，]`),
+      );
       expect(
         screen.getByRole("button", {
           name: tr("library.folder.rename", { name }),

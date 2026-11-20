@@ -983,6 +983,12 @@ export const MESSAGE_KEYS = [
   "ai.model.add",
   "ai.model.accepted",
   "ai.model.reads",
+  "ai.model.readsEstimate",
+  "ai.model.loadCheck",
+  "ai.model.loadCheckCannotRun",
+  "ai.model.loadCheckMemory",
+  "ai.model.loadCheckReady",
+  "ai.model.loadCheckRetry",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -2241,6 +2247,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.add": "ai-model-add",
   "ai.model.accepted": "ai-model-accepted",
   "ai.model.reads": "ai-model-reads",
+  "ai.model.readsEstimate": "ai-model-readsEstimate",
+  "ai.model.loadCheck": "ai-model-loadCheck",
+  "ai.model.loadCheckCannotRun": "ai-model-loadCheckCannotRun",
+  "ai.model.loadCheckMemory": "ai-model-loadCheckMemory",
+  "ai.model.loadCheckReady": "ai-model-loadCheckReady",
+  "ai.model.loadCheckRetry": "ai-model-loadCheckRetry",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
   "ai.model.copied": "ai-model-copied",
@@ -3408,6 +3420,12 @@ export interface MessageArgsByKey {
     size: FluentArgument;
   };
   "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
+  "ai.model.readsEstimate": undefined;
+  "ai.model.loadCheck": undefined;
+  "ai.model.loadCheckCannotRun": undefined;
+  "ai.model.loadCheckMemory": undefined;
+  "ai.model.loadCheckReady": undefined;
+  "ai.model.loadCheckRetry": undefined;
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
   "ai.model.copied": undefined;

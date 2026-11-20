@@ -184,16 +184,17 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   ).toBeChecked();
   await named(row, `Remove ${MODEL}`, "step 3");
 
-  // Step 5: Choose files to import → the three, Unverified, Manual import.
+  // Step 5: New (the button that imports files) → the three, Unverified,
+  // Manual import. The button shows "New" and is named by it (WCAG 2.5.3);
+  // "Choose files to import" is its description (#149; the runbook changes
+  // when this merges).
   await page
     .getByRole("button", { name: /My records/ })
     .locator("visible=true")
     .first()
     .click();
   await fakePickFiles(page, DOCUMENTS);
-  await (
-    await named(page.locator("body"), "Choose files to import", "step 5")
-  ).click();
+  await (await named(page.locator("body"), "New", "step 5")).click();
   for (const name of DOCUMENTS)
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 
