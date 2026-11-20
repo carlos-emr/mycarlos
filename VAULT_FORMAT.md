@@ -1209,7 +1209,19 @@ damaged.** The check that enforces it is the "for a saved link" test in
 is `Corrupt`). The vault has no unlink today (linking again adds a second link with a
 new id, and the old link keeps its refusals), so nothing breaks yet.
 
-A format 1–11 vault opens with no refusals and is upgraded to format 12 at its next
-writable unlock, in a commit of its own, as for every earlier format. An older
+A format 1–11 vault opens with no refusals and is upgraded at its next writable
+unlock to the newest format this build writes (a build with only this change writes
+12; a build that also has previous full names writes 13), in a commit of its own, as
+for every earlier format. An older
 myCarlos then refuses the vault as newer: there is no downgrade. Header/object
 formats and the delivery wire format are unchanged.
+
+## Format 13: previous full names
+
+This build understands manifest formats 1–13. Format 12 (remembered refusals, #143, above) is a real format: a vault at 12 upgrades to 13 at its next writable unlock, in a commit of its own, like any older one. A format newer than 13 is refused as newer without being rewritten or interpreted; the parked model-file draft (#298) takes the next number, 14, when it merges. Format numbers are taken at merge (above): this one is 13 because it merges after #143's 12. Header, object and backup container formats do not change.
+
+A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 13 rather than read/drop this field.
+
+The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
+
+Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.

@@ -1037,5 +1037,11 @@
   "personDetails.reminder",
   "personDetails.notNow",
   "personDetails.notSaved",
-  "ai.summaryTooLarge"
+  "ai.summaryTooLarge",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid"
 ]

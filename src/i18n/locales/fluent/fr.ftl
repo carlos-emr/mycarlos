@@ -2297,3 +2297,10 @@ ai-models-picking = Choisissez un fichier de modèle à ajouter.
 ai-models-changed = Le modèle utilisé a été changé
 
 ai-summaryTooLarge = Le résumé complet est trop volumineux. Aucun nouveau résumé n’a été enregistré.
+
+personDetails-previousTitle = Anciens noms complets
+personDetails-previousHelp = Jusqu’à 16 anciens noms complets aident à repérer les renseignements identifiants. Un nom modifié est proposé ici ; retirez-le avant d’enregistrer si vous ne souhaitez pas le garder. Le retrait ne supprime que cette entrée ; d’autres dossiers et sauvegardes peuvent la conserver.
+personDetails-previousEntry = Ancien nom complet { $number }
+personDetails-previousRemove = Retirer l’ancien nom complet { $number }
+personDetails-previousAdd = Ajouter un ancien nom complet
+personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
