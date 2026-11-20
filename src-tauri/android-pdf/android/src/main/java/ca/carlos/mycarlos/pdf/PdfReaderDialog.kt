@@ -17,7 +17,6 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -29,7 +28,7 @@ import java.util.concurrent.Executors
 /**
  * The reader window: one page at a time, drawn with PdfRenderer from the in-memory document.
  *
- * - Its own Dialog with FLAG_SECURE (out of screenshots and the recent-apps picture); the app's
+ * - Its own Dialog (screenshots are allowed, by the owner's decision); the app's
  *   WebView is not involved, and nothing here reaches the network or a JavaScript bridge.
  * - At most the current page and its two neighbours are kept as bitmaps; the rest are recycled.
  *   The current page is drawn again, from a capped scale, when the person zooms.
@@ -97,10 +96,8 @@ class PdfReaderDialog(
                 return super.dispatchKeyEvent(event)
             }
         }
-        dialog.window?.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE,
-        )
+        // No FLAG_SECURE, on purpose: screenshots and the recent-apps picture are the patient's
+        // choice (owner decision, 20 Nov 2026; THREAT_MODEL.md, "Android PDF reader boundary").
         dialog.setCancelable(true)
         dialog.setOnCancelListener { dismissFor("closed") }
 

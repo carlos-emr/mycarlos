@@ -319,8 +319,10 @@ claim remains unbound under an explicit test pin and unverified without authenti
 On Android, **Read** shows the document in a separate native window drawn with the platform's
 `PdfRenderer`; it is not the desktop PDF helper and does not have its process isolation or
 sandbox (IMP-02, D-04). The window has no Tauri bridge, no JavaScript and no network, and it
-sets `FLAG_SECURE` (no screenshot or recent-apps picture while it is open; the rest of the app does
-not set it today, which is a decision for the owner).
+deliberately does **not** set `FLAG_SECURE`: screenshots and the recent-apps picture are allowed, as
+they are for the rest of the app. This is the patient's choice, by owner decision on 20 November 2026
+("that's their fault"); a screenshot of a letter leaves vault protection like any other copy the
+patient makes (UI-02, the "Readable copies and screenshots" notice in Security).
 
 The document is decrypted by Rust into a bounded buffer (at most 20 MiB, wiped after use), written
 into a sealed anonymous in-memory file (a `memfd`, made with the raw system call because bionic

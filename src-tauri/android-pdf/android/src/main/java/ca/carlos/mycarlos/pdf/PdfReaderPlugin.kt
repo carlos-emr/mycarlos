@@ -42,7 +42,7 @@ class CloseArgs {
 /**
  * The native PDF reader (#358). The document is a sealed in-memory file of this process, handed
  * over as a descriptor number: it is duplicated here and drawn with PdfRenderer in a dialog of
- * its own (no WebView, no JavaScript bridge, no network, FLAG_SECURE). Nothing is written to any
+ * its own (no WebView, no JavaScript bridge, no network). Nothing is written to any
  * path. Backgrounding the app closes the reader, and so do the app's own close and lock
  * commands, through `close(generation)`.
  *

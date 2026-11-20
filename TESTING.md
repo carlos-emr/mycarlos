@@ -817,9 +817,9 @@ and a password-protected one).
    "Show in document" are computers-only, so Android shows the original only. A person who needs
    the text must use **Save a copy** and a reader app of their choice. Record what TalkBack does on
    your phone.
-6. The status bar and the app window itself have no `FLAG_SECURE` today; only this reader window has
-   it (no screenshots or recent-apps picture while a letter is open). Whether the whole app should
-   have it is a decision for the owner.
+6. Neither the app window nor this reader window sets `FLAG_SECURE`: screenshots and the recent-apps
+   picture are allowed everywhere, by the owner's decision of 20 Nov 2026 (the patient's choice).
+   Take a screenshot of an open letter on a test phone and expect it to work.
 
 Automatic checks: the Rust tests cover the bounded export, the cancel/activity gates and the sealed
 in-memory file (and that a refused memfd never falls back to a file); vitest covers the reader
