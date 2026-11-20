@@ -787,6 +787,122 @@ pub(crate) fn is_absence_sentence(text: &str) -> bool {
         .any(|phrase| line.contains(&format!(" {} ", words(phrase))))
 }
 
+/// How a letter says that a medicine starts, stops, goes on or changes (lower-case words).
+const CHANGE_PHRASES: &[&str] = &[
+    "keep taking",
+    "keeps taking",
+    "continue taking",
+    "continue to take",
+    "stop taking",
+    "stopped taking",
+    "do not take",
+    "dont take",
+    "must not take",
+    "should not take",
+    "start taking",
+    "begin taking",
+    "resume taking",
+    "no longer take",
+    "stops after",
+    "stop after",
+    "stop it",
+    "stop them",
+    "then stop",
+    "increase the dose",
+    "decrease the dose",
+    "reduce the dose",
+    "lower the dose",
+];
+
+/// Words that show a sentence is about a medicine: a kind of medicine or dose, or the salt that
+/// ends a generic drug's name ("ferrous fumarate"). A drug named alone ("aspirin") is not
+/// found, so the rule misses some; it never fires on a sentence about anything else.
+const MEDICINE_WORDS: &[&str] = &[
+    "medicine",
+    "medicines",
+    "medication",
+    "medications",
+    "tablet",
+    "tablets",
+    "pill",
+    "pills",
+    "capsule",
+    "capsules",
+    "inhaler",
+    "inhalers",
+    "puffer",
+    "dose",
+    "doses",
+    "insulin",
+    "antibiotic",
+    "antibiotics",
+    "injection",
+    "infusion",
+    "drops",
+    "cream",
+    "ointment",
+    "patch",
+    "suppository",
+    "mg",
+    "mcg",
+    "units",
+    "fumarate",
+    "sulfate",
+    "sulphate",
+    "hydrochloride",
+    "chloride",
+    "tartrate",
+    "maleate",
+    "succinate",
+    "acetate",
+    "phosphate",
+    "citrate",
+    "besylate",
+    "mesylate",
+];
+
+/// The most medicine lines the check adds to one summary: a letter that says this many times over
+/// is a medicine list, and the summary has no room for all of it.
+const MEDICINE_LINES_MAX: usize = 3;
+
+/// The content words of a letter sentence that starts, stops, continues or changes a medicine
+/// (`CHANGE_PHRASES`, in a sentence that is about a medicine, `MEDICINE_WORDS`), or `None` when
+/// it is not one. The phrase's own words and the common words (`STOP`, `STEP_STOP`) are left out.
+fn medicine_change_words(sentence: &str) -> Option<Vec<String>> {
+    let toks = tokens(sentence);
+    let (from, to) = find_phrase(&toks, CHANGE_PHRASES, 0)?;
+    if !toks.iter().any(|t| MEDICINE_WORDS.contains(&t.0.as_str())) {
+        return None;
+    }
+    let words: Vec<String> = toks
+        .iter()
+        .filter(|t| !(t.1 >= from && t.2 <= to))
+        .map(|t| t.0.clone())
+        .filter(|w| {
+            w.chars().count() >= 4
+                && !STOP.contains(&w.as_str())
+                && !STEP_STOP.contains(&w.as_str())
+                && !w.chars().all(|c| c.is_ascii_digit())
+        })
+        .collect();
+    (!words.is_empty()).then_some(words)
+}
+
+/// Whether a summary sentence carries a medicine change: it shares at least two of the letter
+/// sentence's content words (one when it has only one), a plural counting as its singular
+/// ("infusion", "infusions"). Names that differ by a letter are two medicines.
+fn carries_medicine(sentence: &str, words: &[String]) -> bool {
+    let stem = |w: &str| {
+        w.strip_suffix('s')
+            .filter(|_| w.len() > 4)
+            .unwrap_or(w)
+            .to_owned()
+    };
+    let have: Vec<String> = tokens(sentence).into_iter().map(|t| stem(&t.0)).collect();
+    let shared = words.iter().filter(|w| have.contains(&stem(w))).count();
+    shared >= words.len().min(2)
+}
+
 fn flat(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -1027,6 +1143,37 @@ pub(crate) fn check_guarded<E>(
                 lines.push(Line { text: after, quote });
             }
         }
+    }
+    // A medicine that starts, stops, goes on or changes, which no summary sentence carries: the
+    // letter's own sentence goes in, quoted, at the end (a summary at its sentence limit crowds
+    // these out). Up to `MEDICINE_LINES_MAX`; only English letters' phrases are known.
+    let mut added = 0;
+    for &(at, to) in &spans {
+        if added == MEDICINE_LINES_MAX {
+            break;
+        }
+        let sentence = flat(&pages[at..to])
+            .trim_start_matches(['-', '*', '\u{2022}', '\u{2013}', ' '])
+            .trim()
+            .to_owned();
+        let Some(words) = medicine_change_words(&sentence) else {
+            continue;
+        };
+        if lines.iter().any(|l| carries_medicine(&l.text, &words)) {
+            continue;
+        }
+        let after = quoted(&sentence);
+        // Keep source whitespace verbatim and cap characters, never UTF-8 bytes.
+        let quote: String = pages[at..to].trim().chars().take(240).collect();
+        guard(lines, None, &after, &quote)?;
+        log.push(Fallback {
+            check: "medicine",
+            index: lines.len(),
+            before: None,
+            after: after.clone(),
+        });
+        lines.push(Line { text: after, quote });
+        added += 1;
     }
     Ok(log)
 }
@@ -1572,6 +1719,79 @@ mod tests {
         assert_eq!(
             log[0].before.as_deref(),
             Some("They must be seen by Dr. Henrietta Fakeham within 4 weeks.")
+        );
+    }
+
+    #[test]
+    fn given_a_medicine_stop_left_out_when_checked_then_the_letters_sentence_is_added() {
+        check_case("a_medicine_stop_left_out_of_the_summary");
+    }
+
+    #[test]
+    fn given_a_medicine_stop_the_summary_carries_when_checked_then_nothing_is_added() {
+        check_case("a_medicine_stop_carried_by_the_summary");
+    }
+
+    #[test]
+    fn given_keep_taking_left_out_when_checked_then_the_letters_sentence_is_added() {
+        check_case("keep_taking_left_out_of_the_summary");
+    }
+
+    #[test]
+    fn given_a_stop_that_is_not_about_a_medicine_when_checked_then_nothing_is_added() {
+        check_case("a_stop_that_is_not_about_a_medicine");
+    }
+
+    #[test]
+    fn given_many_medicine_changes_left_out_when_checked_then_three_are_added() {
+        check_case("at_most_three_medicine_lines_are_added");
+    }
+
+    #[test]
+    fn given_a_medicine_line_is_added_when_the_log_is_read_then_it_is_a_medicine_check_without_a_before(
+    ) {
+        let pages = "Keep taking sumatriptan and the salbutamol inhaler as before.";
+        let mut lines = vec![Line {
+            text: "Come back in six weeks.".to_owned(),
+            quote: String::new(),
+        }];
+        let log = check(pages, &mut lines);
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].check, "medicine");
+        assert_eq!(log[0].index, 1);
+        assert_eq!(log[0].before, None);
+        // The quote is the letter's own span, found in the pages as written.
+        assert_eq!(lines[1].quote, pages);
+        assert_eq!(moved_to(&log, lines.len()), vec![0]);
+    }
+
+    #[test]
+    fn given_medicine_sentences_when_read_then_the_change_words_exclude_the_phrase_and_common_words(
+    ) {
+        assert_eq!(
+            medicine_change_words("Keep taking sumatriptan and the salbutamol inhaler as before."),
+            Some(vec![
+                "sumatriptan".to_owned(),
+                "salbutamol".to_owned(),
+                "inhaler".to_owned()
+            ])
+        );
+        assert_eq!(
+            medicine_change_words("Ferrous fumarate stops after the infusion."),
+            Some(vec![
+                "ferrous".to_owned(),
+                "fumarate".to_owned(),
+                "infusion".to_owned()
+            ])
+        );
+        // A change phrase with no medicine in the sentence, and a medicine with no change.
+        assert_eq!(
+            medicine_change_words("The bleeding stops after 10 minutes."),
+            None
+        );
+        assert_eq!(
+            medicine_change_words("Take vitamin D3 2,000 units once a day."),
+            None
         );
     }
 

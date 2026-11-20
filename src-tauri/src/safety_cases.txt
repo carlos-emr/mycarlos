@@ -552,3 +552,55 @@ summary:
 You must see Dr. Chen in 6 weeks. ||
 expect:
 You must see Dr. Chen in 6 weeks.
+===
+name: a_medicine_stop_left_out_of_the_summary
+pages:
+Plan
+Iron infusion: ferric derisomaltose 1,000 mg intravenously, once, at the Medical Day Unit on 24 November 2026 at 09:00. Ferrous fumarate stops after the infusion.
+Vitamin D3 2,000 units by mouth once a day.
+summary:
+You must have an iron infusion of ferric derisomaltose 1,000 mg intravenously on 24 November 2026 at 09:00. || Iron infusion: ferric derisomaltose 1,000 mg intravenously, once, at the Medical Day Unit on 24 November 2026 at 09:00
+You must take Vitamin D3 2,000 units by mouth once a day. || Vitamin D3 2,000 units by mouth once a day
+expect:
+You must have an iron infusion of ferric derisomaltose 1,000 mg intravenously on 24 November 2026 at 09:00.
+You must take Vitamin D3 2,000 units by mouth once a day.
+The document says: “Ferrous fumarate stops after the infusion.”
+===
+name: a_medicine_stop_carried_by_the_summary
+pages:
+Plan
+Iron infusion: ferric derisomaltose 1,000 mg intravenously, once, at the Medical Day Unit on 24 November 2026 at 09:00. Ferrous fumarate stops after the infusion.
+summary:
+You must stop taking ferrous fumarate after the infusion on 24 November. || Ferrous fumarate stops after the infusion
+expect:
+You must stop taking ferrous fumarate after the infusion on 24 November.
+===
+name: keep_taking_left_out_of_the_summary
+pages:
+Take vitamin D3 2,000 units once a day. Keep taking sumatriptan and the salbutamol inhaler as before.
+summary:
+You must take Vitamin D3 2,000 units once a day. || Take vitamin D3 2,000 units once a day
+expect:
+You must take Vitamin D3 2,000 units once a day.
+The document says: “Keep taking sumatriptan and the salbutamol inhaler as before.”
+===
+name: a_stop_that_is_not_about_a_medicine
+pages:
+Going home
+The bleeding usually stops after 10 minutes.
+summary:
+The bleeding stops in about 10 minutes. || The bleeding usually stops after 10 minutes
+expect:
+The bleeding stops in about 10 minutes.
+===
+name: at_most_three_medicine_lines_are_added
+pages:
+Medicines
+Stop taking FAKEDRUGA tablets. Stop taking FAKEDRUGB tablets. Stop taking FAKEDRUGC tablets. Stop taking FAKEDRUGD tablets. Stop taking FAKEDRUGE tablets.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+The document says: “Stop taking FAKEDRUGA tablets.”
+The document says: “Stop taking FAKEDRUGB tablets.”
+The document says: “Stop taking FAKEDRUGC tablets.”
