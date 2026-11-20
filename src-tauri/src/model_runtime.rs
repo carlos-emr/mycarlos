@@ -639,8 +639,10 @@ impl ModelRuntime {
             return LoadCheck::Skipped;
         }
         let _ends = CheckEnds(&self.checking);
-        if self.runner.is_running() {
-            return LoadCheck::Ready;
+        match self.runner.is_running_for(claim) {
+            Some(true) => return LoadCheck::Ready,
+            Some(false) => (),
+            None => return LoadCheck::Skipped,
         }
         let outcome = match self.start(claim) {
             Ok(()) => LoadCheck::Ready,
@@ -1670,6 +1672,7 @@ mod tests {
         fn a_load_check_while_an_answer_is_written_loads_nothing_and_keeps_its_model() {
             let (runtime, asked) = with(answers_slowly);
             let runtime = Arc::new(runtime);
+            let prior_check = runtime.load_check_claim().unwrap();
             let ticket = runtime.reserve_answer();
             let writer = {
                 let runtime = Arc::clone(&runtime);
@@ -1686,6 +1689,7 @@ mod tests {
                 assert!(std::time::Instant::now() < deadline, "never answering");
                 std::thread::sleep(Duration::from_millis(20));
             }
+            assert_eq!(runtime.check_load(prior_check), LoadCheck::Skipped);
             assert_eq!(check(&runtime), LoadCheck::Skipped);
             assert!(writer.join().unwrap().is_ok());
             // One load, the answer's; its model stays loaded, as before.

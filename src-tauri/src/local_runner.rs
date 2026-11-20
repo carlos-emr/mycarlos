@@ -1074,7 +1074,27 @@ impl Runner {
         }
     }
 
-    /// Whether a model process is running now: a load check finds the model already loaded.
+    /// A load check's running probe: never waits for the process, and says nothing if a
+    /// newer claim owns it. Check the claim again under the lock and after the process probe.
+    pub(crate) fn is_running_for(&self, ticket: Ticket) -> Option<bool> {
+        if !self.is_current(ticket) {
+            return None;
+        }
+        let mut slot = match self.sidecar.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        if !self.is_current(ticket) {
+            return None;
+        }
+        let running = slot
+            .as_mut()
+            .is_some_and(|running| running.process.running());
+        self.is_current(ticket).then_some(running)
+    }
+
+    /// Whether a model process is running now (ordinary callers may wait for it).
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
@@ -1965,6 +1985,30 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn a_load_check_probe_never_waits_for_a_held_runner_or_uses_a_stale_claim() {
+        let runner = Runner::new();
+        let claim = runner.current_ticket();
+        let held = runner.sidecar.lock().unwrap();
+        std::thread::scope(|scope| {
+            let (send, receive) = std::sync::mpsc::channel();
+            let probe = &runner;
+            let worker = scope.spawn(move || send.send(probe.is_running_for(claim)).unwrap());
+            let result = receive.recv_timeout(Duration::from_secs(1));
+            // Release before asserting/joining, so a blocking-probe regression fails rather
+            // than leaving the test waiting forever for its worker.
+            drop(held);
+            worker.join().unwrap();
+            assert_eq!(result.unwrap(), None);
+        });
+        let held = runner.sidecar.lock().unwrap();
+        let answer = runner.ticket();
+        assert_eq!(runner.is_running_for(claim), None);
+        drop(held);
+        assert_eq!(runner.is_running_for(claim), None);
+        assert_eq!(runner.is_running_for(answer), Some(false));
     }
 
     struct Fixed(Option<u64>);
