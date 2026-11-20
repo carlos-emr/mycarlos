@@ -302,7 +302,7 @@ On every platform:
    choose the other person's records or one of their folders under **Move to**, then press
    **Move**. Check it appears there and its saved copy is unchanged. If that person already
    has the same file, the document stays with its original person and the notice says so.
-6. Open a document, choose **Save a copy to this computer**, then **Save a copy**, and confirm the
+6. Open a document, choose **Save a copy to this device**, then **Save a copy**, and confirm the
    copy opens in a PDF viewer (a new emulator may not have one installed).
 7. In **Security**, choose **Save encrypted backup…** and save the file somewhere other than the
    app's own folder. Import one more document (any PDF), then lock the vault and choose **Restore from a
@@ -699,6 +699,34 @@ en-GB). Camera browser checks fix the computer locale (en-US and en-GB), timezon
 status text uses Fluent isolation; the stored filename contains no formatter
 controls.
 
+## Automated Android emulator smoke test
+
+The workflow `mycarlos-android-emulator.yml` builds the Android debug app for an x86_64
+emulator, starts an Android 34 emulator on a hosted Linux runner and runs
+`scripts/android-emulator-smoke.sh`. It runs by hand (Actions > myCarlos Android emulator smoke
+test > Run workflow) and on pull requests that change the workflow, that script or the Android
+security script; ordinary pull requests do not run it.
+
+What it checks:
+
+- The built APK is `ca.carlos.mycarlos`, has a launchable activity and names a launcher icon
+  (read with `aapt2`) that is really inside the APK.
+- The app installs on the emulator, opens, comes to the front and is still running ten seconds
+  later, with nothing in the crash log and no fatal exception or "not responding" in the log.
+- A screenshot of the first screen, the log and the check output are kept as the
+  `myCarlos-Android-Emulator-Smoke` artifact for 14 days.
+
+What it does not check yet:
+
+- The status-bar inset, the keyboard and how the icon looks. The screenshot lets a person look
+  at them; nothing asserts them.
+- Anything inside the page. WebView debugging is not enabled in the app, so Playwright cannot
+  attach to it on Android yet; that is a follow-up.
+- A phone (arm64). The emulator is x86_64.
+
+A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a
+false alarm; read the log in the artifact before changing the app.
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
@@ -764,6 +792,34 @@ Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-
 The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
 the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
 **Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
+
+## Preparing a document's text for an AI (#72, computers only)
+
+Open a PDF's details and choose **Prepare text for an AI…**. myCarlos reads the
+whole text on this device and shows it with every identifying detail it found
+replaced by a placeholder such as `[NAME 1]` (marked, and named for a screen
+reader). No date is sent: each is a numbered placeholder in calendar order with
+its gap from the earliest, such as `[DATE 2, 14 days after DATE 1]` (marked “date
+replaced”), and an age of 90 or over is `[AGE 1, 90+]`. After a save, **Put
+details back** takes the AI's answer pasted in the box and puts every placeholder
+back exactly; a placeholder it does not know, or whose note was changed, is
+highlighted and left as written. Try: a possible name listed under the text goes with one press;
+select some text and press **Remove the selected text**; type a word in the box
+and press **Remove everywhere**; **Undo the last removal** undoes only your own
+removals. **Save the text…** asks first, then opens the system save dialog with
+a generic name; the file starts with a fixed line that tells an AI to treat
+what follows as a document, not as instructions. The save is in the audit
+history as “Anonymized text saved”. Nothing is saved without the preview.
+
+What to look for: a name, number or date that stayed (read every line; the
+remover is rules, not understanding, and the notice says what it can miss);
+a word removed that should have stayed (undo cannot put it back, but the
+original document is untouched); the page notes when a page has no text, was
+cut or could not be read. Automated: `src/deidentify/*.test.ts` (the remover
+on synthetic letters and reports, the text cleaning and its shared table),
+`src/native/AnonymizePreview.test.tsx` (the preview, the save flow, a refused
+save), `src-tauri/src/text_recheck.rs` (the native re-check) and
+`tests/anonymize-preview.spec.ts` (a keyboard walk at 200% text).
 
 ## Appearance and Windows high contrast
 

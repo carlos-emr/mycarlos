@@ -33,4 +33,10 @@ export class TransferHold {
   get active(): boolean {
     return this.transferRan;
   }
+
+  /** Whether any operation is under way, picker included: its own result
+   * is written first. */
+  get running(): boolean {
+    return this.operations > 0;
+  }
 }

@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 import { Icon } from "../Icon";
 
 import type { VaultFolder, VaultRecord } from "../vault";
-import { formatBytes, recordKind, recordSource } from "./recordPresentation";
+import { formatBytes, recordKind } from "./recordPresentation";
 import { ClinicServiceDate } from "./ClinicServiceDate";
+import { RecordSource } from "./RecordSource";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
 
 interface LibraryItemsProps {
@@ -212,13 +213,7 @@ export function LibraryItems({
               </span>
               {suggestionFor?.(record)}
             </div>
-            <span className="column">
-              {record.verifiedClinicName
-                ? translateNow("portal.sourceVerified", {
-                    clinic: record.verifiedClinicName,
-                  })
-                : recordSource(record)}
-            </span>
+            <RecordSource record={record} className="column" />
             <span className="column">
               {new Date(record.importedAtMs).toLocaleDateString()}
             </span>
@@ -353,6 +348,8 @@ export function LibraryItems({
                 </span>
               </span>
             </button>
+            {/* After the button, so its name stays the document's (#135). */}
+            <RecordSource record={record} />
           </article>
         );
       })}

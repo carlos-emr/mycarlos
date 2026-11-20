@@ -35,6 +35,21 @@ export const FAKE_CLINIC_DOCUMENT = "FAKE Clinic letter.pdf";
 export const FAKE_DEVICE_CODE = "FAKE-DEVICE-1";
 /** Labels of the vault's recovery key, and of a key being set up. */
 export const FAKE_KEY_LABEL = "FAKE-KEY1";
+/** What the fake device reports for the passphrase speed test (#39): round
+ * numbers, under a thousand, so that no locale puts separators in them. */
+export const FAKE_SPEED_REPORT = {
+  memoryKib: 65536,
+  iterations: 3,
+  lanes: 1,
+  samplesMs: [312, 298, 305],
+  medianMs: 305,
+  maxMs: 312,
+  release: false,
+  simulator: false,
+  platform: "windows",
+  architecture: "x86_64",
+  appVersion: "0.0.0-FAKE",
+};
 export const FAKE_NEW_KEY_LABEL = "FAKE-KEY2";
 
 // Fixed synthetic UUIDs, in the wire format accepted by native Uuid fields.
@@ -163,9 +178,26 @@ export interface FakeVaultSetup {
   newRecoveryKey?: string;
   /** Adds FAKE Locked.pdf, locked with FAKE_DOCUMENT_PASSWORD. */
   lockedPdf?: boolean;
+  /** FAKE Letter.pdf also holds a clinic reading aid (vault format 10). */
+  readingAid?: boolean;
   /** Clinic linking is built in: with no clinic linked yet, or with one
-   * linked and approved. */
+   * linked and approved, unless `approval` says the request did not end in
+   * approval. */
   portal?: "unlinked" | "linked";
+  /** The service date the clinic's document from a check carries, as the
+   * clinic sent it ("" = not recorded). Default: none. */
+  clinicServiceDate?: string;
+  /** With the clinic approved: how many of its documents failed their
+   * checks and are remembered as refused (#143); Try again forgets them. */
+  refusedDeliveries?: number;
+  /** With a clinic linked ("linked" only; anything else is refused by
+   * fakeVaultWith) but not approved: the current approval request's state,
+   * and whether a new request may be started (natively: an expired or
+   * cancelled one, within the request limit; never a refused one). */
+  approval?: {
+    status: "pending" | "refused" | "expired" | "cancelled";
+    canRestart?: boolean;
+  };
   /** The backup file a restore would choose: what it replaces on this
    * device, whether the vault here differs, the documents it holds (FAKE
    * names), and the passphrase it was made with (the vault's by default). */
@@ -179,7 +211,12 @@ export interface FakeVaultSetup {
    * missing, so changes are paused until they are hidden as damaged. */
   missingFiles?: string[];
   /** More people in the vault, with the details clinic documents carry. */
-  people?: { displayName: string; fullName?: string; birthDate?: string }[];
+  people?: {
+    displayName: string;
+    fullName?: string;
+    birthDate?: string;
+    previousFullNames?: string[];
+  }[];
   /** Files another app shared to myCarlos, waiting to be added (#61). */
   received?: string[];
   /** What the vault finds on a shared document, by its name: the name and
@@ -188,6 +225,20 @@ export interface FakeVaultSetup {
   /** The history opens damaged: entries before `checkedFromMs` are gone,
    * the later ones proven by the pinned end (D129/D146). */
   damagedHistory?: boolean;
+  /** Photos taken with the camera, already in the vault, by name (FAKE
+   * names ending in .jpg): each has a small JPEG made at run time. */
+  photos?: string[];
+  /** What runtime_info reports: "windows" (default), "macos", "linux",
+   * "android" or "ios". A computer has the app's own zoom; a phone has not. */
+  platform?: string;
+  /** Pages drawn as a FAKE letter (#292), one entry per page: a letterhead
+   * drawn as shapes, then `lines` from `top` (a fraction of the page's
+   * height) down. A line ending in a space runs on into the next one in the
+   * page's text, as a sentence wrapped on the page does. The page's text is
+   * these lines, and vault_page_boxes measures where a quote is drawn. */
+  drawnPages?: { top: number; lines: string[] }[];
+  /** vault_page_boxes answers no box, for this reason (#292). */
+  boxesAbsent?: string;
 }
 
 // The refusals the fake makes itself, by message key, in English as the
@@ -219,6 +270,8 @@ const NATIVE_MESSAGES: MessageKey[] = [
  * a11y.ts's fakeVault, opened with FAKE_PASSPHRASE.
  */
 export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
+  if (setup.approval && setup.portal !== "linked")
+    throw new Error('an approval state needs portal: "linked"');
   await page.addInitScript(
     (setup) => {
       const STORE = "mycarlos-e2e-fake-vault";
@@ -229,12 +282,20 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         displayName: string;
         sourceLabel: string;
         mediaType: string;
-        sourceKind?: "manual";
         plaintextSize: number;
         importedAtMs: number;
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        clinicServiceDate?: string;
+        readingAid?: {
+          deliveryId: string;
+          language: string;
+          reviewedAtMs: number;
+          notice: { version: string; heading: string; body: string };
+          overview: string;
+          points: { text: string; evidence: string[] }[];
+        };
       };
       type Link = {
         id: string;
@@ -249,6 +310,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalRequested: boolean;
         clinicApproved: boolean;
         approvalStatus: string | null;
+        approvalReason?: string | null;
+        approvalCanRestart?: boolean;
+        refusedDeliveries?: number;
       };
       type Snapshot = {
         profiles: {
@@ -257,6 +321,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           createdAtMs: number;
           fullName?: string;
           birthDate?: string;
+          previousFullNames?: string[];
         }[];
         folders: {
           id: string;
@@ -290,6 +355,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         previousSession: string | null;
       };
       type State = {
+        captureEpoch: string;
+        captureSequence: number;
         status: string;
         passphrase: string;
         recoveryKey: string | null;
@@ -312,6 +379,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         importQueue: string[];
         /** Files shared to myCarlos, waiting (#61). */
         received: { id: string; name: string; sourceLabel: string }[];
+        /** The next id for a file shared while the page is open. */
+        nextReceivedId: number;
+        /** The JPEG each photo record shows, as a data: URL, by record id. */
+        photoUrls: Record<string, string>;
         /** What the vault wrote down (#71), as the native side would. */
         history: HistoryEntry[];
         /** Backups saved and the one the restore picker chooses. */
@@ -342,16 +413,23 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         profileId?: string | null;
         currentPassphrase?: string;
         displayName?: string;
-        details?: { fullName?: string; birthDate?: string };
+        details?: {
+          fullName?: string;
+          birthDate?: string;
+          previousFullNames?: string[];
+        };
         confirmed?: string[];
         pickId?: string;
         replace?: boolean;
+        confirmation?: string;
       };
       type Args = {
         request?: Request;
         linkId?: string;
         recordId?: string;
         locale?: string;
+        /** vault_save_photo's body, parsed: the name and the JPEG. */
+        photo?: { name: string; jpeg: Uint8Array };
       };
 
       const copy = <T>(value: T): T =>
@@ -374,6 +452,26 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         approvalStatus: approved ? "accepted" : null,
       });
 
+      /** A small JPEG, made here rather than kept as bytes in the test. It
+       * must stay tiny: the whole state, URLs included, is written to
+       * sessionStorage on every save. */
+      const makeJpegUrl = (): string => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 16;
+        canvas.height = 16;
+        const context = canvas.getContext("2d");
+        if (context) {
+          context.fillStyle = "#4466aa";
+          context.fillRect(0, 0, 16, 16);
+        }
+        return canvas.toDataURL("image/jpeg");
+      };
+      const jpegUrlOf = (jpeg: Uint8Array): string => {
+        let binary = "";
+        for (const byte of jpeg) binary += String.fromCharCode(byte);
+        return `data:image/jpeg;base64,${btoa(binary)}`;
+      };
+
       const initial = (): State => {
         const records: FakeRecord[] = [
           {
@@ -382,7 +480,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [setup.ids.folder],
             displayName: "FAKE Bloodwork.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 2048,
             importedAtMs: Date.UTC(2026, 9, 2, 12),
@@ -394,11 +491,31 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: "FAKE Letter.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 1024,
             importedAtMs: Date.UTC(2026, 9, 3, 12),
             available: true,
+            ...(setup.readingAid
+              ? {
+                  readingAid: {
+                    deliveryId: "00000000-0000-4000-8000-0000000000a1",
+                    language: "en",
+                    reviewedAtMs: Date.UTC(2026, 9, 3, 11),
+                    notice: {
+                      version: "carlos-5537-en-1",
+                      heading: "FAKE notice heading",
+                      body: "FAKE notice body: this reading aid was produced by software.\n\nFAKE second paragraph: open the original for what your clinic recorded.",
+                    },
+                    overview: "FAKE overview of the letter.",
+                    points: [
+                      {
+                        text: "FAKE point: a follow-up is planned.",
+                        evidence: ["FAKE quote from the letter."],
+                      },
+                    ],
+                  },
+                }
+              : {}),
           },
         ];
         const documentPasswords: Record<string, string> = {};
@@ -409,13 +526,29 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             folderIds: [],
             displayName: "FAKE Locked.pdf",
             sourceLabel: "Manual import — unverified",
-            sourceKind: "manual",
             mediaType: "application/pdf",
             plaintextSize: 3072,
             importedAtMs: Date.UTC(2026, 9, 4, 12),
             available: true,
           });
           documentPasswords[setup.ids.locked] = setup.documentPassword;
+        }
+        const photoUrls: Record<string, string> = {};
+        for (const [index, name] of setup.photos.entries()) {
+          const id = makeUuid(800 + index + 1);
+          records.push({
+            id,
+            profileId: setup.ids.profile,
+            folderIds: [],
+            displayName: name,
+            sourceLabel: "Manual import — unverified",
+            // As the vault stores a photo: bytes it does not name.
+            mediaType: "application/octet-stream",
+            plaintextSize: 1234,
+            importedAtMs: Date.UTC(2026, 9, 5, 12),
+            available: true,
+          });
+          photoUrls[id] = makeJpegUrl();
         }
         for (const record of records) {
           if (setup.missingFiles.includes(record.displayName))
@@ -453,9 +586,26 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         };
         if (setup.portal) {
           snapshot.portalLinkingEnabled = true;
+          const approval = setup.approval;
           snapshot.portalLinks =
             setup.portal === "linked"
-              ? [link(1, "https://fake-clinic.example.com", true)]
+              ? [
+                  approval
+                    ? {
+                        ...link(1, "https://fake-clinic.example.com", false),
+                        approvalRequested: true,
+                        approvalStatus: approval.status,
+                        approvalCanRestart:
+                          approval.canRestart ??
+                          ["expired", "cancelled"].includes(approval.status),
+                      }
+                    : {
+                        ...link(1, "https://fake-clinic.example.com", true),
+                        ...(setup.refusedDeliveries
+                          ? { refusedDeliveries: setup.refusedDeliveries }
+                          : {}),
+                      },
+                ]
               : [];
         }
         for (const [index, person] of setup.people.entries()) {
@@ -465,6 +615,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             createdAtMs: 3 + index,
             ...(person.fullName ? { fullName: person.fullName } : {}),
             ...(person.birthDate ? { birthDate: person.birthDate } : {}),
+            ...(person.previousFullNames
+              ? { previousFullNames: [...person.previousFullNames] }
+              : {}),
           });
         }
         const history: HistoryEntry[] = [
@@ -485,6 +638,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           },
         ];
         return {
+          captureEpoch: crypto.randomUUID(),
+          captureSequence: 0,
           nextRecordId: 401,
           nextPickId: 1000,
           picks: {},
@@ -495,6 +650,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             name,
             sourceLabel: "Shared to myCarlos",
           })),
+          nextReceivedId: 700,
+          photoUrls,
           history,
           status: setup.start,
           passphrase: setup.passphrase,
@@ -516,6 +673,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       } catch {
         state = initial();
       }
+      state.captureEpoch ??= crypto.randomUUID();
+      state.captureSequence ??= 0;
+      state.nextReceivedId ??= 700;
+      state.photoUrls ??= {};
       const save = () => {
         try {
           window.sessionStorage.setItem(STORE, JSON.stringify(state));
@@ -524,6 +685,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         }
       };
       save();
+      const captured = () => {
+        const capture = {
+          epoch: state.captureEpoch,
+          sequence: ++state.captureSequence,
+        };
+        const snapshot = { ...copy(state.snapshot), capture };
+        save();
+        return snapshot;
+      };
 
       const refuse = (
         code: string,
@@ -549,6 +719,93 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           .replace(/[IL]/g, "1")
           .replace(/O/g, "0");
       // A page's picture: drawn here, small; the reader scales it.
+      // A FAKE letter page (#292): a letterhead in shapes, then text lines.
+      // Sizes are fractions of the page's width, so any width draws the same
+      // page, and drawnBoxes measures what drawPage drew.
+      const LETTER_ASPECT = 11 / 8.5;
+      type Drawn = { top: number; lines: string[] };
+      const FONT = 0.021;
+      const LEFT = 0.1;
+      const LEADING = 1.55;
+      const fontAt = (width: number) =>
+        `${Math.round(width * FONT * 100) / 100}px Arial, Helvetica, sans-serif`;
+      const drawnText = (drawn: Drawn) =>
+        drawn.lines
+          .map((line) => (line.endsWith(" ") ? line : `${line}\n`))
+          .join("")
+          .replace(/\n$/, "");
+      const baseline = (drawn: Drawn, index: number, width: number) =>
+        drawn.top * width * LETTER_ASPECT + index * width * FONT * LEADING;
+      const drawPage = (drawn: Drawn, width: number) => {
+        const height = Math.round(width * LETTER_ASPECT);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = "#b9c4cf";
+        context.fillRect(
+          width * LEFT,
+          height * 0.05,
+          width * 0.12,
+          width * 0.12,
+        );
+        context.fillRect(
+          width * 0.26,
+          height * 0.06,
+          width * 0.5,
+          width * 0.018,
+        );
+        context.fillRect(
+          width * 0.26,
+          height * 0.085,
+          width * 0.34,
+          width * 0.014,
+        );
+        context.fillStyle = "#1f2328";
+        context.font = fontAt(width);
+        drawn.lines.forEach((line, index) =>
+          context.fillText(line, width * LEFT, baseline(drawn, index, width)),
+        );
+        return canvas.toDataURL("image/png");
+      };
+      const drawnBoxes = (
+        drawn: Drawn,
+        start: number,
+        end: number,
+        quoted: string,
+      ) => {
+        const text = drawnText(drawn);
+        if (start >= end || text.slice(start, end) !== quoted)
+          return { rects: [], absent: "textDiffers" };
+        const width = 1000;
+        const height = width * LETTER_ASPECT;
+        const context = document.createElement("canvas").getContext("2d")!;
+        context.font = fontAt(width);
+        const measure = (part: string) => context.measureText(part).width;
+        const rects: [number, number, number, number][] = [];
+        let at = 0;
+        drawn.lines.forEach((line, index) => {
+          const from = Math.max(start, at) - at;
+          const to = Math.min(end, at + line.length) - at;
+          at += line.length + (line.endsWith(" ") ? 0 : 1);
+          if (from >= to || !line.slice(from, to).trim()) return;
+          const lead =
+            line.slice(from, to).length -
+            line.slice(from, to).trimStart().length;
+          const tail =
+            line.slice(from, to).length - line.slice(from, to).trimEnd().length;
+          const y = baseline(drawn, index, width);
+          rects.push([
+            (width * LEFT + measure(line.slice(0, from + lead))) / width,
+            (y - width * FONT * 0.8) / height,
+            (width * LEFT + measure(line.slice(0, to - tail))) / width,
+            (y + width * FONT * 0.25) / height,
+          ]);
+        });
+        return rects.length ? { rects } : { rects: [], absent: "empty" };
+      };
       const picture = () => {
         const canvas = document.createElement("canvas");
         canvas.width = 60;
@@ -573,7 +830,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         folderIds,
         displayName,
         sourceLabel: "Manual import — unverified",
-        sourceKind: "manual",
         mediaType: "application/pdf",
         plaintextSize: 1024,
         importedAtMs: Date.now(),
@@ -626,6 +882,15 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
 
       // Promises and command guards belong to this window, not sessionStorage.
       const pendingViews = new Set<(reason: unknown) => void>();
+      // Scripted answers still pending, oldest first, for __fakeVault.settle.
+      // One cancelled by cancelViews() is marked settled, so a later settle
+      // skips it instead of resolving a dead promise silently.
+      type Pending = {
+        settled: boolean;
+        resolve: (value: unknown) => void;
+        reject: (reason: unknown) => void;
+      };
+      const pendingScripts: Record<string, Pending[]> = {};
       let cancelledViews = 0;
       let checkingDocuments = false;
       const cancelViews = () => {
@@ -684,21 +949,79 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         const queued = state.script[command]?.shift();
         if (queued) {
           save();
-          if (queued.pending) {
-            if (command === "vault_view_page")
-              return new Promise((_resolve, reject) =>
-                pendingViews.add(reject),
-              );
-            return new Promise(() => undefined);
-          }
+          if (queued.pending)
+            return new Promise((resolve, reject) => {
+              const entry: Pending = {
+                settled: false,
+                resolve: (value) => {
+                  entry.settled = true;
+                  resolve(value);
+                },
+                reject: (reason) => {
+                  entry.settled = true;
+                  reject(reason);
+                },
+              };
+              if (command === "vault_view_page") pendingViews.add(entry.reject);
+              (pendingScripts[command] ??= []).push(entry);
+            });
           if ("reject" in queued) throw queued.reject;
+          // Scripted snapshots are already captured. Never stamp them when
+          // their reply is delivered, including an intentionally old reply.
+          if (
+            [
+              "vault_snapshot",
+              "vault_create",
+              "vault_unlock",
+              "vault_recovery_key_confirm",
+              "vault_recover",
+            ].includes(command) &&
+            !(
+              command === "vault_recovery_key_confirm" &&
+              queued.resolve === null
+            )
+          ) {
+            const value =
+              command === "vault_recover"
+                ? (queued.resolve as { snapshot?: unknown } | undefined)
+                    ?.snapshot
+                : queued.resolve;
+            const capture = (
+              value as
+                | { capture?: { epoch?: unknown; sequence?: unknown } }
+                | undefined
+            )?.capture;
+            if (
+              !capture ||
+              typeof capture.epoch !== "string" ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                capture.epoch,
+              ) ||
+              typeof capture.sequence !== "number" ||
+              !Number.isSafeInteger(capture.sequence) ||
+              capture.sequence <= 0
+            ) {
+              throw new Error(
+                "FAKE scripted snapshot requires capture-time metadata",
+              );
+            }
+          }
           return queued.resolve;
         }
         const request: Request = args.request ?? {};
         const snapshot = state.snapshot;
         switch (command) {
           case "runtime_info":
-            return { platform: "windows" };
+            return { platform: setup.platform };
+          // Preferences on a computer asks whether an AI model is installed (#72).
+          case "ai_model_status":
+            return { state: "notInstalled" };
+          case "ai_models":
+          case "ai_model_catalog":
+            return [];
+          // No add or download running when the row opens (#275).
+          case "ai_model_add_active":
+            return null;
           case "vault_status":
             return state.status;
           case "vault_notification_status":
@@ -729,6 +1052,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 continue;
               }
               const profileId = sharedProfile();
+              // The fake knows a duplicate by its name; the native side by
+              // the encrypted content's fingerprint. A test here proves what
+              // the library does with skippedDuplicates, not native matching.
               if (
                 snapshot.records.some(
                   (r) =>
@@ -775,7 +1101,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           }
           // As a11y.ts: the snapshot is given whenever it is asked for.
           case "vault_snapshot":
-            return copy(snapshot);
+            return captured();
           case "vault_passphrase_rules":
             return { longEnough: true, notAName: true, hardToGuess: true };
           case "vault_create":
@@ -793,7 +1119,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             ];
             snapshot.folders = [];
             snapshot.records = [];
-            return copy(snapshot);
+            return captured();
           case "vault_unlock":
             if (state.status === "absent")
               throw refuse("missing", "native.error.13");
@@ -801,7 +1127,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               throw refuse("wrong_passphrase", "native.error.16");
             state.status = "unlocked";
             wrote("unlocked", { how: "passphrase" });
-            return copy(snapshot);
+            return captured();
           case "vault_recover":
             if (
               !state.recoveryKey ||
@@ -811,7 +1137,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               throw refuse("wrong_recovery_key", "native.error.44");
             state.passphrase = request.newPassphrase ?? "";
             state.status = "unlocked";
-            return { passphraseReplaced: true, snapshot: copy(snapshot) };
+            return { passphraseReplaced: true, snapshot: captured() };
           case "vault_lock":
             cancelViews();
             // A key being set up does not outlive the session.
@@ -819,6 +1145,35 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.picks = {};
             state.pendingKey = null;
             return;
+          // --- Starting again (#71): the typed words are checked first, then
+          // a native dialog asks once more. "Keep this vault" there answers
+          // false: script it with { resolve: false }. ---
+          case "vault_reset":
+            if (request.confirmation !== setup.resetPhrase)
+              throw refuse("invalid", "native.error.19");
+            if (state.status === "absent")
+              throw refuse("missing", "native.error.13");
+            cancelViews();
+            // The capture epoch and sequence carry on across the reset here;
+            // the native side likely starts a new epoch with the new vault.
+            // Align this once #193 (native capture ordering) lands.
+            state.status = "absent";
+            state.passphrase = "";
+            state.recoveryKey = null;
+            state.pendingKey = null;
+            state.documentPasswords = {};
+            state.picks = {};
+            state.importQueue = [];
+            state.received = [];
+            state.history = [];
+            snapshot.profiles = [];
+            snapshot.folders = [];
+            snapshot.records = [];
+            snapshot.recovery = null;
+            snapshot.recoveryKeySetAtMs = null;
+            snapshot.recoveryKeyLabel = null;
+            if (snapshot.portalLinks) snapshot.portalLinks = [];
+            return true;
           case "vault_recovery_key_begin":
             if (request.passphrase !== state.passphrase)
               throw refuse("wrong_passphrase", "native.error.16");
@@ -857,7 +1212,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.pendingKey = null;
             snapshot.recoveryKeySetAtMs = Date.now();
             snapshot.recoveryKeyLabel = setup.newKeyLabel;
-            return copy(snapshot);
+            return captured();
           }
           case "vault_assign_folders":
           case "vault_assign_folders_batch":
@@ -939,6 +1294,18 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               if (request.password !== password)
                 throw refuse("pdf_wrong_password", "native.error.26");
             }
+            const drawn = setup.drawnPages?.[Number(request.page)];
+            if (drawn) {
+              const width = Math.min(4096, Number(request.width));
+              return {
+                pageCount: setup.pageCount,
+                width,
+                height: Math.round(width * LETTER_ASPECT),
+                image: drawPage(drawn, width),
+                text: drawnText(drawn),
+                readableText: drawnText(drawn),
+              };
+            }
             const text = setup.pageText
               .replace("{page}", String(Number(request.page) + 1))
               .replace("{name}", record.displayName);
@@ -955,6 +1322,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_view_cancel":
             cancelViews();
             return;
+          case "vault_page_boxes": {
+            // Where the helper would find a quote on the picture (#292):
+            // here, where drawPage drew it. No drawn page, no box.
+            recordById(request.recordId);
+            if (setup.boxesAbsent)
+              return { rects: [], absent: setup.boxesAbsent };
+            const drawn = setup.drawnPages?.[Number(request.page)];
+            if (!drawn) return { rects: [], absent: "noText" };
+            return drawnBoxes(
+              drawn,
+              Number(request.start),
+              Number(request.end),
+              String(request.quoted ?? ""),
+            );
+          }
           case "vault_export_pick":
             refuseLocked();
             return makePick("export", { recordId: request.recordId });
@@ -976,6 +1358,43 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             record.displayName = request.name ?? "";
             return;
           }
+          // --- Photos taken with the camera (#95): the vault keeps the JPEG;
+          // the viewer gets it back as a data: URL ---
+          case "vault_save_photo": {
+            refuseLocked();
+            refusePaused();
+            const photo = args.photo;
+            if (!photo) throw refuse("invalid", "native.error.19");
+            const profileId = request.profileId ?? setup.ids.profile;
+            const duplicate = snapshot.records.find(
+              (r) => r.profileId === profileId && r.displayName === photo.name,
+            );
+            if (duplicate)
+              return { imported: [], skippedDuplicates: [duplicate.id] };
+            const record = fakeRecord(
+              photo.name,
+              profileId,
+              request.folderIds ?? [],
+            );
+            record.mediaType = "application/octet-stream";
+            record.plaintextSize = photo.jpeg.length;
+            snapshot.records.push(record);
+            state.photoUrls[record.id] = jpegUrlOf(photo.jpeg);
+            wrote("imported", { name: photo.name, how: "camera" });
+            return { imported: [record.id], skippedDuplicates: [] };
+          }
+          case "vault_is_photo": {
+            refuseLocked();
+            const record = recordById(request.recordId);
+            return Boolean(state.photoUrls[record.id]);
+          }
+          case "vault_view_photo": {
+            refuseLocked();
+            const record = recordById(request.recordId);
+            const url = state.photoUrls[record.id];
+            if (!url) throw refuse("not_found", "native.error.18");
+            return url;
+          }
           case "vault_hide_record": {
             const record = recordById(request.recordId);
             if (record.hidden) return;
@@ -996,6 +1415,22 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             links.push(made);
             return copy(made);
           }
+          // #136: links this device and asks the clinic to approve it in one
+          // native call. Not modelled yet: an approval request that fails
+          // after the link was made (native answers the new link with
+          // `approvalError` beside it).
+          case "vault_portal_connect": {
+            const links = (snapshot.portalLinks ??= []);
+            const made = {
+              ...link(links.length + 1, request.portalBase ?? "", false),
+              deviceName: request.deviceName ?? "",
+              profileId: request.profileId ?? null,
+              approvalRequested: true,
+              approvalStatus: "pending",
+            };
+            links.push(made);
+            return { link: copy(made), approvalError: null };
+          }
           case "vault_request_device_approval": {
             const found = snapshot.portalLinks?.find(
               (candidate) => candidate.id === args.linkId,
@@ -1003,6 +1438,54 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             if (!found) throw refuse("not_found", "native.error.18");
             found.approvalRequested = true;
             found.approvalStatus = "pending";
+            return;
+          }
+          // A new approval request after an expired or cancelled one: the
+          // old one goes into the link's history natively, and a fresh one
+          // is pending. Offered only while the link says it can restart.
+          // Not modelled yet (a later round): the history entry native
+          // writes for the restart, and approvalRequestLimitReached.
+          case "vault_restart_device_approval": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            // A refused request is answered as native does, by its own code
+            // (the app words it as the clinic's decision); reachable here
+            // only with a canRestart override.
+            if (found.approvalStatus === "refused")
+              throw refuse("approval_refused", "portal.approvalRefused");
+            if (!found.approvalCanRestart)
+              throw refuse("invalid", "native.error.19");
+            found.approvalRequested = true;
+            found.approvalStatus = "pending";
+            found.approvalReason = null;
+            found.approvalCanRestart = false;
+            return;
+          }
+          // #137: the clinic view's read-only status check of one device. It
+          // finds what the fake knows: an open request is still waiting for
+          // the clinic, with the ten minutes a request lasts; it never sends
+          // or starts a request.
+          case "vault_refresh_device_approval": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            return {
+              capture: captured().capture,
+              link: copy(found),
+              expiresInMs: 10 * 60_000,
+              issue: null,
+              recovery: false,
+            };
+          }
+          case "vault_forget_refused_deliveries": {
+            const found = snapshot.portalLinks?.find(
+              (candidate) => candidate.id === args.linkId,
+            );
+            if (!found) throw refuse("not_found", "native.error.18");
+            found.refusedDeliveries = 0;
             return;
           }
           case "vault_check_documents":
@@ -1030,6 +1513,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               importedAtMs: Date.now(),
               available: true,
               verifiedClinicName: setup.clinic,
+              ...(setup.clinicServiceDate !== null
+                ? { clinicServiceDate: setup.clinicServiceDate }
+                : {}),
             });
             return { added: 1, refused: 0, receiptsPending: 0, issues: [] };
           // Nothing in the fake documents names a person.
@@ -1127,6 +1613,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               person.fullName = request.details.fullName;
             if (request.details?.birthDate)
               person.birthDate = request.details.birthDate;
+            if (request.details?.previousFullNames !== undefined)
+              person.previousFullNames = [...request.details.previousFullNames];
             return;
           }
           case "vault_move_to_person": {
@@ -1212,6 +1700,10 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             snapshot.recovery = null;
             return missing;
           }
+          // --- The speed test, for testers (#39): the device's timings ---
+          case "kdf_benchmark":
+            refuseLocked();
+            return copy(setup.speedReport);
           case "vault_touch":
           case "vault_set_auto_lock":
           case "plugin:window|set_theme":
@@ -1245,24 +1737,76 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           state.importQueue = names;
           save();
         },
+        settle: (command: string, outcome: Outcome) => {
+          let waiting = pendingScripts[command]?.shift();
+          while (waiting?.settled) waiting = pendingScripts[command]?.shift();
+          if (!waiting) throw new Error(`Nothing pending for ${command}`);
+          if ("reject" in outcome) waiting.reject(outcome.reject);
+          else waiting.resolve(outcome.resolve);
+        },
+        share: (names: string[]) => {
+          for (const name of names)
+            state.received.push({
+              id: makeUuid(state.nextReceivedId++),
+              name,
+              sourceLabel: "Shared to myCarlos",
+            });
+          save();
+        },
       });
       Reflect.set(window, "__TAURI_INTERNALS__", {
         metadata: {
           currentWindow: { label: "main" },
           currentWebview: { label: "main", windowLabel: "main" },
         },
-        invoke: async (command: string, args?: Args) => {
-          state.calls.push({ command, args: copy(args ?? {}) });
+        invoke: async (
+          command: string,
+          body?: Args | Uint8Array,
+          options?: { headers?: Record<string, string> },
+        ) => {
+          let args: Args = {};
+          if (body instanceof Uint8Array) {
+            // vault_save_photo's one body: the target's length (4 bytes,
+            // big-endian), the target as JSON, then the JPEG. Recorded as
+            // what a test checks, not as the bytes.
+            const length = new DataView(body.buffer, body.byteOffset).getUint32(
+              0,
+            );
+            const target = JSON.parse(
+              new TextDecoder().decode(body.slice(4, 4 + length)),
+            ) as { profileId: string; folderIds: string[]; name: string };
+            const jpeg = body.slice(4 + length);
+            args = {
+              request: {
+                profileId: target.profileId,
+                folderIds: target.folderIds,
+              },
+              photo: { name: target.name, jpeg },
+            };
+            state.calls.push({
+              command,
+              args: {
+                photo: {
+                  start: Array.from(jpeg.slice(0, 3)),
+                  target,
+                  headers: options?.headers ?? null,
+                },
+              },
+            });
+          } else {
+            args = body ?? {};
+            state.calls.push({ command, args: copy(args) });
+          }
           save();
           let ownsCheck = false;
           try {
-            validateIds(args ?? {});
+            validateIds(args);
             if (command === "vault_check_documents") {
               if (checkingDocuments) throw refuse("invalid", "native.error.19");
               checkingDocuments = true;
               ownsCheck = true;
             }
-            return await answer(command, args ?? {});
+            return await answer(command, args);
           } finally {
             if (ownsCheck) checkingDocuments = false;
             save();
@@ -1281,19 +1825,29 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       keyLabel: FAKE_KEY_LABEL,
       newKeyLabel: FAKE_NEW_KEY_LABEL,
       lockedPdf: setup.lockedPdf ?? false,
+      readingAid: setup.readingAid ?? false,
       documentPassword: FAKE_DOCUMENT_PASSWORD,
       lockedOriginal: lockedOriginalName("{name}.pdf"),
       pageText: PAGE_TEXT,
       pageCount: FAKE_PAGE_COUNT,
       portal: setup.portal ?? null,
+      clinicServiceDate: setup.clinicServiceDate ?? null,
+      refusedDeliveries: setup.refusedDeliveries ?? 0,
+      approval: setup.approval ?? null,
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       received: setup.received ?? [],
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,
+      photos: setup.photos ?? [],
+      platform: setup.platform ?? "windows",
+      drawnPages: setup.drawnPages ?? null,
+      boxesAbsent: setup.boxesAbsent ?? null,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
+      resetPhrase: translate("en", "native.reset.phrase"),
+      speedReport: FAKE_SPEED_REPORT,
       messages: Object.fromEntries(
         NATIVE_MESSAGES.map((key) => [key, translate("en", key)]),
       ) as Record<string, string>,
@@ -1354,6 +1908,13 @@ export async function fakeSnapshot(page: Page) {
         snapshot: () => {
           recoveryKeySetAtMs: number | null;
           recoveryKeyLabel: string | null;
+          sharedProfileId?: string;
+          profiles: {
+            id: string;
+            displayName: string;
+            fullName?: string;
+            birthDate?: string;
+          }[];
           records: {
             id: string;
             displayName: string;
@@ -1381,6 +1942,38 @@ export async function scriptFake(
         }
       ).script(command, outcome),
     { command, outcome },
+  );
+}
+
+/** Settles the oldest pending scripted answer of `command`, as the native
+ * side finishing it would: a picker closing, for one. */
+export async function fakeSettle(
+  page: Page,
+  command: string,
+  outcome: Exclude<FakeOutcome, { pending: true }>,
+) {
+  await page.evaluate(
+    ({ command, outcome }) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          settle: (command: string, outcome: FakeOutcome) => void;
+        }
+      ).settle(command, outcome),
+    { command, outcome },
+  );
+}
+
+/** Files another app shares to myCarlos while the page is open (#61): they
+ * wait for the next ask, as on focus. */
+export async function fakeShare(page: Page, names: string[]) {
+  await page.evaluate(
+    (names) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          share: (names: string[]) => void;
+        }
+      ).share(names),
+    names,
   );
 }
 

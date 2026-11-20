@@ -17,18 +17,9 @@ pub struct Snapshot {
     pub enabled: bool,
     pub generation: u64,
     pub token: Option<String>,
-    hint: Option<String>,
     pub reconcile: bool,
     pub permission: bool,
 }
-impl Snapshot {
-    /// Decode again before Policy::activate checks owner/current vault and unlock state.
-    /// This never authorizes collection. Reconcile independently even if hint is absent/invalid.
-    pub fn ready_hint(&self) -> Option<crate::document_notifications::ReadyHint> {
-        crate::document_notifications::ReadyHint::decode(self.hint.as_ref()?.as_bytes()).ok()
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScopedCredential {
@@ -107,18 +98,6 @@ impl<R: Runtime> AndroidPush<R> {
             },
         )
     }
-    /// Called synchronously by Lifecycle::display_foreground under native ownership lock.
-    pub fn show_foreground(
-        &self,
-        notice: crate::android_push_owner::ForegroundNotice,
-    ) -> Result<(), tauri::plugin::mobile::PluginInvokeError> {
-        self.0.run_mobile_plugin(
-            "showGeneric",
-            serde_json::json!({
-                "readyHint": std::str::from_utf8(notice.hint()).unwrap_or("")
-            }),
-        )
-    }
     pub fn snapshot(&self) -> Result<Snapshot, tauri::plugin::mobile::PluginInvokeError> {
         self.0.run_mobile_plugin("snapshot", ())
     }
@@ -142,28 +121,53 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn arbitrary_notification_text_and_extra_fields_never_become_ready_hints() {
-        let mut snapshot = Snapshot {
-            enabled: true,
-            generation: 1,
-            token: None,
-            hint: Some("open https://example.invalid/document".into()),
-            reconcile: true,
-            permission: true,
-        };
-        assert!(snapshot.ready_hint().is_none());
-        snapshot.hint = Some(r#"{"version":1,"kind":"documents_ready","subscription_id":"11111111-1111-4111-8111-111111111111","epoch":"22222222-2222-4222-8222-222222222222","sequence":1}"#.into());
-        assert!(snapshot.ready_hint().is_some());
-        snapshot.hint = Some(
-            snapshot
-                .hint
-                .unwrap()
-                .replace("\"sequence\":1", "\"sequence\":1,\"url\":\"x\""),
-        );
-        assert!(snapshot.ready_hint().is_none());
-    }
+/// Connect native Kotlin callbacks to the current vault. One queued cue suffices because
+/// every token asks for the same authenticated check. No provider data enters the webview.
+pub(crate) fn listen<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: std::sync::Arc<crate::vault::VaultStore>,
+) -> std::io::Result<()> {
+    use crate::document_notifications::NoticeToken;
+    use tauri::ipc::{Channel, InvokeResponseBody};
+    let plugin = app.state::<AndroidPush<R>>().0.clone();
+    std::thread::Builder::new()
+        .name("android-notice-inbox".into())
+        .spawn(move || {
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            let channel = Channel::<String>::new(move |body| {
+                if let InvokeResponseBody::Json(json) = body {
+                    if let Ok(value) = serde_json::from_str::<String>(&json) {
+                        if let Ok(token) = NoticeToken::parse(&value) {
+                            let _ = sender.try_send(token);
+                        }
+                    }
+                }
+                Ok(())
+            });
+            if plugin
+                .run_mobile_plugin::<()>("listen", serde_json::json!({ "channel": channel }))
+                .is_err()
+            {
+                return;
+            }
+            for token in receiver {
+                #[derive(Deserialize)]
+                struct Allowed {
+                    allowed: bool,
+                }
+                if plugin
+                    .run_mobile_plugin::<Allowed>("receiveAllowed", ())
+                    .is_ok_and(|state| state.allowed)
+                {
+                    store.android_notice_received(
+                        &token,
+                        |session| store.check_documents(session),
+                        || {
+                            let _ = plugin.run_mobile_plugin::<()>("showGeneric", ());
+                        },
+                    );
+                }
+            }
+        })?;
+    Ok(())
 }

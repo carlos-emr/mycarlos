@@ -25,7 +25,9 @@ Windows may warn about an unknown publisher or block this unsigned app. Organiza
 may also prevent installation. A signed publisher build is not available yet; do not disable
 Windows security features to install this evaluation.
 
-The app is not connected to CARLOS EMR. Forgetting the passphrase loses access to this test vault.
+The app can link to a clinic's patient portal (Security > Clinic documents > Link to clinic)
+to receive documents; link only to a test portal. It never connects to CARLOS EMR itself.
+Forgetting the passphrase loses access to this test vault.
 Uninstalling the app can leave its vault data behind. To erase the test vault, use Security >
 Erase entire vault before uninstalling. Reset does not delete any readable copies you exported.
 

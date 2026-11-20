@@ -1,0 +1,84 @@
+name: Android notification test
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/android-notification-test.yml"
+      - "src-tauri/android-push/**"
+      - "src-tauri/src/android_push*.rs"
+      - "src-tauri/android_push_profile.rs"
+      - "src-tauri/src/vault/remote_notices.rs"
+      - "scripts/*android-push*"
+      - "src-tauri/build.rs"
+permissions:
+  contents: read
+concurrency:
+  group: android-notification-test-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  test:
+    name: Android push test APK and emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Configure hosted Android NDK
+        run: |
+          test -d "$ANDROID_NDK_LATEST_HOME"
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+      - name: Install pinned Rust toolchain and Android target
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --target x86_64-linux-android --target aarch64-linux-android
+      - run: npm ci
+      - run: npm run tauri android init -- --ci
+      - name: Disable Android cloud and device-transfer backup
+        run: npm run android:secure
+      - name: Configure isolated test package with synthetic Firebase resources
+        run: node scripts/configure-android-push-test.mjs
+      - name: Build feature-on APK for phones and the emulator
+        run: npm run tauri android build -- --debug --apk --features android-push --target aarch64 x86_64 --ci
+      - name: Package debug APK
+        env:
+          SOURCE: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          apk=src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-entries"
+          grep -q '^lib/arm64-v8a/' "$RUNNER_TEMP/apk-entries"
+          grep -q '^lib/x86_64/' "$RUNNER_TEMP/apk-entries"
+          mkdir push-download
+          cp "$apk" push-download/myCarlos-Android-Push-Test.apk
+          cp src-tauri/android-push/CONTRACT.md push-download/README.md
+          echo "$SOURCE" > push-download/SOURCE.txt
+      - name: Allow the emulator to use hardware acceleration (KVM)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -e /dev/kvm
+      - name: Start an emulator and run the smoke test
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/test-android-push-emulator.sh push-download/myCarlos-Android-Push-Test.apk
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() && hashFiles('push-download/*.apk') != '' }}
+        with:
+          name: myCarlos-Android-Push-Test
+          path: push-download/
+          if-no-files-found: error
+          retention-days: 14

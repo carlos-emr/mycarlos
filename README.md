@@ -2,7 +2,8 @@
 
 > **Synthetic-data development only — do not use real patient files.** The native app now includes
 > an encrypted durable-vault vertical slice, but it has not passed the security, privacy, signing,
-> physical-device, or release gates required for PHI. It is not connected to CARLOS EMR.
+> physical-device, or release gates required for PHI. It can link to a clinic's patient portal to
+> receive documents (test portals only) and never connects to CARLOS EMR itself.
 
 **[Download the Windows evaluation build](https://github.com/carlos-emr/mycarlos/actions/workflows/mycarlos.yml?query=branch%3Amain+event%3Apush)**
 — open the newest run with a successful **Windows native build** job and select

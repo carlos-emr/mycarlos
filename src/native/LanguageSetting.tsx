@@ -21,6 +21,11 @@ const LANGUAGES: ReadonlyArray<readonly [Locale, string, string?]> = [
   ["zh-TW", "繁體中文"],
 ];
 
+/** A language's own name, as the list shows it. */
+export function languageName(locale: Locale): string {
+  return LANGUAGES.find(([code]) => code === locale)?.[1] ?? locale;
+}
+
 export function LanguageSetting({ compact = false }: { compact?: boolean }) {
   const state = useSyncExternalStore(subscribeLocale, getLanguagePreference);
   const { t } = useI18n();
