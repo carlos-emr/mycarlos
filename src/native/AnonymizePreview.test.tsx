@@ -1,8 +1,9 @@
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
+import { LOCALES, translate } from "../i18n";
 import { AnonymizePreview } from "./AnonymizePreview";
 import { joinPages, type DocumentText } from "../documentText";
 import type {
@@ -459,7 +460,7 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(screen.getByText(humanText("1 word to check"))).toBeInTheDocument();
     expect(
       document.querySelector(".native-anonymize-summary"),
-    ).toHaveHumanTextContent(/removed by you: 1/);
+    ).toHaveHumanTextContent(/1 removed by you/);
     // The list below the text reaches the same removal from the keyboard.
     await user.click(
       screen.getByRole("button", { name: humanText("Remove “214”") }),
@@ -524,6 +525,58 @@ describe("the anonymize preview (#72 part B)", () => {
     );
   });
 
+  it("counts each kind with its language's plural forms", () => {
+    const count = (
+      locale: Parameters<typeof translate>[0],
+      kind: string,
+      n: number,
+    ) =>
+      visibleText(
+        translate(
+          locale,
+          `interface.AnonymizePreview.removedCount.${kind}` as Parameters<
+            typeof translate
+          >[1],
+          { count: n },
+        ),
+      );
+    // English and French: one and other; Polish: one, few, many; Chinese: no plural.
+    expect(count("en", "name", 1)).toBe("1 name");
+    expect(count("en", "name", 4)).toBe("4 names");
+    expect(count("en", "phone", 2)).toBe("2 phone numbers");
+    expect(count("en", "date", 6)).toBe("6 dates replaced");
+    expect(count("fr", "name", 1)).toBe("1 nom");
+    expect(count("fr", "phone", 2)).toBe("2 numéros de téléphone");
+    expect(count("pl", "phone", 1)).toBe("1 numer telefonu");
+    expect(count("pl", "phone", 2)).toBe("2 numery telefonów");
+    expect(count("pl", "phone", 5)).toBe("5 numerów telefonów");
+    expect(count("zh-CN", "phone", 2)).toBe("2 个电话号码");
+    // Every kind has a form in every language, and no placeholder is left in it.
+    for (const locale of LOCALES)
+      for (const kind of [
+        "name",
+        "doctor",
+        "clinic",
+        "healthCard",
+        "recordNumber",
+        "sin",
+        "dateOfBirth",
+        "age",
+        "address",
+        "postalCode",
+        "phone",
+        "email",
+        "web",
+        "unclearDate",
+        "manual",
+        "date",
+      ])
+        for (const n of [1, 2, 5, 22])
+          expect(count(locale, kind, n), `${locale} ${kind} ${n}`).toMatch(
+            new RegExp(String(n)),
+          );
+  });
+
   it("says at the top what was removed, by kind, and follows each removal and undo", async () => {
     const user = userEvent.setup();
     renderPreview();
@@ -533,8 +586,8 @@ describe("the anonymize preview (#72 part B)", () => {
     const summary = () =>
       document.querySelector<HTMLElement>(".native-anonymize-summary")!;
     // From the automatic result: the patient's name, birth date, a date and the doctor.
-    expect(summary()).toHaveHumanTextContent(/^Removed: .*name: 1/);
-    expect(summary()).toHaveHumanTextContent(/date of birth: 1/);
+    expect(summary()).toHaveHumanTextContent(/^Removed: .*1 name/);
+    expect(summary()).toHaveHumanTextContent(/1 date of birth/);
     expect(summary()).not.toHaveHumanTextContent(/removed by you/);
     await user.type(
       screen.getByLabelText(humanText("Word or phrase to remove everywhere")),
@@ -543,7 +596,7 @@ describe("the anonymize preview (#72 part B)", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Remove everywhere") }),
     );
-    expect(summary()).toHaveHumanTextContent(/removed by you: 1/);
+    expect(summary()).toHaveHumanTextContent(/1 removed by you/);
     await user.click(
       screen.getByRole("button", { name: humanText("Undo the last removal") }),
     );

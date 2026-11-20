@@ -2215,7 +2215,85 @@ interface-AnonymizePreview-removedSummary = Retiré : { $list }.
 
 interface-AnonymizePreview-removedSummaryNone = Rien n’a encore été retiré.
 
-interface-AnonymizePreview-removedSummaryItem = { $kind } : { $count }
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nom
+   *[other] { $count } noms
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médecin
+   *[other] { $count } médecins
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinique
+   *[other] { $count } cliniques
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numéro de carte santé
+   *[other] { $count } numéros de carte santé
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numéro de dossier
+   *[other] { $count } numéros de dossier
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numéro d'assurance sociale
+   *[other] { $count } numéros d'assurance sociale
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date de naissance
+   *[other] { $count } dates de naissance
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } âge
+   *[other] { $count } âges
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adresse
+   *[other] { $count } adresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } code postal
+   *[other] { $count } codes postaux
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numéro de téléphone
+   *[other] { $count } numéros de téléphone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adresse courriel
+   *[other] { $count } adresses courriel
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adresse web
+   *[other] { $count } adresses web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } date ambiguë
+   *[other] { $count } dates ambiguës
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } retiré par vous
+   *[other] { $count } retirés par vous
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date remplacée
+   *[other] { $count } dates remplacées
+}
 
 interface-AnonymizePreview-toCheck = { $count ->
     [one] { $count } mot à vérifier

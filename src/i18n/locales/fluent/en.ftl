@@ -2180,7 +2180,85 @@ interface-AnonymizePreview-removedSummary = Removed: { $list }.
 
 interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
 
-interface-AnonymizePreview-removedSummaryItem = { $kind }: { $count }
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } name
+   *[other] { $count } names
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } doctor
+   *[other] { $count } doctors
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinic
+   *[other] { $count } clinics
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } health card number
+   *[other] { $count } health card numbers
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } record number
+   *[other] { $count } record numbers
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } social insurance number
+   *[other] { $count } social insurance numbers
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date of birth
+   *[other] { $count } dates of birth
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } age
+   *[other] { $count } ages
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } address
+   *[other] { $count } addresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } postal code
+   *[other] { $count } postal codes
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } phone number
+   *[other] { $count } phone numbers
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } email address
+   *[other] { $count } email addresses
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } web address
+   *[other] { $count } web addresses
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } unclear date
+   *[other] { $count } unclear dates
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removed by you
+   *[other] { $count } removed by you
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date replaced
+   *[other] { $count } dates replaced
+}
 
 interface-AnonymizePreview-toCheck = { $count ->
     [one] { $count } word to check

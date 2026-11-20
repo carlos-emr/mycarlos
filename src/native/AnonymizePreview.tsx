@@ -499,11 +499,12 @@ export function AnonymizePreview({
     const counts = removalCounts(current.onDevice.removed);
     if (counts.length === 0)
       return translateNow("interface.AnonymizePreview.removedSummaryNone");
+    // Each kind says its own count with the language's plural forms: "1 name, 2 phone numbers".
     const items = counts.map(({ kind, count }) =>
-      translateNow("interface.AnonymizePreview.removedSummaryItem", {
-        kind: translateNow(kindKey(kind)),
-        count,
-      }),
+      translateNow(
+        `interface.AnonymizePreview.removedCount.${kind}` as MessageKey,
+        { count },
+      ),
     );
     let list = items.join(", ");
     try {

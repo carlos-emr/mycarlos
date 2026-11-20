@@ -2013,7 +2013,37 @@ interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
 
 interface-AnonymizePreview-removedSummaryNone = 尚未移除任何內容。
 
-interface-AnonymizePreview-removedSummaryItem = { $kind }：{ $count }
+interface-AnonymizePreview-removedCount-name = { $count } 個姓名
+
+interface-AnonymizePreview-removedCount-doctor = { $count } 位醫生
+
+interface-AnonymizePreview-removedCount-clinic = { $count } 家診所
+
+interface-AnonymizePreview-removedCount-healthCard = { $count } 個健保卡號
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count } 個病歷號
+
+interface-AnonymizePreview-removedCount-sin = { $count } 個社會保險號
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count } 個出生日期
+
+interface-AnonymizePreview-removedCount-age = { $count } 個年齡
+
+interface-AnonymizePreview-removedCount-address = { $count } 個地址
+
+interface-AnonymizePreview-removedCount-postalCode = { $count } 個郵遞區號
+
+interface-AnonymizePreview-removedCount-phone = { $count } 個電話號碼
+
+interface-AnonymizePreview-removedCount-email = { $count } 個電子郵件地址
+
+interface-AnonymizePreview-removedCount-web = { $count } 個網址
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count } 個不明確的日期
+
+interface-AnonymizePreview-removedCount-manual = { $count } 項由您移除的內容
+
+interface-AnonymizePreview-removedCount-date = { $count } 個已替換的日期
 
 interface-AnonymizePreview-toCheck = { $count } 個詞需要檢查
 

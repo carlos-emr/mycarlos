@@ -934,7 +934,22 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.possibleNames",
   "interface.AnonymizePreview.removeWord",
   "interface.AnonymizePreview.removedSummary",
-  "interface.AnonymizePreview.removedSummaryItem",
+  "interface.AnonymizePreview.removedCount.name",
+  "interface.AnonymizePreview.removedCount.doctor",
+  "interface.AnonymizePreview.removedCount.clinic",
+  "interface.AnonymizePreview.removedCount.healthCard",
+  "interface.AnonymizePreview.removedCount.recordNumber",
+  "interface.AnonymizePreview.removedCount.sin",
+  "interface.AnonymizePreview.removedCount.dateOfBirth",
+  "interface.AnonymizePreview.removedCount.age",
+  "interface.AnonymizePreview.removedCount.address",
+  "interface.AnonymizePreview.removedCount.postalCode",
+  "interface.AnonymizePreview.removedCount.phone",
+  "interface.AnonymizePreview.removedCount.email",
+  "interface.AnonymizePreview.removedCount.web",
+  "interface.AnonymizePreview.removedCount.unclearDate",
+  "interface.AnonymizePreview.removedCount.manual",
+  "interface.AnonymizePreview.removedCount.date",
   "interface.AnonymizePreview.removedSummaryNone",
   "interface.AnonymizePreview.toCheck",
   "interface.AnonymizePreview.toCheckHelp",
@@ -2173,8 +2188,38 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-removeWord",
   "interface.AnonymizePreview.removedSummary":
     "interface-AnonymizePreview-removedSummary",
-  "interface.AnonymizePreview.removedSummaryItem":
-    "interface-AnonymizePreview-removedSummaryItem",
+  "interface.AnonymizePreview.removedCount.name":
+    "interface-AnonymizePreview-removedCount-name",
+  "interface.AnonymizePreview.removedCount.doctor":
+    "interface-AnonymizePreview-removedCount-doctor",
+  "interface.AnonymizePreview.removedCount.clinic":
+    "interface-AnonymizePreview-removedCount-clinic",
+  "interface.AnonymizePreview.removedCount.healthCard":
+    "interface-AnonymizePreview-removedCount-healthCard",
+  "interface.AnonymizePreview.removedCount.recordNumber":
+    "interface-AnonymizePreview-removedCount-recordNumber",
+  "interface.AnonymizePreview.removedCount.sin":
+    "interface-AnonymizePreview-removedCount-sin",
+  "interface.AnonymizePreview.removedCount.dateOfBirth":
+    "interface-AnonymizePreview-removedCount-dateOfBirth",
+  "interface.AnonymizePreview.removedCount.age":
+    "interface-AnonymizePreview-removedCount-age",
+  "interface.AnonymizePreview.removedCount.address":
+    "interface-AnonymizePreview-removedCount-address",
+  "interface.AnonymizePreview.removedCount.postalCode":
+    "interface-AnonymizePreview-removedCount-postalCode",
+  "interface.AnonymizePreview.removedCount.phone":
+    "interface-AnonymizePreview-removedCount-phone",
+  "interface.AnonymizePreview.removedCount.email":
+    "interface-AnonymizePreview-removedCount-email",
+  "interface.AnonymizePreview.removedCount.web":
+    "interface-AnonymizePreview-removedCount-web",
+  "interface.AnonymizePreview.removedCount.unclearDate":
+    "interface-AnonymizePreview-removedCount-unclearDate",
+  "interface.AnonymizePreview.removedCount.manual":
+    "interface-AnonymizePreview-removedCount-manual",
+  "interface.AnonymizePreview.removedCount.date":
+    "interface-AnonymizePreview-removedCount-date",
   "interface.AnonymizePreview.removedSummaryNone":
     "interface-AnonymizePreview-removedSummaryNone",
   "interface.AnonymizePreview.toCheck": "interface-AnonymizePreview-toCheck",
@@ -3360,10 +3405,32 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.possibleNames": undefined;
   "interface.AnonymizePreview.removeWord": { word: FluentArgument };
   "interface.AnonymizePreview.removedSummary": { list: FluentArgument };
-  "interface.AnonymizePreview.removedSummaryItem": {
+  "interface.AnonymizePreview.removedCount.name": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.doctor": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.clinic": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.healthCard": {
     count: FluentArgument;
-    kind: FluentArgument;
   };
+  "interface.AnonymizePreview.removedCount.recordNumber": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.sin": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.dateOfBirth": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.age": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.address": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.postalCode": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.phone": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.email": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.web": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.unclearDate": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.manual": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.date": { count: FluentArgument };
   "interface.AnonymizePreview.removedSummaryNone": undefined;
   "interface.AnonymizePreview.toCheck": { count: FluentArgument };
   "interface.AnonymizePreview.toCheckHelp": undefined;

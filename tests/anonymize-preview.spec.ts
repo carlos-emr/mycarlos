@@ -281,7 +281,7 @@ test("on a wide window Close is the last button in the action row, at the bottom
     // What was removed, by kind, is said at the top; what is still in the text and may identify
     // someone is highlighted and counted once; the two plain notes are beside Save.
     await expect(preview.locator(".native-anonymize-summary")).toContainText(
-      /^Removed: .*name.*: .*1/, // Fluent isolates each value with invisible marks
+      /^Removed: .*1.*name/, // Fluent isolates each value with invisible marks
     );
     await expect(preview.locator("[data-check]")).toHaveText(["Blake", "214"]);
     await expect(preview.getByText(/2.*words to check/)).toBeVisible();

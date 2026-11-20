@@ -242,10 +242,25 @@ pub enum MessageId {
     InterfaceAnonymizePreviewRemovePhrase,
     InterfaceAnonymizePreviewRemoveSelected,
     InterfaceAnonymizePreviewRemoveWord,
+    InterfaceAnonymizePreviewRemovedCountAddress,
+    InterfaceAnonymizePreviewRemovedCountAge,
+    InterfaceAnonymizePreviewRemovedCountClinic,
+    InterfaceAnonymizePreviewRemovedCountDate,
+    InterfaceAnonymizePreviewRemovedCountDateOfBirth,
+    InterfaceAnonymizePreviewRemovedCountDoctor,
+    InterfaceAnonymizePreviewRemovedCountEmail,
+    InterfaceAnonymizePreviewRemovedCountHealthCard,
+    InterfaceAnonymizePreviewRemovedCountManual,
+    InterfaceAnonymizePreviewRemovedCountName,
+    InterfaceAnonymizePreviewRemovedCountPhone,
+    InterfaceAnonymizePreviewRemovedCountPostalCode,
+    InterfaceAnonymizePreviewRemovedCountRecordNumber,
+    InterfaceAnonymizePreviewRemovedCountSin,
+    InterfaceAnonymizePreviewRemovedCountUnclearDate,
+    InterfaceAnonymizePreviewRemovedCountWeb,
     InterfaceAnonymizePreviewRemovedKind,
     InterfaceAnonymizePreviewRemovedPlaces,
     InterfaceAnonymizePreviewRemovedSummary,
-    InterfaceAnonymizePreviewRemovedSummaryItem,
     InterfaceAnonymizePreviewRemovedSummaryNone,
     InterfaceAnonymizePreviewReplaced,
     InterfaceAnonymizePreviewSave,
@@ -1305,10 +1320,25 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewRemovePhrase,
         Self::InterfaceAnonymizePreviewRemoveSelected,
         Self::InterfaceAnonymizePreviewRemoveWord,
+        Self::InterfaceAnonymizePreviewRemovedCountAddress,
+        Self::InterfaceAnonymizePreviewRemovedCountAge,
+        Self::InterfaceAnonymizePreviewRemovedCountClinic,
+        Self::InterfaceAnonymizePreviewRemovedCountDate,
+        Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth,
+        Self::InterfaceAnonymizePreviewRemovedCountDoctor,
+        Self::InterfaceAnonymizePreviewRemovedCountEmail,
+        Self::InterfaceAnonymizePreviewRemovedCountHealthCard,
+        Self::InterfaceAnonymizePreviewRemovedCountManual,
+        Self::InterfaceAnonymizePreviewRemovedCountName,
+        Self::InterfaceAnonymizePreviewRemovedCountPhone,
+        Self::InterfaceAnonymizePreviewRemovedCountPostalCode,
+        Self::InterfaceAnonymizePreviewRemovedCountRecordNumber,
+        Self::InterfaceAnonymizePreviewRemovedCountSin,
+        Self::InterfaceAnonymizePreviewRemovedCountUnclearDate,
+        Self::InterfaceAnonymizePreviewRemovedCountWeb,
         Self::InterfaceAnonymizePreviewRemovedKind,
         Self::InterfaceAnonymizePreviewRemovedPlaces,
         Self::InterfaceAnonymizePreviewRemovedSummary,
-        Self::InterfaceAnonymizePreviewRemovedSummaryItem,
         Self::InterfaceAnonymizePreviewRemovedSummaryNone,
         Self::InterfaceAnonymizePreviewReplaced,
         Self::InterfaceAnonymizePreviewSave,
@@ -2430,15 +2460,60 @@ impl MessageId {
                 "interface-AnonymizePreview-removeSelected"
             }
             Self::InterfaceAnonymizePreviewRemoveWord => "interface-AnonymizePreview-removeWord",
+            Self::InterfaceAnonymizePreviewRemovedCountAddress => {
+                "interface-AnonymizePreview-removedCount-address"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountAge => {
+                "interface-AnonymizePreview-removedCount-age"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountClinic => {
+                "interface-AnonymizePreview-removedCount-clinic"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDate => {
+                "interface-AnonymizePreview-removedCount-date"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth => {
+                "interface-AnonymizePreview-removedCount-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDoctor => {
+                "interface-AnonymizePreview-removedCount-doctor"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountEmail => {
+                "interface-AnonymizePreview-removedCount-email"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountHealthCard => {
+                "interface-AnonymizePreview-removedCount-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountManual => {
+                "interface-AnonymizePreview-removedCount-manual"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountName => {
+                "interface-AnonymizePreview-removedCount-name"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountPhone => {
+                "interface-AnonymizePreview-removedCount-phone"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountPostalCode => {
+                "interface-AnonymizePreview-removedCount-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountRecordNumber => {
+                "interface-AnonymizePreview-removedCount-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountSin => {
+                "interface-AnonymizePreview-removedCount-sin"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountUnclearDate => {
+                "interface-AnonymizePreview-removedCount-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountWeb => {
+                "interface-AnonymizePreview-removedCount-web"
+            }
             Self::InterfaceAnonymizePreviewRemovedKind => "interface-AnonymizePreview-removedKind",
             Self::InterfaceAnonymizePreviewRemovedPlaces => {
                 "interface-AnonymizePreview-removedPlaces"
             }
             Self::InterfaceAnonymizePreviewRemovedSummary => {
                 "interface-AnonymizePreview-removedSummary"
-            }
-            Self::InterfaceAnonymizePreviewRemovedSummaryItem => {
-                "interface-AnonymizePreview-removedSummaryItem"
             }
             Self::InterfaceAnonymizePreviewRemovedSummaryNone => {
                 "interface-AnonymizePreview-removedSummaryNone"
@@ -4755,8 +4830,53 @@ impl MessageId {
             "interface.AnonymizePreview.removedSummary" => {
                 Some(Self::InterfaceAnonymizePreviewRemovedSummary)
             }
-            "interface.AnonymizePreview.removedSummaryItem" => {
-                Some(Self::InterfaceAnonymizePreviewRemovedSummaryItem)
+            "interface.AnonymizePreview.removedCount.name" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountName)
+            }
+            "interface.AnonymizePreview.removedCount.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDoctor)
+            }
+            "interface.AnonymizePreview.removedCount.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountClinic)
+            }
+            "interface.AnonymizePreview.removedCount.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountHealthCard)
+            }
+            "interface.AnonymizePreview.removedCount.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountRecordNumber)
+            }
+            "interface.AnonymizePreview.removedCount.sin" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountSin)
+            }
+            "interface.AnonymizePreview.removedCount.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth)
+            }
+            "interface.AnonymizePreview.removedCount.age" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountAge)
+            }
+            "interface.AnonymizePreview.removedCount.address" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountAddress)
+            }
+            "interface.AnonymizePreview.removedCount.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountPostalCode)
+            }
+            "interface.AnonymizePreview.removedCount.phone" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountPhone)
+            }
+            "interface.AnonymizePreview.removedCount.email" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountEmail)
+            }
+            "interface.AnonymizePreview.removedCount.web" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountWeb)
+            }
+            "interface.AnonymizePreview.removedCount.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountUnclearDate)
+            }
+            "interface.AnonymizePreview.removedCount.manual" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountManual)
+            }
+            "interface.AnonymizePreview.removedCount.date" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDate)
             }
             "interface.AnonymizePreview.removedSummaryNone" => {
                 Some(Self::InterfaceAnonymizePreviewRemovedSummaryNone)
