@@ -903,6 +903,49 @@ fn carries_medicine(sentence: &str, words: &[String]) -> bool {
     shared >= words.len().min(2)
 }
 
+/// Whether a sentence ends something at a time its source sentence does not give: it says "until
+/// <words>" (or "till") and a content word of those words (four letters or more, no number) is not
+/// in the source sentence, even by its first five letters. A time written from another part of the
+/// letter ("keep eating gluten until the biopsy", from a question asking how long) is not what the
+/// quote says. A trial check (#353): only "until" and "till", so it fires rarely.
+fn time_limit_the_source_lacks(sentence: &str, source: &str) -> bool {
+    let toks = tokens(sentence);
+    let chars: Vec<char> = sentence.chars().collect();
+    let Some(at) = toks.iter().position(|t| t.0 == "until" || t.0 == "till") else {
+        return false;
+    };
+    let have: Vec<String> = tokens(source).into_iter().map(|t| t.0).collect();
+    let mut previous_end = toks[at].2;
+    for t in &toks[at + 1..] {
+        // Punctuation between two words ends the clause.
+        if chars[previous_end..t.1]
+            .iter()
+            .any(|c| matches!(c, ',' | ';' | ':' | '.' | '!' | '?'))
+        {
+            break;
+        }
+        previous_end = t.2;
+        let word = &t.0;
+        if word.chars().count() < 4
+            || STOP.contains(&word.as_str())
+            || STEP_STOP.contains(&word.as_str())
+            || word.chars().any(|c| c.is_ascii_digit())
+        {
+            continue;
+        }
+        let found = have.iter().any(|h| {
+            h == word
+                || (word.chars().count() >= 5
+                    && h.chars().count() >= 5
+                    && word.chars().take(5).eq(h.chars().take(5)))
+        });
+        if !found {
+            return true;
+        }
+    }
+    false
+}
+
 fn flat(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -1021,6 +1064,8 @@ pub(crate) fn check_guarded<E>(
                 "numbers"
             } else if names_a_doctor_the_source_lacks(&line.text, source) {
                 "doctor-name"
+            } else if time_limit_the_source_lacks(&line.text, source) {
+                "time-limit"
             } else {
                 continue;
             };
@@ -1816,4 +1861,44 @@ mod tests {
         }
     }
 
+    #[test]
+    fn given_a_time_limit_taken_from_a_question_when_checked_then_the_letters_sentence_is_quoted() {
+        check_case("a_time_limit_taken_from_a_question");
+    }
+
+    #[test]
+    fn given_a_time_limit_the_quoted_sentence_gives_when_checked_then_nothing_changes() {
+        check_case("a_time_limit_the_quoted_sentence_gives");
+    }
+
+    #[test]
+    fn given_an_until_with_no_content_word_when_checked_then_nothing_changes() {
+        check_case("an_until_with_no_content_word_is_left_alone");
+    }
+
+    #[test]
+    fn given_an_until_clause_when_read_then_it_ends_at_punctuation_and_skips_numbers() {
+        assert!(time_limit_the_source_lacks(
+            "Rest until the biopsy.",
+            "Rest for now."
+        ));
+        assert!(!time_limit_the_source_lacks(
+            "Rest until the biopsy.",
+            "Rest until the biopsy."
+        ));
+        // Only the words of the clause count: "biopsies" shares its first five letters with "biopsy".
+        assert!(!time_limit_the_source_lacks(
+            "Rest until the biopsy.",
+            "Rest until the biopsies are back."
+        ));
+        // The clause stops at a comma: "next week" is not part of it.
+        assert!(!time_limit_the_source_lacks(
+            "Rest until the biopsy, then call next week.",
+            "Rest until the biopsy."
+        ));
+        // A number in the clause is the number check's business, not this one's.
+        assert!(!time_limit_the_source_lacks("Rest until 5 pm.", "Rest."));
+        // No "until" or "till", nothing to check.
+        assert!(!time_limit_the_source_lacks("Rest for now.", "Rest."));
+    }
 }

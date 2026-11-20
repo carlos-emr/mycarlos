@@ -604,3 +604,32 @@ Come back in six weeks.
 The document says: “Stop taking FAKEDRUGA tablets.”
 The document says: “Stop taking FAKEDRUGB tablets.”
 The document says: “Stop taking FAKEDRUGC tablets.”
+===
+name: a_time_limit_taken_from_a_question
+pages:
+Questions
+Should they keep eating gluten until the biopsy, and for how long?
+I have asked them to keep eating gluten for now and not to start a gluten-free diet before
+your assessment. I would be grateful if they could be seen within the next 4 to 6 weeks.
+summary:
+The patient must keep eating gluten until the biopsy. || I have asked them to keep eating gluten for now
+expect:
+The document says: “I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.”
+===
+name: a_time_limit_the_quoted_sentence_gives
+pages:
+Plan
+Keep taking ferrous fumarate until the infusion on 24 November, then stop it.
+summary:
+You must keep taking ferrous fumarate until your infusion on 24 November. || Keep taking ferrous fumarate until the infusion on 24 November
+expect:
+You must keep taking ferrous fumarate until your infusion on 24 November.
+===
+name: an_until_with_no_content_word_is_left_alone
+pages:
+Plan
+Rest at home.
+summary:
+You must rest at home until then. || Rest at home
+expect:
+You must rest at home until then.
