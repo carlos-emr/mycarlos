@@ -1043,5 +1043,15 @@
   "personDetails.previousEntry",
   "personDetails.previousRemove",
   "personDetails.previousAdd",
-  "personDetails.previousInvalid"
+  "personDetails.previousInvalid",
+  "reader.android.failed",
+  "reader.android.next",
+  "reader.android.opening",
+  "reader.android.page",
+  "reader.android.pageStatus",
+  "reader.android.previous",
+  "reader.android.tooLarge",
+  "reader.android.unavailable",
+  "reader.android.zoomIn",
+  "reader.android.zoomOut"
 ]

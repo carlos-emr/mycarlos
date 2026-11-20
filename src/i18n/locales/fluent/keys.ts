@@ -1045,6 +1045,16 @@ export const MESSAGE_KEYS = [
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "reader.android.failed",
+  "reader.android.next",
+  "reader.android.opening",
+  "reader.android.page",
+  "reader.android.pageStatus",
+  "reader.android.previous",
+  "reader.android.tooLarge",
+  "reader.android.unavailable",
+  "reader.android.zoomIn",
+  "reader.android.zoomOut",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2289,6 +2299,16 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "reader.android.failed": "reader-android-failed",
+  "reader.android.next": "reader-android-next",
+  "reader.android.opening": "reader-android-opening",
+  "reader.android.page": "reader-android-page",
+  "reader.android.pageStatus": "reader-android-pageStatus",
+  "reader.android.previous": "reader-android-previous",
+  "reader.android.tooLarge": "reader-android-tooLarge",
+  "reader.android.unavailable": "reader-android-unavailable",
+  "reader.android.zoomIn": "reader-android-zoomIn",
+  "reader.android.zoomOut": "reader-android-zoomOut",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3452,6 +3472,16 @@ export interface MessageArgsByKey {
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "reader.android.failed": undefined;
+  "reader.android.next": undefined;
+  "reader.android.opening": undefined;
+  "reader.android.page": { page: FluentArgument; total: FluentArgument };
+  "reader.android.pageStatus": { page: FluentArgument; total: FluentArgument };
+  "reader.android.previous": undefined;
+  "reader.android.tooLarge": undefined;
+  "reader.android.unavailable": undefined;
+  "reader.android.zoomIn": undefined;
+  "reader.android.zoomOut": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

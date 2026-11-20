@@ -153,6 +153,7 @@ fn main() {
             "vault_unlock_pdf",
             "vault_view_page",
             "vault_view_cancel",
+            "vault_read_android_pdf",
             "vault_page_boxes",
             "vault_document_text",
             "vault_document_text_cancel",
