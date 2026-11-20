@@ -19,6 +19,7 @@ file or opens a connection. Modes, by argument:
   --tail-page N     names page N as that last page, whatever was sent
   --quote-unread    adds a sentence quoting a page it did not read
   --absence         adds a sentence about what the document does not say, with a quote it does not contain
+  --negative-finding adds a negative result ("does not show any sign of ..."), with a quote it does not contain
   --read-fd         explains with the first bytes of descriptor 3
   --greet-after S   waits that long before greeting (for the lock-during-start test)
   --progress        says how far it is before answering, as the real helper does: reading
@@ -112,6 +113,9 @@ for line in sys.stdin:
                                   "total": cap}), flush=True)
         if "--absence" in args:
             answer.append({"text": "The document does not give instructions for taking medicine.",
+                           "quote": "FAKE words the document never says"})
+        if "--negative-finding" in args:
+            answer.append({"text": "The report does not show any sign of celiac disease.",
                            "quote": "FAKE words the document never says"})
         if "--quote-unread" in args and len(pages) > 1:
             answer.append({"text": "In short: the clinic phoned.", "quote": pages[1]["text"][:20]})

@@ -633,3 +633,87 @@ summary:
 You must rest at home until then. || Rest at home
 expect:
 You must rest at home until then.
+===
+name: a_model_written_quote_line_is_still_checked_for_numbers
+pages:
+Going home
+Take 5 mg every day.
+summary:
+The document says: “Take 50 mg every day.” || Take 5 mg every day
+expect:
+The document says: “Take 5 mg every day.”
+===
+name: a_quote_line_is_not_a_doctor_name_or_time_limit_case
+pages:
+Going home
+Dear Dr. Sampleton, rest until the biopsy.
+Sincerely,
+Dr. Henrietta Fakeham MD
+summary:
+The document says: “The patient must be seen by Dr. Fakeham until the biopsy.” || rest until the biopsy
+expect:
+The document says: “The patient must be seen by Dr. Fakeham until the biopsy.”
+===
+name: a_doctor_with_credentials_is_found_by_surname
+pages:
+Going home
+Please see Dr. Henrietta Fakeham MD within 6 weeks.
+summary:
+You must see Dr. Fakeham within 6 weeks. || Please see Dr. Henrietta Fakeham MD within 6 weeks
+expect:
+You must see Dr. Fakeham within 6 weeks.
+===
+name: a_time_limit_in_a_french_letter_is_left_alone
+pages:
+Retour
+Continuez le repos jusqu’à la biopsie.
+summary:
+You must rest until the biopsy. || Continuez le repos jusqu’à la biopsie
+expect:
+You must rest until the biopsy.
+===
+name: a_medicine_question_is_not_an_instruction
+pages:
+Questions
+Should she stop taking the iron tablets before the infusion?
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_contact_offer_about_a_medicine_is_not_an_instruction
+pages:
+Going home
+Please call me if you want to stop taking the FAKEDRUG tablets.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_past_or_third_person_medicine_phrase_is_history
+pages:
+History
+She stopped taking the FAKEDRUG tablets in May. He keeps taking his FAKEDRUGB tablets.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_stop_with_no_medicine_before_it_is_not_a_medicine_change
+pages:
+Going home
+The infusion stops after 30 minutes.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_dont_take_with_an_apostrophe_is_an_instruction
+pages:
+Going home
+Don’t take FAKEDRUG tablets with food.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+The document says: “Don’t take FAKEDRUG tablets with food.”

@@ -145,6 +145,7 @@ const CONDITIONS: &[&str] = &[
     "en cas d",
 ];
 const STOP: &[&str] = &[
+    "should",
     "the",
     "a",
     "an",
@@ -253,6 +254,18 @@ const ENGLISH: &[&str] = &[
     "if", "your", "the", "call", "you", "when", "or", "and", "to", "of",
 ];
 
+/// A word in compatibility-composed form (NFKC): a ligature ("ﬁ") is its letters, a name with a combining
+/// accent is the same name written with the precomposed one. Only the word is folded, so the char spans that
+/// `tokens` returns still index the text it was given.
+fn folded(word: String) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    if word.is_ascii() {
+        word
+    } else {
+        word.nfkc().collect()
+    }
+}
+
 /// Lower-case words with their char spans: runs of letters and digits.
 fn tokens(text: &str) -> Vec<(String, usize, usize)> {
     let mut out = Vec::new();
@@ -265,11 +278,11 @@ fn tokens(text: &str) -> Vec<(String, usize, usize)> {
             }
             word.extend(c.to_lowercase());
         } else if !word.is_empty() {
-            out.push((std::mem::take(&mut word), start, i));
+            out.push((folded(std::mem::take(&mut word)), start, i));
         }
     }
     if !word.is_empty() {
-        out.push((word, start, text.chars().count()));
+        out.push((folded(word), start, text.chars().count()));
     }
     out
 }
@@ -680,6 +693,12 @@ fn quoted(text: &str) -> String {
     format!("{QUOTE_MARK}\u{201C}{text}\u{201D}")
 }
 
+/// Credentials and suffixes that follow a doctor's name ("Dr. Henrietta Fakeham MD"): the name ends before them.
+const CREDENTIALS: &[&str] = &[
+    "md", "mbbs", "mbchb", "mbbch", "do", "phd", "frcpc", "frcsc", "facs", "facp", "faap", "rn",
+    "np", "pa", "dds", "dmd", "od", "dvm", "msc", "mph", "jr", "sr", "ii", "iii",
+];
+
 /// The surnames (as lower-case word lists) of the doctors a sentence names: "Dr." or "Doctor",
 /// then capitalised words ("Dr. Henrietta Fakeham", "Doctor Ian Sampleton's", "Dr. M. O'Neil"):
 /// the last full word is the surname; initials alone do not count. A name with a hyphen is its
@@ -704,7 +723,9 @@ fn doctor_surnames(text: &str) -> Vec<Vec<String>> {
                 .strip_suffix("\u{2019}s")
                 .or_else(|| bare.strip_suffix("'s"))
                 .unwrap_or(bare);
-            if !bare.chars().next().is_some_and(char::is_uppercase) {
+            if !bare.chars().next().is_some_and(char::is_uppercase)
+                || CREDENTIALS.contains(&bare.to_lowercase().as_str())
+            {
                 break;
             }
             if bare.chars().count() >= 2 {
@@ -742,27 +763,23 @@ fn names_a_doctor_the_source_lacks(sentence: &str, source: &str) -> bool {
 /// a sentence it has no quote for; one about an absence has no true quote, so it gets one that is
 /// not in the letter, and the runner then keeps the sentence without a source. Lower-case text,
 /// one space between words.
-const ABSENCE_PHRASES: &[&str] = &[
-    "the document does not",
-    "the document doesn't",
-    "the document did not",
-    "the document gives no",
-    "the document has no",
-    "the document contains no",
-    "the document lists no",
-    "the document mentions no",
-    "the document says nothing",
-    "the document is silent",
-    "the letter does not",
-    "the letter doesn't",
-    "the letter did not",
-    "the letter gives no",
-    "the letter has no",
-    "the letter says nothing",
-    "the report does not",
-    "the report doesn't",
-    "the report gives no",
-    "the report has no",
+const ABSENCE_SUBJECTS: &[&str] = &["document", "letter", "report"];
+const ABSENCE_NEGATIONS: &[&str] = &["does not", "doesn't", "did not"];
+/// Verbs about SAYING. A report that "does not show" or "has no" something states a negative finding, which
+/// is a real result (the unfound quote only means the model misquoted it): those are never dropped.
+const ABSENCE_VERBS: &[&str] = &[
+    "say", "mention", "give", "tell", "list", "include", "state", "provide", "specify", "describe",
+    "explain",
+];
+const ABSENCE_THIRD_PERSON: &[&str] = &[
+    "gives no",
+    "mentions no",
+    "lists no",
+    "includes no",
+    "says nothing",
+    "is silent",
+];
+const ABSENCE_OTHER: &[&str] = &[
     "there is no mention",
     "no information is given",
     "no instructions are given",
@@ -782,19 +799,26 @@ pub(crate) fn is_absence_sentence(text: &str) -> bool {
             .join(" ")
     };
     let line = format!(" {} ", words(text));
-    ABSENCE_PHRASES
-        .iter()
-        .any(|phrase| line.contains(&format!(" {} ", words(phrase))))
+    let has = |phrase: &str| line.contains(&format!(" {} ", words(phrase)));
+    ABSENCE_SUBJECTS.iter().any(|subject| {
+        ABSENCE_NEGATIONS.iter().any(|negation| {
+            ABSENCE_VERBS
+                .iter()
+                .any(|verb| has(&format!("the {subject} {negation} {verb}")))
+        }) || ABSENCE_THIRD_PERSON
+            .iter()
+            .any(|phrase| has(&format!("the {subject} {phrase}")))
+    }) || ABSENCE_OTHER.iter().any(|phrase| has(phrase))
 }
 
-/// How a letter says that a medicine starts, stops, goes on or changes (lower-case words).
+/// How a letter tells the patient to start, stop, go on with or change a medicine (lower-case words,
+/// apostrophes removed). Imperative or advice only: "stopped taking" and "keeps taking" describe the past or
+/// another person, which is history, not an instruction.
 const CHANGE_PHRASES: &[&str] = &[
     "keep taking",
-    "keeps taking",
     "continue taking",
     "continue to take",
     "stop taking",
-    "stopped taking",
     "do not take",
     "dont take",
     "must not take",
@@ -803,15 +827,20 @@ const CHANGE_PHRASES: &[&str] = &[
     "begin taking",
     "resume taking",
     "no longer take",
+    "increase the dose",
+    "decrease the dose",
+    "reduce the dose",
+    "lower the dose",
+];
+
+/// Third-person phrases ("Ferrous fumarate stops after the infusion."): they count only when the medicine is
+/// named BEFORE them, so "The infusion stops after 30 minutes." (no medicine named) is not a medicine change.
+const CHANGE_PHRASES_AFTER_THE_MEDICINE: &[&str] = &[
     "stops after",
     "stop after",
     "stop it",
     "stop them",
     "then stop",
-    "increase the dose",
-    "decrease the dose",
-    "reduce the dose",
-    "lower the dose",
 ];
 
 /// Words that show a sentence is about a medicine: a kind of medicine or dose, or the salt that
@@ -836,8 +865,6 @@ const MEDICINE_WORDS: &[&str] = &[
     "insulin",
     "antibiotic",
     "antibiotics",
-    "injection",
-    "infusion",
     "drops",
     "cream",
     "ointment",
@@ -861,19 +888,83 @@ const MEDICINE_WORDS: &[&str] = &[
     "mesylate",
 ];
 
+/// Words that say what kind of thing or when, not which one: they do not count toward the two content words a
+/// summary sentence must share with a medicine line ("tablets" and "morning" are in many sentences).
+const GENERIC_MEDICINE_WORDS: &[&str] = &[
+    "medicine",
+    "medicines",
+    "medication",
+    "medications",
+    "tablet",
+    "tablets",
+    "pill",
+    "pills",
+    "capsule",
+    "capsules",
+    "inhaler",
+    "inhalers",
+    "puffer",
+    "dose",
+    "doses",
+    "drops",
+    "cream",
+    "ointment",
+    "patch",
+    "morning",
+    "evening",
+    "night",
+    "daily",
+    "today",
+    "tomorrow",
+    "week",
+    "weeks",
+    "month",
+    "months",
+    "days",
+    "once",
+    "twice",
+    "regular",
+    "regularly",
+    "usual",
+    "usually",
+    "other",
+    "others",
+    "same",
+    "again",
+    "still",
+];
+
 /// The most medicine lines the check adds to one summary: a letter that says this many times over
 /// is a medicine list, and the summary has no room for all of it.
 const MEDICINE_LINES_MAX: usize = 3;
 
-/// The content words of a letter sentence that starts, stops, continues or changes a medicine
-/// (`CHANGE_PHRASES`, in a sentence that is about a medicine, `MEDICINE_WORDS`), or `None` when
-/// it is not one. The phrase's own words and the common words (`STOP`, `STEP_STOP`) are left out.
+/// The content words of a letter sentence that tells the patient to start, stop, continue or change a
+/// medicine (`CHANGE_PHRASES`, or `CHANGE_PHRASES_AFTER_THE_MEDICINE` with the medicine named before it, in a
+/// sentence that is about a medicine, `MEDICINE_WORDS`), or `None` when it is not one. A question is none
+/// (the letter asks, it does not tell), and the phrase's own words, the common words (`STOP`, `STEP_STOP`) and
+/// the generic ones (`GENERIC_MEDICINE_WORDS`) are left out.
 fn medicine_change_words(sentence: &str) -> Option<Vec<String>> {
-    let toks = tokens(sentence);
-    let (from, to) = find_phrase(&toks, CHANGE_PHRASES, 0)?;
-    if !toks.iter().any(|t| MEDICINE_WORDS.contains(&t.0.as_str())) {
+    if sentence.trim_end().ends_with('?') {
         return None;
     }
+    // "don't take" and "don\u{2019}t take" are "dont take".
+    let toks = tokens(&sentence.replace(['\'', '\u{2019}'], ""));
+    let medicine_at = |before: usize| {
+        toks.iter()
+            .any(|t| t.1 < before && MEDICINE_WORDS.contains(&t.0.as_str()))
+    };
+    let (from, to) = if let Some(found) = find_phrase(&toks, CHANGE_PHRASES, 0) {
+        if !toks.iter().any(|t| MEDICINE_WORDS.contains(&t.0.as_str())) {
+            return None;
+        }
+        found
+    } else {
+        let found = find_phrase(&toks, CHANGE_PHRASES_AFTER_THE_MEDICINE, 0)?;
+        if !medicine_at(found.0) {
+            return None;
+        }
+        found
+    };
     let words: Vec<String> = toks
         .iter()
         .filter(|t| !(t.1 >= from && t.2 <= to))
@@ -882,6 +973,7 @@ fn medicine_change_words(sentence: &str) -> Option<Vec<String>> {
             w.chars().count() >= 4
                 && !STOP.contains(&w.as_str())
                 && !STEP_STOP.contains(&w.as_str())
+                && !GENERIC_MEDICINE_WORDS.contains(&w.as_str())
                 && !w.chars().all(|c| c.is_ascii_digit())
         })
         .collect();
@@ -1053,18 +1145,24 @@ pub(crate) fn check_guarded<E>(
     let have = page_numbers(pages);
     for index in 0..lines.len() {
         let line = &lines[index];
-        if line.quote.is_empty() || line.text.starts_with(QUOTE_MARK) {
+        if line.quote.is_empty() {
             continue;
         }
+        // A model-written "The document says: “…”" line is still checked for numbers (the model may write
+        // one, and the number it writes must be in the letter); the name and time checks are for its own words.
+        let model_words = !line.text.starts_with(QUOTE_MARK);
         let missing = numbers(&line.text).iter().any(|(_, d)| !have.contains(d));
         if let Some((start, end)) = find_folded(pages, &line.quote) {
             let source = source_sentence(pages, start, end);
             // A number the pages lack, or a doctor the quote's own sentence does not name.
             let check = if missing {
                 "numbers"
-            } else if names_a_doctor_the_source_lacks(&line.text, source) {
+            } else if model_words && names_a_doctor_the_source_lacks(&line.text, source) {
                 "doctor-name"
-            } else if time_limit_the_source_lacks(&line.text, source) {
+            } else if model_words
+                && is_english(source)
+                && time_limit_the_source_lacks(&line.text, source)
+            {
                 "time-limit"
             } else {
                 continue;
@@ -1201,6 +1299,10 @@ pub(crate) fn check_guarded<E>(
             .trim_start_matches(['-', '*', '\u{2022}', '\u{2013}', ' '])
             .trim()
             .to_owned();
+        // A line that offers to be called ("please call me if you want to stop taking it") is no instruction.
+        if is_contact_offer(&sentence) {
+            continue;
+        }
         let Some(words) = medicine_change_words(&sentence) else {
             continue;
         };
@@ -1815,11 +1917,7 @@ mod tests {
     ) {
         assert_eq!(
             medicine_change_words("Keep taking sumatriptan and the salbutamol inhaler as before."),
-            Some(vec![
-                "sumatriptan".to_owned(),
-                "salbutamol".to_owned(),
-                "inhaler".to_owned()
-            ])
+            Some(vec!["sumatriptan".to_owned(), "salbutamol".to_owned()])
         );
         assert_eq!(
             medicine_change_words("Ferrous fumarate stops after the infusion."),
@@ -1900,5 +1998,114 @@ mod tests {
         assert!(!time_limit_the_source_lacks("Rest until 5 pm.", "Rest."));
         // No "until" or "till", nothing to check.
         assert!(!time_limit_the_source_lacks("Rest for now.", "Rest."));
+    }
+
+    #[test]
+    fn given_a_model_written_quote_line_with_a_number_not_in_the_letter_when_checked_then_it_is_replaced(
+    ) {
+        check_case("a_model_written_quote_line_is_still_checked_for_numbers");
+    }
+
+    #[test]
+    fn given_a_quote_line_when_checked_then_the_name_and_time_checks_leave_it() {
+        check_case("a_quote_line_is_not_a_doctor_name_or_time_limit_case");
+    }
+
+    #[test]
+    fn given_a_doctor_with_credentials_when_checked_then_the_surname_is_found() {
+        check_case("a_doctor_with_credentials_is_found_by_surname");
+        assert_eq!(
+            doctor_surnames("Dr. Henrietta Fakeham MD will see you"),
+            vec![vec!["fakeham"]]
+        );
+        assert_eq!(
+            doctor_surnames("Dr. Ian Sampleton, MBBS, FRCPC"),
+            vec![vec!["sampleton"]]
+        );
+    }
+
+    #[test]
+    fn given_a_french_letter_when_checked_then_the_time_limit_check_leaves_the_summary() {
+        check_case("a_time_limit_in_a_french_letter_is_left_alone");
+    }
+
+    #[test]
+    fn given_a_medicine_question_when_checked_then_nothing_is_added() {
+        check_case("a_medicine_question_is_not_an_instruction");
+    }
+
+    #[test]
+    fn given_a_contact_offer_about_a_medicine_when_checked_then_nothing_is_added() {
+        check_case("a_contact_offer_about_a_medicine_is_not_an_instruction");
+    }
+
+    #[test]
+    fn given_a_past_or_third_person_medicine_phrase_when_checked_then_nothing_is_added() {
+        check_case("a_past_or_third_person_medicine_phrase_is_history");
+    }
+
+    #[test]
+    fn given_a_stop_with_no_medicine_before_it_when_checked_then_nothing_is_added() {
+        check_case("a_stop_with_no_medicine_before_it_is_not_a_medicine_change");
+    }
+
+    #[test]
+    fn given_a_dont_take_with_an_apostrophe_when_checked_then_the_sentence_is_added() {
+        check_case("a_dont_take_with_an_apostrophe_is_an_instruction");
+    }
+
+    #[test]
+    fn given_generic_words_when_medicine_words_are_read_then_they_do_not_count() {
+        // "tablets" and "morning" are in many sentences: only the names count toward the two shared words.
+        assert_eq!(
+            medicine_change_words("Stop taking FAKEDRUGA tablets every morning."),
+            Some(vec!["fakedruga".to_owned()])
+        );
+        assert_eq!(
+            medicine_change_words("Keep taking your tablets every morning."),
+            None
+        );
+        assert_eq!(
+            medicine_change_words("Should she stop taking the iron tablets?"),
+            None
+        );
+        assert_eq!(
+            medicine_change_words("She stopped taking the iron tablets."),
+            None
+        );
+        assert_eq!(
+            medicine_change_words("He keeps taking his FAKEDRUG tablets."),
+            None
+        );
+        assert!(medicine_change_words("Do not take FAKEDRUG tablets.").is_some());
+        assert!(medicine_change_words("Don\u{2019}t take FAKEDRUG tablets.").is_some());
+    }
+
+    #[test]
+    fn given_a_negative_finding_when_absence_is_read_then_it_is_not_an_absence_sentence() {
+        for finding in [
+            "The report does not show any sign of celiac disease.",
+            "The report has no evidence of cancer.",
+            "The document contains no signs of infection.",
+            "The biopsy did not find any sign of cancer.",
+        ] {
+            assert!(!is_absence_sentence(finding), "{finding}");
+        }
+    }
+
+    #[test]
+    fn given_a_ligature_when_words_are_read_then_they_are_their_letters() {
+        // The letter's PDF text has "\u{FB01}rst" (a ligature); the summary has "first".
+        assert!(!time_limit_the_source_lacks(
+            "Rest until the first dose.",
+            "Rest until the \u{FB01}rst dose."
+        ));
+        assert_eq!(
+            tokens("\u{FB01}rst dose")
+                .iter()
+                .map(|t| t.0.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "dose"]
+        );
     }
 }

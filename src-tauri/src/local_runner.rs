@@ -3335,6 +3335,20 @@ mod tests {
         }
 
         #[test]
+        fn given_a_negative_finding_with_an_unfound_quote_when_summarized_then_it_is_kept() {
+            // "does not show any sign of ..." is a real result the model misquoted, not an absence of saying.
+            let runner = Runner::new(config(&["--negative-finding"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert_eq!(summary.unlocated, 1);
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not show any sign") && s.quote.is_empty()));
+        }
+
+        #[test]
         fn given_an_absence_sentence_in_another_language_when_summarized_then_it_is_kept() {
             let runner = Runner::new(config(&["--absence"], GIB));
             runner.start(&Fixed(Some(8 * GIB))).unwrap();
