@@ -41,7 +41,7 @@ describe("iPhone document reading", () => {
     );
     expect(
       screen.getByRole("dialog", { name: record.displayName }),
-    ).toHaveAccessibleDescription(record.sourceLabel);
+    ).toHaveAccessibleDescription("Unverified Manual import");
     await waitFor(() => expect(read).toHaveBeenCalledWith(record.id, "Close"));
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("Opening document…");

@@ -7,6 +7,7 @@ export type IconName =
   | "flask"
   | "folder"
   | "folder-plus"
+  | "globe"
   | "grid"
   | "heart"
   | "hidden"
@@ -22,6 +23,7 @@ export type IconName =
   | "search"
   | "settings"
   | "shield"
+  | "sparkle"
   | "sort"
   | "star"
   | "text-size"
@@ -31,6 +33,15 @@ export function Icon({ name }: { name: IconName }) {
   let content: ReactNode;
 
   switch (name) {
+    case "globe":
+      content = (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18" />
+          <path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+        </>
+      );
+      break;
     case "heart":
       content = (
         <path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.5a5.5 5.5 0 0 0 0-7.8Z" />
@@ -120,6 +131,15 @@ export function Icon({ name }: { name: IconName }) {
       break;
     case "shield":
       content = <path d="M12 3 5 6v5c0 4.7 2.9 8 7 10 4.1-2 7-5.3 7-10V6Z" />;
+      break;
+    case "sparkle":
+      // The AI helper (#72): a large four-point star and a small one.
+      content = (
+        <>
+          <path d="M10 3.5 11.9 8.6 17 10.5 11.9 12.4 10 17.5 8.1 12.4 3 10.5 8.1 8.6Z" />
+          <path d="M18 14.5v5M15.5 17h5" />
+        </>
+      );
       break;
     case "settings":
       content = (

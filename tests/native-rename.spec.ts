@@ -8,6 +8,8 @@ test("renames native-library folders and documents with accessible dialogs", asy
   // Exercise the native UI and IPC argument wiring in a real browser. Rust tests
   // separately verify persistence, encryption, and unchanged document contents.
   await page.addInitScript(() => {
+    const captureEpoch = crypto.randomUUID();
+    let captureSequence = 0;
     const snapshot = {
       profiles: [
         { id: "profile", displayName: "FAKE Patient", createdAtMs: 1 },
@@ -49,7 +51,11 @@ test("renames native-library folders and documents with accessible dialogs", asy
         },
       ) => {
         if (command === "vault_status") return "unlocked";
-        if (command === "vault_snapshot") return structuredClone(snapshot);
+        if (command === "vault_snapshot")
+          return {
+            ...structuredClone(snapshot),
+            capture: { epoch: captureEpoch, sequence: ++captureSequence },
+          };
         if (command === "runtime_info") return { platform: "windows" };
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;

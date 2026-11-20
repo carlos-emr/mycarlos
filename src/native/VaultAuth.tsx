@@ -1,5 +1,10 @@
+import { LanguageButton } from "./LanguageButton";
+import {
+  PersonDetailsOrLater,
+  detailsProblem,
+  trimmedDetails,
+} from "./PersonDetails";
 import { useI18n, MessageKey } from "../i18n";
-import { LanguageSetting } from "./LanguageSetting";
 import { SecretInput } from "./SecretInput";
 import {
   useEffect,
@@ -24,7 +29,7 @@ import {
   useNewPassphraseRules,
   type CheckPassphraseRules,
 } from "./PassphraseChecklist";
-import type { VaultBridge } from "../vault";
+import type { PersonDetails, VaultBridge } from "../vault";
 
 export { MIN_PASSPHRASE_CHARS, tooShortPassphrase };
 
@@ -44,9 +49,12 @@ const FRAME_STATES = {
 
 export function VaultAuthFrame({
   state,
+  language = false,
   children,
 }: {
   state: keyof typeof FRAME_STATES;
+  /** The language button, for the screens that have no list of their own. */
+  language?: boolean;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -62,17 +70,15 @@ export function VaultAuthFrame({
           aria-label={t("frame.window.label")}
         >
           <header className="titlebar">
-            <span className="window-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
             <span className="window-title">myCarlos</span>
             <span className="native-auth-state">
               <Icon name="shield" /> {t(FRAME_STATES[state])}
             </span>
           </header>
-          <main className="vault-auth">{children}</main>
+          <main className="vault-auth">
+            {language && <LanguageButton />}
+            {children}
+          </main>
         </section>
       </div>
     </div>
@@ -144,13 +150,23 @@ export function CreateVault({
   busy,
   notice,
   onCreate,
+  askDetails = false,
   checkRules,
   restoreBridge,
   onRestored,
 }: {
   busy: boolean;
   notice: string;
-  onCreate: (profile: string, passphrase: string) => Promise<void>;
+  /** `details` are the first person's full name and birth date, unless the
+   * patient chose to add them later (#234). */
+  onCreate: (
+    profile: string,
+    passphrase: string,
+    details?: PersonDetails,
+  ) => Promise<void>;
+  /** Whether the vault can keep a person's details: then they are asked for
+   * here, after whose records these are, or left for later. */
+  askDetails?: boolean;
   /** The vault's own judgement of a passphrase being typed (#69). Without
    * it, the checklist ticks only the length; Create still judges it all. */
   checkRules?: CheckPassphraseRules;
@@ -159,6 +175,13 @@ export function CreateVault({
 }) {
   const { t } = useI18n();
   const [profile, setProfile] = useState("");
+  const [details, setDetails] = useState<PersonDetails>({});
+  const [birthDateUnknown, setBirthDateUnknown] = useState(false);
+  const [detailsLater, setDetailsLater] = useState(false);
+  const detailsInvalid =
+    askDetails &&
+    !detailsLater &&
+    Boolean(detailsProblem(details, birthDateUnknown));
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState("");
   // Opened by a button that is gone now (Continue on the comfort screen):
@@ -194,7 +217,8 @@ export function CreateVault({
   const profileShared = nameIsShared(profile);
   // A rule the vault has said is not met: Create would only be refused.
   const unmet = rules !== null && !(rules.notAName && rules.hardToGuess);
-  const invalid =
+  // Everything but the person's details.
+  const otherwiseInvalid =
     !profile.trim() ||
     profileTooLong ||
     profileShared ||
@@ -202,6 +226,7 @@ export function CreateVault({
     tooShort ||
     unmet ||
     passphrase !== confirmation;
+  const invalid = detailsInvalid || otherwiseInvalid;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (invalid) return;
@@ -211,12 +236,13 @@ export function CreateVault({
     setShown(false);
     setConfirmationShown(false);
     forget();
-    void onCreate(profile, secret);
+    if (askDetails && !detailsLater)
+      void onCreate(profile, secret, trimmedDetails(details));
+    else void onCreate(profile, secret);
   };
   return (
-    <VaultAuthFrame state="Setting up">
+    <VaultAuthFrame state="Setting up" language>
       <section className="vault-card" aria-labelledby="create-title">
-        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="create-title">{t("create.title")}</h1>
         <p>{t("create.intro")}</p>
@@ -242,6 +268,17 @@ export function CreateVault({
                 folder: t("interface.LibrarySidebar.sharedWithMe"),
               })}
             </p>
+          )}
+          {askDetails && (
+            <PersonDetailsOrLater
+              details={details}
+              onChange={setDetails}
+              birthDateUnknown={birthDateUnknown}
+              onBirthDateUnknownChange={setBirthDateUnknown}
+              later={detailsLater}
+              onLaterChange={setDetailsLater}
+              otherwiseReady={!otherwiseInvalid}
+            />
           )}
           <label>
             {t("passphrase.label")}
@@ -362,9 +399,8 @@ export function UnlockVault({
     void onUnlock(secret);
   };
   return (
-    <VaultAuthFrame state="Locked">
+    <VaultAuthFrame state="Locked" language>
       <section className="vault-card" aria-labelledby="unlock-title">
-        <LanguageSetting compact />
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="unlock-title">{t("unlock.title")}</h1>
         <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>

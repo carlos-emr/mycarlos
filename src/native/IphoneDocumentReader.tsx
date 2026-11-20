@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { useModalFocus } from "../useModalFocus";
+import { RecordSource } from "./RecordSource";
 import { hasVaultErrorCode, type VaultRecord } from "../vault";
 
 /** iPhone uses a native PDF view with no vault bridge. No document bytes enter
@@ -67,7 +68,9 @@ export function IphoneDocumentReader({
             {closeLabel}
           </button>
         </header>
-        <p id="iphone-reader-source">{record.sourceLabel}</p>
+        <p id="iphone-reader-source">
+          <RecordSource record={record} />
+        </p>
         {error ? (
           <p role="alert">{error}</p>
         ) : (
