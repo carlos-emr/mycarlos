@@ -1919,7 +1919,7 @@ aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skons
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Pokaż w dokumencie
+ai-summary-showInDocument = Pokaż mi w dokumencie
 
 ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
 

@@ -1691,7 +1691,7 @@ aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認�
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = 在文件中顯示
+ai-summary-showInDocument = 在文件中指給我看
 
 ai-summary-folded = 摘要已收合，以便為頁面留出空間。
 

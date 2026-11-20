@@ -1879,7 +1879,7 @@ aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médi
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Ver no documento
+ai-summary-showInDocument = Mostrar-me no documento
 
 ai-summary-folded = O resumo está recolhido para dar espaço à página.
 

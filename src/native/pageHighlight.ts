@@ -1,5 +1,5 @@
 /**
- * The quoted words' boxes on a page picture, for "Show in document" (#292).
+ * The quoted words' boxes on a page picture, for "Show me in document" (#292).
  *
  * The PDF helper decides where the words are, exactly or not at all
  * (native `page_boxes`); this only checks what comes back and draws it. A
