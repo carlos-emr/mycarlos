@@ -262,15 +262,22 @@ mod tests {
 
     #[test]
     fn a_system_that_refuses_the_memfd_fails_closed_and_never_falls_back_to_a_file() {
-        let before = std::fs::read_dir(std::env::temp_dir()).unwrap().count();
+        // Nothing named like the reader's file exists before or after: the other tests and
+        // processes share the temporary directory, so only this module's own name is looked for.
+        let ours = || {
+            std::fs::read_dir(std::env::temp_dir())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains("mycarlos-pdf"))
+                .count()
+        };
+        let before = ours();
         for errno in [libc::ENOSYS, libc::EPERM] {
+            // `Refusing::seal` is unreachable: nothing was created to seal, and no other path
+            // (a file, a path) is tried.
             let error = sealed_memfd(&Refusing(errno), b"%PDF-1.7 FAKE").unwrap_err();
             assert_eq!(error.raw_os_error(), Some(errno));
         }
-        // No temporary file appeared anywhere the process writes by default.
-        assert_eq!(
-            std::fs::read_dir(std::env::temp_dir()).unwrap().count(),
-            before
-        );
+        assert_eq!(ours(), before);
     }
 }
