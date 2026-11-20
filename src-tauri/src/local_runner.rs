@@ -1990,7 +1990,7 @@ mod tests {
 
     #[test]
     fn a_load_check_probe_never_waits_for_a_held_runner_or_uses_a_stale_claim() {
-        let runner = Runner::new();
+        let runner = Runner::new(idle_config());
         let claim = runner.current_ticket();
         let held = runner.sidecar.lock().unwrap();
         std::thread::scope(|scope| {
