@@ -493,6 +493,76 @@ describe("the anonymize preview (#72 part B)", () => {
     ).toHaveHumanTextContent(/^Removing details is never perfect/);
   });
 
+  it("copies exactly the text Save would write, warns about the clipboard, and says when it cannot copy", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { saveText } = renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // The plain warning is there, before anything is copied.
+    expect(
+      document.querySelector(".native-anonymize-advice"),
+    ).toHaveHumanTextContent(
+      "Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(
+      await screen.findByText(humanText("The text was copied.")),
+    ).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const copied = writeText.mock.calls[0][0];
+    // The same file Save writes: the first line, a blank line, the text, a last newline.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await screen.findByText(humanText("The text was saved."));
+    const [, , saved] = saveText.mock.calls[0];
+    expect(copied).toBe(`FAKE header line\n\n${saved}\n`);
+    expect(copied).not.toMatch(/Avery|Example|1961/);
+    // A clipboard that refuses says so.
+    writeText.mockRejectedValueOnce(new Error("FAKE: blocked"));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(
+      await screen.findByText(humanText("The text could not be copied.")),
+    ).toBeInTheDocument();
+  });
+
+  it("puts the line about where a long document was cut at the end of the copy, as Save does", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderPreview({ text: documentText({ truncated: true }) });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    const cut = visibleText(
+      translate("en", "aiHelper.exportCut", { page: 1 }),
+    ).replace(/[\u2066-\u2069]/g, "");
+    expect(writeText.mock.calls[0][0]).toMatch(
+      new RegExp(`\\n\\n${cut.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n$`),
+    );
+  });
+
   it("saves exactly the words with or without the flags: they are decoration only", async () => {
     const user = userEvent.setup();
     const checkPages = [

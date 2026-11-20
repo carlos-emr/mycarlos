@@ -292,6 +292,31 @@ test("on a wide window Close is the last button in the action row, at the bottom
       preview.getByText("Where you paste this decides what is kept"),
     ).toBeVisible();
     await page.screenshot({ path: info.outputPath("anonymize-wide.png") });
+    // Copy text is beside Save, before Close; the clipboard warning is plain on the page.
+    const copy = preview.getByRole("button", { name: "Copy text" });
+    const copyBox = (await copy.boundingBox())!;
+    expect(copyBox.x).toBeGreaterThanOrEqual(saveBox.x + saveBox.width);
+    expect(closeBox.x).toBeGreaterThanOrEqual(copyBox.x + copyBox.width);
+    expect(copyBox.height).toBeGreaterThanOrEqual(44);
+    await expect(
+      preview.getByText("Copied text can stay on this device"),
+    ).toBeVisible();
+    // The two tools each have their own row: Remove the selected text above the phrase field's
+    // label, which is above the field.
+    const selected = (await preview
+      .getByRole("button", { name: "Remove the selected text" })
+      .boundingBox())!;
+    const phraseLabel = (await preview
+      .getByText("Word or phrase to remove everywhere")
+      .boundingBox())!;
+    const phraseField = (await preview
+      .getByLabel("Word or phrase to remove everywhere")
+      .boundingBox())!;
+    expect(phraseLabel.y).toBeGreaterThanOrEqual(selected.y + selected.height);
+    expect(phraseField.y).toBeGreaterThanOrEqual(
+      phraseLabel.y + phraseLabel.height,
+    );
+    await page.screenshot({ path: info.outputPath("anonymize-wide-2.png") });
     // Escape still closes it.
     await page.keyboard.press("Escape");
     await expect(preview).toBeHidden();

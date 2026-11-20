@@ -2308,6 +2308,14 @@ interface-AnonymizePreview-savedFileNote = Le fichier enregistré n’est pas pr
 
 interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez décide de ce qui est conservé : un service de clavardage peut le garder ou s’en servir pour apprendre, selon les paramètres de votre compte.
 
+interface-AnonymizePreview-copy = Copier le texte
+
+interface-AnonymizePreview-copied = Le texte a été copié.
+
+interface-AnonymizePreview-copyFailed = Le texte n’a pas pu être copié.
+
+interface-AnonymizePreview-copyWarning = Le texte copié peut rester sur cet appareil : l’historique du presse-papiers de Windows et la synchronisation du presse-papiers entre appareils peuvent en garder une copie.
+
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 
 interface-AnonymizePreview-selectFirst = Sélectionnez d'abord une partie du texte.

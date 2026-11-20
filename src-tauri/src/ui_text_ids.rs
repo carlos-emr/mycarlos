@@ -185,6 +185,10 @@ pub enum MessageId {
     InterfaceAnonymizePreviewClose,
     InterfaceAnonymizePreviewConfirmBody,
     InterfaceAnonymizePreviewConfirmTitle,
+    InterfaceAnonymizePreviewCopied,
+    InterfaceAnonymizePreviewCopy,
+    InterfaceAnonymizePreviewCopyFailed,
+    InterfaceAnonymizePreviewCopyWarning,
     InterfaceAnonymizePreviewCutPages,
     InterfaceAnonymizePreviewEmptyPages,
     InterfaceAnonymizePreviewFailedPages,
@@ -1263,6 +1267,10 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewClose,
         Self::InterfaceAnonymizePreviewConfirmBody,
         Self::InterfaceAnonymizePreviewConfirmTitle,
+        Self::InterfaceAnonymizePreviewCopied,
+        Self::InterfaceAnonymizePreviewCopy,
+        Self::InterfaceAnonymizePreviewCopyFailed,
+        Self::InterfaceAnonymizePreviewCopyWarning,
         Self::InterfaceAnonymizePreviewCutPages,
         Self::InterfaceAnonymizePreviewEmptyPages,
         Self::InterfaceAnonymizePreviewFailedPages,
@@ -2343,6 +2351,10 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewConfirmTitle => {
                 "interface-AnonymizePreview-confirmTitle"
             }
+            Self::InterfaceAnonymizePreviewCopied => "interface-AnonymizePreview-copied",
+            Self::InterfaceAnonymizePreviewCopy => "interface-AnonymizePreview-copy",
+            Self::InterfaceAnonymizePreviewCopyFailed => "interface-AnonymizePreview-copyFailed",
+            Self::InterfaceAnonymizePreviewCopyWarning => "interface-AnonymizePreview-copyWarning",
             Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
             Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
             Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
@@ -4893,6 +4905,14 @@ impl MessageId {
             }
             "interface.AnonymizePreview.pasteWhereNote" => {
                 Some(Self::InterfaceAnonymizePreviewPasteWhereNote)
+            }
+            "interface.AnonymizePreview.copy" => Some(Self::InterfaceAnonymizePreviewCopy),
+            "interface.AnonymizePreview.copied" => Some(Self::InterfaceAnonymizePreviewCopied),
+            "interface.AnonymizePreview.copyFailed" => {
+                Some(Self::InterfaceAnonymizePreviewCopyFailed)
+            }
+            "interface.AnonymizePreview.copyWarning" => {
+                Some(Self::InterfaceAnonymizePreviewCopyWarning)
             }
             "interface.AnonymizePreview.removeSelected" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveSelected)

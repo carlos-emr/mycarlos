@@ -2388,6 +2388,14 @@ interface-AnonymizePreview-savedFileNote = Zapisany plik nie jest chroniony prze
 
 interface-AnonymizePreview-pasteWhereNote = To, gdzie to wkleisz, decyduje o tym, co zostanie zachowane: usługa czatu może to przechowywać lub się na tym uczyć, zależnie od ustawień Twojego konta.
 
+interface-AnonymizePreview-copy = Kopiuj tekst
+
+interface-AnonymizePreview-copied = Tekst został skopiowany.
+
+interface-AnonymizePreview-copyFailed = Nie udało się skopiować tekstu.
+
+interface-AnonymizePreview-copyWarning = Skopiowany tekst może pozostać na tym urządzeniu: historia schowka w systemie Windows i synchronizacja schowka między urządzeniami mogą zachować jego kopię.
+
 interface-AnonymizePreview-removeSelected = Usuń zaznaczony tekst
 
 interface-AnonymizePreview-selectFirst = Najpierw zaznacz fragment tekstu.

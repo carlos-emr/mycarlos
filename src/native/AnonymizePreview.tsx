@@ -377,6 +377,40 @@ export function AnonymizePreview({
     setNotice("");
   };
 
+  /** Exactly what Save would write: the fixed first line, a blank line, the text, the line that
+   * says where a long document was cut (when it was), and a last newline. This is the rule of the
+   * native save (`vault_export_text_picked`); the isolation marks Fluent puts round a number are
+   * not part of it. */
+  const fileText = () => {
+    const plain = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
+    let content = `${plain(exportHeader)}\n\n${current?.toSend ?? ""}`;
+    if (text && text.truncated && text.pages.length > 0)
+      content += `\n\n${plain(
+        translateNow("aiHelper.exportCut", {
+          page: text.pages[text.pages.length - 1].index + 1,
+        }),
+      )}`;
+    return `${content}\n`;
+  };
+
+  /** Copies the same text, for a person who pastes it into an AI by hand. The clipboard is the web
+   * one: the app has no clipboard plugin and gains no permission for this. */
+  const copyText = async () => {
+    if (!current) return;
+    try {
+      await navigator.clipboard.writeText(fileText());
+      setNotice(
+        deferredText(() => translateNow("interface.AnonymizePreview.copied")),
+      );
+    } catch {
+      setNotice(
+        deferredText(() =>
+          translateNow("interface.AnonymizePreview.copyFailed"),
+        ),
+      );
+    }
+  };
+
   const putDetailsBack = () => {
     if (!current) return;
     const result = restoreChecked(pasted, current);
@@ -780,37 +814,45 @@ export function AnonymizePreview({
               </div>
             )}
             <form className="native-anonymize-tools" onSubmit={removePhrase}>
-              <button
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={removeSelected}
-              >
-                {translateNow("interface.AnonymizePreview.removeSelected")}
-              </button>
-              <label htmlFor="anonymize-phrase">
-                {translateNow("interface.AnonymizePreview.phrase")}
-              </label>
-              <input
-                id="anonymize-phrase"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={phrase}
-                disabled={busy}
-                onChange={(event) => setPhrase(event.target.value)}
-              />
-              <button className="button" disabled={busy || !phrase.trim()}>
-                {translateNow("interface.AnonymizePreview.removePhrase")}
-              </button>
-              <button
-                className="button"
-                type="button"
-                disabled={busy || history.length < 2}
-                onClick={undo}
-              >
-                {translateNow("interface.AnonymizePreview.undo")}
-              </button>
+              {/* Two groups, each with its own row: what is selected, and a word or phrase to
+                  remove everywhere (its label above its field, its buttons below). */}
+              <div className="native-anonymize-tool-row">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={removeSelected}
+                >
+                  {translateNow("interface.AnonymizePreview.removeSelected")}
+                </button>
+              </div>
+              <div className="native-anonymize-phrase">
+                <label htmlFor="anonymize-phrase">
+                  {translateNow("interface.AnonymizePreview.phrase")}
+                </label>
+                <input
+                  id="anonymize-phrase"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={phrase}
+                  disabled={busy}
+                  onChange={(event) => setPhrase(event.target.value)}
+                />
+                <div className="native-anonymize-tool-row">
+                  <button className="button" disabled={busy || !phrase.trim()}>
+                    {translateNow("interface.AnonymizePreview.removePhrase")}
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy || history.length < 2}
+                    onClick={undo}
+                  >
+                    {translateNow("interface.AnonymizePreview.undo")}
+                  </button>
+                </div>
+              </div>
             </form>
             {notice && (
               <p className="native-dialog-status" role="status">
@@ -820,6 +862,7 @@ export function AnonymizePreview({
             <div className="native-anonymize-advice">
               <p>{translateNow("interface.AnonymizePreview.pasteWhereNote")}</p>
               <p>{translateNow("interface.AnonymizePreview.savedFileNote")}</p>
+              <p>{translateNow("interface.AnonymizePreview.copyWarning")}</p>
             </div>
             <footer className="native-dialog-actions">
               <button
@@ -829,6 +872,14 @@ export function AnonymizePreview({
                 onClick={() => setConfirming(true)}
               >
                 {translateNow("interface.AnonymizePreview.save")}
+              </button>
+              <button
+                className="button"
+                type="button"
+                disabled={busy}
+                onClick={() => void copyText()}
+              >
+                {translateNow("interface.AnonymizePreview.copy")}
               </button>
               {closeAtBottom && closeButton}
             </footer>

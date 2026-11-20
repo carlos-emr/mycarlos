@@ -2308,6 +2308,14 @@ interface-AnonymizePreview-savedFileNote = O arquivo salvo não é protegido pel
 
 interface-AnonymizePreview-pasteWhereNote = O lugar onde você colar isto decide o que será guardado: um serviço de chat pode guardar ou aprender com o texto, dependendo das configurações da sua conta.
 
+interface-AnonymizePreview-copy = Copiar o texto
+
+interface-AnonymizePreview-copied = O texto foi copiado.
+
+interface-AnonymizePreview-copyFailed = Não foi possível copiar o texto.
+
+interface-AnonymizePreview-copyWarning = O texto copiado pode ficar neste dispositivo: o histórico da área de transferência do Windows e a sincronização da área de transferência entre dispositivos podem guardar uma cópia.
+
 interface-AnonymizePreview-removeSelected = Remover o texto selecionado
 
 interface-AnonymizePreview-selectFirst = Primeiro selecione uma parte do texto.

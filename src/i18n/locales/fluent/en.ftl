@@ -2273,6 +2273,14 @@ interface-AnonymizePreview-savedFileNote = The saved file is not protected by my
 
 interface-AnonymizePreview-pasteWhereNote = Where you paste this decides what is kept: a chat service may keep it or learn from it, depending on your account settings.
 
+interface-AnonymizePreview-copy = Copy text
+
+interface-AnonymizePreview-copied = The text was copied.
+
+interface-AnonymizePreview-copyFailed = The text could not be copied.
+
+interface-AnonymizePreview-copyWarning = Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.
+
 interface-AnonymizePreview-removeSelected = Remove the selected text
 
 interface-AnonymizePreview-selectFirst = Select some of the text first.

@@ -2055,6 +2055,14 @@ interface-AnonymizePreview-savedFileNote = 儲存的檔案不受 myCarlos 保護
 
 interface-AnonymizePreview-pasteWhereNote = 您把它貼到哪裡，決定了什麼會被保留：聊天服務可能會保存它，或依您的帳戶設定從中學習。
 
+interface-AnonymizePreview-copy = 複製文字
+
+interface-AnonymizePreview-copied = 文字已複製。
+
+interface-AnonymizePreview-copyFailed = 無法複製文字。
+
+interface-AnonymizePreview-copyWarning = 複製的文字可能會留在此裝置上：Windows 剪貼簿歷程記錄和裝置之間的剪貼簿同步可能會保留一份複本。
+
 interface-AnonymizePreview-removeSelected = 移除選取的文字
 
 interface-AnonymizePreview-selectFirst = 請先選取一部分文字。

@@ -956,6 +956,10 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.checkPicked",
   "interface.AnonymizePreview.savedFileNote",
   "interface.AnonymizePreview.pasteWhereNote",
+  "interface.AnonymizePreview.copy",
+  "interface.AnonymizePreview.copied",
+  "interface.AnonymizePreview.copyFailed",
+  "interface.AnonymizePreview.copyWarning",
   "interface.AnonymizePreview.removeSelected",
   "interface.AnonymizePreview.selectFirst",
   "interface.AnonymizePreview.phrase",
@@ -2231,6 +2235,12 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-savedFileNote",
   "interface.AnonymizePreview.pasteWhereNote":
     "interface-AnonymizePreview-pasteWhereNote",
+  "interface.AnonymizePreview.copy": "interface-AnonymizePreview-copy",
+  "interface.AnonymizePreview.copied": "interface-AnonymizePreview-copied",
+  "interface.AnonymizePreview.copyFailed":
+    "interface-AnonymizePreview-copyFailed",
+  "interface.AnonymizePreview.copyWarning":
+    "interface-AnonymizePreview-copyWarning",
   "interface.AnonymizePreview.removeSelected":
     "interface-AnonymizePreview-removeSelected",
   "interface.AnonymizePreview.selectFirst":
@@ -3437,6 +3447,10 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.checkPicked": { word: FluentArgument };
   "interface.AnonymizePreview.savedFileNote": undefined;
   "interface.AnonymizePreview.pasteWhereNote": undefined;
+  "interface.AnonymizePreview.copy": undefined;
+  "interface.AnonymizePreview.copied": undefined;
+  "interface.AnonymizePreview.copyFailed": undefined;
+  "interface.AnonymizePreview.copyWarning": undefined;
   "interface.AnonymizePreview.removeSelected": undefined;
   "interface.AnonymizePreview.selectFirst": undefined;
   "interface.AnonymizePreview.phrase": undefined;
