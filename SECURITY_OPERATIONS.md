@@ -20,6 +20,13 @@ production end-of-support schedule remain an owner decision and release gate.
   ([AI helper](#ai-helper-72-nothing-about-the-patient-leaves-the-device)); nothing else may leave the device.
 - The AI helper (#72) adds one host to the allow-list, for the model file only: its "cloud" way is
   a text file the patient saves, and its model helper has no network.
+- **Proposed, not built (#72, the patient's own key):** with the `cloud-ai` Cargo feature on (off by
+  default and not in release builds), one more entry, `api.anthropic.com:443`, paths `POST /v1/messages`
+  and `GET /v1/models` only. What may leave: the re-checked, de-identified text of one document, the
+  app's fixed instructions and schema, the patient's API key in the `x-api-key` header, a fixed
+  `myCarlos` user-agent with no identifier, and the time. Nothing else: no profile, vault, device or
+  document identifier, no cookies, no referrer. The key, the text, the answer and the request and
+  response bodies are never logged (THREAT_MODEL AI-11, NET-05).
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.

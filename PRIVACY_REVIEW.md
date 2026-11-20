@@ -462,6 +462,11 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
 
+21. **Sending to a cloud AI with the patient's own key (#72, proposed, not built; section 11.1):** may a
+    patient's own API key, a de-identified text, and a native confirmation for each send be the cloud
+    way for the pilot? Is "no Canadian processing option" acceptable with a plain notice? Who writes the
+    notice in seven languages, and who checks the provider's current terms? This gates real data (#25).
+
 ## 11. The AI helper (#72)
 
 The text export (part B) is built on main (#171) and works on computers only; it is hidden on
@@ -568,3 +573,31 @@ document, and answers are in backups like the rest of the vault (question 17). E
 
 **What the patient is told.** The notice in `AI_HELPER_NOTICE.md`, in all seven languages, before
 the first use and at any time from Security.
+
+### 11.1 Proposed, not built: sending the text with the patient's own key
+
+On 20 November 2026 Ben chose, for #72's "cloud" way, that the patient may add **their own API key** for
+one provider (Anthropic) and send one document's text from myCarlos. Nothing in this section is built; it
+is described so that the assessment can cover it before any code that sends. It would be behind a Cargo
+feature (`cloud-ai`) that is off by default and not in release builds, and the text-file way stays.
+
+- **What leaves the device:** the text of one document after the remover and the preview, re-checked in
+  Rust, with fixed instructions, plus the key (which identifies the patient's account to the provider, so
+  the provider knows whose account it is whatever was removed) and the computer's internet address. Nothing
+  else: no profile, vault, device or document identifier. **Only after a native confirmation for each
+  send** that names the provider, the model, the size and an estimated cost; there is no background send and
+  no "always allow".
+- **The key:** typed once, stored encrypted in the vault, never shown again (only its last four characters),
+  removed with one confirmed action, and an administration key is refused. **A backup contains it**, and
+  older backups keep it after removal; the dialogs say so and advise a key made for myCarlos with a spending
+  limit.
+- **What the provider does with the text** (how long it is kept, whether it is used to improve models) is
+  decided by the patient's account at the provider; myCarlos cannot see or change it, and the notice makes no
+  claim about it. The documented provider offers no Canadian processing region.
+- **Recorded:** the history keeps the time, provider, model, document and the provider's request id, never
+  the text, the answer or the key; the entry is written before the send.
+- **Stated limits:** the remover is never perfect; the native side cannot prove the patient read the
+  preview; a patient can lose a key to anything that reads what they type; cost is billed by the provider
+  and myCarlos only estimates it.
+- Synthetic data only until this assessment approves real information (#25). Details: `THREAT_MODEL.md`
+  (AI-11, NET-05) and `docs/cloud-ai-send.md`.
