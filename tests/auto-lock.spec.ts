@@ -140,7 +140,7 @@ test("minimized under a picker it opened, the vault stays open; once the picker 
   await scriptFake(page, "vault_import_pick", { pending: true });
   await page
     .getByRole("button", {
-      name: en("interface.VaultApp.chooseFilesToImport"),
+      name: en("interface.VaultLibrary.new"),
       exact: true,
     })
     .click();
