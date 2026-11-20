@@ -2297,3 +2297,10 @@ ai-models-picking = Elige un archivo de modelo para añadir.
 ai-models-changed = Se cambió el modelo en uso
 
 ai-summaryTooLarge = El resumen completo es demasiado grande. No se ha guardado ningún resumen nuevo.
+
+personDetails-previousTitle = Nombres completos anteriores
+personDetails-previousHelp = Hasta 16 nombres completos anteriores ayudan a encontrar datos identificativos. Al cambiar un nombre se sugiere aquí; elimínelo antes de guardar si no desea conservarlo. Quitar un nombre solo elimina esta entrada; otros registros y copias de seguridad pueden conservarlo.
+personDetails-previousEntry = Nombre completo anterior { $number }
+personDetails-previousRemove = Quitar nombre completo anterior { $number }
+personDetails-previousAdd = Añadir nombre completo anterior
+personDetails-previousInvalid = Use hasta 16 nombres distintos y no vacíos, de hasta 120 caracteres cada uno, sin caracteres de control.

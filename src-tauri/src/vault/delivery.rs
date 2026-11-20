@@ -1629,6 +1629,7 @@ impl VaultStore {
                     created_at_ms: now,
                     full_name: None,
                     birth_date: None,
+                    previous_full_names: None,
                 });
             }
             next.history = prepared.state;
@@ -8074,7 +8075,8 @@ mod approval_recovery_tests {
             store.session().as_ref().unwrap().manifest.format_version,
             VAULT_FORMAT
         );
-        assert_eq!(VAULT_FORMAT, MANIFEST_FORMAT_REFUSED);
+        // Format 12 is no longer the newest (previous full names are 13).
+        const { assert!(VAULT_FORMAT >= MANIFEST_FORMAT_REFUSED) };
         assert!(refused_saved(&store).is_empty());
         let refused = undecryptable(&base, 7);
         let (result, _) = check_listing(&store, &link, std::slice::from_ref(&refused));

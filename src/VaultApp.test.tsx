@@ -9447,7 +9447,10 @@ describe("durable vault UI", () => {
     const notice = (await screen.findByText(humanText(english))).closest(
       '[role="status"]',
     )!;
-    expect(update).toHaveBeenCalledExactlyOnceWith("profile-1", { fullName });
+    expect(update).toHaveBeenCalledExactlyOnceWith("profile-1", {
+      fullName,
+      previousFullNames: ["FAKE Earlier Name"],
+    });
     expect(
       screen.queryByRole("form", {
         name: humanText(
@@ -9713,7 +9716,10 @@ describe("durable vault UI", () => {
     await screen.findByText(humanText("Details for FAKE Existing saved."));
     expect(bridge.updateProfileDetails).toHaveBeenCalledExactlyOnceWith(
       "profile-1",
-      { fullName: "FAKE Unsaved Person" },
+      {
+        fullName: "FAKE Unsaved Person",
+        previousFullNames: ["FAKE Original Person"],
+      },
     );
   });
 

@@ -2262,3 +2262,10 @@ ai-models-picking = Choose a model file to add.
 ai-models-changed = Model in use changed
 
 ai-summaryTooLarge = The complete summary is too large. No new summary was saved.
+
+personDetails-previousTitle = Previous full names
+personDetails-previousHelp = Up to 16 previous full names help find identifying details. A changed name is suggested here; remove it before saving if you do not want to keep it. Removing a saved name only removes this list entry; other records and backups may retain it.
+personDetails-previousEntry = Previous full name { $number }
+personDetails-previousRemove = Remove previous full name { $number }
+personDetails-previousAdd = Add previous full name
+personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
