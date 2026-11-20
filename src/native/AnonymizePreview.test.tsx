@@ -2,6 +2,7 @@ import { humanText } from "../test/humanText";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { page } from "vitest/browser";
 import { AnonymizePreview } from "./AnonymizePreview";
 import { joinPages, type DocumentText } from "../documentText";
 import type {
@@ -416,6 +417,72 @@ describe("the anonymize preview (#72 part B)", () => {
     await user.click(screen.getByRole("button", { name: humanText("Close") }));
     expect(cancelRead).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("puts Close last in the action row, at the bottom right, on a wide window", async () => {
+    const user = userEvent.setup();
+    await page.viewport(1100, 800);
+    try {
+      const { onClose } = renderPreview();
+      await screen.findByRole("region", {
+        name: humanText("The text that will be saved"),
+      });
+      const dialog = screen.getByRole("dialog");
+      const close = within(dialog).getByRole("button", {
+        name: humanText("Close"),
+      });
+      const save = within(dialog).getByRole("button", {
+        name: humanText("Save the text…"),
+      });
+      const row = close.closest("footer")!;
+      // Beside Save, after it in reading and Tab order.
+      expect(row).toContainElement(save);
+      expect(
+        save.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // Not in the header any more. (Where it sits on the page, and its 44px
+      // target, are checked with the real stylesheet in tests/anonymize-preview.spec.ts.)
+      expect(dialog.querySelector("header")).not.toContainElement(close);
+      // Escape still closes.
+      await user.keyboard("{Escape}");
+      expect(onClose).toHaveBeenCalled();
+    } finally {
+      await page.viewport(414, 896);
+    }
+  });
+
+  it("keeps Close in the header on a narrow window", async () => {
+    await page.viewport(360, 800);
+    try {
+      renderPreview();
+      await screen.findByRole("region", {
+        name: humanText("The text that will be saved"),
+      });
+      const dialog = screen.getByRole("dialog");
+      const close = within(dialog).getByRole("button", {
+        name: humanText("Close"),
+      });
+      expect(dialog.querySelector("header")).toContainElement(close);
+      expect(close.closest("footer")).toBeNull();
+    } finally {
+      await page.viewport(414, 896);
+    }
+  });
+
+  it("still has a Close at the bottom before the text is shown, on a wide window", async () => {
+    await page.viewport(1100, 800);
+    try {
+      renderPreview({
+        readText: vi.fn(() => new Promise<DocumentText>(() => {})),
+      });
+      const dialog = screen.getByRole("dialog");
+      const close = await within(dialog).findByRole("button", {
+        name: humanText("Close"),
+      });
+      expect(close.closest("footer")).not.toBeNull();
+    } finally {
+      await page.viewport(414, 896);
+    }
   });
 
   it("names the pages left out, cut or empty, and the signs it could not read", async () => {

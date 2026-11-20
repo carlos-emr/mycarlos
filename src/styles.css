@@ -1366,8 +1366,17 @@ p {
   font: inherit;
 }
 .native-anonymize .native-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
   padding: 10px 20px 16px;
+}
+/* On a wide window Close is the last button of the action row, at its end
+   edge (bottom right; bottom left in a right-to-left language), 44px tall
+   like Save. */
+.native-anonymize .native-dialog-actions .button {
+  min-height: 44px;
 }
 
 .filelist {

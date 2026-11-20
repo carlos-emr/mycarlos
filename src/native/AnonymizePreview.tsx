@@ -17,6 +17,7 @@ import {
   type FormEvent,
 } from "react";
 import { useModalFocus } from "../useModalFocus";
+import { useMediaMatch } from "./smallWindow";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   hasVaultErrorCode,
@@ -111,6 +112,9 @@ function placeholderLanguages(text: string): {
   };
 }
 
+/** Narrower than this, Close stays in the header (the same 40em as the reader
+ * header's phone layout in styles.css). */
+const NARROW_DIALOG = "(max-width: 40em)";
 const pageList = (pages: number[]) =>
   pages.map((page) => String(page + 1)).join(", ");
 
@@ -183,6 +187,10 @@ export function AnonymizePreview({
     onClose();
   }, [cancelRead, onClose]);
   useModalFocus(true, dialogRef, close, closeRef);
+  // Close is at the bottom right of the dialog, last in its action row, on a
+  // wide window; on a narrow one it stays in the header, where it is within
+  // reach without scrolling (the header's own phone layout, 40em).
+  const closeAtBottom = !useMediaMatch(NARROW_DIALOG);
 
   const read = useCallback(
     async (password?: string) => {
@@ -443,6 +451,16 @@ export function AnonymizePreview({
   const possibleNames = current?.onDevice.possibleNames ?? [];
   const busy = !current || saving;
 
+  const closeButton = (
+    <button
+      ref={closeRef}
+      className="button native-anonymize-close"
+      type="button"
+      onClick={close}
+    >
+      {translateNow("interface.AnonymizePreview.close")}
+    </button>
+  );
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -460,14 +478,7 @@ export function AnonymizePreview({
             </h2>
             <p>{record.displayName}</p>
           </div>
-          <button
-            ref={closeRef}
-            className="button"
-            type="button"
-            onClick={close}
-          >
-            {translateNow("interface.AnonymizePreview.close")}
-          </button>
+          {!closeAtBottom && closeButton}
         </header>
         <div className="native-anonymize-notes">
           <p id="anonymize-how">
@@ -676,6 +687,7 @@ export function AnonymizePreview({
               >
                 {translateNow("interface.AnonymizePreview.save")}
               </button>
+              {closeAtBottom && closeButton}
             </footer>
             {saved && (
               <section
@@ -757,6 +769,11 @@ export function AnonymizePreview({
               </section>
             )}
           </>
+        )}
+        {/* Before the text is shown (reading, a password, an error) there is no
+            Save: Close still has its row. */}
+        {!current && closeAtBottom && (
+          <footer className="native-dialog-actions">{closeButton}</footer>
         )}
       </section>
       {confirming && (

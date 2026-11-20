@@ -152,7 +152,8 @@ test("prepares a document's text for an AI with the keyboard, at 200% text", asy
     });
     expect(overflow).toBe(false);
 
-    // Close takes the first focus; Tab reaches every control, ending at Save.
+    // Close takes the first focus (at 200% text this window counts as narrow, so Close is in the
+    // header; the wide layout has its own test below); Tab reaches every control, ending at Save.
     await expect(preview.getByRole("button", { name: "Close" })).toBeFocused();
     const save = preview.getByRole("button", { name: "Save the text…" });
     for (let presses = 0; presses < 12; presses += 1) {
@@ -229,6 +230,57 @@ test("prepares a document's text for an AI with the keyboard, at 200% text", asy
       ),
     );
     expect(cancelled).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("on a wide window Close is the last button in the action row, at the bottom right", async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "computers only, like the reader");
+  const context = await browser.newContext({
+    baseURL: info.project.use.baseURL,
+    viewport: { width: 1280, height: 900 },
+  });
+  try {
+    const page = await context.newPage();
+    await fakeVault(page);
+    await page.goto("/");
+    const record = page.getByRole("button", {
+      name: "FAKE Clinic letter.pdf",
+      exact: true,
+    });
+    await expect(record).toBeVisible();
+    await record.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Prepare text for an AI…" }).click();
+    await page
+      .getByRole("dialog", { name: "About the AI helper" })
+      .getByRole("button", { name: "Continue" })
+      .click();
+    const preview = page.getByRole("dialog", {
+      name: "Text with identifying details removed",
+    });
+    await expect(
+      preview.getByRole("region", { name: "The text that will be saved" }),
+    ).toBeVisible();
+    const close = preview.getByRole("button", { name: "Close" });
+    const save = preview.getByRole("button", { name: "Save the text…" });
+    const closeBox = (await close.boundingBox())!;
+    const saveBox = (await save.boundingBox())!;
+    const dialogBox = (await preview.boundingBox())!;
+    // In Save's row, after it, at the dialog's end edge, and 44px tall; the header has no Close.
+    await expect(preview.locator("header").getByRole("button")).toHaveCount(0);
+    expect(closeBox.x).toBeGreaterThanOrEqual(saveBox.x + saveBox.width);
+    expect(Math.abs(closeBox.y - saveBox.y)).toBeLessThan(4);
+    expect(
+      dialogBox.x + dialogBox.width - (closeBox.x + closeBox.width),
+    ).toBeLessThan(32);
+    expect(closeBox.height).toBeGreaterThanOrEqual(44);
+    // Escape still closes it.
+    await page.keyboard.press("Escape");
+    await expect(preview).toBeHidden();
   } finally {
     await context.close();
   }
