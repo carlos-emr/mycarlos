@@ -1,0 +1,168 @@
+"""Read-only synthetic negative controls; never open the running candidate output."""
+import copy
+import csv
+import importlib.util
+import json
+from pathlib import Path
+import unittest
+
+HERE = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location('reuse', HERE / 'exact_review_reuse.py')
+r = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(r)
+spec = importlib.util.spec_from_file_location('compare', r.SCORER)
+c = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(c)
+
+
+def entry(parts):
+    return {'d': {'result': {'sentences': parts}}}
+
+
+def sentence(text='alpha', quote='source alpha', located=True):
+    return dict(text=text, quote=quote, located=located)
+
+
+def review(kind='S', **extra):
+    row = dict(id=kind + 'test', document='d', language='en', sentence='alpha', quote='source alpha',
+               context='fixed source', fact_it_may_state='fact', verdict='correct', unsafe='', technical='no', note='')
+    row.update(extra)
+    return row
+
+
+def event(doc):
+    return dict(kind='document', id=doc, docLang='en', pages=1, textBytes=3,
+                pagesSha256='a' * 64, wallMs=1, result={'sentences': []})
+
+
+class NegativeControls(unittest.TestCase):
+    def test_complete_run_refuses_partial_extra_duplicate_and_end_drift(self):
+        ids = [str(i) for i in range(10)]
+        rows = [dict(kind='run', variant='v', commit='h', model={'sha256': 'm'})]
+        rows += [event(d) for d in ids]
+        rows += [dict(kind='end', answered=10)]
+        data = lambda values: '\n'.join(json.dumps(x) for x in values).encode()
+        self.assertEqual(len(r.complete_run(data(rows), ids, 'v', 'h', 'm')[1]), 10)
+        variants = [rows[:-1], rows + [dict(kind='end', answered=10)],
+                    rows[:2] + [rows[1]] + rows[3:], rows[:-1] + [dict(kind='end', answered=9)]]
+        for values in variants:
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                r.complete_run(data(values), ids, 'v', 'h', 'm')
+        for expected in [('other', 'h', 'm'), ('v', 'other', 'm'), ('v', 'h', 'other')]:
+            with self.subTest(expected=expected), self.assertRaises(ValueError):
+                r.complete_run(data(rows), ids, *expected)
+
+    def test_document_missing_required_field_or_page_hash_refused(self):
+        for field in ('docLang', 'pages', 'textBytes', 'pagesSha256', 'wallMs', 'result'):
+            missing = event('d')
+            del missing[field]
+            data = '\n'.join(json.dumps(x) for x in [dict(kind='run'), missing, dict(kind='end', answered=1)]).encode()
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                r.complete_run(data, ['d'])
+        for value in ('', None, 'not-a-sha256'):
+            missing = dict(event('d'), pagesSha256=value)
+            data = '\n'.join(json.dumps(x) for x in [dict(kind='run'), missing, dict(kind='end', answered=1)]).encode()
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                r.complete_run(data, ['d'])
+
+    def test_mismatched_staged_pages_hash_size_and_count_refused(self):
+        pages = {'d': [dict(index=0, text='abc')]}
+        correct = dict(event('d'), pagesSha256=c.pages_hash(pages['d']))
+        r.verify_event_pages({'d': correct}, pages, c)
+        for field, value in [('pagesSha256', 'b' * 64), ('pages', 2), ('textBytes', 4)]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                r.verify_event_pages({'d': dict(correct, **{field: value})}, pages, c)
+        with self.assertRaises(ValueError):
+            r.verify_event_pages({'d': correct}, {'d': [dict(index=0, text='abd')]}, c)
+
+    def test_duplicate_scorer_labels_refused_before_dict_collapse(self):
+        with self.assertRaises(ValueError):
+            r.scored_runs_by_label([dict(label='E5'), dict(label='E5')])
+        self.assertEqual(set(r.scored_runs_by_label([dict(label='E5'), dict(label='current')])), {'E5', 'current'})
+
+    def test_duplicate_json_keys_refused(self):
+        with self.assertRaises(ValueError):
+            json.loads('{"kind":"run","kind":"end"}', object_pairs_hook=r.json_object)
+
+    def test_exact_s_carries_unfavorable_answers_too(self):
+        old = review(verdict='wrong', unsafe='yes', technical='yes', note='original reviewer explanation')
+        current = dict(old, verdict='', unsafe='', technical='', note='')
+        keys = [dict(run='v', sentence='0')]
+        runs = {'v': entry([sentence()])}
+        self.assertTrue(r.same_evidence(current, old, keys, keys, runs, runs, c))
+
+    def test_normalized_same_id_is_insufficient(self):
+        old = review(sentence='alpha beta')
+        current = dict(old, sentence='alpha  beta')
+        self.assertEqual(c.sentence_id(('d', c.normalized(old['sentence']), old['quote'])),
+                         c.sentence_id(('d', c.normalized(current['sentence']), current['quote'])))
+        self.assertFalse(r.prompt_equal(current, old))
+
+    def test_quote_context_fact_list_language_drift_refused(self):
+        old = review()
+        keys = [dict(run='v', sentence='0')]
+        runs = {'v': entry([sentence()])}
+        for field in ('quote', 'context', 'fact_it_may_state', 'language'):
+            current = dict(old, **{field: old[field] + ' changed'})
+            with self.subTest(field=field):
+                self.assertFalse(r.same_evidence(current, old, keys, keys, runs, runs, c))
+
+    def test_located_drift_refused(self):
+        row = review()
+        keys = [dict(run='v', sentence='0')]
+        self.assertFalse(r.same_evidence(row, row, keys, keys,
+                                        {'v': entry([sentence(located=False)])},
+                                        {'v': entry([sentence()])}, c))
+
+    def test_incomplete_technical_and_multi_fact_note_refused(self):
+        self.assertFalse(r.complete_answers(review(technical=''), c))
+        self.assertFalse(r.complete_answers(review(fact_it_may_state='first | second'), c))
+        self.assertTrue(r.complete_answers(review(fact_it_may_state='first | second', note='states: 1'), c))
+        with self.assertRaises(ValueError):
+            r.complete_answers(review(fact_it_may_state='first | second', note='states: 3'), c)
+
+    def test_t_neighbour_drift_refused(self):
+        row = review('T', sentence='before' + c.TOGETHER + '⟦alpha⟧' + c.TOGETHER + 'after',
+                     quote=c.TOGETHER.join(['source alpha'] * 3))
+        keys = [dict(run='v', sentence='1')]
+        old = {'v': entry([sentence('before'), sentence(), sentence('after')])}
+        current = copy.deepcopy(old)
+        self.assertTrue(r.same_evidence(row, row, keys, keys, current, old, c))
+        current['v']['d']['result']['sentences'][0]['text'] = 'different neighbour'
+        self.assertFalse(r.same_evidence(row, row, keys, keys, current, old, c))
+
+    def test_raw_normalization_collision_in_key_cannot_reuse_displayed_grade(self):
+        row = review(sentence='alpha beta')
+        keys = [dict(run='v', sentence='0')]
+        runs = {'v': entry([sentence('alpha  beta')])}
+        self.assertFalse(r.same_evidence(row, row, keys, keys, runs, runs, c))
+
+    def test_p_partner_and_located_drift_refused(self):
+        row = review('P', sentence='alpha' + c.TOGETHER + 'beta',
+                     quote='source alpha' + c.TOGETHER + 'source beta', verdict='different')
+        old = {'v': entry([sentence(), sentence('beta', 'source beta')])}
+        self.assertTrue(r.same_evidence(row, row, [], [], old, old, c))
+        current = copy.deepcopy(old)
+        current['v']['d']['result']['sentences'][1]['text'] = 'changed'
+        self.assertFalse(r.same_evidence(row, row, [], [], current, old, c))
+        current = copy.deepcopy(old)
+        current['v']['d']['result']['sentences'][1]['located'] = False
+        self.assertFalse(r.same_evidence(row, row, [], [], current, old, c))
+
+    def test_static_pins_and_all_109_original_reviewer_rows(self):
+        for path, expected in r.PINS.items():
+            self.assertEqual(r.sha(path.read_bytes()), expected)
+        provenance = json.loads(r.PROVENANCE.read_text())
+        rows = c.read_csv_rows(r.OLD_SHEET)
+        sources = {x['id']: x for x in provenance['rows']}
+        self.assertEqual(len(rows), 109)
+        for row in rows:
+            source = sources[row['id']]
+            self.assertEqual(r.sha(r.canonical(row)), source['fullRowSha256'])
+            path = Path(source['reviewSource']['path'])
+            self.assertEqual(r.sha(path.read_bytes()), source['reviewSource']['sha256'])
+            self.assertEqual(c.read_csv_rows(path)[source['sourceRow'] - 2], row)
+
+
+if __name__ == '__main__':
+    unittest.main()
