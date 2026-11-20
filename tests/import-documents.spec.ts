@@ -36,7 +36,7 @@ test("Add documents: a cancelled picker changes nothing, chosen files are added 
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   const add = page.getByRole("button", {
-    name: en("interface.VaultApp.chooseFilesToImport"),
+    name: en("interface.VaultLibrary.new"),
     exact: true,
   });
   const row = (name: string) => page.getByRole("button", { name, exact: true });

@@ -93,6 +93,32 @@ export interface AcceptedModel {
   capacity?: ModelCapacity;
 }
 
+/** One model's limits for the AI helper settings (`ai_model_limits`, model
+ * limits): how much of a document it reads at a time, the file's size and the
+ * free memory a start needs. `confirmed` once the helper has made its context
+ * for this model in this session; `trainedContext` and `parameters` are then
+ * what the file says, claims to quote, never promises. */
+export interface ModelLimits {
+  index: number;
+  capacity: ModelCapacity;
+  confirmed: boolean;
+  trainedContext: number | null;
+  parameters: number | null;
+  fileBytes: number;
+  neededBytes: number;
+}
+
+/** What loading the model in use once said (`ai_model_check`, D218): it runs
+ * on this computer, it cannot run here, there is not enough free memory to try
+ * it now, or its file is damaged. `skipped` says nothing: an answer was being
+ * written, or the model changed meanwhile; its first use then tells. */
+export type LoadCheck =
+  | "ready"
+  | "cannotRun"
+  | "memory"
+  | "damaged"
+  | "skipped";
+
 /** One native catalog row, keyed by its stable catalog index (#276A). */
 export interface ModelRow {
   index: number;
