@@ -121,7 +121,11 @@ test("the language is chosen on the first screen only, and the set-up form follo
         const box = label.getBoundingClientRect();
         const span = label.querySelector("span")!;
         // 36px for a mouse, 44px for a finger.
-        const minimum = matchMedia("(pointer: fine)").matches ? 36 : 44;
+        const minimum = matchMedia(
+          "(pointer: fine) and (not (any-pointer: coarse))",
+        ).matches
+          ? 36
+          : 44;
         return (
           box.left >= 0 &&
           box.right <= innerWidth &&
@@ -302,7 +306,11 @@ for (const [width, zoom] of [
         getComputedStyle(document.documentElement).fontSize,
       );
       const room = fieldset.getBoundingClientRect().width / rem;
-      const minimum = matchMedia("(pointer: fine)").matches ? 36 : 44;
+      const minimum = matchMedia(
+        "(pointer: fine) and (not (any-pointer: coarse))",
+      ).matches
+        ? 36
+        : 44;
       return {
         room,
         columns: new Set(

@@ -114,7 +114,7 @@ function undersized() {
     // The Appearance and Language choices are 36px with a mouse (Ben, 20 Nov
     // 2026) and 44px for a finger; every other target is 44px.
     const minimum =
-      matchMedia("(pointer: fine)").matches &&
+      matchMedia("(pointer: fine) and (not (any-pointer: coarse))").matches &&
       control.closest(".choice-segmented, .choice-grid")
         ? 36
         : 44;

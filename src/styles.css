@@ -3863,8 +3863,11 @@ p {
 .appearance-choice.choice-grid {
   grid-template-columns: minmax(0, 1fr);
 }
-/* So little room (320px with text at 200%) that two would crush their words. */
-@container (max-width: 14rem) {
+/* Two buttons side by side need about 8.5rem each so that the longest word of a
+   choice (Contraste, Português) fits on one line: with less room, one column.
+   (320px at 100% is about 16.4rem: 2x2. With text at 150% or more it is under
+   12rem: one column.) */
+@container (max-width: 15.99rem) {
   .appearance-choice.choice-segmented {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3892,8 +3895,9 @@ p {
   border-radius: var(--radius-sm);
   font-size: 1rem;
 }
-/* A mouse or trackpad needs less room than a finger; anything else keeps 44px. */
-@media (pointer: fine) {
+/* A mouse or trackpad needs less room than a finger. A device that also has a
+   touch screen (a touch laptop, a Surface) keeps 44px, as does anything else. */
+@media (pointer: fine) and (not (any-pointer: coarse)) {
   .choice-segmented .appearance-option,
   .choice-grid .appearance-option {
     min-height: 36px;
@@ -3901,14 +3905,14 @@ p {
 }
 .choice-segmented .appearance-option {
   justify-content: center;
-  padding-inline: 1.75rem;
+  padding-inline: 1.25rem;
   text-align: center;
 }
 /* In the row the words are centred, so the check mark sits in the button's
    left padding instead of in the line, and choosing moves nothing. */
 .choice-segmented .choice-check {
   position: absolute;
-  inset-inline-start: -1.375rem;
+  inset-inline-start: -1.125rem;
   top: 50%;
   margin-top: -0.5rem;
 }
@@ -3933,8 +3937,11 @@ p {
 }
 .appearance-choice.choice-segmented .appearance-option input:focus-visible,
 .appearance-choice.choice-grid .appearance-option input:focus-visible {
+  /* Inside the button's own box: .setting-list hides what runs past its edge, and
+     the rows' padding is 2px, so a ring drawn outside would be cut on the
+     outermost buttons (and on every button in one column). */
   outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline-offset: -4px;
 }
 .choice-segmented .appearance-option > span,
 .choice-grid .appearance-option > span {
@@ -3944,6 +3951,9 @@ p {
   gap: 6px;
   min-width: 0;
   pointer-events: none;
+  /* A word breaks only when it cannot fit on a line of its own, never in the
+     middle of one that could (the row's base style allows a break anywhere). */
+  overflow-wrap: break-word;
 }
 .choice-check {
   flex: none;
@@ -4683,8 +4693,8 @@ button:disabled,
 .language-button .icon {
   flex: none;
 }
-/* In the language dialog the list lines up with the title above it and the
-   Close button below it: the same 20px as .dialog-head. */
+/* In the language dialog the list lines up with the title above it: the same
+   20px as .dialog-head. */
 .native-language-dialog .language-compact {
   margin: 0;
   padding: 14px 20px 6px;

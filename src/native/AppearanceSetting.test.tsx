@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppearanceProvider } from "../AppearanceProvider";
 import { APPEARANCE_STORAGE_KEY, startAppearance } from "../appearance";
+import { LOCALES, setLocaleOverride } from "../i18n";
 import { PreferencesSettings } from "./PreferencesSettings";
 
 afterEach(() => {
@@ -66,7 +67,11 @@ describe("Appearance in Preferences", () => {
       "high-contrast",
     );
     // Each choice is a button-sized target: 36px for a mouse, 44px otherwise.
-    const minimum = window.matchMedia("(pointer: fine)").matches ? 36 : 44;
+    const minimum = window.matchMedia(
+      "(pointer: fine) and (not (any-pointer: coarse))",
+    ).matches
+      ? 36
+      : 44;
     for (const choice of choices)
       expect(
         (choice.closest("label") as HTMLElement).getBoundingClientRect().height,
@@ -240,7 +245,7 @@ describe("Appearance drawn as a row of buttons", () => {
       labels.map((label) => Math.round(label.getBoundingClientRect().top));
     expect(new Set(tops(wide.labels)).size).toBe(1);
     cleanup();
-    const narrow = renderIn(300);
+    const narrow = renderIn(400);
     const rows = tops(narrow.labels);
     expect(rows[0]).toBe(rows[1]);
     expect(rows[2]).toBe(rows[3]);
@@ -248,17 +253,145 @@ describe("Appearance drawn as a row of buttons", () => {
     // Nothing runs out sideways, and no button is crushed.
     for (const label of narrow.labels) {
       const box = label.getBoundingClientRect();
-      expect(box.right).toBeLessThanOrEqual(310);
+      expect(box.right).toBeLessThanOrEqual(410);
       expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth + 1);
     }
   });
 
   it("is 36px tall with a mouse and 44px otherwise", () => {
     const { labels } = renderIn(700);
-    const fine = window.matchMedia("(pointer: fine)").matches;
+    const fine = window.matchMedia(
+      "(pointer: fine) and (not (any-pointer: coarse))",
+    ).matches;
     for (const label of labels)
       expect(Math.round(label.getBoundingClientRect().height)).toBe(
         fine ? 36 : 44,
       );
   });
+});
+
+// The two groups of buttons sit inside .setting-list, which hides what runs past
+// its edge, in rows with 2px of padding. A focus ring drawn outside a button
+// would be cut on the outermost buttons, and on every button in one column.
+describe("Preferences choices keep their focus ring and their words whole", () => {
+  function renderIn(width: number) {
+    const appearance = startAppearance();
+    render(
+      <div style={{ width }}>
+        <AppearanceProvider appearance={appearance}>
+          <PreferencesSettings />
+        </AppearanceProvider>
+      </div>,
+    );
+  }
+
+  /** The first ancestor that clips the focus ring of `radio`, or null. */
+  function clippedBy(radio: HTMLElement) {
+    const style = getComputedStyle(radio);
+    // The ring is drawn from `offset` outside the box, `width` thick.
+    const grow =
+      parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+    const box = radio.getBoundingClientRect();
+    const ring = {
+      left: box.left - grow,
+      right: box.right + grow,
+      top: box.top - grow,
+      bottom: box.bottom + grow,
+    };
+    for (let at = radio.parentElement; at; at = at.parentElement) {
+      const cs = getComputedStyle(at);
+      if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+      const edge = at.getBoundingClientRect();
+      if (
+        ring.left < edge.left - 0.5 ||
+        ring.right > edge.right + 0.5 ||
+        ring.top < edge.top - 0.5 ||
+        ring.bottom > edge.bottom + 0.5
+      )
+        return at.className || at.tagName;
+    }
+    return null;
+  }
+
+  for (const width of [900, 300]) {
+    it(`never cuts the focus ring of any Appearance or Language button, in a ${width}px space`, async () => {
+      const user = userEvent.setup();
+      renderIn(width);
+      const radios = [
+        ...document.querySelectorAll<HTMLInputElement>(
+          ".choice-segmented input, .choice-grid input",
+        ),
+      ];
+      expect(radios).toHaveLength(12);
+      for (const radio of radios) {
+        // A key press first, so that focus shows as it does to a keyboard user.
+        await user.keyboard("{Shift}");
+        radio.focus();
+        expect(radio.matches(":focus-visible")).toBe(true);
+        const style = getComputedStyle(radio);
+        expect(style.outlineStyle).toBe("solid");
+        expect(parseFloat(style.outlineWidth)).toBeGreaterThanOrEqual(3);
+        expect(
+          clippedBy(radio),
+          radio.closest("label")!.textContent!,
+        ).toBeNull();
+      }
+    });
+  }
+
+  // A word may wrap to the next line but not break in the middle (Contraste
+  // élevé, Português): checked in every language, at widths from a phone to a
+  // wide window, and with text enlarged to 200%.
+  for (const locale of LOCALES.filter((locale) => !locale.startsWith("zh"))) {
+    it(`never breaks a word of the choices mid-word in ${locale}`, () => {
+      setLocaleOverride(locale);
+      try {
+        for (const size of ["", "200%"]) {
+          document.documentElement.style.fontSize = size;
+          for (const width of [320, 360, 480, 700, 900]) {
+            renderIn(width);
+            const split: string[] = [];
+            for (const label of document.querySelectorAll(
+              ".choice-segmented label, .choice-grid label",
+            )) {
+              const walker = document.createTreeWalker(
+                label,
+                NodeFilter.SHOW_TEXT,
+              );
+              for (
+                let node = walker.nextNode();
+                node;
+                node = walker.nextNode()
+              ) {
+                for (const word of node.textContent!.matchAll(/[\p{L}]+/gu)) {
+                  const range = document.createRange();
+                  range.setStart(node, word.index!);
+                  range.setEnd(node, word.index! + word[0].length);
+                  if (range.getClientRects().length < 2) continue;
+                  // Split. That is only a fault when the word would have fitted
+                  // on a line of its own: a word wider than the whole button
+                  // (a long Spanish word at 200% in a 320px window) cannot.
+                  const text = label.querySelector("svg")!.nextElementSibling!;
+                  const probe = document.createElement("span");
+                  probe.style.cssText =
+                    "position:absolute;visibility:hidden;white-space:nowrap";
+                  probe.textContent = word[0];
+                  node.parentElement!.append(probe);
+                  const needed = probe.getBoundingClientRect().width;
+                  probe.remove();
+                  if (needed <= text.getBoundingClientRect().width + 1)
+                    split.push(`${word[0]} at ${width}px ${size || "100%"}`);
+                }
+              }
+            }
+            expect(split).toEqual([]);
+            cleanup();
+          }
+        }
+      } finally {
+        document.documentElement.style.fontSize = "";
+        setLocaleOverride(null);
+      }
+    });
+  }
 });

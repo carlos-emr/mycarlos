@@ -328,7 +328,9 @@ describe("Language drawn as a grid of buttons", () => {
 
   it("is 36px tall with a mouse and 44px otherwise", () => {
     const { labels } = renderIn(760);
-    const fine = window.matchMedia("(pointer: fine)").matches;
+    const fine = window.matchMedia(
+      "(pointer: fine) and (not (any-pointer: coarse))",
+    ).matches;
     for (const label of labels)
       expect(
         Math.round(label.getBoundingClientRect().height),
