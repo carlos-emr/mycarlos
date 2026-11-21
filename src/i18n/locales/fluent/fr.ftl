@@ -673,7 +673,7 @@ library-folder-items =
 
 library-folder-label = Dossier { $name }
 
-library-folder-open = Ouvrir { $name }
+library-folder-open = { $name }, ouvrir le dossier
 
 library-folder-rename = Renommer le dossier { $name }
 
@@ -894,7 +894,7 @@ notice-created = Coffre-fort chiffré créé. Configurez une clé de récupérat
 
 notice-createdThenLocked = Votre coffre-fort a été créé, puis verrouillé avant que sa clé de récupération puisse être créée. Déverrouillez-le pour en configurer une.
 
-notice-dropRefused = Pour importer des PDF, déverrouillez votre coffre-fort et utilisez { $button }. Le glisser-déposer déplace les documents déjà dans myCarlos.
+notice-dropRefused = Pour importer des PDF, déverrouillez votre coffre-fort et utilisez « { $button } ». Le glisser-déposer déplace les documents déjà dans myCarlos.
 
 notice-eraseCancelled = Rien n’a changé : le coffre-fort n’a pas été mis de côté.
 
@@ -1944,6 +1944,13 @@ ai-model-reads =
    *[other] Lit environ { $pages } pages à la fois (environ { $characters } caractères de texte en anglais). Moins pour les tableaux et certaines langues.
     }
 
+ai-model-readsEstimate = C’est une estimation, jusqu’à la prochaine utilisation de ce modèle.
+ai-model-loadCheck = Vérification du fonctionnement de ce modèle sur cet ordinateur…
+ai-model-loadCheckCannotRun = Cet ordinateur n’a pas pu faire fonctionner ce modèle. Réessayez plus tard ou choisissez un autre modèle.
+ai-model-loadCheckMemory = Il n’y a pas assez de mémoire libre pour essayer ce modèle en ce moment. Fermez d’autres programmes, puis réessayez.
+ai-model-loadCheckReady = Ce modèle a démarré sur cet ordinateur.
+ai-model-loadCheckRetry = Réessayer
+
 ai-model-where = Où obtenir le fichier
 
 ai-model-copy = Copier l’adresse
@@ -2309,3 +2316,10 @@ ai-models-picking = Choisissez un fichier de modèle à ajouter.
 ai-models-changed = Le modèle utilisé a été changé
 
 ai-summaryTooLarge = Le résumé complet est trop volumineux. Aucun nouveau résumé n’a été enregistré.
+
+personDetails-previousTitle = Anciens noms complets
+personDetails-previousHelp = Jusqu’à 16 anciens noms complets aident à repérer les renseignements identifiants. Un nom modifié est proposé ici ; retirez-le avant d’enregistrer si vous ne souhaitez pas le garder. Le retrait ne supprime que cette entrée ; d’autres dossiers et sauvegardes peuvent la conserver.
+personDetails-previousEntry = Ancien nom complet { $number }
+personDetails-previousRemove = Retirer l’ancien nom complet { $number }
+personDetails-previousAdd = Ajouter un ancien nom complet
+personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.

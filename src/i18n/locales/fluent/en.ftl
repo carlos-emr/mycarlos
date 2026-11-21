@@ -655,7 +655,7 @@ library-folder-items =
 
 library-folder-label = { $name } folder
 
-library-folder-open = Open { $name }
+library-folder-open = { $name }, open folder
 
 library-folder-rename = Rename folder { $name }
 
@@ -872,7 +872,7 @@ notice-created = Encrypted vault created. Set up a recovery key, so that a forgo
 
 notice-createdThenLocked = Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.
 
-notice-dropRefused = To import PDFs, unlock your vault and use { $button }. Drag and drop moves documents already in myCarlos.
+notice-dropRefused = To import PDFs, unlock your vault and use “{ $button }”. Drag and drop moves documents already in myCarlos.
 
 notice-eraseCancelled = Nothing changed: the vault was not set aside.
 
@@ -1907,6 +1907,13 @@ ai-model-reads =
    *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
     }
 
+ai-model-readsEstimate = An estimate until you next use this model.
+ai-model-loadCheck = Checking that this model runs on this computer…
+ai-model-loadCheckCannotRun = This computer could not run this model. Try again later, or choose another model.
+ai-model-loadCheckMemory = There isn't enough free memory to try this model now. Close some other programs, then try again.
+ai-model-loadCheckReady = This model started on this computer.
+ai-model-loadCheckRetry = Try again
+
 ai-model-where = Where to get the file
 
 ai-model-copy = Copy address
@@ -2274,3 +2281,10 @@ ai-models-picking = Choose a model file to add.
 ai-models-changed = Model in use changed
 
 ai-summaryTooLarge = The complete summary is too large. No new summary was saved.
+
+personDetails-previousTitle = Previous full names
+personDetails-previousHelp = Up to 16 previous full names help find identifying details. A changed name is suggested here; remove it before saving if you do not want to keep it. Removing a saved name only removes this list entry; other records and backups may retain it.
+personDetails-previousEntry = Previous full name { $number }
+personDetails-previousRemove = Remove previous full name { $number }
+personDetails-previousAdd = Add previous full name
+personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.

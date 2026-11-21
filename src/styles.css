@@ -1838,6 +1838,11 @@ p {
   margin: 0;
   overflow-wrap: anywhere;
 }
+/* Beside an error or a damaged, empty history the status line is empty: no room. */
+.audit-history .status-line:empty {
+  min-height: 0;
+  margin-bottom: 0;
+}
 .old-backups-guide {
   margin-top: 10px;
   padding: 11px 13px;
@@ -2588,6 +2593,7 @@ p {
     .button,
     .side-nav button,
     .unlock-pill,
+    .native-lock-button,
     .breadcrumb,
     .main-head p,
     .name-copy strong,
@@ -2616,6 +2622,7 @@ p {
     .button,
     .side-nav button,
     .unlock-pill,
+    .native-lock-button,
     .native-rename-button,
     .bulkbar button,
     .native-dialog-actions select,
@@ -2804,8 +2811,16 @@ p {
     flex-wrap: wrap;
     row-gap: 6px;
   }
-  .native-vault-page .titlebar .native-lock-button {
+  .native-vault-page .titlebar .native-lock-pill {
     margin-left: 0;
+    /* Issue 149: the state and the button are two parts of the pill; on a narrow
+       window they wrap inside it, as the one button's words used to. */
+    flex-wrap: wrap;
+    row-gap: 2px;
+    max-width: 100%;
+  }
+  .native-vault-page .titlebar .native-lock-button {
+    text-align: start;
   }
 }
 
@@ -2867,6 +2882,22 @@ p {
 .native-lock-button {
   cursor: pointer;
   font: inherit;
+}
+/* #149: the state is text beside the button inside the pill; the button keeps
+   the pill's look, but only the button's words ("Lock now") are the click
+   target: the icon and the state text are not. The pill takes the title
+   bar's font, as it did when the pill was the button (font: inherit below). */
+.unlock-pill.native-lock-pill {
+  font: inherit;
+}
+.unlock-pill .native-lock-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .native-lock-button:disabled {
   cursor: default;
@@ -4500,6 +4531,35 @@ button:disabled,
 .native-person-details-setup label,
 .native-person-details-setup input {
   min-width: 0;
+}
+/* The polite line for a missing name or date is on the page from the start, so that its text is
+   read out when it appears (#149). Empty, it must not add a row and a gap to the grid: it leaves
+   the flow instead of using display: none, which would take it out of the accessibility tree
+   and with it the live region. */
+.native-person-details-setup p[aria-live]:empty,
+.native-rename-fields p[aria-live]:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+}
+/* Previous full names in Edit details: each name and its Remove button stay
+   in one column at any width and text size. */
+.previous-full-names,
+.previous-full-names > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.previous-full-names input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.previous-full-names button {
+  white-space: normal;
+  min-height: 44px;
 }
 
 /* The way to another language from the unlock and set-up screens: a globe and

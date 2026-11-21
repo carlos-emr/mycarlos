@@ -691,7 +691,7 @@ library-folder-items =
 
 library-folder-label = Folder { $name }
 
-library-folder-open = Otwórz { $name }
+library-folder-open = { $name }, otwórz folder
 
 library-folder-rename = Zmień nazwę folderu { $name }
 
@@ -1985,6 +1985,13 @@ ai-model-reads =
    *[other] Czyta naraz około { $pages } stron (około { $characters } znaków tekstu w języku angielskim). Mniej w przypadku tabel i niektórych języków.
     }
 
+ai-model-readsEstimate = To wartość szacunkowa do następnego użycia tego modelu.
+ai-model-loadCheck = Sprawdzanie, czy ten model działa na tym komputerze…
+ai-model-loadCheckCannotRun = Ten komputer nie mógł uruchomić tego modelu. Można spróbować ponownie później albo wybrać inny model.
+ai-model-loadCheckMemory = Brakuje teraz wolnej pamięci, aby wypróbować ten model. Można zamknąć inne programy i spróbować ponownie.
+ai-model-loadCheckReady = Ten model uruchomił się na tym komputerze.
+ai-model-loadCheckRetry = Spróbuj ponownie
+
 ai-model-where = Gdzie pobrać plik
 
 ai-model-copy = Kopiuj adres
@@ -2355,3 +2362,10 @@ ai-models-picking = Wybierz plik modelu do dodania.
 ai-models-changed = Zmieniono używany model
 
 ai-summaryTooLarge = Pełne podsumowanie jest zbyt duże. Nie zapisano nowego podsumowania.
+
+personDetails-previousTitle = Poprzednie pełne imiona i nazwiska
+personDetails-previousHelp = Do 16 poprzednich pełnych imion i nazwisk pomaga wykrywać dane identyfikujące. Zmienione dane są tu proponowane; usuń je przed zapisaniem, jeśli nie chcesz ich zachować. Usunięcie dotyczy tylko tej listy; inne dokumenty i kopie zapasowe mogą je zachować.
+personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
+personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
+personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
+personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.

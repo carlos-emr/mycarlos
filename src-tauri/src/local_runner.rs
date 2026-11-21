@@ -578,6 +578,17 @@ pub(crate) struct Summary {
 
 // --- Cancellation -------------------------------------------------------
 
+/// What a load check's stop did ([`Runner::stop_if_current`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CheckStop {
+    /// No model process is left from the check.
+    Stopped,
+    /// A newer claim (an answer asked meanwhile, a lock) has the runner: left to it.
+    Claimed,
+    /// Something held the process for a moment: nothing was done.
+    Held,
+}
+
 /// A request's claim on its runner: current until the vault locks or the
 /// reader asks that runner for something else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -627,6 +638,12 @@ struct Sidecar {
     generation_threads: Option<u32>,
     /// The model file while the process may still read it (see `RunnerConfig::model_file`).
     model_file: Option<Arc<std::fs::File>>,
+    /// What the helper said it found in the model file (model limits), and why it was not
+    /// kept, when it was not.
+    card: Option<(
+        crate::model_limits::ModelCard,
+        Option<crate::model_limits::CardRejected>,
+    )>,
 }
 
 /// The model process: started as it is, or through the helpers' launcher.
@@ -694,6 +711,17 @@ pub(crate) struct Runner {
     answer_watch: Mutex<Option<(Ticket, AnswerWatch)>>,
     /// Threads to write answers on whatever the load (measuring by hand: `engine_testing`).
     threads_override: Mutex<Option<u32>>,
+    /// The checked cards of the models started in this session, by their SHA-256 (model
+    /// limits): kept after the helper ends, for the settings.
+    cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
+    /// The last card a helper sent, kept or not, and why not, its architecture cut to a short
+    /// name: for support and the engine test, never for the settings.
+    last_card: Mutex<
+        Option<(
+            crate::model_limits::ModelCard,
+            Option<crate::model_limits::CardRejected>,
+        )>,
+    >,
 }
 
 /// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
@@ -704,6 +732,10 @@ pub(crate) type AnswerWatch = Box<dyn FnOnce(Duration) + Send>;
 struct Hello {
     hello: String,
     model: ModelInfo,
+    /// What the helper found in the file it loaded (model limits). Absent from a helper that
+    /// loaded no model (the test stub); kept only when `ModelCard::checked` passes.
+    #[serde(default)]
+    card: Option<crate::model_limits::ModelCard>,
 }
 
 #[derive(Deserialize)]
@@ -729,6 +761,8 @@ struct Answer {
 }
 
 const HELLO: &str = crate::model_helper::CONTRACT;
+/// The most model cards a runner keeps (one per model started in a session).
+const MAX_CARDS: usize = 16;
 /// The pages' separator in a document's joined text (`documentText.ts`'s PAGE_SEPARATOR).
 pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
 /// How often a waiting request looks at its ticket.
@@ -744,7 +778,43 @@ impl Runner {
             last_stats: Mutex::new(None),
             answer_watch: Mutex::new(None),
             threads_override: Mutex::new(None),
+            cards: Mutex::new(Vec::new()),
+            last_card: Mutex::new(None),
         }
+    }
+
+    /// The last card a helper sent, and why it was not kept, when it was not.
+    pub(crate) fn last_card(
+        &self,
+    ) -> Option<(
+        crate::model_limits::ModelCard,
+        Option<crate::model_limits::CardRejected>,
+    )> {
+        self.last_card
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// The checked card of the model with this SHA-256, when the helper has run it in this
+    /// session (model limits).
+    pub(crate) fn card_for(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
+        let cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
+        cards
+            .iter()
+            .find(|(hash, _)| hash == sha256)
+            .map(|(_, card)| card.clone())
+    }
+
+    /// Keeps a started model's card, in place of an older one for the same file. At most
+    /// [`MAX_CARDS`] are kept: the oldest goes.
+    fn remember_card(&self, sha256: &str, card: crate::model_limits::ModelCard) {
+        let mut cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
+        cards.retain(|(hash, _)| hash != sha256);
+        if cards.len() >= MAX_CARDS {
+            cards.remove(0);
+        }
+        cards.push((sha256.to_owned(), card));
     }
 
     /// Tells `watch` the time limit of the answer asked under `ticket`, as it is asked; never,
@@ -800,6 +870,16 @@ impl Runner {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// The claim in force now, without ending any (as [`Self::start_with`] uses): a load check
+    /// starts under it, so it never cancels an answer, and a newer claim (an answer asked
+    /// meanwhile, a lock) ends the check instead.
+    pub(crate) fn current_ticket(&self) -> Ticket {
+        Ticket {
+            runner: self as *const Self as usize,
+            generation: self.generation.load(Ordering::SeqCst),
+        }
+    }
+
     /// Starts the model process if it is not running, with the config it was made with.
     #[allow(dead_code)] // The tests' way in; the app uses `start_with`.
     pub(crate) fn start(&self, probe: &dyn MemoryProbe) -> Result<ModelInfo, RunnerError> {
@@ -818,14 +898,7 @@ impl Runner {
         probe: &dyn MemoryProbe,
         prepare: impl FnOnce() -> Result<RunnerConfig, RunnerError>,
     ) -> Result<ModelInfo, RunnerError> {
-        self.start_for(
-            Ticket {
-                runner: self as *const Self as usize,
-                generation: self.generation.load(Ordering::SeqCst),
-            },
-            probe,
-            prepare,
-        )
+        self.start_for(self.current_ticket(), probe, prepare)
     }
 
     /// An answer's ticket is reserved at admission, never when its worker resumes.
@@ -900,6 +973,21 @@ impl Runner {
             }
             Ok(sidecar) => {
                 let model = sidecar.model.clone();
+                if let Some((card, rejected)) = sidecar.card.clone() {
+                    if rejected.is_none() {
+                        self.remember_card(&model.sha256, card.clone());
+                    }
+                    // Its numbers as sent, its architecture cut as a checked card's is: no
+                    // more of the helper's own text is kept than a short name.
+                    let architecture = crate::model_limits::clean_architecture(&card.architecture);
+                    *self.last_card.lock().unwrap_or_else(|e| e.into_inner()) = Some((
+                        crate::model_limits::ModelCard {
+                            architecture,
+                            ..card
+                        },
+                        rejected,
+                    ));
+                }
                 *slot = Some(sidecar);
                 self.set_status(RunnerStatus::Ready {
                     model: model.clone(),
@@ -933,6 +1021,36 @@ impl Runner {
         });
     }
 
+    /// Stops the model process, as [`Self::stop`] does, only while `ticket` is still the claim
+    /// in force: after a load check, so that an answer asked meanwhile keeps the model it may
+    /// already be using. `release` is called as soon as that is decided, before the process
+    /// is waited for: the caller's own locks go first, so nothing waits for a model to exit
+    /// while holding them. The process lock is kept until the process has ended, so the next
+    /// start finds its memory free. Never waits for that lock: `Held` when something has it.
+    pub(crate) fn stop_if_current(&self, ticket: Ticket, release: impl FnOnce()) -> CheckStop {
+        let mut slot = match self.sidecar.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                release();
+                return CheckStop::Held;
+            }
+        };
+        if !self.is_current(ticket) {
+            release();
+            return CheckStop::Claimed;
+        }
+        let taken = slot.take();
+        if let Some(running) = &taken {
+            self.set_status(RunnerStatus::Installed {
+                model: running.model.clone(),
+            });
+        }
+        release();
+        drop(taken);
+        CheckStop::Stopped
+    }
+
     /// How the last answer was made, when the model said (counts and times only).
     #[allow(dead_code)] // For measuring: the real-model test prints it.
     pub(crate) fn last_stats(&self) -> Option<crate::model_helper::Stats> {
@@ -956,9 +1074,28 @@ impl Runner {
         }
     }
 
-    /// Whether a model process is running now.
-    // Used by the tests and the stub's tests only.
-    #[allow(dead_code)]
+    /// A load check's running probe: never waits for the process, and says nothing if a
+    /// newer claim owns it. Check the claim again under the lock and after the process probe.
+    pub(crate) fn is_running_for(&self, ticket: Ticket) -> Option<bool> {
+        if !self.is_current(ticket) {
+            return None;
+        }
+        let mut slot = match self.sidecar.try_lock() {
+            Ok(slot) => slot,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        if !self.is_current(ticket) {
+            return None;
+        }
+        let running = slot
+            .as_mut()
+            .is_some_and(|running| running.process.running());
+        self.is_current(ticket).then_some(running)
+    }
+
+    /// Whether a model process is running now (ordinary callers may wait for it).
+    #[allow(dead_code)] // Tests and optional engine-testing callers.
     pub(crate) fn is_running(&self) -> bool {
         let mut slot = self.sidecar.lock().unwrap_or_else(|e| e.into_inner());
         match slot.as_mut() {
@@ -1398,6 +1535,7 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
         answer_limit: config.answer_limit,
         generation_threads: config.generation_threads,
         model_file: config.model_file.clone(),
+        card: None,
     };
     let deadline = Instant::now() + config.start_timeout;
     let hello = loop {
@@ -1446,6 +1584,15 @@ fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, Ru
         return Err(RunnerError::Start("not the verified model".to_owned()));
     }
     sidecar.model = hello.model;
+    // Kept only in range, and only for a context no larger than the one asked for: the rest is
+    // dropped, and the catalogue's limits stay (model limits, slice 1: nothing is refused yet).
+    sidecar.card =
+        hello.card.map(
+            |card| match card.clone().checked(crate::model_helper::CONTEXT_TOKENS) {
+                Ok(card) => (card, None),
+                Err(rejected) => (card, Some(rejected)),
+            },
+        );
     // The process holds its own copy of the descriptor now, closed once it has loaded.
     #[cfg(unix)]
     {
@@ -1681,21 +1828,15 @@ fn cut(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
 
-/// What a quote may start or end with that is not part of it, as the reader
-/// trims it (`locateQuote`): quotation marks, straight or curly, and `.,;:`.
-const QUOTE_ENDS: &[char] = &[
-    '"', '\'', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '.', ',', ';', ':',
-];
-
-/// Whether the document contains the quote, word for word, as the reader
-/// matches one (`locateQuote`): whitespace runs count as one, case does not
-/// count, and spaces and [`QUOTE_ENDS`] at either end of the quote are not
-/// part of it. A model often copies the colon of a "Label: value" line
-/// (": Admitted: 2026-10-01"). The renderer places it exactly; here a quote
-/// that is not there at all is enough to empty it.
+/// Whether the pages contain the quote as the reader matches one (`locateQuote.ts`, shared as
+/// `quote_locate`): white space runs count as one, case, accents and ligatures do not count, a
+/// curly quote is a straight one, the space before a comma is not there, and spaces and `.,;:`
+/// and quote marks at either end of the quote are not part of it (a model often copies the colon
+/// of a "Label: value" line, ": Admitted: 2026-10-01"). A quote may be parts joined by "..."
+/// that are found in order, and each part must be worth finding. The renderer places it exactly;
+/// here a quote that is not there at all is enough to empty it.
 fn quote_in(text: &str, quote: &str) -> bool {
-    let quote = folded(quote);
-    !quote.is_empty() && fold(text).contains(&quote)
+    crate::quote_locate::is_located(text, quote)
 }
 
 /// At most this many words make a heading (see [`quote_is_heading`]).
@@ -1711,17 +1852,17 @@ const HEADING_WORDS: usize = 4;
 /// "Allergies: none") is no heading, nor is a line with a value in it ("Admitted:
 /// 2026-10-01") or a sentence ("Hypertension is treated.").
 fn quote_is_heading(text: &str, quote: &str) -> bool {
-    let quote = folded(quote);
-    if quote.is_empty()
-        || quote.split(' ').count() > HEADING_WORDS
-        || quote.chars().any(char::is_numeric)
-    {
+    // A quote joined from parts is no line of its own.
+    let Some(quote) = crate::quote_locate::single_part(quote) else {
+        return false;
+    };
+    if quote.split(' ').count() > HEADING_WORDS || quote.chars().any(char::is_numeric) {
         return false;
     }
     let lines: Vec<&str> = text.lines().collect();
     lines.iter().enumerate().any(|(at, line)| {
         let next = lines[at + 1..].iter().find(|next| !next.trim().is_empty());
-        folded(line) == quote && reads_as_heading(line, next.copied())
+        crate::quote_locate::folded_line(line) == quote && reads_as_heading(line, next.copied())
     })
 }
 
@@ -1754,23 +1895,75 @@ fn reads_as_heading(line: &str, next: Option<&str>) -> bool {
     line.ends_with(':') || in_capitals || over_a_list
 }
 
-/// Whitespace runs as one space, in lower case.
-fn fold(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
-/// A quote, or a line, as quotes are compared: folded, without [`QUOTE_ENDS`] or spaces at
-/// either end.
-fn folded(text: &str) -> String {
-    fold(text.trim_matches(|c: char| c.is_whitespace() || QUOTE_ENDS.contains(&c)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A card as a Qwen3.5 4B-like model's helper sends it (model limits). FAKE.
+    fn card_json(context_made: u32) -> serde_json::Value {
+        serde_json::json!({
+            "architecture": "qwen35",
+            "trainedContext": 262_144,
+            "contextMade": context_made,
+            "parameters": 4_330_000_000u64,
+            "layers": 32,
+            "vocabulary": 248_320,
+            "recurrent": false,
+            "hybrid": true
+        })
+    }
+
+    #[test]
+    fn a_hello_may_carry_a_card_and_it_is_kept_only_when_it_checks() {
+        let base = serde_json::json!({
+            "hello": HELLO,
+            "model": { "name": "FAKE model", "sha256": "ab".repeat(32) }
+        });
+        // The stub (no model loaded) sends none.
+        let hello: Hello = serde_json::from_value(base.clone()).unwrap();
+        assert!(hello.card.is_none());
+        let with = |card: serde_json::Value| {
+            let mut line = base.clone();
+            line["card"] = card;
+            serde_json::from_value::<Hello>(line).unwrap().card
+        };
+        let kept = with(card_json(crate::model_helper::CONTEXT_TOKENS))
+            .unwrap()
+            .checked(crate::model_helper::CONTEXT_TOKENS);
+        assert!(kept.is_ok());
+        // A context larger than the one asked for is never trusted.
+        let more = with(card_json(crate::model_helper::CONTEXT_TOKENS + 1))
+            .unwrap()
+            .checked(crate::model_helper::CONTEXT_TOKENS);
+        assert_eq!(more, Err(crate::model_limits::CardRejected::ContextMade));
+        // A card that is not one is no hello at all.
+        let mut odd = base.clone();
+        odd["card"] = serde_json::json!({ "architecture": "qwen35" });
+        assert!(serde_json::from_value::<Hello>(odd).is_err());
+        // A null card reads as none.
+        assert!(with(serde_json::Value::Null).is_none());
+    }
+
+    #[test]
+    fn a_runner_keeps_one_card_per_model_and_the_newest_cards() {
+        let runner = Runner::new(idle_config());
+        let card: crate::model_limits::ModelCard =
+            serde_json::from_value(card_json(8_192)).unwrap();
+        assert!(runner.card_for("a").is_none());
+        runner.remember_card("a", card.clone());
+        let smaller = crate::model_limits::ModelCard {
+            context_made: 4_096,
+            ..card.clone()
+        };
+        runner.remember_card("a", smaller.clone());
+        assert_eq!(runner.card_for("a"), Some(smaller));
+        for index in 0..MAX_CARDS {
+            runner.remember_card(&format!("other {index}"), card.clone());
+        }
+        // The oldest went to make room.
+        assert!(runner.card_for("a").is_none());
+        assert_eq!(runner.card_for("other 0"), Some(card));
+    }
 
     #[test]
     fn a_summary_is_sized_as_the_call_sized_it_inline_before_the_extraction() {
@@ -1793,6 +1986,30 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn a_load_check_probe_never_waits_for_a_held_runner_or_uses_a_stale_claim() {
+        let runner = Runner::new(idle_config());
+        let claim = runner.current_ticket();
+        let held = runner.sidecar.lock().unwrap();
+        std::thread::scope(|scope| {
+            let (send, receive) = std::sync::mpsc::channel();
+            let probe = &runner;
+            let worker = scope.spawn(move || send.send(probe.is_running_for(claim)).unwrap());
+            let result = receive.recv_timeout(Duration::from_secs(1));
+            // Release before asserting/joining, so a blocking-probe regression fails rather
+            // than leaving the test waiting forever for its worker.
+            drop(held);
+            worker.join().unwrap();
+            assert_eq!(result.unwrap(), None);
+        });
+        let held = runner.sidecar.lock().unwrap();
+        let answer = runner.ticket();
+        assert_eq!(runner.is_running_for(claim), None);
+        drop(held);
+        assert_eq!(runner.is_running_for(claim), None);
+        assert_eq!(runner.is_running_for(answer), Some(false));
     }
 
     struct Fixed(Option<u64>);
@@ -1885,6 +2102,51 @@ mod tests {
         assert!(!quote_in(letter, " :.;'\" "));
         // Inside the quote, the words still have to be there as written.
         assert!(!quote_in(letter, "lasts 3 to 6 minutes"));
+    }
+
+    #[test]
+    fn a_quote_is_found_in_a_pdfs_text_as_the_reader_finds_it() {
+        // A FAKE letter as a PDF's text layer gives it: ligature characters (U+FB01, U+FB03), a
+        // comma at the start of a wrapped line, a micro sign (U+00B5), the Bloods line before
+        // the Diagnosis line. The reader links each of these quotes; the gate must keep them.
+        let letter = "Bloods (3 November 2026): hemoglobin 101 g/L, ferritin 5 \u{b5}g/L\n\
+            Diagnosis\nCeliac disease, con\u{fb01}rmed by biopsy\n, with iron de\u{fb01}ciency anemia\n\
+            Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's o\u{fb03}ce\n\
+            will call within 2\nweeks.";
+        for quote in [
+            "Celiac disease, confirmed by biopsy, with iron deficiency anemia",
+            "Celiac disease, con\u{fb01}rmed by biopsy , with iron de\u{fb01}ciency anemia",
+            "hemoglobin 101 g/L, ferritin 5 \u{3bc}g/L",
+            "the dietitian\u{2019}s office will call within 2 weeks",
+            "Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's office will call within 2 weeks.",
+            // Parts joined by dots, found in order (the Bloods line is first in this letter).
+            "hemoglobin 101 g/L, ferritin 5 \u{b5}g/L ... Celiac disease, confirmed by biopsy",
+            "hemoglobin 101 g/L\u{2026}Celiac disease, confirmed by biopsy",
+        ] {
+            assert!(quote_in(letter, quote), "{quote}");
+            assert!(!quote_is_heading(letter, quote), "{quote}");
+        }
+        // Still not found: a word that is not in the letter, parts out of order, a part that is
+        // too short to mean one place, a made-up quote.
+        for quote in [
+            "Referral to our clinic dietitian, Robin FAKE-Dietwell; the dietitian's office will phone within 2 weeks.",
+            "Celiac disease, confirmed by biopsy ... hemoglobin 101 g/L, ferritin 5 \u{b5}g/L",
+            "hemoglobin ... Celiac disease, confirmed by biopsy",
+            "The patient must start steroids immediately.",
+        ] {
+            assert!(!quote_in(letter, quote), "{quote}");
+        }
+    }
+
+    #[test]
+    fn a_heading_is_a_heading_whatever_its_ligatures_and_a_joined_quote_is_none() {
+        let letter = "De\u{fb01}nite plan:\nBlood tests in 1 week.\nFollow-up in this clinic.";
+        assert!(quote_is_heading(letter, "Definite plan"));
+        assert!(quote_is_heading(letter, "\"Definite plan:\""));
+        assert!(!quote_is_heading(
+            letter,
+            "Definite plan ... Follow-up in this clinic"
+        ));
     }
 
     #[test]
@@ -2218,6 +2480,41 @@ mod tests {
                 ],
                 max_sentences: 5,
             }
+        }
+
+        #[test]
+        fn a_load_check_stops_the_model_only_while_its_claim_stands() {
+            let runner = Runner::new(config(&[], GIB));
+            let check = runner.current_ticket();
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            // An answer asked since has a newer claim: the model stays for it.
+            let answer = runner.ticket();
+            assert_eq!(runner.stop_if_current(check, || ()), CheckStop::Claimed);
+            assert!(runner.is_running());
+            assert!(runner.is_current(answer));
+            // Taking the claim in force ends none; under it, the model stops.
+            let check = runner.current_ticket();
+            assert!(runner.is_current(answer));
+            // Held for a moment by something else: nothing is done, and the caller's locks
+            // are released all the same.
+            {
+                let _held = runner.sidecar.lock().unwrap();
+                let mut released = false;
+                assert_eq!(
+                    runner.stop_if_current(check, || released = true),
+                    CheckStop::Held
+                );
+                assert!(released);
+            }
+            assert!(runner.is_running());
+            let mut released = false;
+            assert_eq!(
+                runner.stop_if_current(check, || released = true),
+                CheckStop::Stopped
+            );
+            assert!(released);
+            assert!(!runner.is_running());
+            assert!(matches!(runner.status(), RunnerStatus::Installed { .. }));
         }
 
         #[test]

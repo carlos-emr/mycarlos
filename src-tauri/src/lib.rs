@@ -33,6 +33,9 @@ mod glossary;
 mod local_runner;
 #[cfg(windows)]
 mod model_acl;
+// Where a model's quote is in the pages: the one rule the runner, addressee and safety share
+// with the reader's `src/ai/locateQuote.ts`.
+mod quote_locate;
 mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
 mod safety;
@@ -42,6 +45,7 @@ mod summary_progress;
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
+mod model_limits;
 mod model_runtime;
 mod notice_key;
 #[cfg(windows)]
@@ -1759,7 +1763,21 @@ fn ai_model_catalog() -> Vec<local_model::Accepted> {
 /// why: not installed, this computer cannot run it, or the file is damaged.
 #[tauri::command]
 fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
-    models.status(&local_model::Here)
+    match models.status(&local_model::Here) {
+        // Once the helper has made this model's context, the reader's question reads from it,
+        // as the settings do (model limits).
+        local_model::ModelStatus::Installed {
+            model,
+            capacity: Some(capacity),
+        } => {
+            let card = model_runtime::app().runner().card_for(&model.sha256);
+            local_model::ModelStatus::Installed {
+                capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
+                model,
+            }
+        }
+        status => status,
+    }
 }
 
 /// Every model the app offers, and any other accepted one on this computer, with its state,
@@ -1767,6 +1785,29 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
 #[tauri::command]
 fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
     models.models()
+}
+
+/// Each model's limits, for the AI helper settings (model limits): how much of a document it
+/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
+/// helper has run a model in this session, its room follows the context the helper made, and
+/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// the model file: the helper's checked card does (`model_limits`).
+#[tauri::command]
+fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
+    let runner = model_runtime::app().runner();
+    models
+        .models()
+        .into_iter()
+        .map(|row| {
+            let card = runner.card_for(row.model.sha256);
+            model_limits::limits(
+                row.index,
+                &row.model,
+                card.as_ref(),
+                model_runtime::needed_bytes(row.model.size_bytes),
+            )
+        })
+        .collect()
 }
 
 /// Which catalog entry a model command is about (`ai_models`' `index`).
@@ -1791,6 +1832,39 @@ async fn ai_model_use(
     })
     .await
     .map_err(|_| local_model::ModelError::Storage)?
+}
+
+/// Loads the model in use once, right after the patient picks it or its download or file is
+/// added (D218), to say now whether it runs on this computer; it is stopped again at once.
+/// Only for the row in use and only while the vault is unlocked; otherwise, and while an answer
+/// is asked or written, nothing is loaded (`skipped`).
+#[tauri::command]
+async fn ai_model_check(
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    use model_runtime::LoadCheck;
+    if !cfg!(desktop) {
+        return Ok(LoadCheck::Skipped);
+    }
+    let runtime = model_runtime::app();
+    // The claim first: a lock after this point ends the check rather than loading while locked.
+    let Some(claim) = runtime.load_check_claim() else {
+        return Ok(LoadCheck::Skipped);
+    };
+    let in_use = models
+        .models()
+        .iter()
+        .any(|row| row.index == request.index && row.in_use);
+    if !in_use || store.answer_origin().is_none() {
+        return Ok(LoadCheck::Skipped);
+    }
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || runtime.check_load(claim))
+            .await
+            .unwrap_or(LoadCheck::Skipped),
+    )
 }
 
 /// Why adding or removing a model was refused, as a word for the renderer.
@@ -5715,6 +5789,8 @@ pub fn run() {
             ai_model_catalog,
             ai_model_status,
             ai_models,
+            ai_model_limits,
+            ai_model_check,
             ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,
@@ -8100,6 +8176,132 @@ mod historical_identifier_export_tests {
         assert!(!outcome.saved);
         assert_eq!(outcome.hits.len(), 1);
         assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 7));
+        assert!(!destination.exists());
+
+        // Only this disposable synthetic vault is damaged. The audit view may
+        // retain checked fragments; a privacy check must not certify the gap.
+        for entry in std::fs::read_dir(root.join("objects")).unwrap() {
+            std::fs::write(entry.unwrap().path(), b"FAKE damaged ciphertext").unwrap();
+        }
+        assert!(tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .is_err());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn profile_details_ipc_distinguishes_omission_clear_and_invalid_null() {
+        let profile = Uuid::new_v4();
+        let request = |details| serde_json::json!({"profileId":profile,"details":details,"today":"2026-11-09"});
+        let omitted: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({}))).unwrap();
+        assert!(omitted.details.previous_full_names.is_none());
+        let cleared: ProfileDetailsRequest =
+            serde_json::from_value(request(serde_json::json!({"previousFullNames":[]}))).unwrap();
+        assert_eq!(cleared.details.previous_full_names, Some(vec![]));
+        assert!(serde_json::from_value::<ProfileDetailsRequest>(request(
+            serde_json::json!({"previousFullNames":null})
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn native_text_export_refuses_a_previous_full_name_and_unverifiable_history_without_writing() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root.clone()));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        store.rename_profile(profile, "FAKE Neralis", 3).unwrap();
+        // The baseline uses every authoritative current, historical and delivery
+        // source. This canary must depend only on the explicit previous-name list.
+        let baseline = store.known_identifiers(record).unwrap();
+        assert!(
+            text_recheck::identifier_hits("Velorina", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        assert!(
+            !text_recheck::identifier_hits("Neralis", &baseline.names, &baseline.birth_dates)
+                .is_empty()
+        );
+        let now = 1_792_713_600_000;
+        store
+            .update_profile_details(
+                profile,
+                vault::ProfileDetails {
+                    previous_full_names: Some(vec!["FAKE Velorina Tersovan".into()]),
+                    ..Default::default()
+                },
+                &vault::utc_date_text(now),
+                now,
+            )
+            .unwrap();
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "Velorina")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let request = || TextExportPickedRequest {
+            record_id: record,
+            ticket,
+            pick_id,
+            text: "Velorina".to_owned(),
+        };
+        let with_previous = store.known_identifiers(record).unwrap();
+        let hits = text_recheck::identifier_hits(
+            "Velorina",
+            &with_previous.names,
+            &with_previous.birth_dates,
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!((hits[0].start, hits[0].end), (0, 8));
+        let outcome = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            request(),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("FAKE healthy history must permit the identifier check"));
+        assert!(!outcome.saved);
+        assert_eq!(outcome.hits.len(), 1);
+        assert_eq!((outcome.hits[0].start, outcome.hits[0].end), (0, 8));
         assert!(!destination.exists());
 
         // Only this disposable synthetic vault is damaged. The audit view may

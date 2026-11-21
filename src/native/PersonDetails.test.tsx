@@ -90,7 +90,10 @@ describe("required profile identity details", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save details" }));
     await waitFor(() =>
-      expect(save).toHaveBeenCalledWith("p1", { fullName: "FAKE Mary Smith" }),
+      expect(save).toHaveBeenCalledWith("p1", {
+        fullName: "FAKE Mary Smith",
+        previousFullNames: [],
+      }),
     );
     expect(
       screen.getByRole("form", { name: humanText("Details for FAKE Mary") }),
@@ -352,9 +355,17 @@ describe("required profile identity details", () => {
     });
 
     act(() => setLocaleOverride("pl"));
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    // What is missing is said politely, on a line kept on the page, and as
+    // the description of the box it is about (#149): never an alert.
+    const missing = screen.getByText(
       "Proszę wpisać imię i nazwisko tej osoby.",
     );
+    expect(missing).toHaveAttribute("aria-live", "polite");
+    expect(name).toHaveAccessibleDescription(
+      "Proszę wpisać imię i nazwisko tej osoby.",
+    );
+    expect(date).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Zapisz dane" })).toBeDisabled();
     const draft = "  FAKE אבג { $name }  ";
     fireEvent.change(name, { target: { value: draft } });
@@ -366,19 +377,33 @@ describe("required profile identity details", () => {
     expect(name).toHaveValue(draft);
     expect(name).toHaveFocus();
     expect(birthDateValue(date)).toBe("2000-02-29");
-    expect(screen.queryByRole("alert")).toBeNull();
+    // Nothing is missing now: the line is empty and describes no box.
+    expect(missing).toBeEmptyDOMElement();
+    expect(name).not.toHaveAttribute("aria-describedby");
+    expect(date).not.toHaveAttribute("aria-describedby");
 
     enterBirthDate(date, "");
     act(() => setLocaleOverride("pl"));
     expect(birthDateGroup(document.body, "Data urodzenia")).toBe(date);
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    // The same line now says what the date needs, and describes the date
+    // group and the "unknown" choice instead of the name.
+    expect(missing).toHaveTextContent(
       "Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.",
     );
+    for (const box of [date, unknown])
+      expect(box).toHaveAccessibleDescription(
+        "Proszę wpisać datę urodzenia lub zaznaczyć, że jest nieznana.",
+      );
+    expect(name).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Zapisz dane" })).toBeDisabled();
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(unknown);
     expect(date).toBeDisabled();
-    expect(screen.queryByRole("alert")).toBeNull();
+    // Answered by "unknown": the line is empty again and describes nothing.
+    expect(missing).toBeEmptyDOMElement();
+    for (const box of [name, date, unknown])
+      expect(box).not.toHaveAttribute("aria-describedby");
 
     act(() => setLocaleOverride("pt-BR"));
     expect(unknown).toBeChecked();
@@ -386,7 +411,10 @@ describe("required profile identity details", () => {
     expect(name).toHaveValue(draft);
     fireEvent.click(screen.getByRole("button", { name: "Salvar dados" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save).toHaveBeenLastCalledWith("p1", { fullName: draft.trim() });
+    expect(save).toHaveBeenLastCalledWith("p1", {
+      fullName: draft.trim(),
+      previousFullNames: [],
+    });
     expect(form).toBeInTheDocument();
     expect(name).toHaveValue(draft);
     expect(unknown).toBeChecked();
@@ -398,7 +426,152 @@ describe("required profile identity details", () => {
     expect(save).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Zapisz dane" }));
     await waitFor(() => expect(form).not.toBeInTheDocument());
-    expect(save).toHaveBeenNthCalledWith(2, "p1", { fullName: draft.trim() });
+    expect(save).toHaveBeenNthCalledWith(2, "p1", {
+      fullName: draft.trim(),
+      previousFullNames: [],
+    });
+  });
+});
+
+describe("previous full-name draft", () => {
+  it("suggests only the original name, keeps dismissal during typing, and saves an explicit list", async () => {
+    const save = vi.fn().mockResolvedValue(true);
+    render(
+      <PersonDetailsList
+        people={[
+          {
+            id: "p",
+            displayName: "FAKE Person",
+            createdAtMs: 1,
+            fullName: "FAKE Original Name",
+          },
+        ]}
+        busy={false}
+        onSave={save}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Edit details for FAKE Person"),
+      }),
+    );
+    const current = screen.getByLabelText("Full name, as on clinic documents");
+    fireEvent.change(current, { target: { value: "FAKE New Name" } });
+    expect(
+      screen.getByLabelText(
+        translate("en", "personDetails.previousEntry", { number: 1 }),
+      ),
+    ).toHaveValue("FAKE Original Name");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: translate("en", "personDetails.previousRemove", { number: 1 }),
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Add previous full name" }),
+    ).toHaveFocus();
+    fireEvent.change(current, { target: { value: "FAKE Newer Name" } });
+    expect(
+      screen.queryByLabelText(
+        translate("en", "personDetails.previousEntry", { number: 1 }),
+      ),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add previous full name" }),
+    );
+    const added = screen.getByLabelText(
+      translate("en", "personDetails.previousEntry", { number: 1 }),
+    );
+    expect(added).toHaveFocus();
+    fireEvent.change(added, { target: { value: " FAKE Explicit Name " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save details" }));
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith("p", {
+        fullName: "FAKE Newer Name",
+        previousFullNames: ["FAKE Explicit Name"],
+      }),
+    );
+  });
+  it("discards suggestions and list edits on Cancel and freezes controls when read-only", () => {
+    const save = vi.fn();
+    const person = {
+      id: "p",
+      displayName: "FAKE Person",
+      createdAtMs: 1,
+      fullName: "FAKE Original Name",
+      previousFullNames: ["FAKE Earlier Name"],
+    };
+    const view = render(
+      <PersonDetailsList people={[person]} busy={false} onSave={save} />,
+    );
+    const open = () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: humanText("Edit details for FAKE Person"),
+        }),
+      );
+    open();
+    fireEvent.change(
+      screen.getByLabelText("Full name, as on clinic documents"),
+      { target: { value: "FAKE Changed Name" } },
+    );
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    open();
+    expect(
+      screen.getByLabelText("Full name, as on clinic documents"),
+    ).toHaveValue(person.fullName);
+    expect(
+      screen.getByLabelText(
+        translate("en", "personDetails.previousEntry", { number: 1 }),
+      ),
+    ).toHaveValue("FAKE Earlier Name");
+    expect(
+      screen.queryByLabelText(
+        translate("en", "personDetails.previousEntry", { number: 2 }),
+      ),
+    ).toBeNull();
+    view.rerender(
+      <PersonDetailsList
+        people={[person]}
+        busy={false}
+        readOnly
+        onSave={save}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Add previous full name" }),
+    ).toBeDisabled();
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form")!);
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("rejects duplicates and over-capacity drafts while preserving omitted versus explicit clear", () => {
+    expect(trimmedDetails({ previousFullNames: [] })).toEqual({
+      previousFullNames: [],
+    });
+    expect(trimmedDetails({})).toEqual({});
+    expect(
+      detailsProblem(
+        {
+          fullName: "FAKE Name",
+          previousFullNames: ["FAKE Same", " FAKE Same "],
+        },
+        true,
+      ),
+    ).toBe("personDetails.previousInvalid");
+    expect(
+      detailsProblem(
+        {
+          fullName: "FAKE Name",
+          previousFullNames: Array.from(
+            { length: 17 },
+            (_, i) => `FAKE Name ${i}`,
+          ),
+        },
+        true,
+      ),
+    ).toBe("personDetails.previousInvalid");
   });
 });
 

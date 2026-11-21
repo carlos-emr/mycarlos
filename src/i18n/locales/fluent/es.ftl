@@ -673,7 +673,7 @@ library-folder-items =
 
 library-folder-label = Carpeta { $name }
 
-library-folder-open = Abrir { $name }
+library-folder-open = { $name }, abrir carpeta
 
 library-folder-rename = Cambiar el nombre de la carpeta { $name }
 
@@ -894,7 +894,7 @@ notice-created = Bóveda cifrada creada. Configure una clave de recuperación pa
 
 notice-createdThenLocked = Su bóveda se creó y luego se bloqueó antes de poder crear su clave de recuperación. Desbloquéela para configurar una.
 
-notice-dropRefused = Para importar archivos PDF, desbloquee su bóveda y use { $button }. Arrastrar y soltar mueve los documentos que ya están en myCarlos.
+notice-dropRefused = Para importar archivos PDF, desbloquee su bóveda y use «{ $button }». Arrastrar y soltar mueve los documentos que ya están en myCarlos.
 
 notice-eraseCancelled = No cambió nada: la bóveda no se dejó aparte.
 
@@ -1944,6 +1944,13 @@ ai-model-reads =
    *[other] Lee alrededor de { $pages } páginas a la vez (alrededor de { $characters } caracteres de texto en inglés). Menos con tablas y en algunos idiomas.
     }
 
+ai-model-readsEstimate = Es una estimación hasta la próxima vez que se use este modelo.
+ai-model-loadCheck = Comprobando que este modelo funciona en este equipo…
+ai-model-loadCheckCannotRun = Este equipo no pudo ejecutar este modelo. Intente de nuevo más tarde o elija otro modelo.
+ai-model-loadCheckMemory = Ahora mismo no hay suficiente memoria libre para probar este modelo. Cierre otros programas e intente de nuevo.
+ai-model-loadCheckReady = Este modelo se inició en este equipo.
+ai-model-loadCheckRetry = Intentar de nuevo
+
 ai-model-where = Dónde obtener el archivo
 
 ai-model-copy = Copiar dirección
@@ -2309,3 +2316,10 @@ ai-models-picking = Elige un archivo de modelo para añadir.
 ai-models-changed = Se cambió el modelo en uso
 
 ai-summaryTooLarge = El resumen completo es demasiado grande. No se ha guardado ningún resumen nuevo.
+
+personDetails-previousTitle = Nombres completos anteriores
+personDetails-previousHelp = Hasta 16 nombres completos anteriores ayudan a encontrar datos identificativos. Al cambiar un nombre se sugiere aquí; elimínelo antes de guardar si no desea conservarlo. Quitar un nombre solo elimina esta entrada; otros registros y copias de seguridad pueden conservarlo.
+personDetails-previousEntry = Nombre completo anterior { $number }
+personDetails-previousRemove = Quitar nombre completo anterior { $number }
+personDetails-previousAdd = Añadir nombre completo anterior
+personDetails-previousInvalid = Use hasta 16 nombres distintos y no vacíos, de hasta 120 caracteres cada uno, sin caracteres de control.

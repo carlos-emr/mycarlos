@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -19,6 +20,19 @@ export function detailsProblem(
   details: PersonDetails,
   birthDateUnknown = false,
 ): MessageKey | null {
+  const previous = details.previousFullNames;
+  if (
+    previous &&
+    (previous.length > 16 ||
+      previous.some(
+        (name) =>
+          !name.trim() ||
+          nameTooLong(name.trim()) ||
+          /[\u0000-\u001f\u007f-\u009f]/u.test(name),
+      ) ||
+      new Set(previous.map((name) => name.trim())).size !== previous.length)
+  )
+    return "personDetails.previousInvalid";
   if (!details.fullName?.trim()) return "personDetails.fullNameRequired";
   if (nameTooLong(details.fullName ?? "")) return "personDetails.nameTooLong";
   if (!details.birthDate && !birthDateUnknown)
@@ -41,6 +55,13 @@ export function trimmedDetails(details: PersonDetails): PersonDetails {
   return {
     ...(details.fullName?.trim() ? { fullName: details.fullName.trim() } : {}),
     ...(details.birthDate ? { birthDate: details.birthDate } : {}),
+    ...(details.previousFullNames !== undefined
+      ? {
+          previousFullNames: details.previousFullNames.map((name) =>
+            name.trim(),
+          ),
+        }
+      : {}),
   };
 }
 /** A birth date as the year, month and day a person types or chooses. A
@@ -81,10 +102,12 @@ export function joinBirthDate({ year, month, day }: BirthDateParts): string {
 function BirthDateFields({
   value,
   unknown,
+  describedBy,
   onChange,
 }: {
   value: string;
   unknown: boolean;
+  describedBy?: string;
   onChange: (birthDate: string) => void;
 }) {
   const { locale, t } = useI18n();
@@ -109,7 +132,11 @@ function BirthDateFields({
     onChange(joinBirthDate(next));
   };
   return (
-    <fieldset className="native-birth-date" disabled={unknown}>
+    <fieldset
+      className="native-birth-date"
+      aria-describedby={describedBy}
+      disabled={unknown}
+    >
       <legend>{t("personDetails.birthDate")}</legend>
       <label className="native-birth-year">
         {t("personDetails.birthYear")}
@@ -182,6 +209,16 @@ export function PersonDetailsFields({
 }) {
   const { t } = useI18n();
   const problem = detailsProblem(details, birthDateUnknown);
+  const shown = showProblem ? problem : null;
+  // What is still missing, once shown, is read out only when it changes: a
+  // polite region kept on the page (not an alert on an empty form), and each
+  // field's description, so it is heard when the field is reached.
+  const problemId = useId();
+  const nameProblem =
+    shown === "personDetails.fullNameRequired" ||
+    shown === "personDetails.nameTooLong";
+  const nameDescribed = nameProblem ? problemId : undefined;
+  const dateDescribed = shown && !nameProblem ? problemId : undefined;
   return (
     <>
       <label>
@@ -189,6 +226,7 @@ export function PersonDetailsFields({
         <input
           autoComplete="off"
           maxLength={NAME_INPUT_MAX_LENGTH}
+          aria-describedby={nameDescribed}
           required
           value={details.fullName ?? ""}
           onChange={(e) => onChange({ ...details, fullName: e.target.value })}
@@ -197,11 +235,13 @@ export function PersonDetailsFields({
       <BirthDateFields
         value={details.birthDate ?? ""}
         unknown={birthDateUnknown}
+        describedBy={dateDescribed}
         onChange={(birthDate) => onChange({ ...details, birthDate })}
       />
       <label className="native-person-date-unknown">
         <input
           type="checkbox"
+          aria-describedby={dateDescribed}
           checked={birthDateUnknown}
           onChange={(e) => {
             onBirthDateUnknownChange(e.target.checked);
@@ -211,10 +251,93 @@ export function PersonDetailsFields({
         <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
-      {problem && showProblem && <p role="alert">{t(problem)}</p>}
+      <p id={problemId} aria-live="polite">
+        {shown ? t(shown) : ""}
+      </p>
     </>
   );
 }
+function PreviousFullNames({
+  details,
+  onChange,
+}: {
+  details: PersonDetails;
+  onChange: (details: PersonDetails) => void;
+}) {
+  const { t } = useI18n();
+  const inputs = useRef<Array<HTMLInputElement | null>>([]);
+  const add = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<number | null>(null);
+  const names = details.previousFullNames ?? [];
+  useEffect(() => {
+    if (pendingFocus.current !== null) {
+      (inputs.current[pendingFocus.current] ?? add.current)?.focus();
+      pendingFocus.current = null;
+    }
+  }, [names]);
+  return (
+    <section
+      className="previous-full-names"
+      aria-label={t("personDetails.previousTitle")}
+    >
+      <h3>{t("personDetails.previousTitle")}</h3>
+      <p>{t("personDetails.previousHelp")}</p>
+      {names.map((name, index) => (
+        <div key={index}>
+          <label>
+            {t("personDetails.previousEntry", { number: index + 1 })}
+            <input
+              ref={(node) => {
+                inputs.current[index] = node;
+              }}
+              value={name}
+              required
+              maxLength={NAME_INPUT_MAX_LENGTH}
+              autoComplete="off"
+              onChange={(event) =>
+                onChange({
+                  ...details,
+                  previousFullNames: names.map((value, i) =>
+                    i === index ? event.target.value : value,
+                  ),
+                })
+              }
+            />
+          </label>
+          <button
+            className="button"
+            type="button"
+            aria-label={t("personDetails.previousRemove", {
+              number: index + 1,
+            })}
+            onClick={() => {
+              pendingFocus.current = index;
+              onChange({
+                ...details,
+                previousFullNames: names.filter((_, i) => i !== index),
+              });
+            }}
+          >
+            {t("personDetails.previousRemove", { number: index + 1 })}
+          </button>
+        </div>
+      ))}
+      <button
+        className="button"
+        type="button"
+        ref={add}
+        disabled={names.length >= 16}
+        onClick={() => {
+          pendingFocus.current = names.length;
+          onChange({ ...details, previousFullNames: [...names, ""] });
+        }}
+      >
+        {t("personDetails.previousAdd")}
+      </button>
+    </section>
+  );
+}
+
 /** A person's details where they can wait (#234, Ben's decision): at vault
  * creation and when a person is added. "Later" leaves them out; a reminder
  * then stays until they are added (`missingDetails`). */
@@ -397,6 +520,8 @@ export function PersonDetailsList({
     id: string;
     details: PersonDetails;
     birthDateUnknown: boolean;
+    originalFullName: string;
+    suggestionDismissed: boolean;
   } | null>(null);
   // Return to the Edit details button after closing, or to the person's
   // line if the vault became read-only while the dialog was open.
@@ -418,7 +543,13 @@ export function PersonDetailsList({
   const showEditFor = (person: PatientProfile) =>
     showEdit({
       id: person.id,
-      details: { fullName: person.fullName, birthDate: person.birthDate },
+      originalFullName: person.fullName?.trim() ?? "",
+      suggestionDismissed: false,
+      details: {
+        fullName: person.fullName,
+        birthDate: person.birthDate,
+        previousFullNames: [...(person.previousFullNames ?? [])],
+      },
       birthDateUnknown: !person.birthDate && Boolean(person.fullName),
     });
   // The library's reminder opens this person's Edit details dialog (#234),
@@ -439,6 +570,34 @@ export function PersonDetailsList({
   const editedPerson = editing
     ? people.find((person) => person.id === editing.id)
     : undefined;
+  const changeDetails = (details: PersonDetails) => {
+    setEditing((current) => {
+      if (!current) return current;
+      const original = current.originalFullName;
+      const dismissed =
+        current.suggestionDismissed ||
+        Boolean(
+          original &&
+            current.details.previousFullNames?.includes(original) &&
+            !details.previousFullNames?.includes(original),
+        );
+      const names = details.previousFullNames ?? [];
+      const suggest =
+        !dismissed &&
+        original &&
+        details.fullName?.trim() &&
+        details.fullName.trim() !== original &&
+        !names.includes(original);
+      return {
+        ...current,
+        details: suggest
+          ? { ...details, previousFullNames: [...names, original] }
+          : details,
+        suggestionDismissed: dismissed,
+      };
+    });
+    setRefused(false);
+  };
   const editDialog = editing && editedPerson && (
     <PersonDialog
       titleId="edit-person-details-title"
@@ -478,10 +637,7 @@ export function PersonDetailsList({
       <fieldset disabled={busy || readOnly}>
         <PersonDetailsFields
           details={editing.details}
-          onChange={(details) => {
-            setEditing((current) => current && { ...current, details });
-            setRefused(false);
-          }}
+          onChange={changeDetails}
           birthDateUnknown={editing.birthDateUnknown}
           // A tick is a change too: it clears a refusal, as typing does.
           onBirthDateUnknownChange={(birthDateUnknown) => {
@@ -491,6 +647,7 @@ export function PersonDetailsList({
             setRefused(false);
           }}
         />
+        <PreviousFullNames details={editing.details} onChange={changeDetails} />
       </fieldset>
     </PersonDialog>
   );

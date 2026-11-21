@@ -673,7 +673,7 @@ library-folder-items =
 
 library-folder-label = Pasta { $name }
 
-library-folder-open = Abrir { $name }
+library-folder-open = { $name }, abrir pasta
 
 library-folder-rename = Renomear a pasta { $name }
 
@@ -894,7 +894,7 @@ notice-created = Cofre criptografado criado. Configure uma chave de recuperaçã
 
 notice-createdThenLocked = Seu cofre foi criado e depois bloqueado antes que a chave de recuperação pudesse ser gerada. Desbloqueie-o para configurar uma.
 
-notice-dropRefused = Para importar PDFs, desbloqueie seu cofre e use { $button }. Arrastar e soltar move documentos que já estão no myCarlos.
+notice-dropRefused = Para importar PDFs, desbloqueie seu cofre e use “{ $button }”. Arrastar e soltar move documentos que já estão no myCarlos.
 
 notice-eraseCancelled = Nada mudou: o cofre não foi deixado de lado.
 
@@ -1944,6 +1944,13 @@ ai-model-reads =
    *[other] Lê cerca de { $pages } páginas por vez (cerca de { $characters } caracteres de texto em inglês). Menos para tabelas e alguns idiomas.
     }
 
+ai-model-readsEstimate = É uma estimativa até a próxima vez que este modelo for usado.
+ai-model-loadCheck = Verificando se este modelo funciona neste computador…
+ai-model-loadCheckCannotRun = Este computador não conseguiu executar este modelo. Tente de novo mais tarde ou escolha outro modelo.
+ai-model-loadCheckMemory = Não há memória livre suficiente para testar este modelo agora. Feche outros programas e tente de novo.
+ai-model-loadCheckReady = Este modelo iniciou neste computador.
+ai-model-loadCheckRetry = Tentar de novo
+
 ai-model-where = Onde obter o arquivo
 
 ai-model-copy = Copiar endereço
@@ -2309,3 +2316,10 @@ ai-models-picking = Escolha um arquivo de modelo para adicionar.
 ai-models-changed = Modelo em uso alterado
 
 ai-summaryTooLarge = O resumo completo é grande demais. Nenhum novo resumo foi salvo.
+
+personDetails-previousTitle = Nomes completos anteriores
+personDetails-previousHelp = Até 16 nomes completos anteriores ajudam a encontrar dados de identificação. Um nome alterado é sugerido aqui; remova-o antes de salvar se não quiser guardá-lo. A remoção afeta apenas esta entrada; outros registros e backups podem mantê-lo.
+personDetails-previousEntry = Nome completo anterior { $number }
+personDetails-previousRemove = Remover nome completo anterior { $number }
+personDetails-previousAdd = Adicionar nome completo anterior
+personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.

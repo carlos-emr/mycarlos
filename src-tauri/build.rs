@@ -97,6 +97,8 @@ fn main() {
             "ai_model_catalog",
             "ai_model_status",
             "ai_models",
+            "ai_model_limits",
+            "ai_model_check",
             "ai_model_use",
             "ai_model_add_picked",
             "ai_model_add_cancel",

@@ -975,6 +975,12 @@ export const MESSAGE_KEYS = [
   "ai.model.add",
   "ai.model.accepted",
   "ai.model.reads",
+  "ai.model.readsEstimate",
+  "ai.model.loadCheck",
+  "ai.model.loadCheckCannotRun",
+  "ai.model.loadCheckMemory",
+  "ai.model.loadCheckReady",
+  "ai.model.loadCheckRetry",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -1050,6 +1056,12 @@ export const MESSAGE_KEYS = [
   "native.tray.open",
   "native.tray.quit",
   "native.tray.tooltip",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2223,6 +2235,12 @@ const FLUENT_IDS_BY_KEY = {
   "ai.model.add": "ai-model-add",
   "ai.model.accepted": "ai-model-accepted",
   "ai.model.reads": "ai-model-reads",
+  "ai.model.readsEstimate": "ai-model-readsEstimate",
+  "ai.model.loadCheck": "ai-model-loadCheck",
+  "ai.model.loadCheckCannotRun": "ai-model-loadCheckCannotRun",
+  "ai.model.loadCheckMemory": "ai-model-loadCheckMemory",
+  "ai.model.loadCheckReady": "ai-model-loadCheckReady",
+  "ai.model.loadCheckRetry": "ai-model-loadCheckRetry",
   "ai.model.where": "ai-model-where",
   "ai.model.copy": "ai-model-copy",
   "ai.model.copied": "ai-model-copied",
@@ -2299,6 +2317,12 @@ const FLUENT_IDS_BY_KEY = {
   "native.tray.open": "native-tray-open",
   "native.tray.quit": "native-tray-quit",
   "native.tray.tooltip": "native-tray-tooltip",
+  "personDetails.previousTitle": "personDetails-previousTitle",
+  "personDetails.previousHelp": "personDetails-previousHelp",
+  "personDetails.previousEntry": "personDetails-previousEntry",
+  "personDetails.previousRemove": "personDetails-previousRemove",
+  "personDetails.previousAdd": "personDetails-previousAdd",
+  "personDetails.previousInvalid": "personDetails-previousInvalid",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3384,6 +3408,12 @@ export interface MessageArgsByKey {
     size: FluentArgument;
   };
   "ai.model.reads": { characters: FluentArgument; pages: FluentArgument };
+  "ai.model.readsEstimate": undefined;
+  "ai.model.loadCheck": undefined;
+  "ai.model.loadCheckCannotRun": undefined;
+  "ai.model.loadCheckMemory": undefined;
+  "ai.model.loadCheckReady": undefined;
+  "ai.model.loadCheckRetry": undefined;
   "ai.model.where": undefined;
   "ai.model.copy": undefined;
   "ai.model.copied": undefined;
@@ -3467,6 +3497,12 @@ export interface MessageArgsByKey {
   "native.tray.open": undefined;
   "native.tray.quit": undefined;
   "native.tray.tooltip": undefined;
+  "personDetails.previousTitle": undefined;
+  "personDetails.previousHelp": undefined;
+  "personDetails.previousEntry": { number: FluentArgument };
+  "personDetails.previousRemove": { number: FluentArgument };
+  "personDetails.previousAdd": undefined;
+  "personDetails.previousInvalid": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -974,6 +974,12 @@
   "ai.model.add",
   "ai.model.accepted",
   "ai.model.reads",
+  "ai.model.readsEstimate",
+  "ai.model.loadCheck",
+  "ai.model.loadCheckCannotRun",
+  "ai.model.loadCheckMemory",
+  "ai.model.loadCheckReady",
+  "ai.model.loadCheckRetry",
   "ai.model.where",
   "ai.model.copy",
   "ai.model.copied",
@@ -1048,5 +1054,11 @@
   "background.error",
   "native.tray.open",
   "native.tray.quit",
-  "native.tray.tooltip"
+  "native.tray.tooltip",
+  "personDetails.previousTitle",
+  "personDetails.previousHelp",
+  "personDetails.previousEntry",
+  "personDetails.previousRemove",
+  "personDetails.previousAdd",
+  "personDetails.previousInvalid"
 ]

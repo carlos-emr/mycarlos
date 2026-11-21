@@ -583,7 +583,7 @@ library-folder-items = { $count } 個項目
 
 library-folder-label = { $name } 資料夾
 
-library-folder-open = 開啟 { $name }
+library-folder-open = { $name }，開啟資料夾
 
 library-folder-rename = 重新命名資料夾 { $name }
 
@@ -784,7 +784,7 @@ notice-created = 已建立加密保險庫。請設定復原金鑰，避免忘記
 
 notice-createdThenLocked = 保險庫已建立，但在建立復原金鑰前就已鎖定。請解鎖後設定復原金鑰。
 
-notice-dropRefused = 若要匯入 PDF，請解鎖保險庫並使用 { $button }。拖放功能會移動 myCarlos 中已有的文件。
+notice-dropRefused = 若要匯入 PDF，請解鎖保險庫並使用「{ $button }」。拖放功能會移動 myCarlos 中已有的文件。
 
 notice-eraseCancelled = 沒有變更任何內容：保險庫未擱置。
 
@@ -1751,6 +1751,13 @@ ai-model-accepted = { $name }，{ $size } MB。授權：{ $licence }。
 
 ai-model-reads = 每次約可讀 { $pages } 頁（約 { $characters } 個英文字元）。表格和某些語言會更少。
 
+ai-model-readsEstimate = 在下次使用此模型之前，這只是估計值。
+ai-model-loadCheck = 正在檢查此模型能否在此電腦上執行…
+ai-model-loadCheckCannotRun = 此電腦未能執行此模型。請稍後重試，或選擇其他模型。
+ai-model-loadCheckMemory = 目前可用記憶體不足，無法試用此模型。請關閉其他程式後重試。
+ai-model-loadCheckReady = 此模型已在此電腦上啟動。
+ai-model-loadCheckRetry = 重試
+
 ai-model-where = 在哪裡取得檔案
 
 ai-model-copy = 複製網址
@@ -2107,3 +2114,10 @@ ai-models-picking = 請選擇要新增的模型檔案。
 ai-models-changed = 已變更正在使用的模型
 
 ai-summaryTooLarge = 完整摘要過大。未儲存新的摘要。
+
+personDetails-previousTitle = 曾用全名
+personDetails-previousHelp = 最多可儲存16個曾用全名，以協助尋找身分資訊。變更姓名時，原姓名會在此處建議保留；如不想保留，請在儲存前移除。移除僅影響此清單項目，其他紀錄與備份仍可能保留該姓名。
+personDetails-previousEntry = 曾用全名 { $number }
+personDetails-previousRemove = 移除曾用全名 { $number }
+personDetails-previousAdd = 新增曾用全名
+personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
