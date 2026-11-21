@@ -14800,7 +14800,8 @@ describe("the vault locked natively: closed to the tray, Quit or the native idle
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", {
-        name: humanText("Choose files to import"),
+        // The import button is named "New" now (#149); "Choose files to import" is its description.
+        name: humanText("New"),
       }),
     );
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
