@@ -2374,3 +2374,4 @@ interface-RecordDialog-notEnoughRoom = No hay espacio suficiente para grabar un 
 interface-RecordDialog-lowOnRoom = Queda poco espacio. La grabación se guarda cuando no quede más espacio.
 interface-RecordDialog-lowOnRoomMinutes = Queda poco espacio: unos { $minutes } minutos de grabación. La grabación se guarda cuando no quede más espacio.
 interface-RecordDialog-videoSavedNoRoom = Guardado. Ya no había más espacio: { $name }
+interface-RecordDialog-videoKeptUnfinished = Ya no había espacio, así que el video no se pudo terminar. Se conserva como una grabación sin terminar: libera espacio y myCarlos la terminará la próxima vez que desbloquees.

@@ -1111,5 +1111,6 @@
   "interface.RecordDialog.notEnoughRoom",
   "interface.RecordDialog.lowOnRoom",
   "interface.RecordDialog.lowOnRoomMinutes",
-  "interface.RecordDialog.videoSavedNoRoom"
+  "interface.RecordDialog.videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished"
 ]

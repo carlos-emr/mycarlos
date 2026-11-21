@@ -338,6 +338,7 @@ pub enum MessageId {
     InterfaceRecordDialogThisDeviceCannotRecordMp4,
     InterfaceRecordDialogUnavailable,
     InterfaceRecordDialogUseTheCameraAndMicrophone,
+    InterfaceRecordDialogVideoKeptUnfinished,
     InterfaceRecordDialogVideoNeedsBoth,
     InterfaceRecordDialogVideoSaved,
     InterfaceRecordDialogVideoSavedFailed,
@@ -1455,6 +1456,7 @@ impl MessageId {
         Self::InterfaceRecordDialogThisDeviceCannotRecordMp4,
         Self::InterfaceRecordDialogUnavailable,
         Self::InterfaceRecordDialogUseTheCameraAndMicrophone,
+        Self::InterfaceRecordDialogVideoKeptUnfinished,
         Self::InterfaceRecordDialogVideoNeedsBoth,
         Self::InterfaceRecordDialogVideoSaved,
         Self::InterfaceRecordDialogVideoSavedFailed,
@@ -2711,6 +2713,9 @@ impl MessageId {
             Self::InterfaceRecordDialogUnavailable => "interface-RecordDialog-unavailable",
             Self::InterfaceRecordDialogUseTheCameraAndMicrophone => {
                 "interface-RecordDialog-useTheCameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogVideoKeptUnfinished => {
+                "interface-RecordDialog-videoKeptUnfinished"
             }
             Self::InterfaceRecordDialogVideoNeedsBoth => "interface-RecordDialog-videoNeedsBoth",
             Self::InterfaceRecordDialogVideoSaved => "interface-RecordDialog-videoSaved",
@@ -5239,6 +5244,9 @@ impl MessageId {
             }
             "interface.RecordDialog.videoSavedNoRoom" => {
                 Some(Self::InterfaceRecordDialogVideoSavedNoRoom)
+            }
+            "interface.RecordDialog.videoKeptUnfinished" => {
+                Some(Self::InterfaceRecordDialogVideoKeptUnfinished)
             }
             _ => None,
         }
