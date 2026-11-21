@@ -354,12 +354,14 @@ pub enum MessageId {
     InterfaceRecordingRecoveryDelete,
     InterfaceRecordingRecoveryDeleteSure,
     InterfaceRecordingRecoveryDeleted,
+    InterfaceRecordingRecoveryFinishedWithRoom,
     InterfaceRecordingRecoveryKeep,
     InterfaceRecordingRecoveryKept,
     InterfaceRecordingRecoveryName,
     InterfaceRecordingRecoveryNothingToKeep,
     InterfaceRecordingRecoverySavedLocked,
     InterfaceRecordingRecoverySavedLockedPaused,
+    InterfaceRecordingRecoveryStillNoRoom,
     InterfaceSecuritySettingsEvaluationBuild,
     InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
     InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -1472,12 +1474,14 @@ impl MessageId {
         Self::InterfaceRecordingRecoveryDelete,
         Self::InterfaceRecordingRecoveryDeleteSure,
         Self::InterfaceRecordingRecoveryDeleted,
+        Self::InterfaceRecordingRecoveryFinishedWithRoom,
         Self::InterfaceRecordingRecoveryKeep,
         Self::InterfaceRecordingRecoveryKept,
         Self::InterfaceRecordingRecoveryName,
         Self::InterfaceRecordingRecoveryNothingToKeep,
         Self::InterfaceRecordingRecoverySavedLocked,
         Self::InterfaceRecordingRecoverySavedLockedPaused,
+        Self::InterfaceRecordingRecoveryStillNoRoom,
         Self::InterfaceSecuritySettingsEvaluationBuild,
         Self::InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
         Self::InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -2744,6 +2748,9 @@ impl MessageId {
             Self::InterfaceRecordingRecoveryDelete => "interface-RecordingRecovery-delete",
             Self::InterfaceRecordingRecoveryDeleteSure => "interface-RecordingRecovery-deleteSure",
             Self::InterfaceRecordingRecoveryDeleted => "interface-RecordingRecovery-deleted",
+            Self::InterfaceRecordingRecoveryFinishedWithRoom => {
+                "interface-RecordingRecovery-finishedWithRoom"
+            }
             Self::InterfaceRecordingRecoveryKeep => "interface-RecordingRecovery-keep",
             Self::InterfaceRecordingRecoveryKept => "interface-RecordingRecovery-kept",
             Self::InterfaceRecordingRecoveryName => "interface-RecordingRecovery-name",
@@ -2755,6 +2762,9 @@ impl MessageId {
             }
             Self::InterfaceRecordingRecoverySavedLockedPaused => {
                 "interface-RecordingRecovery-savedLockedPaused"
+            }
+            Self::InterfaceRecordingRecoveryStillNoRoom => {
+                "interface-RecordingRecovery-stillNoRoom"
             }
             Self::InterfaceSecuritySettingsEvaluationBuild => {
                 "interface-SecuritySettings-evaluationBuild"
@@ -5247,6 +5257,12 @@ impl MessageId {
             }
             "interface.RecordDialog.videoKeptUnfinished" => {
                 Some(Self::InterfaceRecordDialogVideoKeptUnfinished)
+            }
+            "interface.RecordingRecovery.finishedWithRoom" => {
+                Some(Self::InterfaceRecordingRecoveryFinishedWithRoom)
+            }
+            "interface.RecordingRecovery.stillNoRoom" => {
+                Some(Self::InterfaceRecordingRecoveryStillNoRoom)
             }
             _ => None,
         }

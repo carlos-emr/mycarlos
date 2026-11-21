@@ -1114,6 +1114,8 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.lowOnRoomMinutes",
   "interface.RecordDialog.videoSavedNoRoom",
   "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2463,6 +2465,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-videoSavedNoRoom",
   "interface.RecordDialog.videoKeptUnfinished":
     "interface-RecordDialog-videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom":
+    "interface-RecordingRecovery-finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom":
+    "interface-RecordingRecovery-stillNoRoom",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3695,6 +3701,8 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
   "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
   "interface.RecordDialog.videoKeptUnfinished": undefined;
+  "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
+  "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

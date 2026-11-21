@@ -251,6 +251,7 @@ describe("the question about a recording that was cut short", () => {
       startedAtMs: 1,
       paused: false,
       parked: false,
+      stopped: false,
       ...overrides,
     }) satisfies PendingRecording;
 
@@ -354,6 +355,60 @@ describe("the question about a recording that was cut short", () => {
     expect(notice).toHaveHumanTextContent(
       "myCarlos locked while a recording was paused. The video was saved: FAKE Paused.mp4",
     );
+  });
+
+  it("says a recording the patient ended for want of room was finished now there is room, not that a lock ended it", async () => {
+    const bridge = renderLibrary(base, {
+      videoPending: vi.fn(async () => ({
+        recordings: [pending({ parked: true, stopped: true })],
+        unreadable: 0,
+      })),
+      videoRecover: vi.fn(async () => ({ recordId: "video-1" })),
+    });
+    await waitFor(() =>
+      expect(bridge.videoRecover).toHaveBeenCalledWith("recording-9", true),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          `There is room again, so your unfinished video was finished: ${VIDEO_NAME}`,
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText(/locked while you were recording/)),
+    ).toBeNull();
+  });
+
+  it("says there is still no room for one, tries the others, and does not call it a failure", async () => {
+    const bridge = renderLibrary(base, {
+      videoPending: vi.fn(async () => ({
+        recordings: [
+          pending({ id: "recording-1", parked: true, stopped: true }),
+          pending({
+            id: "recording-2",
+            displayName: "FAKE Other.mp4",
+            parked: true,
+          }),
+        ],
+        unreadable: 0,
+      })),
+      videoRecover: vi.fn(async (id: string) => {
+        if (id === "recording-1")
+          throw { code: "no_space", message: "FAKE no room" };
+        return { recordId: "video-2" };
+      }),
+    });
+    await waitFor(() => expect(bridge.videoRecover).toHaveBeenCalledTimes(2));
+    const notice = await screen.findByText(
+      humanText(
+        /There is still not enough room to finish your unfinished video/,
+      ),
+    );
+    expect(notice).toHaveHumanTextContent(
+      "myCarlos locked while you were recording. The video was saved: FAKE Other.mp4",
+    );
+    expect(notice).not.toHaveHumanTextContent("could not");
   });
 
   it("waits for the next unlock when the patient does not answer", async () => {

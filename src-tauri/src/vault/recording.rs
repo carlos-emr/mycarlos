@@ -87,6 +87,14 @@ struct Journal {
     /// copy a crash interrupts is found and removed rather than left behind.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     copying: Vec<String>,
+    /// The patient ended it (Stop) and it could not be finished then (a lock did
+    /// not park it): so that the next unlock can say why it is being finished.
+    #[serde(default, skip_serializing_if = "is_false")]
+    stopped: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn recordings_dir(root: &Path) -> PathBuf {
@@ -595,6 +603,9 @@ pub struct PendingRecording {
     pub paused: bool,
     /// It was parked by a lock (not a crash).
     pub parked: bool,
+    /// The patient ended it and it could not be finished for want of room: it is
+    /// finished when there is room again, and the notice says so.
+    pub stopped: bool,
 }
 
 /// All the journals found, and how many could not be read.
@@ -647,6 +658,7 @@ impl VaultStore {
             tail_name: None,
             superseded: Vec::new(),
             copying: Vec::new(),
+            stopped: false,
         };
         let dir = recordings_dir(&self.root);
         create_private_dir_all(&dir)?;
@@ -878,6 +890,7 @@ impl VaultStore {
             && !entries.is_empty()
             && recording.normaliser.written() == recording.normaliser.complete_end();
         if !clean {
+            recording.journal.stopped = true;
             self.park_one(&mut recording)?;
             return self.recording_recover(id, true, now_ms);
         }
@@ -980,6 +993,7 @@ impl VaultStore {
                     started_at_ms: journal.started_at_ms,
                     paused: journal.state == JournalState::Paused,
                     parked: journal.state == JournalState::Parked,
+                    stopped: journal.stopped,
                 }),
                 Err(_) => found.unreadable += 1,
             }
@@ -1661,6 +1675,8 @@ mod tests {
         assert_eq!(pending.unreadable, 0);
         assert_eq!(pending.recordings.len(), 1);
         assert!(pending.recordings[0].parked);
+        // Parked by a lock, not ended by the patient.
+        assert!(!pending.recordings[0].stopped);
         assert_eq!(pending.recordings[0].display_name, "FAKE parked.mp4");
         let record = store.recording_recover(id, true, 9).unwrap().unwrap();
         let plain = stored(&store, record);
@@ -2714,6 +2730,8 @@ mod tests {
         let pending = store.recordings_pending().unwrap();
         assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
         assert!(pending.recordings[0].parked);
+        // The patient ended it: the next unlock says why it is being finished.
+        assert!(pending.recordings[0].stopped);
         free.store(10 * GIB, AtomicOrdering::SeqCst);
         let record = store.recording_recover(id, true, 9).unwrap().unwrap();
         assert_eq!(index_of(&stored(&store, record)).entries.len(), 2);

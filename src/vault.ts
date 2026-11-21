@@ -49,6 +49,9 @@ export interface PendingRecording {
   paused: boolean;
   /** A lock parked it (not a crash). */
   parked: boolean;
+  /** The patient ended it and it could not be finished for want of room: it is
+   * finished when there is room again. */
+  stopped: boolean;
 }
 
 export interface PendingRecordings {

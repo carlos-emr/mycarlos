@@ -329,13 +329,17 @@ export function RecordDialog({
       recorderRef.current = null;
       stopCamera();
       await sendNext();
+      const sendFailed = failedSendRef.current;
       try {
-        const sendFailed = failedSendRef.current;
         const saved = await bridge.videoStop(id);
         recordingIdRef.current = null;
         if (!openRef.current) return;
-        // A piece the vault would not take: what was saved before it is kept.
-        if (sendFailed && !saved.recordId) throw sendFailed;
+        // A piece the vault would not take, and nothing complete before it:
+        // nothing was kept, and the library says so.
+        if (sendFailed && !saved.recordId) {
+          onSaved(null, isNoSpace(sendFailed) ? "space" : "failed");
+          return;
+        }
         onSaved(
           saved.recordId,
           sendFailed && why === "asked"
@@ -347,9 +351,10 @@ export function RecordDialog({
       } catch (error) {
         recordingIdRef.current = null;
         if (!openRef.current) return;
-        // Ending it needed room to finish it (a recording cut off mid-fragment
-        // or by a write the disk refused is finished by copying it): it is kept,
-        // not lost, and finished when there is room.
+        // Only when Stop itself was refused for want of room: ending it needed
+        // room to finish it (a recording cut off mid-fragment or by a write the
+        // disk refused is finished by copying it), so the vault kept it, not
+        // lost, to be finished when there is room.
         if (isNoSpace(error)) {
           onSaved(null, "unfinished");
           return;

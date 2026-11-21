@@ -2375,3 +2375,5 @@ interface-RecordDialog-lowOnRoom = Il reste peu de place. L’enregistrement est
 interface-RecordDialog-lowOnRoomMinutes = Il reste peu de place : environ { $minutes } minutes d’enregistrement. L’enregistrement est sauvegardé quand il n’y a plus de place.
 interface-RecordDialog-videoSavedNoRoom = Sauvegardé. Il n’y avait plus de place : { $name }
 interface-RecordDialog-videoKeptUnfinished = Il n’y avait plus de place, donc la vidéo n’a pas pu être terminée. Elle est conservée comme enregistrement inachevé : libérez de l’espace, et myCarlos la terminera au prochain déverrouillage.
+interface-RecordingRecovery-finishedWithRoom = Il y a de nouveau de la place, votre vidéo inachevée a donc été terminée : { $name }
+interface-RecordingRecovery-stillNoRoom = Il n’y a toujours pas assez de place pour terminer votre vidéo inachevée : { $name }. Libérez de l’espace ; elle est conservée.

@@ -2340,3 +2340,5 @@ interface-RecordDialog-lowOnRoom = Running low on room. The recording is saved w
 interface-RecordDialog-lowOnRoomMinutes = Running low on room: about { $minutes } minutes of recording left. The recording is saved when there is no more room.
 interface-RecordDialog-videoSavedNoRoom = Saved. There was no more room: { $name }
 interface-RecordDialog-videoKeptUnfinished = There was no more room, so the video could not be finished. It is kept as an unfinished recording: free up some space, and myCarlos will finish it the next time you unlock.
+interface-RecordingRecovery-finishedWithRoom = There is room again, so your unfinished video was finished: { $name }
+interface-RecordingRecovery-stillNoRoom = There is still not enough room to finish your unfinished video: { $name }. Free up some space; it is kept.
