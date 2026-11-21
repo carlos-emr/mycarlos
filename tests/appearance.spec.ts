@@ -74,6 +74,9 @@ async function fakeVault(
             themes.push(args?.value);
             return;
           }
+          if (command === "vault_video_pending")
+            return { recordings: [], unreadable: 0 };
+          if (command === "vault_is_video") return false;
           if (
             [
               "vault_touch",
@@ -375,6 +378,9 @@ test("remembers appearance and follows live system changes without vault mutatio
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",
+          // Reads the library makes at start (#359): they change nothing.
+          "vault_video_pending",
+          "vault_is_video",
         ].includes(command),
     ),
   ).toEqual([]);

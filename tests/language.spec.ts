@@ -82,6 +82,9 @@ test("language choices persist, preserve High contrast and work from the keyboar
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",
+          // Reads the library makes at start (#359): they change nothing.
+          "vault_video_pending",
+          "vault_is_video",
         ].includes(command),
     ),
   ).toEqual([]);
