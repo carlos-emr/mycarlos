@@ -156,9 +156,10 @@ export function VideoViewer({
             onPlaying={() => say(true)}
             onPause={() => say(false)}
             onEnded={() => say(false)}
-            // Waiting for data is not playing; `playing` says so again when it goes on.
+            // Waiting for data is not playing; `playing` says so again when it
+            // goes on. (Not `stalled`: it can fire while the video still plays
+            // from what it has buffered.)
             onWaiting={() => say(false)}
-            onStalled={() => say(false)}
             onError={() => {
               say(false);
               setFailed(true);

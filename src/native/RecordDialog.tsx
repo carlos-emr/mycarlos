@@ -401,10 +401,19 @@ export function RecordDialog({
     setTracksEnabled(false);
     setStage("paused");
     await sendNext();
+    // A piece the vault refused on the way ends the recording (see sendNext):
+    // it is not announced as paused.
+    if (failedSendRef.current) {
+      setChanging(false);
+      return;
+    }
     try {
       await bridge.videoPause(id);
     } catch (error) {
+      // Not paused as far as the vault is concerned: say so, not "paused".
       setProblem(vaultErrorMessage(error));
+      setChanging(false);
+      return;
     }
     setChanging(false);
     setStatus(
