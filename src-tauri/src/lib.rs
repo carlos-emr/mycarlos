@@ -688,13 +688,6 @@ struct BackupWriteRequest {
     leave_videos_out: bool,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct BackupSizeRequest {
-    #[serde(default)]
-    leave_videos_out: bool,
-}
-
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3747,14 +3740,8 @@ async fn vault_backup_pick(
 /// How big a backup would be, and how much of it is video, asked before the
 /// patient chooses where to save it.
 #[tauri::command]
-async fn vault_backup_size(
-    store: State<'_, Arc<VaultStore>>,
-    request: BackupSizeRequest,
-) -> CommandResult<vault::BackupSize> {
-    run_blocking(store.inner(), move |store| {
-        store.backup_size(request.leave_videos_out)
-    })
-    .await
+async fn vault_backup_size(store: State<'_, Arc<VaultStore>>) -> CommandResult<vault::BackupSize> {
+    run_blocking(store.inner(), |store| store.backup_size()).await
 }
 
 #[tauri::command]
@@ -3799,7 +3786,8 @@ async fn vault_backup_picked(
     run_blocking(store.inner(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
-        store.verify_for_backup_with(leave_videos_out)?;
+        let plan = store.plan_backup(leave_videos_out)?;
+        store.verify_for_backup_planned(&plan)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -3810,13 +3798,13 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup_with(
+        store.backup_planned(
             std::io::BufWriter::new(Counted {
                 inner: output,
                 bytes: counted,
             }),
             now_ms(),
-            leave_videos_out,
+            &plan,
         )?;
         store.record_backup_saved(&place);
         Ok(())
@@ -8089,7 +8077,6 @@ mod tests {
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
             let _ = serde_json::from_slice::<BackupWriteRequest>(&payload);
-            let _ = serde_json::from_slice::<BackupSizeRequest>(&payload);
             let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);

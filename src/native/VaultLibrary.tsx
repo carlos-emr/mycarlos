@@ -10,7 +10,7 @@ import {
   type UiText,
   type MessageKey,
 } from "../i18n";
-import type { PendingRecording, PersonDetails } from "../vault";
+import type { BackupSize, PendingRecording, PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
@@ -1482,13 +1482,30 @@ export function VaultLibrary({
   });
 
   // Asked for the screen that offers a backup: how big it would be.
-  const backupSize = useCallback(
-    (leaveVideosOut: boolean) =>
+  // Told once for each set of documents, not each time Security opens or the box
+  // is ticked: working it out reads the start of the recorded videos. A failed
+  // answer is not kept.
+  const sizeAnswer = useRef<{
+    key: string;
+    answer: Promise<BackupSize>;
+  } | null>(null);
+  const documentsKey = records
+    .map((record) => `${record.id}${record.available ? "" : "-"}`)
+    .join(",");
+  const backupSize = useCallback(() => {
+    if (sizeAnswer.current?.key === documentsKey) {
+      return sizeAnswer.current.answer;
+    }
+    const answer =
       typeof bridge.backupSize === "function"
-        ? bridge.backupSize(leaveVideosOut)
-        : Promise.reject(new Error("no backup size")),
-    [bridge],
-  );
+        ? bridge.backupSize()
+        : Promise.reject(new Error("no backup size"));
+    sizeAnswer.current = { key: documentsKey, answer };
+    answer.catch(() => {
+      if (sizeAnswer.current?.answer === answer) sizeAnswer.current = null;
+    });
+    return answer;
+  }, [bridge, documentsKey]);
   const saveBackup = (leaveVideosOut = false) =>
     run(async () => {
       // Named by the patient's own date, not the UTC one.

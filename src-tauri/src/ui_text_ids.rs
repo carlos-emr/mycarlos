@@ -1041,6 +1041,7 @@ pub enum MessageId {
     SecurityBackupLeaveVideosOutHelp,
     SecurityBackupSave,
     SecurityBackupSize,
+    SecurityBackupSizeCalculating,
     SecurityBackupSizeNoVideos,
     SecurityBackupSizeWithVideos,
     SecurityBackupTitle,
@@ -2167,6 +2168,7 @@ impl MessageId {
         Self::SecurityBackupLeaveVideosOutHelp,
         Self::SecurityBackupSave,
         Self::SecurityBackupSize,
+        Self::SecurityBackupSizeCalculating,
         Self::SecurityBackupSizeNoVideos,
         Self::SecurityBackupSizeWithVideos,
         Self::SecurityBackupTitle,
@@ -3623,6 +3625,7 @@ impl MessageId {
             Self::SecurityBackupLeaveVideosOutHelp => "security-backup-leaveVideosOutHelp",
             Self::SecurityBackupSave => "security-backup-save",
             Self::SecurityBackupSize => "security-backup-size",
+            Self::SecurityBackupSizeCalculating => "security-backup-sizeCalculating",
             Self::SecurityBackupSizeNoVideos => "security-backup-sizeNoVideos",
             Self::SecurityBackupSizeWithVideos => "security-backup-sizeWithVideos",
             Self::SecurityBackupTitle => "security-backup-title",
@@ -5288,6 +5291,7 @@ impl MessageId {
             "security.backup.leaveVideosOut" => Some(Self::SecurityBackupLeaveVideosOut),
             "security.backup.leaveVideosOutHelp" => Some(Self::SecurityBackupLeaveVideosOutHelp),
             "restore.leftOut" => Some(Self::RestoreLeftOut),
+            "security.backup.sizeCalculating" => Some(Self::SecurityBackupSizeCalculating),
             _ => None,
         }
     }

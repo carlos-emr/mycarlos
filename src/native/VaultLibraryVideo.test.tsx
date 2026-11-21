@@ -411,6 +411,26 @@ describe("the question about a recording that was cut short", () => {
     expect(notice).not.toHaveHumanTextContent("could not");
   });
 
+  it("works out the backup's size once for a set of documents, not each time Security opens", async () => {
+    const backupSize = vi.fn(async () => ({
+      totalBytes: 1_000_000,
+      withoutVideosBytes: 500_000,
+      videoBytes: 500_000,
+      videoCount: 1,
+    }));
+    renderLibrary(base, { backupSize });
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    await waitFor(() => expect(backupSize).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    expect(
+      await screen.findByRole("checkbox", {
+        name: humanText("Leave videos out"),
+      }),
+    ).toBeVisible();
+    expect(backupSize).toHaveBeenCalledTimes(1);
+  });
+
   it("waits for the next unlock when the patient does not answer", async () => {
     const bridge = renderLibrary(base, {
       videoPending: vi.fn(async () => ({
