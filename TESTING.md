@@ -450,6 +450,35 @@ while recording, take a call (the recording ends and is saved), and lock the pho
 **iPhone and iPad.** From iOS 14.5; before that, the "isn't available" line. The simulator has no camera:
 use a real device. The prompt text is the one in the dialog's explanation.
 
+### Camera and microphone on Apple devices (the Wry patch, #359 PR 7)
+
+myCarlos carries a patch to Wry (`src-tauri/vendor/wry.patch`) so that on a Mac, an iPhone and an iPad the
+webview answers a camera and microphone request as the other platforms do: **video, alone or with sound, from
+myCarlos's own page, and nothing else**. The decision itself is tested on any computer; the Apple code that
+asks it is compiled and run only on an Apple device, so it needs these checks. Use the CI's macOS build and an
+iPhone or iPad build (not `tauri dev`: the development server is refused on purpose, so the camera does not
+work there).
+
+1. **A photo** (My records, **Take a photo**): the system asks for the camera once; the preview appears; take a
+   photo. It must work as before the patch.
+2. **A video with sound** (**Record a video**): the system asks for the camera and then the microphone, once each;
+   recording, pause, resume and stop work, and the sound is in the saved video.
+3. **Denied in Settings.** Turn the camera off for myCarlos in System Settings (macOS: Privacy & Security;
+   iOS: Settings > myCarlos), then try again: the dialog says it could not start, and the camera light stays
+   off. Turn it back on.
+4. **Nothing turns on by itself.** Open myCarlos, open every screen except the photo and video dialogs, and
+   watch the camera light and the orange or green indicator: it must stay off. After closing a dialog or
+   locking, it must go off at once.
+5. **Not from another page.** This is the one the patch adds, and cannot be tried from the app's own screens:
+   it is covered by the unit tests of the decision. If you have a debugging build with the Safari Web
+   Inspector attached, run `navigator.mediaDevices.getUserMedia({audio:true})` in the console: it must be
+   refused (sound alone), where before the patch it asked the system.
+6. **Both versions.** Repeat 1 and 2 on the oldest macOS and iOS you have (macOS 10.13 to 11 on an Intel Mac is
+   the app's lower end; iOS 14.5 is the video minimum).
+
+If any of 1 to 3 fails, the patch is wrong for that system: the delegate method is the only place to look
+(`src-tauri/vendor/wry/src/wkwebview/class/wry_web_view_ui_delegate.rs`).
+
 ## Accessibility checks
 
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to

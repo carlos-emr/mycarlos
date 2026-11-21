@@ -6,5 +6,15 @@
     "archiveUrl": "https://static.crates.io/crates/glib/glib-0.18.5.crate",
     "upstreamRevision": "42b9caf98e03ded086362d9653ca58fe94dc8658",
     "excludedFiles": []
+  },
+  {
+    "name": "wry",
+    "version": "0.55.1",
+    "archiveSha256": "186f9871daa55fd9c016578b810d149de58367113db7fb72b462d2323ce19514",
+    "archiveUrl": "https://static.crates.io/crates/wry/wry-0.55.1.crate",
+    "upstreamRevision": "a5bf203a1c8dbb3583588382538d6521655222a8",
+    "excludedFiles": [
+      "Cargo.lock"
+    ]
   }
 ]
