@@ -55,6 +55,8 @@ export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   aiResultSaved: "interface.history.event.aiResultSaved",
   cloudKeyAdded: "interface.history.event.cloudKeyAdded",
   cloudKeyRemoved: "interface.history.event.cloudKeyRemoved",
+  aiCloudSent: "interface.history.event.aiCloudSent",
+  aiCloudAnswered: "interface.history.event.aiCloudAnswered",
 };
 
 /** The title of an entry's event; never the formatting-failure text, even for an

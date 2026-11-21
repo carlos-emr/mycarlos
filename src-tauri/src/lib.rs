@@ -1,5 +1,9 @@
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
+// The native side of the cloud send (#72): compiled for tests and the `cloud-ai` feature only.
+#[cfg(any(feature = "cloud-ai", test))]
+#[allow(dead_code)]
+mod cloud_ai;
 mod ui_text;
 mod ui_text_ids;
 use ui_text::UiLocale;

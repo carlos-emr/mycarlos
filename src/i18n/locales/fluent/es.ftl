@@ -1661,6 +1661,8 @@ interface-history-error-unverified = No se pudo leer ni verificar el historial. 
 interface-history-event-aiResultSaved = Respuesta de la IA guardada
 interface-history-event-cloudKeyAdded = Clave de IA en la nube añadida
 interface-history-event-cloudKeyRemoved = Clave de IA en la nube quitada
+interface-history-event-aiCloudSent = Texto enviado a una IA en la nube
+interface-history-event-aiCloudAnswered = Terminó el envío a la IA en la nube
 
 interface-history-event-backupRestored = Copia de seguridad restaurada
 

@@ -370,7 +370,9 @@ export interface AuditHistoryEntry {
     | "readingAidFiled"
     | "aiResultSaved"
     | "cloudKeyAdded"
-    | "cloudKeyRemoved";
+    | "cloudKeyRemoved"
+    | "aiCloudSent"
+    | "aiCloudAnswered";
   name: string | null;
   oldName: string | null;
   from: string[] | null;

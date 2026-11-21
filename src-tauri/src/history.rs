@@ -28,6 +28,9 @@ pub const SEGMENT_PLAINTEXT_BYTES: usize = 64 * 1024;
 /// characters; a longer one is cut, and the SHA-256 of the whole is kept
 /// beside it, so that no entry can outgrow a segment.
 pub const MAX_PLACE_CHARS: usize = 256;
+/// The longest `detail` of an entry.
+#[cfg_attr(not(any(feature = "cloud-ai", test)), allow(dead_code))]
+pub const MAX_DETAIL_CHARS: usize = 160;
 
 /// A move names at most this many folders on each side; when there were
 /// more, it says how many in all. With every other cap (names of 120 and 240
@@ -96,6 +99,13 @@ pub enum HistoryEvent {
     /// A cloud AI key was removed from the vault; `how` is the provider. Older backups still
     /// hold it.
     CloudKeyRemoved,
+    /// A document's de-identified text is about to be sent to a cloud AI provider with the
+    /// patient's own key (#72): `how` is the provider, `detail` the model. Written BEFORE the send,
+    /// so a text that left the device always has a record. Never the text.
+    AiCloudSent,
+    /// How that send ended: `detail` is "ok" with the provider's request id and token counts, or
+    /// the plain name of the failure. Never the answer.
+    AiCloudAnswered,
 }
 
 /// A folder as it was named at the time of the event.
@@ -166,6 +176,10 @@ pub struct HistoryEntry {
     pub delivery_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ciphertext_sha256: Option<String>,
+    /// A short note some events carry: the model of a cloud send, or how it ended. At most
+    /// `MAX_DETAIL_CHARS`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
     /// The hash of the entry before this one.
     pub prev: String,
 }
@@ -195,6 +209,7 @@ impl HistoryEntry {
             clinic_key_ids: None,
             delivery_id: None,
             ciphertext_sha256: None,
+            detail: None,
             prev: String::new(),
         }
     }

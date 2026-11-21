@@ -1628,6 +1628,8 @@ interface-history-error-unverified = The history could not be read and verified.
 interface-history-event-aiResultSaved = AI answer kept
 interface-history-event-cloudKeyAdded = Cloud AI key added
 interface-history-event-cloudKeyRemoved = Cloud AI key removed
+interface-history-event-aiCloudSent = Text sent to a cloud AI
+interface-history-event-aiCloudAnswered = Cloud AI send ended
 
 interface-history-event-backupRestored = Backup restored
 

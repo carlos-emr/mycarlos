@@ -1661,6 +1661,8 @@ interface-history-error-unverified = L’historique n’a pas pu être lu et vé
 interface-history-event-aiResultSaved = Réponse de l’IA conservée
 interface-history-event-cloudKeyAdded = Clé d'IA infonuagique ajoutée
 interface-history-event-cloudKeyRemoved = Clé d'IA infonuagique retirée
+interface-history-event-aiCloudSent = Texte envoyé à une IA infonuagique
+interface-history-event-aiCloudAnswered = Fin de l'envoi à l'IA infonuagique
 
 interface-history-event-backupRestored = Sauvegarde restaurée
 
