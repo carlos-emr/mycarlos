@@ -503,6 +503,8 @@ pub(super) struct ActiveRecording {
     /// A piece the normaliser refused: the recording takes no more, and ends
     /// through recovery, which keeps what was complete.
     poisoned: bool,
+    /// The sequence number the next piece must carry (pieces sent with one).
+    next_sequence: u64,
 }
 
 /// A finished object, ready to be verified, published and committed.
@@ -526,6 +528,9 @@ pub struct RecordingProgress {
     /// has been read.
     pub has_video: Option<bool>,
     pub has_audio: Option<bool>,
+    /// The sequence number the next piece must carry, so that a lost or repeated
+    /// piece is noticed.
+    pub next_sequence: u64,
 }
 
 /// One unfinished recording found in `recordings/`, for the question at unlock.
@@ -629,6 +634,7 @@ impl VaultStore {
                     scratch: Vec::new(),
                     paused: false,
                     poisoned: false,
+                    next_sequence: 0,
                 },
             );
         Ok(record_id)
@@ -638,6 +644,21 @@ impl VaultStore {
     pub fn recording_append(
         &self,
         id: Uuid,
+        piece: &[u8],
+    ) -> Result<RecordingProgress, VaultError> {
+        self.recording_append_numbered(id, None, piece)
+    }
+
+    /// Adds a piece that may carry a sequence number. A piece with the number
+    /// expected is added; a repeat of the one just added (a reply that was lost)
+    /// is answered with the progress it made and not added again; any other
+    /// number is refused and nothing is changed. Every piece added counts as
+    /// activity, so the vault does not lock under a recording that is running;
+    /// a paused recording sends none, and so does not hold it.
+    pub fn recording_append_numbered(
+        &self,
+        id: Uuid,
+        sequence: Option<u64>,
         piece: &[u8],
     ) -> Result<RecordingProgress, VaultError> {
         if piece.len() > MAX_RECORDING_PIECE {
@@ -651,6 +672,15 @@ impl VaultStore {
         let recording = map.get_mut(&id).ok_or(VaultError::NotFound)?;
         if recording.poisoned {
             return Err(VaultError::Invalid);
+        }
+        if let Some(sequence) = sequence {
+            if sequence != recording.next_sequence {
+                // The piece just added, sent again: it is already in.
+                if sequence + 1 == recording.next_sequence {
+                    return Ok(progress_of(&recording.normaliser, recording.next_sequence));
+                }
+                return Err(VaultError::Invalid);
+            }
         }
         recording.scratch.clear();
         if recording
@@ -679,7 +709,10 @@ impl VaultStore {
             let name = format!("{id}.tail");
             atomic_bytes(&recordings_dir(&self.root).join(name), &sealed)?;
         }
-        Ok(progress_of(&recording.normaliser))
+        recording.next_sequence += 1;
+        // Video that keeps arriving keeps the vault from locking on idle.
+        self.idle.touch(Instant::now());
+        Ok(progress_of(&recording.normaliser, recording.next_sequence))
     }
 
     /// Pauses: the partial frame is sealed to a tail file first, so that a crash
@@ -1257,12 +1290,13 @@ impl VaultStore {
     }
 }
 
-fn progress_of(normaliser: &Mp4Normaliser) -> RecordingProgress {
+fn progress_of(normaliser: &Mp4Normaliser, next_sequence: u64) -> RecordingProgress {
     RecordingProgress {
         stored_bytes: normaliser.written(),
         fragments: normaliser.index().len(),
         has_video: normaliser.init().map(InitInfo::has_video),
         has_audio: normaliser.init().map(InitInfo::has_audio),
+        next_sequence,
     }
 }
 
@@ -2268,5 +2302,76 @@ mod tests {
         assert_eq!(store.snapshot().unwrap().records.len(), 1);
         assert!(recordings_files(temp.path()).is_empty());
         assert_eq!(index_of(&stored(&store, id)).entries.len(), 4);
+    }
+
+    // ---- sequence numbers and the idle lock ---------------------------------
+
+    #[test]
+    fn a_numbered_piece_is_added_once_and_a_wrong_number_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE numbered.mp4", 5)
+            .unwrap();
+        let clip = movie(3, 5000);
+        let (first, rest) = clip.split_at(1000);
+        let progress = store.recording_append_numbered(id, Some(0), first).unwrap();
+        assert_eq!(progress.next_sequence, 1);
+        // The reply was lost and the page sends the same piece again: answered,
+        // not added twice.
+        let again = store.recording_append_numbered(id, Some(0), first).unwrap();
+        assert_eq!(
+            (again.next_sequence, again.stored_bytes),
+            (1, progress.stored_bytes)
+        );
+        // A number from the future, or from long ago, is refused and changes nothing.
+        for wrong in [2_u64, 5, u64::MAX] {
+            assert!(matches!(
+                store.recording_append_numbered(id, Some(wrong), rest),
+                Err(VaultError::Invalid)
+            ));
+        }
+        let mut next = 1;
+        for part in rest.chunks(1500) {
+            let progress = store
+                .recording_append_numbered(id, Some(next), part)
+                .unwrap();
+            next += 1;
+            assert_eq!(progress.next_sequence, next);
+        }
+        // Stopped, the video is exactly what was sent once.
+        let record = store.recording_stop(id, 6).unwrap().unwrap();
+        let plain = stored(&store, record);
+        assert_eq!(&plain[..clip.len()], &clip[..]);
+        assert_eq!(index_of(&plain).entries.len(), 3);
+    }
+
+    #[test]
+    fn a_recording_that_is_running_holds_the_idle_lock_and_a_paused_one_does_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE idle.mp4", 5)
+            .unwrap();
+        // Where the deadline would fall had nothing been added since the unlock.
+        let unlocked = Instant::now();
+        let due_unless_touched = unlocked
+            + Duration::from_secs(15 * 60)
+            + crate::idle::MARGIN
+            + Duration::from_millis(40);
+        assert!(store.idle().is_due(due_unless_touched));
+        std::thread::sleep(Duration::from_millis(120));
+        let clip = movie(2, 5000);
+        store.recording_append(id, &clip[..500]).unwrap();
+        // A piece arrived after the unlock: the deadline moved on with it.
+        assert!(!store.idle().is_due(due_unless_touched));
+        // Paused, no piece arrives and nothing touches the deadline: it stays
+        // where the last piece put it, so it runs out from the pause.
+        store.recording_pause(id).unwrap();
+        let held_until = Instant::now()
+            + Duration::from_secs(15 * 60)
+            + crate::idle::MARGIN
+            + Duration::from_secs(1);
+        assert!(store.idle().is_due(held_until));
     }
 }

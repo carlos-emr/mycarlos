@@ -182,6 +182,23 @@ export function formatPhotoName(
   return value;
 }
 
+/** A generated filename is stored data, not a human sentence. Do not add bidi
+ * delimiters to it or turn a formatter fault into a saved document name. */
+export function formatVideoName(
+  locale: Locale,
+  date: string,
+  time: string,
+): string {
+  const value = formatMessage(
+    locale,
+    "interface.video.name",
+    { date, time },
+    false,
+  );
+  if (value === formattingFailure(locale)) throw new Error(value);
+  return value;
+}
+
 /** The name a new clinic link gives this device until the patient changes
  * it, such as "myCarlos on Windows". It is sent to the clinic's portal, so it
  * is data: no bidi delimiters, and a formatter fault gives the app's name,
