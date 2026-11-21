@@ -148,15 +148,23 @@ define_class!(
       // MYCARLOS LOCAL PATCH (#359 PR 7): upstream grants every request here.
       // Only video, alone or with sound, from the app's own page is granted;
       // everything else is denied without a prompt. See media_capture_policy.rs.
-      let allowed = unsafe {
-        media_capture_policy::media_capture_allowed(
-          capture_type.0,
+      // The four reads from WebKit are the only unsafe calls; the decision
+      // itself is plain Rust, so it is outside them.
+      let (main_frame, protocol, host, port) = unsafe {
+        (
           frame.isMainFrame(),
-          &origin.protocol().to_string(),
-          &origin.host().to_string(),
+          origin.protocol().to_string(),
+          origin.host().to_string(),
           origin.port(),
         )
       };
+      let allowed = media_capture_policy::media_capture_allowed(
+        capture_type.0,
+        main_frame,
+        &protocol,
+        &host,
+        port,
+      );
       (*decision_handler).call((if allowed {
         WKPermissionDecision::Grant
       } else {

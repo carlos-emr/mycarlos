@@ -473,8 +473,10 @@ work there).
    it is covered by the unit tests of the decision. If you have a debugging build with the Safari Web
    Inspector attached, run `navigator.mediaDevices.getUserMedia({audio:true})` in the console: it must be
    refused (sound alone), where before the patch it asked the system.
-6. **Both versions.** Repeat 1 and 2 on the oldest macOS and iOS you have (macOS 10.13 to 11 on an Intel Mac is
-   the app's lower end; iOS 14.5 is the video minimum).
+6. **Both versions.** Repeat 1 and 2 on the oldest macOS and iOS you have. The patched method exists only on
+   macOS 12 and later and iOS 15 and later: on macOS 10.13 to 11 and on iOS 14.5 to 14.8 (the app's lower end)
+   WebKit never calls it, so its own default answers and step 5 will not show the patch's refusal there. Note
+   which of those you tried; if they matter, the minimums are the thing to raise.
 
 If any of 1 to 3 fails, the patch is wrong for that system: the delegate method is the only place to look
 (`src-tauri/vendor/wry/src/wkwebview/class/wry_web_view_ui_delegate.rs`).

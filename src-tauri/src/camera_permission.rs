@@ -352,6 +352,50 @@ mod tests {
             assert!(DELEGATE.contains("WKMediaCaptureType::CameraAndMicrophone.0"));
         }
 
+        const POLICY: &str =
+            include_str!("../vendor/wry/src/wkwebview/class/media_capture_policy.rs");
+        const CLASS_MOD: &str = include_str!("../vendor/wry/src/wkwebview/class/mod.rs");
+
+        /// The lines the patch adds to one file, in order.
+        fn added_lines(file: &str) -> Vec<&'static str> {
+            let header = format!("diff --git a/{file} b/{file}");
+            let mut lines = PATCH.lines();
+            assert!(lines.any(|line| line == header), "{file} is in the patch");
+            lines
+                .take_while(|line| !line.starts_with("diff --git "))
+                .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+                .map(|line| &line[1..])
+                .collect()
+        }
+
+        /// `wry.patch` is what `scripts/verify-native-vendor.py` applies to the
+        /// pinned release in CI. The tree under `vendor/wry` is what is built.
+        /// If they drift (the tree edited, the patch not regenerated), the
+        /// policy these tests run is not the one the patch reproduces. That
+        /// stops here, in `cargo test`, and not only in the CI script.
+        #[test]
+        fn the_patch_adds_exactly_the_policy_file_that_is_built_and_tested() {
+            let added = added_lines("src/wkwebview/class/media_capture_policy.rs");
+            let rebuilt: String = added.iter().map(|line| format!("{line}\n")).collect();
+            assert_eq!(rebuilt, POLICY);
+        }
+
+        #[test]
+        fn every_line_the_patch_adds_elsewhere_is_in_the_built_files_in_order() {
+            for (file, built) in [
+                ("src/wkwebview/class/mod.rs", CLASS_MOD),
+                ("src/wkwebview/class/wry_web_view_ui_delegate.rs", DELEGATE),
+            ] {
+                let mut remaining = built.lines();
+                for line in added_lines(file) {
+                    assert!(
+                        remaining.any(|built_line| built_line == line),
+                        "{file}: the patch adds a line the built file lacks or has out of order: {line}"
+                    );
+                }
+            }
+        }
+
         #[test]
         fn the_patch_touches_only_the_three_files_that_make_the_change() {
             let files: Vec<&str> = PATCH

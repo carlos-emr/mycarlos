@@ -296,7 +296,9 @@ not a security fix for a published advisory; it narrows what the page the app se
 page that was somehow loaded cannot turn the microphone on for sound alone. The decision is
 a plain function that the app's tests run on every host. The delegate itself is Apple-only code
 and is not compiled or run on the Linux build host; it needs the macOS and iOS builds and the device
-steps in TESTING.md. Carrying the patch to a new Wry is described in the
+steps in TESTING.md. WebKit calls the patched method only on macOS 12 and later and iOS 15 and
+later; on older systems (the app's iOS minimum is 14.5) WebKit's own default answers, as before the
+patch. Carrying the patch to a new Wry is described in the
 [native patch notes](src-tauri/vendor/README.md).
 
 ### Provenance, audit, and maintenance

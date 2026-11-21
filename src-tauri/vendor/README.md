@@ -48,9 +48,14 @@ The change is three files, all under `src/wkwebview/class/`:
   a compile-time check that its numbers for the capture types are the ones
   objc2-web-kit names (a mismatch stops the build).
 
+Where it applies: WebKit calls this delegate method only on macOS 12 and later and iOS 15 and
+later. On macOS 10.13 to 11 and on iOS 14.5 to 14.8 (the app's iOS minimum is 14.5) it is never called,
+so WebKit's own default answers and the patch's decision is not applied there. That is the
+same as before the patch. The fix for it is to raise those minimums, which is a product decision.
+
 Carrying it to a new Wry: take the new release, apply `wry.patch` (the delegate method is
 the only place that can conflict), update `upstream.json` (`version`,
-`archiveSha256`, `upstreamRevision`, `archiveUrl`) and `[patch.crates-io]`'s version,
+`archiveSha256`, `upstreamRevision`, `archiveUrl`; `[patch.crates-io]` names only the path, so it has no version to change),
 run `python3 scripts/verify-native-vendor.py`, and run the camera tests. If the new Wry
 has a hook for this decision, drop the patch. Cargo.lock's wry entry has no source or
 checksum while it is patched; `audit-native-dependencies.py` restores them for the
