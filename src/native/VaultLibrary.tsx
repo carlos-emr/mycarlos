@@ -1510,7 +1510,10 @@ export function VaultLibrary({
     answer: Promise<BackupSize>;
   } | null>(null);
   const documentsKey = records
-    .map((record) => `${record.id}${record.available ? "" : "-"}`)
+    .map(
+      (record) =>
+        `${record.id}${record.available ? "" : "-"}${record.hidden ? "h" : ""}`,
+    )
     .join(",");
   const backupSize = useCallback(() => {
     if (sizeAnswer.current?.key === documentsKey) {

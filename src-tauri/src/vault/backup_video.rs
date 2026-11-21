@@ -46,13 +46,30 @@ pub struct BackupPlan {
 }
 
 impl BackupPlan {
-    /// The records whose files this backup leaves out.
-    pub(super) fn omitted(&self) -> &[Uuid] {
-        if self.leave_out {
-            &self.videos
-        } else {
-            &[]
+    /// The records whose files this backup leaves out: the videos found, that
+    /// this vault still has and has not had hidden since (a patient's hide
+    /// must keep a record's file in the backup). Size, check and write all ask
+    /// this, so they agree even if a record is hidden between them.
+    pub(super) fn omitted_in(&self, manifest: &Manifest) -> Vec<Uuid> {
+        if !self.leave_out {
+            return Vec::new();
         }
+        self.videos
+            .iter()
+            .copied()
+            .filter(|id| {
+                manifest
+                    .records
+                    .iter()
+                    .any(|record| record.id == *id && record.hidden.is_none())
+            })
+            .collect()
+    }
+
+    /// The videos found, whether or not they are left out.
+    #[cfg(test)]
+    pub(super) fn videos(&self) -> &[Uuid] {
+        &self.videos
     }
 }
 
@@ -426,7 +443,7 @@ mod tests {
         })
         .collect();
         let plan = store.plan_backup(true).unwrap();
-        assert_eq!(plan.omitted(), [video]);
+        assert_eq!(plan.videos(), [video]);
         let size = store.backup_size().unwrap();
         assert_eq!(size.video_count, 1);
         let backup = backup_bytes(&store, true);
@@ -447,12 +464,35 @@ mod tests {
     }
 
     #[test]
+    fn a_video_hidden_after_the_videos_were_found_is_still_kept_by_the_check_and_the_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, video) = vault_with_a_video(temp.path());
+        let plan = store.plan_backup(true).unwrap();
+        assert_eq!(plan.videos(), [video]);
+        // The patient hides it between the plan and the save (a provider's slow open).
+        store.hide_record(video, 7).unwrap();
+        {
+            let guard = store.session();
+            assert!(plan
+                .omitted_in(&guard.as_ref().unwrap().manifest)
+                .is_empty());
+        }
+        // The check reads it (it would be written), and the write holds it.
+        store.verify_for_backup_planned(&plan).unwrap();
+        let mut bytes = Vec::new();
+        store.backup_planned(&mut bytes, 9, &plan).unwrap();
+        assert_eq!(&bytes[..16], &BACKUP_MAGIC[..16]);
+        let other = restored(bytes, temp.path()).unwrap();
+        assert_eq!(read_all(&other, video), read_all(&store, video));
+    }
+
+    #[test]
     fn a_video_the_patient_hid_stays_in_the_backup_with_its_reason() {
         let temp = tempfile::tempdir().unwrap();
         let (store, _, video) = vault_with_a_video(temp.path());
         store.hide_record(video, 7).unwrap();
         let plan = store.plan_backup(true).unwrap();
-        assert!(plan.omitted().is_empty());
+        assert!(plan.videos().is_empty());
         let backup = backup_bytes(&store, true);
         // Not format 2: nothing was left out, and the video is there to restore.
         assert_eq!(&backup[..16], &BACKUP_MAGIC[..16]);
@@ -529,6 +569,9 @@ mod tests {
         assert_eq!(said[0].record_id, Some(video));
         // The Hidden list can say why the file is missing: the latest event is it.
         assert_eq!(restored.left_out_records().unwrap(), [video]);
+        // Its details ask whether it is a video to play: no, and no error, though
+        // its camera event is still in the history and its file is not here.
+        assert!(!crate::is_video(&restored, video).unwrap());
         // The vault the backup was made from left nothing out, and the whole
         // backup's restore did not either.
         assert!(store.left_out_records().unwrap().is_empty());

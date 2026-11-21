@@ -4010,7 +4010,7 @@ impl VaultStore {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
-        let omitted = plan.omitted();
+        let omitted = plan.omitted_in(&unlocked.manifest);
         for record in &unlocked.manifest.records {
             if omitted.contains(&record.id) {
                 continue;
@@ -4056,17 +4056,7 @@ impl VaultStore {
         let mut parts = self.backup_parts(unlocked)?;
         let manifest = &unlocked.manifest;
         // Only records this vault still has, and has not had hidden since.
-        let omitted: Vec<Uuid> = plan
-            .omitted()
-            .iter()
-            .copied()
-            .filter(|id| {
-                manifest
-                    .records
-                    .iter()
-                    .any(|record| record.id == *id && record.hidden.is_none())
-            })
-            .collect();
+        let omitted = plan.omitted_in(manifest);
         if !omitted.is_empty() {
             parts.manifest_data = backup_video::manifest_without_videos(
                 &unlocked.master_key,
