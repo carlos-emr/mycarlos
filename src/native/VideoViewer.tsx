@@ -33,18 +33,31 @@ export function VideoViewer({
   const playingRef = useRef(false);
   useModalFocus(true, dialogRef, onClose, closeRef);
 
+  // The latest callback and address, read through refs: the library hands in a
+  // new function on every render, and a teardown that depended on it would run
+  // (and strip the address) at each one.
+  const onPlayingRef = useRef(onPlaying);
+  onPlayingRef.current = onPlaying;
+  const urlRef = useRef(url);
+  urlRef.current = url;
+
   const say = (playing: boolean) => {
     if (playingRef.current === playing) return;
     playingRef.current = playing;
-    onPlaying?.(playing);
+    onPlayingRef.current?.(playing);
   };
-  // Closed for any reason: no longer playing, and nothing left attached.
+  // Closed for any reason: no longer playing, and nothing left attached. It runs
+  // once, when the viewer goes away. (React's development double mount runs it
+  // too; the address is put back on the next mount, so the player is not left
+  // blank.)
   useEffect(() => {
     const video = videoRef.current;
+    if (video && !video.getAttribute("src"))
+      video.setAttribute("src", urlRef.current);
     return () => {
       if (playingRef.current) {
         playingRef.current = false;
-        onPlaying?.(false);
+        onPlayingRef.current?.(false);
       }
       if (video) {
         video.pause();
@@ -52,7 +65,7 @@ export function VideoViewer({
         video.load();
       }
     };
-  }, [onPlaying]);
+  }, []);
 
   const key = (event: KeyboardEvent<HTMLElement>) => {
     const video = videoRef.current;
@@ -143,6 +156,9 @@ export function VideoViewer({
             onPlaying={() => say(true)}
             onPause={() => say(false)}
             onEnded={() => say(false)}
+            // Waiting for data is not playing; `playing` says so again when it goes on.
+            onWaiting={() => say(false)}
+            onStalled={() => say(false)}
             onError={() => {
               say(false);
               setFailed(true);

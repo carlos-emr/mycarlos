@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
@@ -137,11 +138,25 @@ describe("VideoViewer", () => {
     fireEvent(video, new Event("playing"));
     fireEvent(video, new Event("playing"));
     expect(onPlaying.mock.calls).toEqual([[true]]);
+    // Stuck waiting for data is not playing either; it says so again when it goes on.
+    fireEvent(video, new Event("waiting"));
+    fireEvent(video, new Event("playing"));
+    fireEvent(video, new Event("stalled"));
+    fireEvent(video, new Event("playing"));
+    expect(onPlaying.mock.calls.map(([playing]) => playing)).toEqual([
+      true,
+      false,
+      true,
+      false,
+      true,
+    ]);
+    onPlaying.mockClear();
     fireEvent(video, new Event("pause"));
-    expect(onPlaying.mock.calls).toEqual([[true], [false]]);
+    expect(onPlaying.mock.calls).toEqual([[false]]);
+    onPlaying.mockClear();
     fireEvent(video, new Event("playing"));
     fireEvent(video, new Event("ended"));
-    expect(onPlaying.mock.calls).toEqual([[true], [false], [true], [false]]);
+    expect(onPlaying.mock.calls).toEqual([[true], [false]]);
   });
 
   it("lets go of the lock and drops its address when it closes while playing (a lock closes it)", () => {
@@ -152,6 +167,56 @@ describe("VideoViewer", () => {
     // Nothing is left asking the vault for more.
     expect(video.getAttribute("src")).toBeNull();
     expect(pause).toHaveBeenCalled();
+  });
+
+  it("keeps its address and its video when the library draws it again", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const view = render(
+      <VideoViewer
+        name="FAKE.mp4"
+        url={URL}
+        onPlaying={first}
+        onClose={vi.fn()}
+      />,
+    );
+    const video = view.container.ownerDocument.querySelector("video")!;
+    // The library draws again with a new function each time.
+    view.rerender(
+      <VideoViewer
+        name="FAKE.mp4"
+        url={URL}
+        onPlaying={second}
+        onClose={vi.fn()}
+      />,
+    );
+    view.rerender(
+      <VideoViewer
+        name="FAKE.mp4"
+        url={URL}
+        onPlaying={second}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(video.getAttribute("src")).toBe(URL);
+    expect(pause).not.toHaveBeenCalled();
+    // The newest callback is the one told.
+    fireEvent(video, new Event("playing"));
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledWith(true);
+    view.unmount();
+    expect(video.getAttribute("src")).toBeNull();
+    expect(second).toHaveBeenLastCalledWith(false);
+  });
+
+  it("is not left blank by React's development double mount", () => {
+    const view = render(
+      <StrictMode>
+        <VideoViewer name="FAKE.mp4" url={URL} onClose={vi.fn()} />
+      </StrictMode>,
+    );
+    const video = view.container.ownerDocument.querySelector("video")!;
+    expect(video.getAttribute("src")).toBe(URL);
   });
 
   it("closes on Escape and on its button", () => {

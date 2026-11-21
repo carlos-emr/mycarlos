@@ -337,6 +337,10 @@ describe("RecordDialog", () => {
     expect(released).not.toHaveBeenCalled();
     fireEvent.click(button("Pause recording"));
     await waitFor(() => expect(released).toHaveBeenCalledTimes(1));
+    // The pause is done once the status says so; only then can it be undone.
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
+    );
     fireEvent.click(button("Resume recording"));
     await waitFor(() => expect(holdLock).toHaveBeenCalledTimes(2));
   });
@@ -426,19 +430,102 @@ describe("RecordDialog", () => {
     expect(recorder().state).toBe("inactive");
   });
 
-  it("ends the recording and saves what was sent if the vault refuses a piece", async () => {
+  it("stops at once, not at Stop, when the vault refuses a piece, and keeps what was saved", async () => {
     const bridge = fakeBridge({
       videoAppend: vi.fn(async () => {
         throw { code: "no_space", message: "FAKE full" };
       }),
     });
     const { onSaved } = await recording(bridge);
+    // The patient does nothing: a piece goes, is refused, and that ends it.
     act(() => recorder().emit(piece(100)));
-    fireEvent.click(button("Stop and save"));
     await waitFor(() =>
-      expect(onSaved).toHaveBeenCalledWith("video-1", "stopped"),
+      expect(onSaved).toHaveBeenCalledWith("video-1", "failed"),
     );
+    expect(recorder().state).toBe("inactive");
+    expect(bridge.videoStop).toHaveBeenCalledWith("recording-1");
     expect(bridge.videoAppend).toHaveBeenCalledTimes(1);
+    expect(
+      streams.every((s) =>
+        s.getTracks().every((t) => t.readyState === "ended"),
+      ),
+    ).toBe(true);
+  });
+
+  it("turns the camera and microphone off and ends the vault's recording when the recorder cannot start", async () => {
+    class Throws extends FakeRecorder {
+      constructor(stream: MediaStream, options: MediaRecorderOptions) {
+        super(stream, options);
+        throw new Error("FAKE no recorder");
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Throws);
+    const bridge = fakeBridge();
+    open({}, bridge);
+    await readyToRecord();
+    fireEvent.click(button("Start recording"));
+    await screen.findByRole("alert");
+    expect(bridge.videoStart).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(bridge.videoStop).toHaveBeenCalledWith("recording-1"),
+    );
+    expect(
+      streams.every((s) =>
+        s.getTracks().every((t) => t.readyState === "ended"),
+      ),
+    ).toBe(true);
+  });
+
+  it("can be cancelled while starting, and a camera that answers late is turned off", async () => {
+    let answer!: (stream: MediaStream) => void;
+    getUserMedia.mockImplementationOnce(
+      () => new Promise<MediaStream>((resolve) => (answer = resolve)),
+    );
+    const { onClose } = open();
+    fireEvent.click(button("Use the camera and microphone"));
+    const cancel = await screen.findByRole("button", { name: "Cancel" });
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    expect(onClose).toHaveBeenCalled();
+    // The camera answers after the dialog has gone: it is stopped at once.
+    const late = fakeCameraAndMicrophone();
+    await act(async () => answer(late));
+    expect(late.getTracks().every((t) => t.readyState === "ended")).toBe(true);
+  });
+
+  it("waits for a pause that is on its way before it will resume, and does not send it twice", async () => {
+    let finish!: () => void;
+    const bridge = fakeBridge({
+      videoPause: vi.fn(
+        () => new Promise<void>((resolve) => (finish = resolve)),
+      ),
+    });
+    await recording(bridge);
+    fireEvent.click(button("Pause recording"));
+    const toggle = await screen.findByRole("button", {
+      name: "Resume recording",
+    });
+    await waitFor(() => expect(bridge.videoPause).toHaveBeenCalledTimes(1));
+    expect(toggle).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(bridge.videoResume).not.toHaveBeenCalled();
+    expect(bridge.videoPause).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-disabled", "false"),
+    );
+    fireEvent.click(toggle);
+    await waitFor(() => expect(bridge.videoResume).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows the library's notice beside what it is saying about the recording, not instead of it", async () => {
+    await recording(fakeBridge(), { notice: "A leftover notice." });
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Recording");
+    expect(status).toHaveTextContent("A leftover notice.");
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() => expect(status).toHaveTextContent("Recording paused."));
   });
 
   it("says nothing was saved when the vault has no complete video", async () => {

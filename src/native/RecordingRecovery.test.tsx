@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axe from "axe-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
@@ -59,10 +59,44 @@ describe("RecordingRecovery", () => {
     expect(onAnswer).toHaveBeenCalledWith(true);
   });
 
-  it("deletes only when told to", () => {
+  it("does not delete on one tap: it asks again, says it cannot be undone, and Keep is the default", async () => {
     const { onAnswer } = open(recording());
     fireEvent.click(screen.getByRole("button", { name: "Delete it" }));
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("alertdialog", {
+        name: humanText("Delete this recording? It can't be undone."),
+      }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Keep the video" }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete it" }));
+    expect(onAnswer).toHaveBeenCalledTimes(1);
     expect(onAnswer).toHaveBeenCalledWith(false);
+  });
+
+  it("goes back from the confirmation on Escape, and keeping from it keeps", () => {
+    const { onAnswer, onLater } = open(recording());
+    fireEvent.click(screen.getByRole("button", { name: "Delete it" }));
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    // Back at the question; nothing was deleted and nothing was put off.
+    expect(
+      screen.getByRole("alertdialog", {
+        name: humanText(
+          "myCarlos closed while you were recording. Keep the video that was saved?",
+        ),
+      }),
+    ).toBeVisible();
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(onLater).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Delete it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep the video" }));
+    expect(onAnswer).toHaveBeenCalledWith(true);
   });
 
   it("can be left unanswered: Escape or Ask me later, and the question comes back at the next unlock", () => {
@@ -76,32 +110,15 @@ describe("RecordingRecovery", () => {
     expect(onAnswer).not.toHaveBeenCalled();
   });
 
-  it("says paused when it was paused, and locked when a lock ended it", () => {
-    for (const [r, text] of [
-      [
-        recording({ paused: true }),
-        "myCarlos closed while a recording was paused. Keep the video that was saved?",
-      ],
-      [
-        recording({ parked: true }),
-        "myCarlos locked while you were recording. Keep the video that was saved?",
-      ],
-      [
-        recording({ parked: true, paused: true }),
-        "myCarlos locked while a recording was paused. Keep the video that was saved?",
-      ],
-    ] as const) {
-      const { unmount } = render(
-        <RecordingRecovery
-          recording={r}
-          busy={false}
-          onAnswer={vi.fn()}
-          onLater={vi.fn()}
-        />,
-      );
-      expect(screen.getByRole("alertdialog", { name: text })).toBeVisible();
-      unmount();
-    }
+  it("says paused when it was paused", () => {
+    open(recording({ paused: true }));
+    expect(
+      screen.getByRole("alertdialog", {
+        name: humanText(
+          "myCarlos closed while a recording was paused. Keep the video that was saved?",
+        ),
+      }),
+    ).toBeVisible();
   });
 
   it("does nothing while an answer is being saved", () => {

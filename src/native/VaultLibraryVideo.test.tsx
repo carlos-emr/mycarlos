@@ -293,17 +293,24 @@ describe("the question about a recording that was cut short", () => {
     ).toBeVisible();
   });
 
-  it("deletes when told to and says so", async () => {
+  it("deletes only after a second, plainer question, and says so", async () => {
     const bridge = renderLibrary(base, {
       videoPending: vi.fn(async () => ({
-        recordings: [pending({ paused: true, parked: true })],
+        recordings: [pending({ paused: true })],
         unreadable: 0,
       })),
     });
     await screen.findByRole("alertdialog", {
       name: humanText(
-        "myCarlos locked while a recording was paused. Keep the video that was saved?",
+        "myCarlos closed while a recording was paused. Keep the video that was saved?",
       ),
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Delete it") }),
+    );
+    expect(bridge.videoRecover).not.toHaveBeenCalled();
+    await screen.findByRole("alertdialog", {
+      name: humanText("Delete this recording? It can't be undone."),
     });
     fireEvent.click(
       screen.getByRole("button", { name: humanText("Delete it") }),
@@ -316,6 +323,37 @@ describe("the question about a recording that was cut short", () => {
         humanText("The unfinished recording was deleted."),
       ),
     ).toBeVisible();
+  });
+
+  it("saves a recording a lock parked, without a question, and says so", async () => {
+    const bridge = renderLibrary(base, {
+      videoPending: vi.fn(async () => ({
+        recordings: [
+          pending({ id: "recording-1", parked: true }),
+          pending({
+            id: "recording-2",
+            displayName: "FAKE Paused.mp4",
+            parked: true,
+            paused: true,
+          }),
+        ],
+        unreadable: 0,
+      })),
+      videoRecover: vi.fn(async (id: string) => ({ recordId: `video-${id}` })),
+    });
+    await waitFor(() => expect(bridge.videoRecover).toHaveBeenCalledTimes(2));
+    expect(bridge.videoRecover).toHaveBeenCalledWith("recording-1", true);
+    expect(bridge.videoRecover).toHaveBeenCalledWith("recording-2", true);
+    // No Keep or Delete question: they were saved.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    const notice = await screen.findByText(
+      humanText(
+        /myCarlos locked while you were recording\. The video was saved/,
+      ),
+    );
+    expect(notice).toHaveHumanTextContent(
+      "myCarlos locked while a recording was paused. The video was saved: FAKE Paused.mp4",
+    );
   });
 
   it("waits for the next unlock when the patient does not answer", async () => {
@@ -344,6 +382,12 @@ describe("the question about a recording that was cut short", () => {
       })),
     });
     await screen.findByText(humanText(`Recording: ${VIDEO_NAME}`));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Delete it") }),
+    );
+    await screen.findByRole("alertdialog", {
+      name: humanText("Delete this recording? It can't be undone."),
+    });
     fireEvent.click(
       screen.getByRole("button", { name: humanText("Delete it") }),
     );

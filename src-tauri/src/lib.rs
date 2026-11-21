@@ -5242,6 +5242,10 @@ impl Drop for VideoAppendRequest {
 /// A piece's bytes from its base64 text: refused, before it is decoded, if the
 /// text is longer than a piece may be.
 fn decode_video_piece(data: &str) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    // The length of the text is checked, not of the bytes it would decode to:
+    // decoding allocates a piece's size, and a hostile page could otherwise send
+    // text for a far larger one before anything bounded it. The limit is the
+    // base64 length of `MAX_RECORDING_PIECE` bytes (4/3 of it) plus padding.
     if data.len() > MAX_VIDEO_PIECE_BASE64 {
         return Err(VaultError::Invalid);
     }

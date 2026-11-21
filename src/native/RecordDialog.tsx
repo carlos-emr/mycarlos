@@ -47,7 +47,13 @@ export type RecordBridge = Pick<
 >;
 
 /** How a recording ended: the patient asked, or something else did. */
-export type RecordEnd = "asked" | "stopped" | "slow" | "hidden" | "space";
+export type RecordEnd =
+  | "asked"
+  | "stopped"
+  | "slow"
+  | "hidden"
+  | "failed"
+  | "space";
 
 type Stage =
   | "explain"
@@ -115,6 +121,8 @@ export function RecordDialog({
   // How room stands while recording: a warning from 512 MiB left, and the
   // recording ends and is saved at 256 MiB.
   const [room, setRoom] = useState<RecordingProgress | null>(null);
+  // A pause or a resume is on its way: the toggle waits for it.
+  const [changing, setChanging] = useState(false);
   const [status, setStatus] = useTextState();
   const [, setTick] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -258,8 +266,10 @@ export function RecordDialog({
           if (progress.space === "stop") void finishRef.current("space");
         } catch (error) {
           failedSendRef.current = error;
-          // A disk that filled anyway is the same: what was recorded is kept.
-          if (isNoSpace(error)) void finishRef.current("space");
+          // The vault would not take a piece: the recorder is stopped at once,
+          // not left saying Recording, and what was saved before it is kept. A
+          // disk that filled anyway is told as no room.
+          void finishRef.current(isNoSpace(error) ? "space" : "failed");
         } finally {
           bytes.fill(0);
         }
@@ -330,7 +340,7 @@ export function RecordDialog({
           sendFailed && why === "asked"
             ? isNoSpace(sendFailed)
               ? "space"
-              : "stopped"
+              : "failed"
             : why,
         );
       } catch (error) {
@@ -360,6 +370,7 @@ export function RecordDialog({
     }
     setProblem(null);
     setStage("starting");
+    let startedId: string | null = null;
     try {
       const started = await bridge.videoStart(
         profileId,
@@ -371,6 +382,7 @@ export function RecordDialog({
         void bridge.videoStop(started.recordingId).catch(() => undefined);
         return;
       }
+      startedId = started.recordingId;
       recordingIdRef.current = started.recordingId;
       sequenceRef.current = 0;
       unsentRef.current = [];
@@ -400,7 +412,12 @@ export function RecordDialog({
         deferredText(() => translateNow("interface.RecordDialog.recording")),
       );
     } catch (error) {
+      // Nothing is recording: the camera and microphone go off, and a recording
+      // the vault began is ended (nothing complete, so nothing is added).
+      recorderRef.current = null;
       recordingIdRef.current = null;
+      stopCamera();
+      if (startedId) void bridge.videoStop(startedId).catch(() => undefined);
       setStage("failed");
       setProblem(vaultErrorMessage(error));
       setStatus("");
@@ -415,7 +432,8 @@ export function RecordDialog({
   const pause = async () => {
     const recorder = recorderRef.current;
     const id = recordingIdRef.current;
-    if (stage !== "recording" || !recorder || !id) return;
+    if (stage !== "recording" || !recorder || !id || changing) return;
+    setChanging(true);
     // What was cut so far goes to the vault before the pause, so the vault
     // can keep it safe through the pause.
     try {
@@ -433,6 +451,7 @@ export function RecordDialog({
     } catch (error) {
       setProblem(vaultErrorMessage(error));
     }
+    setChanging(false);
     setStatus(
       deferredText(() =>
         translateNow("interface.RecordDialog.recordingPaused"),
@@ -443,11 +462,13 @@ export function RecordDialog({
   const resume = async () => {
     const recorder = recorderRef.current;
     const id = recordingIdRef.current;
-    if (stage !== "paused" || !recorder || !id) return;
+    if (stage !== "paused" || !recorder || !id || changing) return;
+    setChanging(true);
     // Room is looked at again before recording goes on: with too little, the
     // recording is saved as it is, not continued into a full disk.
     const space = await bridge.videoSpace?.().catch(() => undefined);
     if (space && !space.canRecord) {
+      setChanging(false);
       void finishRef.current("space");
       return;
     }
@@ -455,8 +476,10 @@ export function RecordDialog({
       await bridge.videoResume(id);
     } catch (error) {
       setProblem(vaultErrorMessage(error));
+      setChanging(false);
       return;
     }
+    setChanging(false);
     setProblem(null);
     setTracksEnabled(true);
     recorder.resume();
@@ -531,7 +554,8 @@ export function RecordDialog({
       setConfirmStop(true);
       return;
     }
-    if (stage === "starting") return;
+    // Also while starting: the camera that was being asked for is turned off the
+    // moment it answers, and a recording the vault had begun is ended.
     stopCamera();
     onClose();
   };
@@ -745,7 +769,7 @@ export function RecordDialog({
           )}
         </div>
         <p className="native-dialog-status" role="status">
-          {notice || status}
+          {[status, notice].filter(Boolean).join(" ")}
         </p>
         <footer className="dialog-actions camera-actions">
           {stage === "explain" && (
@@ -769,7 +793,7 @@ export function RecordDialog({
             </>
           )}
           {stage === "starting" && (
-            <button className="button" type="button" disabled>
+            <button className="button" type="button" onClick={close}>
               {translateNow("common.cancel")}
             </button>
           )}
@@ -798,6 +822,7 @@ export function RecordDialog({
                   <button
                     className="button"
                     type="button"
+                    aria-disabled={changing}
                     onClick={() => void (pausedNow ? resume() : pause())}
                   >
                     <Icon name={pausedNow ? "camera" : "pause"} />
