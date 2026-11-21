@@ -922,7 +922,9 @@ impl VaultStore {
         let dir = recordings_dir(&self.root);
         // A copy an earlier recovery was making when it was interrupted: never
         // committed, never named by the manifest, safe to remove.
-        if !journal.copying.is_empty() && journal.state != JournalState::Committing {
+        // (A `committing` journal never lists one: the commit's journal empties
+        // the list, so this is safe for every state.)
+        if !journal.copying.is_empty() {
             for name in journal.copying.drain(..) {
                 let _ = remove_owned_file(dir.join(name), Removable::Recording);
             }
@@ -1042,8 +1044,19 @@ impl VaultStore {
         // Any failure from here to the commit takes the copy away and puts the
         // journal back as it was, so the old object is still what it names and
         // the next attempt starts clean.
+        let copy_name = new_name.clone();
         let abandon = |error: VaultError| {
             let _ = remove_owned_file(&new_path, Removable::Recording);
+            // The copy may have been published (or swept aside) before the commit
+            // failed: remove it there too, unless the manifest names it.
+            if !self.manifest_names_object(&copy_name) {
+                for place in ["objects", "quarantine"] {
+                    let _ = remove_owned_file(
+                        self.root.join(place).join(&copy_name),
+                        Removable::Recording,
+                    );
+                }
+            }
             let _ = write_journal(&self.root, &journal_key_value, vault_id, &journal);
             error
         };
@@ -1138,8 +1151,11 @@ impl VaultStore {
         let objects = self.root.join("objects");
         publish_object(object_path, &objects.join(&journal.object_name))?;
         terminate_at_test_boundary("recording.after-publish");
-        sync_dir(&objects)?;
         let result = (|| {
+            // A failure here is a failed commit like any other: the copy is taken
+            // back out of `objects/` below.
+            fail_at_test_boundary("recording.sync-after-publish")?;
+            sync_dir(&objects)?;
             let mut guard = self.session();
             let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
             if unlocked.manifest.vault_id != vault_id {
@@ -1202,12 +1218,33 @@ impl VaultStore {
             Err(error) => {
                 // Not committed: take the object back out of `objects/`, so that no
                 // sweep has anything to move, and keep the journal. The object is
-                // published by rename, so the finished file is put back.
-                let _ = publish_object(&objects.join(&journal.object_name), object_path);
-                sync_parent(&objects);
+                // published by rename, so the finished file is put back; if that
+                // fails the copy is removed (it is ciphertext, and the recording's
+                // own object is still there to recover from). Never touched if the
+                // manifest names it, or if that cannot be told.
+                if !self.manifest_names_object(&journal.object_name) {
+                    let published = objects.join(&journal.object_name);
+                    if publish_object(&published, object_path).is_err() {
+                        let _ = remove_owned_file(published, Removable::Recording);
+                    }
+                    sync_parent(&objects);
+                }
                 Err(error)
             }
         }
+    }
+
+    /// Whether the open manifest names `object_name`. True when there is no open
+    /// session, so that nothing is removed on a guess.
+    fn manifest_names_object(&self, object_name: &str) -> bool {
+        let guard = self.session();
+        guard.as_ref().is_none_or(|unlocked| {
+            unlocked
+                .manifest
+                .records
+                .iter()
+                .any(|record| record.object_name == object_name)
+        })
     }
 
     fn require_writable_session(&self) -> Result<(), VaultError> {
@@ -1857,6 +1894,35 @@ mod tests {
         assert!(recordings_files(temp.path()).is_empty());
     }
 
+    fn object_files(root: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(root.join("vault").join("objects"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_failure_after_publishing_takes_the_copy_back_out_of_objects() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let before = object_files(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE publish.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(3, 9000), 4000);
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.sync-after-publish"]);
+        let failed = store.recording_stop(id, 6);
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(matches!(failed, Err(VaultError::NoSpace)), "{failed:?}");
+        // Nothing of the recording is left in objects/, and it can still be recovered.
+        assert_eq!(object_files(temp.path()), before);
+        let record = store.recording_recover(id, true, 7).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 3);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
     #[test]
     fn setting_the_vault_aside_parks_a_recording_and_drops_its_keys() {
         let temp = tempfile::tempdir().unwrap();
@@ -2145,6 +2211,25 @@ mod tests {
             fs::read_dir(quarantine).map_or(true, |mut e| e.next().is_none()),
             "{boundary}"
         );
+    }
+
+    #[test]
+    fn two_crashes_in_a_row_leave_no_copy_behind() {
+        // The first ends a stop after publishing (a `committing` journal); the
+        // second ends the recovery of it after it began a copy; the third finishes.
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _) = new_store(temp.path());
+        drop(store);
+        run_child(temp.path(), "stop", "recording.after-publish");
+        run_child(temp.path(), "recover", "recording.recovery-after-copy");
+        let store = reopen(temp.path());
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
+        let id = pending.recordings[0].id;
+        let record = store.recording_recover(id, true, 10).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 4);
+        assert!(recordings_files(temp.path()).is_empty());
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
     }
 
     #[test]

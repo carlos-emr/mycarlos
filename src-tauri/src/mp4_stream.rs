@@ -220,6 +220,11 @@ struct TrafInfo {
     tfdt_wide: bool,
     tfdt: u64,
     duration: u64,
+    /// The samples in the track's runs.
+    samples: u64,
+    /// `duration` is the sum of durations the runs (or the track's default) gave,
+    /// not a guess.
+    exact: bool,
 }
 
 /// What the normaliser needs of a buffered `moof`.
@@ -248,8 +253,11 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
         let track_id = be32(moof, tfhd.0 + 12).ok_or(Mp4Error::Malformed)?;
         // An explicit base data offset is an absolute position in the file the
         // pieces came from; the normaliser moves every fragment, so it would
-        // point at the wrong bytes afterwards. MediaRecorder does not write one
-        // (it uses default-base-is-moof), so one is refused, not rewritten.
+        // point at the wrong bytes afterwards. Neither Chromium (which sets
+        // default-base-is-moof) nor WebKitGTK (whose tfhd carries no flags, so
+        // a run's offsets count from its moof) writes one in the pieces seen, so
+        // one is refused, not rewritten. A moof and its mdat move together, which
+        // keeps the offsets that count from the moof right.
         if flags & 0x01 != 0 {
             return Err(Mp4Error::Malformed);
         }
@@ -276,12 +284,17 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
         };
         // The fragment's length: the sum of its runs' sample durations.
         let mut duration = 0_u64;
+        let mut samples = 0_u64;
+        let mut exact = default_duration != 0;
         for &(rat, rsize, rkind) in &parts {
             if &rkind != b"trun" {
                 continue;
             }
             let flags = be32(moof, rat + 8).ok_or(Mp4Error::Malformed)? & 0x00ff_ffff;
             let count = be32(moof, rat + 12).ok_or(Mp4Error::Malformed)? as usize;
+            samples = samples
+                .checked_add(count as u64)
+                .ok_or(Mp4Error::Malformed)?;
             let mut at = rat + 16;
             if flags & 0x01 != 0 {
                 at += 4;
@@ -297,6 +310,7 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
                 if at + count.checked_mul(each).ok_or(Mp4Error::Malformed)? > rat + rsize {
                     return Err(Mp4Error::Malformed);
                 }
+                exact = true;
                 for sample in 0..count {
                     duration = duration
                         .checked_add(u64::from(
@@ -317,6 +331,8 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
             tfdt_wide: wide,
             tfdt: value,
             duration,
+            samples,
+            exact,
         });
     }
     if trafs.is_empty() {
@@ -368,8 +384,13 @@ pub struct Mp4Normaliser {
     /// timescale.
     shifts: Vec<(u32, u64)>,
     resume_pending: bool,
-    /// Where the primary track's last fragment ended, after any shift.
-    last_end: Option<u64>,
+    /// Per track, where its last fragment ended, after any shift.
+    last_ends: Vec<(u32, u64)>,
+    /// The last indexed fragment's duration was estimated (its runs gave none),
+    /// so the next fragment's start corrects it.
+    last_estimated: bool,
+    /// A sample's duration in the primary track's last exact fragment.
+    last_per_sample: u64,
 }
 
 impl Default for Mp4Normaliser {
@@ -395,7 +416,9 @@ impl Mp4Normaliser {
             next_sequence: 1,
             shifts: Vec::new(),
             resume_pending: false,
-            last_end: None,
+            last_ends: Vec::new(),
+            last_estimated: false,
+            last_per_sample: 0,
         }
     }
 
@@ -673,6 +696,20 @@ impl Mp4Normaliser {
     /// Writes a pending `moof`, renumbered and with its times moved, into
     /// `out`, and says where its fragment starts in time. The caller fills in
     /// the offset and, at the end of the `mdat`, the size.
+    fn last_end_of(&self, track: u32) -> Option<u64> {
+        self.last_ends
+            .iter()
+            .find(|(id, _)| *id == track)
+            .map(|(_, end)| *end)
+    }
+
+    fn set_last_end(&mut self, track: u32, end: u64) {
+        match self.last_ends.iter_mut().find(|(id, _)| *id == track) {
+            Some(slot) => slot.1 = end,
+            None => self.last_ends.push((track, end)),
+        }
+    }
+
     fn emit_moof(
         &mut self,
         pending: Pending,
@@ -690,31 +727,34 @@ impl Mp4Normaliser {
             .find(|t| t.track_id == primary.id)
             .copied();
         let counted = lead.is_some();
-        let lead = lead.unwrap_or(TrafInfo {
-            track_id: primary.id,
-            tfdt_at: 0,
-            tfdt_wide: false,
-            tfdt: 0,
-            duration: 0,
-        });
-        let lead_track = primary.clone();
-        if counted && self.resume_pending {
-            self.resume_pending = false;
-            if let Some(last_end) = self.last_end {
-                let candidate = lead
-                    .tfdt
-                    .checked_sub(self.shift_of(lead.track_id))
-                    .ok_or(Mp4Error::Timeline)?;
-                let tolerance = u64::from(lead_track.timescale) / GAP_TOLERANCE_DIVISOR;
-                if candidate > last_end.saturating_add(tolerance) {
-                    let gap = candidate - last_end;
-                    // The same real time out of every track, in its own scale.
-                    for track in &init.tracks {
-                        let ticks = (u128::from(gap) * u128::from(track.timescale)
-                            + u128::from(lead_track.timescale) / 2)
-                            / u128::from(lead_track.timescale);
-                        let ticks = u64::try_from(ticks).map_err(|_| Mp4Error::Timeline)?;
-                        self.add_shift(track.id, ticks);
+        if self.resume_pending {
+            // The first fragment after a pause says how long the pause was. It is
+            // read from the primary track's run if it has one, else from whichever
+            // track it carries, each against that track's own last end, and the
+            // same real time is taken out of every track.
+            if let Some(reference) = lead.or_else(|| info.trafs.first().copied()) {
+                self.resume_pending = false;
+                let reference_track = init
+                    .tracks
+                    .iter()
+                    .find(|t| t.id == reference.track_id)
+                    .ok_or(Mp4Error::Malformed)?
+                    .clone();
+                if let Some(last_end) = self.last_end_of(reference.track_id) {
+                    let candidate = reference
+                        .tfdt
+                        .checked_sub(self.shift_of(reference.track_id))
+                        .ok_or(Mp4Error::Timeline)?;
+                    let tolerance = u64::from(reference_track.timescale) / GAP_TOLERANCE_DIVISOR;
+                    if candidate > last_end.saturating_add(tolerance) {
+                        let gap = candidate - last_end;
+                        for track in &init.tracks {
+                            let ticks = (u128::from(gap) * u128::from(track.timescale)
+                                + u128::from(reference_track.timescale) / 2)
+                                / u128::from(reference_track.timescale);
+                            let ticks = u64::try_from(ticks).map_err(|_| Mp4Error::Timeline)?;
+                            self.add_shift(track.id, ticks);
+                        }
                     }
                 }
             }
@@ -728,6 +768,7 @@ impl Mp4Normaliser {
             .ok_or(Mp4Error::Timeline)?;
         let mut start = 0;
         let mut duration = 0;
+        let mut estimated = false;
         for traf in &info.trafs {
             let moved = traf
                 .tfdt
@@ -739,13 +780,36 @@ impl Mp4Normaliser {
                 let narrow = u32::try_from(moved).map_err(|_| Mp4Error::Timeline)?;
                 bytes[traf.tfdt_at..traf.tfdt_at + 4].copy_from_slice(&narrow.to_be_bytes());
             }
-            if counted && traf.track_id == lead.track_id {
+            let mut length = traf.duration;
+            if traf.track_id == primary.id {
                 start = moved;
-                duration = traf.duration;
+                // Runs with no durations and no default give none: take the
+                // length of a sample from the fragment before, and let the next
+                // fragment's start correct it.
+                if traf.exact && traf.samples > 0 {
+                    self.last_per_sample = traf.duration / traf.samples;
+                } else if !traf.exact && traf.samples > 0 {
+                    // Zero if no fragment has had exact durations yet.
+                    length = self.last_per_sample.saturating_mul(traf.samples);
+                    estimated = true;
+                }
+                duration = length;
             }
+            self.set_last_end(
+                traf.track_id,
+                moved.checked_add(length).ok_or(Mp4Error::Timeline)?,
+            );
         }
         if counted {
-            self.last_end = Some(start.checked_add(duration).ok_or(Mp4Error::Timeline)?);
+            // The fragment before was estimated: now its length is known exactly.
+            if self.last_estimated {
+                if let Some(last) = self.entries.last_mut() {
+                    if let Some(exact) = start.checked_sub(last.start).filter(|d| *d > 0) {
+                        last.duration = exact;
+                    }
+                }
+            }
+            self.last_estimated = estimated;
         }
         self.written += bytes.len() as u64;
         out.extend_from_slice(&bytes);
@@ -1059,6 +1123,38 @@ pub(crate) mod fake {
                 boxed(b"mvex", &[trex(1, 1000), trex(2, 1024)].concat()),
             ]
             .concat(),
+        )
+    }
+
+    /// A movie whose tracks have no default sample duration, so a run without
+    /// durations says nothing about how long its samples are.
+    pub(crate) fn moov_without_defaults() -> Vec<u8> {
+        boxed(
+            b"moov",
+            &[
+                trak(1, b"vide", 30000),
+                trak(2, b"soun", 48000),
+                boxed(b"mvex", &[trex(1, 0), trex(2, 0)].concat()),
+            ]
+            .concat(),
+        )
+    }
+
+    /// A track fragment as WebKitGTK's muxer writes it: a `tfhd` with no flags
+    /// (no default-base-is-moof, no defaults) and a `trun` with a data offset, a
+    /// duration and a size for every sample.
+    pub(crate) fn traf_webkit(id: u32, tfdt: u64, durations: &[u32]) -> Vec<u8> {
+        let tfhd = full(b"tfhd", 0, 0, &id.to_be_bytes());
+        let tfdt = full(b"tfdt", 1, 0, &tfdt.to_be_bytes());
+        let mut run = (durations.len() as u32).to_be_bytes().to_vec();
+        run.extend_from_slice(&0_u32.to_be_bytes()); // data offset
+        for duration in durations {
+            run.extend_from_slice(&duration.to_be_bytes());
+            run.extend_from_slice(&100_u32.to_be_bytes()); // size
+        }
+        boxed(
+            b"traf",
+            &[tfhd, tfdt, full(b"trun", 0, 0x301, &run)].concat(),
         )
     }
 
@@ -1559,5 +1655,161 @@ mod tests {
             .sum();
         assert_eq!(time, 70_000 * 30000);
         assert_eq!(built.media_end - built.first_fragment, referenced);
+    }
+
+    /// Every `moof` in a normalised stream, as (track, tfdt, duration) per track
+    /// fragment, in order.
+    fn timeline(out: &[u8], init: &InitInfo) -> Vec<Vec<(u32, u64, u64)>> {
+        children(out, 0, out.len())
+            .unwrap()
+            .into_iter()
+            .filter(|(_, _, kind)| kind == b"moof")
+            .map(|(at, size, _)| {
+                parse_moof(&out[at..at + size], init)
+                    .unwrap()
+                    .trafs
+                    .iter()
+                    .map(|t| (t.track_id, t.tfdt, t.duration))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_resume_whose_first_fragment_carries_only_sound_still_closes_the_gap_in_every_track() {
+        let sound_only = |sequence: u32, start: u64| {
+            let mfhd = full(b"mfhd", 0, 0, &sequence.to_be_bytes());
+            let moof = boxed(
+                b"moof",
+                &[mfhd, traf(2, start, true, &[1024; 47], false)].concat(),
+            );
+            [moof, boxed(b"mdat", &[0xCD; 500])].concat()
+        };
+        let mut normaliser = Mp4Normaliser::new();
+        let mut out = Vec::new();
+        let first = [
+            ftyp(),
+            moov(),
+            fragment(1, 0, 0, 500),
+            fragment(2, 30000, 48128, 500),
+        ]
+        .concat();
+        normaliser.push(&first, &mut out).unwrap();
+        normaliser.mark_pause();
+        // The webview wrote the next pieces 1.5 s late: sound first, then both.
+        let after = [
+            sound_only(3, 96256 + 72000),
+            fragment(4, 60000 + 45000, 96256 + 72000 + 48128, 500),
+        ]
+        .concat();
+        normaliser.push(&after, &mut out).unwrap();
+        let line = timeline(&out, normaliser.init().unwrap());
+        let sound: Vec<u64> = line
+            .iter()
+            .flatten()
+            .filter(|(track, _, _)| *track == 2)
+            .map(|(_, tfdt, _)| *tfdt)
+            .collect();
+        // Sound never jumps: each fragment starts where the one before ended.
+        assert_eq!(sound, vec![0, 48128, 96256, 144384]);
+        let video: Vec<u64> = line
+            .iter()
+            .flatten()
+            .filter(|(track, _, _)| *track == 1)
+            .map(|(_, tfdt, _)| *tfdt)
+            .collect();
+        assert_eq!(video, vec![0, 30000, 60000]);
+    }
+
+    #[test]
+    fn a_webkit_shaped_fragment_has_exact_durations_and_an_unmodified_layout() {
+        // tfhd flags 0 and a trun with a data offset, durations and sizes.
+        let fragment = |sequence: u32, start: u64| {
+            let mfhd = full(b"mfhd", 0, 0, &sequence.to_be_bytes());
+            let moof = boxed(
+                b"moof",
+                &[
+                    mfhd,
+                    traf_webkit(1, start, &[1001; 30]),
+                    traf_webkit(2, start * 48000 / 30000, &[1024; 47]),
+                ]
+                .concat(),
+            );
+            [moof, boxed(b"mdat", &[0xAB; 4000])].concat()
+        };
+        let stream = [
+            ftyp(),
+            moov_without_defaults(),
+            fragment(7, 0),
+            fragment(8, 30030),
+        ]
+        .concat();
+        for piece in [1, 13, stream.len()] {
+            let (normaliser, out) = run(&stream, piece);
+            let entries = normaliser.index();
+            assert_eq!(entries.len(), 2, "piece {piece}");
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|e| (e.start, e.duration))
+                    .collect::<Vec<_>>(),
+                vec![(0, 30030), (30030, 30030)]
+            );
+            // Renumbered from 1, nothing else about the fragments changed.
+            let line = timeline(&out, normaliser.init().unwrap());
+            assert_eq!(line.len(), 2);
+            assert_eq!(line[1][0], (1, 30030, 30030));
+        }
+    }
+
+    #[test]
+    fn a_fragment_whose_runs_give_no_durations_is_corrected_by_the_next_ones_start() {
+        // No durations in the runs and none as defaults: the length of the last
+        // fragment cannot be known, but every earlier one is, from what follows.
+        let stream = [
+            ftyp(),
+            moov_without_defaults(),
+            fragment(1, 0, 0, 500),
+            fragment(2, 30000, 48128, 500),
+            fragment(3, 60000, 96256, 500),
+        ]
+        .concat();
+        let (normaliser, _) = run(&stream, 997);
+        let entries = normaliser.index();
+        assert_eq!(entries.len(), 3);
+        // The video runs here carry durations (1000 each); sound has none. The
+        // index follows the primary track, which is exact.
+        assert_eq!(
+            entries.iter().map(|e| e.duration).collect::<Vec<_>>(),
+            vec![30000, 30000, 30000]
+        );
+        // With the primary's runs bare too, the earlier ones are corrected.
+        let bare = |sequence: u32, start: u64| {
+            let mfhd = full(b"mfhd", 0, 0, &sequence.to_be_bytes());
+            let moof = boxed(
+                b"moof",
+                &[mfhd, traf(1, start, false, &[1000; 30], false)].concat(),
+            );
+            [moof, boxed(b"mdat", &[1; 100])].concat()
+        };
+        let stream = [
+            ftyp(),
+            moov_without_defaults(),
+            bare(1, 0),
+            bare(2, 30000),
+            bare(3, 60000),
+        ]
+        .concat();
+        let (normaliser, _) = run(&stream, 211);
+        let entries = normaliser.index();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| (e.start, e.duration))
+                .collect::<Vec<_>>(),
+            // The last has nothing after it: it takes the length of the one before
+            // (index() says so), the only estimate there is.
+            vec![(0, 30000), (30000, 30000), (60000, 30000)]
+        );
     }
 }
