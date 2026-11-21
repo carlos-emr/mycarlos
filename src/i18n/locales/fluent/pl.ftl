@@ -2320,6 +2320,8 @@ native-tray-open = Otwórz myCarlos
 native-tray-quit = Zakończ myCarlos
 native-tray-tooltip = myCarlos — sejf zablokowany
 
+native-tray-waiting = Czeka nowy dokument. Odblokuj myCarlos, aby go zobaczyć.
+
 ai-summary-again = Podsumuj ponownie
 
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.

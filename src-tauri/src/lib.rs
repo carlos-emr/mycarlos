@@ -67,6 +67,7 @@ mod signed_pdf_helper;
 mod text_recheck;
 mod throttle;
 mod tray_notices;
+mod tray_poller;
 mod unicode_cleaning_table;
 mod vault;
 #[cfg(windows)]

@@ -1056,6 +1056,7 @@ export const MESSAGE_KEYS = [
   "native.tray.open",
   "native.tray.quit",
   "native.tray.tooltip",
+  "native.tray.waiting",
   "personDetails.previousTitle",
   "personDetails.previousHelp",
   "personDetails.previousEntry",
@@ -2317,6 +2318,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.tray.open": "native-tray-open",
   "native.tray.quit": "native-tray-quit",
   "native.tray.tooltip": "native-tray-tooltip",
+  "native.tray.waiting": "native-tray-waiting",
   "personDetails.previousTitle": "personDetails-previousTitle",
   "personDetails.previousHelp": "personDetails-previousHelp",
   "personDetails.previousEntry": "personDetails-previousEntry",
@@ -3497,6 +3499,7 @@ export interface MessageArgsByKey {
   "native.tray.open": undefined;
   "native.tray.quit": undefined;
   "native.tray.tooltip": undefined;
+  "native.tray.waiting": undefined;
   "personDetails.previousTitle": undefined;
   "personDetails.previousHelp": undefined;
   "personDetails.previousEntry": { number: FluentArgument };

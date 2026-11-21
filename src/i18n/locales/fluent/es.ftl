@@ -2274,6 +2274,8 @@ native-tray-open = Abrir myCarlos
 native-tray-quit = Salir de myCarlos
 native-tray-tooltip = myCarlos — bóveda bloqueada
 
+native-tray-waiting = Hay un documento nuevo esperando. Desbloquee myCarlos para verlo.
+
 ai-summary-again = Resumir de nuevo
 
 ai-keepFailed = myCarlos no pudo guardar esta respuesta con el documento. Se sigue mostrando aquí.

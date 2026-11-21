@@ -2239,6 +2239,8 @@ native-tray-open = Open myCarlos
 native-tray-quit = Quit myCarlos
 native-tray-tooltip = myCarlos — vault locked
 
+native-tray-waiting = A new document is waiting. Unlock myCarlos to see it.
+
 ai-summary-again = Summarize again
 
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
