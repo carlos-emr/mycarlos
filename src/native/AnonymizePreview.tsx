@@ -19,6 +19,8 @@ import {
 import { useModalFocus } from "../useModalFocus";
 import { useMediaMatch } from "./smallWindow";
 import { removalCounts, wordsToCheck } from "./anonymizeReview";
+import { CloudSendStep } from "./CloudSendStep";
+import type { CloudAiBridge } from "../cloudAi";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   hasVaultErrorCode,
@@ -136,6 +138,7 @@ export function AnonymizePreview({
   pickDestination,
   saveText,
   exportHeader,
+  cloudAi = null,
   onClose,
 }: {
   record: VaultRecord;
@@ -155,6 +158,9 @@ export function AnonymizePreview({
   ) => Promise<TextSaveOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
+  /** The cloud AI bridge (#72), given only in a build with the cloud AI flag; the send step
+   * shows only when cloud AI is on and a key is saved. */
+  cloudAi?: CloudAiBridge | null;
   onClose: () => void;
 }) {
   useI18n();
@@ -881,6 +887,13 @@ export function AnonymizePreview({
               >
                 {translateNow("interface.AnonymizePreview.copy")}
               </button>
+              {current && (
+                <CloudSendStep
+                  bridge={cloudAi}
+                  text={current.toSend}
+                  disabled={busy || !ticket}
+                />
+              )}
               {closeAtBottom && closeButton}
             </footer>
             {saved && (

@@ -1078,6 +1078,46 @@ export const MESSAGE_KEYS = [
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "cloudAi.title",
+  "cloudAi.syntheticOnly",
+  "cloudAi.notice",
+  "cloudAi.understand",
+  "cloudAi.enable",
+  "cloudAi.disable",
+  "cloudAi.enabledState",
+  "cloudAi.disabledState",
+  "cloudAi.noKey",
+  "cloudAi.keyItem",
+  "cloudAi.addKey",
+  "cloudAi.addTitle",
+  "cloudAi.labelField",
+  "cloudAi.keyField",
+  "cloudAi.keyHelp",
+  "cloudAi.add",
+  "cloudAi.cancel",
+  "cloudAi.remove",
+  "cloudAi.removeTitle",
+  "cloudAi.removeBody",
+  "cloudAi.removeConfirm",
+  "cloudAi.err.badShape",
+  "cloudAi.err.adminKey",
+  "cloudAi.err.duplicate",
+  "cloudAi.err.tooMany",
+  "cloudAi.err.badLabel",
+  "cloudAi.err.generic",
+  "cloudAi.send",
+  "cloudAi.previewNote",
+  "cloudAi.sendTitle",
+  "cloudAi.sendBody",
+  "cloudAi.costEstimate",
+  "cloudAi.costUnknown",
+  "cloudAi.sendConfirm",
+  "cloudAi.working",
+  "cloudAi.cancelSend",
+  "cloudAi.cancelled",
+  "cloudAi.answerTitle",
+  "cloudAi.answerLabel",
+  "cloudAi.sendFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2379,6 +2419,46 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "cloudAi.title": "cloudAi-title",
+  "cloudAi.syntheticOnly": "cloudAi-syntheticOnly",
+  "cloudAi.notice": "cloudAi-notice",
+  "cloudAi.understand": "cloudAi-understand",
+  "cloudAi.enable": "cloudAi-enable",
+  "cloudAi.disable": "cloudAi-disable",
+  "cloudAi.enabledState": "cloudAi-enabledState",
+  "cloudAi.disabledState": "cloudAi-disabledState",
+  "cloudAi.noKey": "cloudAi-noKey",
+  "cloudAi.keyItem": "cloudAi-keyItem",
+  "cloudAi.addKey": "cloudAi-addKey",
+  "cloudAi.addTitle": "cloudAi-addTitle",
+  "cloudAi.labelField": "cloudAi-labelField",
+  "cloudAi.keyField": "cloudAi-keyField",
+  "cloudAi.keyHelp": "cloudAi-keyHelp",
+  "cloudAi.add": "cloudAi-add",
+  "cloudAi.cancel": "cloudAi-cancel",
+  "cloudAi.remove": "cloudAi-remove",
+  "cloudAi.removeTitle": "cloudAi-removeTitle",
+  "cloudAi.removeBody": "cloudAi-removeBody",
+  "cloudAi.removeConfirm": "cloudAi-removeConfirm",
+  "cloudAi.err.badShape": "cloudAi-err-badShape",
+  "cloudAi.err.adminKey": "cloudAi-err-adminKey",
+  "cloudAi.err.duplicate": "cloudAi-err-duplicate",
+  "cloudAi.err.tooMany": "cloudAi-err-tooMany",
+  "cloudAi.err.badLabel": "cloudAi-err-badLabel",
+  "cloudAi.err.generic": "cloudAi-err-generic",
+  "cloudAi.send": "cloudAi-send",
+  "cloudAi.previewNote": "cloudAi-previewNote",
+  "cloudAi.sendTitle": "cloudAi-sendTitle",
+  "cloudAi.sendBody": "cloudAi-sendBody",
+  "cloudAi.costEstimate": "cloudAi-costEstimate",
+  "cloudAi.costUnknown": "cloudAi-costUnknown",
+  "cloudAi.sendConfirm": "cloudAi-sendConfirm",
+  "cloudAi.working": "cloudAi-working",
+  "cloudAi.cancelSend": "cloudAi-cancelSend",
+  "cloudAi.cancelled": "cloudAi-cancelled",
+  "cloudAi.answerTitle": "cloudAi-answerTitle",
+  "cloudAi.answerLabel": "cloudAi-answerLabel",
+  "cloudAi.sendFailed": "cloudAi-sendFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3585,6 +3665,55 @@ export interface MessageArgsByKey {
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "cloudAi.title": undefined;
+  "cloudAi.syntheticOnly": undefined;
+  "cloudAi.notice": undefined;
+  "cloudAi.understand": undefined;
+  "cloudAi.enable": undefined;
+  "cloudAi.disable": undefined;
+  "cloudAi.enabledState": undefined;
+  "cloudAi.disabledState": undefined;
+  "cloudAi.noKey": undefined;
+  "cloudAi.keyItem": {
+    date: FluentArgument;
+    label: FluentArgument;
+    last4: FluentArgument;
+  };
+  "cloudAi.addKey": undefined;
+  "cloudAi.addTitle": undefined;
+  "cloudAi.labelField": undefined;
+  "cloudAi.keyField": undefined;
+  "cloudAi.keyHelp": undefined;
+  "cloudAi.add": undefined;
+  "cloudAi.cancel": undefined;
+  "cloudAi.remove": undefined;
+  "cloudAi.removeTitle": undefined;
+  "cloudAi.removeBody": undefined;
+  "cloudAi.removeConfirm": undefined;
+  "cloudAi.err.badShape": undefined;
+  "cloudAi.err.adminKey": undefined;
+  "cloudAi.err.duplicate": undefined;
+  "cloudAi.err.tooMany": undefined;
+  "cloudAi.err.badLabel": undefined;
+  "cloudAi.err.generic": undefined;
+  "cloudAi.send": undefined;
+  "cloudAi.previewNote": undefined;
+  "cloudAi.sendTitle": undefined;
+  "cloudAi.sendBody": {
+    characters: FluentArgument;
+    cost: FluentArgument;
+    label: FluentArgument;
+    model: FluentArgument;
+  };
+  "cloudAi.costEstimate": { amount: FluentArgument };
+  "cloudAi.costUnknown": undefined;
+  "cloudAi.sendConfirm": undefined;
+  "cloudAi.working": undefined;
+  "cloudAi.cancelSend": undefined;
+  "cloudAi.cancelled": undefined;
+  "cloudAi.answerTitle": undefined;
+  "cloudAi.answerLabel": undefined;
+  "cloudAi.sendFailed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
