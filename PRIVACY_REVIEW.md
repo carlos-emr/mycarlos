@@ -109,10 +109,22 @@ encrypted into the vault, and is never saved anywhere else. It carries no place,
 details: the app makes the JPEG itself, and the vault removes any such details again before
 encrypting it. Its name gives the date and time it was taken, and it is labelled like any added
 document ("Manual import — unverified"). The camera is turned on only after the patient chooses to
-use it, never records sound, and turns off as soon as the photo is taken or the camera window
-closes. On a phone, the phone itself asks once whether myCarlos may use the camera; the app says
+use it, never records sound for a photo, and turns off as soon as the photo is taken or the camera
+window closes. On a phone, the phone itself asks once whether myCarlos may use the camera; the app says
 so before it asks, and never opens the phone's own camera app, so no photo reaches the phone's
 Photos or Gallery app.
+
+A **video recorded in myCarlos** (#359; the permissions are in place, the recording screen is not
+built yet) is recorded **with sound**. The camera and the microphone are turned on only after the
+patient taps Record video, and are asked for together, once; the computer or phone asks whether
+myCarlos may use them, and on Apple phones and computers its prompt reads: "myCarlos uses the
+microphone to record sound with your videos. Videos stay locked in myCarlos." Before the first
+recording the app says that people nearby may be heard. A video is encrypted into the vault as it is
+recorded and is never saved anywhere else; it is sent from myCarlos only if the patient chooses to
+send it. Both are turned off at Stop, when the recording window closes, when the vault locks and
+when the app is hidden, and a badge shows that recording (or a pause) is on for as long as it is.
+The app makes no transcript and no other copy of the sound. It cannot ask the people who are heard:
+that is the patient's to do.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:

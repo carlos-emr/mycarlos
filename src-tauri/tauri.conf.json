@@ -43,6 +43,9 @@
         "silent": true
       }
     },
+    "iOS": {
+      "minimumSystemVersion": "14.5"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

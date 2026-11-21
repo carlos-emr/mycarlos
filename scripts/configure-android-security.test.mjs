@@ -14,6 +14,7 @@ import {
   configureAndroidSecurity,
   copyLauncherIcons,
   declareCamera,
+  declareMicrophone,
   keepPageClearOfSystemBars,
 } from "./configure-android-security.mjs";
 
@@ -99,7 +100,7 @@ test("Android backup exclusions are applied exactly once", async () => {
   }
 });
 
-test("the camera is declared once, not required, and the microphone not at all (D97)", async () => {
+test("the camera and the microphone are each declared once, neither required (D97, #359)", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-camera-"));
   try {
     await mkdir(join(directory, "res"));
@@ -143,7 +144,36 @@ test("the camera is declared once, not required, and the microphone not at all (
       ).length,
       1,
     );
-    assert.doesNotMatch(manifest, /RECORD_AUDIO|MODIFY_AUDIO_SETTINGS/);
+    // The microphone (#359): once each, and the feature is not required, so a
+    // device without one can still install the app. The test used to assert the
+    // opposite while nothing asked for sound; video with sound now does.
+    for (const permission of ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]) {
+      assert.equal(
+        (
+          manifest.match(
+            new RegExp(
+              `<uses-permission android:name="android\\.permission\\.${permission}" />`,
+              "g",
+            ),
+          ) ?? []
+        ).length,
+        1,
+        permission,
+      );
+    }
+    assert.equal(
+      (
+        manifest.match(
+          /<uses-feature android:name="android\.hardware\.microphone" android:required="false" \/>/g,
+        ) ?? []
+      ).length,
+      1,
+    );
+    // Nothing else about sound or recording is asked for.
+    assert.doesNotMatch(
+      manifest,
+      /RECORD_VIDEO|CAPTURE_AUDIO_OUTPUT|FOREGROUND_SERVICE|READ_MEDIA|WRITE_EXTERNAL_STORAGE|ACCESS_(FINE|COARSE)_LOCATION/,
+    );
     // What was there stays.
     assert.match(manifest, /android\.permission\.INTERNET/);
     assert.match(manifest, /<application android:allowBackup="false"/);
@@ -167,6 +197,20 @@ test("a camera feature marked required is replaced by one that is not", () => {
     /<uses-feature android:name="android\.hardware\.camera\.autofocus" android:required="false" \/>/,
   );
   assert.throws(() => declareCamera("<application />"), /manifest element/);
+});
+
+test("a microphone feature marked required is replaced by one that is not", () => {
+  const manifest = declareMicrophone(
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-feature android:name="android.hardware.microphone" android:required="true" /><application /></manifest>',
+  );
+  assert.doesNotMatch(manifest, /android:required="true"/);
+  assert.equal(manifest.match(/RECORD_AUDIO/g)?.length, 1);
+  assert.equal(manifest.match(/MODIFY_AUDIO_SETTINGS/g)?.length, 1);
+  assert.match(
+    manifest,
+    /<uses-feature android:name="android\.hardware\.microphone" android:required="false" \/>/,
+  );
+  assert.throws(() => declareMicrophone("<application />"), /manifest element/);
 });
 
 test("the page is kept clear of the status bar, the gesture bar and the keyboard, once", () => {
