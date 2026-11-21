@@ -464,6 +464,7 @@ pub enum MessageId {
     InterfaceHiddenFileMissing,
     InterfaceHiddenRecord,
     InterfaceHiddenRestore,
+    InterfaceHiddenVideoLeftOut,
     InterfaceHideDamagedTitle,
     InterfaceHistoryAppVersion,
     InterfaceHistoryApprovalAccepted,
@@ -1591,6 +1592,7 @@ impl MessageId {
         Self::InterfaceHiddenFileMissing,
         Self::InterfaceHiddenRecord,
         Self::InterfaceHiddenRestore,
+        Self::InterfaceHiddenVideoLeftOut,
         Self::InterfaceHideDamagedTitle,
         Self::InterfaceHistoryAppVersion,
         Self::InterfaceHistoryApprovalAccepted,
@@ -2986,6 +2988,7 @@ impl MessageId {
             Self::InterfaceHiddenFileMissing => "interface-hidden-fileMissing",
             Self::InterfaceHiddenRecord => "interface-hidden-record",
             Self::InterfaceHiddenRestore => "interface-hidden-restore",
+            Self::InterfaceHiddenVideoLeftOut => "interface-hidden-videoLeftOut",
             Self::InterfaceHideDamagedTitle => "interface-hideDamaged-title",
             Self::InterfaceHistoryAppVersion => "interface-history-appVersion",
             Self::InterfaceHistoryApprovalAccepted => "interface-history-approval-accepted",
@@ -5292,6 +5295,7 @@ impl MessageId {
             "security.backup.leaveVideosOutHelp" => Some(Self::SecurityBackupLeaveVideosOutHelp),
             "restore.leftOut" => Some(Self::RestoreLeftOut),
             "security.backup.sizeCalculating" => Some(Self::SecurityBackupSizeCalculating),
+            "interface.hidden.videoLeftOut" => Some(Self::InterfaceHiddenVideoLeftOut),
             _ => None,
         }
     }

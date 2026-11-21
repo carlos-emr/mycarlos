@@ -1121,5 +1121,6 @@
   "security.backup.leaveVideosOut",
   "security.backup.leaveVideosOutHelp",
   "restore.leftOut",
-  "security.backup.sizeCalculating"
+  "security.backup.sizeCalculating",
+  "interface.hidden.videoLeftOut"
 ]

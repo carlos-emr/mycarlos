@@ -1481,6 +1481,26 @@ export function VaultLibrary({
       : [recordId],
   });
 
+  // Which hidden records a backup was made without the file of, asked when the
+  // Hidden list opens (from the history, so that nothing more is stored).
+  const [leftOutIds, setLeftOutIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (section !== "hidden" || typeof bridge.leftOutRecords !== "function") {
+      return;
+    }
+    let current = true;
+    bridge.leftOutRecords().then(
+      (ids) => {
+        if (current) setLeftOutIds(new Set(ids));
+      },
+      () => {
+        if (current) setLeftOutIds(new Set());
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, section, hiddenRecords.length]);
   // Asked for the screen that offers a backup: how big it would be.
   // Told once for each set of documents, not each time Security opens or the box
   // is ticked: working it out reads the start of the recorded videos. A failed
@@ -2792,6 +2812,7 @@ export function VaultLibrary({
 
             {section === "hidden" && (
               <HiddenDocuments
+                leftOutIds={leftOutIds}
                 records={hiddenRecords}
                 rootName={hiddenScopeName}
                 onBack={backToSecurity}

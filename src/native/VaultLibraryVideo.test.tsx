@@ -431,6 +431,32 @@ describe("the question about a recording that was cut short", () => {
     expect(backupSize).toHaveBeenCalledTimes(1);
   });
 
+  it("says in the Hidden list that a backup left a video's file out, asking the history when it opens", async () => {
+    const clip = {
+      id: "video-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: VIDEO_NAME,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 100,
+      importedAtMs: 1,
+      available: false,
+      hidden: { atMs: 2, reason: "damaged" as const },
+    };
+    const leftOutRecords = vi.fn(async () => ["video-1"]);
+    renderLibrary({ ...base, records: [clip] }, { leftOutRecords });
+    expect(leftOutRecords).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(/^Hidden 1 document/) }),
+    );
+    expect(
+      await screen.findByText(humanText(/Video left out of the backup/)),
+    ).toBeVisible();
+    expect(leftOutRecords).toHaveBeenCalledTimes(1);
+  });
+
   it("waits for the next unlock when the patient does not answer", async () => {
     const bridge = renderLibrary(base, {
       videoPending: vi.fn(async () => ({

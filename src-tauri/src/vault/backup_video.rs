@@ -17,6 +17,9 @@
 
 use super::*;
 
+/// The way a restore's "hidden" event says the file was left out of the backup.
+const LEFT_OUT_HOW: &str = "leftOutOfBackup";
+
 /// What a backup would be, before it is saved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -128,6 +131,36 @@ impl VaultStore {
             }
         }
         Ok(videos)
+    }
+
+    /// The records whose file a backup left out, as this vault's history says
+    /// them: those whose **latest** event is "hidden" with the way
+    /// `leftOutOfBackup`, which a restore adds. A record the patient has since
+    /// done anything else with (restored it, renamed it, moved it) is no longer
+    /// listed. Read from the history, so nothing is stored for it; a damaged
+    /// history piece only means a record is not listed.
+    pub fn left_out_records(&self) -> Result<Vec<Uuid>, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let view = self.history_view_in_session(unlocked)?;
+        let mut latest: HashMap<Uuid, bool> = HashMap::new();
+        // The shown entries then the later ones: in order, each record's last wins.
+        for entry in view.entries.iter().chain(view.later.iter()) {
+            if let Some(id) = entry.record_id {
+                latest.insert(
+                    id,
+                    entry.event == HistoryEvent::Hidden
+                        && entry.how.as_deref() == Some(LEFT_OUT_HOW),
+                );
+            }
+        }
+        Ok(unlocked
+            .manifest
+            .records
+            .iter()
+            .filter(|record| latest.get(&record.id) == Some(&true))
+            .map(|record| record.id)
+            .collect())
     }
 
     /// The videos of this save, found once (see `BackupPlan`).
@@ -246,7 +279,7 @@ pub(super) fn left_out_entries(
         .filter(|record| omitted.contains(&record.id))
         .map(|record| {
             let mut entry = record_entry(HistoryEvent::Hidden, now_ms, record);
-            entry.how = Some("leftOutOfBackup".to_owned());
+            entry.how = Some(LEFT_OUT_HOW.to_owned());
             entry
         })
         .collect()
@@ -494,6 +527,15 @@ mod tests {
             .collect();
         assert_eq!(said.len(), 1);
         assert_eq!(said[0].record_id, Some(video));
+        // The Hidden list can say why the file is missing: the latest event is it.
+        assert_eq!(restored.left_out_records().unwrap(), [video]);
+        // The vault the backup was made from left nothing out, and the whole
+        // backup's restore did not either.
+        assert!(store.left_out_records().unwrap().is_empty());
+        // Anything the patient does with the record after that is the latest
+        // event, and it is not told as left out any more.
+        restored.rename_record(video, "FAKE renamed.mp4").unwrap();
+        assert!(restored.left_out_records().unwrap().is_empty());
         // And the whole one restores the video too.
         let temp_whole = tempfile::tempdir().unwrap();
         let whole = restored_from(ordinary, temp_whole.path());

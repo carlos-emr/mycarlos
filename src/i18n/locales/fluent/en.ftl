@@ -2349,3 +2349,4 @@ security-backup-leaveVideosOut = Leave videos out
 security-backup-leaveVideosOutHelp = The backup will not contain your videos. If you restore it, the videos are not brought back.
 restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
 security-backup-sizeCalculating = Working out how big the backup will be…
+interface-hidden-videoLeftOut = Video left out of the backup

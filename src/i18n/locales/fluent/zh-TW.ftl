@@ -2182,3 +2182,4 @@ security-backup-leaveVideosOut = 不包含影片
 security-backup-leaveVideosOutHelp = 備份將不包含您的影片。如果您還原該備份，影片不會還原。
 restore-leftOut = 此備份是在不含影片的情況下製作的。還原它會帶回其他所有內容，但您的影片不會在其中。它們會作為遺失的檔案列在隱藏文件中。
 security-backup-sizeCalculating = 正在計算備份大小…
+interface-hidden-videoLeftOut = 備份中未包含的影片

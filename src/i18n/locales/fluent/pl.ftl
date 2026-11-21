@@ -2430,3 +2430,4 @@ security-backup-leaveVideosOut = Pomiń filmy
 security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich filmów. Jeśli ją przywrócisz, filmy nie wrócą.
 restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
+interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
