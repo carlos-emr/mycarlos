@@ -183,8 +183,7 @@ export function videoName(now: Date): string {
     /:/g,
     ".",
   );
-  const filenameText = (value: string) =>
-    value.replace(/[‎‏‪-‮⁦-⁩]/g, "");
+  const filenameText = (value: string) => value.replace(/[‎‏‪-‮⁦-⁩]/g, "");
   return formatVideoName(getLocale(), filenameText(date), filenameText(time));
 }
 

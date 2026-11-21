@@ -1359,4 +1359,3 @@ export function bytesToBase64(bytes: Uint8Array): string {
     text += String.fromCharCode(...bytes.subarray(at, at + slice));
   return btoa(text);
 }
-

@@ -676,7 +676,7 @@ impl VaultStore {
         if let Some(sequence) = sequence {
             if sequence != recording.next_sequence {
                 // The piece just added, sent again: it is already in.
-                if sequence + 1 == recording.next_sequence {
+                if sequence.checked_add(1) == Some(recording.next_sequence) {
                     return Ok(progress_of(&recording.normaliser, recording.next_sequence));
                 }
                 return Err(VaultError::Invalid);

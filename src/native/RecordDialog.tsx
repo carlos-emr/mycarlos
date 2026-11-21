@@ -266,7 +266,9 @@ export function RecordDialog({
       setStage("stopping");
       clock.stop();
       setStatus(
-        deferredText(() => translateNow("interface.RecordDialog.savingTheVideo")),
+        deferredText(() =>
+          translateNow("interface.RecordDialog.savingTheVideo"),
+        ),
       );
       // The recorder ends first: its last piece arrives as it stops.
       if (recorder && recorder.state !== "inactive") {
@@ -289,7 +291,10 @@ export function RecordDialog({
         if (!openRef.current) return;
         // A piece the vault would not take: what was saved before it is kept.
         if (sendFailed && !saved.recordId) throw sendFailed;
-        onSaved(saved.recordId, sendFailed && why === "asked" ? "stopped" : why);
+        onSaved(
+          saved.recordId,
+          sendFailed && why === "asked" ? "stopped" : why,
+        );
       } catch (error) {
         recordingIdRef.current = null;
         if (!openRef.current) return;
@@ -309,7 +314,9 @@ export function RecordDialog({
     if (!stream || stage !== "ready") return;
     const mimeType = pickMp4Type();
     if (!mimeType) {
-      setProblem(translateNow("interface.RecordDialog.thisDeviceCannotRecordMp4"));
+      setProblem(
+        translateNow("interface.RecordDialog.thisDeviceCannotRecordMp4"),
+      );
       setStage("failed");
       return;
     }
@@ -342,7 +349,10 @@ export function RecordDialog({
       recorder.addEventListener("dataavailable", (event) =>
         onPiece((event as BlobEvent).data),
       );
-      recorder.addEventListener("error", () => void finishRef.current("stopped"));
+      recorder.addEventListener(
+        "error",
+        () => void finishRef.current("stopped"),
+      );
       // About a piece a second.
       recorder.start(1000);
       clock.start();
@@ -386,7 +396,9 @@ export function RecordDialog({
       setProblem(vaultErrorMessage(error));
     }
     setStatus(
-      deferredText(() => translateNow("interface.RecordDialog.recordingPaused")),
+      deferredText(() =>
+        translateNow("interface.RecordDialog.recordingPaused"),
+      ),
     );
   };
 
@@ -425,7 +437,10 @@ export function RecordDialog({
 
   useEffect(() => {
     if (stage !== "recording") return;
-    const timer = window.setInterval(() => setTick((n) => n + 1), CLOCK_TICK_MS);
+    const timer = window.setInterval(
+      () => setTick((n) => n + 1),
+      CLOCK_TICK_MS,
+    );
     return () => window.clearInterval(timer);
   }, [stage]);
 
@@ -511,11 +526,17 @@ export function RecordDialog({
         <div className="camera-body">
           {stage === "explain" && (
             <div id="record-about" className="camera-about">
-              <p>{translateNow("interface.RecordDialog.theVideoIsRecordedWithSound")}</p>
+              <p>
+                {translateNow(
+                  "interface.RecordDialog.theVideoIsRecordedWithSound",
+                )}
+              </p>
               <p>
                 {phone
                   ? translateNow("interface.RecordDialog.yourPhoneAsksOnce")
-                  : translateNow("interface.RecordDialog.theCameraAndMicrophoneAreOn")}
+                  : translateNow(
+                      "interface.RecordDialog.theCameraAndMicrophoneAreOn",
+                    )}
               </p>
             </div>
           )}
@@ -539,7 +560,9 @@ export function RecordDialog({
           />
           {stage === "ready" && (
             <fieldset className="record-quality appearance-choice">
-              <legend>{translateNow("interface.RecordDialog.pictureQuality")}</legend>
+              <legend>
+                {translateNow("interface.RecordDialog.pictureQuality")}
+              </legend>
               <label className="appearance-option">
                 <input
                   type="radio"
@@ -550,7 +573,9 @@ export function RecordDialog({
                 <span>
                   {standard}
                   <span className="record-quality-size">
-                    {translateNow("interface.RecordDialog.aboutStandardPerHour")}
+                    {translateNow(
+                      "interface.RecordDialog.aboutStandardPerHour",
+                    )}
                   </span>
                 </span>
               </label>
@@ -570,14 +595,20 @@ export function RecordDialog({
                   </span>
                 </label>
               )}
-              <p>{translateNow("interface.RecordDialog.theCameraAndMicrophoneAreOnNow")}</p>
+              <p>
+                {translateNow(
+                  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
+                )}
+              </p>
             </fieldset>
           )}
           {recordingNow && (
             <div className="record-state">
               <p
                 className={
-                  pausedNow ? "record-badge record-badge-paused" : "record-badge"
+                  pausedNow
+                    ? "record-badge record-badge-paused"
+                    : "record-badge"
                 }
               >
                 <Icon name={pausedNow ? "pause" : "camera"} />
@@ -589,7 +620,9 @@ export function RecordDialog({
               </p>
               {pausedNow && (
                 <p className="record-paused-note">
-                  {translateNow("interface.RecordDialog.pausedCameraAndMicrophoneStillOn")}
+                  {translateNow(
+                    "interface.RecordDialog.pausedCameraAndMicrophoneStillOn",
+                  )}
                 </p>
               )}
               {/* Not a live region: it would speak every second. Read on focus. */}
@@ -608,7 +641,11 @@ export function RecordDialog({
             </div>
           )}
           {confirmStop && (
-            <div className="record-confirm" role="alertdialog" aria-labelledby="record-stop-title">
+            <div
+              className="record-confirm"
+              role="alertdialog"
+              aria-labelledby="record-stop-title"
+            >
               <p id="record-stop-title">
                 {translateNow("interface.RecordDialog.stopAndSaveTheVideo")}
               </p>
@@ -661,7 +698,9 @@ export function RecordDialog({
               >
                 <Icon name="camera" />
                 <span>
-                  {translateNow("interface.RecordDialog.useTheCameraAndMicrophone")}
+                  {translateNow(
+                    "interface.RecordDialog.useTheCameraAndMicrophone",
+                  )}
                 </span>
               </button>
             </>
@@ -683,7 +722,9 @@ export function RecordDialog({
                 onClick={() => void record()}
               >
                 <Icon name="camera" />
-                <span>{translateNow("interface.RecordDialog.startRecording")}</span>
+                <span>
+                  {translateNow("interface.RecordDialog.startRecording")}
+                </span>
               </button>
             </>
           )}
@@ -715,7 +756,11 @@ export function RecordDialog({
             </>
           )}
           {stage === "stopping" && (
-            <button className="button primary" type="button" aria-disabled="true">
+            <button
+              className="button primary"
+              type="button"
+              aria-disabled="true"
+            >
               {translateNow("rename.saving")}
             </button>
           )}

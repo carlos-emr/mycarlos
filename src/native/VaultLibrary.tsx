@@ -769,7 +769,7 @@ export function VaultLibrary({
   const videoCandidate =
     activeRecord?.available &&
     !namedAsPdf(activeRecord.displayName) &&
-    bridge.isVideo
+    typeof bridge.isVideo === "function"
       ? activeRecord.id
       : null;
   useEffect(() => {
@@ -791,7 +791,7 @@ export function VaultLibrary({
   // Recordings a crash or a lock left unfinished are asked about once the
   // library is up, each unlock: Keep (the default) or Delete.
   useEffect(() => {
-    if (!bridge.videoPending) return;
+    if (typeof bridge.videoPending !== "function") return;
     let current = true;
     bridge.videoPending().then(
       (pending) => {
@@ -959,7 +959,7 @@ export function VaultLibrary({
         shownPhoto ||
         renameTarget ||
         cameraOpen ||
-      videoUiOpen ||
+        videoUiOpen ||
         confirmation ||
         confirmHideDamaged ||
         recoverySetup ||
@@ -1850,7 +1850,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
-      videoUiOpen ||
+                videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
@@ -1892,7 +1892,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
-      videoUiOpen ||
+                videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
@@ -1942,7 +1942,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
-      videoUiOpen ||
+                videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
@@ -2226,38 +2226,46 @@ export function VaultLibrary({
                           </span>
                         </button>
                       )}
-                      {cameraPlatform && bridge.videoStart && videoRecording && (
-                        <button
-                          className="button"
-                          type="button"
-                          disabled={busy || readOnly || !profileId}
-                          onClick={() => {
-                            setNotice("");
-                            setRecordOpen(true);
-                          }}
-                        >
-                          <Icon name="video" />
-                          <span>
-                            {translateNow("interface.RecordDialog.recordAVideo")}
-                          </span>
-                        </button>
-                      )}
-                      {cameraPlatform && bridge.videoStart && !videoRecording && (
-                        // Where the button would be, a line says why it is not
-                        // (Ben, Q4b): the camera works, video does not.
-                        <span className="video-unavailable">
-                          <span>
-                            {translateNow("interface.RecordDialog.unavailable")}
-                          </span>
+                      {cameraPlatform &&
+                        typeof bridge.videoStart === "function" &&
+                        videoRecording && (
                           <button
-                            className="link-action"
+                            className="button"
                             type="button"
-                            onClick={() => setWhyNoVideoOpen(true)}
+                            disabled={busy || readOnly || !profileId}
+                            onClick={() => {
+                              setNotice("");
+                              setRecordOpen(true);
+                            }}
                           >
-                            {translateNow("interface.RecordDialog.why")}
+                            <Icon name="video" />
+                            <span>
+                              {translateNow(
+                                "interface.RecordDialog.recordAVideo",
+                              )}
+                            </span>
                           </button>
-                        </span>
-                      )}
+                        )}
+                      {cameraPlatform &&
+                        typeof bridge.videoStart === "function" &&
+                        !videoRecording && (
+                          // Where the button would be, a line says why it is not
+                          // (Ben, Q4b): the camera works, video does not.
+                          <span className="video-unavailable">
+                            <span>
+                              {translateNow(
+                                "interface.RecordDialog.unavailable",
+                              )}
+                            </span>
+                            <button
+                              className="link-action"
+                              type="button"
+                              onClick={() => setWhyNoVideoOpen(true)}
+                            >
+                              {translateNow("interface.RecordDialog.why")}
+                            </button>
+                          </span>
+                        )}
                       <button
                         className="button primary"
                         type="button"
@@ -2901,20 +2909,24 @@ export function VaultLibrary({
               onClose={() => setCameraOpen(false)}
             />
           )}
-          {recordOpen && cameraPlatform && bridge.videoStart && (
-            <RecordDialog
-              platform={cameraPlatform}
-              bridge={bridge}
-              profileId={profileId}
-              folderIds={currentFolderId ? [currentFolderId] : []}
-              whileAsking={cameraAsking}
-              holdLock={holdMedia}
-              notice={notice}
-              onSaved={recordSaved}
-              onClose={() => setRecordOpen(false)}
-            />
+          {recordOpen &&
+            cameraPlatform &&
+            typeof bridge.videoStart === "function" && (
+              <RecordDialog
+                platform={cameraPlatform}
+                bridge={bridge}
+                profileId={profileId}
+                folderIds={currentFolderId ? [currentFolderId] : []}
+                whileAsking={cameraAsking}
+                holdLock={holdMedia}
+                notice={notice}
+                onSaved={recordSaved}
+                onClose={() => setRecordOpen(false)}
+              />
+            )}
+          {whyNoVideoOpen && (
+            <VideoHelp onClose={() => setWhyNoVideoOpen(false)} />
           )}
-          {whyNoVideoOpen && <VideoHelp onClose={() => setWhyNoVideoOpen(false)} />}
           {activeRecord && shownVideo?.recordId === activeRecord.id && (
             <VideoViewer
               name={activeRecord.displayName}

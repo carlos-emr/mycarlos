@@ -107,6 +107,7 @@ export function VideoViewer({
         return;
     }
     event.preventDefault();
+    event.stopPropagation();
   };
 
   return (
@@ -118,7 +119,9 @@ export function VideoViewer({
         aria-modal="true"
         aria-labelledby="video-viewer-title"
         onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={key}
+        // In the capture phase, so that the player's own controls do not also
+        // act on a key this has already handled (a double skip).
+        onKeyDownCapture={key}
       >
         <header className="dialog-head">
           <div>
