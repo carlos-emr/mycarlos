@@ -1064,7 +1064,6 @@ security-backup-title = 加密备份
 
 security-copies-body = 导出文件和屏幕截屏不受保险库保护。在 myCarlos 中隐藏文档不会删除这些副本或诊所的原始病历。
 
-
 security-devBuild-body = 仅使用合成文件。
 
 security-devBuild-title = 开发版本。

@@ -94,8 +94,9 @@ interface SecuritySettingsProps {
 
 /** The speed test is for testers: a development build shows it, and so does a
  * build made with VITE_SHOW_SPEED_TEST=1 (the browser tests set it, so that
- * they can reach it). Evaluation and release builds do not. */
-function speedTestShownByBuild(): boolean {
+ * they can reach it). Evaluation and release builds do not. Exported for its
+ * test. */
+export function speedTestShownByBuild(): boolean {
   return (
     import.meta.env.DEV === true || import.meta.env.VITE_SHOW_SPEED_TEST === "1"
   );

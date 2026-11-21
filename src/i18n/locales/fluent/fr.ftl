@@ -1204,7 +1204,6 @@ security-backup-title = Sauvegarde chiffrée
 
 security-copies-body = Les exportations et les captures d’écran ne sont plus protégées par le coffre-fort. Masquer un document dans myCarlos n’efface ni ces copies ni le dossier médical d’origine de la clinique.
 
-
 security-devBuild-body = Utilisez uniquement des fichiers fictifs.
 
 security-devBuild-title = Version de développement.

@@ -1204,7 +1204,6 @@ security-backup-title = Cópia de segurança criptografada
 
 security-copies-body = As exportações e capturas de tela ficam fora da proteção do cofre. Ocultar um documento no myCarlos não apaga essas cópias nem o prontuário médico original da clínica.
 
-
 security-devBuild-body = Use apenas arquivos fictícios.
 
 security-devBuild-title = Versão de desenvolvimento.

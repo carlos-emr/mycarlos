@@ -1204,7 +1204,6 @@ security-backup-title = Copia de seguridad cifrada
 
 security-copies-body = Las exportaciones y las capturas de pantalla quedan fuera de la protección de la bóveda. Ocultar un documento en myCarlos no borra esas copias ni el historial médico original de la clínica.
 
-
 security-devBuild-body = Use solo archivos ficticios.
 
 security-devBuild-title = Versión de desarrollo.

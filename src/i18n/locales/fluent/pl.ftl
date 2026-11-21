@@ -1232,7 +1232,6 @@ security-backup-title = Zaszyfrowana kopia zapasowa
 
 security-copies-body = Wyeksportowane pliki i zrzuty ekranu nie są objęte ochroną sejfu. Ukrycie dokumentu w myCarlos nie usuwa tych kopii ani źródłowej dokumentacji medycznej w przychodni.
 
-
 security-devBuild-body = Proszę używać wyłącznie fikcyjnych plików.
 
 security-devBuild-title = Wersja rozwojowa.

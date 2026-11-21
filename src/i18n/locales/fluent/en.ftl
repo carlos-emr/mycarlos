@@ -1176,7 +1176,6 @@ security-backup-title = Encrypted backup
 
 security-copies-body = Exports and screenshots leave vault protection. Hiding a document in myCarlos does not erase those copies or the clinic's source medical record.
 
-
 security-devBuild-body = Use synthetic files only.
 
 security-devBuild-title = Development build.

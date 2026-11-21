@@ -15,7 +15,11 @@ import { page } from "vitest/browser";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
-import { SecuritySettings, speedTestLine } from "./SecuritySettings";
+import {
+  SecuritySettings,
+  speedTestLine,
+  speedTestShownByBuild,
+} from "./SecuritySettings";
 
 const speedTest = {
   memoryKib: 65536,
@@ -149,6 +153,26 @@ describe("SecuritySettings profile layout", () => {
     const box = button.getBoundingClientRect();
     expect(box.left).toBeGreaterThanOrEqual(text.right);
     expect(box.top).toBeLessThan(text.bottom);
+  });
+});
+
+// Vite replaces import.meta.env.DEV with a boolean in a build; vi.stubEnv stores
+// "1" or "" for it instead, so only DEV false can be stood in for here.
+describe("Which builds show the speed test", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is hidden in a production build made without VITE_SHOW_SPEED_TEST", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_SHOW_SPEED_TEST", undefined);
+    expect(speedTestShownByBuild()).toBe(false);
+  });
+
+  it("is shown in a production build made with VITE_SHOW_SPEED_TEST=1", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_SHOW_SPEED_TEST", "1");
+    expect(speedTestShownByBuild()).toBe(true);
   });
 });
 

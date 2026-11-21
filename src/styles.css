@@ -4103,24 +4103,16 @@ button:disabled,
   font-size: 0.875rem;
 }
 
+/* Connected clinics is full width, and reads like the other Security sections: the same
+   2px side inset as a settings row, a heading laid out as theirs is (below), and the text
+   under it in the same soft colour and line. */
 .portal-documents {
   margin-block-end: 2rem;
+  padding-inline: 2px;
 }
 /* In Security the clinics sit between two lists of settings. */
 .setting-list + .portal-documents {
   margin-block-start: 1.25rem;
-}
-/* Connected clinics is full width, and reads like the other Security sections: the same
-   2px side inset as a settings row, a heading laid out as theirs is, and the text under it in
-   the same soft colour and line. */
-.portal-documents {
-  padding-inline: 2px;
-}
-.portal-documents > h2 {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
 }
 .portal-documents > p {
   max-width: 700px;
@@ -4138,6 +4130,10 @@ button:disabled,
    its heading has their size (.setting-row h2), and a clinic's name in its
    card is no larger than that heading. */
 .portal-documents > h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--ink);
   font-size: 1rem;
