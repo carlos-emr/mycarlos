@@ -77,4 +77,30 @@ describe("yearless dates are numbered in calendar order, whichever the text name
     expect(out).toContain("March was long; may I ask?");
     expect(out).toContain("Jan said no.");
   });
+
+  it("keeps the text order when yearless dates run across the new year (Dec to Jan)", () => {
+    // "Review Jan 4" after "Seen Dec 28" is probably the next year: not numbered below it.
+    const out = send("Seen Dec 28. Review Jan 4. Later Feb 2.");
+    expect(out).toBe("Seen [DATE 1]. Review [DATE 2]. Later [DATE 3].");
+    // The French, Spanish and Chinese forms follow the same rule.
+    expect(send("Vu le 28 décembre. Contrôle le 4 janvier.")).toBe(
+      "Vu le [DATE 1]. Contrôle le [DATE 2].",
+    );
+    expect(send("Visto el 28 de diciembre. Control el 4 de enero.")).toBe(
+      "Visto el [DATE 1]. Control el [DATE 2].",
+    );
+    expect(send("12月28日就诊，1月4日复查。")).toBe(
+      "[DATE 1]就诊，[DATE 2]复查。",
+    );
+  });
+
+  it("still numbers in calendar order when the dates do not cross the new year", () => {
+    expect(send("Review Mar 3. Seen Jan 10. Then Jun 1.")).toBe(
+      "Review [DATE 2]. Seen [DATE 1]. Then [DATE 3].",
+    );
+    // Two dates a few months apart, later in the text but earlier in the year, are not a new year.
+    expect(send("Seen May 2. Review Feb 20.")).toBe(
+      "Seen [DATE 2]. Review [DATE 1].",
+    );
+  });
 });
