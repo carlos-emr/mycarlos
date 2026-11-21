@@ -246,12 +246,16 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
         let tfhd = find(&parts, b"tfhd").ok_or(Mp4Error::Malformed)?;
         let flags = be32(moof, tfhd.0 + 8).ok_or(Mp4Error::Malformed)? & 0x00ff_ffff;
         let track_id = be32(moof, tfhd.0 + 12).ok_or(Mp4Error::Malformed)?;
-        // Optional fields, in order: base data offset (8), sample description
-        // index (4), default sample duration (4), default size (4), flags (4).
-        let mut cursor = tfhd.0 + 16;
+        // An explicit base data offset is an absolute position in the file the
+        // pieces came from; the normaliser moves every fragment, so it would
+        // point at the wrong bytes afterwards. MediaRecorder does not write one
+        // (it uses default-base-is-moof), so one is refused, not rewritten.
         if flags & 0x01 != 0 {
-            cursor += 8;
+            return Err(Mp4Error::Malformed);
         }
+        // Optional fields, in order: sample description index (4), default
+        // sample duration (4), default size (4), flags (4).
+        let mut cursor = tfhd.0 + 16;
         if flags & 0x02 != 0 {
             cursor += 4;
         }
@@ -294,11 +298,17 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
                     return Err(Mp4Error::Malformed);
                 }
                 for sample in 0..count {
-                    duration +=
-                        u64::from(be32(moof, at + sample * each).ok_or(Mp4Error::Malformed)?);
+                    duration = duration
+                        .checked_add(u64::from(
+                            be32(moof, at + sample * each).ok_or(Mp4Error::Malformed)?,
+                        ))
+                        .ok_or(Mp4Error::Malformed)?;
                 }
             } else {
-                duration += count as u64 * default_duration;
+                duration = (count as u64)
+                    .checked_mul(default_duration)
+                    .and_then(|more| duration.checked_add(more))
+                    .ok_or(Mp4Error::Malformed)?;
             }
         }
         trafs.push(TrafInfo {
@@ -346,6 +356,12 @@ pub struct Mp4Normaliser {
     /// Where the `moof` of the fragment being passed through starts, and how
     /// the entry for it will read.
     open_fragment: Option<FragmentEntry>,
+    /// Whether the fragment being passed through carries the primary track (and
+    /// so gets an index entry of its own): one without it is folded into the
+    /// entry before it, or the one after, so the entries stay contiguous.
+    open_counted: bool,
+    /// Where uncounted fragments that came before any entry began.
+    carry_offset: Option<u64>,
     entries: Vec<FragmentEntry>,
     next_sequence: u32,
     /// Per track, how much time has been taken out (by pauses), in its own
@@ -373,6 +389,8 @@ impl Mp4Normaliser {
             written: 0,
             complete_end: 0,
             open_fragment: None,
+            open_counted: true,
+            carry_offset: None,
             entries: Vec::new(),
             next_sequence: 1,
             shifts: Vec::new(),
@@ -479,13 +497,7 @@ impl Mp4Normaliser {
                     data = &data[take..];
                     if *remaining == 0 {
                         self.state = State::Header;
-                        if let Some(entry) = self.open_fragment.take() {
-                            self.entries.push(FragmentEntry {
-                                size: self.written - entry.offset,
-                                ..entry
-                            });
-                            self.complete_end = self.written;
-                        }
+                        self.close_fragment();
                     }
                 }
                 State::Skipping { remaining } => {
@@ -571,10 +583,11 @@ impl Mp4Normaliser {
                     return self.close_if_empty();
                 };
                 let offset = self.written;
-                let entry = self.emit_moof(pending, out)?;
+                let (entry, counted) = self.emit_moof(pending, out)?;
                 out.extend_from_slice(&self.buffer);
                 self.written += self.buffer.len() as u64;
                 self.buffer.clear();
+                self.open_counted = counted;
                 self.open_fragment = Some(FragmentEntry { offset, ..entry });
                 self.state = State::Streaming { remaining: payload };
                 if payload == 0 {
@@ -599,17 +612,34 @@ impl Mp4Normaliser {
             State::Skipping { remaining: 0 } => self.state = State::Header,
             State::Streaming { remaining: 0 } => {
                 self.state = State::Header;
-                if let Some(entry) = self.open_fragment.take() {
-                    self.entries.push(FragmentEntry {
-                        size: self.written - entry.offset,
-                        ..entry
-                    });
-                    self.complete_end = self.written;
-                }
+                self.close_fragment();
             }
             _ => {}
         }
         Ok(())
+    }
+
+    /// The fragment being passed through is whole: index it. A fragment without
+    /// the primary track has no entry of its own; its bytes are added to the
+    /// entry before it (or, if none came yet, to the first one) so the entries
+    /// still follow one another and the sidx built from them has no gap.
+    fn close_fragment(&mut self) {
+        let Some(entry) = self.open_fragment.take() else {
+            return;
+        };
+        if self.open_counted {
+            let offset = self.carry_offset.take().unwrap_or(entry.offset);
+            self.entries.push(FragmentEntry {
+                offset,
+                size: self.written - offset,
+                ..entry
+            });
+        } else if let Some(last) = self.entries.last_mut() {
+            last.size = self.written - last.offset;
+        } else if self.carry_offset.is_none() {
+            self.carry_offset = Some(entry.offset);
+        }
+        self.complete_end = self.written;
     }
 
     /// A buffered box is whole.
@@ -647,24 +677,28 @@ impl Mp4Normaliser {
         &mut self,
         pending: Pending,
         out: &mut Vec<u8>,
-    ) -> Result<FragmentEntry, Mp4Error> {
+    ) -> Result<(FragmentEntry, bool), Mp4Error> {
         let Pending { mut bytes, info } = pending;
         let init = self.init.clone().ok_or(Mp4Error::NoInit)?;
         let primary = init.primary().ok_or(Mp4Error::NoInit)?.clone();
+        // Only a fragment with the primary track is timed and indexed in the
+        // primary's timescale. One without it (rare) is passed through with its
+        // tracks' shifts applied, but never timed from another track's clock.
         let lead = info
             .trafs
             .iter()
             .find(|t| t.track_id == primary.id)
-            .or_else(|| info.trafs.first())
-            .copied()
-            .ok_or(Mp4Error::Malformed)?;
-        let lead_track = init
-            .tracks
-            .iter()
-            .find(|t| t.id == lead.track_id)
-            .ok_or(Mp4Error::Malformed)?
-            .clone();
-        if self.resume_pending {
+            .copied();
+        let counted = lead.is_some();
+        let lead = lead.unwrap_or(TrafInfo {
+            track_id: primary.id,
+            tfdt_at: 0,
+            tfdt_wide: false,
+            tfdt: 0,
+            duration: 0,
+        });
+        let lead_track = primary.clone();
+        if counted && self.resume_pending {
             self.resume_pending = false;
             if let Some(last_end) = self.last_end {
                 let candidate = lead
@@ -705,20 +739,25 @@ impl Mp4Normaliser {
                 let narrow = u32::try_from(moved).map_err(|_| Mp4Error::Timeline)?;
                 bytes[traf.tfdt_at..traf.tfdt_at + 4].copy_from_slice(&narrow.to_be_bytes());
             }
-            if traf.track_id == lead.track_id {
+            if counted && traf.track_id == lead.track_id {
                 start = moved;
                 duration = traf.duration;
             }
         }
-        self.last_end = Some(start + duration);
+        if counted {
+            self.last_end = Some(start.checked_add(duration).ok_or(Mp4Error::Timeline)?);
+        }
         self.written += bytes.len() as u64;
         out.extend_from_slice(&bytes);
-        Ok(FragmentEntry {
-            offset: 0,
-            size: 0,
-            start,
-            duration,
-        })
+        Ok((
+            FragmentEntry {
+                offset: 0,
+                size: 0,
+                start,
+                duration,
+            },
+            counted,
+        ))
     }
 }
 
@@ -831,7 +870,7 @@ pub fn parse_index_trailer(trailer: &[u8]) -> Result<ParsedIndex, Mp4Error> {
     // The fragments follow one another from the first, and end where the
     // index begins.
     for pair in entries.windows(2) {
-        if pair[0].offset + pair[0].size != pair[1].offset {
+        if pair[0].offset.checked_add(pair[0].size) != Some(pair[1].offset) {
             return Err(Mp4Error::Malformed);
         }
     }
@@ -903,8 +942,24 @@ pub fn build_virtual_head(
         return Err(Mp4Error::Malformed);
     }
     let mut bytes = stored_start[..head_len].to_vec();
-    // sidx, version 0: the first fragment follows it at once.
-    let count = u16::try_from(index.entries.len()).map_err(|_| Mp4Error::TooLarge)?;
+    // sidx, version 0: the first fragment follows it at once. A sidx holds at
+    // most 65,535 references; a longer recording (about 18 hours at one
+    // fragment a second) groups consecutive fragments under one reference, so
+    // seeking there lands on a group's start, a few seconds from the target,
+    // instead of the recording being refused.
+    let group = index.entries.len().div_ceil(usize::from(u16::MAX));
+    let references: Vec<(u64, u64)> = index
+        .entries
+        .chunks(group.max(1))
+        .map(|run| {
+            let size = run.iter().try_fold(0_u64, |sum, e| sum.checked_add(e.size));
+            let duration = run
+                .iter()
+                .try_fold(0_u64, |sum, e| sum.checked_add(e.duration));
+            size.zip(duration).ok_or(Mp4Error::TooLarge)
+        })
+        .collect::<Result<_, _>>()?;
+    let count = u16::try_from(references.len()).map_err(|_| Mp4Error::TooLarge)?;
     let size = 32 + usize::from(count) * 12;
     bytes.extend_from_slice(&(size as u32).to_be_bytes());
     bytes.extend_from_slice(b"sidx");
@@ -919,14 +974,14 @@ pub fn build_virtual_head(
     bytes.extend_from_slice(&0_u32.to_be_bytes()); // first offset
     bytes.extend_from_slice(&0_u16.to_be_bytes());
     bytes.extend_from_slice(&count.to_be_bytes());
-    for entry in &index.entries {
-        let referenced = u32::try_from(entry.size).map_err(|_| Mp4Error::TooLarge)?;
+    for (size, duration) in references {
+        let referenced = u32::try_from(size).map_err(|_| Mp4Error::TooLarge)?;
         if referenced >= 0x8000_0000 {
             return Err(Mp4Error::TooLarge);
         }
         bytes.extend_from_slice(&referenced.to_be_bytes()); // reference type 0: media
         bytes.extend_from_slice(
-            &u32::try_from(entry.duration)
+            &u32::try_from(duration)
                 .map_err(|_| Mp4Error::Timeline)?
                 .to_be_bytes(),
         );
@@ -936,7 +991,10 @@ pub fn build_virtual_head(
         bytes,
         stored_head_len: head_len as u64,
         first_fragment: first.offset,
-        media_end: last.offset + last.size,
+        media_end: last
+            .offset
+            .checked_add(last.size)
+            .ok_or(Mp4Error::Malformed)?,
     })
 }
 
@@ -1395,5 +1453,111 @@ mod tests {
         let top = children(&served, 0, served.len()).unwrap();
         let kinds: Vec<_> = top.iter().map(|(_, _, k)| *k).collect();
         assert_eq!(&kinds[..4], &[*b"ftyp", *b"moov", *b"sidx", *b"moof"]);
+    }
+
+    #[test]
+    fn a_fragment_without_the_primary_track_is_folded_into_the_entry_before_it() {
+        // Sound only: it is not timed from the sound clock, gets no entry, and
+        // the entries still follow one another with no gap.
+        let sound_only = {
+            let mfhd = full(b"mfhd", 0, 0, &2_u32.to_be_bytes());
+            let moof = boxed(
+                b"moof",
+                &[mfhd, traf(2, 48128, true, &[1024; 47], false)].concat(),
+            );
+            [moof, boxed(b"mdat", &[0xCD; 2000])].concat()
+        };
+        let stream = [
+            ftyp(),
+            moov(),
+            fragment(1, 0, 0, 5000),
+            sound_only,
+            fragment(3, 30000, 96256, 5000),
+        ]
+        .concat();
+        for piece in [1, 7, 1000, stream.len()] {
+            let (normaliser, out) = run(&stream, piece);
+            let entries = normaliser.index();
+            assert_eq!(entries.len(), 2, "piece {piece}");
+            assert_eq!(
+                entries.iter().map(|e| e.start).collect::<Vec<_>>(),
+                vec![0, 30000]
+            );
+            assert_eq!(entries[0].offset + entries[0].size, entries[1].offset);
+            assert_eq!(entries[1].offset + entries[1].size, out.len() as u64);
+            assert_eq!(normaliser.complete_end(), out.len() as u64);
+        }
+        // Before any counted fragment: its bytes join the first entry.
+        let lead_in = [
+            ftyp(),
+            moov(),
+            {
+                let mfhd = full(b"mfhd", 0, 0, &1_u32.to_be_bytes());
+                let moof = boxed(
+                    b"moof",
+                    &[mfhd, traf(2, 0, true, &[1024; 47], false)].concat(),
+                );
+                [moof, boxed(b"mdat", &[0xEF; 300])].concat()
+            },
+            fragment(2, 0, 48128, 5000),
+        ]
+        .concat();
+        let (normaliser, _) = run(&lead_in, 100);
+        let entries = normaliser.index();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].offset, (ftyp().len() + moov().len()) as u64);
+    }
+
+    #[test]
+    fn an_explicit_base_data_offset_is_refused_not_left_pointing_at_the_old_file() {
+        let mut fragment = fragment(1, 0, 0, 100);
+        let at = fragment
+            .windows(4)
+            .position(|w| w == b"tfhd")
+            .expect("a tfhd");
+        // Flags 0x000001 (base data offset present) in the full-box header.
+        fragment[at + 5..at + 8].copy_from_slice(&[0x02, 0x00, 0x01]);
+        let stream = [ftyp(), moov(), fragment].concat();
+        let mut normaliser = Mp4Normaliser::new();
+        let mut out = Vec::new();
+        assert_eq!(normaliser.push(&stream, &mut out), Err(Mp4Error::Malformed));
+    }
+
+    #[test]
+    fn a_very_long_recording_groups_fragments_under_one_sidx_reference() {
+        // 70,000 one-second fragments exceed a sidx's 65,535 references.
+        let head = [ftyp(), moov()].concat();
+        let mut entries = Vec::new();
+        let mut offset = head.len() as u64;
+        for n in 0..70_000_u64 {
+            entries.push(FragmentEntry {
+                offset,
+                size: 100,
+                start: n * 30000,
+                duration: 30000,
+            });
+            offset += 100;
+        }
+        let index = ParsedIndex {
+            track_id: 1,
+            timescale: 30000,
+            entries,
+        };
+        // Starts in a 32-bit field up to 2^32 ticks: 70,000 s is too long at this
+        // scale, so the sidx's first start (0) is what is checked, not the last.
+        let built = build_virtual_head(&head, &index).unwrap();
+        let sidx = &built.bytes[head.len()..];
+        let count = usize::from(u16::from_be_bytes([sidx[30], sidx[31]]));
+        assert_eq!(count, 35_000);
+        assert_eq!(sidx.len(), 32 + count * 12);
+        let referenced: u64 = (0..count)
+            .map(|n| u64::from(be32(sidx, 32 + n * 12).unwrap()))
+            .sum();
+        assert_eq!(referenced, 70_000 * 100);
+        let time: u64 = (0..count)
+            .map(|n| u64::from(be32(sidx, 36 + n * 12).unwrap()))
+            .sum();
+        assert_eq!(time, 70_000 * 30000);
+        assert_eq!(built.media_end - built.first_fragment, referenced);
     }
 }

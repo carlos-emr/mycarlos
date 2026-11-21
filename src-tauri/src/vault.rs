@@ -1351,6 +1351,9 @@ impl VaultStore {
             let mut guard = poisoned.into_inner();
             self.invalidate_collection_cache();
             self.portal_session.fetch_add(1, Ordering::AcqRel);
+            // A recording keeps its own copy of the keys: park it (and so drop
+            // them) with the session, not after it.
+            self.park_recordings();
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
@@ -3925,6 +3928,10 @@ impl VaultStore {
                 .with_place(&set_aside_name(&target));
             record_in_session(&self.root, unlocked, vec![entry]);
         }
+        // A recording in progress is parked in the vault being set aside, and its
+        // keys dropped, before the session goes: it must not write into a vault
+        // that is no longer where it was.
+        self.park_recordings();
         *guard = None;
         self.idle.disarm();
         // How that vault's last session ended is nothing to the next one's.

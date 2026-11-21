@@ -83,6 +83,10 @@ struct Journal {
     /// still known if the process ends in between.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     superseded: Vec<String>,
+    /// The object a recovery is copying into, named before it is created, so a
+    /// copy a crash interrupts is found and removed rather than left behind.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    copying: Vec<String>,
 }
 
 fn recordings_dir(root: &Path) -> PathBuf {
@@ -200,6 +204,13 @@ struct ObjectAppender {
     index: u64,
     total: u64,
     mac: HmacSha256,
+    /// Where the next frame starts in the file: what a failed write is cut back to.
+    file_len: u64,
+    /// A write, a sync or a frame failed. The appender takes nothing more: a
+    /// frame is never sealed twice under the same nonce (that would leak the
+    /// XOR of two plaintexts and, with different associated data, the Poly1305
+    /// key), and a torn frame is cut off rather than left in the middle.
+    failed: bool,
 }
 
 impl ObjectAppender {
@@ -230,7 +241,14 @@ impl ObjectAppender {
             index: 0,
             total: 0,
             mac,
+            file_len: header.len() as u64,
+            failed: false,
         })
+    }
+
+    /// Whether the appender has failed and takes no more.
+    fn has_failed(&self) -> bool {
+        self.failed
     }
 
     /// What a pause seals to the tail file: the number of whole frames already in
@@ -247,6 +265,9 @@ impl ObjectAppender {
     }
 
     fn write(&mut self, mut data: &[u8]) -> Result<(), VaultError> {
+        if self.failed {
+            return Err(VaultError::Storage);
+        }
         while !data.is_empty() {
             let take = (CHUNK_SIZE - self.buffer.len()).min(data.len());
             self.buffer.extend_from_slice(&data[..take]);
@@ -261,6 +282,19 @@ impl ObjectAppender {
     }
 
     fn seal(&mut self, final_chunk: bool) -> Result<(), VaultError> {
+        if self.failed {
+            return Err(VaultError::Storage);
+        }
+        // Any failure below ends this appender for good: the frame's index is
+        // not advanced, so sealing again would reuse its nonce.
+        let result = self.seal_frame(final_chunk);
+        if result.is_err() {
+            self.failed = true;
+        }
+        result
+    }
+
+    fn seal_frame(&mut self, final_chunk: bool) -> Result<(), VaultError> {
         let mut nonce = [0_u8; 24];
         nonce[..16].copy_from_slice(&self.nonce_prefix);
         nonce[16..].copy_from_slice(&self.index.to_be_bytes());
@@ -279,19 +313,30 @@ impl ObjectAppender {
         frame.extend_from_slice(&(ciphertext.len() as u32).to_be_bytes());
         frame.push(u8::from(final_chunk));
         frame.extend_from_slice(&ciphertext);
-        self.file.write_all(&frame)?;
-        self.file.sync_data()?;
+        let written = fail_at_test_boundary("recording.chunk-write")
+            .and_then(|()| self.file.write_all(&frame).map_err(VaultError::from))
+            .and_then(|()| self.file.sync_data().map_err(VaultError::from));
+        if let Err(error) = written {
+            // Cut the half-written frame off, so the object ends at the last
+            // whole one. If that fails too, recovery treats it as a torn tail.
+            let _ = self.file.set_len(self.file_len);
+            return Err(error);
+        }
+        self.file_len += frame.len() as u64;
+        self.buffer.clear();
+        self.index = self.index.checked_add(1).ok_or(VaultError::Invalid)?;
         if !final_chunk {
             terminate_at_test_boundary("recording.after-chunk-write");
             fail_at_test_boundary("recording.after-chunk-write")?;
         }
-        self.buffer.clear();
-        self.index = self.index.checked_add(1).ok_or(VaultError::Invalid)?;
         Ok(())
     }
 
     /// Seals what is left as the final frame (which may be empty) and syncs.
     fn finish(mut self) -> Result<EncryptedObject, VaultError> {
+        if self.failed {
+            return Err(VaultError::Storage);
+        }
         self.seal(true)?;
         self.file.sync_all()?;
         Ok(EncryptedObject {
@@ -345,7 +390,14 @@ fn read_unfinished_object(
         }
         let length = u32::from_be_bytes(length) as usize;
         if !(16..=CHUNK_SIZE + 16).contains(&length) {
-            return Err(VaultError::Corrupt);
+            // After a power loss a file can end in blocks of zeros the file
+            // system had extended it by but never filled: nothing but zeros to
+            // the end is a torn tail. Anything else is damage.
+            return if length == 0 && rest_is_zero(&mut reader)? {
+                Ok((ObjectEnd::Torn, index))
+            } else {
+                Err(VaultError::Corrupt)
+            };
         }
         let mut final_byte = [0_u8; 1];
         if !read_full(&mut reader, &mut final_byte)? {
@@ -362,21 +414,42 @@ fn read_unfinished_object(
         let mut nonce = [0_u8; 24];
         nonce[..16].copy_from_slice(&nonce_prefix);
         nonce[16..].copy_from_slice(&index.to_be_bytes());
-        let plaintext = Zeroizing::new(
-            cipher
-                .decrypt(
-                    XNonce::from_slice(&nonce),
-                    Payload {
-                        msg: &ciphertext,
-                        aad: &object_aad(vault_id, record_id, index, final_chunk),
-                    },
-                )
-                .map_err(|_| VaultError::Corrupt)?,
-        );
+        let plaintext = match cipher.decrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: &ciphertext,
+                aad: &object_aad(vault_id, record_id, index, final_chunk),
+            },
+        ) {
+            Ok(plaintext) => Zeroizing::new(plaintext),
+            // The last frame in the file, of the right length but not
+            // authentic: after a power loss its blocks may never have reached
+            // the disk (zeros, or the old contents). It is a torn tail, and the
+            // object ends at the frame before it. The same failure in a frame
+            // that something follows is damage.
+            Err(_) if read_some(&mut reader, &mut [0_u8; 1])? == 0 => {
+                return Ok((ObjectEnd::Torn, index));
+            }
+            Err(_) => return Err(VaultError::Corrupt),
+        };
         sink(&plaintext)?;
         index += 1;
         if final_chunk {
             return Ok((ObjectEnd::Final, index));
+        }
+    }
+}
+
+/// Whether everything left in the reader is zero.
+fn rest_is_zero(reader: &mut impl Read) -> Result<bool, VaultError> {
+    let mut chunk = [0_u8; 4096];
+    loop {
+        let got = read_some(reader, &mut chunk)?;
+        if chunk[..got].iter().any(|b| *b != 0) {
+            return Ok(false);
+        }
+        if got < chunk.len() {
+            return Ok(true);
         }
     }
 }
@@ -430,6 +503,15 @@ pub(super) struct ActiveRecording {
     /// A piece the normaliser refused: the recording takes no more, and ends
     /// through recovery, which keeps what was complete.
     poisoned: bool,
+}
+
+/// A finished object, ready to be verified, published and committed.
+struct FinishedRecording<'a> {
+    journal: &'a Journal,
+    journal_key: &'a SecretKey,
+    object_path: &'a Path,
+    object_key: &'a SecretKey,
+    encrypted: EncryptedObject,
 }
 
 /// What a caller learns after a piece.
@@ -502,6 +584,7 @@ impl VaultStore {
             state: JournalState::Recording,
             tail_name: None,
             superseded: Vec::new(),
+            copying: Vec::new(),
         };
         let dir = recordings_dir(&self.root);
         create_private_dir_all(&dir)?;
@@ -579,7 +662,12 @@ impl VaultStore {
             return Err(VaultError::Invalid);
         }
         let appender = recording.appender.as_mut().ok_or(VaultError::Invalid)?;
-        appender.write(&recording.scratch)?;
+        if let Err(error) = appender.write(&recording.scratch) {
+            // The disk refused (full, or gone): the recording takes no more and
+            // ends through recovery, which keeps the frames that were written.
+            recording.poisoned = true;
+            return Err(error);
+        }
         // A piece the webview cut before the pause can arrive after it: the
         // tail follows what is in memory.
         if recording.paused {
@@ -697,11 +785,14 @@ impl VaultStore {
         terminate_at_test_boundary("recording.after-finish");
         fail_at_test_boundary("recording.after-finish")?;
         self.commit_recording(
-            &recording.journal,
-            &recording.journal_key,
-            &recording.object_path,
-            &recording.object_key,
-            encrypted,
+            recording.vault_id,
+            FinishedRecording {
+                journal: &recording.journal,
+                journal_key: &recording.journal_key,
+                object_path: &recording.object_path,
+                object_key: &recording.object_key,
+                encrypted,
+            },
             now_ms,
         )
         .map(Some)
@@ -727,7 +818,11 @@ impl VaultStore {
 
     fn park_one(&self, recording: &mut ActiveRecording) -> Result<(), VaultError> {
         let appender = recording.appender.take().ok_or(VaultError::Invalid)?;
-        appender.finish()?;
+        // A failed appender is left as it is: the object ends at its last whole
+        // frame and recovery keeps what was complete.
+        if !appender.has_failed() {
+            appender.finish()?;
+        }
         recording.journal.state = JournalState::Parked;
         write_journal(
             &self.root,
@@ -823,8 +918,16 @@ impl VaultStore {
         {
             return Err(VaultError::Invalid);
         }
-        let journal = read_journal(&self.root, &journal_key_value, vault_id, id)?;
+        let mut journal = read_journal(&self.root, &journal_key_value, vault_id, id)?;
         let dir = recordings_dir(&self.root);
+        // A copy an earlier recovery was making when it was interrupted: never
+        // committed, never named by the manifest, safe to remove.
+        if !journal.copying.is_empty() && journal.state != JournalState::Committing {
+            for name in journal.copying.drain(..) {
+                let _ = remove_owned_file(dir.join(name), Removable::Recording);
+            }
+            write_journal(&self.root, &journal_key_value, vault_id, &journal)?;
+        }
         // Already committed (a crash after the manifest commit, before the
         // journal was removed): the live object stays; the leftovers go.
         if committed {
@@ -907,6 +1010,10 @@ impl VaultStore {
         OsRng.fill_bytes(new_key.as_mut());
         let new_name = format!("{}.mcobj", Uuid::new_v4());
         let new_path = dir.join(&new_name);
+        // The journal names the copy before it exists.
+        let mut copying = journal.clone();
+        copying.copying = vec![new_name.clone()];
+        write_journal(&self.root, &journal_key_value, vault_id, &copying)?;
         let mut appender = ObjectAppender::create(
             &new_path,
             ObjectContext {
@@ -932,27 +1039,48 @@ impl VaultStore {
             remaining -= take as u64;
             Ok(())
         });
+        // Any failure from here to the commit takes the copy away and puts the
+        // journal back as it was, so the old object is still what it names and
+        // the next attempt starts clean.
+        let abandon = |error: VaultError| {
+            let _ = remove_owned_file(&new_path, Removable::Recording);
+            let _ = write_journal(&self.root, &journal_key_value, vault_id, &journal);
+            error
+        };
         if let Err(error) = outcome {
             drop(appender);
-            let _ = remove_owned_file(&new_path, Removable::Recording);
-            return Err(error);
+            return Err(abandon(error));
         }
-        let init = copy.init().cloned().ok_or(VaultError::Corrupt)?;
-        let entries = copy.index();
-        let trailer =
-            mp4_stream::index_trailer(&init, &entries).map_err(|_| VaultError::Corrupt)?;
-        appender.write(&trailer)?;
-        let encrypted = appender.finish()?;
+        let finished = (|| {
+            let init = copy.init().cloned().ok_or(VaultError::Corrupt)?;
+            let entries = copy.index();
+            let trailer =
+                mp4_stream::index_trailer(&init, &entries).map_err(|_| VaultError::Corrupt)?;
+            appender.write(&trailer)?;
+            appender.finish()
+        })();
+        let encrypted = match finished {
+            Ok(encrypted) => encrypted,
+            Err(error) => return Err(abandon(error)),
+        };
+        terminate_at_test_boundary("recording.recovery-after-copy");
         let mut renewed = journal.clone();
         renewed.superseded.push(journal.object_name.clone());
         renewed.object_name = new_name;
-        renewed.wrapped_object_key = wrap_secret(&object_wrap, &new_key, id.as_bytes())?;
+        renewed.copying = Vec::new();
+        renewed.wrapped_object_key = match wrap_secret(&object_wrap, &new_key, id.as_bytes()) {
+            Ok(wrapped) => wrapped,
+            Err(error) => return Err(abandon(error)),
+        };
         let record = self.commit_recording(
-            &renewed,
-            &journal_key_value,
-            &new_path,
-            &new_key,
-            encrypted,
+            vault_id,
+            FinishedRecording {
+                journal: &renewed,
+                journal_key: &journal_key_value,
+                object_path: &new_path,
+                object_key: &new_key,
+                encrypted,
+            },
             now_ms,
         );
         match record {
@@ -964,10 +1092,9 @@ impl VaultStore {
                 remove_recording_files(&self.root, &spent, false);
                 Ok(Some(record_id))
             }
-            Err(error) => {
-                let _ = remove_owned_file(&new_path, Removable::Recording);
-                Err(error)
-            }
+            // Not committed: the copy goes, and the journal names the old object again
+            // (it may have been rewritten as `committing` for the copy).
+            Err(error) => Err(abandon(error)),
         }
     }
 
@@ -977,18 +1104,20 @@ impl VaultStore {
     /// stays for the next unlock.
     fn commit_recording(
         &self,
-        journal: &Journal,
-        journal_key: &SecretKey,
-        object_path: &Path,
-        object_key: &SecretKey,
-        encrypted: EncryptedObject,
+        vault_id: Uuid,
+        finished: FinishedRecording<'_>,
         now_ms: u64,
     ) -> Result<Uuid, VaultError> {
+        let FinishedRecording {
+            journal,
+            journal_key,
+            object_path,
+            object_key,
+            encrypted,
+        } = finished;
         let record_id = journal.record_id;
-        let vault_id = {
-            let guard = self.session();
-            guard.as_ref().ok_or(VaultError::Locked)?.manifest.vault_id
-        };
+        // `vault_id` is the one the recording was made under, not whatever vault
+        // is open now: the check below refuses to commit into another.
         // Verified: every frame authenticates and the size is the one written.
         let mut counted = CountingSink(0);
         verify_object(
@@ -1020,6 +1149,7 @@ impl VaultStore {
                 return Err(VaultError::RecoveryMode);
             }
             require_profile(&unlocked.manifest, journal.profile_id)?;
+            fail_at_test_boundary("recording.before-commit")?;
             let folders: Vec<Uuid> = journal
                 .folder_ids
                 .iter()
@@ -1114,6 +1244,9 @@ fn remove_recording_files(root: &Path, journal: &Journal, own_object: bool) {
         for place in [dir.clone(), root.join("objects"), root.join("quarantine")] {
             let _ = remove_owned_file(place.join(name), Removable::Recording);
         }
+    }
+    for name in &journal.copying {
+        let _ = remove_owned_file(dir.join(name), Removable::Recording);
     }
     let _ = remove_owned_file(
         dir.join(format!("{}.tail", journal.record_id)),
@@ -1601,6 +1734,246 @@ mod tests {
         );
     }
 
+    // ---- a failing disk, a failed commit, and keys that must not outlive the vault
+
+    fn frame_len() -> u64 {
+        5 + CHUNK_SIZE as u64 + 16
+    }
+
+    fn the_object_of(store: &VaultStore, id: Uuid) -> PathBuf {
+        store.recordings.lock().unwrap()[&id].object_path.clone()
+    }
+
+    #[test]
+    fn a_write_that_fails_ends_the_recording_without_sealing_a_frame_twice() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE full.mp4", 5)
+            .unwrap();
+        let clip = movie(6, 700_000);
+        // About 1.3 MiB gets in: one whole frame is sealed.
+        feed(&store, id, &clip[..1_400_000], 250_000);
+        let object = the_object_of(&store, id);
+        assert_eq!(fs::metadata(&object).unwrap().len(), 25 + frame_len());
+        // The disk is full for the next frame.
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.chunk-write"]);
+        let mut failed = None;
+        for part in clip[1_400_000..].chunks(250_000) {
+            if let Err(error) = store.recording_append(id, part) {
+                failed = Some(error);
+                break;
+            }
+        }
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(matches!(failed, Some(VaultError::NoSpace)), "{failed:?}");
+        // The object ends at the last whole frame, not in the middle of one.
+        assert_eq!(fs::metadata(&object).unwrap().len(), 25 + frame_len());
+        // The appender is dead and the recording takes nothing more, even once
+        // the disk has room again: the same frame is never sealed a second time.
+        assert!(matches!(
+            store.recording_append(id, &clip[..1000]),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(fs::metadata(&object).unwrap().len(), 25 + frame_len());
+        // Stopping keeps what was written: the first frame holds the init and one
+        // whole fragment.
+        let record = store.recording_stop(id, 6).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 1);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn a_frame_that_failed_after_it_was_written_is_not_sealed_again_either() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE sync.mp4", 5)
+            .unwrap();
+        let clip = movie(6, 700_000);
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.after-chunk-write"]);
+        let mut failed = false;
+        for part in clip.chunks(250_000) {
+            if store.recording_append(id, part).is_err() {
+                failed = true;
+                break;
+            }
+        }
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(failed);
+        let object = the_object_of(&store, id);
+        assert_eq!(fs::metadata(&object).unwrap().len(), 25 + frame_len());
+        assert!(store.recording_append(id, &clip[..10]).is_err());
+        assert_eq!(fs::metadata(&object).unwrap().len(), 25 + frame_len());
+        // Parking and stopping do not seal a final frame over the failed one.
+        let record = store.recording_stop(id, 6).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 1);
+    }
+
+    #[test]
+    fn a_recovery_whose_commit_fails_can_be_tried_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE retry.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(4, 700_000), 250_000);
+        drop(store); // a crash
+        let store = reopen(temp.path());
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.before-commit"]);
+        let failed = store.recording_recover(id, true, 9);
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(matches!(failed, Err(VaultError::NoSpace)), "{failed:?}");
+        assert!(store.snapshot().unwrap().records.is_empty());
+        // Still there, still readable, and no copy of it left lying about.
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
+        let objects: Vec<_> = fs::read_dir(recordings_dir(&temp.path().join("vault")))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".mcobj"))
+            .collect();
+        assert_eq!(objects.len(), 1, "{objects:?}");
+        let record = store.recording_recover(id, true, 10).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 2);
+        assert!(recordings_files(temp.path()).is_empty());
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+
+    #[test]
+    fn a_failed_commit_when_stopping_leaves_the_recording_to_be_recovered() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE stopfail.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(3, 9000), 4000);
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.before-commit"]);
+        let failed = store.recording_stop(id, 6);
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(matches!(failed, Err(VaultError::NoSpace)));
+        let record = store.recording_recover(id, true, 7).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 3);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn setting_the_vault_aside_parks_a_recording_and_drops_its_keys() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE reset.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(2, 5000), 3000);
+        store.reset().unwrap();
+        // Nothing of it is held: no keys, and nothing can be written into the
+        // vault that was set aside.
+        assert!(store.recordings.lock().unwrap().is_empty());
+        assert!(matches!(
+            store.recording_append(id, &[1]),
+            Err(VaultError::Locked | VaultError::NotFound)
+        ));
+        let aside = store.set_aside_folder().expect("a set-aside folder");
+        let parked: Vec<_> = fs::read_dir(aside)
+            .unwrap()
+            .flat_map(|d| fs::read_dir(d.unwrap().path().join("recordings")))
+            .flatten()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(parked.iter().any(|n| n.ends_with(".journal")), "{parked:?}");
+    }
+
+    #[test]
+    fn a_poisoned_session_parks_the_recordings_with_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let store = Arc::new(store);
+        let id = store
+            .recording_start(profile, vec![], "FAKE poison.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(2, 5000), 3000);
+        let poisoner = Arc::clone(&store);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.unlocked.lock().unwrap();
+            panic!("synthetic panic while holding the vault mutex");
+        })
+        .join();
+        assert!(store.unlocked.is_poisoned());
+        // Whichever method runs next drops the session, and the recording's keys
+        // go with it.
+        assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        assert!(store.recordings.lock().unwrap().is_empty());
+        assert!(matches!(
+            store.recording_append(id, &[1]),
+            Err(VaultError::Locked | VaultError::NotFound)
+        ));
+        // And it was parked, so the next unlock finds it.
+        let store = reopen(temp.path());
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!(pending.recordings.len(), 1);
+        assert!(pending.recordings[0].parked);
+    }
+
+    #[test]
+    fn a_file_that_ends_in_zeros_or_a_zeroed_last_frame_is_a_torn_tail_not_damage() {
+        for how in ["extended", "zeroed"] {
+            let temp = tempfile::tempdir().unwrap();
+            let (store, profile) = new_store(temp.path());
+            let id = store
+                .recording_start(profile, vec![], "FAKE zeros.mp4", 5)
+                .unwrap();
+            feed(&store, id, &movie(4, 700_000), 250_000);
+            let object = the_object_of(&store, id);
+            drop(store);
+            let length = fs::metadata(&object).unwrap().len();
+            let frames = (length - 25) / frame_len();
+            assert_eq!(frames, 2, "{how}");
+            let file = OpenOptions::new().write(true).open(&object).unwrap();
+            if how == "extended" {
+                // Blocks the file system extended the file by and never filled.
+                file.set_len(length + 5000).unwrap();
+            } else {
+                // The last frame's blocks never reached the disk: right length,
+                // all zeros after its header.
+                use std::io::{Seek, SeekFrom};
+                let mut file = file;
+                file.seek(SeekFrom::Start(25 + frame_len() + 5)).unwrap();
+                file.write_all(&vec![0; CHUNK_SIZE + 16]).unwrap();
+            }
+            let store = reopen(temp.path());
+            let record = store.recording_recover(id, true, 9).unwrap().expect(how);
+            let kept = if how == "extended" { 2 } else { 1 };
+            assert_eq!(
+                index_of(&stored(&store, record)).entries.len(),
+                kept,
+                "{how}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_damaged_frame_with_more_after_it_is_still_damage() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE middle.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(4, 700_000), 250_000);
+        let object = the_object_of(&store, id);
+        drop(store);
+        let mut bytes = fs::read(&object).unwrap();
+        for byte in &mut bytes[30..40] {
+            *byte ^= 0xFF;
+        }
+        fs::write(&object, bytes).unwrap();
+        let store = reopen(temp.path());
+        assert!(matches!(
+            store.recording_recover(id, true, 9),
+            Err(VaultError::Corrupt)
+        ));
+        assert!(store.snapshot().unwrap().records.is_empty());
+    }
+
     // ---- an abrupt end at each step, in a child process ----------------------
 
     fn unlock_with_boundaries_held(store: &VaultStore) {
@@ -1619,6 +1992,15 @@ mod tests {
         let operation = std::env::var("MYCARLOS_TEST_OPERATION").unwrap();
         let store = VaultStore::new(PathBuf::from(root));
         unlock_with_boundaries_held(&store);
+        if operation == "recover" {
+            // An earlier child left a recording; this one recovers it and is
+            // ended at the configured boundary inside the recovery.
+            let pending = store.recordings_pending().unwrap();
+            store
+                .recording_recover(pending.recordings[0].id, true, 9)
+                .unwrap();
+            panic!("configured termination boundary was not reached");
+        }
         let profile = store.snapshot().unwrap().profiles[0].id;
         let id = store
             .recording_start(profile, vec![], "FAKE child.mp4", 5)
@@ -1629,6 +2011,15 @@ mod tests {
             "pause" => {
                 feed(&store, id, &clip[..400_000], 100_000);
                 store.recording_pause(id).unwrap();
+            }
+            // Three whole small fragments, all still in memory.
+            "pause-small" => {
+                feed(&store, id, &movie(3, 5000), 1500);
+                store.recording_pause(id).unwrap();
+            }
+            "lock" => {
+                feed(&store, id, &movie(3, 5000), 1500);
+                store.lock();
             }
             "stop" => {
                 feed(&store, id, &clip, 250_000);
@@ -1713,6 +2104,57 @@ mod tests {
         // 400 KB: the init and the first fragment's start, far under one frame;
         // the pause's tail holds them, but no fragment is complete.
         recovered_after("recording.after-pause-tail", "pause", None);
+    }
+
+    #[test]
+    fn the_tail_is_what_keeps_a_recording_that_never_filled_a_frame() {
+        // Three whole fragments in memory only. The end comes after the tail is
+        // written and before the journal says paused, so the journal still says
+        // recording: only the tail (found by its name) holds them.
+        recovered_after("recording.after-pause-tail", "pause-small", Some(3));
+    }
+
+    #[test]
+    fn an_abrupt_end_after_a_lock_parked_the_recording_keeps_it() {
+        recovered_after("recording.after-park", "lock", Some(3));
+    }
+
+    /// A crashed recording, then a recovery that is itself ended at `boundary`,
+    /// then a recovery that must still make the video, leaving nothing behind.
+    fn recovered_after_a_recovery_ended_at(boundary: &str, expect: usize) {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _) = new_store(temp.path());
+        drop(store);
+        run_child(temp.path(), "append", "recording.after-chunk-write");
+        run_child(temp.path(), "recover", boundary);
+        let store = reopen(temp.path());
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!(pending.unreadable, 0, "{boundary}");
+        assert_eq!(pending.recordings.len(), 1, "{boundary}");
+        let id = pending.recordings[0].id;
+        let record = store
+            .recording_recover(id, true, 10)
+            .unwrap()
+            .expect(boundary);
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), expect);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1, "{boundary}");
+        assert!(recordings_files(temp.path()).is_empty(), "{boundary}");
+        // The superseded copy and any quarantined one are gone with it.
+        let quarantine = temp.path().join("vault").join("quarantine");
+        assert!(
+            fs::read_dir(quarantine).map_or(true, |mut e| e.next().is_none()),
+            "{boundary}"
+        );
+    }
+
+    #[test]
+    fn a_recovery_ended_before_its_commit_leaves_no_copy_behind() {
+        recovered_after_a_recovery_ended_at("recording.recovery-after-copy", 1);
+    }
+
+    #[test]
+    fn a_recovery_ended_after_publishing_its_copy_is_recovered_again() {
+        recovered_after_a_recovery_ended_at("recording.after-publish", 1);
     }
 
     #[test]
