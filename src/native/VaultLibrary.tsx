@@ -212,7 +212,7 @@ export function VaultLibrary({
   sharedNew?: number;
   /** The patient opened Shared with me: its new files have been seen. */
   onSharedSeen?: () => void;
-  /** Security opened (Clinic documents lives there): a chance to show arrivals. */
+  /** Security opened (Connected clinics lives there): a chance to show arrivals. */
   onSecurityEntry?: () => Promise<void>;
 }) {
   const { t } = useI18n();
@@ -2532,7 +2532,11 @@ export function VaultLibrary({
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "ai" && computer && (
-              <AiSettings aiStatus={aiStatus} onAiStatus={setAiStatus} />
+              <AiSettings
+                aiStatus={aiStatus}
+                onAiStatus={setAiStatus}
+                onOpenAiHelperNotice={() => openAiNotice({ before: null })}
+              />
             )}
 
             {section === "security" && (
@@ -2573,9 +2577,6 @@ export function VaultLibrary({
                   setReturnFocusToHistory(false);
                   setSection("history");
                 }}
-                onOpenAiHelperNotice={
-                  computer ? () => openAiNotice({ before: null }) : undefined
-                }
                 people={people}
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
@@ -2902,6 +2903,8 @@ export function VaultLibrary({
                         setReaderRecordId(null);
                         setSection("ai");
                       },
+                      // The reader's Summary offers the notice (#355).
+                      onOpenAiNotice: () => openAiNotice({ before: null }),
                       beforeFirstUse: beforeFirstAiUse,
                     }
                   : undefined

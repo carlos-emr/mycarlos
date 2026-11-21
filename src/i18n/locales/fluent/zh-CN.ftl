@@ -1064,8 +1064,6 @@ security-backup-title = 加密备份
 
 security-copies-body = 导出文件和屏幕截屏不受保险库保护。在 myCarlos 中隐藏文档不会删除这些副本或诊所的原始病历。
 
-security-copies-title = 可读副本和屏幕截屏
-
 security-devBuild-body = 仅使用合成文件。
 
 security-devBuild-title = 开发版本。
@@ -1308,7 +1306,7 @@ portal-approvalCancelled = 此批准请求已取消。请先检查最新状态�
 
 portal-approvalContact = 需要核实诊所的批准状态。请联系诊所了解后续步骤。
 
-portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「诊所文档」。
+portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「已连接的诊所」。
 
 portal-approvalMissing = 门户网站上找不到您已保存的批准请求。请重新发送已保存的请求。
 
@@ -1400,7 +1398,7 @@ portal-serviceDate = 服务日期：{ $date }
 
 portal-serviceDateLabel = 服务日期
 
-portal-title = 诊所文档
+portal-title = 已连接的诊所
 
 rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
 
@@ -1416,13 +1414,13 @@ rename-title-profile = 重命名此人的文件夹
 
 portal-connectConsent = 此操作会连接此设备并发送批准请求。诊所必须先批准此设备，设备才能接收文档。
 
-portal-connected = 设备已关联。可在「安全」的「诊所文档」下查看其批准状态。
+portal-connected = 设备已关联。可在「安全」的「已连接的诊所」下查看其批准状态。
 
 portal-connecting = 正在连接并申请诊所批准…
 
 portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
 
-portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「已连接的诊所」下的批准状态，了解下一步操作。
 
 portal-retryApproval = 重试已保存的批准请求
 
@@ -2052,7 +2050,7 @@ notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoNeedsNotices = 请先允许文档到达通知，才能开启此选项。
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
-notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
+notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“已连接的诊所”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
 noticesStep-title = 来自诊所的通知
 noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。

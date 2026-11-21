@@ -1204,8 +1204,6 @@ security-backup-title = Sauvegarde chiffrée
 
 security-copies-body = Les exportations et les captures d’écran ne sont plus protégées par le coffre-fort. Masquer un document dans myCarlos n’efface ni ces copies ni le dossier médical d’origine de la clinique.
 
-security-copies-title = Copies lisibles et captures d’écran
-
 security-devBuild-body = Utilisez uniquement des fichiers fictifs.
 
 security-devBuild-title = Version de développement.
@@ -1468,7 +1466,7 @@ portal-approvalCancelled = Cette demande d’approbation a été annulée. Véri
 
 portal-approvalContact = L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.
 
-portal-approvalExpired = Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Documents de la clinique.
+portal-approvalExpired = Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Cliniques connectées.
 
 portal-approvalMissing = Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.
 
@@ -1564,7 +1562,7 @@ portal-serviceDate = Date du service : { $date }
 
 portal-serviceDateLabel = Date du service
 
-portal-title = Documents de la clinique
+portal-title = Cliniques connectées
 
 rename-help-profile = Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.
 
@@ -1580,13 +1578,13 @@ rename-title-profile = Renommer le dossier de la personne
 
 portal-connectConsent = Cette action associe cet appareil à votre clinique et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.
 
-portal-connected = Appareil associé. Son état d’approbation est indiqué sur la page Sécurité, section Documents de la clinique.
+portal-connected = Appareil associé. Son état d’approbation est indiqué sur la page Sécurité, section Cliniques connectées.
 
 portal-connecting = Connexion et demande d’approbation à la clinique en cours…
 
 portal-errorBusy = Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.
 
-portal-linkedApprovalIssue = Appareil associé. L’état de son approbation, sur la page Sécurité, section Documents de la clinique, indique la marche à suivre.
+portal-linkedApprovalIssue = Appareil associé. L’état de son approbation, sur la page Sécurité, section Cliniques connectées, indique la marche à suivre.
 
 portal-retryApproval = Réessayer la demande d’approbation enregistrée
 
@@ -2254,7 +2252,7 @@ notifications-helpAutomatic = Windows peut afficher un avis générique après l
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
 notifications-autoNeedsNotices = Autorisez d’abord les avis d’arrivée de documents pour activer cette option.
 notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
-notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
+notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Cliniques connectées et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
 noticesStep-title = Avis de votre clinique
 noticesStep-intro = Votre clinique est associée. myCarlos peut vous avertir quand un nouveau document arrive. Rien n’est activé à moins que vous ne le cochiez.
