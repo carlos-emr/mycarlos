@@ -1538,6 +1538,24 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { added: 1, refused: 0, receiptsPending: 0, issues: [] };
           // Nothing in the fake documents names a person.
           // --- Security: encrypted backup ---
+          // The size the backup would have, with and without videos (#359):
+          // the fake holds no video.
+          case "vault_backup_size": {
+            refuseLocked();
+            const bytes = snapshot.records.reduce(
+              (sum, record) => sum + record.plaintextSize,
+              4096,
+            );
+            return {
+              totalBytes: bytes,
+              withoutVideosBytes: bytes,
+              videoBytes: 0,
+              videoCount: 0,
+            };
+          }
+          case "vault_left_out_records":
+            refuseLocked();
+            return [];
           case "vault_backup_pick":
             refusePaused();
             return makePick("backup");

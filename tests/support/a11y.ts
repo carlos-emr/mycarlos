@@ -335,6 +335,15 @@ export async function fakeVault(
               return { imported: ["scan"], skippedDuplicates: [] };
             // Video (#359): nothing is waiting to be finished, and no
             // document starts as an MP4 does.
+            case "vault_backup_size":
+              return {
+                totalBytes: 4096,
+                withoutVideosBytes: 4096,
+                videoBytes: 0,
+                videoCount: 0,
+              };
+            case "vault_left_out_records":
+              return [];
             case "vault_video_space":
               return {
                 freeBytes: 50 * 1024 ** 3,
