@@ -5710,15 +5710,25 @@ pub fn run() {
         .plugin(navigation_guard())
         // The address a stored video plays from (#359): only a token made at this
         // unlock is answered, and nothing else is served.
-        .register_uri_scheme_protocol(video_scheme::SCHEME, |context, request| {
-            match context.app_handle().try_state::<Arc<VaultStore>>() {
-                Some(store) => video_scheme::respond(store.inner(), &request),
-                None => tauri::http::Response::builder()
-                    .status(404)
-                    .body(Vec::new())
-                    .unwrap_or_default(),
-            }
-        })
+        // Only the main window may ask, and the answer (a range of ciphertext
+        // decrypted) is made off the UI thread.
+        .register_asynchronous_uri_scheme_protocol(
+            video_scheme::SCHEME,
+            |context, request, responder| {
+                let store = video_scheme::webview_allowed(context.webview_label())
+                    .then(|| context.app_handle().try_state::<Arc<VaultStore>>())
+                    .flatten()
+                    .map(|store| Arc::clone(store.inner()));
+                match store {
+                    Some(store) => {
+                        tauri::async_runtime::spawn_blocking(move || {
+                            responder.respond(video_scheme::respond(&store, &request));
+                        });
+                    }
+                    None => responder.respond(video_scheme::refused()),
+                }
+            },
+        )
         .setup(|app| {
             // The window is made here, not by the configuration, so that it
             // can refuse to open others: nothing in the app opens a window,
