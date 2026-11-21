@@ -44,6 +44,7 @@ pub(crate) use delivery::AidFiling;
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+mod recording;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
@@ -1029,6 +1030,9 @@ pub struct VaultStore {
     /// The folder this run of the app last set a vault aside in, for the
     /// next vault created (#71's third part). In memory only.
     last_set_aside: Mutex<Option<String>>,
+    /// Recordings in progress (#359), by record id. In memory only; each has a journal
+    /// in `recordings/`. A lock parks them.
+    recordings: Mutex<HashMap<Uuid, recording::ActiveRecording>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1054,6 +1058,7 @@ impl VaultStore {
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+            recordings: Mutex::new(HashMap::new()),
             push_inbox: Mutex::new(Default::default()),
         }
     }
@@ -1745,6 +1750,9 @@ impl VaultStore {
             // the two and be left unlocked with no deadline.
             let due = due();
             if due {
+                // A recording in progress is parked first: its last frame is sealed
+                // and its journal says so, so that the next unlock can finish it.
+                self.park_recordings();
                 self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
@@ -7887,6 +7895,9 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
+    /// An unfinished recording's tail, journal or superseded object, or a
+    /// recording's object that recovery found nothing complete in (#359).
+    Recording,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.

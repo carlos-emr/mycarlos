@@ -231,6 +231,9 @@ vault-home/               holds only what the vault manages; back up as a whole
     quarantine/<uuid>.mcobj  an object no manifest named at a writable unlock, moved aside,
                          never removed (#71)
     staging/<job-id>/    incomplete imports, removed after failure or next unlock
+    recordings/<id>.journal  a video recording in progress or left unfinished (#359), encrypted
+    recordings/<uuid>.mcobj  its growing object, in the object format below
+    recordings/<id>.tail     the partial last frame, sealed at a pause
 ```
 
 Nothing but these entries is ever written to the home, and the home is created private. That is
@@ -1225,3 +1228,15 @@ A non-Shared encrypted profile may contain `previousFullNames`, a nonempty order
 The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
 
 Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.
+
+## Video recordings in progress (#359, no format change)
+
+A recording is stored in the existing `MCVO1` object format, one 1 MiB frame at a time, so **header, object, manifest and backup formats do not change** and no format number is taken. It becomes a record only when it ends, in the same commit an import makes (history entry `imported`, how `camera`). Until then it lives in `recordings/`, beside `staging/` and not in it, because every unlock removes `staging/`.
+
+- **Journal** (`<id>.journal`): `MCRJ1` + a 24-byte random nonce + an XChaCha20-Poly1305 ciphertext, under `HKDF-SHA-256(master key, salt = vault id, "mycarlos/recording-journal/v1")`, with the vault id and recording id in the associated data. It holds the profile, folders, display name, start time, the object's name, the object key wrapped like a record's, a state (`recording`, `paused`, `parked`, `committing`), the pause tail's name and the names of objects recovery copied from. It is written before the object's first byte, and replaced atomically at each state change. A journal that does not authenticate is counted as unreadable and never guessed at or deleted.
+- **Object**: every frame but the last is exactly 1 MiB, each sealed and synced as it fills, so a crash loses at most the frame in memory. The final frame is sealed when the recording ends, or when a lock **parks** it.
+- **Pause tail** (`<id>.tail`): at a pause the partial frame is sealed to this file (same key and a fresh nonce, associated data naming the recording), so a crash while paused loses nothing. A resume removes it.
+- **Recovery** (one path for a lock, a crash and a recording that ended badly): read the old object, authenticating every frame (a whole frame that fails is damage, an error; a torn last frame is a crash and is dropped), append the pause tail if the object has no final frame, cut at the end of the last complete fragment, and **copy** into a new object under a **new key**. A frame is never rewritten: that would reuse a nonce under the same key. The new object gets its index, is verified, and is committed like an import. If no fragment is complete, everything is deleted and nothing is added.
+- **Crash between publishing and committing**: the journal says `committing` before the object enters `objects/`. An unlock's orphan sweep may then move the unreferenced object to `quarantine/`; recovery looks in `recordings/`, `objects/` and `quarantine/`. A crash after the manifest commit leaves a journal for a record that exists: recovery removes only the leftovers.
+- **Backup, reset and restore**: a backup copies the header, the manifest and the *referenced* objects, so a recording in progress is **not in it**. Setting a vault aside moves `recordings/` with it; a restore replaces the vault directory, and with it `recordings/`.
+- **What stays on disk**: nothing readable. The journal, tail and object are ciphertext; the object's name is opaque and its length shows roughly how long the recording is, like any record's.
