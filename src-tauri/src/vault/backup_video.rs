@@ -111,9 +111,16 @@ impl VaultStore {
         // Each entry: its kind, name length, name and length (11 bytes and the
         // name), and in the trailer about 150 bytes of JSON.
         let entry = |name: &str| 11 + name.len() as u64 + 150;
+        // The manifest as the backup will hold it: with the videos left out it is
+        // the one with those records marked, which may fall in a larger size class.
+        let manifest_len = if leave_videos_out && !videos.is_empty() {
+            manifest_without_videos(&unlocked.master_key, manifest, &videos, 0)?.len()
+        } else {
+            parts.manifest_data.len()
+        };
         let mut total = BACKUP_MAGIC.len() as u64 + 1;
         total += parts.header_data.len() as u64 + entry("header.json");
-        total += parts.manifest_data.len() as u64 + entry("manifest.bin");
+        total += manifest_len as u64 + entry("manifest.bin");
         let mut video_bytes = 0_u64;
         for record in &manifest.records {
             let is_video = videos.contains(&record.id);
@@ -415,7 +422,10 @@ mod tests {
         // left out is not read, so a backup without it still works.
         let path = record_object_path_for_test(&store, video);
         let mut bytes = fs::read(&path).unwrap();
-        bytes[1000] ^= 1;
+        // In the second frame: the first still reads, so it is known to be a
+        // video (one whose first frame is damaged cannot be told from any other
+        // damaged document, and is kept in the backup, which then refuses it).
+        bytes[25 + 5 + CHUNK_SIZE + 16 + 100] ^= 1;
         fs::write(&path, bytes).unwrap();
         assert!(matches!(
             store.verify_for_backup(),

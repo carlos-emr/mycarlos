@@ -678,12 +678,6 @@ impl Drop for PassphraseRequest {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickRequest {
-    pick_id: Uuid,
-}
-
 /// Writes the backup to a place the patient chose, optionally leaving the videos
 /// out (#359).
 #[derive(Deserialize)]
@@ -8088,7 +8082,8 @@ mod tests {
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
-            let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupWriteRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupSizeRequest>(&payload);
             let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);

@@ -3990,6 +3990,7 @@ impl VaultStore {
     /// writing one: for a destination that cannot be written beside and
     /// renamed over, such as a document provider's, so that an earlier backup
     /// there is not overwritten by one that is then refused.
+    #[cfg(test)]
     pub fn verify_for_backup(&self) -> Result<(), VaultError> {
         self.verify_for_backup_with(false)
     }
@@ -4017,6 +4018,7 @@ impl VaultStore {
     /// Writes a portable backup of the vault: its ciphertext only, as the
     /// patient sees it now. A read-only vault is not backed up, since what
     /// it shows may not be what it holds.
+    #[cfg(test)]
     pub fn backup<W: Write>(&self, writer: W, now_ms: u64) -> Result<(), VaultError> {
         self.backup_with(writer, now_ms, false)
     }
@@ -4196,6 +4198,7 @@ impl VaultStore {
     /// Saves a backup to a file the patient chose, as an export is saved:
     /// never inside the vault home, and replacing the destination only once
     /// the whole backup is written.
+    #[cfg(test)]
     pub fn backup_atomic(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
         self.backup_atomic_with(destination, now_ms, false)
     }
@@ -8637,6 +8640,7 @@ struct BackupWriter<W: Write> {
 }
 
 impl<W: Write> BackupWriter<W> {
+    #[cfg(test)]
     fn new(inner: W) -> Result<Self, VaultError> {
         Self::with_format(inner, false)
     }
