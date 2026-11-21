@@ -1049,5 +1049,7 @@
   "personDetails.previousEntry",
   "personDetails.previousRemove",
   "personDetails.previousAdd",
-  "personDetails.previousInvalid"
+  "personDetails.previousInvalid",
+  "portal.deviceLine",
+  "portal.deviceLineLinked"
 ]

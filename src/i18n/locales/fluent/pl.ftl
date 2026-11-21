@@ -1534,6 +1534,10 @@ portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
 
+portal-deviceLine = Urządzenie: { $device }
+
+portal-deviceLineLinked = Urządzenie: { $device }, połączono { $date }
+
 portal-deviceDetailsShow = Pokaż szczegóły urządzenia
 
 portal-deviceDetailsHide = Ukryj szczegóły urządzenia

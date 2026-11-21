@@ -120,6 +120,9 @@ export interface PortalLinkSummary {
   id: string;
   portalBase: string;
   deviceName: string;
+  /** When the link was started, in milliseconds: the card shows the day, so that two cards for
+   * the same address differ (#160). Always sent by the app; optional only for older fixtures. */
+  linkedAtMs?: number;
   profileId: string | null;
   clinicName: string | null;
   fingerprints: string[];

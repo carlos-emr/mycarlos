@@ -1051,6 +1051,8 @@ export const MESSAGE_KEYS = [
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "portal.deviceLine",
+  "portal.deviceLineLinked",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2301,6 +2303,8 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "portal.deviceLine": "portal-deviceLine",
+  "portal.deviceLineLinked": "portal-deviceLineLinked",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3470,6 +3474,8 @@ export interface MessageArgsByKey {
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "portal.deviceLine": { device: FluentArgument };
+  "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
