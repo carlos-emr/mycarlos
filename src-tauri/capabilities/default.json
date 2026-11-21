@@ -47,6 +47,8 @@
     "allow-vault-recovery-key-cancel",
     "allow-vault-recover",
     "allow-vault-backup-pick",
+    "allow-vault-backup-size",
+    "allow-vault-left-out-records",
     "allow-vault-backup-picked",
     "allow-vault-restore-pick",
     "allow-vault-restore-inspect",

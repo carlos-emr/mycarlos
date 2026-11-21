@@ -180,6 +180,13 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     videoPause: vi.fn().mockResolvedValue(undefined),
     videoResume: vi.fn().mockResolvedValue(undefined),
     videoStop: vi.fn().mockResolvedValue({ recordId: null }),
+    leftOutRecords: vi.fn().mockResolvedValue([]),
+    backupSize: vi.fn().mockResolvedValue({
+      totalBytes: 1000,
+      withoutVideosBytes: 1000,
+      videoBytes: 0,
+      videoCount: 0,
+    }),
     videoSpace: vi.fn().mockResolvedValue({
       freeBytes: null,
       level: "unknown",
