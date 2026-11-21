@@ -2803,21 +2803,26 @@ async fn vault_lock(
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
-    picks.clear();
-    // A page still being drawn, a text being read, and the AI model with
-    // its answer, stop with the lock.
-    pdf_view::cancel_views();
-    pdf_view::cancel_text_reads();
-    local_runner::on_lock();
-    run_blocking(store.inner(), |store| {
+    stop_work_for_lock(&picks);
+    let picks = Arc::clone(picks.inner());
+    run_blocking(store.inner(), move |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
-        pdf_view::cancel_views();
-        pdf_view::cancel_text_reads();
-        local_runner::on_lock();
+        stop_work_for_lock(&picks);
         Ok(())
     })
     .await
+}
+
+/// What stops with a lock, whichever way the vault locks (the command, the idle deadline, and a
+/// switch to another vault): the picks a native dialog was about to hand over, a page still being
+/// drawn, a text being read, and the AI model with its answer. One list, so a lock path cannot
+/// forget one of them (#357).
+fn stop_work_for_lock(picks: &PendingPicks) {
+    picks.clear();
+    pdf_view::cancel_views();
+    pdf_view::cancel_text_reads();
+    local_runner::on_lock();
 }
 
 /// How often the native timer checks the idle deadline.
@@ -2836,10 +2841,7 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
-        pdf_view::cancel_views();
-        pdf_view::cancel_text_reads();
-        local_runner::on_lock();
-        picks.clear();
+        stop_work_for_lock(picks);
     }
     locked
 }
@@ -6856,6 +6858,28 @@ mod tests {
         ));
         // A locked vault has no deadline, so the timer does not lock it again.
         assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
+    }
+
+    #[test]
+    fn stop_work_for_lock_stops_what_every_lock_path_stops() {
+        // One list for "Lock now", the idle deadline and a switch to another vault (#357): the picks a
+        // native dialog was about to hand over, and a page view in flight.
+        let picks = PendingPicks::default();
+        let record_id = Uuid::new_v4();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let pick_id = picks.store_export(picks.session(), record_id, path());
+        let ticket = pdf_view::ViewTicket::new();
+        assert!(ticket.is_current());
+
+        stop_work_for_lock(&picks);
+
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+        assert!(!ticket.is_current());
+        // Nothing to stop is not an error, and it may be called again after the vault has locked.
+        stop_work_for_lock(&picks);
     }
 
     /// When the default delay and the margin after `from` run out, exactly.
