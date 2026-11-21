@@ -762,6 +762,55 @@ first, as the backup checks it (a read-only vault, the header, the manifest slot
 before that document is opened and emptied; only a failure while the backup is written, or a lock
 or change that comes between the check and the writing, can leave it emptied.
 
+### Profile handover package (#360 PR 1)
+
+One person's records in a file of its own, `.mycarlosprofile`, with a key of its own, for another myCarlos
+to read. It is **not** a backup: a backup carries the vault's header and so hands over the vault's master key,
+while a package has none of the source vault's keys, ids, names or devices in it. Package format **1**. It is
+not a vault or manifest format: nothing in the vault changes when one is written, and the vault does not read
+one in this step (the writer and reader are in `src-tauri/src/vault/profile_package.rs`; the export and import
+commands follow).
+
+```text
+"MYCARLOS-PROFILE"                      16-byte magic
+header length (u32) | header JSON       {format, packageId, keyKind: "key"|"passphrase", kdf?, wrappedPackageKey}
+entry*   kind (u8) | name length (u16) | name | length (u64) | bytes
+         manifest (kind 1, first)       encrypted JSON, padded to a size class
+         object   (kind 2, many)        one MCVO1 object each, in the manifest's order
+         digests  (kind 3, last)        encrypted: each object's id, size and plaintext SHA-256
+trailer  0xff | length (u32) | JSON {format, packageId, entries[]} | HMAC-SHA-256 tag (32 bytes)
+```
+
+- **Keys.** A random 256-bit package key is wrapped under either a generated 128-bit key (HKDF, shown as 7
+  groups of 4 like a recovery key; never stored) or the Argon2id of a typed passphrase (the vault's own
+  parameters, and the vault's rules for a new passphrase). The manifest key, the object key and the tag key
+  come from the package key and the package id with labels of their own (`mycarlos/profile-package/v1/...`).
+  An object's key comes from the object key and the object's id, so the manifest, which comes first, carries no
+  per-object key. Nothing is related to a vault key; two exports of one person differ in every byte.
+- **Objects.** The chunk format is the vault's own (`MCVO1`, 1 MiB frames, XChaCha20-Poly1305, a final flag
+  on the last chunk), with the **package id where a vault id would be** in each chunk's associated data. The
+  stored length of an object is fixed by its size (25 + 21 per chunk + size; an empty object is one empty
+  final chunk), so an object streams from the source vault into the package one chunk at a time with no
+  readable copy anywhere, and a source that is not the declared size is refused.
+- **The manifest** is the person's identity details, the folder tree, the records (name, source label, media
+  type, dates, folders, whether hidden, their objects, AI answer details, carried clinic evidence as JSON) and
+  the history excerpt if it was kept. It is checked on writing and on reading: bounded counts, names that are
+  names, unique ids, every folder's parent present, no cycle, depth at most 64, every record in folders that
+  exist, an object used once, sizes within a terabyte.
+- **Padding and the clear.** The manifest and the digests are padded with zeros to a size class (a power of
+  two, at least 16 KiB, at most 64 MiB), and the padding is checked. In the clear: the magic, the package id,
+  the KDF salt, the entry names (a random id each), their lengths and the SHA-256 of their ciphertext. That
+  shows how many documents and how large; it shows no name, no vault id, no device, no clinic, and not the
+  time of the export.
+- **Order and trust.** The plaintext hashes are written after the objects because they are known only once an
+  object has been streamed; the manifest is first so that it can be inspected on its own. The tag is last and
+  covers the header and every entry's hash, so **nothing read from a package is trusted until the reader's
+  `finish` has returned**. A reader stages what it reads and commits after.
+- **Refused.** A wrong key (a damaged header looks the same), a typed key whose check characters are wrong, a
+  package format newer than this build's, a file that is cut short, has a changed byte anywhere, bytes after
+  the trailer, an entry swapped, repeated or missing, a trailer that lists what the file does not hold, or a
+  declared length past the limits (checked before anything is allocated).
+
 ## Settings kept outside the vault
 
 The following device preferences are kept in the webview's own storage, not in the vault, so that

@@ -44,6 +44,10 @@ pub(crate) use delivery::AidFiling;
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+// The profile handover package (#360 PR 1): its writer and reader are used by
+// the export and import commands of the later PRs.
+#[cfg_attr(not(test), allow(dead_code))]
+mod profile_package;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
