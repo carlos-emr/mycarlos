@@ -668,7 +668,7 @@ describe("RecordDialog", () => {
     ).toBe(true);
   });
 
-  it("treats a disk that filled anyway the same way: saved, told as no room", async () => {
+  it("ends the recording when a piece is refused for want of room, and saves it when the vault can", async () => {
     const bridge = fakeBridge({
       videoAppend: vi.fn(async () => {
         throw { code: "no_space", message: "FAKE full" };
@@ -679,6 +679,31 @@ describe("RecordDialog", () => {
     await waitFor(() =>
       expect(onSaved).toHaveBeenCalledWith("video-1", "space"),
     );
+  });
+
+  it("says the video is kept unfinished, not saved, when the vault could not finish it for want of room", async () => {
+    // A write the disk refused, or a recording cut off mid-fragment: ending it
+    // needs room to finish it, which is not there. The vault refuses Stop with
+    // no_space and keeps the recording; the page must not claim it was saved.
+    const bridge = fakeBridge({
+      videoAppend: vi.fn(async () => {
+        throw { code: "no_space", message: "FAKE full" };
+      }),
+      videoStop: vi.fn(async () => {
+        throw { code: "no_space", message: "FAKE full" };
+      }),
+    });
+    const { onSaved } = await recording(bridge);
+    act(() => recorder().emit(piece(100)));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith(null, "unfinished"),
+    );
+    expect(onSaved).not.toHaveBeenCalledWith("video-1", expect.anything());
+    expect(
+      streams.every((s) =>
+        s.getTracks().every((t) => t.readyState === "ended"),
+      ),
+    ).toBe(true);
   });
 
   it("looks at the room again on resume, and saves instead of recording into a full disk", async () => {

@@ -2339,6 +2339,7 @@ interface-RecordDialog-notEnoughRoom = There is not enough room to record a vide
 interface-RecordDialog-lowOnRoom = Running low on room. The recording is saved when there is no more room.
 interface-RecordDialog-lowOnRoomMinutes = Running low on room: about { $minutes } minutes of recording left. The recording is saved when there is no more room.
 interface-RecordDialog-videoSavedNoRoom = Saved. There was no more room: { $name }
+interface-RecordDialog-videoKeptUnfinished = There was no more room, so the video could not be finished. It is kept as an unfinished recording: free up some space, and myCarlos will finish it the next time you unlock.
 security-backup-size = About { $size }.
 security-backup-sizeWithVideos = About { $size }, of which videos { $videos }.
 security-backup-sizeNoVideos = About { $size }, without videos.

@@ -622,7 +622,8 @@ impl VaultStore {
         }
         // Too little room is refused before anything is written (and, in the
         // page, before the camera or microphone is turned on).
-        if !self.recording_space().can_record {
+        let start_space = self.space_now();
+        if !start_space.can_record {
             return Err(VaultError::NoSpace);
         }
         require_profile(&unlocked.manifest, profile_id)?;
@@ -691,8 +692,9 @@ impl VaultStore {
                     paused: false,
                     poisoned: false,
                     next_sequence: 0,
-                    space: SpaceLevel::Ok,
-                    free_bytes: None,
+                    // Where the start found room: until the first look at 8 MiB.
+                    space: start_space.level,
+                    free_bytes: start_space.free_bytes,
                     next_space_check: 0,
                 },
             );
@@ -1365,8 +1367,15 @@ impl VaultStore {
 
     /// How much room the vault's volume has, and whether that is enough to
     /// record: asked before the camera and microphone are turned on, and again
-    /// on every resume.
-    pub fn recording_space(&self) -> RecordingSpace {
+    /// on every resume. Only of a vault that is open and writable, as recording
+    /// is.
+    pub fn recording_space(&self) -> Result<RecordingSpace, VaultError> {
+        self.require_writable_session()?;
+        Ok(self.space_now())
+    }
+
+    /// As `recording_space`, for a caller that already holds the session.
+    fn space_now(&self) -> RecordingSpace {
         let free = self.free_space_now();
         RecordingSpace {
             free_bytes: free,
@@ -2518,7 +2527,7 @@ mod tests {
         let (store, profile) = new_store(temp.path());
         let free = Arc::new(AtomicU64::new(GIB - 1));
         pretend_room(&store, &free);
-        let space = store.recording_space();
+        let space = store.recording_space().unwrap();
         assert!(!space.can_record);
         assert_eq!(space.free_bytes, Some(GIB - 1));
         assert!(matches!(
@@ -2529,7 +2538,7 @@ mod tests {
         assert!(store.recordings.lock().unwrap().is_empty());
         // Exactly one GiB is enough.
         free.store(GIB, AtomicOrdering::SeqCst);
-        assert!(store.recording_space().can_record);
+        assert!(store.recording_space().unwrap().can_record);
         assert!(store
             .recording_start(profile, vec![], "FAKE ok.mp4", 5)
             .is_ok());
@@ -2540,7 +2549,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let (store, profile) = new_store(temp.path());
         *store.free_space.lock().unwrap() = Box::new(|_| None);
-        let space = store.recording_space();
+        let space = store.recording_space().unwrap();
         assert!(space.can_record);
         assert_eq!(space.level, SpaceLevel::Unknown);
         assert!(store
@@ -2566,10 +2575,8 @@ mod tests {
             progress = Some(store.recording_append(id, part).unwrap());
         }
         let looks = asked.load(AtomicOrdering::SeqCst) - after_start;
-        assert!(
-            (3..=5).contains(&looks),
-            "looked {looks} times for about 21 frames"
-        );
+        // At frame 0, 8 and 16 of about 21.
+        assert_eq!(looks, 3, "looked {looks} times for about 21 frames");
         assert_eq!(progress.unwrap().space, SpaceLevel::Ok);
         // Room falls to the warning, and the next look says so.
         free.store(400 * MIB, AtomicOrdering::SeqCst);
@@ -2650,8 +2657,6 @@ mod tests {
         let pending = store.recordings_pending().unwrap();
         assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
         assert!(store.snapshot().unwrap().records.is_empty());
-        // Deleting needs no room.
-        // (not tried here: it is the other branch)
         free.store(10 * GIB, AtomicOrdering::SeqCst);
         let record = store.recording_recover(id, true, 10).unwrap().unwrap();
         assert_eq!(index_of(&stored(&store, record)).entries.len(), 2);
@@ -2671,5 +2676,78 @@ mod tests {
         pretend_room(&store, &Arc::new(AtomicU64::new(0)));
         assert_eq!(store.recording_recover(id, false, 9).unwrap(), None);
         assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn room_is_only_asked_of_a_vault_that_is_open_and_writable() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _) = new_store(temp.path());
+        assert!(store.recording_space().is_ok());
+        store.lock();
+        assert!(matches!(store.recording_space(), Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn a_recording_that_ends_mid_fragment_on_a_full_disk_is_kept_unfinished_not_lost() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(10 * GIB));
+        pretend_room(&store, &free);
+        let id = store
+            .recording_start(profile, vec![], "FAKE midway.mp4", 5)
+            .unwrap();
+        // Two whole fragments, then half of a third: the recorder ended where the
+        // disk filled.
+        let whole = movie(2, 400_000);
+        let third = fragment(3, 60000, 96256, 400_000);
+        store.recording_append(id, &whole).unwrap();
+        store.recording_append(id, &third[..200_000]).unwrap();
+        // Finishing it means copying it, which needs room that is not there.
+        free.store(100 * MIB, AtomicOrdering::SeqCst);
+        assert!(matches!(
+            store.recording_stop(id, 6),
+            Err(VaultError::NoSpace)
+        ));
+        // Not lost: it is parked, nothing was added, and it is asked about when
+        // the vault is next opened (or recovered now, with room).
+        assert!(store.snapshot().unwrap().records.is_empty());
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
+        assert!(pending.recordings[0].parked);
+        free.store(10 * GIB, AtomicOrdering::SeqCst);
+        let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 2);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn a_write_that_fails_for_want_of_room_keeps_what_was_written_for_later() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(10 * GIB));
+        pretend_room(&store, &free);
+        let id = store
+            .recording_start(profile, vec![], "FAKE filled.mp4", 5)
+            .unwrap();
+        let piece = |n: u64| fragment(n as u32 + 1, n * 30000, n * 48128, 1_048_000);
+        store
+            .recording_append(id, &[ftyp(), moov(), piece(0)].concat())
+            .unwrap();
+        store.recording_append(id, &piece(1)).unwrap();
+        // The disk fills under the next frame: the write is refused.
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.chunk-write"]);
+        let refused = store.recording_append(id, &piece(2));
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(matches!(refused, Err(VaultError::NoSpace)), "{refused:?}");
+        free.store(50 * MIB, AtomicOrdering::SeqCst);
+        // Ending it needs room to finish it by copy: not there, so it is kept.
+        assert!(matches!(
+            store.recording_stop(id, 6),
+            Err(VaultError::NoSpace)
+        ));
+        assert_eq!(store.recordings_pending().unwrap().recordings.len(), 1);
+        free.store(10 * GIB, AtomicOrdering::SeqCst);
+        let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        assert!(!index_of(&stored(&store, record)).entries.is_empty());
     }
 }

@@ -2374,6 +2374,7 @@ interface-RecordDialog-notEnoughRoom = Il n’y a pas assez de place pour enregi
 interface-RecordDialog-lowOnRoom = Il reste peu de place. L’enregistrement est sauvegardé quand il n’y a plus de place.
 interface-RecordDialog-lowOnRoomMinutes = Il reste peu de place : environ { $minutes } minutes d’enregistrement. L’enregistrement est sauvegardé quand il n’y a plus de place.
 interface-RecordDialog-videoSavedNoRoom = Sauvegardé. Il n’y avait plus de place : { $name }
+interface-RecordDialog-videoKeptUnfinished = Il n’y avait plus de place, donc la vidéo n’a pas pu être terminée. Elle est conservée comme enregistrement inachevé : libérez de l’espace, et myCarlos la terminera au prochain déverrouillage.
 security-backup-size = Environ { $size }.
 security-backup-sizeWithVideos = Environ { $size }, dont { $videos } de vidéos.
 security-backup-sizeNoVideos = Environ { $size }, sans les vidéos.

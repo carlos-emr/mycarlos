@@ -1217,6 +1217,11 @@ export function VaultLibrary({
     run(async () => {
       setRecordOpen(false);
       const next = await refresh();
+      if (endedBy === "unfinished") {
+        // Kept, not lost: it is finished at the next unlock, when there is room.
+        setNotice(message("interface.RecordDialog.videoKeptUnfinished"));
+        return;
+      }
       const saved = recordId
         ? next.records.find((record) => record.id === recordId)
         : undefined;

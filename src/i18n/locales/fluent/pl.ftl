@@ -2420,6 +2420,7 @@ interface-RecordDialog-notEnoughRoom = Brak wystarczającej ilości miejsca na n
 interface-RecordDialog-lowOnRoom = Zostaje mało miejsca. Nagranie zostanie zapisane, gdy miejsca zabraknie.
 interface-RecordDialog-lowOnRoomMinutes = Zostaje mało miejsca: około { $minutes } min nagrywania. Nagranie zostanie zapisane, gdy miejsca zabraknie.
 interface-RecordDialog-videoSavedNoRoom = Zapisano. Zabrakło miejsca: { $name }
+interface-RecordDialog-videoKeptUnfinished = Zabrakło miejsca, więc nie udało się dokończyć filmu. Jest zachowany jako nieukończone nagranie: zwolnij miejsce, a myCarlos dokończy go przy następnym odblokowaniu.
 security-backup-size = Około { $size }.
 security-backup-sizeWithVideos = Około { $size }, z czego filmy to { $videos }.
 security-backup-sizeNoVideos = Około { $size }, bez filmów.

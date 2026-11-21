@@ -2172,6 +2172,7 @@ interface-RecordDialog-notEnoughRoom = 没有足够的空间录制视频，需�
 interface-RecordDialog-lowOnRoom = 剩余空间不多。空间用完时，录制内容会被保存。
 interface-RecordDialog-lowOnRoomMinutes = 剩余空间不多：大约还能录制 { $minutes } 分钟。空间用完时，录制内容会被保存。
 interface-RecordDialog-videoSavedNoRoom = 已保存。空间已用完：{ $name }
+interface-RecordDialog-videoKeptUnfinished = 空间已用完，视频无法完成。它已作为未完成的录制保留：请释放一些空间，下次解锁时 myCarlos 会完成它。
 security-backup-size = 约 { $size }。
 security-backup-sizeWithVideos = 约 { $size }，其中视频占 { $videos }。
 security-backup-sizeNoVideos = 约 { $size }，不含视频。

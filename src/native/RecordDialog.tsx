@@ -53,7 +53,8 @@ export type RecordEnd =
   | "slow"
   | "hidden"
   | "failed"
-  | "space";
+  | "space"
+  | "unfinished";
 
 type Stage =
   | "explain"
@@ -346,6 +347,13 @@ export function RecordDialog({
       } catch (error) {
         recordingIdRef.current = null;
         if (!openRef.current) return;
+        // Ending it needed room to finish it (a recording cut off mid-fragment
+        // or by a write the disk refused is finished by copying it): it is kept,
+        // not lost, and finished when there is room.
+        if (isNoSpace(error)) {
+          onSaved(null, "unfinished");
+          return;
+        }
         setStage("failed");
         setFailure(null);
         setProblem(vaultErrorMessage(error));
@@ -369,6 +377,7 @@ export function RecordDialog({
       return;
     }
     setProblem(null);
+    setRoom(null);
     setStage("starting");
     let startedId: string | null = null;
     try {
