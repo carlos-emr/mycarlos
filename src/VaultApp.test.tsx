@@ -167,6 +167,26 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     isPhoto: vi.fn().mockResolvedValue(false),
+    videoStart: vi.fn().mockResolvedValue({ recordingId: "recording-1" }),
+    videoAppend: vi.fn().mockResolvedValue({
+      storedBytes: 0,
+      fragments: 0,
+      hasVideo: null,
+      hasAudio: null,
+      nextSequence: 1,
+    }),
+    videoPause: vi.fn().mockResolvedValue(undefined),
+    videoResume: vi.fn().mockResolvedValue(undefined),
+    videoStop: vi.fn().mockResolvedValue({ recordId: null }),
+    videoPending: vi.fn().mockResolvedValue({ recordings: [], unreadable: 0 }),
+    videoRecover: vi.fn().mockResolvedValue({ recordId: null }),
+    isVideo: vi.fn().mockResolvedValue(false),
+    videoOpen: vi.fn().mockResolvedValue({
+      token: "0".repeat(64),
+      url: "mycarlos-video://localhost/FAKE",
+      totalBytes: 0,
+    }),
+    videoClose: vi.fn().mockResolvedValue(undefined),
     isLockedPdf: vi.fn().mockResolvedValue(false),
     unlockPdf: vi.fn(),
     viewPhoto: vi

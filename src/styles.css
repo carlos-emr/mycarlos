@@ -3524,6 +3524,81 @@ p {
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* Recording a video, and playing one (#359). */
+.record-video-dialog .record-quality {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.record-video-dialog .record-quality legend {
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+.record-quality-size {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.record-state {
+  display: grid;
+  gap: 6px;
+}
+.record-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-weight: 700;
+  color: var(--red);
+}
+.record-badge .icon {
+  width: 18px;
+  height: 18px;
+}
+.record-badge-paused {
+  color: var(--ink);
+}
+.record-paused-note,
+.record-delivered {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.record-clock {
+  width: fit-content;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+.record-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+.video-viewer {
+  width: min(960px, 100%);
+}
+.video-frame {
+  padding: 12px 20px;
+}
+.video-player {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-sm);
+  background: var(--camera-view);
+}
+.video-unavailable {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.video-unavailable .link-action {
+  width: fit-content;
+}
 .photo-viewer-frame {
   max-height: 70vh;
   overflow: auto;

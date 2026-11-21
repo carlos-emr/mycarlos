@@ -1049,6 +1049,44 @@ impl std::io::Write for FileStart {
     }
 }
 
+/// The first `N` bytes of a record's file, and no more (as `FileStart`).
+struct FileStartN<const N: usize> {
+    bytes: [u8; N],
+    seen: usize,
+}
+
+impl<const N: usize> Default for FileStartN<N> {
+    fn default() -> Self {
+        Self {
+            bytes: [0; N],
+            seen: 0,
+        }
+    }
+}
+
+impl<const N: usize> FileStartN<N> {
+    fn complete(&self) -> bool {
+        self.seen == N
+    }
+}
+
+impl<const N: usize> std::io::Write for FileStartN<N> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let take = data.len().min(N - self.seen);
+        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
+        self.seen += take;
+        if self.complete() {
+            Err(std::io::Error::other("the first bytes are read"))
+        } else {
+            Ok(data.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
 /// called. A document's details ask this before offering View photo, so the
 /// photo itself stays here until the patient asks to see it; `view_photo` then
@@ -5135,6 +5173,240 @@ async fn vault_view_photo(
     .await
 }
 
+// ---- video recording and playback (#359) ------------------------------------
+//
+// The page records with the webview's own MediaRecorder and sends each piece
+// (about one a second) here as base64 in the ordinary JSON arguments: a byte
+// body would arrive on Android as a JSON array of numbers several times its
+// size. Each piece carries a sequence number the vault checks. Playback goes
+// by a token for the `mycarlos-video` address (video_scheme.rs); no path, id or
+// name of a file ever reaches the page.
+
+/// The most base64 text one piece may be: `MAX_RECORDING_PIECE` bytes, 4/3
+/// larger, with room for padding. Checked before anything is decoded.
+const MAX_VIDEO_PIECE_BASE64: usize = vault::MAX_RECORDING_PIECE / 3 * 4 + 8;
+/// The most folders a recording may be filed in at once, as an import's.
+const MAX_VIDEO_FOLDERS: usize = 64;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoStartRequest {
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoStarted {
+    recording_id: Uuid,
+}
+
+#[tauri::command]
+async fn vault_video_start(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoStartRequest,
+) -> CommandResult<VideoStarted> {
+    if request.folder_ids.len() > MAX_VIDEO_FOLDERS {
+        return Err(VaultError::Invalid.into());
+    }
+    run_blocking(store.inner(), move |store| {
+        store
+            .recording_start(
+                request.profile_id,
+                request.folder_ids,
+                &request.name,
+                now_ms(),
+            )
+            .map(|recording_id| VideoStarted { recording_id })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoAppendRequest {
+    recording_id: Uuid,
+    sequence: u64,
+    data: String,
+}
+
+// The piece's text is wiped however the command ends.
+impl Drop for VideoAppendRequest {
+    fn drop(&mut self) {
+        self.data.zeroize();
+    }
+}
+
+/// A piece's bytes from its base64 text: refused, before it is decoded, if the
+/// text is longer than a piece may be.
+fn decode_video_piece(data: &str) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    // The length of the text is checked, not of the bytes it would decode to:
+    // decoding allocates a piece's size, and a hostile page could otherwise send
+    // text for a far larger one before anything bounded it. The limit is the
+    // base64 length of `MAX_RECORDING_PIECE` bytes (4/3 of it) plus padding.
+    if data.len() > MAX_VIDEO_PIECE_BASE64 {
+        return Err(VaultError::Invalid);
+    }
+    BASE64
+        .decode(data)
+        .map(Zeroizing::new)
+        .map_err(|_| VaultError::Invalid)
+}
+
+#[tauri::command]
+async fn vault_video_append(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoAppendRequest,
+) -> CommandResult<vault::RecordingProgress> {
+    let piece = decode_video_piece(&request.data)?;
+    let (id, sequence) = (request.recording_id, request.sequence);
+    drop(request);
+    run_blocking(store.inner(), move |store| {
+        store.recording_append_numbered(id, Some(sequence), &piece)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecordingRequest {
+    recording_id: Uuid,
+}
+
+#[tauri::command]
+async fn vault_video_pause(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoRecordingRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.recording_pause(request.recording_id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_video_resume(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoRecordingRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.recording_resume(request.recording_id)
+    })
+    .await
+}
+
+/// What ended a recording: the video that was added to the library, or nothing
+/// (nothing complete had been recorded).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoSaved {
+    record_id: Option<Uuid>,
+}
+
+#[tauri::command]
+async fn vault_video_stop(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoRecordingRequest,
+) -> CommandResult<VideoSaved> {
+    run_blocking(store.inner(), move |store| {
+        store
+            .recording_stop(request.recording_id, now_ms())
+            .map(|record_id| VideoSaved { record_id })
+    })
+    .await
+}
+
+/// The recordings a crash or a lock left unfinished, for the question at unlock.
+#[tauri::command]
+async fn vault_video_pending(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<vault::PendingRecordings> {
+    run_blocking(store.inner(), VaultStore::recordings_pending).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecoverRequest {
+    recording_id: Uuid,
+    keep: bool,
+}
+
+/// Answers the question at unlock: keep what was saved (it becomes a video) or
+/// delete it.
+#[tauri::command]
+async fn vault_video_recover(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoRecoverRequest,
+) -> CommandResult<VideoSaved> {
+    run_blocking(store.inner(), move |store| {
+        store
+            .recording_recover(request.recording_id, request.keep, now_ms())
+            .map(|record_id| VideoSaved { record_id })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecordRequest {
+    record_id: Uuid,
+}
+
+/// Whether a record's file starts as an MP4 does (`ftyp` at byte 4), whatever it
+/// is called: the details ask this before offering Play video.
+fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    let mut start = FileStartN::<8>::default();
+    let exported = store.read_for_view(record_id, &mut start);
+    if start.complete() {
+        return Ok(&start.bytes[4..8] == b"ftyp");
+    }
+    exported.map(|()| false)
+}
+
+#[tauri::command]
+async fn vault_is_video(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoRecordRequest,
+) -> CommandResult<bool> {
+    run_blocking(store.inner(), move |store| {
+        is_video(store, request.record_id)
+    })
+    .await
+}
+
+/// Opens a stored video for playback: the token the page puts in a `<video>`'s
+/// address, and the length of the file a player sees.
+#[tauri::command]
+async fn vault_video_open(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoRecordRequest,
+) -> CommandResult<vault::PlaybackOpened> {
+    run_blocking(store.inner(), move |store| {
+        store.playback_open(request.record_id)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoCloseRequest {
+    token: String,
+}
+
+/// Ends one video's playback (the player closed). Locking ends every one.
+#[tauri::command]
+async fn vault_video_close(
+    store: State<'_, Arc<VaultStore>>,
+    request: VideoCloseRequest,
+) -> CommandResult<()> {
+    run_blocking(store.inner(), move |store| {
+        store.playback_close(&request.token);
+        Ok(())
+    })
+    .await
+}
+
 #[tauri::command]
 async fn vault_is_locked_pdf(
     store: State<'_, Arc<VaultStore>>,
@@ -5664,6 +5936,16 @@ pub fn run() {
             vault_save_photo,
             vault_is_photo,
             vault_view_photo,
+            vault_video_start,
+            vault_video_append,
+            vault_video_pause,
+            vault_video_resume,
+            vault_video_stop,
+            vault_video_pending,
+            vault_video_recover,
+            vault_is_video,
+            vault_video_open,
+            vault_video_close,
             vault_is_locked_pdf,
             vault_unlock_pdf,
             vault_hide_record,
@@ -8571,6 +8853,161 @@ mod photo_command_tests {
         let saved = body("fn save_photo(");
         assert!(saved.contains("store.import_from("));
         assert!(saved.contains("\"camera\""));
+    }
+
+    // ---- video (#359) -------------------------------------------------------
+
+    #[test]
+    fn a_piece_of_video_is_decoded_only_within_its_limit() {
+        let bytes = vec![7_u8; 1000];
+        let text = BASE64.encode(&bytes);
+        assert_eq!(*decode_video_piece(&text).unwrap(), bytes);
+        assert!(decode_video_piece("").unwrap().is_empty());
+        for bad in ["not base64!", "AAA", "====", "\u{0}"] {
+            assert!(
+                matches!(decode_video_piece(bad), Err(VaultError::Invalid)),
+                "{bad:?}"
+            );
+        }
+        // The largest piece goes through; one character more of text is refused
+        // before it is decoded.
+        let largest = BASE64.encode(vec![1_u8; vault::MAX_RECORDING_PIECE]);
+        assert!(largest.len() <= MAX_VIDEO_PIECE_BASE64);
+        assert_eq!(
+            decode_video_piece(&largest).unwrap().len(),
+            vault::MAX_RECORDING_PIECE
+        );
+        let too_long = "A".repeat(MAX_VIDEO_PIECE_BASE64 + 1);
+        assert!(matches!(
+            decode_video_piece(&too_long),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn the_video_requests_take_exactly_the_fields_they_name() {
+        let id = Uuid::new_v4();
+        let ok = |value: serde_json::Value| serde_json::from_value::<VideoAppendRequest>(value);
+        assert!(ok(serde_json::json!({"recordingId": id, "sequence": 3, "data": "AAAA"})).is_ok());
+        for bad in [
+            serde_json::json!({"recordingId": id, "sequence": 3, "data": "AAAA", "path": "/x"}),
+            serde_json::json!({"recordingId": id, "sequence": -1, "data": "AAAA"}),
+            serde_json::json!({"recordingId": "nope", "sequence": 3, "data": "AAAA"}),
+            serde_json::json!({"recordingId": id, "data": "AAAA"}),
+        ] {
+            assert!(ok(bad).is_err());
+        }
+        assert!(
+            serde_json::from_value::<VideoStartRequest>(serde_json::json!({
+                "profileId": id, "folderIds": [], "name": "FAKE clip.mp4"
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<VideoStartRequest>(serde_json::json!({
+                "profileId": id, "folderIds": [], "name": "FAKE", "extra": 1
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<VideoRecoverRequest>(serde_json::json!({
+                "recordingId": id, "keep": true
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<VideoRecoverRequest>(serde_json::json!({
+                "recordingId": id
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<VideoCloseRequest>(serde_json::json!({
+                "token": "x", "recordId": id
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn the_video_commands_are_wired_as_the_renderer_calls_them() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        for command in [
+            "async fn vault_video_start(",
+            "async fn vault_video_pause(",
+            "async fn vault_video_resume(",
+            "async fn vault_video_stop(",
+            "async fn vault_video_pending(",
+            "async fn vault_video_recover(",
+            "async fn vault_is_video(",
+            "async fn vault_video_open(",
+            "async fn vault_video_close(",
+        ] {
+            assert!(body(command).contains("run_blocking("), "{command}");
+        }
+        // A piece is decoded, with its limit checked, before the blocking work,
+        // and numbered so a lost or repeated one is noticed.
+        let append = body("async fn vault_video_append(");
+        assert!(append.contains("decode_video_piece(&request.data)"));
+        assert!(append.contains("recording_append_numbered("));
+        assert!(append.contains("run_blocking("));
+        // Playback hands out a token, never a path.
+        let open = body("async fn vault_video_open(");
+        assert!(open.contains("playback_open("));
+        assert!(!open.contains("objects"));
+    }
+
+    #[test]
+    fn a_record_is_a_video_when_its_file_starts_as_an_mp4_does() {
+        use crate::mp4_stream::fake::{fragment, ftyp, moov};
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let id = store
+            .recording_start(profile, vec![], "FAKE clip.mp4", 5)
+            .unwrap();
+        let movie = [ftyp(), moov(), fragment(1, 0, 0, 3000)].concat();
+        store.recording_append(id, &movie).unwrap();
+        let video = store.recording_stop(id, 6).unwrap().unwrap();
+        assert!(is_video(&store, video).unwrap());
+        // A photo, a PDF-like file and a tiny file are not.
+        for (name, bytes) in [
+            (
+                "FAKE a.jpg",
+                vec![0xff, 0xd8, 0xff, 0xe0, 0, 0x10, b'J', b'F', b'I', b'F'],
+            ),
+            ("FAKE b.pdf", b"%PDF-1.7 FAKE".to_vec()),
+            ("FAKE c.txt", b"hi".to_vec()),
+        ] {
+            store
+                .import(
+                    profile,
+                    vec![],
+                    vec![ImportSource {
+                        display_name: name.to_owned(),
+                        reader: Box::new(std::io::Cursor::new(bytes)),
+                    }],
+                    9,
+                )
+                .unwrap();
+        }
+        let records = store.snapshot().unwrap().records;
+        for record in records.iter().filter(|r| r.id != video) {
+            assert!(
+                !is_video(&store, record.id).unwrap(),
+                "{}",
+                record.display_name
+            );
+        }
+        assert!(matches!(
+            is_video(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
     }
 }
 

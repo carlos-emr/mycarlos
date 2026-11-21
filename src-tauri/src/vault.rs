@@ -46,6 +46,7 @@ pub use playback::PlaybackOpened;
 #[cfg(test)]
 pub(crate) use playback::MAX_RANGE_RESPONSE;
 pub(crate) use playback::{looks_like_token, PlaybackRefusal};
+pub(crate) use recording::{PendingRecordings, RecordingProgress, MAX_RECORDING_PIECE};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
@@ -3311,7 +3312,10 @@ impl VaultStore {
                 at_ms: now_ms,
                 reason: HiddenReason::Patient,
             }),
-        )
+        )?;
+        // A video playing from it stops being served.
+        self.end_playback_for(record_id);
+        Ok(())
     }
 
     /// Puts a hidden document back where it was. One hidden as damaged comes
