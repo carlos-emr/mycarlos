@@ -486,3 +486,342 @@ summary:
 Drink 1500 mL a day. || Drink 1,500 mL a day
 expect:
 The document says: “Drink 1,500 mL a day.”
+===
+name: the_writer_named_as_the_doctor_asked_to_see_the_patient
+pages:
+Dear Dr. Sampleton,
+Questions
+Should they keep eating gluten until the biopsy, and for how long?
+I have asked them to keep eating gluten for now and not to start a gluten-free diet before
+your assessment. I would be grateful if they could be seen within the next 4 to 6 weeks.
+Sincerely,
+Dr. Henrietta Fakeham, MD (FAKE)
+summary:
+The patient must be seen by Dr. Henrietta Fakeham within the next 4 to 6 weeks. || they could be seen within the next 4 to 6 weeks
+expect:
+The document says: “I would be grateful if they could be seen within the next 4 to 6 weeks.”
+===
+name: a_doctor_named_in_the_quoted_sentence_stays
+pages:
+Plan
+Follow-up with Dr. Ian Sampleton in 6 weeks.
+Sincerely,
+Dr. Henrietta Fakeham, MD (FAKE)
+summary:
+You must see Dr. Ian Sampleton in 6 weeks. || Follow-up with Dr. Ian Sampleton in 6 weeks
+You must see Dr. Sampleton in 6 weeks. || Follow-up with Dr. Ian Sampleton in 6 weeks
+expect:
+You must see Dr. Ian Sampleton in 6 weeks.
+You must see Dr. Sampleton in 6 weeks.
+===
+name: a_possessive_doctor_name_found_in_the_quote
+pages:
+Going home
+Call Dr. Sampleton’s office at 555-0147 to change the visit.
+summary:
+You must call Dr. Sampleton's office at 555-0147 to change the visit. || Call Dr. Sampleton’s office at 555-0147 to change the visit
+expect:
+You must call Dr. Sampleton's office at 555-0147 to change the visit.
+===
+name: a_doctor_named_from_elsewhere_in_the_letter
+pages:
+Going home
+Dr. Chen will see you again.
+Come back in 6 weeks with your blood tests.
+summary:
+You must come back to Dr. Chen in 6 weeks with your blood tests. || Come back in 6 weeks with your blood tests
+expect:
+The document says: “Come back in 6 weeks with your blood tests.”
+===
+name: a_sentence_with_no_doctor_name_is_left_alone
+pages:
+Going home
+Come back in 6 weeks with your blood tests.
+Sincerely,
+Dr. Henrietta Fakeham, MD (FAKE)
+summary:
+You must come back in 6 weeks with your blood tests. || Come back in 6 weeks with your blood tests
+expect:
+You must come back in 6 weeks with your blood tests.
+===
+name: a_sentence_without_a_found_quote_is_left_alone
+pages:
+Going home
+Come back in 6 weeks with your blood tests.
+summary:
+You must see Dr. Chen in 6 weeks. ||
+expect:
+You must see Dr. Chen in 6 weeks.
+===
+name: a_medicine_stop_left_out_of_the_summary
+pages:
+Plan
+Iron infusion: ferric derisomaltose 1,000 mg intravenously, once, at the Medical Day Unit on 24 November 2026 at 09:00. Ferrous fumarate stops after the infusion.
+Vitamin D3 2,000 units by mouth once a day.
+summary:
+You must have an iron infusion of ferric derisomaltose 1,000 mg intravenously on 24 November 2026 at 09:00. || Iron infusion: ferric derisomaltose 1,000 mg intravenously, once, at the Medical Day Unit on 24 November 2026 at 09:00
+You must take Vitamin D3 2,000 units by mouth once a day. || Vitamin D3 2,000 units by mouth once a day
+expect:
+You must have an iron infusion of ferric derisomaltose 1,000 mg intravenously on 24 November 2026 at 09:00.
+You must take Vitamin D3 2,000 units by mouth once a day.
+The document says: “Ferrous fumarate stops after the infusion.”
+===
+name: a_medicine_stop_carried_by_the_summary
+pages:
+Plan
+Iron infusion: ferric derisomaltose 1,000 mg intravenously, once, at the Medical Day Unit on 24 November 2026 at 09:00. Ferrous fumarate stops after the infusion.
+summary:
+You must stop taking ferrous fumarate after the infusion on 24 November. || Ferrous fumarate stops after the infusion
+expect:
+You must stop taking ferrous fumarate after the infusion on 24 November.
+===
+name: keep_taking_left_out_of_the_summary
+pages:
+Take vitamin D3 2,000 units once a day. Keep taking sumatriptan and the salbutamol inhaler as before.
+summary:
+You must take Vitamin D3 2,000 units once a day. || Take vitamin D3 2,000 units once a day
+expect:
+You must take Vitamin D3 2,000 units once a day.
+The document says: “Keep taking sumatriptan and the salbutamol inhaler as before.”
+===
+name: a_stop_that_is_not_about_a_medicine
+pages:
+Going home
+The bleeding usually stops after 10 minutes.
+summary:
+The bleeding stops in about 10 minutes. || The bleeding usually stops after 10 minutes
+expect:
+The bleeding stops in about 10 minutes.
+===
+name: at_most_three_medicine_lines_are_added
+pages:
+Medicines
+Stop taking FAKEDRUGA tablets. Stop taking FAKEDRUGB tablets. Stop taking FAKEDRUGC tablets. Stop taking FAKEDRUGD tablets. Stop taking FAKEDRUGE tablets.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+The document says: “Stop taking FAKEDRUGA tablets.”
+The document says: “Stop taking FAKEDRUGB tablets.”
+The document says: “Stop taking FAKEDRUGC tablets.”
+===
+name: a_time_limit_taken_from_a_question
+pages:
+Questions
+Should they keep eating gluten until the biopsy, and for how long?
+I have asked them to keep eating gluten for now and not to start a gluten-free diet before
+your assessment. I would be grateful if they could be seen within the next 4 to 6 weeks.
+summary:
+The patient must keep eating gluten until the biopsy. || I have asked them to keep eating gluten for now
+expect:
+The document says: “I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.”
+===
+name: a_time_limit_the_quoted_sentence_gives
+pages:
+Plan
+Keep taking ferrous fumarate until the infusion on 24 November, then stop it.
+summary:
+You must keep taking ferrous fumarate until your infusion on 24 November. || Keep taking ferrous fumarate until the infusion on 24 November
+expect:
+You must keep taking ferrous fumarate until your infusion on 24 November.
+===
+name: an_until_with_no_content_word_is_left_alone
+pages:
+Plan
+Rest at home.
+summary:
+You must rest at home until then. || Rest at home
+expect:
+You must rest at home until then.
+===
+name: a_model_written_quote_line_is_still_checked_for_numbers
+pages:
+Going home
+Take 5 mg every day.
+summary:
+The document says: “Take 50 mg every day.” || Take 5 mg every day
+expect:
+The document says: “Take 5 mg every day.”
+===
+name: a_quote_line_naming_a_doctor_the_quote_lacks_is_replaced
+pages:
+Going home
+Dear Dr. Sampleton, rest until the biopsy.
+Sincerely,
+Dr. Henrietta Fakeham MD
+summary:
+The document says: “The patient must be seen by Dr. Fakeham until the biopsy.” || rest until the biopsy
+expect:
+The document says: “Dear Dr. Sampleton, rest until the biopsy.”
+===
+name: a_doctor_with_credentials_is_found_by_surname
+pages:
+Going home
+Please see Dr. Henrietta Fakeham MD within 6 weeks.
+summary:
+You must see Dr. Fakeham within 6 weeks. || Please see Dr. Henrietta Fakeham MD within 6 weeks
+expect:
+You must see Dr. Fakeham within 6 weeks.
+===
+name: a_time_limit_in_a_french_letter_is_left_alone
+pages:
+Retour
+Continuez le repos jusqu’à la biopsie.
+summary:
+You must rest until the biopsy. || Continuez le repos jusqu’à la biopsie
+expect:
+You must rest until the biopsy.
+===
+name: a_medicine_question_is_not_an_instruction
+pages:
+Questions
+Should she stop taking the iron tablets before the infusion?
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_contact_offer_about_a_medicine_is_not_an_instruction
+pages:
+Going home
+Please call me if you want to stop taking the FAKEDRUG tablets.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_past_or_third_person_medicine_phrase_is_history
+pages:
+History
+She stopped taking the FAKEDRUG tablets in May. He keeps taking his FAKEDRUGB tablets.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_stop_with_no_medicine_before_it_is_not_a_medicine_change
+pages:
+Going home
+The infusion stops after 30 minutes.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: a_dont_take_with_an_apostrophe_is_an_instruction
+pages:
+Going home
+Don’t take FAKEDRUG tablets with food.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+The document says: “Don’t take FAKEDRUG tablets with food.”
+===
+name: a_quote_line_with_a_time_limit_the_quote_lacks_is_replaced
+pages:
+Questions
+Should they keep eating gluten until the biopsy?
+I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.
+summary:
+The document says: “The patient must keep eating gluten until the biopsy.” || keep eating gluten for now
+expect:
+The document says: “I have asked them to keep eating gluten for now and not to start a gluten-free diet before your assessment.”
+===
+name: keep_taking_does_not_carry_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must keep taking FAKEDRUG tablets after the infusion. ||
+expect:
+You must keep taking FAKEDRUG tablets after the infusion.
+The document says: “Stop taking FAKEDRUG tablets after the infusion.”
+===
+name: stop_taking_carries_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must stop taking FAKEDRUG tablets after the infusion. ||
+expect:
+You must stop taking FAKEDRUG tablets after the infusion.
+===
+name: a_question_without_a_question_mark_is_not_an_instruction
+pages:
+Questions
+Please advise whether she should stop taking the FAKEDRUG tablets.
+(Would it help to stop taking the FAKEDRUGB tablets?)
+She was told to stop taking the FAKEDRUGC tablets in 2019.
+summary:
+Come back in six weeks. || Come back
+expect:
+Come back in six weeks.
+===
+name: keep_taking_other_medicines_is_added_unless_the_summary_says_keep
+pages:
+Going home
+Keep taking your other medicines as usual.
+summary:
+Come back in six weeks. || Come back
+Take your medicines with food. ||
+expect:
+Come back in six weeks.
+Take your medicines with food.
+The document says: “Keep taking your other medicines as usual.”
+===
+name: keep_taking_other_medicines_carried_by_a_keep_sentence
+pages:
+Going home
+Keep taking your other medicines as usual.
+summary:
+You must keep taking your other medicines. ||
+expect:
+You must keep taking your other medicines.
+===
+name: do_not_stop_taking_does_not_carry_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must not stop taking FAKEDRUG tablets after the infusion. ||
+expect:
+You must not stop taking FAKEDRUG tablets after the infusion.
+The document says: “Stop taking FAKEDRUG tablets after the infusion.”
+===
+name: a_sentence_with_no_direction_does_not_carry_a_stop
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+Your FAKEDRUG tablets were reviewed after the infusion. ||
+expect:
+Your FAKEDRUG tablets were reviewed after the infusion.
+The document says: “Stop taking FAKEDRUG tablets after the infusion.”
+===
+name: do_not_take_carries_stop_taking
+pages:
+Plan
+Stop taking FAKEDRUG tablets after the infusion.
+summary:
+You must not take FAKEDRUG tablets after the infusion. ||
+expect:
+You must not take FAKEDRUG tablets after the infusion.
+===
+name: a_sentence_with_no_direction_may_carry_a_keep
+pages:
+Plan
+Keep taking FAKEDRUG tablets after the infusion.
+summary:
+Your FAKEDRUG tablets after the infusion are the usual ones. ||
+expect:
+Your FAKEDRUG tablets after the infusion are the usual ones.
+===
+name: an_until_date_carries_a_then_stop
+pages:
+Plan
+FAKEDRUG 875 mg by mouth twice daily until 31 October 2026, then stop.
+summary:
+You must take FAKEDRUG 875 mg by mouth twice daily until 31 October 2026. ||
+expect:
+You must take FAKEDRUG 875 mg by mouth twice daily until 31 October 2026.
