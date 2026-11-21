@@ -36,10 +36,6 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
-// The storage is in every build (the manifest field is part of the format); what reads and writes
-// it is compiled for tests and the `cloud-ai` feature only, so the rest is unused otherwise.
-#[allow(dead_code)]
-mod cloud_keys;
 mod delivery;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
@@ -51,11 +47,6 @@ mod original_pdf;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
-use cloud_keys::StoredCloudKey;
-// The API the commands of a later change use; unused until then.
-#[cfg(any(feature = "cloud-ai", test))]
-#[allow(unused_imports)]
-pub use cloud_keys::{CloudKeyError, CloudKeyInfo};
 
 /// Manifest format 2 (#71) adds hidden documents and pads the manifest to a
 /// size class; format 3 adds the history; format 4 adds profile identity details;
@@ -74,12 +65,7 @@ pub use cloud_keys::{CloudKeyError, CloudKeyInfo};
 /// model-file draft (#298) takes the next number when it merges. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
-/// Format 14 (#72, the patient's own cloud AI key) adds `cloudAiKeys`. **Provisional:** its number
-/// is taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge", with no gap), and the
-/// parked model-file draft (#298) also waits for one. A renumber changes this line, the format's
-/// section in VAULT_FORMAT.md and the tests that name 13 and 14.
-const MANIFEST_FORMAT_CLOUD_KEYS: u32 = 14;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_CLOUD_KEYS;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
@@ -682,10 +668,6 @@ struct Manifest {
     /// the link, so that the link a check is working from stays as saved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     refused_deliveries: Vec<RefusedDelivery>,
-    /// The patient's own API keys for a cloud AI provider (#72), encrypted with the rest of the
-    /// manifest and so in every backup. Format 14. Never given to the page (cloud_keys.rs).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    cloud_ai_keys: Vec<StoredCloudKey>,
 }
 
 /// A clinic delivery that failed its checks (#143): what the portal's
@@ -1493,7 +1475,6 @@ impl VaultStore {
                 waiting_aids: Vec::new(),
                 remote_notices: Default::default(),
                 refused_deliveries: Vec::new(),
-                cloud_ai_keys: Vec::new(),
             };
             // The history's first entry (#71), in the stage like the rest. A
             // vault made after this run set one aside names where it went.
@@ -4989,21 +4970,6 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     // Remembered refusals (#143): format 12, for a saved link, one per
     // delivery, and a bounded number per link.
     if manifest.format_version < MANIFEST_FORMAT_REFUSED && !manifest.refused_deliveries.is_empty()
-    {
-        return Err(VaultError::Corrupt);
-    }
-    // The patient's own cloud AI keys (#72): format 14, a bounded number, each well formed, no
-    // key twice.
-    if manifest.format_version < MANIFEST_FORMAT_CLOUD_KEYS && !manifest.cloud_ai_keys.is_empty() {
-        return Err(VaultError::Corrupt);
-    }
-    if manifest.cloud_ai_keys.len() > cloud_keys::MAX_CLOUD_KEYS
-        || manifest.cloud_ai_keys.iter().any(|key| !key.valid())
-        || manifest.cloud_ai_keys.iter().enumerate().any(|(at, key)| {
-            manifest.cloud_ai_keys[..at]
-                .iter()
-                .any(|before| before.same_as(key))
-        })
     {
         return Err(VaultError::Corrupt);
     }
@@ -9877,7 +9843,6 @@ mod tests {
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
             refused_deliveries: Vec::new(),
-            cloud_ai_keys: Vec::new(),
         };
         (vault_id, manifest)
     }
@@ -15600,7 +15565,6 @@ mod tests {
             waiting_aids: Vec::new(),
             remote_notices: Default::default(),
             refused_deliveries: Vec::new(),
-            cloud_ai_keys: Vec::new(),
         }
     }
 
@@ -17495,8 +17459,6 @@ mod tests {
             // Remembered refusals (#143), format 12: the last before previous
             // full names (13).
             MANIFEST_FORMAT_REFUSED,
-            // Previous full names, format 13: the last before the patient's own cloud AI key (14).
-            MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

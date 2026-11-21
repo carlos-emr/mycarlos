@@ -91,11 +91,6 @@ pub enum HistoryEvent {
     /// The AI helper's answer was kept with the document (#72): `how` is
     /// the tool, "summary" or "explain". No text is recorded.
     AiResultSaved,
-    /// The patient's own cloud AI key was added (#72): `how` is the provider. Never the key.
-    CloudKeyAdded,
-    /// A cloud AI key was removed from the vault; `how` is the provider. Older backups still
-    /// hold it.
-    CloudKeyRemoved,
 }
 
 /// A folder as it was named at the time of the event.

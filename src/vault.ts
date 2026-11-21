@@ -368,9 +368,7 @@ export interface AuditHistoryEntry {
     | "deliveryFiled"
     | "deliveryReceiptSettled"
     | "readingAidFiled"
-    | "aiResultSaved"
-    | "cloudKeyAdded"
-    | "cloudKeyRemoved";
+    | "aiResultSaved";
   name: string | null;
   oldName: string | null;
   from: string[] | null;

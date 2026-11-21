@@ -1006,8 +1006,6 @@ export const MESSAGE_KEYS = [
   "ai.model.refusedUnavailable",
   "native.filter.models",
   "interface.history.event.aiResultSaved",
-  "interface.history.event.cloudKeyAdded",
-  "interface.history.event.cloudKeyRemoved",
   "interface.history.how.summary",
   "interface.history.how.explain",
   "ai.summary.again",
@@ -2258,10 +2256,6 @@ const FLUENT_IDS_BY_KEY = {
   "native.filter.models": "native-filter-models",
   "interface.history.event.aiResultSaved":
     "interface-history-event-aiResultSaved",
-  "interface.history.event.cloudKeyAdded":
-    "interface-history-event-cloudKeyAdded",
-  "interface.history.event.cloudKeyRemoved":
-    "interface-history-event-cloudKeyRemoved",
   "interface.history.how.summary": "interface-history-how-summary",
   "interface.history.how.explain": "interface-history-how-explain",
   "ai.summary.again": "ai-summary-again",
@@ -3423,8 +3417,6 @@ export interface MessageArgsByKey {
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
   "interface.history.event.aiResultSaved": undefined;
-  "interface.history.event.cloudKeyAdded": undefined;
-  "interface.history.event.cloudKeyRemoved": undefined;
   "interface.history.how.summary": undefined;
   "interface.history.how.explain": undefined;
   "ai.summary.again": undefined;
