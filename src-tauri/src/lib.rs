@@ -8026,9 +8026,8 @@ mod historical_identifier_export_tests {
         .expect("approved");
         assert_eq!(
             approved,
-            compose_export_text(UiLocale::default(), clean, Some(2)).unwrap_or_else(|_| {
-                panic!("the file text composes")
-            })
+            compose_export_text(UiLocale::default(), clean, Some(2))
+                .unwrap_or_else(|_| { panic!("the file text composes") })
         );
         assert!(approved.contains(clean));
         assert!(approved.ends_with('\n'));
