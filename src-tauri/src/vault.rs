@@ -39,6 +39,7 @@ mod ai_results;
 mod delivery;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
+mod notice_keys;
 mod remote_notices;
 pub(crate) use delivery::AidFiling;
 #[cfg(test)]
@@ -2113,6 +2114,11 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(link_id);
+        // The Portal removed this device: its notice key (#230) is finished with it, and no
+        // request is needed to say so.
+        if let Some(keys) = crate::notice_key::kept() {
+            let _ = keys.wipe_link(link_id);
+        }
     }
 
     fn link_portal_using(
