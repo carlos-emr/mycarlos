@@ -273,7 +273,6 @@ pub(crate) mod driver {
     use super::*;
     use crate::desktop_background::desktop::Background;
     use crate::notice_key;
-    use crate::vault::VaultStore;
     use std::sync::Arc;
     use tauri::{AppHandle, Emitter};
 
@@ -318,9 +317,15 @@ pub(crate) mod driver {
         f64::from(rand::rngs::OsRng.next_u32()) / f64::from(u32::MAX) * 2.0 - 1.0
     }
 
-    /// Starts the thread. It does nothing until the conditions hold: in the tray, the vault
-    /// locked, and a notice key kept (a key exists only while tray notices are wanted).
-    pub(crate) fn start(app: AppHandle, store: Arc<VaultStore>, background: Arc<Background>) {
+    /// Starts the thread. It does nothing until the conditions hold: in the tray, every vault
+    /// locked (`is_locked`: the only thing it asks of the vault side, so that no store is held
+    /// here), and a notice key kept (a key exists only while tray notices are wanted). It reads
+    /// every key `notice_key::kept()` has, whichever vault made it.
+    pub(crate) fn start(
+        app: AppHandle,
+        is_locked: Arc<dyn Fn() -> bool + Send + Sync>,
+        background: Arc<Background>,
+    ) {
         let screens = Screens {
             app,
             background: Arc::clone(&background),
@@ -332,7 +337,7 @@ pub(crate) mod driver {
                 let mut poller = Poller::new();
                 loop {
                     std::thread::sleep(LOOK);
-                    let locked = store.open_vault_id().is_none();
+                    let locked = is_locked();
                     if !locked {
                         // The patient unlocked: the news is theirs now, and the icon goes back.
                         if waiting_now() {
@@ -651,7 +656,7 @@ mod tests {
         let portal = Script::new(&[]);
         let mut poller = Poller::new();
         poller.tick(Duration::ZERO, IN_TRAY, &keys, &portal, &mut no_jitter);
-        keys.wipe_all().unwrap();
+        keys.wipe(|_| true).unwrap();
         let tick = poller.tick(INTERVAL, IN_TRAY, &keys, &portal, &mut no_jitter);
         assert_eq!(tick, Tick::default());
         assert_eq!(poller.next_due(INTERVAL), None);

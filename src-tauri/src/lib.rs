@@ -5820,9 +5820,10 @@ pub fn run() {
                 tray_notices::set_keep_running(background.status().keep_running);
                 // The check that runs while locked in the tray: it waits until the tray, a locked
                 // vault and a notice key are all there.
+                let poll_store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
                 tray_poller::driver::start(
                     app.handle().clone(),
-                    Arc::clone(app.state::<Arc<VaultStore>>().inner()),
+                    Arc::new(move || poll_store.open_vault_id().is_none()),
                     Arc::clone(&background),
                 );
             }

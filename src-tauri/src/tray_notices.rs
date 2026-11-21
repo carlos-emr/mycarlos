@@ -91,8 +91,9 @@ pub(crate) struct LinkView<'a> {
 /// Brings the kept keys in line with what is wanted, for `vault_id`'s `links`.
 ///
 /// - Not wanted: every key goes.
-/// - Wanted: a key of another vault, of a link that is gone from the vault or from the Portal
-///   (`gone`), or of a link no longer linked goes; each completed link without a key gets one
+/// - Wanted: a key of this vault whose link is gone from the vault or from the Portal (`gone`),
+///   or no longer linked, goes; a key of another vault is left alone; each completed link
+///   without a key gets one
 ///   (`make_for`), which `register` enrols with the Portal; a key the Portal refuses, or could
 ///   not be asked about, is **not kept**: a key outside the vault that the Portal does not know
 ///   is only a secret at rest.
@@ -110,20 +111,26 @@ pub(crate) fn sync_keys<S: WrapKeyStore>(
 ) -> Result<NoticeSync, NoticeKeyError> {
     let mut sync = NoticeSync::default();
     let linked = |id: Uuid| links.iter().any(|link| link.id == id && link.linked) && !gone(id);
+    // Only this vault's keys are looked at: another vault's are not this sync's to judge (the
+    // vault-open hook, `notice_key::after_open`, owns that, and a device with several vaults will
+    // keep them all).
+    let stale =
+        |entry: &NoticeKeyEntry| entry.vault_id == vault_id && (!wanted || !linked(entry.link_id));
     let kept = keys.entries()?;
-    for entry in kept
-        .iter()
-        .filter(|entry| !wanted || entry.vault_id != vault_id || !linked(entry.link_id))
-    {
+    for entry in kept.iter().filter(|entry| stale(entry)) {
         give_up(entry);
     }
-    let wiped =
-        keys.wipe(|entry| !wanted || entry.vault_id != vault_id || !linked(entry.link_id))?;
+    let wiped = keys.wipe(stale)?;
     sync.wiped = wiped.key_ids.len();
     if !wanted {
         return Ok(sync);
     }
-    let have: Vec<Uuid> = keys.entries()?.iter().map(|entry| entry.link_id).collect();
+    let have: Vec<Uuid> = keys
+        .entries()?
+        .iter()
+        .filter(|entry| entry.vault_id == vault_id)
+        .map(|entry| entry.link_id)
+        .collect();
     for link in links
         .iter()
         .filter(|link| link.linked && !gone(link.id) && !have.contains(&link.id))
@@ -316,22 +323,32 @@ mod tests {
     }
 
     #[test]
-    fn another_vaults_key_is_wiped_and_not_replaced_by_this_ones_registration_of_its_own() {
+    fn another_vaults_key_is_not_this_syncs_to_judge_whether_wanted_or_not() {
         let (_temp, keys) = keys();
-        keys.make_for(uuid(99), uuid(10), ORIGIN).unwrap();
-        let done = run(
-            &keys,
-            &[link(10, true)],
-            &[],
-            true,
-            Registration::Registered,
-        );
-        let sync = done.sync.unwrap();
-        // The other vault's key went; this vault got its own for the same link id.
-        assert_eq!((sync.wiped, sync.made), (1, 1));
-        let kept = keys.entries().unwrap();
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].vault_id, uuid(1));
+        keys.make_for(uuid(99), uuid(50), ORIGIN).unwrap();
+        // This vault has a link of its own; the other vault's key (for a link this vault does not
+        // have) is left alone, wanted or not.
+        for wanted in [true, false] {
+            let done = run(
+                &keys,
+                &[link(10, true)],
+                &[],
+                wanted,
+                Registration::Registered,
+            );
+            done.sync.unwrap();
+            assert!(
+                done.given_up.is_empty(),
+                "no key of another vault is given up"
+            );
+            assert!(
+                keys.entries()
+                    .unwrap()
+                    .iter()
+                    .any(|entry| entry.vault_id == uuid(99)),
+                "the other vault's key stays (wanted: {wanted})"
+            );
+        }
     }
 
     #[test]
