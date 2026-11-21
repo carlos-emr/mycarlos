@@ -684,6 +684,23 @@ struct PickRequest {
     pick_id: Uuid,
 }
 
+/// Writes the backup to a place the patient chose, optionally leaving the videos
+/// out (#359).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupWriteRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    leave_videos_out: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupSizeRequest {
+    #[serde(default)]
+    leave_videos_out: bool,
+}
+
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3733,13 +3750,27 @@ async fn vault_backup_pick(
     Ok(destination.map(|destination| picks.backups.store(session, destination)))
 }
 
+/// How big a backup would be, and how much of it is video, asked before the
+/// patient chooses where to save it.
+#[tauri::command]
+async fn vault_backup_size(
+    store: State<'_, Arc<VaultStore>>,
+    request: BackupSizeRequest,
+) -> CommandResult<vault::BackupSize> {
+    run_blocking(store.inner(), move |store| {
+        store.backup_size(request.leave_videos_out)
+    })
+    .await
+}
+
 #[tauri::command]
 async fn vault_backup_picked(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: PickRequest,
+    request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let leave_videos_out = request.leave_videos_out;
     let destination = picks
         .backups
         .take(request.pick_id, picks.session())
@@ -3753,7 +3784,7 @@ async fn vault_backup_picked(
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.inner(), move |store| {
-            store.backup_atomic(&path, now_ms())?;
+            store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
             Ok(SavedBackup {
                 name,
                 bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
@@ -3774,7 +3805,7 @@ async fn vault_backup_picked(
     run_blocking(store.inner(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
-        store.verify_for_backup()?;
+        store.verify_for_backup_with(leave_videos_out)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -3785,12 +3816,13 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup(
+        store.backup_with(
             std::io::BufWriter::new(Counted {
                 inner: output,
                 bytes: counted,
             }),
             now_ms(),
+            leave_videos_out,
         )?;
         store.record_backup_saved(&place);
         Ok(())
@@ -5915,6 +5947,7 @@ pub fn run() {
             vault_recovery_key_cancel,
             vault_recover,
             vault_backup_pick,
+            vault_backup_size,
             vault_backup_picked,
             vault_restore_pick,
             vault_restore_inspect,
@@ -7578,6 +7611,7 @@ mod tests {
             replaces,
             differs_from_this_device: differs,
             document_count: 3,
+            left_out: 0,
             fingerprint: [0; 32],
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());

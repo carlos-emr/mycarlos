@@ -1111,5 +1111,11 @@
   "interface.RecordDialog.notEnoughRoom",
   "interface.RecordDialog.lowOnRoom",
   "interface.RecordDialog.lowOnRoomMinutes",
-  "interface.RecordDialog.videoSavedNoRoom"
+  "interface.RecordDialog.videoSavedNoRoom",
+  "security.backup.size",
+  "security.backup.sizeWithVideos",
+  "security.backup.sizeNoVideos",
+  "security.backup.leaveVideosOut",
+  "security.backup.leaveVideosOutHelp",
+  "restore.leftOut"
 ]

@@ -1113,6 +1113,12 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.lowOnRoom",
   "interface.RecordDialog.lowOnRoomMinutes",
   "interface.RecordDialog.videoSavedNoRoom",
+  "security.backup.size",
+  "security.backup.sizeWithVideos",
+  "security.backup.sizeNoVideos",
+  "security.backup.leaveVideosOut",
+  "security.backup.leaveVideosOutHelp",
+  "restore.leftOut",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2460,6 +2466,12 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-lowOnRoomMinutes",
   "interface.RecordDialog.videoSavedNoRoom":
     "interface-RecordDialog-videoSavedNoRoom",
+  "security.backup.size": "security-backup-size",
+  "security.backup.sizeWithVideos": "security-backup-sizeWithVideos",
+  "security.backup.sizeNoVideos": "security-backup-sizeNoVideos",
+  "security.backup.leaveVideosOut": "security-backup-leaveVideosOut",
+  "security.backup.leaveVideosOutHelp": "security-backup-leaveVideosOutHelp",
+  "restore.leftOut": "restore-leftOut",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3691,6 +3703,15 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.lowOnRoom": undefined;
   "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
   "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
+  "security.backup.size": { size: FluentArgument };
+  "security.backup.sizeWithVideos": {
+    size: FluentArgument;
+    videos: FluentArgument;
+  };
+  "security.backup.sizeNoVideos": { size: FluentArgument };
+  "security.backup.leaveVideosOut": undefined;
+  "security.backup.leaveVideosOutHelp": undefined;
+  "restore.leftOut": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

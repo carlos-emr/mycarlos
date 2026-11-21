@@ -15,7 +15,7 @@ import {
   inDialogHost,
   trimmedDetails,
 } from "./PersonDetails";
-import type { PatientProfile, PersonDetails } from "../vault";
+import type { BackupSize, PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
 import { SpokenCount } from "./SpokenCount";
 import {
@@ -43,7 +43,7 @@ import {
 import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
 import type { OldBackupsGuide } from "./oldBackups";
-import { formatFileSize } from "./recordPresentation";
+import { formatBackupSize, formatFileSize } from "./recordPresentation";
 
 interface SecuritySettingsProps {
   clinicDocuments?: ReactNode;
@@ -82,7 +82,11 @@ interface SecuritySettingsProps {
   /** Whether this platform's file app counts sizes in 1024s (Windows). */
   sizesIn1024s?: boolean;
   onSetUpRecoveryKey: () => void;
-  onSaveBackup: () => Promise<void>;
+  /** Saves a backup, with the videos left out or not. */
+  onSaveBackup: (leaveVideosOut: boolean) => Promise<void>;
+  /** How big a backup would be (#359), so that the patient sees it before
+   * choosing where to save it. */
+  onBackupSize?: (leaveVideosOut: boolean) => Promise<BackupSize>;
   onSpeedTest: () => Promise<SpeedTestReport>;
   /** Where the profile dialogs are drawn: beside the library's other dialogs,
    * outside the page it makes inert while one is open. Without it, in place. */
@@ -185,11 +189,33 @@ export function SecuritySettings({
   sizesIn1024s = false,
   onSetUpRecoveryKey,
   onSaveBackup,
+  onBackupSize,
   onSpeedTest,
   dialogHost,
   onDialogChange,
 }: SecuritySettingsProps) {
   const { t } = useI18n();
+  // The size a backup would be, with or without the videos (#359).
+  const [leaveVideosOut, setLeaveVideosOut] = useState(false);
+  const [backupSize, setBackupSize] = useState<BackupSize | null>(null);
+  useEffect(() => {
+    if (!onBackupSize) return;
+    let current = true;
+    onBackupSize(leaveVideosOut).then(
+      (size) => {
+        if (!current) return;
+        setBackupSize(size);
+        // A vault with no video has nothing to leave out.
+        if (size.videoCount === 0) setLeaveVideosOut(false);
+      },
+      () => {
+        if (current) setBackupSize(null);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [onBackupSize, leaveVideosOut]);
   const hiddenEntryRef = useRef<HTMLButtonElement | null>(null);
   const auditEntryRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -487,6 +513,41 @@ export function SecuritySettings({
           <div>
             <h2>{translateNow("security.backup.title")}</h2>
             <p>{translateNow("security.backup.body")}</p>
+            {backupSize && (
+              <>
+                <p className="backup-size" role="status">
+                  {backupSize.videoCount === 0
+                    ? translateNow("security.backup.size", {
+                        size: formatBackupSize(backupSize.totalBytes),
+                      })
+                    : leaveVideosOut
+                      ? translateNow("security.backup.sizeNoVideos", {
+                          size: formatBackupSize(backupSize.totalBytes),
+                        })
+                      : translateNow("security.backup.sizeWithVideos", {
+                          size: formatBackupSize(backupSize.totalBytes),
+                          videos: formatBackupSize(backupSize.videoBytes),
+                        })}
+                </p>
+                {backupSize.videoCount > 0 && (
+                  <>
+                    <label className="restore-choice">
+                      <input
+                        type="checkbox"
+                        checked={leaveVideosOut}
+                        onChange={(event) =>
+                          setLeaveVideosOut(event.target.checked)
+                        }
+                      />
+                      {translateNow("security.backup.leaveVideosOut")}
+                    </label>
+                    <p className="native-dialog-status">
+                      {translateNow("security.backup.leaveVideosOutHelp")}
+                    </p>
+                  </>
+                )}
+              </>
+            )}
             {oldBackupsGuide && (
               <section
                 className="old-backups-guide"
@@ -544,7 +605,7 @@ export function SecuritySettings({
               className="button"
               type="button"
               disabled={busy || readOnly}
-              onClick={() => void onSaveBackup()}
+              onClick={() => void onSaveBackup(leaveVideosOut)}
             >
               {translateNow("security.backup.save")}
             </button>

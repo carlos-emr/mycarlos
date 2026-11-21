@@ -1019,3 +1019,82 @@ describe("SecuritySettings backup layout", () => {
     }
   });
 });
+
+describe("the backup's size and leaving the videos out (#359)", () => {
+  const sizes = (videos: number) =>
+    vi.fn(async (leave: boolean) => ({
+      totalBytes: leave ? 1_300_000_000 : 14_200_000_000,
+      videoBytes: videos > 0 ? 12_900_000_000 : 0,
+      videoCount: videos,
+    }));
+
+  it("shows how big the backup will be, and how much of it is video, before anything is saved", async () => {
+    setLocaleOverride("en");
+    const props = renderSettings({ onBackupSize: sizes(3) });
+    expect(
+      await screen.findByText(
+        humanText("About 14.2 GB, of which videos 12.9 GB."),
+      ),
+    ).toBeVisible();
+    expect(props.onSaveBackup).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("checkbox", { name: humanText("Leave videos out") }),
+    ).not.toBeChecked();
+  });
+
+  it("recomputes the size when the videos are left out, says what that means, and saves without them", async () => {
+    setLocaleOverride("en");
+    const onBackupSize = sizes(3);
+    const props = renderSettings({ onBackupSize });
+    const leave = await screen.findByRole("checkbox", {
+      name: humanText("Leave videos out"),
+    });
+    fireEvent.click(leave);
+    expect(
+      await screen.findByText(humanText("About 1.3 GB, without videos.")),
+    ).toBeVisible();
+    expect(onBackupSize).toHaveBeenLastCalledWith(true);
+    expect(
+      screen.getByText(
+        humanText(
+          "The backup will not contain your videos. If you restore it, the videos are not brought back.",
+        ),
+      ),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(true);
+  });
+
+  it("offers nothing to leave out when the vault holds no video", async () => {
+    setLocaleOverride("en");
+    const props = renderSettings({ onBackupSize: sizes(0) });
+    expect(await screen.findByText(humanText("About 14.2 GB."))).toBeVisible();
+    expect(
+      screen.queryByRole("checkbox", { name: humanText("Leave videos out") }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(false);
+  });
+
+  it("is in the patient's language and still saves when the size cannot be told", async () => {
+    setLocaleOverride("fr");
+    const props = renderSettings({
+      onBackupSize: vi.fn().mockRejectedValue(new Error("FAKE")),
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: /./ })).toBeNull(),
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.backup.save")),
+      }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(false);
+    setLocaleOverride("en");
+  });
+});

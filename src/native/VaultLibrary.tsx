@@ -15,6 +15,7 @@ import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -1459,7 +1460,15 @@ export function VaultLibrary({
       : [recordId],
   });
 
-  const saveBackup = () =>
+  // Asked for the screen that offers a backup: how big it would be.
+  const backupSize = useCallback(
+    (leaveVideosOut: boolean) =>
+      typeof bridge.backupSize === "function"
+        ? bridge.backupSize(leaveVideosOut)
+        : Promise.reject(new Error("no backup size")),
+    [bridge],
+  );
+  const saveBackup = (leaveVideosOut = false) =>
     run(async () => {
       // Named by the patient's own date, not the UTC one.
       const pickId = await bridge.pickBackupDestination(
@@ -1477,7 +1486,7 @@ export function VaultLibrary({
       }
       let saved: SavedBackup | undefined;
       try {
-        saved = await bridge.saveBackupToPicked(pickId);
+        saved = await bridge.saveBackupToPicked(pickId, leaveVideosOut);
       } catch (error) {
         // On Android the steps may name no file, and this save may have been
         // over the one they say to keep, now emptied: a new backup comes
@@ -2823,6 +2832,7 @@ export function VaultLibrary({
                 sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
+                onBackupSize={backupSize}
                 onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />

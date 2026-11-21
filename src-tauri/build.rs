@@ -140,6 +140,7 @@ fn main() {
             "vault_recovery_key_cancel",
             "vault_recover",
             "vault_backup_pick",
+            "vault_backup_size",
             "vault_backup_picked",
             "vault_restore_pick",
             "vault_restore_inspect",
