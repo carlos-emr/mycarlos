@@ -776,9 +776,10 @@ state, described in the recovery-key sections above.
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
 
-**Waiting keys for tray notices (myCarlos integration planned in #230; Portal contract in carlos-portal#88).** To let a
-locked myCarlos in the tray ask a linked portal "is anything waiting?", the planned integration
-creates each link's waiting key at clinic-link time, independently of later notice opt-in.
+**Waiting keys for tray notices (#230, built with the tray; Portal contract in carlos-portal#88).** To let a
+locked myCarlos in the tray ask a linked portal "is anything waiting?", each link gets a waiting
+key while the vault is unlocked and tray notices are wanted (tray mode and notices both on: at link
+time, at unlock, or when a switch turns on); a vault that never turns them on keeps none.
 It is kept outside the vault so that it works while the vault is locked.
 It is not a preference and is not in the webview's storage:
 
@@ -793,13 +794,13 @@ It is not a preference and is not in the webview's storage:
 
 Anyone who runs as the patient's OS account can decrypt the stored portal addresses and count
 the populated waiting-key slots, and use a waiting key to ask each of those portals whether
-something is waiting (Ben's decision, 5 November 2026). The keys are wiped on unlink,
+something is waiting (Ben's decision, 5 November 2026). The keys are wiped when a link is gone,
 when notices or the tray are turned off,
-on vault reset or set-aside, and when a different vault is opened. Each wipe also requests portal
-revocation, which may wait while the device is offline ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
+on vault reset or set-aside, when a different vault is opened, and at the first "not found" from the
+portal. Each wipe first has the key tell the portal it is finished (best effort, no retry) ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
 "Tray notices"). The file and the OS item are not in myCarlos portable backups. OS/device backup
 behavior is a separate platform property; restoring a myCarlos portable backup restores no
-waiting key. The integration must create and register a new key before tray checks resume.
+waiting key. The next unlock makes and registers a new key before tray checks resume.
 
 ## Known limits before release
 

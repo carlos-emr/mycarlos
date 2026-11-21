@@ -821,6 +821,40 @@ on synthetic letters and reports, the text cleaning and its shared table),
 save), `src-tauri/src/text_recheck.rs` (the native re-check) and
 `tests/anonymize-preview.spec.ts` (a keyboard walk at 200% text).
 
+## Notices while locked in the tray (#230, Windows only for now)
+
+Needs: a Windows PC; a myCarlos build with the tray (#206) and this change; a development Portal that
+has the waiting-key routes (carlos-portal#88) with a FAKE clinic and a FAKE patient who can be sent a
+document. Use synthetic data only. Windows is the only system with a credential-store adapter, so on
+Linux and macOS nothing below is made or asked (fail closed, no plain file).
+
+1. In Preferences, turn on **Keep myCarlos running in the background** and the **notices** choice,
+   then link the clinic (or, if it is linked, lock and unlock once). Check that a key was made:
+   - `cmdkey /list` shows a Credential Manager item named `myCarlos/notice-keys/v1`;
+   - `notice-keys.v1` is beside the settings in the app's local data folder, **20,532 bytes**
+     whatever the number of clinics linked.
+2. Close the window (it goes to the tray and the vault locks). From the Portal side, deliver a
+   document for the device. Within about 5 to 6 minutes (5 min with up to 20 % jitter; never sooner than
+   2 minutes) **a Windows notice appears: "A new document is waiting. Unlock myCarlos to see it."** and
+   nothing else: no clinic, patient, document or count. Hover the tray icon: its tooltip says the same.
+3. Click the notice. **Check and report what it does** (not verified without a Windows build): the aim is
+   that it shows the myCarlos window on the unlock screen. If it does nothing, the tray icon's left click
+   (or Open) must; that part is the tray's own.
+4. The unlock screen shows the same sentence once. Unlock: the line goes, the icon's tooltip goes back
+   to "myCarlos, vault locked" on the next lock, and the normal document check takes over. A second
+   document does not announce again until the next unlock.
+5. Turn the **notices** choice (or the background choice) off while unlocked: `notice-keys.v1` keeps its
+   size but the key is gone, the `cmdkey` item is removed once no key is left, and the Portal stops
+   answering for that key (the device's waiting key is revoked there, best effort).
+6. Wipes: remove the device in the Portal (the key goes at the first "not found" from it, or at the
+   next unlock's reconciliation); set the vault aside and start again (every key goes); open a
+   different vault (the first vault's keys go).
+7. Offline: disconnect the network with the window in the tray. Nothing is announced, nothing breaks, and
+   asking resumes with a longer wait after failures (doubling up to an hour, then back to 5 minutes
+   after one success).
+Please report the tray icon, the notice text and its language (change the language in Preferences before
+closing to the tray), and what a click on the notice does.
+
 ## Appearance and Windows high contrast
 
 Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,

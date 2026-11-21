@@ -297,8 +297,8 @@ model download (#219), only when the patient clicks it: the download site sees t
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
-**Tray notices (myCarlos integration planned in #230; Portal contract merged in carlos-portal#88).**
-With the tray, closing the window locks the vault. While unlocked at clinic-link time, the device
+**Tray notices (built in #230, after the tray #206; Portal contract merged in carlos-portal#88).**
+With the tray, closing the window locks the vault. While unlocked and tray notices are wanted (tray mode and notices both on: at link time, at unlock, or when a switch turns on), the device
 registers a separate waiting key's id, public key and algorithm with that portal, in a request
 signed by the link's device key. To still tell the patient that a clinic has sent something, the
 locked app may then ask each linked portal "is anything waiting?" with its waiting key. Each check's
