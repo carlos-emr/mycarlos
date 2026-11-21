@@ -26,9 +26,49 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
 };
+
+/// Runs `work` on a thread of its own, or on this one if no thread can be made. A lock that a
+/// failed spawn silently dropped would leave the window hidden with the vault open (a close) or a
+/// Quit that does nothing, which is worse than a lock that waits for the vault's mutex here.
+#[cfg_attr(not(desktop), allow(dead_code))]
+pub(crate) fn run_off_thread(name: &str, work: impl FnOnce() + Send + 'static) {
+    run_with(name, work, |name, job| {
+        std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(job)
+            .map(|_| ())
+    });
+}
+
+/// `run_off_thread` with the spawning given, so a test can make it fail.
+fn run_with<W, S>(name: &str, work: W, spawner: S)
+where
+    W: FnOnce() + Send + 'static,
+    S: FnOnce(&str, Box<dyn FnOnce() + Send>) -> io::Result<()>,
+{
+    type Work = Box<dyn FnOnce() + Send>;
+    fn take(slot: &Mutex<Option<Work>>) -> Option<Work> {
+        slot.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+    }
+    let slot: Arc<Mutex<Option<Work>>> = Arc::new(Mutex::new(Some(Box::new(work))));
+    let in_thread = Arc::clone(&slot);
+    // A spawn that fails drops its closure, so the work waits in a slot both sides can take from.
+    let job: Work = Box::new(move || {
+        if let Some(work) = take(&in_thread) {
+            work();
+        }
+    });
+    if spawner(name, job).is_err() {
+        if let Some(work) = take(&slot) {
+            work();
+        }
+    }
+}
 
 /// How many times the window was closed to the tray (the vault locked with it).
 static CLOSE_LOCKS: AtomicU64 = AtomicU64::new(0);
@@ -729,12 +769,10 @@ pub(crate) mod desktop {
                     "quit" => {
                         let lock_all = Arc::clone(&lock_all);
                         let app = app.clone();
-                        let _ = std::thread::Builder::new()
-                            .name("quit-lock".to_owned())
-                            .spawn(move || {
-                                lock_all();
-                                app.exit(0);
-                            });
+                        run_off_thread("quit-lock", move || {
+                            lock_all();
+                            app.exit(0);
+                        });
                     }
                     _ => {}
                 })
@@ -830,9 +868,7 @@ pub(crate) mod desktop {
                 // answer is worse than a lock a moment later (the vault_lock command does the
                 // same on the blocking pool).
                 let lock_all = Arc::clone(&background.backend.lock_all);
-                let _ = std::thread::Builder::new()
-                    .name("close-lock".to_owned())
-                    .spawn(move || lock_all());
+                run_off_thread("close-lock", move || lock_all());
             }
         }
     }
@@ -917,6 +953,34 @@ mod tests {
         assert!(must_refuse_unlock(3, 4, true));
         // The window is still hidden in the tray: refused, even with no new close.
         assert!(must_refuse_unlock(3, 3, true));
+    }
+
+    #[test]
+    fn work_runs_inline_when_no_thread_can_be_made_and_once_when_one_can() {
+        let ran = Arc::new(AtomicUsize::new(0));
+        // The spawn fails: the lock still happens, here.
+        let count = Arc::clone(&ran);
+        run_with(
+            "lock",
+            move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            },
+            |_, _| Err(io::Error::other("no threads")),
+        );
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
+        // The spawn works (the job runs as the thread would): it runs once, not again inline.
+        let count = Arc::clone(&ran);
+        run_with(
+            "lock",
+            move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            },
+            |_, job| {
+                job();
+                Ok(())
+            },
+        );
+        assert_eq!(ran.load(Ordering::SeqCst), 2);
     }
 
     #[test]
