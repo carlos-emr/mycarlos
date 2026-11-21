@@ -2625,10 +2625,7 @@ mod tests {
         // that was taken, and no copy of it made (a copy needs room).
         let before = object_files(temp.path());
         let record = store.recording_stop(id, 6).unwrap().unwrap();
-        assert_eq!(
-            index_of(&stored(&store, record)).entries.len() as u64,
-            next - 1
-        );
+        assert_eq!(index_of(&stored(&store, record)).entries.len() as u64, next);
         assert_eq!(object_files(temp.path()).len(), before.len() + 1);
         assert!(recordings_files(temp.path()).is_empty());
     }

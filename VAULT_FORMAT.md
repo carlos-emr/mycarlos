@@ -1242,3 +1242,32 @@ A recording is stored in the existing `MCVO1` object format, one 1 MiB frame at 
 - **What stays on disk**: nothing readable. The journal, tail and object are ciphertext; the object's name is opaque and its length shows roughly how long the recording is, like any record's.
 - **Index and playback head**: the trailing index (an `mcvx` box and a 12-byte footer) holds one entry per fragment that carries the primary track; a fragment without it (rare) is folded into the entry before it, so entries stay contiguous. A fragment that names an explicit base data offset is refused (the normaliser moves every fragment, so an absolute offset would point at the wrong bytes). The synthetic `sidx` holds at most 65,535 references: a recording longer than that (about 18 hours at one fragment a second) groups consecutive fragments under one reference, so seeking there lands on a group's start rather than the recording being refused.
 - **Media type and label**: a recording is stored with the same `application/octet-stream` type and "Manual import — unverified" label as every other record (the manifest check requires them); what it is, is told by its contents, as for a photo.
+
+## Video records (#359, no new format)
+
+A recorded video is an ordinary record: **no manifest, header, object or backup format changes, and no
+format number is taken.** What makes it a video is its contents.
+
+- **Object.** An `MCVO1` object like any other (1 MiB frames, every non-final frame full size). Its
+  plaintext is the fragmented MP4 the webview recorded after the normaliser (one `ftyp` and one `moov`,
+  fragments renumbered from 1, pauses closed up in every track), then a trailing index: an `mcvx` box
+  (one entry per fragment that carries the primary track: its offset, size, start and duration) and a
+  12-byte `mcve` footer that says how long it is, so it is found from the end. A player skips both as
+  unknown boxes.
+- **Record.** `mediaType` is `application/octet-stream` and `sourceLabel` the usual manual-import label,
+  as for every record (the manifest check requires them; a photo is the same). The name is generated once
+  (`Video, 20 Nov 2026, 3.05 PM.mp4`); the size, folders and history are the usual ones. The history
+  entry is `imported` with the way `camera`, as a photo's.
+- **Recognised by its first bytes.** `ftyp` at byte 4, as a photo is recognised by `FF D8 FF`; a name
+  ending in `.mp4` is not what decides.
+- **Played from a synthetic head.** The player is served `ftyp`, `moov`, a `sidx` built in memory from the
+  index, then the stored fragments: the stored bytes are unchanged, and the head is never stored. A
+  recording longer than a `sidx` can index (65,535 fragments) groups fragments under one reference.
+- **Not carried (yet).** A video is a document in a backup and an export like any other, streamed without
+  being held whole. A backup of a vault with hours of video is very large; PR 6 of #359 adds its size
+  beforehand and "leave videos out" (backup container format 2), which is the next format number to be
+  taken and is not this change.
+- **An older myCarlos** opens a vault that holds videos and shows them as documents it cannot read as
+  PDFs or photos; they stay exportable. It does not know `recordings/` (see above); a vault with an
+  unfinished recording in it was not opened with an older build here, and the first newer unlock finishes
+  or asks about it.

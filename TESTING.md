@@ -392,6 +392,57 @@ On the iOS Simulator, also check the items in [issue #5](https://github.com/carl
 Developers can find a fuller checklist, including large files and interrupted transfers, in
 [EVALUATION.md](EVALUATION.md); it needs a development setup.
 
+## Recording and playing a video (#359)
+
+Use **made-up people and documents only** (a person named "FAKE Patient", a filing folder of your own),
+and point the camera at something harmless. Sound is recorded: anyone talking near the device is heard.
+
+**On every platform**
+
+1. In **My records** choose **Record a video**. Where the webview cannot record MP4 the button is
+   replaced by "Video recording isn't available on this device" and a **Why?** that explains: check
+   that, and that **Take a photo** still works.
+2. In the dialog read the notice about sound, then choose **Use the camera and microphone**. The system
+   (or, on Windows and Linux, the app alone) allows it; nothing is recorded yet. Then **Start recording**.
+3. Check the **Recording** badge and the **Recorded 0:07** time. Press **Pause recording**: the badge says
+   **Paused**, the note says the camera and microphone are still on, the time stops, and a screen reader
+   says "Recording paused." **Resume recording**: it counts on.
+4. **Stop and save.** The video appears in the list; open it and choose **Play video**. Seek by the bar
+   and with the arrow keys; check that it neither starts by itself nor repeats, that sound plays, and that
+   the time shown is the time you recorded **without** the pause.
+5. Close the player, then **Lock now** while a video is open: the player goes and nothing plays.
+6. **Idle lock.** Set the automatic lock to 1 minute. Record for 2 minutes without touching the screen:
+   it must **not** lock. Pause and wait: it **must** lock about a minute later, and after unlocking the
+   video that was saved is there with a note.
+7. **A crash.** Start recording, then end myCarlos from the system (kill it). Open it again and unlock: it
+   asks "myCarlos closed while you were recording. Keep the video that was saved?" with **Keep the video**
+   focused. Try **Delete it**: it asks again and says it cannot be undone. Keep it and play it.
+8. **Hiding while recording.** Switch to another app while recording: the recording ends and is saved.
+9. **Room.** On a device or volume with little free space (a small disk image is enough), **Record a video**
+   with under 1 GB free: the dialog says there is not enough room and neither the camera nor the
+   microphone turns on. With a little more, record until it warns about the room left and then stops by
+   itself, saved: "Saved. There was no more room."
+10. **Hide a video** from its details while it plays: the player stops.
+
+**Windows (WebView2).** Windows has no per-app prompt for the microphone: "Let desktop apps access your
+microphone" in Settings > Privacy decides. Switch it off and check the dialog says where to look. On an
+**N or KN edition** without the Media Feature Pack, expect the "isn't available" line.
+
+**macOS.** The system asks for the camera and the microphone with the texts in the dialog's explanation.
+An unsigned build without the hardened runtime asks; a signed one needs the camera and audio-input
+entitlements (not yet signed, #24).
+
+**Linux (WebKitGTK).** Install `gstreamer1.0-plugins-bad` and `gstreamer1.0-plugins-ugly` (and
+`gstreamer1.0-libav`) first: without them there is no Record. Nothing asks: the app allows the camera and
+microphone for its own pages. Check that the screen is never offered.
+
+**Android.** A phone with Android 7 or older shows the "isn't available" line. Otherwise the phone asks once
+for the camera and the microphone (also try **Don't ask again** and check the message). Rotate the phone
+while recording, take a call (the recording ends and is saved), and lock the phone.
+
+**iPhone and iPad.** From iOS 14.5; before that, the "isn't available" line. The simulator has no camera:
+use a real device. The prompt text is the one in the dialog's explanation.
+
 ## Accessibility checks
 
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to

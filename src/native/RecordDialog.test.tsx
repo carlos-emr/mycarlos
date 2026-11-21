@@ -134,8 +134,15 @@ function fakeBridge(overrides: Partial<RecordBridge> = {}) {
         hasVideo: true,
         hasAudio: true,
         nextSequence: ++next,
+        space: "ok" as const,
+        freeBytes: null,
       }),
     ),
+    videoSpace: vi.fn(async () => ({
+      freeBytes: 50 * 1024 ** 3,
+      level: "ok" as const,
+      canRecord: true,
+    })),
     videoPause: vi.fn(async () => undefined),
     videoResume: vi.fn(async () => undefined),
     videoStop: vi.fn(async () => ({ recordId: "video-1" })),
@@ -411,6 +418,8 @@ describe("RecordDialog", () => {
           hasVideo: true,
           hasAudio: true,
           nextSequence: 1,
+          space: "ok" as const,
+          freeBytes: null,
         };
       }),
     });
@@ -433,7 +442,7 @@ describe("RecordDialog", () => {
   it("stops at once, not at Stop, when the vault refuses a piece, and keeps what was saved", async () => {
     const bridge = fakeBridge({
       videoAppend: vi.fn(async () => {
-        throw { code: "no_space", message: "FAKE full" };
+        throw { code: "storage", message: "FAKE refused" };
       }),
     });
     const { onSaved } = await recording(bridge);
@@ -585,6 +594,113 @@ describe("RecordDialog", () => {
     expect(status).toHaveTextContent("A leftover notice.");
     fireEvent.click(button("Pause recording"));
     await waitFor(() => expect(status).toHaveTextContent("Recording paused."));
+  });
+
+  it("turns neither the camera nor the microphone on when there is not enough room, and says so", async () => {
+    let room = 600 * 1024 ** 2;
+    const bridge = fakeBridge({
+      videoSpace: vi.fn(async () => ({
+        freeBytes: room,
+        level: "low" as const,
+        canRecord: room >= 1024 ** 3,
+      })),
+    });
+    const { onSaved } = open({}, bridge);
+    fireEvent.click(button("Use the camera and microphone"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "There is not enough room to record a video. About 1 GB must be free.",
+    );
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(bridge.videoStart).not.toHaveBeenCalled();
+    expect(streams).toHaveLength(0);
+    // Make room, and Try again goes on to the camera.
+    room = 5 * 1024 ** 3;
+    fireEvent.click(button("Try again"));
+    await screen.findByRole("button", { name: "Start recording" });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("warns when room runs low while recording, and keeps recording", async () => {
+    const bridge = fakeBridge({
+      videoAppend: vi.fn(async () => ({
+        storedBytes: 1,
+        fragments: 1,
+        hasVideo: true,
+        hasAudio: true,
+        nextSequence: 1,
+        space: "low" as const,
+        freeBytes: 400 * 1024 ** 2,
+      })),
+    });
+    const { onSaved } = await recording(bridge);
+    act(() => recorder().emit(piece(100)));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Running low on room.",
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(recorder().state).toBe("recording");
+  });
+
+  it("ends and saves the recording when the vault says the reserve is reached", async () => {
+    const bridge = fakeBridge({
+      videoAppend: vi.fn(async () => ({
+        storedBytes: 1,
+        fragments: 1,
+        hasVideo: true,
+        hasAudio: true,
+        nextSequence: 1,
+        space: "stop" as const,
+        freeBytes: 100 * 1024 ** 2,
+      })),
+    });
+    const { onSaved } = await recording(bridge);
+    act(() => recorder().emit(piece(100)));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "space"),
+    );
+    expect(recorder().state).toBe("inactive");
+    expect(
+      streams.every((s) =>
+        s.getTracks().every((t) => t.readyState === "ended"),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats a disk that filled anyway the same way: saved, told as no room", async () => {
+    const bridge = fakeBridge({
+      videoAppend: vi.fn(async () => {
+        throw { code: "no_space", message: "FAKE full" };
+      }),
+    });
+    const { onSaved } = await recording(bridge);
+    act(() => recorder().emit(piece(100)));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "space"),
+    );
+  });
+
+  it("looks at the room again on resume, and saves instead of recording into a full disk", async () => {
+    let canRecord = true;
+    const bridge = fakeBridge({
+      videoSpace: vi.fn(async () => ({
+        freeBytes: canRecord ? 5 * 1024 ** 3 : 100 * 1024 ** 2,
+        level: canRecord ? ("ok" as const) : ("stop" as const),
+        canRecord,
+      })),
+    });
+    const { onSaved } = await recording(bridge);
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
+    );
+    canRecord = false;
+    fireEvent.click(button("Resume recording"));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "space"),
+    );
+    expect(bridge.videoResume).not.toHaveBeenCalled();
   });
 
   it("says nothing was saved when the vault has no complete video", async () => {

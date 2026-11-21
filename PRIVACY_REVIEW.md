@@ -114,20 +114,25 @@ window closes. On a phone, the phone itself asks once whether myCarlos may use t
 so before it asks, and never opens the phone's own camera app, so no photo reaches the phone's
 Photos or Gallery app.
 
-A **video recorded in myCarlos** (#359) will be recorded **with sound**. The permissions are in
-place; the recording screen is not built yet, so what follows is what it will do. The camera and the
-microphone will be turned on only after the patient taps Record video, and asked for together. On a
-phone and on a Mac the system asks whether myCarlos may use them, and on Apple phones and computers its
-prompt reads: "myCarlos uses the microphone to record sound with your videos. Videos stay locked in
-myCarlos." On Windows the system's own microphone setting decides (Windows raises the camera and the
-microphone as two requests, and shows no prompt of its own for a desktop app), and on Linux nothing
-asks beyond the app's own check, which allows the camera and microphone for myCarlos's own pages only.
-Before the first recording the app will say that people nearby may be heard. A video will be encrypted
-into the vault as it is recorded and never saved anywhere else; it is sent from myCarlos only if the
-patient chooses to send it. Both will be turned off at Stop, when the recording window closes, when
-the vault locks and when the app is hidden, and a badge will show that recording (or a pause) is on
-for as long as it is. The app makes no transcript and no other copy of the sound. It cannot ask the
-people who are heard: that is the patient's to do.
+A **video recorded in myCarlos** (#359) is recorded **with sound**. The camera and the microphone
+are turned on only after the patient taps Record video and then chooses to use them, and are asked
+for together. On a phone and on a Mac the system asks whether myCarlos may use them, and on Apple
+phones and computers its prompt reads: "myCarlos uses the microphone to record sound with your
+videos. Videos stay locked in myCarlos." On Windows the system's own microphone setting decides
+(Windows raises the camera and the microphone as two requests, and shows no prompt of its own for a
+desktop app), and on Linux nothing asks beyond the app's own check, which allows the camera and
+microphone for myCarlos's own pages only. Before anything is turned on the dialog says that people
+nearby may be heard. A video is encrypted into the vault as it is recorded, a piece at a time, and
+never saved anywhere else; it is sent from myCarlos only if the patient chooses to send it. Both
+are turned off at Stop, when the recording window closes, when the vault locks and when the app is
+hidden, and a badge shows that recording (or a pause) is on for as long as it is. A pause keeps
+the camera and microphone on, and says so. About 1 GB of free room is needed to start, the dialog
+warns when room runs low, and a recording is saved, not lost, when the room runs out. If myCarlos
+closes or locks during a recording, what was saved is kept: after a lock it is saved and the
+patient is told at the next unlock, and after a crash the patient is asked whether to keep it.
+Playing a video shows it in the app's own player, from the vault, and nothing is left behind. The
+app makes no transcript and no other copy of the sound. It cannot ask the people who are heard:
+that is the patient's to do.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:

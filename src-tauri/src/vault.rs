@@ -1010,6 +1010,10 @@ impl Drop for KdfWork<'_> {
     }
 }
 
+/// How the vault asks how much room its volume has: the disk's, unless a test
+/// stands in for it.
+type FreeSpaceProbe = Box<dyn Fn(&Path) -> Option<u64> + Send + Sync>;
+
 pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
@@ -1052,7 +1056,7 @@ pub struct VaultStore {
     playback: Mutex<HashMap<String, playback::PlaybackSession>>,
     /// How much room the volume holding the vault has (#359): the disk's, unless
     /// a test stands in for it.
-    free_space: Mutex<Box<dyn Fn(&Path) -> Option<u64> + Send + Sync>>,
+    free_space: Mutex<FreeSpaceProbe>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
