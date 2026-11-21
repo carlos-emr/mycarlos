@@ -46,6 +46,7 @@ mod model_download;
 mod model_helper;
 mod model_limits;
 mod model_runtime;
+mod video_scheme;
 // The recording core (#359) and, in the next step, the playback address use it.
 #[allow(dead_code)]
 mod mp4_stream;
@@ -5439,6 +5440,27 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
+        // The address a stored video plays from (#359): only a token made at this
+        // unlock is answered, and nothing else is served.
+        // Only the main window may ask, and the answer (a range of ciphertext
+        // decrypted) is made off the UI thread.
+        .register_asynchronous_uri_scheme_protocol(
+            video_scheme::SCHEME,
+            |context, request, responder| {
+                let store = video_scheme::webview_allowed(context.webview_label())
+                    .then(|| context.app_handle().try_state::<Arc<VaultStore>>())
+                    .flatten()
+                    .map(|store| Arc::clone(store.inner()));
+                match store {
+                    Some(store) => {
+                        tauri::async_runtime::spawn_blocking(move || {
+                            responder.respond(video_scheme::respond(&store, &request));
+                        });
+                    }
+                    None => responder.respond(video_scheme::refused()),
+                }
+            },
+        )
         .setup(|app| {
             // The window is made here, not by the configuration, so that it
             // can refuse to open others: nothing in the app opens a window,
@@ -7477,6 +7499,20 @@ mod tests {
             "form-action 'none'",
         ] {
             assert!(production_csp.contains(directive));
+        }
+        // Stored videos play from the app's own scheme and nowhere else (#359).
+        for csp in [production_csp, security["devCsp"].as_str().unwrap()] {
+            assert!(
+                csp.contains("media-src 'self' mycarlos-video: http://mycarlos-video.localhost;")
+            );
+            let connect = csp
+                .split(';')
+                .find(|d| d.trim_start().starts_with("connect-src"))
+                .unwrap();
+            assert!(
+                !connect.contains("mycarlos-video"),
+                "scripts may not fetch videos"
+            );
         }
         assert!(security["devCsp"].as_str().unwrap().contains("ws://*:1421"));
         assert_eq!(security["freezePrototype"], true);
