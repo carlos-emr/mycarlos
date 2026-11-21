@@ -351,7 +351,9 @@ pub(crate) mod driver {
                 loop {
                     std::thread::sleep(LOOK);
                     let locked = is_locked();
-                    let keys = notice_key::kept();
+                    // Unlocked, nothing is asked and the Credential Manager is not read: "wanted" is
+                    // only looked up for a locked vault.
+                    let keys = if locked { notice_key::kept() } else { None };
                     let wanted = keys
                         .and_then(|keys| keys.entries().ok())
                         .is_some_and(|entries| !entries.is_empty());
@@ -447,6 +449,11 @@ mod tests {
         for conditions in [
             Conditions {
                 in_tray: false,
+                ..IN_TRAY
+            },
+            // A locked but visible window is not the tray's business (decision b).
+            Conditions {
+                window_hidden: false,
                 ..IN_TRAY
             },
             Conditions {
