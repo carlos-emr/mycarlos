@@ -143,7 +143,7 @@ impl VaultStore {
         }
         if leave_videos_out && !videos.is_empty() {
             // The note, and the list in the trailer.
-            total += 64 + videos.len() as u64 * 40 * 2;
+            total += entry("left-out.json") + 64 + videos.len() as u64 * 80;
         }
         Ok(BackupSize {
             total_bytes: total + 32 + 16,
