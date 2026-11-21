@@ -1097,13 +1097,15 @@
   "interface.VideoHelp.restWorks",
   "interface.RecordingRecovery.closed",
   "interface.RecordingRecovery.closedPaused",
-  "interface.RecordingRecovery.locked",
-  "interface.RecordingRecovery.lockedPaused",
   "interface.RecordingRecovery.name",
   "interface.RecordingRecovery.askLater",
   "interface.RecordingRecovery.delete",
   "interface.RecordingRecovery.keep",
   "interface.RecordingRecovery.kept",
   "interface.RecordingRecovery.nothingToKeep",
-  "interface.RecordingRecovery.deleted"
+  "interface.RecordingRecovery.deleted",
+  "interface.RecordingRecovery.deleteSure",
+  "interface.RecordingRecovery.savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed"
 ]

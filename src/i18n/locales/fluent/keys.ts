@@ -1098,8 +1098,6 @@ export const MESSAGE_KEYS = [
   "interface.VideoHelp.restWorks",
   "interface.RecordingRecovery.closed",
   "interface.RecordingRecovery.closedPaused",
-  "interface.RecordingRecovery.locked",
-  "interface.RecordingRecovery.lockedPaused",
   "interface.RecordingRecovery.name",
   "interface.RecordingRecovery.askLater",
   "interface.RecordingRecovery.delete",
@@ -1107,6 +1105,10 @@ export const MESSAGE_KEYS = [
   "interface.RecordingRecovery.kept",
   "interface.RecordingRecovery.nothingToKeep",
   "interface.RecordingRecovery.deleted",
+  "interface.RecordingRecovery.deleteSure",
+  "interface.RecordingRecovery.savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2430,9 +2432,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.RecordingRecovery.closed": "interface-RecordingRecovery-closed",
   "interface.RecordingRecovery.closedPaused":
     "interface-RecordingRecovery-closedPaused",
-  "interface.RecordingRecovery.locked": "interface-RecordingRecovery-locked",
-  "interface.RecordingRecovery.lockedPaused":
-    "interface-RecordingRecovery-lockedPaused",
   "interface.RecordingRecovery.name": "interface-RecordingRecovery-name",
   "interface.RecordingRecovery.askLater":
     "interface-RecordingRecovery-askLater",
@@ -2442,6 +2441,14 @@ const FLUENT_IDS_BY_KEY = {
   "interface.RecordingRecovery.nothingToKeep":
     "interface-RecordingRecovery-nothingToKeep",
   "interface.RecordingRecovery.deleted": "interface-RecordingRecovery-deleted",
+  "interface.RecordingRecovery.deleteSure":
+    "interface-RecordingRecovery-deleteSure",
+  "interface.RecordingRecovery.savedLocked":
+    "interface-RecordingRecovery-savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused":
+    "interface-RecordingRecovery-savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed":
+    "interface-RecordDialog-videoSavedFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3658,8 +3665,6 @@ export interface MessageArgsByKey {
   "interface.VideoHelp.restWorks": undefined;
   "interface.RecordingRecovery.closed": undefined;
   "interface.RecordingRecovery.closedPaused": undefined;
-  "interface.RecordingRecovery.locked": undefined;
-  "interface.RecordingRecovery.lockedPaused": undefined;
   "interface.RecordingRecovery.name": { name: FluentArgument };
   "interface.RecordingRecovery.askLater": undefined;
   "interface.RecordingRecovery.delete": undefined;
@@ -3667,6 +3672,10 @@ export interface MessageArgsByKey {
   "interface.RecordingRecovery.kept": { name: FluentArgument };
   "interface.RecordingRecovery.nothingToKeep": undefined;
   "interface.RecordingRecovery.deleted": undefined;
+  "interface.RecordingRecovery.deleteSure": undefined;
+  "interface.RecordingRecovery.savedLocked": { name: FluentArgument };
+  "interface.RecordingRecovery.savedLockedPaused": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedFailed": { name: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

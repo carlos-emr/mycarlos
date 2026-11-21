@@ -789,13 +789,20 @@ export function VaultLibrary({
     };
   }, [bridge, videoCandidate]);
   // Recordings a crash or a lock left unfinished are asked about once the
-  // library is up, each unlock: Keep (the default) or Delete.
+  // library is up, each unlock. One a lock parked is saved, and the patient is
+  // told; one a crash cut short is asked about: Keep (the default) or Delete.
+  const keepParkedRef = useRef<(parked: PendingRecording[]) => Promise<void>>(
+    async () => undefined,
+  );
   useEffect(() => {
     if (typeof bridge.videoPending !== "function") return;
     let current = true;
     bridge.videoPending().then(
       (pending) => {
-        if (current) setPendingRecordings(pending.recordings);
+        if (!current) return;
+        setPendingRecordings(pending.recordings.filter((r) => !r.parked));
+        const parked = pending.recordings.filter((r) => r.parked);
+        if (parked.length > 0) void keepParkedRef.current(parked);
       },
       () => undefined,
     );
@@ -1226,12 +1233,38 @@ export function VaultLibrary({
               ? "interface.RecordDialog.videoSavedHidden"
               : endedBy === "slow"
                 ? "interface.RecordDialog.videoSavedSlow"
-                : "interface.RecordDialog.videoSavedStopped",
+                : endedBy === "failed"
+                  ? "interface.RecordDialog.videoSavedFailed"
+                  : "interface.RecordDialog.videoSavedStopped",
           { name: saved.displayName },
         ),
         recordId: saved.id,
       });
     });
+  const keepParked = (parked: PendingRecording[]) =>
+    run(async () => {
+      const kept: PendingRecording[] = [];
+      for (const recording of parked) {
+        const saved = await bridge.videoRecover(recording.id, true);
+        if (saved.recordId) kept.push(recording);
+      }
+      await refresh();
+      setNotice(
+        kept.length === 0
+          ? message("interface.RecordingRecovery.nothingToKeep")
+          : joinText(
+              ...kept.map((recording) =>
+                message(
+                  recording.paused
+                    ? "interface.RecordingRecovery.savedLockedPaused"
+                    : "interface.RecordingRecovery.savedLocked",
+                  { name: recording.displayName },
+                ),
+              ),
+            ),
+      );
+    });
+  keepParkedRef.current = keepParked;
   const answerRecording = (keep: boolean) =>
     run(async () => {
       const [first, ...rest] = pendingRecordings;

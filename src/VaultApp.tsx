@@ -282,14 +282,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [transferHold] = useState(() => new TransferHold());
   // Video being recorded or played holds the automatic lock for as long as it
   // runs (#359): how many holds are taken now. A lock ends them all.
-  const mediaHoldsRef = useRef(0);
+  const mediaHoldsRef = useRef(new Set<symbol>());
   const holdMedia = useCallback(() => {
-    mediaHoldsRef.current += 1;
-    let released = false;
+    // Each hold is its own id, so letting go twice, or after a lock ended them
+    // all, cannot take away another's.
+    const hold = Symbol("media hold");
+    mediaHoldsRef.current.add(hold);
     return () => {
-      if (released) return;
-      released = true;
-      mediaHoldsRef.current = Math.max(0, mediaHoldsRef.current - 1);
+      mediaHoldsRef.current.delete(hold);
     };
   }, []);
   // What was last reported since the latest transfer began: its result, or a
@@ -484,7 +484,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
-      mediaHoldsRef.current = 0;
+      mediaHoldsRef.current.clear();
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
@@ -790,7 +790,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         deadline = Date.now() + delayMs;
       // Video that is recording or playing is not idle time: the deadline stays
       // a full delay away, and the native one is told, as for user input.
-      if (mediaHoldsRef.current > 0) {
+      if (mediaHoldsRef.current.size > 0) {
         deadline = Date.now() + delayMs;
         if (Date.now() - mediaTouchedAt >= TOUCH_THROTTLE_MS) {
           mediaTouchedAt = Date.now();
