@@ -2300,7 +2300,7 @@ interface-AnonymizePreview-toCheck = { $count ->
    *[other] { $count } mots à vérifier
 }
 
-interface-AnonymizePreview-toCheckHelp = Les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus sont surlignés : ils peuvent identifier quelqu’un. Sélectionnez-en un, puis choisissez Retirer.
+interface-AnonymizePreview-toCheckHelp = Surlignés : les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus. Ils peuvent identifier quelqu’un. Cette aide ne trouve pas tout. Elle manque les noms écrits en majuscules, les noms au début d’une ligne, les noms écrits dans une écriture sans majuscules (chinois, coréen ou arabe, par exemple) et les noms qui sont aussi des mois, des médicaments ou des termes médicaux (comme « Juin » ou « Bell »). Sélectionnez un mot surligné, puis choisissez Retirer, et lisez vous-même tout le texte.
 
 interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
 

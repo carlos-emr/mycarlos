@@ -2380,7 +2380,7 @@ interface-AnonymizePreview-toCheck = { $count ->
    *[other] { $count } słowa do sprawdzenia
 }
 
-interface-AnonymizePreview-toCheckHelp = Podświetlone są słowa pisane wielką literą w środku zdania oraz liczby co najmniej trzycyfrowe: mogą kogoś identyfikować. Wybierz jedno, a potem Usuń.
+interface-AnonymizePreview-toCheckHelp = Podświetlone są słowa pisane wielką literą w środku zdania oraz liczby co najmniej trzycyfrowe. Mogą kogoś identyfikować. To nie wykrywa wszystkiego. Pomija imiona i nazwiska zapisane wielkimi literami, na początku wiersza, w pismach bez wielkich liter (np. chińskim, koreańskim lub arabskim) oraz takie, które są też nazwami miesięcy, leków lub terminami medycznymi (np. „Czerwiec” albo „Bell”). Wybierz podświetlone słowo, potem Usuń, i sam przeczytaj cały tekst.
 
 interface-AnonymizePreview-checkPicked = „{ $word }” może kogoś identyfikować.
 

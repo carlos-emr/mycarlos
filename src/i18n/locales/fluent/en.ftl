@@ -2265,7 +2265,7 @@ interface-AnonymizePreview-toCheck = { $count ->
    *[other] { $count } words to check
 }
 
-interface-AnonymizePreview-toCheckHelp = Words that start with a capital letter inside a sentence, and numbers with three or more digits, are highlighted: they may identify someone. Select one, then choose Remove.
+interface-AnonymizePreview-toCheckHelp = Highlighted: words that start with a capital letter inside a sentence, and numbers with three or more digits. They may identify someone. This does not find everything. It misses names written in capitals, names at the start of a line, names in scripts without capital letters (such as Chinese, Korean or Arabic), and names that are also months, drugs or medical terms (such as “June” or “Bell”). Select a highlighted word, then choose Remove, and read all of the text yourself.
 
 interface-AnonymizePreview-checkPicked = “{ $word }” may identify someone.
 

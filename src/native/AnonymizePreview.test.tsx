@@ -458,6 +458,14 @@ describe("the anonymize preview (#72 part B)", () => {
     // The capitalised word that does not start a sentence and the number of three digits; not
     // the placeholders, "Monday", the drug, "Seen" (a sentence start) or the dose "5".
     expect(marks()).toEqual(["Blake", "214"]);
+    // The help says what the flags miss: capitals-only names, a line's first word, scripts
+    // without capitals, and names that are also months, drugs or medical terms.
+    const help = document.querySelector(".native-anonymize-checks")!;
+    expect(help).toHaveHumanTextContent(/does not find everything/);
+    expect(help).toHaveHumanTextContent(/names written in capitals/);
+    expect(help).toHaveHumanTextContent(/start of a line/);
+    expect(help).toHaveHumanTextContent(/Chinese, Korean or Arabic/);
+    expect(help).toHaveHumanTextContent(/months, drugs or medical terms/);
     // One count for a screen reader, in a closed list, not a stop at each word.
     expect(screen.getByText(humanText("2 words to check"))).toBeInTheDocument();
     // Decoration only: a flagged word is plain text in a span, with its offset like any other.

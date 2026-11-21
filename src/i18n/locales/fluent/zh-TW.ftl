@@ -2047,7 +2047,7 @@ interface-AnonymizePreview-removedCount-date = { $count } 個已替換的日期
 
 interface-AnonymizePreview-toCheck = { $count } 個詞需要檢查
 
-interface-AnonymizePreview-toCheckHelp = 句子中間以大寫字母開頭的詞，以及三位或更多位的數字會被醒目標示：它們可能識別出某個人。請選擇其一，然後選擇「移除」。
+interface-AnonymizePreview-toCheckHelp = 醒目標示的是：在使用大寫字母的文字（如英文、法文）中，句子中間以大寫字母開頭的詞，以及三位或更多位的數字。它們可能識別出某個人。這並不能找出所有內容：它找不到全大寫的姓名、位於行首的姓名、用沒有大寫字母的文字（如中文、韓文、阿拉伯文）寫的姓名，以及同時是月份、藥物或醫學術語的姓名（如「June」、「Bell」）。請選擇一個醒目標示的詞，再選擇「移除」，並自己閱讀全部文字。
 
 interface-AnonymizePreview-checkPicked = 「{ $word }」可能識別出某個人。
 
