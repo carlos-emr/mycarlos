@@ -2755,7 +2755,7 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
-        refuse_unlock_closed_meanwhile(store.inner(), &relock, started)?;
+        refuse_unlock_closed_meanwhile(store.inner(), &relock, started).await?;
         forget_vault(throttle.inner()).await;
     }
     created
@@ -2786,7 +2786,7 @@ async fn vault_unlock(
         }),
     )
     .await?;
-    refuse_unlock_closed_meanwhile(store.inner(), &relock, started)?;
+    refuse_unlock_closed_meanwhile(store.inner(), &relock, started).await?;
     after_open(store.inner());
     run_blocking(store.inner(), VaultStore::snapshot).await
 }
@@ -2894,13 +2894,19 @@ fn lock_vault_now(store: &VaultStore, picks: &PendingPicks) {
 /// while it is still hidden there) is closed again and refused (#206 review): the close found
 /// nothing to lock while the unlock was in flight, and the screen ignores a lock it is not yet
 /// ready for, so the vault would otherwise open in a window nobody can see.
-fn refuse_unlock_closed_meanwhile(
-    store: &VaultStore,
-    picks: &PendingPicks,
+async fn refuse_unlock_closed_meanwhile(
+    store: &Arc<VaultStore>,
+    picks: &Arc<PendingPicks>,
     started: u64,
 ) -> CommandResult<()> {
     if desktop_background::unlock_refused(started) {
-        lock_vault_now(store, picks);
+        // On the blocking pool: the lock waits for the vault's mutex.
+        let picks = Arc::clone(picks);
+        run_blocking(store, move |store| {
+            lock_vault_now(store, &picks);
+            Ok(())
+        })
+        .await?;
         return Err(VaultError::Cancelled.into());
     }
     Ok(())
@@ -3752,7 +3758,7 @@ async fn vault_recover(
         }),
     )
     .await?;
-    refuse_unlock_closed_meanwhile(store.inner(), &relock, started)?;
+    refuse_unlock_closed_meanwhile(store.inner(), &relock, started).await?;
     after_open(store.inner());
     Ok(RecoverResponse {
         passphrase_replaced,
