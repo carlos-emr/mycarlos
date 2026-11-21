@@ -17,16 +17,60 @@
 
 use super::*;
 
+/// The way a restore's "hidden" event says the file was left out of the backup.
+const LEFT_OUT_HOW: &str = "leftOutOfBackup";
+
 /// What a backup would be, before it is saved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupSize {
-    /// The whole file, about: its entries, their headers and the trailer.
+    /// The whole file with its videos, about: its entries, their headers and
+    /// the trailer.
     pub total_bytes: u64,
-    /// Of what the vault holds, how much is video (not counted in
-    /// `total_bytes` when videos are left out).
+    /// The whole file with its videos left out, about. Both are given at once so
+    /// that the screen can show either as the patient ticks the box, without
+    /// asking again.
+    pub without_videos_bytes: u64,
+    /// Of what the vault holds, how much is video that can be left out.
     pub video_bytes: u64,
     pub video_count: usize,
+}
+
+/// The videos a backup is made around, found once for the whole save: the size
+/// shown, the check of what will be written, and the write itself all use this
+/// one list, so that they agree.
+#[derive(Clone, Debug)]
+pub struct BackupPlan {
+    videos: Vec<Uuid>,
+    leave_out: bool,
+}
+
+impl BackupPlan {
+    /// The records whose files this backup leaves out: the videos found, that
+    /// this vault still has and has not had hidden since (a patient's hide
+    /// must keep a record's file in the backup). Size, check and write all ask
+    /// this, so they agree even if a record is hidden between them.
+    pub(super) fn omitted_in(&self, manifest: &Manifest) -> Vec<Uuid> {
+        if !self.leave_out {
+            return Vec::new();
+        }
+        self.videos
+            .iter()
+            .copied()
+            .filter(|id| {
+                manifest
+                    .records
+                    .iter()
+                    .any(|record| record.id == *id && record.hidden.is_none())
+            })
+            .collect()
+    }
+
+    /// The videos found, whether or not they are left out.
+    #[cfg(test)]
+    pub(super) fn videos(&self) -> &[Uuid] {
+        &self.videos
+    }
 }
 
 /// The first bytes of an object's plaintext, and no more: it stops the read.
@@ -53,19 +97,28 @@ impl Write for FirstBytes {
 }
 
 impl VaultStore {
-    /// The records whose file starts as an MP4 does (`ftyp` at byte 4), whatever
-    /// they are called. Only the first chunk of each is read. A record whose file
-    /// cannot be read here is not called a video: a backup then keeps it, and
-    /// says nothing is wrong with that.
-    pub(super) fn video_record_ids(
+    /// The videos myCarlos recorded that a backup can leave out: records the
+    /// history says were added with the camera whose file starts as an MP4 does
+    /// (`ftyp` at byte 4). Never the bytes alone: an iPhone's HEIC photo, an M4A
+    /// voice memo, a camera raw file and even a PDF can carry `ftyp`, and
+    /// leaving one of those out would silently drop a patient's record.
+    ///
+    /// A record the patient hid is not listed: its file is required to restore
+    /// it, and marking it as lacking its file would erase the patient's own
+    /// choice, so it stays in the backup. A record whose file cannot be read here
+    /// is not called a video either, and a backup keeps it.
+    fn video_record_ids(
         &self,
         unlocked: &UnlockedVault,
         keys: &DerivedKeys,
     ) -> Result<Vec<Uuid>, VaultError> {
+        let camera_made = self.camera_made_records(unlocked)?;
         let mut videos = Vec::new();
         for record in &unlocked.manifest.records {
-            // Records marked as lacking their file have nothing to leave out.
-            if !object_required(record) || record.plaintext_size < 12 {
+            if !camera_made.contains(&record.id)
+                || record.hidden.is_some()
+                || record.plaintext_size < 12
+            {
                 continue;
             }
             let mut start = FirstBytes {
@@ -97,30 +150,83 @@ impl VaultStore {
         Ok(videos)
     }
 
-    /// How big a backup would be, with or without the videos, from the files'
+    /// The records whose file a backup left out, as this vault's history says
+    /// them: those whose **latest** event is "hidden" with the way
+    /// `leftOutOfBackup`, which a restore adds. A record the patient has since
+    /// done anything else with (restored it, renamed it, moved it) is no longer
+    /// listed. Read from the history, so nothing is stored for it; a damaged
+    /// history piece only means a record is not listed.
+    pub fn left_out_records(&self) -> Result<Vec<Uuid>, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let view = self.history_view_in_session(unlocked)?;
+        let mut latest: HashMap<Uuid, bool> = HashMap::new();
+        // The shown entries then the later ones: in order, each record's last wins.
+        for entry in view.entries.iter().chain(view.later.iter()) {
+            if let Some(id) = entry.record_id {
+                latest.insert(
+                    id,
+                    entry.event == HistoryEvent::Hidden
+                        && entry.how.as_deref() == Some(LEFT_OUT_HOW),
+                );
+            }
+        }
+        Ok(unlocked
+            .manifest
+            .records
+            .iter()
+            .filter(|record| latest.get(&record.id) == Some(&true))
+            .map(|record| record.id)
+            .collect())
+    }
+
+    /// The videos of this save, found once (see `BackupPlan`).
+    pub fn plan_backup(&self, leave_videos_out: bool) -> Result<BackupPlan, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let keys = derive_keys(unlocked.manifest.vault_id, &unlocked.master_key)?;
+        Ok(BackupPlan {
+            videos: self.video_record_ids(unlocked, &keys)?,
+            leave_out: leave_videos_out,
+        })
+    }
+
+    /// How big a backup would be, with and without the videos, from the files'
     /// real sizes: asked before the patient chooses where to save it.
-    pub fn backup_size(&self, leave_videos_out: bool) -> Result<BackupSize, VaultError> {
+    pub fn backup_size(&self) -> Result<BackupSize, VaultError> {
+        self.backup_size_planned(&self.plan_backup(false)?)
+    }
+
+    /// `backup_size` for the videos already found.
+    pub(super) fn backup_size_planned(&self, plan: &BackupPlan) -> Result<BackupSize, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
         let manifest = &unlocked.manifest;
-        let videos = self.video_record_ids(unlocked, &parts.keys)?;
+        let videos = &plan.videos;
         let size_of = |name: &str| -> u64 {
             fs::metadata(self.root.join("objects").join(name)).map_or(0, |m| m.len())
         };
         // Each entry: its kind, name length, name and length (11 bytes and the
         // name), and in the trailer about 150 bytes of JSON.
         let entry = |name: &str| 11 + name.len() as u64 + 150;
-        // The manifest as the backup will hold it: with the videos left out it is
-        // the one with those records marked, which may fall in a larger size class.
-        let manifest_len = if leave_videos_out && !videos.is_empty() {
-            manifest_without_videos(&unlocked.master_key, manifest, &videos, 0)?.len()
-        } else {
+        // The manifest as the backup will hold it with the videos left out: the
+        // one with those records marked, which may fall in a larger size class.
+        // Sized with the largest time, so that the size is never undercounted.
+        let manifest_len_without = if videos.is_empty() {
             parts.manifest_data.len()
+        } else {
+            manifest_without_videos(&unlocked.master_key, manifest, videos, u64::MAX)?.len()
         };
-        let mut total = BACKUP_MAGIC.len() as u64 + 1;
-        total += parts.header_data.len() as u64 + entry("header.json");
-        total += manifest_len as u64 + entry("manifest.bin");
+        let fixed = BACKUP_MAGIC.len() as u64
+            + 1
+            + parts.header_data.len() as u64
+            + entry("header.json")
+            + entry("manifest.bin")
+            + 32
+            + 16;
+        let mut with = fixed + parts.manifest_data.len() as u64;
+        let mut without = fixed + manifest_len_without as u64;
         let mut video_bytes = 0_u64;
         for record in &manifest.records {
             let is_video = videos.contains(&record.id);
@@ -129,24 +235,26 @@ impl VaultStore {
                 .filter(|object| self.backs_up_record_object(record, *object))
             {
                 let size = size_of(object.object_name);
+                with += size + entry(object.object_name);
                 if is_video {
                     video_bytes += size;
-                    if leave_videos_out {
-                        continue;
-                    }
+                } else {
+                    without += size + entry(object.object_name);
                 }
-                total += size + entry(object.object_name);
             }
         }
         for segment in &manifest.history.segments {
-            total += size_of(&segment.object_name) + entry(&segment.object_name);
+            let size = size_of(&segment.object_name) + entry(&segment.object_name);
+            with += size;
+            without += size;
         }
-        if leave_videos_out && !videos.is_empty() {
+        if !videos.is_empty() {
             // The note, and the list in the trailer.
-            total += entry("left-out.json") + 64 + videos.len() as u64 * 80;
+            without += entry("left-out.json") + 64 + videos.len() as u64 * 80;
         }
         Ok(BackupSize {
-            total_bytes: total + 32 + 16,
+            total_bytes: with,
+            without_videos_bytes: without,
             video_bytes,
             video_count: videos.len(),
         })
@@ -188,7 +296,7 @@ pub(super) fn left_out_entries(
         .filter(|record| omitted.contains(&record.id))
         .map(|record| {
             let mut entry = record_entry(HistoryEvent::Hidden, now_ms, record);
-            entry.how = Some("leftOutOfBackup".to_owned());
+            entry.how = Some(LEFT_OUT_HOW.to_owned());
             entry
         })
         .collect()
@@ -268,21 +376,136 @@ mod tests {
     fn the_size_shown_is_the_size_written_and_says_how_much_is_video() {
         let temp = tempfile::tempdir().unwrap();
         let (store, _, _) = vault_with_a_video(temp.path());
-        let with = store.backup_size(false).unwrap();
-        let without = store.backup_size(true).unwrap();
+        let size = store.backup_size().unwrap();
+        let (with, without) = (size, size);
         let written = backup_bytes(&store, false).len() as u64;
         let written_without = backup_bytes(&store, true).len() as u64;
         // Within the overhead of the headers and the trailer.
         assert!(with.total_bytes >= written, "{with:?} {written}");
         assert!(with.total_bytes - written < 4096, "{with:?} {written}");
-        assert!(without.total_bytes >= written_without, "{without:?}");
-        assert!(without.total_bytes - written_without < 4096, "{without:?}");
+        assert!(
+            without.without_videos_bytes >= written_without,
+            "{without:?}"
+        );
+        assert!(
+            without.without_videos_bytes - written_without < 4096,
+            "{without:?}"
+        );
         assert_eq!(with.video_count, 1);
         assert!(with.video_bytes > 2_500_000);
-        assert_eq!(without.video_bytes, with.video_bytes);
         // Without the videos the backup is smaller by about what they take.
-        assert!(without.total_bytes < with.total_bytes - with.video_bytes + 1024);
-        assert!(without.total_bytes < 100_000);
+        assert!(without.without_videos_bytes < with.total_bytes - with.video_bytes + 1024);
+        assert!(without.without_videos_bytes < 100_000);
+    }
+
+    /// An imported file that has `ftyp` where an MP4 does, with `brand` after it.
+    fn imported_with_ftyp(store: &VaultStore, name: &str, brand: &[u8; 4], how: &str) -> Uuid {
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let mut bytes = vec![0, 0, 0, 0x18];
+        bytes.extend_from_slice(b"ftyp");
+        bytes.extend_from_slice(brand);
+        bytes.extend_from_slice(&[0; 12]);
+        bytes.extend_from_slice(name.as_bytes());
+        let outcome = store
+            .import_from(
+                profile,
+                vec![],
+                vec![ImportSource {
+                    display_name: name.to_owned(),
+                    reader: Box::new(Cursor::new(bytes)),
+                }],
+                5,
+                how,
+            )
+            .unwrap();
+        outcome.imported[0]
+    }
+
+    #[test]
+    fn only_a_video_recorded_in_the_app_is_left_out_never_a_photo_a_memo_or_a_pdf_with_ftyp() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, video) = vault_with_a_video(temp.path());
+        // What an iPhone, a recorder and a camera make, and a PDF that carries
+        // `ftyp` in the same place, all imported from the device's files.
+        let kept: Vec<(Uuid, Vec<u8>)> = [
+            ("FAKE rash.heic", b"heic", "picked"),
+            ("FAKE rash.avif", b"avif", "picked"),
+            ("FAKE memo.m4a", b"M4A ", "picked"),
+            ("FAKE raw.cr3", b"crx ", "picked"),
+            ("FAKE clip.mov", b"qt  ", "picked"),
+            ("FAKE clip.mp4 picked", b"isom", "picked"),
+            ("FAKE scan.pdf", b"mp42", "picked"),
+        ]
+        .iter()
+        .map(|(name, brand, how)| {
+            let id = imported_with_ftyp(&store, name, brand, how);
+            (id, read_all(&store, id))
+        })
+        .collect();
+        let plan = store.plan_backup(true).unwrap();
+        assert_eq!(plan.videos(), [video]);
+        let size = store.backup_size().unwrap();
+        assert_eq!(size.video_count, 1);
+        let backup = backup_bytes(&store, true);
+        let other = restored(backup, temp.path()).unwrap();
+        for (id, bytes) in kept {
+            assert_eq!(read_all(&other, id), bytes);
+        }
+        assert!(
+            !other
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .find(|r| r.id == video)
+                .unwrap()
+                .available
+        );
+    }
+
+    #[test]
+    fn a_video_hidden_after_the_videos_were_found_is_still_kept_by_the_check_and_the_write() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, video) = vault_with_a_video(temp.path());
+        let plan = store.plan_backup(true).unwrap();
+        assert_eq!(plan.videos(), [video]);
+        // The patient hides it between the plan and the save (a provider's slow open).
+        store.hide_record(video, 7).unwrap();
+        {
+            let guard = store.session();
+            assert!(plan
+                .omitted_in(&guard.as_ref().unwrap().manifest)
+                .is_empty());
+        }
+        // The check reads it (it would be written), and the write holds it.
+        store.verify_for_backup_planned(&plan).unwrap();
+        let mut bytes = Vec::new();
+        store.backup_planned(&mut bytes, 9, &plan).unwrap();
+        assert_eq!(&bytes[..16], &BACKUP_MAGIC[..16]);
+        let other = restored(bytes, temp.path()).unwrap();
+        assert_eq!(read_all(&other, video), read_all(&store, video));
+    }
+
+    #[test]
+    fn a_video_the_patient_hid_stays_in_the_backup_with_its_reason() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, video) = vault_with_a_video(temp.path());
+        store.hide_record(video, 7).unwrap();
+        let plan = store.plan_backup(true).unwrap();
+        assert!(plan.videos().is_empty());
+        let backup = backup_bytes(&store, true);
+        // Not format 2: nothing was left out, and the video is there to restore.
+        assert_eq!(&backup[..16], &BACKUP_MAGIC[..16]);
+        let other = restored(backup, temp.path()).unwrap();
+        let record = other
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .find(|r| r.id == video)
+            .unwrap();
+        assert!(record.available);
+        assert_eq!(read_all(&other, video), read_all(&store, video));
     }
 
     #[test]
@@ -344,6 +567,18 @@ mod tests {
             .collect();
         assert_eq!(said.len(), 1);
         assert_eq!(said[0].record_id, Some(video));
+        // The Hidden list can say why the file is missing: the latest event is it.
+        assert_eq!(restored.left_out_records().unwrap(), [video]);
+        // Its details ask whether it is a video to play: no, and no error, though
+        // its camera event is still in the history and its file is not here.
+        assert!(!crate::is_video(&restored, video).unwrap());
+        // The vault the backup was made from left nothing out, and the whole
+        // backup's restore did not either.
+        assert!(store.left_out_records().unwrap().is_empty());
+        // Anything the patient does with the record after that is the latest
+        // event, and it is not told as left out any more.
+        restored.rename_record(video, "FAKE renamed.mp4").unwrap();
+        assert!(restored.left_out_records().unwrap().is_empty());
         // And the whole one restores the video too.
         let temp_whole = tempfile::tempdir().unwrap();
         let whole = restored_from(ordinary, temp_whole.path());

@@ -11,6 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BackupSize } from "../vault";
 import { page } from "vitest/browser";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
@@ -1022,8 +1023,9 @@ describe("SecuritySettings backup layout", () => {
 
 describe("the backup's size and leaving the videos out (#359)", () => {
   const sizes = (videos: number) =>
-    vi.fn(async (leave: boolean) => ({
-      totalBytes: leave ? 1_300_000_000 : 14_200_000_000,
+    vi.fn(async () => ({
+      totalBytes: 14_200_000_000,
+      withoutVideosBytes: videos > 0 ? 1_300_000_000 : 14_200_000_000,
       videoBytes: videos > 0 ? 12_900_000_000 : 0,
       videoCount: videos,
     }));
@@ -1042,7 +1044,7 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     ).not.toBeChecked();
   });
 
-  it("recomputes the size when the videos are left out, says what that means, and saves without them", async () => {
+  it("shows the size without the videos when the box is ticked, with no second question, and says what that means, and saves without them", async () => {
     setLocaleOverride("en");
     const onBackupSize = sizes(3);
     const props = renderSettings({ onBackupSize });
@@ -1053,7 +1055,8 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     expect(
       await screen.findByText(humanText("About 1.3 GB, without videos.")),
     ).toBeVisible();
-    expect(onBackupSize).toHaveBeenLastCalledWith(true);
+    // Asked once: ticking the box does not ask again.
+    expect(onBackupSize).toHaveBeenCalledTimes(1);
     expect(
       screen.getByText(
         humanText(
@@ -1065,6 +1068,40 @@ describe("the backup's size and leaving the videos out (#359)", () => {
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(props.onSaveBackup).toHaveBeenCalledWith(true);
+  });
+
+  it("says the size is being worked out until it is known", async () => {
+    setLocaleOverride("en");
+    let answer: (size: BackupSize) => void = () => {};
+    renderSettings({
+      onBackupSize: vi.fn(
+        () =>
+          new Promise<BackupSize>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+    });
+    expect(
+      await screen.findByText(
+        humanText("Working out how big the backup will be…"),
+      ),
+    ).toBeVisible();
+    act(() =>
+      answer({
+        totalBytes: 14_200_000_000,
+        withoutVideosBytes: 1_300_000_000,
+        videoBytes: 12_900_000_000,
+        videoCount: 3,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        humanText("About 14.2 GB, of which videos 12.9 GB."),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("Working out how big the backup will be…")),
+    ).toBeNull();
   });
 
   it("offers nothing to leave out when the vault holds no video", async () => {

@@ -40,7 +40,7 @@ mod delivery;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
-pub use backup_video::BackupSize;
+pub use backup_video::{BackupPlan, BackupSize};
 pub(crate) use delivery::AidFiling;
 #[allow(unused_imports)]
 pub use playback::PlaybackOpened;
@@ -53,13 +53,12 @@ pub(crate) use recording::{
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
-// Playback of a stored video (#359 PR 2): the scheme handler calls it; the command
-// that opens a video and the screen come next.
-#[allow(dead_code)]
+// Backups that carry the videos or leave them out (#359 PR 6).
 mod backup_video;
+// Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
+// open and close commands call it.
 mod playback;
-// The recording core (#359 PR 1): the commands and screen that call it come next.
-#[allow(dead_code)]
+// Recording into the vault (#359): the video commands call it.
 mod recording;
 
 use ai_results::StoredAiResult;
@@ -1059,6 +1058,9 @@ pub struct VaultStore {
     /// How much room the volume holding the vault has (#359): the disk's, unless
     /// a test stands in for it.
     free_space: Mutex<FreeSpaceProbe>,
+    // The records the history says were added with the camera, for the history it
+    // was read from (recording.rs `camera_made_records`).
+    camera_made: Mutex<Option<recording::CameraMade>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1087,6 +1089,7 @@ impl VaultStore {
             recordings: Mutex::new(HashMap::new()),
             playback: Mutex::new(HashMap::new()),
             free_space: Mutex::new(Box::new(crate::disk_space::free_bytes)),
+            camera_made: Mutex::new(None),
             push_inbox: Mutex::new(Default::default()),
         }
     }
@@ -3997,15 +4000,17 @@ impl VaultStore {
 
     /// `verify_for_backup` for a backup that may leave the videos out: those
     /// are not read, as the backup will not hold them.
+    #[cfg(test)]
     pub fn verify_for_backup_with(&self, leave_videos_out: bool) -> Result<(), VaultError> {
+        self.verify_for_backup_planned(&self.plan_backup(leave_videos_out)?)
+    }
+
+    /// `verify_for_backup_with` for the videos already found for this save.
+    pub fn verify_for_backup_planned(&self, plan: &BackupPlan) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
-        let omitted = if leave_videos_out {
-            self.video_record_ids(unlocked, &parts.keys)?
-        } else {
-            Vec::new()
-        };
+        let omitted = plan.omitted_in(&unlocked.manifest);
         for record in &unlocked.manifest.records {
             if omitted.contains(&record.id) {
                 continue;
@@ -4028,21 +4033,30 @@ impl VaultStore {
     /// (format 2), and its manifest marks those records as lacking their file,
     /// as a document whose file went missing is marked. The vault itself is not
     /// changed.
+    #[cfg(test)]
     pub fn backup_with<W: Write>(
         &self,
         writer: W,
         now_ms: u64,
         leave_videos_out: bool,
     ) -> Result<(), VaultError> {
+        self.backup_planned(writer, now_ms, &self.plan_backup(leave_videos_out)?)
+    }
+
+    /// `backup_with` for the videos already found for this save (`BackupPlan`),
+    /// the same ones the size and the check used.
+    pub fn backup_planned<W: Write>(
+        &self,
+        writer: W,
+        now_ms: u64,
+        plan: &BackupPlan,
+    ) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let mut parts = self.backup_parts(unlocked)?;
         let manifest = &unlocked.manifest;
-        let omitted: Vec<Uuid> = if leave_videos_out {
-            self.video_record_ids(unlocked, &parts.keys)?
-        } else {
-            Vec::new()
-        };
+        // Only records this vault still has, and has not had hidden since.
+        let omitted = plan.omitted_in(manifest);
         if !omitted.is_empty() {
             parts.manifest_data = backup_video::manifest_without_videos(
                 &unlocked.master_key,
@@ -4218,10 +4232,15 @@ impl VaultStore {
         if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
         }
-        let size = self.backup_size(leave_videos_out)?;
-        if crate::disk_space::free_bytes(destination_parent)
-            .is_some_and(|free| free < size.total_bytes)
-        {
+        // The videos are found once: the size, the check and the write all use them.
+        let plan = self.plan_backup(leave_videos_out)?;
+        let size = self.backup_size_planned(&plan)?;
+        let needed = if leave_videos_out {
+            size.without_videos_bytes
+        } else {
+            size.total_bytes
+        };
+        if crate::disk_space::free_bytes(destination_parent).is_some_and(|free| free < needed) {
             return Err(VaultError::NoSpace);
         }
         let mut options = OpenOptions::new();
@@ -4231,7 +4250,7 @@ impl VaultStore {
         let mut outcome = Ok(());
         let written = AtomicFile::new(destination, AllowOverwrite).write_with_options(
             |file| {
-                outcome = self.backup_with(BufWriter::new(&mut *file), now_ms, leave_videos_out);
+                outcome = self.backup_planned(BufWriter::new(&mut *file), now_ms, &plan);
                 match &outcome {
                     Ok(()) => file.sync_all(),
                     Err(_) => Err(io::Error::other("backup failed")),

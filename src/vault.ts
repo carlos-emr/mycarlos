@@ -297,9 +297,12 @@ export interface RestorePreview {
 
 /** How big a backup would be, before it is saved. */
 export interface BackupSize {
-  /** The file, about. Without the videos when they are left out. */
+  /** The file, about, with its videos. */
   totalBytes: number;
-  /** How much of what the vault holds is video. */
+  /** The file, about, with the videos left out: both are given at once, so
+   * ticking the box needs no second question. */
+  withoutVideosBytes: number;
+  /** How much of what the vault holds is video that can be left out. */
   videoBytes: number;
   videoCount: number;
 }
@@ -551,7 +554,9 @@ export interface VaultBridge {
     leaveVideosOut?: boolean,
   ): Promise<SavedBackup>;
   /** How big a backup would be, with or without the videos (#359). */
-  backupSize(leaveVideosOut: boolean): Promise<BackupSize>;
+  backupSize(): Promise<BackupSize>;
+  /** The records a backup was made without the file of (ids). */
+  leftOutRecords(): Promise<string[]>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -1123,8 +1128,8 @@ export function createVaultBridge(): VaultBridge {
       invoke<SavedBackup>("vault_backup_picked", {
         request: { pickId, leaveVideosOut },
       }),
-    backupSize: (leaveVideosOut) =>
-      invoke<BackupSize>("vault_backup_size", { request: { leaveVideosOut } }),
+    backupSize: () => invoke<BackupSize>("vault_backup_size"),
+    leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>

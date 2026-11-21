@@ -1122,6 +1122,8 @@ export const MESSAGE_KEYS = [
   "security.backup.leaveVideosOut",
   "security.backup.leaveVideosOutHelp",
   "restore.leftOut",
+  "security.backup.sizeCalculating",
+  "interface.hidden.videoLeftOut",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2481,6 +2483,8 @@ const FLUENT_IDS_BY_KEY = {
   "security.backup.leaveVideosOut": "security-backup-leaveVideosOut",
   "security.backup.leaveVideosOutHelp": "security-backup-leaveVideosOutHelp",
   "restore.leftOut": "restore-leftOut",
+  "security.backup.sizeCalculating": "security-backup-sizeCalculating",
+  "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3724,6 +3728,8 @@ export interface MessageArgsByKey {
   "security.backup.leaveVideosOut": undefined;
   "security.backup.leaveVideosOutHelp": undefined;
   "restore.leftOut": undefined;
+  "security.backup.sizeCalculating": undefined;
+  "interface.hidden.videoLeftOut": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

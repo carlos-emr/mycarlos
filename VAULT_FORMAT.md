@@ -1258,8 +1258,15 @@ format number is taken.** What makes it a video is its contents.
   as for every record (the manifest check requires them; a photo is the same). The name is generated once
   (`Video, 20 Nov 2026, 3.05 PM.mp4`); the size, folders and history are the usual ones. The history
   entry is `imported` with the way `camera`, as a photo's.
-- **Recognised by its first bytes.** `ftyp` at byte 4, as a photo is recognised by `FF D8 FF`; a name
-  ending in `.mp4` is not what decides.
+- **A video is one myCarlos recorded.** The history says it was added with the camera (the `imported` event
+  with the way `camera`) **and** its file starts as an MP4 does (`ftyp` at byte 4); a name ending in `.mp4`
+  decides nothing. The bytes alone never decide: an iPhone's HEIC and AVIF photos, an M4A voice memo, a
+  camera raw file and a PDF can carry `ftyp` where an MP4 does, and imports are stored without a type.
+  Nothing else is called a video until importing videos is built. A record whose history piece is damaged is
+  not offered as a video; its file is kept as any document is. A video restored without its history (a
+  vault rebuilt from a backup that lacks the history pieces) likewise loses **Play video** but is kept, and
+  can still be saved out as any document can. A video restored from a backup that left its file out is not a
+  video to play either: its details show no error.
 - **Played from a synthetic head.** The player is served `ftyp`, `moov`, a `sidx` built in memory from the
   index, then the stored fragments: the stored bytes are unchanged, and the head is never stored. A
   recording longer than a `sidx` can index (65,535 fragments) groups fragments under one reference.
@@ -1286,7 +1293,12 @@ trailer  as format 1, with format 2 and "omitted": [record id, ...] (ids, never 
 ```
 
 - **What it holds.** The same entries as a format-1 backup except the objects of the omitted records (the
-  records whose file starts as an MP4 does; their history, names and sizes are in the manifest as usual).
+  videos myCarlos recorded: the history says they were added with the camera and the file starts as an MP4
+  does, never the bytes alone, so an iPhone HEIC photo, an M4A voice memo or a camera raw file is never
+  omitted; a video the patient hid stays in the backup, since restoring a document the patient hid needs its
+  file and marking it as missing would erase that choice; their history, names and sizes are in the manifest
+  as usual). The videos are found once for each save and the same list is used for the size, the check and
+  the write.
   The trailer still lists every entry's length and SHA-256 (the note included) and is authenticated as
   before, so a damaged or altered backup is found: one flipped bit anywhere, a cut, or an addition is refused.
 - **Its manifest** is the vault's, encrypted as any manifest is, with each omitted record marked
@@ -1305,7 +1317,10 @@ trailer  as format 1, with format 2 and "omitted": [record id, ...] (ids, never 
 - **An older build** refuses a format-2 backup as not a backup (its first 16 bytes are not the magic it
   knows), the safe outcome: it would find a manifest naming files the backup lacks.
 - **Size shown first.** The screen adds the real sizes of the files it would copy (plus about 160 bytes an
-  entry for the headers and the trailer): "About 14.2 GB, of which videos 12.9 GB"; leaving the videos out
-  recomputes it. Before any byte is written to a chosen file, the room at its destination is checked
+  entry for the headers and the trailer): "About 14.2 GB, of which videos 12.9 GB". One question gives both
+  sizes, with and without the videos (the one without is sized with the manifest as the backup will hold it,
+  never undercounted), so ticking the box needs no second one, and the screen asks once for each set of
+  documents. A destination the app cannot measure (an Android document provider) is not checked; a failure
+  there says whether the earlier file at that place was emptied. Before any byte is written to a chosen file, the room at its destination is checked
   against that size.
 

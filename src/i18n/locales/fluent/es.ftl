@@ -2383,3 +2383,5 @@ security-backup-sizeNoVideos = Unos { $size }, sin videos.
 security-backup-leaveVideosOut = Dejar fuera los videos
 security-backup-leaveVideosOutHelp = La copia de seguridad no contendrá tus videos. Si la restauras, los videos no se recuperan.
 restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se recupera todo lo demás, y tus videos no estarán. Aparecen entre los documentos ocultos, como archivos que faltan.
+security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
+interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad

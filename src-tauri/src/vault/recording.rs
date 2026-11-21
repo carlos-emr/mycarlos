@@ -49,6 +49,9 @@ const MAX_JOURNAL_BYTES: usize = 64 * 1024;
 /// The most one piece from the webview may be. Pieces are about a second of
 /// video; a larger one is refused, not buffered.
 pub(crate) const MAX_RECORDING_PIECE: usize = 8 * 1024 * 1024;
+/// Which history the camera-made records were read from, and them.
+pub(super) type CameraMade = ((Uuid, u64, String), Arc<HashSet<Uuid>>);
+
 /// The label the history gives a recording: the same as a photo taken in the app.
 const RECORDING_HOW: &str = "camera";
 
@@ -713,7 +716,10 @@ impl VaultStore {
         Ok(record_id)
     }
 
-    /// Adds a piece. The caller sends them in order and one at a time.
+    /// Adds a piece. The caller sends them in order and one at a time. The
+    /// commands number their pieces (`recording_append_numbered`); this is for
+    /// the tests.
+    #[cfg(test)]
     pub fn recording_append(
         &self,
         id: Uuid,
@@ -1379,6 +1385,82 @@ impl VaultStore {
         })
     }
 
+    /// The records that were added with the camera, from the history: the
+    /// Imported events whose way is `camera`. This is the origin of a video:
+    /// only myCarlos's own recording (and its photos, which are JPEGs) is added
+    /// that way, and nothing is called a video because of what its bytes look
+    /// like (an iPhone's HEIC photo, an M4A voice memo, a camera raw file and
+    /// even a PDF can carry `ftyp` where an MP4 does). A record whose history
+    /// piece is damaged is not named here: it is then not offered as a video
+    /// and not left out of a backup, which keeps it.
+    ///
+    /// The answer is kept for as long as the history is the same one (its
+    /// length and its head, which change with every event), so that opening a
+    /// document's details does not read the whole history each time. It is not
+    /// kept when part of the history could not be read, so that a piece that
+    /// comes back is read.
+    pub(super) fn camera_made_records(
+        &self,
+        unlocked: &UnlockedVault,
+    ) -> Result<Arc<HashSet<Uuid>>, VaultError> {
+        let history = &unlocked.manifest.history;
+        let key = (
+            unlocked.manifest.vault_id,
+            history.count,
+            history.head.clone(),
+        );
+        if let Some((kept, found)) = self
+            .camera_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            if *kept == key {
+                return Ok(Arc::clone(found));
+            }
+        }
+        let view = self.history_view_in_session(unlocked)?;
+        let found: Arc<HashSet<Uuid>> = Arc::new(
+            view.entries
+                .iter()
+                .chain(view.later.iter())
+                .filter(|entry| {
+                    entry.event == HistoryEvent::Imported
+                        && entry.how.as_deref() == Some(RECORDING_HOW)
+                })
+                .filter_map(|entry| entry.record_id)
+                .collect(),
+        );
+        *self
+            .camera_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            view.complete.then(|| (key, Arc::clone(&found)));
+        Ok(found)
+    }
+
+    /// Whether the history says the record was added with the camera, and its
+    /// file is there to be read (`NotFound` for a record the vault does not
+    /// have). A video restored from a backup that left its file out is still
+    /// marked as lacking it and is not a video to play: that is `false`, not an
+    /// error, so its details show nothing wrong.
+    pub fn added_with_camera(&self, record_id: Uuid) -> Result<bool, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let record = unlocked
+            .manifest
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?;
+        if !object_required(record)
+            && object_presence_name(&self.root, &record.object_name) != ObjectPresence::Present
+        {
+            return Ok(false);
+        }
+        Ok(self.camera_made_records(unlocked)?.contains(&record_id))
+    }
+
     /// How much room the vault's volume has, and whether that is enough to
     /// record: asked before the camera and microphone are turned on, and again
     /// on every resume. Only of a vault that is open and writable, as recording
@@ -1679,6 +1761,12 @@ mod tests {
         assert!(!pending.recordings[0].stopped);
         assert_eq!(pending.recordings[0].display_name, "FAKE parked.mp4");
         let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        // A recording finished by recovery has the origin of one finished at once.
+        assert!(store.added_with_camera(record).unwrap());
+        assert!(matches!(
+            store.added_with_camera(Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
         let plain = stored(&store, record);
         let index = index_of(&plain);
         assert_eq!(index.entries.len(), 2);
@@ -2767,5 +2855,30 @@ mod tests {
         free.store(10 * GIB, AtomicOrdering::SeqCst);
         let record = store.recording_recover(id, true, 9).unwrap().unwrap();
         assert!(!index_of(&stored(&store, record)).entries.is_empty());
+    }
+
+    #[test]
+    fn the_camera_origin_is_kept_per_history_and_follows_new_recordings() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = |name: &str, at: u64| {
+            let id = store.recording_start(profile, vec![], name, at).unwrap();
+            let movie = [mp4_stream::fake::ftyp(), mp4_stream::fake::moov()].concat();
+            store.recording_append(id, &movie).unwrap();
+            store
+                .recording_append(id, &mp4_stream::fake::fragment(1, 0, 0, 3000))
+                .unwrap();
+            store.recording_stop(id, at + 1).unwrap().unwrap()
+        };
+        let first = record("FAKE one.mp4", 5);
+        // Asked twice (the second is the kept answer), and the same.
+        assert!(store.added_with_camera(first).unwrap());
+        assert!(store.added_with_camera(first).unwrap());
+        // A later recording changes the history, so the kept answer is replaced.
+        let second = record("FAKE two.mp4", 9);
+        assert!(store.added_with_camera(second).unwrap());
+        assert!(store.added_with_camera(first).unwrap());
     }
 }
