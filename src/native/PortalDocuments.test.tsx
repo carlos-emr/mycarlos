@@ -1735,6 +1735,36 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledOnce();
   });
 
+  it("moves an open Link another clinic dialog to the panel when a check finds the last working device removed (#293)", async () => {
+    const offered: PortalLinkSummary = { ...pending, approvalCanRestart: true };
+    const gone = checked(
+      () =>
+        reply(offered, {
+          issue: { code: "portal_device_removed", message: "Native text." },
+        }),
+      offered,
+    );
+    const address = () => screen.queryByLabelText("Portal HTTPS address");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.change(address()!, {
+      target: { value: "https://portal.example.test/patient" },
+    });
+    // The poll's own answer (not the check button's) says the device was removed.
+    await pass(10_000);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Link another clinic" }),
+    ).toBeNull();
+    expect(address()).toBeVisible();
+    expect(address()).toHaveValue("https://portal.example.test/patient");
+    expect(address()).toHaveFocus();
+    gone.unmount();
+    vi.useRealTimers();
+  });
+
   it("says a removed device plainly and stops, and words other refusals neutrally", async () => {
     const removed =
       "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.";
@@ -2394,6 +2424,43 @@ describe("Link another clinic (#145)", () => {
     );
     expect(addressBox()).toBeNull();
     expect(linkAnother()).not.toBeNull();
+  });
+
+  it("keeps what was typed and puts the focus on the panel's form when the last working link is removed under an open dialog (#293)", async () => {
+    const waits = new PortalWaits();
+    const { props, rerender } = fixture({ waits });
+    const user = userEvent.setup();
+    await user.click(linkAnother()!);
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    // The portal says the only working device was removed, while the dialog is open.
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    // Not left in a dialog with no button to return to: the dialog is gone, the same form stands
+    // on the panel with what was typed, and the focus is on its first field (not on the page).
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(linkAnother()).toBeNull();
+    expect(addressBox()).toBeVisible();
+    expect(addressBox()).toHaveValue("https://portal.example.test/patient");
+    expect(addressBox()).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("keeps a dialog that is still behind a working link when another clinic's device is removed", async () => {
+    const waits = new PortalWaits();
+    const second = { ...link, id: "link-2", clinicName: "FAKE Second Clinic" };
+    const { props, rerender } = fixture({
+      waits,
+      snapshot: { ...snapshot, portalLinks: [link, second] },
+    });
+    await userEvent.setup().click(linkAnother()!);
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    // One working clinic is left: the dialog stays open and the form stays behind the button.
+    expect(screen.getByRole("dialog")).toBeVisible();
   });
 
   it("puts the linked clinics first, and the form behind Link another clinic", () => {

@@ -283,8 +283,14 @@ export function PortalDocuments({
   // link sent from it is over: the clinic's heading, or else back to the
   // button that opened it.
   const [linkDialog, setLinkDialog] = useState(false);
+  // The last working link turned removed while the dialog was open (#293): the form moves to the
+  // panel, and the focus goes to its first field once the dialog has gone.
+  const [formToFocus, setFormToFocus] = useState(false);
   const linkAnotherRef = useRef<HTMLButtonElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
+  // The panel's own form, for the focus after a dialog is dropped: `addressRef` is shared with the
+  // dialog's field and goes null when that field unmounts.
+  const panelFormRef = useRef<HTMLFormElement | null>(null);
   const returnToLinkAnother = useRef(false);
   // From the moment a link is sent until the work ends, its form (or the
   // dialog's opener) is disabled. Focus that was there waits on the panel's
@@ -381,7 +387,19 @@ export function PortalDocuments({
     dialogChange.current?.(open);
   };
   useEffect(() => {
-    if (!linked && linkDialog) showLinkDialog(false);
+    if (!linked && linkDialog) {
+      // The "Link another clinic" button is gone and the same fields now stand on the panel (what
+      // was typed is kept: the fields are one set of state). Do not leave the patient in a dialog
+      // that has no button to come back to, and do not drop the focus on the page body.
+      setFormToFocus(true);
+      showLinkDialog(false);
+    }
+  });
+  useEffect(() => {
+    if (!formToFocus || linkDialog) return;
+    // The dialog's own cleanup has already tried to return the focus to a button that is gone.
+    panelFormRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    setFormToFocus(false);
   });
   useEffect(() => () => dialogChange.current?.(false), []);
   useEffect(() => {
@@ -1088,7 +1106,11 @@ export function PortalDocuments({
       {!linked && <p>{t("portal.connectConsent")}</p>}
       <p>{t("portal.unlockCheckConsent")}</p>
       {!linked && (
-        <form className="native-inline-form" onSubmit={submit}>
+        <form
+          ref={panelFormRef}
+          className="native-inline-form"
+          onSubmit={submit}
+        >
           {linkFields}
           <button className="button" type="submit" disabled={disabled}>
             {t("portal.link")}
