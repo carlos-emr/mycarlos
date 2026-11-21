@@ -1055,6 +1055,9 @@ pub struct VaultStore {
     /// How much room the volume holding the vault has (#359): the disk's, unless
     /// a test stands in for it.
     free_space: Mutex<FreeSpaceProbe>,
+    // The records the history says were added with the camera, for the history it
+    // was read from (recording.rs `camera_made_records`).
+    camera_made: Mutex<Option<recording::CameraMade>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1083,6 +1086,7 @@ impl VaultStore {
             recordings: Mutex::new(HashMap::new()),
             playback: Mutex::new(HashMap::new()),
             free_space: Mutex::new(Box::new(crate::disk_space::free_bytes)),
+            camera_made: Mutex::new(None),
             push_inbox: Mutex::new(Default::default()),
         }
     }
