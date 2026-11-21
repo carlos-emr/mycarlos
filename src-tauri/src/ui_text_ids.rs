@@ -311,6 +311,9 @@ pub enum MessageId {
     InterfaceRecordDialogAboutStandardPerHour,
     InterfaceRecordDialogHigh,
     InterfaceRecordDialogKeepRecording,
+    InterfaceRecordDialogLowOnRoom,
+    InterfaceRecordDialogLowOnRoomMinutes,
+    InterfaceRecordDialogNotEnoughRoom,
     InterfaceRecordDialogNothingWasRecorded,
     InterfaceRecordDialogPauseRecording,
     InterfaceRecordDialogPaused,
@@ -338,6 +341,7 @@ pub enum MessageId {
     InterfaceRecordDialogVideoNeedsBoth,
     InterfaceRecordDialogVideoSaved,
     InterfaceRecordDialogVideoSavedHidden,
+    InterfaceRecordDialogVideoSavedNoRoom,
     InterfaceRecordDialogVideoSavedSlow,
     InterfaceRecordDialogVideoSavedStopped,
     InterfaceRecordDialogWhy,
@@ -1422,6 +1426,9 @@ impl MessageId {
         Self::InterfaceRecordDialogAboutStandardPerHour,
         Self::InterfaceRecordDialogHigh,
         Self::InterfaceRecordDialogKeepRecording,
+        Self::InterfaceRecordDialogLowOnRoom,
+        Self::InterfaceRecordDialogLowOnRoomMinutes,
+        Self::InterfaceRecordDialogNotEnoughRoom,
         Self::InterfaceRecordDialogNothingWasRecorded,
         Self::InterfaceRecordDialogPauseRecording,
         Self::InterfaceRecordDialogPaused,
@@ -1449,6 +1456,7 @@ impl MessageId {
         Self::InterfaceRecordDialogVideoNeedsBoth,
         Self::InterfaceRecordDialogVideoSaved,
         Self::InterfaceRecordDialogVideoSavedHidden,
+        Self::InterfaceRecordDialogVideoSavedNoRoom,
         Self::InterfaceRecordDialogVideoSavedSlow,
         Self::InterfaceRecordDialogVideoSavedStopped,
         Self::InterfaceRecordDialogWhy,
@@ -2651,6 +2659,11 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
             Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
+            Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
+            Self::InterfaceRecordDialogLowOnRoomMinutes => {
+                "interface-RecordDialog-lowOnRoomMinutes"
+            }
+            Self::InterfaceRecordDialogNotEnoughRoom => "interface-RecordDialog-notEnoughRoom",
             Self::InterfaceRecordDialogNothingWasRecorded => {
                 "interface-RecordDialog-nothingWasRecorded"
             }
@@ -2699,6 +2712,9 @@ impl MessageId {
             Self::InterfaceRecordDialogVideoSaved => "interface-RecordDialog-videoSaved",
             Self::InterfaceRecordDialogVideoSavedHidden => {
                 "interface-RecordDialog-videoSavedHidden"
+            }
+            Self::InterfaceRecordDialogVideoSavedNoRoom => {
+                "interface-RecordDialog-videoSavedNoRoom"
             }
             Self::InterfaceRecordDialogVideoSavedSlow => "interface-RecordDialog-videoSavedSlow",
             Self::InterfaceRecordDialogVideoSavedStopped => {
@@ -5196,6 +5212,16 @@ impl MessageId {
                 Some(Self::InterfaceRecordingRecoveryNothingToKeep)
             }
             "interface.RecordingRecovery.deleted" => Some(Self::InterfaceRecordingRecoveryDeleted),
+            "interface.RecordDialog.notEnoughRoom" => {
+                Some(Self::InterfaceRecordDialogNotEnoughRoom)
+            }
+            "interface.RecordDialog.lowOnRoom" => Some(Self::InterfaceRecordDialogLowOnRoom),
+            "interface.RecordDialog.lowOnRoomMinutes" => {
+                Some(Self::InterfaceRecordDialogLowOnRoomMinutes)
+            }
+            "interface.RecordDialog.videoSavedNoRoom" => {
+                Some(Self::InterfaceRecordDialogVideoSavedNoRoom)
+            }
             _ => None,
         }
     }

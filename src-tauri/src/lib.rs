@@ -41,6 +41,7 @@ mod safety;
 mod summary_contract;
 mod summary_progress;
 // The model download runs on computers only (no AI helper on a phone).
+mod disk_space;
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
@@ -5313,6 +5314,15 @@ async fn vault_video_stop(
     .await
 }
 
+/// How much room there is to record: asked before the camera and microphone are
+/// turned on, and again on every resume.
+#[tauri::command]
+async fn vault_video_space(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<vault::RecordingSpace> {
+    run_blocking(store.inner(), |store| Ok(store.recording_space())).await
+}
+
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
 #[tauri::command]
 async fn vault_video_pending(
@@ -5937,6 +5947,7 @@ pub fn run() {
             vault_video_pause,
             vault_video_resume,
             vault_video_stop,
+            vault_video_space,
             vault_video_pending,
             vault_video_recover,
             vault_is_video,
@@ -8937,6 +8948,7 @@ mod photo_command_tests {
             "async fn vault_video_pause(",
             "async fn vault_video_resume(",
             "async fn vault_video_stop(",
+            "async fn vault_video_space(",
             "async fn vault_video_pending(",
             "async fn vault_video_recover(",
             "async fn vault_is_video(",

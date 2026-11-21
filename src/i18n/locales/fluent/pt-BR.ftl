@@ -2368,3 +2368,7 @@ interface-RecordingRecovery-keep = Manter o vídeo
 interface-RecordingRecovery-kept = Vídeo mantido: { $name }
 interface-RecordingRecovery-nothingToKeep = Nada completo havia sido salvo, então não havia vídeo para manter.
 interface-RecordingRecovery-deleted = A gravação inacabada foi excluída.
+interface-RecordDialog-notEnoughRoom = Não há espaço suficiente para gravar um vídeo. Cerca de 1 GB precisa estar livre. Libere espaço neste dispositivo e escolha Tentar de novo.
+interface-RecordDialog-lowOnRoom = O espaço está acabando. A gravação é salva quando não houver mais espaço.
+interface-RecordDialog-lowOnRoomMinutes = O espaço está acabando: restam cerca de { $minutes } minutos de gravação. A gravação é salva quando não houver mais espaço.
+interface-RecordDialog-videoSavedNoRoom = Salvo. Não havia mais espaço: { $name }

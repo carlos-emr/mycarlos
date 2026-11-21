@@ -1105,5 +1105,9 @@
   "interface.RecordingRecovery.keep",
   "interface.RecordingRecovery.kept",
   "interface.RecordingRecovery.nothingToKeep",
-  "interface.RecordingRecovery.deleted"
+  "interface.RecordingRecovery.deleted",
+  "interface.RecordDialog.notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom"
 ]

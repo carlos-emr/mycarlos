@@ -7,7 +7,11 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
-import { vaultErrorMessage, type VaultBridge } from "../vault";
+import {
+  vaultErrorMessage,
+  type RecordingProgress,
+  type VaultBridge,
+} from "../vault";
 import {
   cameraFailure,
   cameraFailureMessage,
@@ -17,6 +21,8 @@ import {
 import {
   MAX_UNSENT_BYTES,
   QUALITIES,
+  isNoSpace,
+  minutesLeft,
   RecordedClock,
   deliveredHeight,
   formatClock,
@@ -32,11 +38,16 @@ import {
 /** The part of the bridge recording uses. */
 export type RecordBridge = Pick<
   VaultBridge,
-  "videoStart" | "videoAppend" | "videoPause" | "videoResume" | "videoStop"
+  | "videoStart"
+  | "videoAppend"
+  | "videoPause"
+  | "videoResume"
+  | "videoStop"
+  | "videoSpace"
 >;
 
 /** How a recording ended: the patient asked, or something else did. */
-export type RecordEnd = "asked" | "stopped" | "slow" | "hidden";
+export type RecordEnd = "asked" | "stopped" | "slow" | "hidden" | "space";
 
 type Stage =
   | "explain"
@@ -98,6 +109,12 @@ export function RecordDialog({
   const [highOk, setHighOk] = useState(false);
   const [delivered, setDelivered] = useState<number | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
+  // No room to record: the dialog says so and offers Try again, the camera and
+  // microphone still off.
+  const [needsRoom, setNeedsRoom] = useState(false);
+  // How room stands while recording: a warning from 512 MiB left, and the
+  // recording ends and is saved at 256 MiB.
+  const [room, setRoom] = useState<RecordingProgress | null>(null);
   const [status, setStatus] = useTextState();
   const [, setTick] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -136,6 +153,7 @@ export function RecordDialog({
     const attempt = attemptRef.current;
     setFailure(null);
     setProblem(null);
+    setNeedsRoom(false);
     setStage("starting");
     setStatus(
       deferredText(() =>
@@ -143,6 +161,16 @@ export function RecordDialog({
       ),
     );
     try {
+      // Room first: with too little, neither the camera nor the microphone is
+      // turned on.
+      const space = await bridge.videoSpace?.();
+      if (attempt !== attemptRef.current) return;
+      if (space && !space.canRecord) {
+        setNeedsRoom(true);
+        setStage("failed");
+        setStatus("");
+        return;
+      }
       if (!navigator.mediaDevices?.getUserMedia)
         throw new DOMException("No camera interface", "NotFoundError");
       const stream = await whileAsking(
@@ -177,7 +205,7 @@ export function RecordDialog({
       setStage("failed");
       setStatus("");
     }
-  }, [phone, stopCamera, whileAsking]);
+  }, [bridge, phone, stopCamera, whileAsking]);
 
   // The preview, once there is a stream and a place for it.
   useEffect(() => {
@@ -224,8 +252,14 @@ export function RecordDialog({
           sequenceRef.current = progress.nextSequence;
           unsentRef.current.shift();
           unsentBytesRef.current -= piece.size;
+          setRoom(progress);
+          // At the reserve the recording ends and is saved: "Saved. There was
+          // no more room."
+          if (progress.space === "stop") void finishRef.current("space");
         } catch (error) {
           failedSendRef.current = error;
+          // A disk that filled anyway is the same: what was recorded is kept.
+          if (isNoSpace(error)) void finishRef.current("space");
         } finally {
           bytes.fill(0);
         }
@@ -293,7 +327,11 @@ export function RecordDialog({
         if (sendFailed && !saved.recordId) throw sendFailed;
         onSaved(
           saved.recordId,
-          sendFailed && why === "asked" ? "stopped" : why,
+          sendFailed && why === "asked"
+            ? isNoSpace(sendFailed)
+              ? "space"
+              : "stopped"
+            : why,
         );
       } catch (error) {
         recordingIdRef.current = null;
@@ -406,6 +444,13 @@ export function RecordDialog({
     const recorder = recorderRef.current;
     const id = recordingIdRef.current;
     if (stage !== "paused" || !recorder || !id) return;
+    // Room is looked at again before recording goes on: with too little, the
+    // recording is saved as it is, not continued into a full disk.
+    const space = await bridge.videoSpace?.().catch(() => undefined);
+    if (space && !space.canRecord) {
+      void finishRef.current("space");
+      return;
+    }
     try {
       await bridge.videoResume(id);
     } catch (error) {
@@ -640,6 +685,22 @@ export function RecordDialog({
               )}
             </div>
           )}
+          {recordingNow && room?.space === "low" && (
+            <p className="camera-failure" role="alert">
+              {(() => {
+                const minutes = minutesLeft(
+                  room.freeBytes,
+                  room.storedBytes,
+                  clock.elapsed(),
+                );
+                return minutes === null
+                  ? translateNow("interface.RecordDialog.lowOnRoom")
+                  : translateNow("interface.RecordDialog.lowOnRoomMinutes", {
+                      minutes,
+                    });
+              })()}
+            </p>
+          )}
           {confirmStop && (
             <div
               className="record-confirm"
@@ -670,9 +731,11 @@ export function RecordDialog({
           )}
           {stage === "failed" && (
             <p className="camera-failure" role="alert">
-              {failure
-                ? `${cameraFailureMessage(failure, platform)} ${translateNow("interface.RecordDialog.videoNeedsBoth")}`
-                : problem}
+              {needsRoom
+                ? translateNow("interface.RecordDialog.notEnoughRoom")
+                : failure
+                  ? `${cameraFailureMessage(failure, platform)} ${translateNow("interface.RecordDialog.videoNeedsBoth")}`
+                  : problem}
             </p>
           )}
           {stage !== "failed" && problem && (
@@ -769,7 +832,7 @@ export function RecordDialog({
               <button className="button" type="button" onClick={close}>
                 {translateNow("photo.close")}
               </button>
-              {failure && (
+              {(failure || needsRoom) && (
                 <button
                   ref={retryRef}
                   className="button primary"

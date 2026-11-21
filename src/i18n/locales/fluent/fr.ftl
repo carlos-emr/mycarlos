@@ -2368,3 +2368,7 @@ interface-RecordingRecovery-keep = Conserver la vidéo
 interface-RecordingRecovery-kept = Vidéo conservée : { $name }
 interface-RecordingRecovery-nothingToKeep = Rien de complet n’avait été sauvegardé, donc il n’y avait pas de vidéo à conserver.
 interface-RecordingRecovery-deleted = L’enregistrement inachevé a été supprimé.
+interface-RecordDialog-notEnoughRoom = Il n’y a pas assez de place pour enregistrer une vidéo. Environ 1 Go doit être libre. Libérez de l’espace sur cet appareil, puis choisissez Réessayer.
+interface-RecordDialog-lowOnRoom = Il reste peu de place. L’enregistrement est sauvegardé quand il n’y a plus de place.
+interface-RecordDialog-lowOnRoomMinutes = Il reste peu de place : environ { $minutes } minutes d’enregistrement. L’enregistrement est sauvegardé quand il n’y a plus de place.
+interface-RecordDialog-videoSavedNoRoom = Sauvegardé. Il n’y avait plus de place : { $name }

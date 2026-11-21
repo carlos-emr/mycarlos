@@ -46,7 +46,9 @@ pub use playback::PlaybackOpened;
 #[cfg(test)]
 pub(crate) use playback::MAX_RANGE_RESPONSE;
 pub(crate) use playback::{looks_like_token, PlaybackRefusal};
-pub(crate) use recording::{PendingRecordings, RecordingProgress, MAX_RECORDING_PIECE};
+pub(crate) use recording::{
+    PendingRecordings, RecordingProgress, RecordingSpace, MAX_RECORDING_PIECE,
+};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
@@ -1048,6 +1050,9 @@ pub struct VaultStore {
     /// Videos open for playback (#359), by token. In memory only; every one is
     /// ended by a lock, a reset or a dropped session.
     playback: Mutex<HashMap<String, playback::PlaybackSession>>,
+    /// How much room the volume holding the vault has (#359): the disk's, unless
+    /// a test stands in for it.
+    free_space: Mutex<Box<dyn Fn(&Path) -> Option<u64> + Send + Sync>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1075,6 +1080,7 @@ impl VaultStore {
             last_set_aside: Mutex::new(None),
             recordings: Mutex::new(HashMap::new()),
             playback: Mutex::new(HashMap::new()),
+            free_space: Mutex::new(Box::new(crate::disk_space::free_bytes)),
             push_inbox: Mutex::new(Default::default()),
         }
     }

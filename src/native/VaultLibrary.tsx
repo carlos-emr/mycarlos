@@ -1226,7 +1226,9 @@ export function VaultLibrary({
               ? "interface.RecordDialog.videoSavedHidden"
               : endedBy === "slow"
                 ? "interface.RecordDialog.videoSavedSlow"
-                : "interface.RecordDialog.videoSavedStopped",
+                : endedBy === "space"
+                  ? "interface.RecordDialog.videoSavedNoRoom"
+                  : "interface.RecordDialog.videoSavedStopped",
           { name: saved.displayName },
         ),
         recordId: saved.id,

@@ -1107,6 +1107,10 @@ export const MESSAGE_KEYS = [
   "interface.RecordingRecovery.kept",
   "interface.RecordingRecovery.nothingToKeep",
   "interface.RecordingRecovery.deleted",
+  "interface.RecordDialog.notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2442,6 +2446,13 @@ const FLUENT_IDS_BY_KEY = {
   "interface.RecordingRecovery.nothingToKeep":
     "interface-RecordingRecovery-nothingToKeep",
   "interface.RecordingRecovery.deleted": "interface-RecordingRecovery-deleted",
+  "interface.RecordDialog.notEnoughRoom":
+    "interface-RecordDialog-notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom": "interface-RecordDialog-lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes":
+    "interface-RecordDialog-lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom":
+    "interface-RecordDialog-videoSavedNoRoom",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3667,6 +3678,10 @@ export interface MessageArgsByKey {
   "interface.RecordingRecovery.kept": { name: FluentArgument };
   "interface.RecordingRecovery.nothingToKeep": undefined;
   "interface.RecordingRecovery.deleted": undefined;
+  "interface.RecordDialog.notEnoughRoom": undefined;
+  "interface.RecordDialog.lowOnRoom": undefined;
+  "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
+  "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

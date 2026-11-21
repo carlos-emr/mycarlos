@@ -2333,3 +2333,7 @@ interface-RecordingRecovery-keep = Keep the video
 interface-RecordingRecovery-kept = Video kept: { $name }
 interface-RecordingRecovery-nothingToKeep = Nothing complete had been saved, so there was no video to keep.
 interface-RecordingRecovery-deleted = The unfinished recording was deleted.
+interface-RecordDialog-notEnoughRoom = There is not enough room to record a video. About 1 GB must be free. Free up some space on this device, then choose Try again.
+interface-RecordDialog-lowOnRoom = Running low on room. The recording is saved when there is no more room.
+interface-RecordDialog-lowOnRoomMinutes = Running low on room: about { $minutes } minutes of recording left. The recording is saved when there is no more room.
+interface-RecordDialog-videoSavedNoRoom = Saved. There was no more room: { $name }

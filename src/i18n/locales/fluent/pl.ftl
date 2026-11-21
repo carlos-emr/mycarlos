@@ -2414,3 +2414,7 @@ interface-RecordingRecovery-keep = Zachowaj film
 interface-RecordingRecovery-kept = Zachowano film: { $name }
 interface-RecordingRecovery-nothingToKeep = Nie zapisano niczego kompletnego, więc nie było filmu do zachowania.
 interface-RecordingRecovery-deleted = Nieukończone nagranie zostało usunięte.
+interface-RecordDialog-notEnoughRoom = Brak wystarczającej ilości miejsca na nagranie filmu. Wolny musi być około 1 GB. Zwolnij miejsce na tym urządzeniu, a potem wybierz Spróbuj ponownie.
+interface-RecordDialog-lowOnRoom = Zostaje mało miejsca. Nagranie zostanie zapisane, gdy miejsca zabraknie.
+interface-RecordDialog-lowOnRoomMinutes = Zostaje mało miejsca: około { $minutes } min nagrywania. Nagranie zostanie zapisane, gdy miejsca zabraknie.
+interface-RecordDialog-videoSavedNoRoom = Zapisano. Zabrakło miejsca: { $name }

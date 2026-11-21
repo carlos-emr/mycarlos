@@ -2166,3 +2166,7 @@ interface-RecordingRecovery-keep = 保留视频
 interface-RecordingRecovery-kept = 已保留视频：{ $name }
 interface-RecordingRecovery-nothingToKeep = 没有保存任何完整的内容，因此没有可保留的视频。
 interface-RecordingRecovery-deleted = 未完成的录制已删除。
+interface-RecordDialog-notEnoughRoom = 没有足够的空间录制视频，需要约 1 GB 的可用空间。请在此设备上释放一些空间，然后选择“重试”。
+interface-RecordDialog-lowOnRoom = 剩余空间不多。空间用完时，录制内容会被保存。
+interface-RecordDialog-lowOnRoomMinutes = 剩余空间不多：大约还能录制 { $minutes } 分钟。空间用完时，录制内容会被保存。
+interface-RecordDialog-videoSavedNoRoom = 已保存。空间已用完：{ $name }
