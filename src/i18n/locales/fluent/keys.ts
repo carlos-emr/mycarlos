@@ -1109,6 +1109,13 @@ export const MESSAGE_KEYS = [
   "interface.RecordingRecovery.savedLocked",
   "interface.RecordingRecovery.savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2449,6 +2456,19 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordingRecovery-savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed":
     "interface-RecordDialog-videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom":
+    "interface-RecordDialog-notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom": "interface-RecordDialog-lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes":
+    "interface-RecordDialog-lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom":
+    "interface-RecordDialog-videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished":
+    "interface-RecordDialog-videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom":
+    "interface-RecordingRecovery-finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom":
+    "interface-RecordingRecovery-stillNoRoom",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3676,6 +3696,13 @@ export interface MessageArgsByKey {
   "interface.RecordingRecovery.savedLocked": { name: FluentArgument };
   "interface.RecordingRecovery.savedLockedPaused": { name: FluentArgument };
   "interface.RecordDialog.videoSavedFailed": { name: FluentArgument };
+  "interface.RecordDialog.notEnoughRoom": undefined;
+  "interface.RecordDialog.lowOnRoom": undefined;
+  "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
+  "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
+  "interface.RecordDialog.videoKeptUnfinished": undefined;
+  "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
+  "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

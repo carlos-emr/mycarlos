@@ -37,6 +37,7 @@ mod model_acl;
 mod quote_locate;
 mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod disk_space;
 mod safety;
 mod summary_contract;
 mod summary_progress;
@@ -5317,6 +5318,15 @@ async fn vault_video_stop(
     .await
 }
 
+/// How much room there is to record: asked before the camera and microphone are
+/// turned on, and again on every resume.
+#[tauri::command]
+async fn vault_video_space(
+    store: State<'_, Arc<VaultStore>>,
+) -> CommandResult<vault::RecordingSpace> {
+    run_blocking(store.inner(), VaultStore::recording_space).await
+}
+
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
 #[tauri::command]
 async fn vault_video_pending(
@@ -5353,9 +5363,15 @@ struct VideoRecordRequest {
     record_id: Uuid,
 }
 
-/// Whether a record's file starts as an MP4 does (`ftyp` at byte 4), whatever it
-/// is called: the details ask this before offering Play video.
+/// Whether a record is a video myCarlos recorded: the history says it was added
+/// with the camera, and its file starts as an MP4 does (`ftyp` at byte 4). The
+/// origin decides, never the bytes alone: an iPhone's HEIC photo, an M4A voice
+/// memo and a camera raw file also carry `ftyp`, and are not videos. The
+/// details ask this before offering Play video.
 fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    if !store.added_with_camera(record_id)? {
+        return Ok(false);
+    }
     let mut start = FileStartN::<8>::default();
     let exported = store.read_for_view(record_id, &mut start);
     if start.complete() {
@@ -5941,6 +5957,7 @@ pub fn run() {
             vault_video_pause,
             vault_video_resume,
             vault_video_stop,
+            vault_video_space,
             vault_video_pending,
             vault_video_recover,
             vault_is_video,
@@ -8941,6 +8958,7 @@ mod photo_command_tests {
             "async fn vault_video_pause(",
             "async fn vault_video_resume(",
             "async fn vault_video_stop(",
+            "async fn vault_video_space(",
             "async fn vault_video_pending(",
             "async fn vault_video_recover(",
             "async fn vault_is_video(",
@@ -8975,7 +8993,19 @@ mod photo_command_tests {
         store.recording_append(id, &movie).unwrap();
         let video = store.recording_stop(id, 6).unwrap().unwrap();
         assert!(is_video(&store, video).unwrap());
-        // A photo, a PDF-like file and a tiny file are not.
+        // A photo, a PDF-like file and a tiny file are not, and neither is anything
+        // else that carries `ftyp` where an MP4 does and was imported: an iPhone's
+        // HEIC and AVIF photos, an M4A voice memo, a camera raw (CR3) and a PDF
+        // with `ftyp` in the same place.
+        let with_ftyp = |brand: &[u8; 4]| {
+            let mut bytes = vec![0, 0, 0, 0x18];
+            bytes.extend_from_slice(b"ftyp");
+            bytes.extend_from_slice(brand);
+            bytes.extend_from_slice(&[0; 12]);
+            bytes
+        };
+        let mut pdf = b"%PDF".to_vec();
+        pdf.extend_from_slice(b"ftyp FAKE junk, not an MP4");
         for (name, bytes) in [
             (
                 "FAKE a.jpg",
@@ -8983,6 +9013,13 @@ mod photo_command_tests {
             ),
             ("FAKE b.pdf", b"%PDF-1.7 FAKE".to_vec()),
             ("FAKE c.txt", b"hi".to_vec()),
+            ("FAKE d.heic", with_ftyp(b"heic")),
+            ("FAKE e.avif", with_ftyp(b"avif")),
+            ("FAKE f.m4a", with_ftyp(b"M4A ")),
+            ("FAKE g.cr3", with_ftyp(b"crx ")),
+            ("FAKE h.mov", with_ftyp(b"qt  ")),
+            ("FAKE i.mp4 (picked, not recorded)", with_ftyp(b"isom")),
+            ("FAKE j.pdf", pdf),
         ] {
             store
                 .import(

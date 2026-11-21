@@ -32,10 +32,11 @@ fn extraction_rules_exclude_everything(rules: &str) -> bool {
 }
 
 /// The camera dialog (D97) needs Android's camera permission declared, or
-/// Android refuses it without asking. The camera is not required, nor the
-/// autofocus the permission implies, so devices without them can install the
-/// app, and nothing asks for the microphone.
-fn declares_camera_only(manifest: &str) -> bool {
+/// Android refuses it without asking, and video recording (#359) needs the
+/// microphone's too. Neither the camera, the autofocus the permission implies
+/// nor the microphone is required, so devices without them can install the
+/// app. Nothing else about sound or the camera is declared.
+fn declares_camera_and_microphone(manifest: &str) -> bool {
     manifest.contains("<uses-permission android:name=\"android.permission.CAMERA\" />")
         && manifest.contains(
             "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
@@ -43,7 +44,13 @@ fn declares_camera_only(manifest: &str) -> bool {
         && manifest.contains(
             "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />",
         )
-        && !manifest.contains("android.permission.RECORD_AUDIO")
+        && manifest.contains("<uses-permission android:name=\"android.permission.RECORD_AUDIO\" />")
+        && manifest.contains(
+            "<uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />",
+        )
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.microphone\" android:required=\"false\" />",
+        )
 }
 
 fn main() {
@@ -70,8 +77,8 @@ fn main() {
             "Android backup exclusions must be applied with `npm run android:secure` before every Android build"
         );
         assert!(
-            declares_camera_only(&contents),
-            "The camera must be declared (not required, and no microphone) with `npm run android:secure` before every Android build"
+            declares_camera_and_microphone(&contents),
+            "The camera and the microphone must be declared (neither required) with `npm run android:secure` before every Android build"
         );
     }
     let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
@@ -171,6 +178,7 @@ fn main() {
             "vault_video_pause",
             "vault_video_resume",
             "vault_video_stop",
+            "vault_video_space",
             "vault_video_pending",
             "vault_video_recover",
             "vault_is_video",

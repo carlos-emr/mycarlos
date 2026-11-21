@@ -46,16 +46,16 @@ pub use playback::PlaybackOpened;
 #[cfg(test)]
 pub(crate) use playback::MAX_RANGE_RESPONSE;
 pub(crate) use playback::{looks_like_token, PlaybackRefusal};
-pub(crate) use recording::{PendingRecordings, RecordingProgress, MAX_RECORDING_PIECE};
+pub(crate) use recording::{
+    PendingRecordings, RecordingProgress, RecordingSpace, MAX_RECORDING_PIECE,
+};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
-// Playback of a stored video (#359 PR 2): the scheme handler calls it; the command
-// that opens a video and the screen come next.
-#[allow(dead_code)]
+// Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
+// open and close commands call it.
 mod playback;
-// The recording core (#359 PR 1): the commands and screen that call it come next.
-#[allow(dead_code)]
+// Recording into the vault (#359): the video commands call it.
 mod recording;
 
 use ai_results::StoredAiResult;
@@ -1008,6 +1008,10 @@ impl Drop for KdfWork<'_> {
     }
 }
 
+/// How the vault asks how much room its volume has: the disk's, unless a test
+/// stands in for it.
+type FreeSpaceProbe = Box<dyn Fn(&Path) -> Option<u64> + Send + Sync>;
+
 pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
@@ -1048,6 +1052,12 @@ pub struct VaultStore {
     /// Videos open for playback (#359), by token. In memory only; every one is
     /// ended by a lock, a reset or a dropped session.
     playback: Mutex<HashMap<String, playback::PlaybackSession>>,
+    /// How much room the volume holding the vault has (#359): the disk's, unless
+    /// a test stands in for it.
+    free_space: Mutex<FreeSpaceProbe>,
+    // The records the history says were added with the camera, for the history it
+    // was read from (recording.rs `camera_made_records`).
+    camera_made: Mutex<Option<recording::CameraMade>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1075,6 +1085,8 @@ impl VaultStore {
             last_set_aside: Mutex::new(None),
             recordings: Mutex::new(HashMap::new()),
             playback: Mutex::new(HashMap::new()),
+            free_space: Mutex::new(Box::new(crate::disk_space::free_bytes)),
+            camera_made: Mutex::new(None),
             push_inbox: Mutex::new(Default::default()),
         }
     }

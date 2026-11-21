@@ -24,6 +24,20 @@ export interface RecordingProgress {
   hasAudio: boolean | null;
   /** The sequence number the next piece must carry. */
   nextSequence: number;
+  /** How much room there was when last looked at (about every 8 MiB). */
+  space: SpaceLevel;
+  freeBytes: number | null;
+}
+
+/** Plenty, low (under 512 MiB: warn), stop (under 256 MiB: end and save), or
+ * unknown (the volume could not be asked: nothing is refused on a guess). */
+export type SpaceLevel = "ok" | "low" | "stop" | "unknown";
+
+export interface RecordingSpace {
+  freeBytes: number | null;
+  level: SpaceLevel;
+  /** At least 1 GiB, or not known. */
+  canRecord: boolean;
 }
 
 /** One recording a crash or a lock left unfinished. */
@@ -35,6 +49,9 @@ export interface PendingRecording {
   paused: boolean;
   /** A lock parked it (not a crash). */
   parked: boolean;
+  /** The patient ended it and it could not be finished for want of room: it is
+   * finished when there is room again. */
+  stopped: boolean;
 }
 
 export interface PendingRecordings {
@@ -595,6 +612,9 @@ export interface VaultBridge {
   /** Ends the recording: the video is added to the library, or nothing is when
    * nothing complete was recorded (`recordId` is null). */
   videoStop(recordingId: string): Promise<VideoSaved>;
+  /** How much room there is to record. Asked before the camera and microphone
+   * are turned on, and again on every resume. */
+  videoSpace(): Promise<RecordingSpace>;
   /** The recordings a crash or a lock left unfinished. */
   videoPending(): Promise<PendingRecordings>;
   /** Keeps (`true`) or deletes (`false`) one of them. */
@@ -1170,6 +1190,7 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_video_resume", { request: { recordingId } }),
     videoStop: (recordingId) =>
       invoke<VideoSaved>("vault_video_stop", { request: { recordingId } }),
+    videoSpace: () => invoke<RecordingSpace>("vault_video_space"),
     videoPending: () => invoke<PendingRecordings>("vault_video_pending"),
     videoRecover: (recordingId, keep) =>
       invoke<VideoSaved>("vault_video_recover", {
