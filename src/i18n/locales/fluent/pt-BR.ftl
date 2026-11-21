@@ -2300,7 +2300,7 @@ interface-AnonymizePreview-toCheck = { $count ->
    *[other] { $count } palavras para verificar
 }
 
-interface-AnonymizePreview-toCheckHelp = Ficam destacadas as palavras que começam com letra maiúscula no meio de uma frase e os números com três ou mais dígitos. Podem identificar alguém. Isso não encontra tudo. Não pega nomes escritos em maiúsculas, nomes no início de uma linha, nomes em escritas sem maiúsculas (como chinês, coreano ou árabe) nem nomes que também são meses, medicamentos ou termos médicos (como “Junho” ou “Bell”). Selecione uma palavra destacada, escolha Remover e leia todo o texto você mesmo.
+interface-AnonymizePreview-toCheckHelp = Ficam destacadas as palavras que começam com letra maiúscula no meio de uma frase e os números com três ou mais dígitos. Podem identificar alguém. Isso não encontra tudo. Não pega nomes escritos em maiúsculas, nomes no início de uma linha, nomes em escritas sem maiúsculas (como chinês, coreano ou árabe) nem nomes que também são meses, medicamentos ou termos médicos (como “June” ou “Bell”). Selecione uma palavra destacada, escolha Remover e leia todo o texto você mesmo.
 
 interface-AnonymizePreview-checkPicked = “{ $word }” pode identificar alguém.
 

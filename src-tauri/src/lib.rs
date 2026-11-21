@@ -8031,7 +8031,6 @@ mod historical_identifier_export_tests {
             })
         );
         assert!(approved.contains(clean));
-        assert!(approved.contains("\n\n[Text cut after page 2]") || approved.contains("2"));
         assert!(approved.ends_with('\n'));
         assert!(!destination.exists(), "a copy writes no file");
         assert!(tauri::async_runtime::block_on(vault_export_text_copy(
@@ -8043,6 +8042,15 @@ mod historical_identifier_export_tests {
         .unwrap_or_else(|_| panic!("the ticket survives a copy"))
         .approved
         .is_some());
+        // A lock ends the ticket: a copy after it is refused, as a save is.
+        store.lock();
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .is_err());
         // An unknown ticket is refused as it is for a save.
         assert!(tauri::async_runtime::block_on(vault_export_text_copy(
             app.state(),

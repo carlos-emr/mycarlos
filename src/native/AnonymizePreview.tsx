@@ -391,6 +391,7 @@ export function AnonymizePreview({
   const copyTheText = async () => {
     if (!current || !ticket) return;
     setSaving(true);
+    setError("");
     try {
       const outcome = await copyText(ticket, current.toSend);
       if (outcome.approved === null) {

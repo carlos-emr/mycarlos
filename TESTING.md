@@ -821,6 +821,8 @@ on synthetic letters and reports, the text cleaning and its shared table),
 save), `src-tauri/src/text_recheck.rs` (the native re-check) and
 `tests/anonymize-preview.spec.ts` (a keyboard walk at 200% text).
 
+**Copy text, by hand on Linux.** On Linux (WebKitGTK) the browser clipboard may refuse `writeText` once an awaited call has run since the click, because the click's permission can be lost. The button does an awaited native check first, so it may say "The text could not be copied." The app fails safe (nothing is copied, and it says so); please check it on your Linux machine and say what you see. On Windows and macOS it should copy.
+
 ## Appearance and Windows high contrast
 
 Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
