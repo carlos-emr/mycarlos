@@ -2743,6 +2743,8 @@ async fn vault_create(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     let created = run_blocking(store.inner(), move |store| {
         let result = store
@@ -2755,6 +2757,7 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
+        refuse_unlock_closed_meanwhile(store.inner(), &relock, started)?;
         forget_vault(throttle.inner()).await;
     }
     created
@@ -2767,6 +2770,8 @@ async fn vault_unlock(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     tried(
         throttle.inner(),
@@ -2783,6 +2788,7 @@ async fn vault_unlock(
         }),
     )
     .await?;
+    refuse_unlock_closed_meanwhile(store.inner(), &relock, started)?;
     after_open(store.inner());
     run_blocking(store.inner(), VaultStore::snapshot).await
 }
@@ -2837,16 +2843,6 @@ fn second_launch_shows_window<S: AsRef<str>>(args: &[S]) -> bool {
         .any(|arg| arg.as_ref() == desktop_background::BACKGROUND_ARG)
 }
 
-/// A second launch while myCarlos runs (Windows, #206): it starts no second process and no second
-/// tray icon; the running window comes forward as from the tray, still locked if it was locked.
-/// Files given to the second launch ("Open with") are not taken yet (#53; #133 forwards them).
-#[cfg(windows)]
-fn on_second_launch(app: &tauri::AppHandle, args: &[String]) {
-    if second_launch_shows_window(args) {
-        desktop_background::desktop::show_main(app);
-    }
-}
-
 /// The lock the background mode runs on close-to-tray and on Quit, as `run` gives it: from the
 /// app's own vault and picks. Tests take it from here too, so they test `run`'s wiring.
 #[cfg_attr(not(desktop), allow(dead_code))]
@@ -2894,6 +2890,22 @@ fn lock_vault_now(store: &VaultStore, picks: &PendingPicks) {
     pdf_view::cancel_views();
     pdf_view::cancel_text_reads();
     local_runner::on_lock();
+}
+
+/// An unlock, recovery or creation that completes after the window was closed to the tray (or
+/// while it is still hidden there) is closed again and refused (#206 review): the close found
+/// nothing to lock while the unlock was in flight, and the screen ignores a lock it is not yet
+/// ready for, so the vault would otherwise open in a window nobody can see.
+fn refuse_unlock_closed_meanwhile(
+    store: &VaultStore,
+    picks: &PendingPicks,
+    started: u64,
+) -> CommandResult<()> {
+    if desktop_background::unlock_refused(started) {
+        lock_vault_now(store, picks);
+        return Err(VaultError::Cancelled.into());
+    }
+    Ok(())
 }
 
 /// The Preferences "Running in the background" choices. On a phone there is no such mode.
@@ -3766,6 +3778,8 @@ async fn vault_recover(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     let passphrase_replaced = tried(
         throttle.inner(),
@@ -3781,6 +3795,7 @@ async fn vault_recover(
         }),
     )
     .await?;
+    refuse_unlock_closed_meanwhile(store.inner(), &relock, started)?;
     after_open(store.inner());
     Ok(RecoverResponse {
         passphrase_replaced,
@@ -4518,8 +4533,8 @@ struct ReceivedAcceptOutcome {
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
-/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
-/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// renderer asks at start, after an unlock, when notified of an arrival, and whenever the
+/// window comes back to the front. Names stay off the lock screen: the renderer shows a count
 /// there.
 #[tauri::command]
 fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
@@ -4527,6 +4542,30 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
         files: received.list(),
         notice: received.take_notice(),
     }
+}
+
+/// The files the patient confirmed adding (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedAcceptRequest {
+    ids: Vec<Uuid>,
+}
+
+/// The files the patient said No to (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedDiscardRequest {
+    ids: Vec<Uuid>,
+}
+
+/// Forgets the waiting files the patient cancelled: nothing was stored, so nothing is left. A file
+/// that arrived since, or one an import has taken, is not touched.
+#[tauri::command]
+fn received_discard(
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedDiscardRequest,
+) -> usize {
+    received.forget(&request.ids)
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
@@ -4537,8 +4576,15 @@ async fn received_accept(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     received: State<'_, Arc<ReceivedFiles>>,
+    request: Option<ReceivedAcceptRequest>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
-    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    // With `ids`, exactly the files the patient confirmed (a file that arrived since waits for its
+    // own question); without, every waiting file, as for files shared from another app.
+    let ids: Vec<Uuid> = match request {
+        Some(request) => request.ids,
+        // Never a file named by a path: those are added only after the patient confirms them.
+        None => received.ids_needing_no_question(),
+    };
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
             imported: Vec::new(),
@@ -5658,6 +5704,55 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
+// Fixed, payload-free notification: paths, names and even counts stay out of this channel.
+#[cfg(windows)]
+const RECEIVED_CHANGED_SCRIPT: &str =
+    "window.dispatchEvent(new Event('mycarlos-received-changed'));";
+
+#[cfg(windows)]
+fn notify_received(app: &tauri::AppHandle) {
+    let app = app.clone();
+    // Wry can execute UI dispatch inline on the window thread. Post UI work
+    // from an async worker instead; never wait for JavaScript or open files in that callback.
+    let _notification = tauri::async_runtime::spawn(async move {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.eval(RECEIVED_CHANGED_SCRIPT);
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        // Missing/destroying windows leave the queue intact. Mount/focus/unlock also refresh.
+    });
+}
+
+/// What a second launch on Windows says when it cannot hand what was opened to
+/// the myCarlos already running (#133): fixed text, never a path or file name,
+/// in the Windows display language when myCarlos has it, else English.
+/// `language` is a Windows LANGID: the primary language in the low 10 bits and
+/// the sublanguage above it, which tells Traditional from Simplified Chinese.
+#[cfg(any(windows, test))]
+fn handoff_failed_text(language: u16) -> (&'static str, &'static str) {
+    let text = match (language & 0x3ff, language >> 10) {
+        // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
+        (0x0c, _) => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
+        (0x0a, _) => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
+        (0x15, _) => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
+        (0x16, _) => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        // LANG_CHINESE: Traditional for Taiwan, Hong Kong, Macau and zh-Hant;
+        // Simplified for the rest (China, Singapore, zh-Hans).
+        (0x04, 0x01 | 0x03 | 0x05 | 0x1f) => "myCarlos 已開啟，但無法與其連線。未新增任何內容。請關閉 myCarlos，然後重試。",
+        (0x04, _) => "myCarlos 已打开，但无法与其连接。未添加任何内容。请关闭 myCarlos，然后重试。",
+        _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
+    };
+    ("myCarlos", text)
+}
+
+/// The Windows display language, as a LANGID.
+#[cfg(windows)]
+fn windows_display_language() -> u16 {
+    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() }
+}
+
 // Keep one generated context for every runtime. On macOS the macro also
 // embeds the application Info.plist, whose process-wide symbol must be unique.
 // Tests use this same production configuration and capability authority.
@@ -5667,14 +5762,33 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
-    // One myCarlos per user (#206): registered first, before any vault or window setup, so a
-    // second launch ends before it opens anything and the running copy comes forward instead.
-    // Windows only for now, the same plugin and pin as the file-open forwarding draft (#133).
+    // Queue before plugins or any webview exist. A callback during startup keeps its
+    // files in this same Arc, after initial argv and before ordinary vault setup.
+    let received = Arc::new(ReceivedFiles::default());
+    #[cfg(any(windows, target_os = "linux"))]
+    received.receive_command_line(std::env::args_os());
+    let builder = tauri::Builder::default().manage(Arc::clone(&received));
     #[cfg(windows)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-        on_second_launch(app, &args)
-    }));
+    let builder = {
+        let (title, text) = handoff_failed_text(windows_display_language());
+        builder.plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(move |app, args, _cwd| {
+                    // A start from the login entry (`--background`) that finds myCarlos already
+                    // running changes nothing on screen (#206); any files it carries are still taken.
+                    let shows = second_launch_shows_window(&args);
+                    received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
+                    if shows {
+                        notify_received(app);
+                        // From the tray: the window comes back as the tray's Open brings it, and a
+                        // screen that did not take the lock while hidden is told first (#206).
+                        desktop_background::desktop::show_main(app);
+                    }
+                })
+                .handoff_failed_message(title, text)
+                .build(),
+        )
+    };
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -5788,14 +5902,6 @@ pub fn run() {
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
-            app.manage(Arc::new(ReceivedFiles::default()));
-            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
-            // second launch while the app is open is not forwarded yet (#53).
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                let (offered, sources) = received::accept_command_line(std::env::args_os());
-                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
-            }
             let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             let idle_app = app.handle().clone();
@@ -5902,6 +6008,7 @@ pub fn run() {
             vault_import_picked,
             received_list,
             received_accept,
+            received_discard,
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
@@ -5963,6 +6070,39 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    #[test]
+    fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
+        let (title, english) = handoff_failed_text(0x09);
+        assert_eq!(title, "myCarlos");
+        assert!(english.starts_with("myCarlos is already open, but it couldn't be reached."));
+        // A language myCarlos does not have (German) falls back to English.
+        assert_eq!(handoff_failed_text(0x07), (title, english));
+        for (language, start) in [
+            (0x0c, "myCarlos est déjà ouvert"),
+            (0x0a, "myCarlos ya está abierto"),
+            (0x15, "myCarlos jest już uruchomiony"),
+            (0x16, "O myCarlos já está aberto"),
+            // Full LANGIDs: the sublanguage picks the Chinese script.
+            (0x040c, "myCarlos est déjà ouvert"),
+            (0x0804, "myCarlos 已打开"),
+            (0x1004, "myCarlos 已打开"),
+            (0x0004, "myCarlos 已打开"),
+            (0x0404, "myCarlos 已開啟"),
+            (0x0c04, "myCarlos 已開啟"),
+            (0x1404, "myCarlos 已開啟"),
+            (0x7c04, "myCarlos 已開啟"),
+        ] {
+            let (title, text) = handoff_failed_text(language);
+            assert_eq!(title, "myCarlos");
+            assert!(text.starts_with(start), "{language:#x}");
+        }
+        // Fixed text only: never a path or a file name.
+        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16, 0x0804, 0x0404] {
+            let text = handoff_failed_text(language).1;
+            assert!(!text.contains('\\') && !text.contains('/') && !text.contains(':'));
+        }
+    }
 
     #[test]
     fn does_not_return_a_page_for_a_cancelled_view_ticket() {

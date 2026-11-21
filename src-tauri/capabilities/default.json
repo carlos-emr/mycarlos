@@ -69,6 +69,7 @@
     "allow-vault-import-picked",
     "allow-received-list",
     "allow-received-accept",
+    "allow-received-discard",
     "allow-vault-move-to-person",
     "allow-vault-is-locked-pdf",
     "allow-vault-unlock-pdf",

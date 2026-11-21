@@ -1377,12 +1377,12 @@ unlock-title = Déverrouiller votre coffre-fort
 
 unlock-waiting =
     { $count ->
-    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
-    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
-    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
     }
 
-unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
 
 language-error-formatting = myCarlos n’a pas pu afficher ce message correctement. Choisissez une autre langue ou redémarrez l’application, puis vérifiez vos dossiers avant de réessayer.
 
@@ -2272,7 +2272,7 @@ background-unavailable = Une icône d’arrière-plan n’est pas disponible sur
 background-error = Ce réglage n’a pas pu être modifié. Il reste tel qu’il était.
 native-tray-open = Ouvrir myCarlos
 native-tray-quit = Quitter myCarlos
-native-tray-tooltip = myCarlos — coffre verrouillé
+native-tray-tooltip = myCarlos
 
 native-tray-waiting = Un nouveau document est en attente. Déverrouillez myCarlos pour le voir.
 
@@ -2325,3 +2325,11 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+interface-received-confirmTitleOne = Importer { $name } dans Partagés avec moi ?
+
+interface-received-confirmTitleMany = Importer { $count } documents dans Partagés avec moi ?
+
+interface-received-confirmBody = Rien n’est ajouté tant que vous n’avez pas choisi Importer. Annuler ne laisse rien.
+
+interface-received-import = Importer

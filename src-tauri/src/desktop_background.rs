@@ -25,10 +25,87 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
 };
+
+/// How many times the window was closed to the tray (the vault locked with it).
+static CLOSE_LOCKS: AtomicU64 = AtomicU64::new(0);
+/// The window is hidden in the tray, since a close and until it is shown again.
+static HIDDEN_BY_CLOSE: AtomicBool = AtomicBool::new(false);
+
+/// The number of closes to the tray so far. An unlock, recovery or creation notes it as it starts
+/// and asks `unlock_refused` as it completes.
+pub(crate) fn close_locks() -> u64 {
+    CLOSE_LOCKS.load(Ordering::SeqCst)
+}
+
+/// The window was closed to the tray: from now on a vault that finishes opening is closed again.
+pub(crate) fn closed_to_tray() {
+    CLOSE_LOCKS.fetch_add(1, Ordering::SeqCst);
+    HIDDEN_BY_CLOSE.store(true, Ordering::SeqCst);
+}
+
+/// The window was brought back from the tray.
+pub(crate) fn shown_again() {
+    HIDDEN_BY_CLOSE.store(false, Ordering::SeqCst);
+}
+
+/// Whether an unlock (or recovery, or creation) that started when `started` closes had been
+/// counted must be refused as it completes: the window was closed to the tray meanwhile, or is
+/// still hidden there. Without this, a close that arrives while an unlock is in flight finds
+/// nothing to lock, the screen ignores the lock because it is not unlocked yet, and the queued
+/// unlock then opens the vault in a window nobody can see (#206 review).
+pub(crate) fn unlock_refused(started: u64) -> bool {
+    must_refuse_unlock(
+        started,
+        close_locks(),
+        HIDDEN_BY_CLOSE.load(Ordering::SeqCst),
+    )
+}
+
+/// The decision of `unlock_refused`, with its inputs, so it is tested without the global counters.
+pub(crate) fn must_refuse_unlock(started: u64, now: u64, hidden: bool) -> bool {
+    now != started || hidden
+}
+
+/// Whether this desktop has somewhere to show a tray icon. Linux only asks: a stock GNOME without
+/// the AppIndicator extension takes the icon without error and shows it nowhere, so a close would
+/// hide the window with no way back. `name_has_owner` says whether a session D-Bus name is taken.
+pub(crate) fn linux_tray_has_host(name_has_owner: &dyn Fn(&str) -> bool) -> bool {
+    [
+        "org.kde.StatusNotifierWatcher",
+        "org.freedesktop.StatusNotifierWatcher",
+    ]
+    .iter()
+    .any(|name| name_has_owner(name))
+}
+
+/// Whether the session bus has an owner for `name` (Linux). Any failure is "no".
+#[cfg(target_os = "linux")]
+fn session_name_has_owner(name: &str) -> bool {
+    use webkit2gtk::gio::{self, prelude::*};
+    use webkit2gtk::glib::ToVariant;
+    let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else {
+        return false;
+    };
+    connection
+        .call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            Some(&(name,).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            2000,
+            gio::Cancellable::NONE,
+        )
+        .ok()
+        .and_then(|reply| reply.get::<(bool,)>())
+        .is_some_and(|(owned,)| owned)
+}
 
 /// The argument the login entry passes so a start at login can be quiet.
 pub(crate) const BACKGROUND_ARG: &str = "--background";
@@ -354,8 +431,9 @@ pub(crate) fn set_login_item(enabled: bool, exe: &Path) -> Result<(), Error> {
             .stderr(std::process::Stdio::null())
             .status()
             .map_err(|_| Error::LoginItem)?;
-        // Deleting a value that is not there fails with 1; the entry is gone either way.
-        if status.success() || !enabled {
+        // Deleting a value that is not there fails with 1; the entry is gone either way. Any other
+        // failure (access denied, say) means it may still be there, and is reported.
+        if status.success() || (!enabled && status.code() == Some(1)) {
             Ok(())
         } else {
             Err(Error::LoginItem)
@@ -372,6 +450,15 @@ pub(crate) fn set_login_item(enabled: bool, exe: &Path) -> Result<(), Error> {
         let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
         let mac = cfg!(target_os = "macos");
         let path = login_file(mac, &home, xdg.as_deref());
+        // An AppImage runs from a temporary mount: its own path is what must start at login.
+        let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from);
+        let exe = appimage
+            .as_deref()
+            .filter(|path| !mac && path.is_absolute())
+            .unwrap_or(exe);
+        if enabled && !login_path_ok(exe) {
+            return Err(Error::LoginItem);
+        }
         let contents = enabled.then(|| {
             if mac {
                 mac_launch_agent(exe)
@@ -583,6 +670,7 @@ pub(crate) mod desktop {
     /// screen that did not take the lock while hidden is told again first, so it lets go of the
     /// vault's contents before it is drawn (#206).
     pub(crate) fn show_main<R: tauri::Runtime>(app: &AppHandle<R>) {
+        shown_again();
         crate::tell_screen_if_locked(app);
         if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
             let _ = window.unminimize();
@@ -616,6 +704,11 @@ pub(crate) mod desktop {
             if parts.is_some() {
                 return Ok(());
             }
+            // A "successful" tray with nowhere to show it would hide the window for good.
+            #[cfg(target_os = "linux")]
+            if !linux_tray_has_host(&session_name_has_owner) {
+                return Err(Error::Tray);
+            }
             let (open_text, quit_text, tooltip) = self.words(locale);
             let open = MenuItem::with_id(&self.app, "open", open_text, true, None::<&str>)
                 .map_err(|_| Error::Tray)?;
@@ -631,10 +724,17 @@ pub(crate) mod desktop {
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "open" => show_main(app),
-                    // Quit really exits: lock first, so nothing stays open in memory.
+                    // Quit really exits: lock first, so nothing stays open in memory. Off the menu's
+                    // thread, which must not wait for the vault's mutex.
                     "quit" => {
-                        lock_all();
-                        app.exit(0);
+                        let lock_all = Arc::clone(&lock_all);
+                        let app = app.clone();
+                        let _ = std::thread::Builder::new()
+                            .name("quit-lock".to_owned())
+                            .spawn(move || {
+                                lock_all();
+                                app.exit(0);
+                            });
                     }
                     _ => {}
                 })
@@ -721,10 +821,19 @@ pub(crate) mod desktop {
         };
         if background.on_close() == CloseAction::LockAndHide {
             api.prevent_close();
-            if LOCK_ON_CLOSE {
-                (background.backend.lock_all)();
-            }
             let _ = window.hide();
+            // Counted first, so that an unlock already in flight is refused as it completes.
+            closed_to_tray();
+            if LOCK_ON_CLOSE {
+                // Off the window's own thread: the lock waits for the vault's mutex, which an
+                // unlock or an import holds for as long as it runs, and a window that does not
+                // answer is worse than a lock a moment later (the vault_lock command does the
+                // same on the blocking pool).
+                let lock_all = Arc::clone(&background.backend.lock_all);
+                let _ = std::thread::Builder::new()
+                    .name("close-lock".to_owned())
+                    .spawn(move || lock_all());
+            }
         }
     }
 }
@@ -796,6 +905,33 @@ mod tests {
         c.set_waiting(true);
         c.set_waiting(false);
         assert_eq!(*fake.waiting.lock().unwrap(), vec![true, false]);
+    }
+
+    #[test]
+    fn an_unlock_that_completes_after_a_close_to_the_tray_is_refused() {
+        // Nothing closed since it started, and the window is shown: it stands.
+        assert!(!must_refuse_unlock(3, 3, false));
+        // A close was counted while it was in flight: refused, whether or not the window was
+        // brought back since.
+        assert!(must_refuse_unlock(3, 4, false));
+        assert!(must_refuse_unlock(3, 4, true));
+        // The window is still hidden in the tray: refused, even with no new close.
+        assert!(must_refuse_unlock(3, 3, true));
+    }
+
+    #[test]
+    fn the_tray_needs_a_host_on_linux_or_it_is_not_made() {
+        let owners = |taken: &'static [&'static str]| move |name: &str| taken.contains(&name);
+        // Stock GNOME without the AppIndicator extension: nobody owns either watcher name.
+        assert!(!linux_tray_has_host(&owners(&[])));
+        // KDE, or GNOME with the extension, or a desktop that uses the newer name.
+        assert!(linux_tray_has_host(&owners(&[
+            "org.kde.StatusNotifierWatcher"
+        ])));
+        assert!(linux_tray_has_host(&owners(&[
+            "org.freedesktop.StatusNotifierWatcher"
+        ])));
+        assert!(!linux_tray_has_host(&owners(&["org.example.Other"])));
     }
 
     #[test]

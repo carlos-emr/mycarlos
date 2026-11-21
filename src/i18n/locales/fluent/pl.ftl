@@ -1408,13 +1408,13 @@ unlock-title = Odblokuj sejf
 
 unlock-waiting =
     { $count ->
-    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
-    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
     }
 
-unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
 language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Proszę wybrać inny język lub uruchomić aplikację ponownie, a przed kolejną próbą sprawdzić swoje dokumenty.
 
@@ -2318,7 +2318,7 @@ background-unavailable = Ikona w tle nie jest dostępna na tym komputerze. myCar
 background-error = Nie udało się zmienić tego ustawienia. Pozostaje bez zmian.
 native-tray-open = Otwórz myCarlos
 native-tray-quit = Zakończ myCarlos
-native-tray-tooltip = myCarlos — sejf zablokowany
+native-tray-tooltip = myCarlos
 
 native-tray-waiting = Czeka nowy dokument. Odblokuj myCarlos, aby go zobaczyć.
 
@@ -2371,3 +2371,11 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+interface-received-confirmTitleOne = Zaimportować { $name } do Udostępnione mi?
+
+interface-received-confirmTitleMany = Zaimportować dokumenty ({ $count }) do Udostępnione mi?
+
+interface-received-confirmBody = Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Anulowanie nie zostawia niczego.
+
+interface-received-import = Importuj

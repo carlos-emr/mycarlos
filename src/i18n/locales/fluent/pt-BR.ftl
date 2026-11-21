@@ -1377,12 +1377,12 @@ unlock-title = Desbloqueie seu cofre
 
 unlock-waiting =
     { $count ->
-    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
-    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
-    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
     }
 
-unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
 
 language-error-formatting = O myCarlos não conseguiu exibir esta mensagem corretamente. Escolha outro idioma ou reinicie o aplicativo e confira seus registros antes de tentar novamente.
 
@@ -2272,7 +2272,7 @@ background-unavailable = Um ícone em segundo plano não está disponível neste
 background-error = Não foi possível alterar esta configuração. Ela continua como estava.
 native-tray-open = Abrir o myCarlos
 native-tray-quit = Sair do myCarlos
-native-tray-tooltip = myCarlos — cofre bloqueado
+native-tray-tooltip = myCarlos
 
 native-tray-waiting = Há um novo documento esperando. Desbloqueie o myCarlos para vê-lo.
 
@@ -2325,3 +2325,11 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+interface-received-confirmTitleOne = Importar { $name } para Compartilhados comigo?
+
+interface-received-confirmTitleMany = Importar { $count } documentos para Compartilhados comigo?
+
+interface-received-confirmBody = Nada é adicionado até você escolher Importar. Cancelar não deixa nada.
+
+interface-received-import = Importar
