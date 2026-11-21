@@ -15,8 +15,15 @@
 //!   password; a copy of this file lets someone test guesses offline at the hash's cost. The file is
 //!   padded up to a power of two so its size tells only a bucket, but that a second vault exists is
 //!   visible anyway (the `vaults/` folders). No claim of hidden existence is made.
-//! - **File.** Magic, a version, the payload's length, the payload (JSON), then random padding up to
-//!   a power of two of at least 2 KiB. A file that is not exactly that, or whose payload is not
+//! - **File.** Magic, a version, the payload's length, the payload (JSON, with the number of the name
+//!   normalisation it was made under), then random padding up to a power of two of at least 2 KiB.
+//!   Readable by this user only (0600, the folder 0700); a symbolic link or other non-file in its place
+//!   is refused. Every read-modify-write holds a device lock file ([`Registry::update`]). A damaged file
+//!   is **never overwritten**: it is set aside under another name ([`set_aside_damaged`]) and recovered
+//!   from by trying the passphrase against the slot folders.
+//! - **Duplicates.** At most [`DUPLICATE_NAME_CAP`] vaults share a name, so an unlock always makes that
+//!   many passphrase attempts (real ones and decoys): the timing never says how many share it. An
+//!   unknown name must run the same decoy attempts (the unlock path's job, a later step). A file that is not exactly that, or whose payload is not
 //!   consistent, is `Damaged` and treated as no registry by the caller (fail closed, never repaired
 //!   by guessing). Written with an atomic replace, so a power loss leaves the old file or the new one.
 #![cfg_attr(not(test), allow(dead_code))]
@@ -29,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use subtle::ConstantTimeEq;
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -41,6 +49,17 @@ pub(crate) const SLOTS_FOLDER: &str = "vaults";
 const VAULT_HOME: &str = "vault-home";
 /// The vault itself, inside its `vault-home`.
 const VAULT_DIR: &str = "vault-v1";
+
+/// How a name is made comparable (see [`normalise_name`]). It is part of the stored file: a name hash
+/// is only comparable under the rules it was made with, so a file with another number is `Damaged`
+/// here, and a later version that changes the rules reads the old number and rehashes at unlock.
+pub(crate) const NORMALISATION_VERSION: u32 = 1;
+/// At most this many vaults may share one name. A lookup then costs a FIXED number of passphrase
+/// attempts (this many, the real ones and decoys), so the timing of an unlock never says how many
+/// vaults share a name. A tampered file with more is cut to this many.
+pub(crate) const DUPLICATE_NAME_CAP: usize = 4;
+/// The registry's lock file, beside it: every read-modify-write of the registry holds it.
+const LOCK_NAME: &str = "vaults.v1.lock";
 
 const MAGIC: &[u8; 8] = b"MCVAULTS";
 const FILE_VERSION: u16 = 1;
@@ -87,10 +106,14 @@ pub(crate) enum RegistryError {
     /// The file is not a registry this version wrote, or is not consistent: no registry.
     Damaged,
     Io,
-    /// A name that cannot be a name (empty, or longer than [`MAX_NAME_CHARS`]).
+    /// A name that cannot be a name (empty, too long, or with characters that cannot be typed).
     Name(NameError),
     /// No such slot in the registry.
     UnknownSlot,
+    /// A hashing cost outside what a phone can bear.
+    Cost,
+    /// [`DUPLICATE_NAME_CAP`] vaults already have this name.
+    NameTaken,
 }
 
 impl From<io::Error> for RegistryError {
@@ -105,35 +128,69 @@ pub(crate) enum NameError {
     Empty,
     /// More than [`MAX_NAME_CHARS`] characters after normalising.
     TooLong,
+    /// A control character, a private-use code point or a non-character: not something to type.
+    Invalid,
 }
 
-/// How a typed name is made comparable, the same way at set-up and at unlock: Unicode NFKC, lower
-/// case, zero-width and bidi control characters dropped, any run of white space (no-break and
-/// ideographic spaces too) one space, trimmed. Accents are **kept** ("José" is not "Jose"): folding
-/// them would merge unrelated names, so the set-up page tells the owner to type it the same way.
-pub(crate) fn normalise_name(typed: &str) -> String {
-    let joined: String = typed
-        .nfkc()
-        .filter(|c| !is_invisible(*c))
-        .collect::<String>()
-        .to_lowercase();
-    // Lower-casing can leave a form NFKC would change (a final sigma, a ligature): once more.
-    let folded: String = joined.nfkc().collect();
-    folded.split_whitespace().collect::<Vec<_>>().join(" ")
+/// How a typed name is made comparable, the same way at set-up and at unlock ([`NORMALISATION_VERSION`]
+/// 1): Unicode NFKC; default-ignorable code points dropped (zero-width spaces and joiners, the soft
+/// hyphen, the combining grapheme joiner, variation selectors, bidi controls, tag characters); then
+/// the **full default case fold** (so "Weiß", "WEISS" and "weiss" are one name, and a final sigma "ς"
+/// is "σ"; `to_lowercase` is not a case fold); NFKC again, since folding can leave a form NFKC
+/// changes; any run of white space (no-break and ideographic spaces too) one space, trimmed. Accents
+/// are **kept** ("José" is not "Jose"): folding them would merge unrelated names, so the set-up page
+/// tells the owner to type it the same way. The intermediate strings are zeroed when dropped.
+pub(crate) fn normalise_name(typed: &str) -> Zeroizing<String> {
+    let visible = Zeroizing::new(
+        typed
+            .nfkc()
+            .filter(|c| !is_default_ignorable(*c))
+            .collect::<String>(),
+    );
+    let folded = Zeroizing::new(caseless::default_case_fold_str(&visible));
+    let composed = Zeroizing::new(folded.nfkc().collect::<String>());
+    Zeroizing::new(composed.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
-/// Characters that show nothing and could make two names look the same: zero-width spaces, joiners,
-/// the word joiner and the byte order mark, and the bidirectional controls.
-fn is_invisible(c: char) -> bool {
+/// The Unicode `Default_Ignorable_Code_Point` property (DerivedCoreProperties): code points that show
+/// nothing and could make two names look the same.
+fn is_default_ignorable(c: char) -> bool {
     matches!(
         c,
-        '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}' | '\u{00AD}' | '\u{061C}'
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}'
+            | '\u{180B}'..='\u{180F}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{FFF0}'..='\u{FFF8}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0000}'..='\u{E0FFF}'
     )
+}
+
+/// Characters a name may not hold at set-up: controls, private use and non-characters. (Unassigned
+/// code points are not rejected: `std` has no assignment table, and adding one is out of this step.)
+fn is_untypeable(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{E000}'..='\u{F8FF}' | '\u{FDD0}'..='\u{FDEF}' | '\u{F0000}'..='\u{10FFFF}')
+        || (u32::from(c) & 0xFFFE) == 0xFFFE
 }
 
 /// A name checked for storing: normalised, 1 to [`MAX_NAME_CHARS`] characters.
 fn checked_name(typed: &str) -> Result<Zeroizing<String>, NameError> {
-    let name = Zeroizing::new(normalise_name(typed));
+    let name = normalise_name(typed);
+    if name.chars().any(is_untypeable) {
+        return Err(NameError::Invalid);
+    }
     match name.chars().count() {
         0 => Err(NameError::Empty),
         n if n > MAX_NAME_CHARS => Err(NameError::TooLong),
@@ -149,6 +206,9 @@ pub(crate) struct HashCost {
     pub(crate) passes: u32,
     pub(crate) lanes: u32,
 }
+
+/// The most memory (KiB) a name hash may ask for: 128 MiB.
+const MAX_MEMORY_KIB: u32 = 128 * 1024;
 
 impl HashCost {
     /// The device cost. The design asks for about 0.3 s on a phone: **tune on a phone before the
@@ -169,9 +229,10 @@ impl HashCost {
 
     /// A cost a file may carry: the bounds keep a hostile file from asking for gigabytes or minutes.
     fn acceptable(self) -> bool {
-        (8..=1 << 20).contains(&self.memory_kib)
-            && (1..=16).contains(&self.passes)
-            && (1..=8).contains(&self.lanes)
+        // At most 128 MiB: a tampered file must not be able to make a phone run out of memory.
+        (8..=MAX_MEMORY_KIB).contains(&self.memory_kib)
+            && (1..=8).contains(&self.passes)
+            && (1..=4).contains(&self.lanes)
             && self.memory_kib >= 8 * self.lanes
     }
 
@@ -205,25 +266,28 @@ pub(crate) struct Registry {
 
 impl Registry {
     /// A registry with nothing in it and a new random salt.
-    pub(crate) fn new(cost: HashCost) -> Registry {
+    pub(crate) fn new(cost: HashCost) -> Result<Registry, RegistryError> {
+        if !cost.acceptable() {
+            return Err(RegistryError::Cost);
+        }
         let mut salt = [0u8; SALT_BYTES];
         OsRng.fill_bytes(&mut salt);
-        Registry {
+        Ok(Registry {
             cost,
             salt,
             entries: Vec::new(),
-        }
+        })
     }
 
     /// The registry of a device that has only the vault it has today: `Main`, the default, no name.
-    pub(crate) fn with_main(cost: HashCost) -> Registry {
-        let mut registry = Registry::new(cost);
+    pub(crate) fn with_main(cost: HashCost) -> Result<Registry, RegistryError> {
+        let mut registry = Registry::new(cost)?;
         registry.entries.push(Entry {
             slot: SlotId::Main,
             default: true,
             name_hash: None,
         });
-        registry
+        Ok(registry)
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -271,12 +335,37 @@ impl Registry {
         let name = checked_name(name).map_err(RegistryError::Name)?;
         let slot = SlotId::Extra(Uuid::new_v4());
         let hash = self.hash_name(&name);
+        self.refuse_a_name_taken_too_often(&hash, None)?;
         self.entries.push(Entry {
             slot,
             default: self.entries.is_empty(),
             name_hash: Some(hash),
         });
         Ok(slot)
+    }
+
+    /// A name may be shared (a check at the unlock screen would tell anyone there which names exist),
+    /// but by at most [`DUPLICATE_NAME_CAP`] vaults, so an unlock tries a fixed number.
+    fn refuse_a_name_taken_too_often(
+        &self,
+        hash: &[u8; NAME_HASH_BYTES],
+        except: Option<SlotId>,
+    ) -> Result<(), RegistryError> {
+        let sharing = self
+            .entries
+            .iter()
+            .filter(|entry| Some(entry.slot) != except)
+            .filter(|entry| {
+                entry
+                    .name_hash
+                    .as_ref()
+                    .is_some_and(|stored| constant_time_eq(stored, hash))
+            })
+            .count();
+        if sharing >= DUPLICATE_NAME_CAP {
+            return Err(RegistryError::NameTaken);
+        }
+        Ok(())
     }
 
     /// Gives a slot a name, or takes its name away (`None`): then it is reached only as the default.
@@ -288,7 +377,9 @@ impl Registry {
         let hash = match name {
             Some(typed) => {
                 let name = checked_name(typed).map_err(RegistryError::Name)?;
-                Some(self.hash_name(&name))
+                let hash = self.hash_name(&name);
+                self.refuse_a_name_taken_too_often(&hash, Some(slot))?;
+                Some(hash)
             }
             None => None,
         };
@@ -335,11 +426,12 @@ impl Registry {
     /// a name the registry does not know takes as long as one it does and no entry is skipped. A name
     /// of no vault is an empty list, never an error: the caller shows its one message for it.
     pub(crate) fn slots_named(&self, typed: &str) -> Vec<SlotId> {
-        let probe: String = normalise_name(typed)
-            .chars()
-            .take(MAX_PROBE_CHARS)
-            .collect();
-        let probe = Zeroizing::new(probe);
+        let probe = Zeroizing::new(
+            normalise_name(typed)
+                .chars()
+                .take(MAX_PROBE_CHARS)
+                .collect::<String>(),
+        );
         if probe.is_empty() {
             return self.default_slot().into_iter().collect();
         }
@@ -354,6 +446,8 @@ impl Registry {
                 found.push(entry.slot);
             }
         }
+        // The cap holds for what this version wrote; a tampered file cannot widen it.
+        found.truncate(DUPLICATE_NAME_CAP);
         found
     }
 
@@ -363,6 +457,7 @@ impl Registry {
     /// of two of at least [`MIN_FILE_BYTES`].
     pub(crate) fn to_bytes(&self) -> Vec<u8> {
         let stored = Stored {
+            normalisation: NORMALISATION_VERSION,
             cost: self.cost,
             salt: B64.encode(self.salt),
             entries: self
@@ -411,7 +506,7 @@ impl Registry {
         }
         let stored: Stored = serde_json::from_slice(&bytes[HEADER_BYTES..end])
             .map_err(|_| RegistryError::Damaged)?;
-        if !stored.cost.acceptable() {
+        if stored.normalisation != NORMALISATION_VERSION || !stored.cost.acceptable() {
             return Err(RegistryError::Damaged);
         }
         let salt: [u8; SALT_BYTES] = decode_fixed(&stored.salt)?;
@@ -443,28 +538,131 @@ impl Registry {
         })
     }
 
-    /// The registry of a device, or `None` when it has none yet (the file is absent).
+    /// The registry of a device, or `None` when it has none yet (the file is absent). A symbolic link,
+    /// a folder or another non-file at its place, a file over the size bound (checked before it is
+    /// read) and a file that is not a registry are errors: **never an empty registry**.
     pub(crate) fn load(data_dir: &Path) -> Result<Option<Registry>, RegistryError> {
         let path = data_dir.join(FILE_NAME);
-        match fs::read(&path) {
-            Ok(bytes) => Registry::from_bytes(&bytes).map(Some),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(_) => Err(RegistryError::Io),
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(RegistryError::Io),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(RegistryError::Damaged);
         }
+        if metadata.len() > MAX_FILE_BYTES as u64 {
+            return Err(RegistryError::Damaged);
+        }
+        let bytes = fs::read(&path).map_err(|_| RegistryError::Io)?;
+        Registry::from_bytes(&bytes).map(Some)
     }
 
-    /// Writes the registry, replacing the file atomically.
+    /// Writes the registry, replacing the file atomically, readable by this user only (0600; the
+    /// folder it is made in 0700) because the salt and the name hashes are what someone could test
+    /// guesses against. **Refuses to replace a file that is not a registry** (a damaged one is set
+    /// aside first, [`set_aside_damaged`], never overwritten), and refuses a symbolic link or another
+    /// non-file at its place or as its folder. Callers that read, change and write hold
+    /// [`Registry::update`]'s lock instead of calling this directly.
     pub(crate) fn save(&self, data_dir: &Path) -> Result<(), RegistryError> {
-        fs::create_dir_all(data_dir)?;
+        create_private_dir_all(data_dir)?;
+        let folder = fs::symlink_metadata(data_dir)?;
+        if !folder.is_dir() || folder.file_type().is_symlink() {
+            return Err(RegistryError::Io);
+        }
+        let path = data_dir.join(FILE_NAME);
+        if fs::symlink_metadata(&path).is_ok() {
+            // Whatever is there must be a registry this version reads: load says Damaged otherwise.
+            Registry::load(data_dir)?;
+        }
         let bytes = self.to_bytes();
-        AtomicFile::new(data_dir.join(FILE_NAME), AllowOverwrite)
-            .write(|file| file.write_all(&bytes))
+        AtomicFile::new(&path, AllowOverwrite)
+            .write(|file| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+                }
+                file.write_all(&bytes)
+            })
             .map_err(|_| RegistryError::Io)
     }
+
+    /// Reads the registry under the device lock, lets `change` change it, and writes it back, so two
+    /// writers (two windows, a second instance) can never lose each other's change. `create` makes the
+    /// registry when the device has none yet. Not called by the app yet.
+    pub(crate) fn update<T>(
+        data_dir: &Path,
+        create: impl FnOnce() -> Result<Registry, RegistryError>,
+        change: impl FnOnce(&mut Registry) -> Result<T, RegistryError>,
+    ) -> Result<T, RegistryError> {
+        create_private_dir_all(data_dir)?;
+        let _lock = RegistryLock::take(data_dir)?;
+        let mut registry = match Registry::load(data_dir)? {
+            Some(registry) => registry,
+            None => create()?,
+        };
+        let value = change(&mut registry)?;
+        registry.save(data_dir)?;
+        Ok(value)
+    }
+}
+
+/// The device lock of the registry: a file beside it, never removed or renamed (so no one can lock a
+/// new file while the old is held), opened without following a symbolic link. Held until dropped.
+struct RegistryLock {
+    _file: fs::File,
+}
+
+impl RegistryLock {
+    fn take(data_dir: &Path) -> Result<RegistryLock, RegistryError> {
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options.open(data_dir.join(LOCK_NAME))?;
+        if !file.metadata()?.is_file() {
+            return Err(RegistryError::Io);
+        }
+        file.lock()?;
+        Ok(RegistryLock { _file: file })
+    }
+}
+
+/// Moves a registry file that is damaged (or is not a file this version reads) out of the way to
+/// `vaults.v1.damaged-<seconds>-<uuid>` beside it, and gives that path. **Never deletes it**: it holds
+/// the only record of which slot folders belong to a vault, and recovery from it is by the owner (try
+/// the passphrase against the slot folders listed by [`unregistered_slot_folders`] with an empty
+/// registry). Whoever does that writes a new registry afterwards; until then `save` refuses.
+pub(crate) fn set_aside_damaged(data_dir: &Path) -> Result<PathBuf, RegistryError> {
+    let _lock = RegistryLock::take(data_dir)?;
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let target = data_dir.join(format!("{FILE_NAME}.damaged-{seconds}-{}", Uuid::new_v4()));
+    fs::rename(data_dir.join(FILE_NAME), &target)?;
+    Ok(target)
+}
+
+/// A folder (and what is above it that is missing), made readable by this user only on Unix.
+fn create_private_dir_all(path: &Path) -> io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
 }
 
 #[derive(Serialize, Deserialize)]
 struct Stored {
+    /// The rules the names were hashed under ([`NORMALISATION_VERSION`]).
+    normalisation: u32,
     cost: HashCost,
     salt: String,
     entries: Vec<StoredEntry>,
@@ -489,11 +687,7 @@ fn bucket(len: usize) -> usize {
 
 /// Equal bytes, in time that does not depend on where they first differ.
 fn constant_time_eq(a: &[u8; NAME_HASH_BYTES], b: &[u8; NAME_HASH_BYTES]) -> bool {
-    let mut difference = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        difference |= x ^ y;
-    }
-    std::hint::black_box(difference) == 0
+    bool::from(a.ct_eq(b))
 }
 
 // ---- where each vault lives ---------------------------------------------------------------------
@@ -550,31 +744,35 @@ pub(crate) fn unregistered_slot_folders(
 mod tests {
     use super::*;
 
+    fn norm(typed: &str) -> String {
+        normalise_name(typed).to_string()
+    }
+
     fn registry() -> Registry {
-        Registry::with_main(HashCost::TEST)
+        Registry::with_main(HashCost::TEST).unwrap()
     }
 
     #[test]
     fn given_typed_names_that_differ_only_by_case_spacing_or_invisible_marks_when_normalised_then_they_are_one_name(
     ) {
-        let one = normalise_name("Ana  Lopez");
+        let one = norm("Ana  Lopez");
         assert_eq!(one, "ana lopez");
-        assert_eq!(normalise_name(" ANA LOPEZ "), one);
-        assert_eq!(normalise_name("ana\u{00A0}lopez"), one);
-        assert_eq!(normalise_name("ana\u{3000}\u{3000}lopez"), one);
-        assert_eq!(normalise_name("a\u{200B}na lo\u{FEFF}pez"), one);
-        assert_eq!(normalise_name("\u{202E}ana lopez\u{202C}"), one);
+        assert_eq!(norm(" ANA LOPEZ "), one);
+        assert_eq!(norm("ana\u{00A0}lopez"), one);
+        assert_eq!(norm("ana\u{3000}\u{3000}lopez"), one);
+        assert_eq!(norm("a\u{200B}na lo\u{FEFF}pez"), one);
+        assert_eq!(norm("\u{202E}ana lopez\u{202C}"), one);
         // Compatibility forms: a full-width name and a ligature.
-        assert_eq!(normalise_name("ＡＮＡ ＬＯＰＥＺ"), one);
-        assert_eq!(normalise_name("ﬁnn"), "finn");
+        assert_eq!(norm("ＡＮＡ ＬＯＰＥＺ"), one);
+        assert_eq!(norm("ﬁnn"), "finn");
         // A combining accent and the precomposed letter are the same name.
-        assert_eq!(normalise_name("Jose\u{301}"), normalise_name("Jos\u{E9}"));
+        assert_eq!(norm("Jose\u{301}"), norm("Jos\u{E9}"));
     }
 
     #[test]
     fn given_accents_when_normalised_then_they_are_kept() {
-        assert_ne!(normalise_name("José"), normalise_name("Jose"));
-        assert_eq!(normalise_name("José"), "josé");
+        assert_ne!(norm("José"), norm("Jose"));
+        assert_eq!(norm("José"), "josé");
     }
 
     #[test]
@@ -613,7 +811,10 @@ mod tests {
         for empty in ["", "   ", "\u{200B}", "\u{00A0}\u{3000}"] {
             assert_eq!(registry.slots_named(empty), vec![SlotId::Main], "{empty:?}");
         }
-        assert!(Registry::new(HashCost::TEST).slots_named("").is_empty());
+        assert!(Registry::new(HashCost::TEST)
+            .unwrap()
+            .slots_named("")
+            .is_empty());
     }
 
     #[test]
@@ -645,7 +846,7 @@ mod tests {
 
     #[test]
     fn given_the_first_vault_when_added_then_it_is_the_default_and_the_default_can_change() {
-        let mut registry = Registry::new(HashCost::TEST);
+        let mut registry = Registry::new(HashCost::TEST).unwrap();
         assert_eq!(registry.default_slot(), None);
         let first = registry.add_extra("one").unwrap();
         let second = registry.add_extra("two").unwrap();
@@ -678,7 +879,7 @@ mod tests {
         assert_eq!(registry.default_slot(), None);
         assert_eq!(registry.remove(a), Err(RegistryError::UnknownSlot));
         // Taking another vault out never changes the default.
-        let mut registry = Registry::with_main(HashCost::TEST);
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
         let extra = registry.add_extra("x").unwrap();
         registry.remove(extra).unwrap();
         assert_eq!(registry.default_slot(), Some(SlotId::Main));
@@ -715,7 +916,7 @@ mod tests {
 
     #[test]
     fn given_registries_of_different_sizes_when_written_then_the_size_is_a_power_of_two_bucket() {
-        let mut registry = Registry::with_main(HashCost::TEST);
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
         let one = registry.to_bytes().len();
         assert_eq!(one, MIN_FILE_BYTES);
         for index in 0..4 {
@@ -753,8 +954,8 @@ mod tests {
 
     #[test]
     fn given_two_devices_when_the_same_name_is_hashed_then_the_hashes_differ_by_the_device_salt() {
-        let mut one = Registry::new(HashCost::TEST);
-        let mut two = Registry::new(HashCost::TEST);
+        let mut one = Registry::new(HashCost::TEST).unwrap();
+        let mut two = Registry::new(HashCost::TEST).unwrap();
         one.add_extra("Ana").unwrap();
         two.add_extra("Ana").unwrap();
         assert_ne!(one.entries[0].name_hash, two.entries[0].name_hash);
@@ -826,6 +1027,7 @@ mod tests {
 
     fn stored(entries: Vec<StoredEntry>) -> Stored {
         Stored {
+            normalisation: NORMALISATION_VERSION,
             cost: HashCost::TEST,
             salt: B64.encode([1u8; SALT_BYTES]),
             entries,
@@ -901,7 +1103,7 @@ mod tests {
                 lanes: 1,
             },
             HashCost {
-                memory_kib: 1 << 21,
+                memory_kib: 128 * 1024 + 1,
                 passes: 1,
                 lanes: 1,
             },
@@ -912,7 +1114,7 @@ mod tests {
             },
             HashCost {
                 memory_kib: 8,
-                passes: 17,
+                passes: 9,
                 lanes: 1,
             },
             HashCost {
@@ -923,7 +1125,7 @@ mod tests {
             HashCost {
                 memory_kib: 8,
                 passes: 1,
-                lanes: 9,
+                lanes: 5,
             },
             // Four lanes need at least 32 KiB.
             HashCost {
@@ -949,7 +1151,7 @@ mod tests {
     ) {
         let temp = tempfile::tempdir().unwrap();
         assert_eq!(Registry::load(temp.path()), Ok(None));
-        let mut registry = Registry::with_main(HashCost::TEST);
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
         let slot = registry.add_extra("Ana").unwrap();
         registry.save(temp.path()).unwrap();
         let loaded = Registry::load(temp.path()).unwrap().unwrap();
@@ -997,7 +1199,7 @@ mod tests {
             Path::new("/data/vaults/0b6f1f1e-2d3c-4b5a-8c7d-9e0f1a2b3c4d/vault-home/vault-v1")
         );
         // The folder says nothing about the owner: only the random id.
-        let mut registry = Registry::with_main(HashCost::TEST);
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
         let slot = registry.add_extra("Ana Lopez").unwrap();
         let path = slot_home(data, slot).to_string_lossy().to_lowercase();
         assert!(!path.contains("ana") && !path.contains("lopez"));
@@ -1007,7 +1209,7 @@ mod tests {
     fn given_slot_folders_on_disk_when_the_registry_lacks_one_then_only_that_one_is_reported() {
         let temp = tempfile::tempdir().unwrap();
         let data = temp.path();
-        let mut registry = Registry::with_main(HashCost::TEST);
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
         assert!(unregistered_slot_folders(data, &registry)
             .unwrap()
             .is_empty());
@@ -1044,5 +1246,282 @@ mod tests {
     fn given_the_device_cost_when_checked_then_it_is_one_the_file_would_accept() {
         assert!(HashCost::DEVICE.acceptable());
         assert!(HashCost::DEVICE.argon().is_some());
+    }
+
+    #[test]
+    fn given_names_that_differ_only_by_a_case_fold_when_normalised_then_they_are_one_name() {
+        // Full default case folding, not lower-casing.
+        assert_eq!(norm("Weiß"), norm("WEISS"));
+        assert_eq!(norm("Weiß"), norm("weiss"));
+        assert_eq!(norm("STRAẞE"), norm("strasse"));
+        // A final sigma and a medial one are one letter; so is the capital.
+        assert_eq!(norm("ΟΔΥΣΣΕΥΣ"), norm("οδυσσευς"));
+        assert_eq!(norm("σας"), norm("σασ"));
+        assert_eq!(norm("ΣΑΣ"), norm("σας"));
+        // A dotted capital I, a long s and the Kelvin sign.
+        assert_eq!(norm("İ"), norm("i\u{307}"));
+        assert_eq!(norm("ſun"), norm("SUN"));
+        assert_eq!(norm("\u{212A}"), norm("k"));
+        // Still not accents.
+        assert_ne!(norm("Weiß"), norm("Weiss\u{301}"));
+    }
+
+    #[test]
+    fn given_default_ignorable_code_points_when_normalised_then_they_are_dropped() {
+        let plain = norm("ana lopez");
+        for c in [
+            '\u{00AD}',
+            '\u{034F}',
+            '\u{200B}',
+            '\u{200D}',
+            '\u{2060}',
+            '\u{2064}',
+            '\u{FE0F}',
+            '\u{180E}',
+            '\u{FEFF}',
+            '\u{E0001}',
+            '\u{E0100}',
+        ] {
+            assert_eq!(
+                norm(&format!("ana{c} lopez")),
+                plain,
+                "{:04X}",
+                u32::from(c)
+            );
+        }
+    }
+
+    #[test]
+    fn given_characters_that_cannot_be_typed_when_a_name_is_checked_then_it_is_invalid() {
+        for typed in [
+            "ana\u{7}",
+            "ana\u{E000}",
+            "ana\u{FDD0}",
+            "ana\u{10FFFF}",
+            "ana\u{FFFE}",
+            "ana\u{1FFFF}",
+        ] {
+            assert_eq!(
+                checked_name(typed).err(),
+                Some(NameError::Invalid),
+                "{typed:?}"
+            );
+        }
+        assert!(checked_name("ana lopez 北京").is_ok());
+    }
+
+    #[test]
+    fn given_a_registry_when_written_then_it_names_the_normalisation_it_used_and_another_number_is_damaged(
+    ) {
+        let registry = registry();
+        let text = String::from_utf8_lossy(&registry.to_bytes()).into_owned();
+        assert!(text.contains(&format!("\"normalisation\":{NORMALISATION_VERSION}")));
+        let mut other = stored(vec![]);
+        other.normalisation = NORMALISATION_VERSION + 1;
+        assert_eq!(
+            Registry::from_bytes(&file_with(&other)),
+            Err(RegistryError::Damaged)
+        );
+    }
+
+    #[test]
+    fn given_a_cost_a_phone_cannot_bear_when_a_registry_is_made_then_it_is_refused() {
+        for cost in [
+            HashCost {
+                memory_kib: 128 * 1024 + 1,
+                passes: 1,
+                lanes: 1,
+            },
+            HashCost {
+                memory_kib: 7,
+                passes: 1,
+                lanes: 1,
+            },
+            HashCost {
+                memory_kib: 8,
+                passes: 9,
+                lanes: 1,
+            },
+            HashCost {
+                memory_kib: 8,
+                passes: 1,
+                lanes: 5,
+            },
+        ] {
+            assert_eq!(
+                Registry::new(cost).err(),
+                Some(RegistryError::Cost),
+                "{cost:?}"
+            );
+            assert_eq!(Registry::with_main(cost).err(), Some(RegistryError::Cost));
+        }
+        assert!(Registry::new(HashCost {
+            memory_kib: 128 * 1024,
+            passes: 8,
+            lanes: 4
+        })
+        .is_ok());
+    }
+
+    #[test]
+    fn given_more_vaults_than_the_cap_with_one_name_when_added_or_renamed_then_it_is_refused() {
+        let mut registry = registry();
+        let mut slots = Vec::new();
+        for _ in 0..DUPLICATE_NAME_CAP {
+            slots.push(registry.add_extra("Sam").unwrap());
+        }
+        assert_eq!(registry.add_extra("sam"), Err(RegistryError::NameTaken));
+        // A fifth vault with another name, renamed to the full name, is refused too.
+        let other = registry.add_extra("Other").unwrap();
+        assert_eq!(
+            registry.set_name(other, Some("SAM")),
+            Err(RegistryError::NameTaken)
+        );
+        // Renaming one of the four to the same name is not a new sharer.
+        assert_eq!(registry.set_name(slots[0], Some("sam")), Ok(()));
+        assert_eq!(registry.slots_named("sam").len(), DUPLICATE_NAME_CAP);
+        // Taking one away makes room.
+        registry.set_name(slots[1], None).unwrap();
+        assert_eq!(registry.set_name(other, Some("SAM")), Ok(()));
+    }
+
+    #[test]
+    fn given_a_tampered_file_with_too_many_sharers_when_looked_up_then_the_answer_is_cut_to_the_cap(
+    ) {
+        let mut registry = registry();
+        for _ in 0..DUPLICATE_NAME_CAP {
+            registry.add_extra("Sam").unwrap();
+        }
+        let hash = registry.entries[1].name_hash;
+        for _ in 0..3 {
+            registry.entries.push(Entry {
+                slot: SlotId::Extra(Uuid::new_v4()),
+                default: false,
+                name_hash: hash,
+            });
+        }
+        let read = Registry::from_bytes(&registry.to_bytes()).unwrap();
+        assert_eq!(read.slots_named("sam").len(), DUPLICATE_NAME_CAP);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_a_saved_registry_when_its_permissions_are_read_then_only_this_user_can_read_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().join("fresh").join("data");
+        registry().save(&data).unwrap();
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&data.join(FILE_NAME)), 0o600);
+        assert_eq!(mode(&data), 0o700);
+        // Saving again keeps it.
+        registry().save(&data).unwrap();
+        assert_eq!(mode(&data.join(FILE_NAME)), 0o600);
+        // The lock file too.
+        Registry::update(&data, || Registry::new(HashCost::TEST), |_| Ok(())).unwrap();
+        assert_eq!(mode(&data.join(LOCK_NAME)), 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_a_symbolic_link_or_a_folder_where_the_file_goes_when_loaded_or_saved_then_it_is_refused(
+    ) {
+        // Each case in a folder of its own (nothing is removed in a test: #71).
+        let linked = tempfile::tempdir().unwrap();
+        let target = linked.path().join("elsewhere");
+        fs::write(&target, registry().to_bytes()).unwrap();
+        std::os::unix::fs::symlink(&target, linked.path().join(FILE_NAME)).unwrap();
+        assert_eq!(Registry::load(linked.path()), Err(RegistryError::Damaged));
+        assert_eq!(registry().save(linked.path()), Err(RegistryError::Damaged));
+        // A folder at its place.
+        let folder = tempfile::tempdir().unwrap();
+        fs::create_dir(folder.path().join(FILE_NAME)).unwrap();
+        assert_eq!(Registry::load(folder.path()), Err(RegistryError::Damaged));
+        assert_eq!(registry().save(folder.path()), Err(RegistryError::Damaged));
+        // The data directory itself a symbolic link.
+        let real = tempfile::tempdir().unwrap();
+        let link = real.path().join("link");
+        std::os::unix::fs::symlink(real.path(), &link).unwrap();
+        assert_eq!(registry().save(&link), Err(RegistryError::Io));
+        // And a registry made properly is read.
+        let good = tempfile::tempdir().unwrap();
+        registry().save(good.path()).unwrap();
+        assert!(Registry::load(good.path()).unwrap().is_some());
+    }
+
+    #[test]
+    fn given_a_file_over_the_size_bound_when_loaded_then_it_is_damaged_without_being_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = fs::File::create(temp.path().join(FILE_NAME)).unwrap();
+        // A sparse file one byte over the bound: reading it would take 16 MiB.
+        file.set_len(MAX_FILE_BYTES as u64 + 1).unwrap();
+        assert_eq!(Registry::load(temp.path()), Err(RegistryError::Damaged));
+    }
+
+    #[test]
+    fn given_a_damaged_registry_when_saved_over_then_it_is_refused_and_set_aside_it_is_kept() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path();
+        fs::write(data.join(FILE_NAME), b"scribble").unwrap();
+        assert_eq!(registry().save(data), Err(RegistryError::Damaged));
+        assert_eq!(fs::read(data.join(FILE_NAME)).unwrap(), b"scribble");
+        // update() refuses too, and changes nothing.
+        let outcome = Registry::update(data, || Registry::new(HashCost::TEST), |_| Ok(()));
+        assert_eq!(outcome, Err(RegistryError::Damaged));
+        let aside = set_aside_damaged(data).unwrap();
+        assert_eq!(fs::read(&aside).unwrap(), b"scribble");
+        assert!(aside
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("vaults.v1.damaged-"));
+        assert_eq!(Registry::load(data), Ok(None));
+        // Now a new registry may be written; the set-aside file stays.
+        registry().save(data).unwrap();
+        assert!(aside.exists());
+    }
+
+    #[test]
+    fn given_two_writers_when_they_update_at_once_then_neither_change_is_lost() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path().to_path_buf();
+        Registry::update(&data, || Registry::with_main(HashCost::TEST), |_| Ok(())).unwrap();
+        let threads: Vec<_> = (0..8)
+            .map(|index| {
+                let data = data.clone();
+                std::thread::spawn(move || {
+                    Registry::update(
+                        &data,
+                        || Registry::with_main(HashCost::TEST),
+                        |registry| registry.add_extra(&format!("writer {index}")).map(|_| ()),
+                    )
+                    .unwrap();
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let registry = Registry::load(&data).unwrap().unwrap();
+        assert_eq!(registry.len(), 9);
+        for index in 0..8 {
+            assert_eq!(registry.slots_named(&format!("writer {index}")).len(), 1);
+        }
+    }
+
+    #[test]
+    fn given_an_update_that_fails_when_it_returns_an_error_then_nothing_is_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path();
+        Registry::update(data, || Registry::with_main(HashCost::TEST), |_| Ok(())).unwrap();
+        let before = fs::read(data.join(FILE_NAME)).unwrap();
+        let outcome: Result<(), _> = Registry::update(
+            data,
+            || Registry::with_main(HashCost::TEST),
+            |registry| registry.set_default(SlotId::Extra(Uuid::new_v4())),
+        );
+        assert_eq!(outcome, Err(RegistryError::UnknownSlot));
+        assert_eq!(fs::read(data.join(FILE_NAME)).unwrap(), before);
     }
 }

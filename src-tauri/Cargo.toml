@@ -74,6 +74,8 @@ x509-cert = "=0.2.5"
 x25519-dalek = { version = "=2.0.1", default-features = false, features = ["alloc", "static_secrets", "zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
+caseless = "0.2"
+subtle = "2"
 
 # Match the WebKitGTK bindings already used by the pinned Tauri/Wry runtime. The PDF helper's
 # sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter it cannot run
