@@ -67,6 +67,7 @@ mod text_recheck;
 mod throttle;
 mod unicode_cleaning_table;
 mod vault;
+mod vault_registry;
 #[cfg(windows)]
 mod windows_navigation;
 
