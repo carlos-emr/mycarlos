@@ -1258,8 +1258,12 @@ format number is taken.** What makes it a video is its contents.
   as for every record (the manifest check requires them; a photo is the same). The name is generated once
   (`Video, 20 Nov 2026, 3.05 PM.mp4`); the size, folders and history are the usual ones. The history
   entry is `imported` with the way `camera`, as a photo's.
-- **Recognised by its first bytes.** `ftyp` at byte 4, as a photo is recognised by `FF D8 FF`; a name
-  ending in `.mp4` is not what decides.
+- **A video is one myCarlos recorded.** The history says it was added with the camera (the `imported` event
+  with the way `camera`) **and** its file starts as an MP4 does (`ftyp` at byte 4); a name ending in `.mp4`
+  decides nothing. The bytes alone never decide: an iPhone's HEIC and AVIF photos, an M4A voice memo, a
+  camera raw file and a PDF can carry `ftyp` where an MP4 does, and imports are stored without a type.
+  Nothing else is called a video until importing videos is built. A record whose history piece is damaged is
+  not offered as a video; its file is kept as any document is.
 - **Played from a synthetic head.** The player is served `ftyp`, `moov`, a `sidx` built in memory from the
   index, then the stored fragments: the stored bytes are unchanged, and the head is never stored. A
   recording longer than a `sidx` can index (65,535 fragments) groups fragments under one reference.
