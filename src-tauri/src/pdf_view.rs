@@ -333,7 +333,9 @@ struct FormCache {
 /// form without its own font for a name falls back to the page's (and the enclosing forms') fonts,
 /// as a reader does for a missing resource. Images and other drawing objects are left out: they
 /// hold no text. Forms inside forms go to a fixed depth; forms, fonts, operations and bytes are
-/// bounded, and a page that passes a bound is left as it was. Each form is decoded once.
+/// bounded, and a page that passes a bound is left as it was. Each form is decoded once. The
+/// 16 MiB budget is on what is written out in all, each drawing counted, so a page that draws
+/// large forms many times falls back to the page's own text rather than being read in part.
 fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId) -> bool {
     use lopdf::content::Content;
     use lopdf::{Dictionary, Object};
@@ -475,6 +477,15 @@ fn inline_operations(
         }
         match operation.operator.as_str() {
             "Tf" => {
+                // The font is written out again after every form drawn, so it must be small: a
+                // name within PDF's own limit (127 bytes) and the two operands a Tf has. A page
+                // with any other Tf is left as it was.
+                let small = operation.operands.len() == 2
+                    && matches!(&operation.operands[0], Object::Name(name) if name.len() <= 127)
+                    && matches!(operation.operands[1], Object::Integer(_) | Object::Real(_));
+                if !small {
+                    return None;
+                }
                 let mut operation = operation.clone();
                 if let Some(Object::Name(name)) = operation.operands.first() {
                     if let Some(new) = renamed.get(name) {
@@ -1693,6 +1704,42 @@ mod tests {
             false,
         );
         assert_eq!(page_text(&pdf, 0).trim_end(), "Page text");
+    }
+
+    #[test]
+    fn an_oversized_font_selection_cannot_be_copied_after_every_form() {
+        // A hostile page: a 15 MiB font name in a Tf, then a tiny form drawn 2,000 times. The
+        // font is written out again after every drawing, so such a Tf leaves the page as it was.
+        let name = "G".repeat(15 * 1024 * 1024);
+        let pdf = pdf_with_form_fonts(
+            &format!(
+                "BT /F1 11 Tf (Page text) Tj /{name} 11 Tf ET {}",
+                "/Fm0 Do ".repeat(2_000)
+            ),
+            b"BT (x) Tj ET",
+            &[],
+            false,
+        );
+        let started = std::time::Instant::now();
+        assert_eq!(page_text(&pdf, 0).trim_end(), "Page text");
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        // A Tf with a name over 127 bytes, or with extra operands, is refused the same way; an
+        // ordinary one is not.
+        for (operators, inlined) in [
+            (format!("BT /{} 11 Tf ET /Fm0 Do", "G".repeat(128)), false),
+            ("BT /F1 11 12 Tf ET /Fm0 Do".to_owned(), false),
+            ("BT /F1 Tf ET /Fm0 Do".to_owned(), false),
+            (format!("BT /{} 11 Tf ET /Fm0 Do", "G".repeat(127)), true),
+            ("BT /F1 11 Tf (A) Tj ET /Fm0 Do".to_owned(), true),
+        ] {
+            let pdf = pdf_with_form_fonts(&operators, b"BT /F1 11 Tf (Form) Tj ET", &[], false);
+            assert_eq!(
+                page_text(&pdf, 0).contains("Form"),
+                inlined,
+                "{}",
+                operators.chars().take(30).collect::<String>()
+            );
+        }
     }
 
     #[test]
