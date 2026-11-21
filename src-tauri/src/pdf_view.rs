@@ -546,6 +546,11 @@ fn inline_operations(
                             .and_then(|(_, object)| object.as_dict().ok())
                         {
                             for (font_name, font) in font_resources.iter() {
+                                // No Tf can name a key over 127 bytes (the same limit as a
+                                // page's Tf), and it is copied with every drawing: skipped.
+                                if font_name.len() > 127 {
+                                    continue;
+                                }
                                 // Every entry counts, typed or not.
                                 cache.font_entries += 1;
                                 if cache.font_entries > MAX_INLINED_FONTS {
@@ -1740,6 +1745,30 @@ mod tests {
                 operators.chars().take(30).collect::<String>()
             );
         }
+    }
+
+    #[test]
+    fn a_form_font_key_too_long_to_name_is_skipped_not_copied_with_every_drawing() {
+        // A hostile form: a font key of 8 MiB (no Tf can name it), drawn 2,000 times. Copied per
+        // drawing that would be 16 GB; skipped, the form is read at once with the page's text.
+        let fonts = vec![("G".repeat(8 * 1024 * 1024), true)];
+        let pdf = pdf_with_form_fonts(
+            &format!(
+                "BT /F1 11 Tf (Page text) Tj ET {}",
+                "/Fm0 Do ".repeat(2_000)
+            ),
+            b"BT /F1 11 Tf (Form text) Tj ET",
+            &fonts,
+            false,
+        );
+        let started = std::time::Instant::now();
+        let text = page_text(&pdf, 0);
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        assert!(
+            text.starts_with("Page text\n"),
+            "{}",
+            text.chars().take(20).collect::<String>()
+        );
     }
 
     #[test]
