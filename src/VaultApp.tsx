@@ -743,15 +743,34 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // (#206). The vault is already locked, so the screen lets go of everything
   // it shows at once, as its own lock does, whatever is in flight. It does not
   // wait for a `visibilitychange` that a hidden window may never get.
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  // A native lock that arrives while an unlock is in flight (the window was closed to the tray
+  // meanwhile): the vault is about to open, so the lock is remembered and applied the moment it
+  // does. The native side refuses such an unlock too; this covers the screen's own part.
+  const pendingNativeLockRef = useRef<"closed" | "idle" | null>(null);
   useEffect(
     () =>
       bridge.onVaultLocked?.(({ by }) => {
-        if (statusRef.current !== "unlocked") return;
+        if (statusRef.current !== "unlocked") {
+          if (busyRef.current) pendingNativeLockRef.current = by;
+          return;
+        }
         lockReasonRef.current ??= by === "idle" ? "idle" : "hidden";
         requestLock(true);
       }),
     [bridge, requestLock],
   );
+  useEffect(() => {
+    const pending = pendingNativeLockRef.current;
+    if (status === "unlocked" && pending) {
+      pendingNativeLockRef.current = null;
+      lockReasonRef.current ??= pending === "idle" ? "idle" : "hidden";
+      requestLock(true);
+    } else if (status !== "unlocked" && !busy) {
+      pendingNativeLockRef.current = null;
+    }
+  }, [status, busy, requestLock]);
   const trackedBridge = useMemo<VaultBridge>(() => {
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
       // `run` locks once the operation has reported the transfer's outcome.

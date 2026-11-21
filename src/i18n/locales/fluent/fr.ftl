@@ -2272,7 +2272,7 @@ background-unavailable = Une icône d’arrière-plan n’est pas disponible sur
 background-error = Ce réglage n’a pas pu être modifié. Il reste tel qu’il était.
 native-tray-open = Ouvrir myCarlos
 native-tray-quit = Quitter myCarlos
-native-tray-tooltip = myCarlos — coffre verrouillé
+native-tray-tooltip = myCarlos
 
 ai-summary-again = Résumer à nouveau
 

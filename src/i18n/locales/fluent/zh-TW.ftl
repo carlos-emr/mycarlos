@@ -2070,7 +2070,7 @@ background-unavailable = 此電腦不支援背景圖示。關閉視窗時，myCa
 background-error = 無法變更此設定，它維持原樣。
 native-tray-open = 開啟 myCarlos
 native-tray-quit = 結束 myCarlos
-native-tray-tooltip = myCarlos — 保險庫已鎖定
+native-tray-tooltip = myCarlos
 
 ai-summary-again = 重新產生摘要
 

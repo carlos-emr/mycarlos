@@ -2237,7 +2237,7 @@ background-unavailable = A background icon is not available on this computer. my
 background-error = This setting could not be changed. It stays as it was.
 native-tray-open = Open myCarlos
 native-tray-quit = Quit myCarlos
-native-tray-tooltip = myCarlos — vault locked
+native-tray-tooltip = myCarlos
 
 ai-summary-again = Summarize again
 

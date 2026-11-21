@@ -15321,6 +15321,47 @@ describe("the vault locked natively: closed to the tray, Quit or the native idle
     expect(document.body).not.toHaveTextContent("FAKE: a short summary.");
   });
 
+  it("locks the moment an unlock completes, when the window was closed to the tray while it was in flight", async () => {
+    let say: (locked: { by: "closed" | "idle" }) => void = () => undefined;
+    let finish: (snapshot: VaultSnapshot) => void = () => undefined;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("locked"),
+      unlock: vi.fn(
+        () =>
+          new Promise<VaultSnapshot>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+      onVaultLocked: vi.fn(
+        (handler: (locked: { by: "closed" | "idle" }) => void) => {
+          say = handler;
+          return () => undefined;
+        },
+      ),
+    });
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    const user = userEvent.setup();
+    await user.type(
+      await screen.findByLabelText(humanText("Passphrase")),
+      "FAKE-passphrase-for-this-test",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await waitFor(() => expect(bridge.unlock).toHaveBeenCalled());
+    // The window is closed to the tray while the unlock is still in flight: the native lock finds
+    // an unlocked screen that is not unlocked yet, and says so.
+    await act(async () => say({ by: "closed" }));
+    await act(async () => finish(captureSnapshot(snapshotWithRecord)));
+    // The library never stays: the screen locks as the unlock completes.
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(document.body).not.toHaveTextContent("FAKE_Results.pdf");
+  });
+
   it("does not hold the screen open for a transfer: the vault is already locked natively", async () => {
     let say: (locked: { by: "closed" | "idle" }) => void = () => undefined;
     const bridge = nativeBridge({

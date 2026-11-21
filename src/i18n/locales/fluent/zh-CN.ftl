@@ -2070,7 +2070,7 @@ background-unavailable = 此电脑不支持后台图标。关闭窗口时，myCa
 background-error = 无法更改此设置，它保持原样。
 native-tray-open = 打开 myCarlos
 native-tray-quit = 退出 myCarlos
-native-tray-tooltip = myCarlos — 保险库已锁定
+native-tray-tooltip = myCarlos
 
 ai-summary-again = 重新生成摘要
 

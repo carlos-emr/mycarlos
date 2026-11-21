@@ -2318,7 +2318,7 @@ background-unavailable = Ikona w tle nie jest dostępna na tym komputerze. myCar
 background-error = Nie udało się zmienić tego ustawienia. Pozostaje bez zmian.
 native-tray-open = Otwórz myCarlos
 native-tray-quit = Zakończ myCarlos
-native-tray-tooltip = myCarlos — sejf zablokowany
+native-tray-tooltip = myCarlos
 
 ai-summary-again = Podsumuj ponownie
 

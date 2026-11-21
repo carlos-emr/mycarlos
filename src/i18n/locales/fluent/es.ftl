@@ -2272,7 +2272,7 @@ background-unavailable = Un icono en segundo plano no está disponible en este e
 background-error = No se pudo cambiar este ajuste. Sigue como estaba.
 native-tray-open = Abrir myCarlos
 native-tray-quit = Salir de myCarlos
-native-tray-tooltip = myCarlos — bóveda bloqueada
+native-tray-tooltip = myCarlos
 
 ai-summary-again = Resumir de nuevo
 
