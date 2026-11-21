@@ -2587,7 +2587,7 @@ p {
 
 /* #67: bigger by default in the app. Body text is 16px; counts, dates, captions and
    other secondary text stay at 14px, the floor. Every button, tick box, field and link
-   is a target of at least 44px. Text size in Preferences still scales all of it. */
+   is a target of at least 44px. App zoom in Preferences still scales all of it. */
 .native-vault-page
   :is(
     .button,

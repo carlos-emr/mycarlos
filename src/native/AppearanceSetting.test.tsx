@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe("Appearance in Preferences", () => {
-  it("offers all four choices beside Text size even without desktop zoom", async () => {
+  it("offers all four choices beside App zoom even without desktop zoom", async () => {
     const user = userEvent.setup();
     const appearance = startAppearance();
     render(

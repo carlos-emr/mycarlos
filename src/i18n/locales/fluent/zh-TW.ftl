@@ -1182,31 +1182,31 @@ sidebar-settings = 設定
 
 sidebar-storage = 加密的本機保險庫
 
-textSize-announce = 文字大小 { $percent }
+textSize-announce = 應用程式縮放 { $percent }
 
-textSize-between = { $typed }% 介於尺寸之間，因此調整為 { $size }。
+textSize-between = { $typed }% 介於縮放等級之間，因此調整為 { $size }。
 
-textSize-box = 文字大小百分比
+textSize-box = 應用程式縮放百分比
 
 textSize-followsDevice = 此處的文字大小會依照裝置設定或瀏覽器縮放比例調整。
 
-textSize-help = 調整 myCarlos 中所有內容的大小，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。您也可以按住 { $modifier }，再按加號、減號或 0。
+textSize-help = 放大或縮小 myCarlos 中的文字、按鈕和其他項目，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。按 { $modifier } 加 + 或 − 可縮放，按 { $modifier } 加 0 可恢復為 100%。
 
 textSize-key-command = Command
 
-textSize-larger = 放大文字
+textSize-larger = 放大
 
-textSize-largest = 最大尺寸為 { $max }%。
+textSize-largest = 最大縮放為 { $max }%。
 
 textSize-notNumber = 請輸入 { $min } 到 { $max } 之間的數字。
 
-textSize-reset = 恢復正常大小
+textSize-reset = 恢復為 100%
 
-textSize-smaller = 縮小文字
+textSize-smaller = 縮小
 
-textSize-smallest = 最小尺寸為 { $min }%。
+textSize-smallest = 最小縮放為 { $min }%。
 
-textSize-title = 文字大小
+textSize-title = 應用程式縮放
 
 unlock-autoLock = 閒置 { $count } 分鐘後，以及 myCarlos 隱藏時（例如縮到最小或移至背景），保險庫就會鎖定。
 

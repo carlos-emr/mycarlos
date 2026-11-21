@@ -1302,31 +1302,31 @@ sidebar-settings = Settings
 
 sidebar-storage = Encrypted local vault
 
-textSize-announce = Text size { $percent }
+textSize-announce = App zoom { $percent }
 
-textSize-between = { $typed }% is between sizes, so it is { $size }.
+textSize-between = { $typed }% is between zoom levels, so it is { $size }.
 
-textSize-box = Text size in percent
+textSize-box = App zoom in percent
 
 textSize-followsDevice = Here, text size follows your device: its own text size setting, or the browser's zoom.
 
-textSize-help = Makes everything in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers the size on this device. You can also hold { $modifier } and press plus, minus or 0.
+textSize-help = Make text, buttons, and other items in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers your setting on this device. Use { $modifier } with + or − to zoom, or { $modifier } with 0 to reset to 100%.
 
 textSize-key-command = Command
 
-textSize-larger = Larger text
+textSize-larger = Zoom in
 
-textSize-largest = The largest size is { $max }%.
+textSize-largest = The largest zoom is { $max }%.
 
 textSize-notNumber = Type a number from { $min } to { $max }.
 
-textSize-reset = Back to normal size
+textSize-reset = Back to 100%
 
-textSize-smaller = Smaller text
+textSize-smaller = Zoom out
 
-textSize-smallest = The smallest size is { $min }%.
+textSize-smallest = The smallest zoom is { $min }%.
 
-textSize-title = Text size
+textSize-title = App zoom
 
 unlock-autoLock =
     { $count ->
