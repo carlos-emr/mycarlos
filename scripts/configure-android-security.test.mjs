@@ -169,11 +169,32 @@ test("the camera and the microphone are each declared once, neither required (D9
       ).length,
       1,
     );
-    // Nothing else about sound or recording is asked for.
-    assert.doesNotMatch(
-      manifest,
-      /RECORD_VIDEO|CAPTURE_AUDIO_OUTPUT|FOREGROUND_SERVICE|READ_MEDIA|WRITE_EXTERNAL_STORAGE|ACCESS_(FINE|COARSE)_LOCATION/,
-    );
+    // The permissions are exactly these: an allowlist, so that adding one (sound
+    // recording in the background, storage, location, ...) fails here and has to
+    // be argued, not slipped in beside the microphone. INTERNET is the one the
+    // fixture manifest started with.
+    const permissions = [
+      ...manifest.matchAll(/<uses-permission android:name="([^"]+)"/g),
+    ]
+      .map((match) => match[1])
+      .sort();
+    assert.deepEqual(permissions, [
+      "android.permission.CAMERA",
+      "android.permission.INTERNET",
+      "android.permission.MODIFY_AUDIO_SETTINGS",
+      "android.permission.RECORD_AUDIO",
+    ]);
+    // And only these hardware features, none of them required.
+    const features = [
+      ...manifest.matchAll(
+        /<uses-feature android:name="([^"]+)" android:required="([^"]+)"/g,
+      ),
+    ].map((match) => `${match[1]}=${match[2]}`);
+    assert.deepEqual(features.sort(), [
+      "android.hardware.camera.autofocus=false",
+      "android.hardware.camera=false",
+      "android.hardware.microphone=false",
+    ]);
     // What was there stays.
     assert.match(manifest, /android\.permission\.INTERNET/);
     assert.match(manifest, /<application android:allowBackup="false"/);

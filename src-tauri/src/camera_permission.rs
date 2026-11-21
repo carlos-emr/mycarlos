@@ -34,6 +34,13 @@ use tauri::{Config, Url, WebviewWindow};
 /// Whether a webview's capture request (camera and/or microphone) is allowed:
 /// the app's own page, and video asked for, with or without sound. Sound alone,
 /// or a request that asks for neither, is refused.
+///
+/// Screen capture (`getDisplayMedia`) reaches WebKitGTK as a user-media request
+/// that is for neither a camera nor a microphone (it has its own display flag,
+/// `webkit_user_media_permission_is_for_display_device`, which the Rust binding
+/// does not expose below WebKitGTK 2.34). It is refused here because it is not
+/// "video": the decision needs a camera request, and a display request is not
+/// one. The test `display_capture_is_not_a_camera_request` pins the shape.
 #[cfg(any(target_os = "linux", test))]
 fn capture_allowed(video: bool, audio: bool, ours: bool) -> bool {
     let _ = audio; // video with sound is allowed; sound alone is not (no video)
@@ -171,6 +178,12 @@ mod tests {
     fn photos_ask_for_video_alone_and_recordings_for_video_with_sound_from_our_pages() {
         assert!(capture_allowed(true, false, true)); // the photo dialog
         assert!(capture_allowed(true, true, true)); // the recording dialog
+    }
+
+    #[test]
+    fn display_capture_is_not_a_camera_request() {
+        // A display-capture request is for neither device kind: refused.
+        assert!(!capture_allowed(false, false, true));
     }
 
     #[test]
