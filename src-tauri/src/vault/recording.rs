@@ -1379,6 +1379,46 @@ impl VaultStore {
         })
     }
 
+    /// The records that were added with the camera, from the history: the
+    /// Imported events whose way is `camera`. This is the origin of a video:
+    /// only myCarlos's own recording (and its photos, which are JPEGs) is added
+    /// that way, and nothing is called a video because of what its bytes look
+    /// like (an iPhone's HEIC photo, an M4A voice memo, a camera raw file and
+    /// even a PDF can carry `ftyp` where an MP4 does). A record whose history
+    /// piece is damaged is not named here: it is then not offered as a video
+    /// and not left out of a backup, which keeps it.
+    pub(super) fn camera_made_records(
+        &self,
+        unlocked: &UnlockedVault,
+    ) -> Result<HashSet<Uuid>, VaultError> {
+        let view = self.history_view_in_session(unlocked)?;
+        Ok(view
+            .entries
+            .iter()
+            .chain(view.later.iter())
+            .filter(|entry| {
+                entry.event == HistoryEvent::Imported && entry.how.as_deref() == Some(RECORDING_HOW)
+            })
+            .filter_map(|entry| entry.record_id)
+            .collect())
+    }
+
+    /// Whether the history says the record was added with the camera
+    /// (`NotFound` for a record the vault does not have).
+    pub fn added_with_camera(&self, record_id: Uuid) -> Result<bool, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        if !unlocked
+            .manifest
+            .records
+            .iter()
+            .any(|record| record.id == record_id)
+        {
+            return Err(VaultError::NotFound);
+        }
+        Ok(self.camera_made_records(unlocked)?.contains(&record_id))
+    }
+
     /// How much room the vault's volume has, and whether that is enough to
     /// record: asked before the camera and microphone are turned on, and again
     /// on every resume. Only of a vault that is open and writable, as recording
@@ -1679,6 +1719,12 @@ mod tests {
         assert!(!pending.recordings[0].stopped);
         assert_eq!(pending.recordings[0].display_name, "FAKE parked.mp4");
         let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        // A recording finished by recovery has the origin of one finished at once.
+        assert!(store.added_with_camera(record).unwrap());
+        assert!(matches!(
+            store.added_with_camera(Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
         let plain = stored(&store, record);
         let index = index_of(&plain);
         assert_eq!(index.entries.len(), 2);

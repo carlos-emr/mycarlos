@@ -53,13 +53,12 @@ pub(crate) use recording::{
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
-// Playback of a stored video (#359 PR 2): the scheme handler calls it; the command
-// that opens a video and the screen come next.
-#[allow(dead_code)]
+// Backups that carry the videos or leave them out (#359 PR 6).
 mod backup_video;
+// Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
+// open and close commands call it.
 mod playback;
-// The recording core (#359 PR 1): the commands and screen that call it come next.
-#[allow(dead_code)]
+// Recording into the vault (#359): the video commands call it.
 mod recording;
 
 use ai_results::StoredAiResult;
