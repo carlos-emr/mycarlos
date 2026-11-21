@@ -1220,9 +1220,9 @@ unlock-submit = 解鎖
 
 unlock-title = 解鎖保險庫
 
-unlock-waiting = 有 { $count } 個分享檔案正在等候。解鎖後，它們會移至「{ $folder }」。如果 myCarlos 先關閉，檔案就不會保留，請重新分享。
+unlock-waiting = 有 { $count } 個分享檔案正在等候。解鎖後，myCarlos 會先詢問，再將它們加入「{ $folder }」。如果 myCarlos 先關閉，檔案就不會保留，請重新分享。
 
-unlock-waiting-one = 有 1 個分享檔案正在等候。解鎖後，它會移至「{ $folder }」。如果 myCarlos 先關閉，檔案就不會保留，請重新分享。
+unlock-waiting-one = 有 1 個分享檔案正在等候。解鎖後，myCarlos 會先詢問，再將它加入「{ $folder }」。如果 myCarlos 先關閉，檔案就不會保留，請重新分享。
 
 language-error-formatting = myCarlos 無法正確顯示此訊息。請選擇其他語言或重新啟動 App，並在重試前檢查您的紀錄。
 
@@ -2121,3 +2121,11 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+
+interface-received-confirmTitleOne = 要將 { $name } 匯入「與我分享」嗎？
+
+interface-received-confirmTitleMany = 要將 { $count } 份文件匯入「與我分享」嗎？
+
+interface-received-confirmBody = 在您選擇「匯入」之前不會新增任何內容。取消不會留下任何內容。
+
+interface-received-import = 匯入

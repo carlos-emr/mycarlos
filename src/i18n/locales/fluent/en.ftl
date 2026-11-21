@@ -1346,11 +1346,11 @@ unlock-title = Unlock your vault
 
 unlock-waiting =
     { $count ->
-    [one] { $count } shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
-    *[other] { $count } shared files are waiting. Unlock and they go into { $folder }. If myCarlos closes first, they are not kept: share them again.
+    [one] { $count } shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.
+    *[other] { $count } shared files are waiting. Unlock and myCarlos asks first before adding them to { $folder }. If myCarlos closes first, they are not kept: share them again.
     }
 
-unlock-waiting-one = One shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
+unlock-waiting-one = One shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.
 
 language-error-formatting = myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.
 
@@ -2288,3 +2288,11 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+interface-received-confirmTitleOne = Import { $name } into Shared with me?
+
+interface-received-confirmTitleMany = Import { $count } documents into Shared with me?
+
+interface-received-confirmBody = Nothing is added until you choose Import. Cancel leaves nothing behind.
+
+interface-received-import = Import
