@@ -1073,9 +1073,13 @@ describe("durable vault UI", () => {
         files: structuredClone(queue),
         notice: { dropped: 0, refusedShares: 0 },
       })),
-      acceptReceived: vi.fn(async () => {
-        const added = queue.filter((file) => file.name.endsWith(".pdf"));
-        const notPdf = queue
+      acceptReceived: vi.fn(async (ids?: string[]) => {
+        // Exactly the files named, or every waiting one (the real command's two forms).
+        const taken = ids
+          ? queue.filter((file) => ids.includes(file.id))
+          : queue;
+        const added = taken.filter((file) => file.name.endsWith(".pdf"));
+        const notPdf = taken
           .filter((file) => !file.name.endsWith(".pdf"))
           .map((file) => file.name);
         if (added.length && !vault.profiles.some((p) => p.id === SHARED))
@@ -1096,7 +1100,7 @@ describe("durable vault UI", () => {
             importedAtMs: 3,
             available: true,
           });
-        queue = [];
+        queue = queue.filter((file) => !taken.includes(file));
         return {
           imported: added.map((file) => `record-${file.id}`),
           skippedDuplicates: [],
@@ -1416,7 +1420,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(
         humanText(
-          "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
+          "2 shared files are waiting. Unlock and myCarlos asks first before adding them to Shared with me. If myCarlos closes first, they are not kept: share them again.",
         ),
       ),
     ).toBeVisible();
@@ -1711,6 +1715,53 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("a file that arrives while the question is open waits for its own question, and never changes the one on screen (#133)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(["FAKE_A.pdf", "FAKE_B.pdf"]);
+    let arrived = false;
+    const listed = vi.mocked(bridge.listReceived).getMockImplementation()!;
+    vi.mocked(bridge.listReceived).mockImplementation(async () => {
+      const all = await listed();
+      return {
+        ...all,
+        files: all.files.filter(
+          (file) => arrived || file.name === "FAKE_A.pdf",
+        ),
+      };
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_A.pdf into Shared with me?"),
+    });
+    // B arrives now: the question under the cursor stays about A alone.
+    arrived = true;
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await act(async () =>
+      window.dispatchEvent(new Event("mycarlos-received-changed")),
+    );
+    expect(
+      screen.getByRole("alertdialog", {
+        name: humanText("Import FAKE_A.pdf into Shared with me?"),
+      }),
+    ).toBe(dialog);
+    expect(screen.queryByText(humanText("FAKE_B.pdf"))).not.toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Import") }),
+    );
+    // Only A was confirmed; B is asked about on its own afterwards.
+    await waitFor(() =>
+      expect(bridge.acceptReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(bridge.acceptReceived).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_B.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+    expect(bridge.acceptReceived).toHaveBeenCalledTimes(1);
+  });
+
   it("Cancel forgets the opened files and stores nothing, and the question does not come back (#133)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = openedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
@@ -1747,7 +1798,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(
         humanText(
-          "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+          "One shared file is waiting. Unlock and myCarlos asks first before adding it to Shared with me. If myCarlos closes first, it is not kept: share it again.",
         ),
       ),
     ).toBeVisible();
@@ -2537,7 +2588,7 @@ describe("durable vault UI", () => {
         expect(
           await screen.findByText(
             humanText(
-              "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+              "One shared file is waiting. Unlock and myCarlos asks first before adding it to Shared with me. If myCarlos closes first, it is not kept: share it again.",
             ),
           ),
         ).toBeVisible();

@@ -388,8 +388,10 @@ $appPath = 'C:\replace-with-the-actual-installed-executable.exe'
 ```
 
 With the app initially closed, it should open one window and show only a waiting count
-until unlock. After unlocking, the file should appear in Shared with me with its size and
-**Manual import — unverified** label. Keep the app running for the second launch:
+until unlock. After unlocking, myCarlos asks "Import <name> into Shared with me?" first;
+the file is added only after **Import** (Cancel keeps nothing), and then appears in Shared
+with me with its size and **Manual import — unverified** label. Keep the app running for the
+second launch:
 
 ```powershell
 Start-Job -ArgumentList $appPath, 'C:\FAKE Samples\FAKE José 结果.pdf' -ScriptBlock {
@@ -400,9 +402,12 @@ Start-Job -ArgumentList $appPath, 'C:\FAKE Samples\FAKE José 结果.pdf' -Scrip
 ```
 
 Bring myCarlos to the front before five seconds pass and leave it focused. The second
-file should appear once, without requiring another focus change or another window.
-Repeat while locked with another FAKE PDF: the count changes, names remain hidden, and
-unlocking adds it.
+file should ask once ("Import <name> into Shared with me?"), without requiring another focus
+change or another window; a file that arrives while a question is open waits for its own
+question after you answer. Repeat while locked with another FAKE PDF: the count changes,
+names remain hidden, and unlocking asks before adding it. Also try the startup "Open with"
+while unlocked (it asks too), Cancel (nothing is stored), and a path such as `\\.\pipe\x`
+or `\\?\GLOBALROOT\x` on the command line (it is ignored).
 Also record startup/exit races, a second arrival during an import, an unreadable-file
 retry, and password-protected PDF helper operation. Record the exact build and results;
 browser mocks and cross-compilation do not establish these Windows outcomes. This checks

@@ -186,11 +186,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // here: `acceptShared` takes one at a time and asks again once it is done, so
   // a pending import never holds back a later list, including a new session's.
   const [received, setReceived] = useState<ReceivedFile[]>([]);
-  const acceptSharedRef = useRef<(ids?: string[]) => Promise<void>>(
+  const acceptSharedRef = useRef<(ids?: string[]) => Promise<boolean | void>>(
     async () => undefined,
   );
   // Files named by a program started with their path (Open with, a second launch) wait here for
   // the patient's answer before anything is stored (#133). Cancel forgets them.
+  // Whether the "Import ... into Shared with me?" question is open, set at once (state is not).
+  const confirmOpen = useRef(false);
   const [confirmReceived, setConfirmReceived] = useState<ReceivedFile[] | null>(
     null,
   );
@@ -222,7 +224,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 setNotice(deferredText(() => receiveNoticeText(missed)));
               const ask = files.filter((file) => file.needsConfirm);
               if (ask.length) {
-                setConfirmReceived(ask);
+                // The question in front of the patient is never changed under their cursor: a
+                // file that arrives while it is open waits, and is asked about after the answer
+                // (the answer asks again).
+                if (!confirmOpen.current) {
+                  confirmOpen.current = true;
+                  setConfirmReceived(ask);
+                }
                 // Anything shared from another app is added as it arrives, as before.
                 const shared = files.filter((file) => !file.needsConfirm);
                 if (shared.length)
@@ -1570,7 +1578,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       concealedRef.current ||
       lockingRef.current
     )
-      return;
+      // Nothing was asked of native code: the caller may ask the patient again.
+      return false;
     const current = () =>
       generation === receiveGeneration.current &&
       inSession() &&
@@ -1653,7 +1662,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   }, [refreshReceived, status]);
   // A lock takes the question away: nothing was stored, and the files ask again after an unlock.
   useEffect(() => {
-    if (status !== "unlocked") setConfirmReceived(null);
+    if (status !== "unlocked") {
+      confirmOpen.current = false;
+      setConfirmReceived(null);
+    }
   }, [status]);
 
   // A restored vault is locked: it opens with its own passphrase or key.
@@ -1945,12 +1957,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
             ) : undefined
           }
           onConfirm={() => {
-            const ids = confirmReceived.map((file) => file.id);
+            const files = confirmReceived;
+            const ids = files.map((file) => file.id);
+            confirmOpen.current = false;
             setConfirmReceived(null);
-            void acceptSharedRef.current(ids);
+            void acceptSharedRef.current(ids).then((ran) => {
+              // Not asked of native code (the window was hidden, or an import was under way):
+              // the files still wait, so the same question comes back rather than being lost.
+              if (ran === false) {
+                confirmOpen.current = true;
+                setConfirmReceived(files);
+              }
+            });
           }}
           onCancel={() => {
             const ids = confirmReceived.map((file) => file.id);
+            confirmOpen.current = false;
             setConfirmReceived(null);
             void bridge
               .discardReceived(ids)
@@ -1959,6 +1981,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                   waiting.filter((file) => !ids.includes(file.id)),
                 ),
               )
+              // A file that arrived while the question was open is asked about now.
+              .then(() => refreshReceivedRef.current())
               .catch(() => undefined);
           }}
         >

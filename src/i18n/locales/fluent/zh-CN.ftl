@@ -1220,9 +1220,9 @@ unlock-submit = 解锁
 
 unlock-title = 解锁保险库
 
-unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，它们会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它们加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
-unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，它会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
 language-error-formatting = myCarlos 无法正确显示此消息。请选择其他语言或重新启动应用，并在重试前检查您的记录。
 

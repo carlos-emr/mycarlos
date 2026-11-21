@@ -1377,12 +1377,12 @@ unlock-title = Déverrouiller votre coffre-fort
 
 unlock-waiting =
     { $count ->
-    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
-    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
-    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
     }
 
-unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
 
 language-error-formatting = myCarlos n’a pas pu afficher ce message correctement. Choisissez une autre langue ou redémarrez l’application, puis vérifiez vos dossiers avant de réessayer.
 

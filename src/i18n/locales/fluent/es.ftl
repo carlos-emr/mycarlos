@@ -1377,12 +1377,12 @@ unlock-title = Desbloquee su bóveda
 
 unlock-waiting =
     { $count ->
-    [one] Hay { $count } archivo compartido en espera. Desbloquee la bóveda y pasará a «{ $folder }». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.
-    [many] Hay { $count } archivos compartidos en espera. Desbloquee la bóveda y pasarán a «{ $folder }». Si myCarlos se cierra antes, no se conservarán: compártalos de nuevo.
-    *[other] Hay { $count } archivos compartidos en espera. Desbloquee la bóveda y pasarán a «{ $folder }». Si myCarlos se cierra antes, no se conservarán: compártalos de nuevo.
+    [one] Hay { $count } archivo compartido en espera. Desbloquee la bóveda: myCarlos preguntará primero antes de añadirlo a «{ $folder }». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.
+    [many] Hay { $count } archivos compartidos en espera. Desbloquee la bóveda: myCarlos preguntará primero antes de añadirlos a «{ $folder }». Si myCarlos se cierra antes, no se conservarán: compártalos de nuevo.
+    *[other] Hay { $count } archivos compartidos en espera. Desbloquee la bóveda: myCarlos preguntará primero antes de añadirlos a «{ $folder }». Si myCarlos se cierra antes, no se conservarán: compártalos de nuevo.
     }
 
-unlock-waiting-one = Hay un archivo compartido en espera. Desbloquee la bóveda y pasará a «{ $folder }». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.
+unlock-waiting-one = Hay un archivo compartido en espera. Desbloquee la bóveda: myCarlos preguntará primero antes de añadirlo a «{ $folder }». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.
 
 language-error-formatting = myCarlos no pudo mostrar este mensaje correctamente. Elija otro idioma o reinicie la aplicación; revise sus registros antes de volver a intentarlo.
 

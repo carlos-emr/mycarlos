@@ -1408,13 +1408,13 @@ unlock-title = Odblokuj sejf
 
 unlock-waiting =
     { $count ->
-    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
-    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
     }
 
-unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
 language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Proszę wybrać inny język lub uruchomić aplikację ponownie, a przed kolejną próbą sprawdzić swoje dokumenty.
 

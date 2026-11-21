@@ -4261,7 +4261,8 @@ async fn received_accept(
     // own question); without, every waiting file, as for files shared from another app.
     let ids: Vec<Uuid> = match request {
         Some(request) => request.ids,
-        None => received.list().into_iter().map(|file| file.id).collect(),
+        // Never a file named by a path: those are added only after the patient confirms them.
+        None => received.ids_needing_no_question(),
     };
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {

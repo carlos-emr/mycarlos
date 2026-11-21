@@ -73,11 +73,35 @@ pub(crate) fn accept_command_line(
         .collect();
     let kept = offered
         .iter()
-        .filter(|path| path.is_absolute())
+        .filter(|path| path.is_absolute() && !is_device_path(path))
         .cloned()
         .map(ReceivedSource::Path)
         .collect();
     (offered.len(), kept)
+}
+
+/// A Windows device or raw-volume path that a program named on its command line must never open:
+/// `\\.\` (a device namespace: a pipe, a COM port, a disk) and `\\?\` anything but a drive
+/// (`\\?\C:\`) or a UNC share (`\\?\UNC\`). Opening one can block, or read something that is
+/// not a file the patient chose. A plain drive path and a plain UNC path stay (the handle is also
+/// checked to be a regular file before anything is read: `vault::open_regular_read`).
+fn is_device_path(path: &std::path::Path) -> bool {
+    let text = path.to_string_lossy();
+    if text.starts_with("\\\\.\\") {
+        return true;
+    }
+    match text.strip_prefix("\\\\?\\") {
+        None => false,
+        Some(rest) => {
+            let drive = rest.as_bytes();
+            let is_drive = drive.len() >= 3
+                && drive[0].is_ascii_alphabetic()
+                && drive[1] == b':'
+                && drive[2] == b'\\';
+            let is_unc = rest.len() >= 4 && rest[..4].eq_ignore_ascii_case("UNC\\");
+            !(is_drive || is_unc)
+        }
+    }
 }
 
 /// The name shown for a received file before it is cleaned by the vault's own naming rules.
@@ -317,10 +341,14 @@ impl ReceivedFiles {
         waiting.files.extend(later);
     }
 
-    /// Forgets the files named. Unknown ids are ignored: a file already imported is gone too.
-    #[cfg(test)]
-    pub(crate) fn discard(&self, ids: &[Uuid]) {
-        self.waiting().files.retain(|(id, _)| !ids.contains(id));
+    /// The ids of the waiting files that need no question: those shared from another app (a
+    /// content URI), which are added as they arrive. A file named by a path never is.
+    pub(crate) fn ids_needing_no_question(&self) -> Vec<Uuid> {
+        self.list()
+            .into_iter()
+            .filter(|file| !file.needs_confirm)
+            .map(|file| file.id)
+            .collect()
     }
 
     #[cfg(test)]
@@ -382,6 +410,47 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn refuses_windows_device_paths_and_keeps_drive_and_unc_paths() {
+        for refused in [
+            "\\\\.\\pipe\\FAKE.pdf",
+            "\\\\.\\COM1",
+            "\\\\.\\PhysicalDrive0",
+            "\\\\?\\GLOBALROOT\\Device\\FAKE\\a.pdf",
+            "\\\\?\\Volume{FAKE}\\a.pdf",
+            "\\\\?\\C:",
+        ] {
+            assert!(is_device_path(std::path::Path::new(refused)), "{refused}");
+        }
+        for kept in [
+            "C:\\Users\\FAKE\\a.pdf",
+            "\\\\server\\share\\a.pdf",
+            "\\\\?\\C:\\Users\\FAKE\\a.pdf",
+            "\\\\?\\UNC\\server\\share\\a.pdf",
+            "/tmp/FAKE.pdf",
+        ] {
+            assert!(!is_device_path(std::path::Path::new(kept)), "{kept}");
+        }
+    }
+
+    #[test]
+    fn files_shared_from_another_app_need_no_question_and_paths_always_do() {
+        let files = ReceivedFiles::default();
+        let uri = url("content://com.example.provider/doc/FAKE.pdf");
+        files
+            .add_share(vec![
+                ReceivedSource::Path(PathBuf::from("/tmp/FAKE a.pdf")),
+                ReceivedSource::ContentUri(uri),
+            ])
+            .unwrap();
+        let listed = files.list();
+        let free = files.ids_needing_no_question();
+        assert_eq!(free.len(), 1);
+        assert!(listed
+            .iter()
+            .any(|file| file.id == free[0] && !file.needs_confirm));
     }
 
     #[test]
@@ -575,7 +644,7 @@ mod tests {
             ["FAKE 0.pdf", "FAKE 2.pdf"]
         );
         assert!(files.take(&[ids[0]]).is_none(), "an id is used once");
-        files.discard(&[ids[1], Uuid::new_v4()]);
+        files.forget(&[ids[1], Uuid::new_v4()]);
         assert_eq!(files.len(), 0);
     }
 
