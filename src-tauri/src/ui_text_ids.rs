@@ -418,6 +418,8 @@ pub enum MessageId {
     InterfaceHistoryEventAiResultSaved,
     InterfaceHistoryEventBackupRestored,
     InterfaceHistoryEventBackupSaved,
+    InterfaceHistoryEventCloudKeyAdded,
+    InterfaceHistoryEventCloudKeyRemoved,
     InterfaceHistoryEventCopySaved,
     InterfaceHistoryEventCreated,
     InterfaceHistoryEventDeliveryFiled,
@@ -1473,6 +1475,8 @@ impl MessageId {
         Self::InterfaceHistoryEventAiResultSaved,
         Self::InterfaceHistoryEventBackupRestored,
         Self::InterfaceHistoryEventBackupSaved,
+        Self::InterfaceHistoryEventCloudKeyAdded,
+        Self::InterfaceHistoryEventCloudKeyRemoved,
         Self::InterfaceHistoryEventCopySaved,
         Self::InterfaceHistoryEventCreated,
         Self::InterfaceHistoryEventDeliveryFiled,
@@ -2746,6 +2750,8 @@ impl MessageId {
             Self::InterfaceHistoryEventAiResultSaved => "interface-history-event-aiResultSaved",
             Self::InterfaceHistoryEventBackupRestored => "interface-history-event-backupRestored",
             Self::InterfaceHistoryEventBackupSaved => "interface-history-event-backupSaved",
+            Self::InterfaceHistoryEventCloudKeyAdded => "interface-history-event-cloudKeyAdded",
+            Self::InterfaceHistoryEventCloudKeyRemoved => "interface-history-event-cloudKeyRemoved",
             Self::InterfaceHistoryEventCopySaved => "interface-history-event-copySaved",
             Self::InterfaceHistoryEventCreated => "interface-history-event-created",
             Self::InterfaceHistoryEventDeliveryFiled => "interface-history-event-deliveryFiled",
@@ -4830,6 +4836,12 @@ impl MessageId {
             "native.filter.models" => Some(Self::NativeFilterModels),
             "interface.history.event.aiResultSaved" => {
                 Some(Self::InterfaceHistoryEventAiResultSaved)
+            }
+            "interface.history.event.cloudKeyAdded" => {
+                Some(Self::InterfaceHistoryEventCloudKeyAdded)
+            }
+            "interface.history.event.cloudKeyRemoved" => {
+                Some(Self::InterfaceHistoryEventCloudKeyRemoved)
             }
             "interface.history.how.summary" => Some(Self::InterfaceHistoryHowSummary),
             "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),

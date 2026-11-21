@@ -1659,6 +1659,8 @@ interface-history-empty = No hay eventos en el historial.
 interface-history-error-unverified = No se pudo leer ni verificar el historial. No se muestra ningún evento.
 
 interface-history-event-aiResultSaved = Respuesta de la IA guardada
+interface-history-event-cloudKeyAdded = Clave de IA en la nube añadida
+interface-history-event-cloudKeyRemoved = Clave de IA en la nube quitada
 
 interface-history-event-backupRestored = Copia de seguridad restaurada
 

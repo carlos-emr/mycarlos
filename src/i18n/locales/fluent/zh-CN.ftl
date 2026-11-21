@@ -1490,6 +1490,8 @@ interface-history-empty = 没有任何记录事件。
 interface-history-error-unverified = 无法读取并验证记录，因此不显示任何事件。
 
 interface-history-event-aiResultSaved = AI 回答已保存
+interface-history-event-cloudKeyAdded = 已添加云端 AI 密钥
+interface-history-event-cloudKeyRemoved = 已移除云端 AI 密钥
 
 interface-history-event-backupRestored = 备份已还原
 
