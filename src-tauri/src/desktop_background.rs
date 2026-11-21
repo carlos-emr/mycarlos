@@ -400,6 +400,11 @@ pub(crate) trait Backend: Send + Sync {
     /// Rewords the icon's menu and tooltip.
     fn reword_tray(&self, locale: Option<UiLocale>);
     fn set_login_item(&self, enabled: bool) -> Result<(), Error>;
+    /// The tooltip says a document is waiting (#230), or goes back to "vault locked". Nothing
+    /// else changes; a backend with no tooltip ignores it.
+    fn set_waiting(&self, waiting: bool, locale: Option<UiLocale>) {
+        let _ = (waiting, locale);
+    }
 }
 
 pub(crate) struct Controller<B: Backend> {
@@ -454,6 +459,17 @@ impl<B: Backend> Controller<B> {
 
     /// Turning it on makes the icon first: with no icon, closing the window would strand the
     /// app, so nothing is saved and the choice stays off.
+    /// The language the interface last reported, for the words the tray and its notices use.
+    pub(crate) fn locale(&self) -> Option<UiLocale> {
+        self.settings.locale()
+    }
+
+    /// Tells the icon whether a document is waiting (#230): its tooltip carries the one fixed
+    /// sentence, and goes back to "vault locked" when the patient unlocks.
+    pub(crate) fn set_waiting(&self, waiting: bool) {
+        self.backend.set_waiting(waiting, self.settings.locale());
+    }
+
     pub(crate) fn set_keep_running(&self, on: bool) -> Result<Status, Error> {
         if !self.backend.supported() {
             return Err(Error::Unsupported);
@@ -580,7 +596,12 @@ pub(crate) mod desktop {
             (
                 tray_text(locale, MessageId::NativeTrayOpen),
                 tray_text(locale, MessageId::NativeTrayQuit),
-                tray_text(locale, MessageId::NativeTrayTooltip),
+                // The tooltip is the waiting sentence while a document waits (#230).
+                if crate::tray_poller::waiting_now() {
+                    crate::tray_poller::waiting_notice_text(locale)
+                } else {
+                    tray_text(locale, MessageId::NativeTrayTooltip)
+                },
             )
         }
     }
@@ -653,6 +674,17 @@ pub(crate) mod desktop {
             let exe = std::env::current_exe().map_err(|_| Error::LoginItem)?;
             set_login_item(enabled, &exe)
         }
+
+        fn set_waiting(&self, waiting: bool, locale: Option<UiLocale>) {
+            let tooltip = if waiting {
+                crate::tray_poller::waiting_notice_text(locale)
+            } else {
+                tray_text(locale, MessageId::NativeTrayTooltip)
+            };
+            if let Some(parts) = self.parts.lock().expect("tray parts poisoned").as_ref() {
+                let _ = parts.tray.set_tooltip(Some(tooltip));
+            }
+        }
     }
 
     /// Makes the controller, brings the icon back if it was chosen, and hides the window of a
@@ -712,6 +744,7 @@ mod tests {
         hidden: AtomicUsize,
         reworded: Mutex<Vec<Option<UiLocale>>>,
         login: Mutex<Vec<bool>>,
+        waiting: Mutex<Vec<bool>>,
     }
     impl Fake {
         fn desktop() -> Self {
@@ -747,9 +780,22 @@ mod tests {
             self.login.lock().unwrap().push(enabled);
             Ok(())
         }
+        fn set_waiting(&self, waiting: bool, _locale: Option<UiLocale>) {
+            self.waiting.lock().unwrap().push(waiting);
+        }
     }
     fn controller<'a>(dir: &Path, fake: &'a Fake) -> Controller<&'a Fake> {
         Controller::new(Settings::load(dir.join("background-v1.json")), fake)
+    }
+
+    #[test]
+    fn the_icon_is_told_when_a_document_is_waiting_and_when_the_patient_unlocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        c.set_waiting(true);
+        c.set_waiting(false);
+        assert_eq!(*fake.waiting.lock().unwrap(), vec![true, false]);
     }
 
     #[test]

@@ -362,6 +362,7 @@ export function UnlockVault({
   busy,
   notice,
   waiting = 0,
+  trayWaiting = false,
   autoLockMinutes,
   onUnlock,
   onRecover,
@@ -373,6 +374,9 @@ export function UnlockVault({
   notice: string;
   /** How many shared files wait for an unlock. Their names are not shown. */
   waiting?: number;
+  /** The tray check found a document waiting at the clinic (#230): one fixed sentence, with
+   * nothing about the document, the clinic or the person. */
+  trayWaiting?: boolean;
   autoLockMinutes: number;
   onUnlock: (passphrase: string) => Promise<void>;
   onRecover: (recoveryKey: string, newPassphrase: string) => Promise<void>;
@@ -406,6 +410,11 @@ export function UnlockVault({
         <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
         {/* Shared files waiting: a count, never a name, since whoever is
             looking on has not unlocked. */}
+        {trayWaiting && (
+          <p className="native-received-waiting" role="status">
+            {t("native.tray.waiting")}
+          </p>
+        )}
         {waiting > 0 && (
           <p className="native-received-waiting">
             {waiting === 1

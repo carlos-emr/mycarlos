@@ -9,6 +9,7 @@
     "allow-background-set-keep-running",
     "allow-background-set-start-at-login",
     "allow-background-report-locale",
+    "allow-tray-waiting-status",
     "allow-ai-model-catalog",
     "allow-ai-model-status",
     "allow-ai-models",

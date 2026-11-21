@@ -632,6 +632,11 @@ export interface VaultBridge {
   onVaultLocked?(
     handler: (locked: { by: "closed" | "idle" }) => void,
   ): () => void;
+  /** Whether the tray check found a document waiting while the vault was locked (#230): the
+   * unlock screen shows one fixed sentence when it did. Computers only. */
+  trayWaiting?(): Promise<boolean>;
+  /** The same, as it changes. Returns the way to stop listening. */
+  onTrayWaiting?(handler: (waiting: boolean) => void): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -1201,6 +1206,13 @@ export function createVaultBridge(): VaultBridge {
     onVaultLocked: (handler) => {
       const stop = listen<{ by: "closed" | "idle" }>("vault-locked", (event) =>
         handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    trayWaiting: () => invoke<boolean>("tray_waiting_status"),
+    onTrayWaiting: (handler) => {
+      const stop = listen<boolean>("tray-waiting", (event) =>
+        handler(event.payload === true),
       );
       return () => void stop.then((unlisten) => unlisten());
     },

@@ -678,6 +678,21 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }),
     [bridge],
   );
+  // A document is waiting at a clinic, as the tray check found it while the vault was locked
+  // (#230). One fixed sentence on the unlock screen; it clears when the vault unlocks.
+  const [trayWaiting, setTrayWaiting] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void bridge
+      .trayWaiting?.()
+      .then((waiting) => live && setTrayWaiting(waiting))
+      .catch(() => undefined);
+    const stop = bridge.onTrayWaiting?.((waiting) => setTrayWaiting(waiting));
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, [bridge]);
   // The vault locked natively without this screen asking: the window was
   // closed to the tray, Quit was chosen, or the native idle lock fell due
   // (#206). The vault is already locked, so the screen lets go of everything
@@ -1691,6 +1706,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         busy={busy}
         notice={notice}
         waiting={received.length}
+        trayWaiting={trayWaiting && status === "locked"}
         restoreBridge={trackedBridge}
         onRestored={restored}
         autoLockMinutes={autoLockMinutes}

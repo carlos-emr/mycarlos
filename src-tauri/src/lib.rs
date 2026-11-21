@@ -2972,6 +2972,13 @@ async fn background_set_start_at_login(
     }
 }
 
+/// Whether a document is waiting, as the tray check last found it (#230): the unlock screen shows
+/// the one fixed sentence when it is. No document, clinic or person is part of the answer.
+#[tauri::command]
+async fn tray_waiting_status() -> CommandResult<bool> {
+    Ok(tray_poller::waiting_now())
+}
+
 /// The interface's language, so the tray icon's menu and tooltip are worded in it.
 #[tauri::command]
 async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> CommandResult<()> {
@@ -5811,6 +5818,13 @@ pub fn run() {
                 );
                 // Tray notices (#230) need this switch: the poller and the notice keys read it.
                 tray_notices::set_keep_running(background.status().keep_running);
+                // The check that runs while locked in the tray: it waits until the tray, a locked
+                // vault and a notice key are all there.
+                tray_poller::driver::start(
+                    app.handle().clone(),
+                    Arc::clone(app.state::<Arc<VaultStore>>().inner()),
+                    Arc::clone(&background),
+                );
             }
             Ok(())
         })
@@ -5826,6 +5840,7 @@ pub fn run() {
             background_set_keep_running,
             background_set_start_at_login,
             background_report_locale,
+            tray_waiting_status,
             ai_model_catalog,
             ai_model_status,
             ai_models,

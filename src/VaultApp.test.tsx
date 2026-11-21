@@ -14623,6 +14623,62 @@ describe("Automatic arrival snapshot ownership", () => {
   });
 });
 
+describe("a document waiting, as the tray check found it while the vault was locked (#230)", () => {
+  const SENTENCE = "A new document is waiting. Unlock myCarlos to see it.";
+
+  it("shows one fixed sentence on the unlock screen, as it is found and as it clears", async () => {
+    let say: (waiting: boolean) => void = () => {
+      throw new Error("the screen did not listen for the tray check");
+    };
+    const stop = vi.fn();
+    const bridge = nativeBridge({
+      trayWaiting: vi.fn().mockResolvedValue(false),
+      onTrayWaiting: vi.fn((handler: (waiting: boolean) => void) => {
+        say = handler;
+        return stop;
+      }),
+    });
+    const { unmount } = render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(screen.queryByText(humanText(SENTENCE))).toBeNull();
+    // The tray check found a document: the one sentence, and nothing about it.
+    await act(async () => say(true));
+    const line = await screen.findByText(humanText(SENTENCE));
+    expect(line).toBeVisible();
+    expect(line).toHaveAttribute("role", "status");
+    // It clears when the tray check says so (the vault was unlocked elsewhere, or reset).
+    await act(async () => say(false));
+    expect(screen.queryByText(humanText(SENTENCE))).toBeNull();
+    unmount();
+    expect(stop).toHaveBeenCalled();
+  });
+
+  it("shows it from the start when the native side already knows", async () => {
+    const bridge = nativeBridge({
+      trayWaiting: vi.fn().mockResolvedValue(true),
+      onTrayWaiting: vi.fn(() => () => undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(await screen.findByText(humanText(SENTENCE))).toBeVisible();
+  });
+
+  it("does not show it over an unlocked library", async () => {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      trayWaiting: vi.fn().mockResolvedValue(true),
+      onTrayWaiting: vi.fn(() => () => undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByText("FAKE_Results.pdf");
+    expect(screen.queryByText(humanText(SENTENCE))).toBeNull();
+  });
+});
+
 describe("the vault locked natively: closed to the tray, Quit or the native idle lock (#206)", () => {
   beforeEach(() => {
     window.localStorage.clear();

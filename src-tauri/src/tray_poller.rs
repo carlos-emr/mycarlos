@@ -15,8 +15,17 @@ use crate::notice_key::{NoticeKeyEntry, NoticeKeys, WrapKeyStore};
 use crate::ui_text::UiLocale;
 use crate::ui_text_ids::MessageId;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use uuid::Uuid;
+
+static WAITING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the last tray check found something waiting and the patient has not unlocked since:
+/// the tooltip and the unlock screen say so.
+pub(crate) fn waiting_now() -> bool {
+    WAITING.load(Ordering::SeqCst)
+}
 
 /// The usual spacing between checks of one Portal.
 pub(crate) const INTERVAL: Duration = Duration::from_secs(300);
@@ -255,6 +264,100 @@ pub(crate) fn reply_from(status: u16, body: &[u8], retry_after: Option<u64>) -> 
         429 => Reply::TooSoon(retry_after.unwrap_or(120)),
         404 => Reply::Gone,
         _ => Reply::Failed,
+    }
+}
+
+/// The thread that runs the poller in the tray, and the screens that show its news (#230).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) mod driver {
+    use super::*;
+    use crate::desktop_background::desktop::Background;
+    use crate::notice_key;
+    use crate::vault::VaultStore;
+    use std::sync::Arc;
+    use tauri::{AppHandle, Emitter};
+
+    /// The page listens for this to show the line on the unlock screen.
+    pub(crate) const EVENT: &str = "tray-waiting";
+    /// How often the thread looks at its conditions; each Portal still keeps its own schedule.
+    const LOOK: Duration = Duration::from_secs(15);
+
+    /// Shows the one sentence: the icon's tooltip, the unlock screen (by an event), and on
+    /// Windows a toast. It is only ever given the catalogue sentence.
+    struct Screens {
+        app: AppHandle,
+        background: Arc<Background>,
+    }
+
+    impl Notify for Screens {
+        fn show(&self, text: &str) {
+            WAITING.store(true, Ordering::SeqCst);
+            self.background.set_waiting(true);
+            let _ = self.app.emit(EVENT, true);
+            toast(&self.app, text);
+        }
+    }
+
+    #[cfg(windows)]
+    fn toast(app: &AppHandle, text: &str) {
+        use crate::document_notification_runtime::active::Backend as _;
+        let toaster = crate::document_notification_windows::WindowsBackend::new(
+            app.config().identifier.clone(),
+        );
+        // A toast the OS does not take (notifications blocked) is not an error: the tooltip and
+        // the unlock screen still say it.
+        let _ = toaster.accept(text, &|| true);
+    }
+
+    #[cfg(not(windows))]
+    fn toast(_app: &AppHandle, _text: &str) {}
+
+    /// A number in `[-1.0, 1.0]` for the jitter.
+    fn unit() -> f64 {
+        use rand::RngCore;
+        f64::from(rand::rngs::OsRng.next_u32()) / f64::from(u32::MAX) * 2.0 - 1.0
+    }
+
+    /// Starts the thread. It does nothing until the conditions hold: in the tray, the vault
+    /// locked, and a notice key kept (a key exists only while tray notices are wanted).
+    pub(crate) fn start(app: AppHandle, store: Arc<VaultStore>, background: Arc<Background>) {
+        let screens = Screens {
+            app,
+            background: Arc::clone(&background),
+        };
+        let _ = std::thread::Builder::new()
+            .name("tray-notice-poller".to_owned())
+            .spawn(move || {
+                let started = std::time::Instant::now();
+                let mut poller = Poller::new();
+                loop {
+                    std::thread::sleep(LOOK);
+                    let locked = store.open_vault_id().is_none();
+                    if !locked {
+                        // The patient unlocked: the news is theirs now, and the icon goes back.
+                        if waiting_now() {
+                            WAITING.store(false, Ordering::SeqCst);
+                            background.set_waiting(false);
+                            let _ = screens.app.emit(EVENT, false);
+                        }
+                        poller.reset();
+                        continue;
+                    }
+                    let Some(keys) = notice_key::kept() else {
+                        continue;
+                    };
+                    let in_tray = background.status().tray_ready;
+                    let wanted = keys.entries().map(|k| !k.is_empty()).unwrap_or(false);
+                    let conditions = Conditions {
+                        in_tray,
+                        locked,
+                        wanted,
+                    };
+                    let tick =
+                        poller.tick(started.elapsed(), conditions, keys, &HttpWaiting, &mut unit);
+                    act_on(&tick, background.locale(), &screens);
+                }
+            });
     }
 }
 
