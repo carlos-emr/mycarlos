@@ -211,7 +211,8 @@ The generated `src-tauri/gen/android` and `src-tauri/gen/apple` directories are 
 the pinned Tauri CLI rather than reviewed application source, so CI regenerates them on clean
 runners. A checked-in configuration script applies the Android backup policy and `build.rs` enforces
 it for every Android compilation. Android debug builds run on Linux; the unsigned iOS simulator
-build runs on macOS. Use the `dev` commands for live UI updates and automatic Rust
+build runs on macOS. The iOS minimum is 14.5 (`bundle.iOS.minimumSystemVersion` in
+`tauri.conf.json`): Safari's engine records MP4 video from that version (#359). Use the `dev` commands for live UI updates and automatic Rust
 rebuild/relaunch; use `build` for standalone evaluation packages. Picker behaviour is
 Android-specific (the system picker hides the page) and cannot be exercised in the browser tests,
 so run `npm run tauri android dev` against an Android Studio emulator (Device Manager → create a
