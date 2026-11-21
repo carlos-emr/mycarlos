@@ -2017,17 +2017,55 @@ interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
 
 interface-AnonymizePreview-removedSummaryNone = 尚未移除任何內容。
 
-interface-AnonymizePreview-removedSummaryItem = { $kind }：{ $count }
+interface-AnonymizePreview-removedCount-name = { $count } 個姓名
+
+interface-AnonymizePreview-removedCount-doctor = { $count } 位醫生
+
+interface-AnonymizePreview-removedCount-clinic = { $count } 家診所
+
+interface-AnonymizePreview-removedCount-healthCard = { $count } 個健保卡號
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count } 個病歷號
+
+interface-AnonymizePreview-removedCount-sin = { $count } 個社會保險號
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count } 個出生日期
+
+interface-AnonymizePreview-removedCount-age = { $count } 個年齡
+
+interface-AnonymizePreview-removedCount-address = { $count } 個地址
+
+interface-AnonymizePreview-removedCount-postalCode = { $count } 個郵遞區號
+
+interface-AnonymizePreview-removedCount-phone = { $count } 個電話號碼
+
+interface-AnonymizePreview-removedCount-email = { $count } 個電子郵件地址
+
+interface-AnonymizePreview-removedCount-web = { $count } 個網址
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count } 個不明確的日期
+
+interface-AnonymizePreview-removedCount-manual = { $count } 項由您移除的內容
+
+interface-AnonymizePreview-removedCount-date = { $count } 個已替換的日期
 
 interface-AnonymizePreview-toCheck = { $count } 個詞需要檢查
 
-interface-AnonymizePreview-toCheckHelp = 句子中間以大寫字母開頭的詞，以及三位或更多位的數字會被醒目標示：它們可能識別出某個人。請選擇其一，然後選擇「移除」。
+interface-AnonymizePreview-toCheckHelp = 醒目標示的是：在使用大寫字母的文字（如英文、法文）中，句子中間以大寫字母開頭的詞，以及三位或更多位的數字。它們可能識別出某個人。這並不能找出所有內容：它找不到全大寫的姓名、位於行首的姓名、用沒有大寫字母的文字（如中文、韓文、阿拉伯文）寫的姓名，以及同時是月份、藥物或醫學術語的姓名（如「June」、「Bell」）。請選擇一個醒目標示的詞，再選擇「移除」，並自己閱讀全部文字。
 
 interface-AnonymizePreview-checkPicked = 「{ $word }」可能識別出某個人。
 
 interface-AnonymizePreview-savedFileNote = 儲存的檔案不受 myCarlos 保護。其中沒有姓名，但包含醫療詳情。用完後請將其刪除。
 
 interface-AnonymizePreview-pasteWhereNote = 您把它貼到哪裡，決定了什麼會被保留：聊天服務可能會保存它，或依您的帳戶設定從中學習。
+
+interface-AnonymizePreview-copy = 複製文字
+
+interface-AnonymizePreview-copied = 文字已複製。
+
+interface-AnonymizePreview-copyFailed = 無法複製文字。
+
+interface-AnonymizePreview-copyWarning = 複製的文字可能會留在此裝置上：Windows 剪貼簿歷程記錄和裝置之間的剪貼簿同步可能會保留一份複本。
 
 interface-AnonymizePreview-removeSelected = 移除選取的文字
 

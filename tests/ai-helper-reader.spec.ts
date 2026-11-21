@@ -277,7 +277,7 @@ test.describe("with a model on this device", () => {
     await expectOnlyFakedCommands(page);
   });
 
-  test("after Show me in document, Tab goes on from the marked words, not back to Close", async ({
+  test("after Show me in the document, Tab goes on from the marked words, not back to Close", async ({
     page,
   }) => {
     const reader = await openReader(page, { model: INSTALLED });
@@ -291,7 +291,7 @@ test.describe("with a model on this device", () => {
     await expect(marked).toHaveText(fakePageText(LETTER, 2));
     await expect(marked).toBeFocused();
     // Tab: the next control after the marked words, the summary's first
-    // Show me in document; never the reader's Close at the top.
+    // Show me in the document; never the reader's Close at the top.
     await page.keyboard.press("Tab");
     await expect(show.first()).toBeFocused();
     await expect(

@@ -53,7 +53,8 @@ const KNOWN_WORDS: ReadonlySet<string> = (() => {
     "pr",
     "sr",
     "sra",
-    // Days and months, English, French, Spanish, Portuguese, Polish.
+    // Weekdays in English, French and Spanish, and months in English and French (the other
+    // languages' months are not listed, so a name such as "Junio" is flagged).
     "monday",
     "tuesday",
     "wednesday",

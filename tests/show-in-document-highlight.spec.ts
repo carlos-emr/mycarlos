@@ -11,7 +11,7 @@ import {
   type FakeVaultSetup,
 } from "./support/vaultFake";
 
-// Show me in document marks a summary sentence's quote on the page picture as
+// Show me in the document marks a summary sentence's quote on the page picture as
 // well as in "Text on this page" (#292). The native side is faked: the page
 // is a FAKE letter drawn on a canvas (support/vaultFake.ts, drawnPages), and
 // vault_page_boxes answers where it drew the quoted words, as the PDF helper

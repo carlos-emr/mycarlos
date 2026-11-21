@@ -405,7 +405,7 @@ export function ReaderAiPanel({
     summary !== null &&
     shownIndex !== null;
   // Focus inside the summary when it folds (the window got smaller) goes to
-  // the button that unfolds it, never to the page. A "Show me in document"
+  // the button that unfolds it, never to the page. A "Show me in the document"
   // press then moves it on to the marked words (the reader's own effect,
   // which runs after this one). Before paint, while the focused element is
   // still the active one in every webview (WebKit included).

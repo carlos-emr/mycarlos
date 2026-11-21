@@ -84,6 +84,11 @@ async function fakeVault(page: Page) {
             clinicNames: [],
           };
         if (command === "vault_export_text_pick") return "FAKE-pick";
+        if (command === "vault_export_text_copy")
+          return {
+            approved: `FAKE export header\n\n${String((args as { request: { text: string } }).request.text)}\n`,
+            hits: [],
+          };
         if (command === "vault_export_text_picked")
           return { saved: true, hits: [] };
         return undefined;
@@ -281,7 +286,7 @@ test("on a wide window Close is the last button in the action row, at the bottom
     // What was removed, by kind, is said at the top; what is still in the text and may identify
     // someone is highlighted and counted once; the two plain notes are beside Save.
     await expect(preview.locator(".native-anonymize-summary")).toContainText(
-      /^Removed: .*name.*: .*1/, // Fluent isolates each value with invisible marks
+      /^Removed: .*1.*name/, // Fluent isolates each value with invisible marks
     );
     await expect(preview.locator("[data-check]")).toHaveText(["Blake", "214"]);
     await expect(preview.getByText(/2.*words to check/)).toBeVisible();
@@ -292,6 +297,31 @@ test("on a wide window Close is the last button in the action row, at the bottom
       preview.getByText("Where you paste this decides what is kept"),
     ).toBeVisible();
     await page.screenshot({ path: info.outputPath("anonymize-wide.png") });
+    // Copy text is beside Save, before Close; the clipboard warning is plain on the page.
+    const copy = preview.getByRole("button", { name: "Copy text" });
+    const copyBox = (await copy.boundingBox())!;
+    expect(copyBox.x).toBeGreaterThanOrEqual(saveBox.x + saveBox.width);
+    expect(closeBox.x).toBeGreaterThanOrEqual(copyBox.x + copyBox.width);
+    expect(copyBox.height).toBeGreaterThanOrEqual(44);
+    await expect(
+      preview.getByText("Copied text can stay on this device"),
+    ).toBeVisible();
+    // The two tools each have their own row: Remove the selected text above the phrase field's
+    // label, which is above the field.
+    const selected = (await preview
+      .getByRole("button", { name: "Remove the selected text" })
+      .boundingBox())!;
+    const phraseLabel = (await preview
+      .getByText("Word or phrase to remove everywhere")
+      .boundingBox())!;
+    const phraseField = (await preview
+      .getByLabel("Word or phrase to remove everywhere")
+      .boundingBox())!;
+    expect(phraseLabel.y).toBeGreaterThanOrEqual(selected.y + selected.height);
+    expect(phraseField.y).toBeGreaterThanOrEqual(
+      phraseLabel.y + phraseLabel.height,
+    );
+    await page.screenshot({ path: info.outputPath("anonymize-wide-2.png") });
     // Escape still closes it.
     await page.keyboard.press("Escape");
     await expect(preview).toBeHidden();

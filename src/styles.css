@@ -1130,7 +1130,7 @@ p {
     mix-blend-mode: normal;
   }
 }
-/* While Show me in document marks a quote, the text and the AI panel give the
+/* While Show me in the document marks a quote, the text and the AI panel give the
    picture room, so that a short or narrow window keeps the words in view in
    both places (#292). */
 /* The text box scrolls in its own region; capping the details around it only
@@ -1409,23 +1409,29 @@ p {
   list-style: none;
 }
 .native-anonymize-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px;
+  display: grid;
+  gap: 14px;
   padding: 10px 20px;
 }
-.native-anonymize-tools label {
+/* Each group has a row of its own, its buttons side by side and wrapping. */
+.native-anonymize-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.native-anonymize-phrase {
   display: grid;
-  gap: 5px;
-  flex: 1;
-  min-width: 12em;
+  gap: 6px;
+  min-width: 0;
+}
+.native-anonymize-tools label {
   color: var(--ink-soft);
   font-size: 0.875rem;
   font-weight: 700;
 }
 .native-anonymize-tools input {
   width: 100%;
+  max-width: 36em;
   min-height: 40px;
   padding: 8px 10px;
   border: 1px solid var(--line);

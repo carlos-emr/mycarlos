@@ -25,6 +25,7 @@ import {
   vaultErrorMessage,
   type KnownIdentifiers,
   type PatientProfile,
+  type TextCopyOutcome,
   type TextSaveOutcome,
   type VaultRecord,
 } from "../vault";
@@ -137,6 +138,7 @@ export function AnonymizePreview({
   knownDetails,
   pickDestination,
   saveText,
+  copyText,
   exportHeader,
   onClose,
 }: {
@@ -155,6 +157,9 @@ export function AnonymizePreview({
     ticket: string,
     text: string,
   ) => Promise<TextSaveOutcome>;
+  /** The native re-check a save runs, for a copy: the file text approved to put on the
+   * clipboard, or a refusal with the ranges still holding a detail. */
+  copyText: (ticket: string, text: string) => Promise<TextCopyOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   onClose: () => void;
@@ -394,10 +399,67 @@ export function AnonymizePreview({
     setNotice("");
   };
 
+  /** Copies the text, for a person who pastes it into an AI by hand. Copy is never weaker than
+   * Save: the native side runs the same re-check on the same text and returns the file Save would
+   * write (first line, cut line, final newline); only what it returns reaches the clipboard. A
+   * refusal is handled as Save's is: the details it found are taken out, for the patient to
+   * check. The clipboard is the web one: the app has no clipboard plugin and gains no
+   * permission for this. */
+  const copyTheText = async () => {
+    if (!current || !ticket) return;
+    setSaving(true);
+    setError("");
+    try {
+      const outcome = await copyText(ticket, current.toSend);
+      if (outcome.approved === null) {
+        refuse(outcome.hits);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(outcome.approved);
+        setNotice(
+          deferredText(() => translateNow("interface.AnonymizePreview.copied")),
+        );
+      } catch {
+        setNotice(
+          deferredText(() =>
+            translateNow("interface.AnonymizePreview.copyFailed"),
+          ),
+        );
+      }
+    } catch (failure) {
+      setError(deferredText(() => vaultErrorMessage(failure)));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const putDetailsBack = () => {
     if (!current) return;
     const result = restoreChecked(pasted, current);
     setPutBack({ parts: result.parts, flagged: result.flagged.length });
+  };
+
+  /** What native code still found, for a save or a copy: taken out, placeholders and moved
+   * dates whole, for the patient to check and try again. */
+  const refuse = (hits: { start: number; end: number }[]) => {
+    if (!current) return;
+    let step = current;
+    for (const hit of [...hits].sort((a, b) => b.start - a.start)) {
+      try {
+        step = removeMore(step, hit.start, hit.end, { over: true });
+      } catch {
+        // Out of the text: nothing to do.
+      }
+    }
+    setHistory((steps) => [...steps, step]);
+    setNotice(
+      deferredText(() =>
+        translateNow("interface.AnonymizePreview.refused", {
+          count: hits.length,
+        }),
+      ),
+    );
   };
 
   const save = async () => {
@@ -424,24 +486,7 @@ export function AnonymizePreview({
         );
         return;
       }
-      // What native code still found: taken out, placeholders and moved
-      // dates whole, for the patient to check and save again.
-      let step = current;
-      for (const hit of [...outcome.hits].sort((a, b) => b.start - a.start)) {
-        try {
-          step = removeMore(step, hit.start, hit.end, { over: true });
-        } catch {
-          // Out of the text: nothing to do.
-        }
-      }
-      setHistory((steps) => [...steps, step]);
-      setNotice(
-        deferredText(() =>
-          translateNow("interface.AnonymizePreview.refused", {
-            count: outcome.hits.length,
-          }),
-        ),
-      );
+      refuse(outcome.hits);
     } catch (failure) {
       setError(deferredText(() => vaultErrorMessage(failure)));
     } finally {
@@ -519,11 +564,12 @@ export function AnonymizePreview({
     const counts = removalCounts(current.onDevice.removed);
     if (counts.length === 0)
       return translateNow("interface.AnonymizePreview.removedSummaryNone");
+    // Each kind says its own count with the language's plural forms: "1 name, 2 phone numbers".
     const items = counts.map(({ kind, count }) =>
-      translateNow("interface.AnonymizePreview.removedSummaryItem", {
-        kind: translateNow(kindKey(kind)),
-        count,
-      }),
+      translateNow(
+        `interface.AnonymizePreview.removedCount.${kind}` as MessageKey,
+        { count },
+      ),
     );
     let list = items.join(", ");
     try {
@@ -836,37 +882,45 @@ export function AnonymizePreview({
               </div>
             )}
             <form className="native-anonymize-tools" onSubmit={removePhrase}>
-              <button
-                className="button"
-                type="button"
-                disabled={busy}
-                onClick={removeSelected}
-              >
-                {translateNow("interface.AnonymizePreview.removeSelected")}
-              </button>
-              <label htmlFor="anonymize-phrase">
-                {translateNow("interface.AnonymizePreview.phrase")}
-              </label>
-              <input
-                id="anonymize-phrase"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                value={phrase}
-                disabled={busy}
-                onChange={(event) => setPhrase(event.target.value)}
-              />
-              <button className="button" disabled={busy || !phrase.trim()}>
-                {translateNow("interface.AnonymizePreview.removePhrase")}
-              </button>
-              <button
-                className="button"
-                type="button"
-                disabled={busy || history.length < 2}
-                onClick={undo}
-              >
-                {translateNow("interface.AnonymizePreview.undo")}
-              </button>
+              {/* Two groups, each with its own row: what is selected, and a word or phrase to
+                  remove everywhere (its label above its field, its buttons below). */}
+              <div className="native-anonymize-tool-row">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy}
+                  onClick={removeSelected}
+                >
+                  {translateNow("interface.AnonymizePreview.removeSelected")}
+                </button>
+              </div>
+              <div className="native-anonymize-phrase">
+                <label htmlFor="anonymize-phrase">
+                  {translateNow("interface.AnonymizePreview.phrase")}
+                </label>
+                <input
+                  id="anonymize-phrase"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={phrase}
+                  disabled={busy}
+                  onChange={(event) => setPhrase(event.target.value)}
+                />
+                <div className="native-anonymize-tool-row">
+                  <button className="button" disabled={busy || !phrase.trim()}>
+                    {translateNow("interface.AnonymizePreview.removePhrase")}
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy || history.length < 2}
+                    onClick={undo}
+                  >
+                    {translateNow("interface.AnonymizePreview.undo")}
+                  </button>
+                </div>
+              </div>
             </form>
             {notice && (
               <p className="native-dialog-status" role="status">
@@ -876,6 +930,7 @@ export function AnonymizePreview({
             <div className="native-anonymize-advice">
               <p>{translateNow("interface.AnonymizePreview.pasteWhereNote")}</p>
               <p>{translateNow("interface.AnonymizePreview.savedFileNote")}</p>
+              <p>{translateNow("interface.AnonymizePreview.copyWarning")}</p>
             </div>
             <footer className="native-dialog-actions">
               <button
@@ -885,6 +940,14 @@ export function AnonymizePreview({
                 onClick={() => setConfirming(true)}
               >
                 {translateNow("interface.AnonymizePreview.save")}
+              </button>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || !ticket}
+                onClick={() => void copyTheText()}
+              >
+                {translateNow("interface.AnonymizePreview.copy")}
               </button>
               {closeAtBottom && closeButton}
             </footer>

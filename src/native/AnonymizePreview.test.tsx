@@ -1,13 +1,15 @@
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
+import { LOCALES, translate } from "../i18n";
 import { AnonymizePreview } from "./AnonymizePreview";
 import { joinPages, type DocumentText } from "../documentText";
 import type {
   KnownIdentifiers,
   PatientProfile,
+  TextCopyOutcome,
   TextSaveOutcome,
   VaultRecord,
 } from "../vault";
@@ -75,6 +77,14 @@ function renderPreview({
   ),
   pickDestination = vi.fn(async (_ticket: string) => "pick-1" as string | null),
   details = known,
+  // The native copy: the same file a save writes, here "FAKE header line", a blank line, the
+  // text and a newline, or a refusal.
+  copyText = vi.fn(
+    async (_ticket: string, text: string): Promise<TextCopyOutcome> => ({
+      approved: `FAKE header line\n\n${text}\n`,
+      hits: [],
+    }),
+  ),
 } = {}) {
   const onClose = vi.fn();
   const cancelRead = vi.fn();
@@ -88,11 +98,19 @@ function renderPreview({
       knownDetails={async () => details}
       pickDestination={pickDestination}
       saveText={saveText}
+      copyText={copyText}
       exportHeader="FAKE header line"
       onClose={onClose}
     />,
   );
-  return { readText, saveText, pickDestination, onClose, cancelRead };
+  return {
+    readText,
+    saveText,
+    copyText,
+    pickDestination,
+    onClose,
+    cancelRead,
+  };
 }
 
 const shownText = () =>
@@ -478,6 +496,14 @@ describe("the anonymize preview (#72 part B)", () => {
     // The capitalised word that does not start a sentence and the number of three digits; not
     // the placeholders, "Monday", the drug, "Seen" (a sentence start) or the dose "5".
     expect(marks()).toEqual(["Blake", "214"]);
+    // The help says what the flags miss: capitals-only names, a line's first word, scripts
+    // without capitals, and names that are also months, drugs or medical terms.
+    const help = document.querySelector(".native-anonymize-checks")!;
+    expect(help).toHaveHumanTextContent(/does not find everything/);
+    expect(help).toHaveHumanTextContent(/names written in capitals/);
+    expect(help).toHaveHumanTextContent(/start of a line/);
+    expect(help).toHaveHumanTextContent(/Chinese, Korean or Arabic/);
+    expect(help).toHaveHumanTextContent(/months, drugs or medical terms/);
     // One count for a screen reader, in a closed list, not a stop at each word.
     expect(screen.getByText(humanText("2 words to check"))).toBeInTheDocument();
     // Decoration only: a flagged word is plain text in a span, with its offset like any other.
@@ -497,7 +523,7 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(screen.getByText(humanText("1 word to check"))).toBeInTheDocument();
     expect(
       document.querySelector(".native-anonymize-summary"),
-    ).toHaveHumanTextContent(/removed by you: 1/);
+    ).toHaveHumanTextContent(/1 removed by you/);
     // The list below the text reaches the same removal from the keyboard.
     await user.click(
       screen.getByRole("button", { name: humanText("Remove “214”") }),
@@ -528,6 +554,87 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(
       document.querySelector(".native-anonymize-warning"),
     ).toHaveHumanTextContent(/^Removing details is never perfect/);
+  });
+
+  it("copies only what the native check returns, which is the text Save would write, and warns about the clipboard", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const { saveText, copyText } = renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // The plain warning is there, before anything is copied.
+    expect(
+      document.querySelector(".native-anonymize-advice"),
+    ).toHaveHumanTextContent(
+      "Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(
+      await screen.findByText(humanText("The text was copied.")),
+    ).toBeInTheDocument();
+    // The check ran on the shown text with the ticket, and the clipboard got what it returned.
+    expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString());
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const copied = writeText.mock.calls[0][0];
+    // A clipboard that refuses says so (a copy does not use up the ticket).
+    writeText.mockRejectedValueOnce(new Error("FAKE: blocked"));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(
+      await screen.findByText(humanText("The text could not be copied.")),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await screen.findByText(humanText("The text was saved."));
+    const [, , saved] = saveText.mock.calls[0];
+    // The same text went to both checks, and the copy is the file built from it.
+    expect(saved).toBe(copyText.mock.calls[0][1]);
+    expect(copied).toBe(`FAKE header line\n\n${saved}\n`);
+    expect(copied).not.toMatch(/Avery|Example|1961/);
+  });
+
+  it("copies nothing when the native check refuses, and takes out what it found, as Save does", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    // The check finds "Ward" (offsets in the shown text) still standing.
+    const { copyText } = renderPreview({
+      copyText: vi.fn(async (_ticket: string, text: string) => {
+        const at = text.indexOf("ward");
+        return { approved: null, hits: [{ start: at, end: at + 4 }] };
+      }),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    expect(shownString()).toContain("Admitted to the ward on day 3.");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(copyText).toHaveBeenCalledTimes(1);
+    // Nothing reached the clipboard; the refused range is taken out for the patient to check.
+    expect(writeText).not.toHaveBeenCalled();
+    expect(shownString()).toContain("Admitted to the [REMOVED 1] on day 3.");
+    expect(
+      await screen.findByText(humanText(/were still in the text/)),
+    ).toBeInTheDocument();
   });
 
   it("saves exactly the words with or without the flags: they are decoration only", async () => {
@@ -562,6 +669,58 @@ describe("the anonymize preview (#72 part B)", () => {
     );
   });
 
+  it("counts each kind with its language's plural forms", () => {
+    const count = (
+      locale: Parameters<typeof translate>[0],
+      kind: string,
+      n: number,
+    ) =>
+      visibleText(
+        translate(
+          locale,
+          `interface.AnonymizePreview.removedCount.${kind}` as Parameters<
+            typeof translate
+          >[1],
+          { count: n },
+        ),
+      );
+    // English and French: one and other; Polish: one, few, many; Chinese: no plural.
+    expect(count("en", "name", 1)).toBe("1 name");
+    expect(count("en", "name", 4)).toBe("4 names");
+    expect(count("en", "phone", 2)).toBe("2 phone numbers");
+    expect(count("en", "date", 6)).toBe("6 dates replaced");
+    expect(count("fr", "name", 1)).toBe("1 nom");
+    expect(count("fr", "phone", 2)).toBe("2 numéros de téléphone");
+    expect(count("pl", "phone", 1)).toBe("1 numer telefonu");
+    expect(count("pl", "phone", 2)).toBe("2 numery telefonów");
+    expect(count("pl", "phone", 5)).toBe("5 numerów telefonów");
+    expect(count("zh-CN", "phone", 2)).toBe("2 个电话号码");
+    // Every kind has a form in every language, and no placeholder is left in it.
+    for (const locale of LOCALES)
+      for (const kind of [
+        "name",
+        "doctor",
+        "clinic",
+        "healthCard",
+        "recordNumber",
+        "sin",
+        "dateOfBirth",
+        "age",
+        "address",
+        "postalCode",
+        "phone",
+        "email",
+        "web",
+        "unclearDate",
+        "manual",
+        "date",
+      ])
+        for (const n of [1, 2, 5, 22])
+          expect(count(locale, kind, n), `${locale} ${kind} ${n}`).toMatch(
+            new RegExp(String(n)),
+          );
+  });
+
   it("says at the top what was removed, by kind, and follows each removal and undo", async () => {
     const user = userEvent.setup();
     renderPreview();
@@ -571,8 +730,8 @@ describe("the anonymize preview (#72 part B)", () => {
     const summary = () =>
       document.querySelector<HTMLElement>(".native-anonymize-summary")!;
     // From the automatic result: the patient's name, birth date, a date and the doctor.
-    expect(summary()).toHaveHumanTextContent(/^Removed: .*name: 1/);
-    expect(summary()).toHaveHumanTextContent(/date of birth: 1/);
+    expect(summary()).toHaveHumanTextContent(/^Removed: .*1 name/);
+    expect(summary()).toHaveHumanTextContent(/1 date of birth/);
     expect(summary()).not.toHaveHumanTextContent(/removed by you/);
     await user.type(
       screen.getByLabelText(humanText("Word or phrase to remove everywhere")),
@@ -581,7 +740,7 @@ describe("the anonymize preview (#72 part B)", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Remove everywhere") }),
     );
-    expect(summary()).toHaveHumanTextContent(/removed by you: 1/);
+    expect(summary()).toHaveHumanTextContent(/1 removed by you/);
     await user.click(
       screen.getByRole("button", { name: humanText("Undo the last removal") }),
     );

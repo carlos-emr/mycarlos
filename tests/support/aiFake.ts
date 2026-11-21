@@ -46,6 +46,7 @@ export const AI_COMMANDS = {
   knownDetails: "vault_record_known_details",
   exportPick: "vault_export_text_pick",
   exportPicked: "vault_export_text_picked",
+  exportCopy: "vault_export_text_copy",
   // The answers kept with a document, in the vault (#212).
   keptList: "vault_ai_results",
   keptSave: "vault_ai_result_save",
@@ -498,6 +499,12 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             return setup.pickId;
           case c.exportPicked:
             return { saved: true, hits: [] };
+          // The same file a save writes: the first line, a blank line, the text, a newline.
+          case c.exportCopy:
+            return {
+              approved: `FAKE export header\n\n${String(request.text)}\n`,
+              hits: [],
+            };
           // Kept in memory, as the vault keeps them per document: one shown
           // per question (tool, language, term), the newest; the older ones
           // hidden, never deleted (D3).
