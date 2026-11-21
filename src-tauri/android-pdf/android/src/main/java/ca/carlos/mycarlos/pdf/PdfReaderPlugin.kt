@@ -109,6 +109,8 @@ class PdfReaderPlugin(private val activity: Activity) : Plugin(activity) {
                     invoke.reject("cancelled")
                     return@runOnUiThread
                 }
+                // An older open can no longer get in after this one.
+                if (args.generation > minGeneration) minGeneration = args.generation
                 duplicate = try {
                     ParcelFileDescriptor.fromFd(args.fd)
                 } catch (error: Exception) {
@@ -150,13 +152,24 @@ class PdfReaderPlugin(private val activity: Activity) : Plugin(activity) {
                 }
                 current = reader
             }
-            reader.show()
+            try {
+                reader.show()
+            } catch (error: Exception) {
+                // A window that cannot be added (BadTokenException: the activity is going away):
+                // closed as a failure, which rejects this call.
+                reader.dismissFor("failed")
+            }
         }
     }
 
     @Command
     fun close(invoke: Invoke) {
-        val args = invoke.parseArgs(CloseArgs::class.java)
+        val args = try {
+            invoke.parseArgs(CloseArgs::class.java)
+        } catch (error: Exception) {
+            invoke.reject("bad request")
+            return
+        }
         val open: PdfReaderDialog?
         synchronized(lock) {
             if (args.generation > minGeneration) minGeneration = args.generation

@@ -817,6 +817,11 @@ and a password-protected one).
    "Show in document" are computers-only, so Android shows the original only. A person who needs
    the text must use **Save a copy** and a reader app of their choice. Record what TalkBack does on
    your phone.
+5a. **memfd on Android 8 to 10 (API 26 to 29), for Ben's device test:** the reader makes its in-memory
+   file with the raw `memfd_create` system call. Some vendors' seccomp filters on those versions may
+   kill the call (a signal, SIGSYS) rather than return an error, which the app cannot catch. Open a
+   letter on the oldest phone available; a crash on open, not a "cannot show this document"
+   message, is this. Android 11 and later return an error that the app handles.
 6. Neither the app window nor this reader window sets `FLAG_SECURE`: screenshots and the recent-apps
    picture are allowed everywhere, by the owner's decision of 20 Nov 2026 (the patient's choice).
    Take a screenshot of an open letter on a test phone and expect it to work.

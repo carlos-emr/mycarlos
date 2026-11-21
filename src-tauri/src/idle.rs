@@ -206,12 +206,9 @@ impl IdleDeadline {
         state.wall.touch(now.wall);
     }
 
-    /// Records activity: a command, the renderer reporting user input, or a
-    /// transfer making progress. A transfer counts for as long as it makes
-    /// progress, however slowly; one that has stalled does not.
-    /// Genuine input in a native reader obeys the renderer's owed-lock rule: once the user-facing
-    /// delay elapsed, it cannot revive either deadline. Check and touch share the mutex. The
-    /// normal backstop keeps its margin.
+    /// Genuine input in a native reader (the Android PDF reader) obeys the renderer's owed-lock
+    /// rule: once the user-facing delay elapsed, it cannot revive either deadline. Check and touch
+    /// share the mutex. The normal backstop keeps its margin.
     #[cfg(any(target_os = "android", target_os = "ios", test))]
     pub fn touch_before_deadline(&self, now: impl Into<Now>) -> bool {
         let now = now.into();
@@ -234,6 +231,9 @@ impl IdleDeadline {
         true
     }
 
+    /// Records activity: a command, the renderer reporting user input, or a
+    /// transfer making progress. A transfer counts for as long as it makes
+    /// progress, however slowly; one that has stalled does not.
     pub fn touch(&self, now: impl Into<Now>) {
         let now = now.into();
         let mut state = self.state();

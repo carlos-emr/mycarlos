@@ -59,10 +59,10 @@ class PdfReaderDialog(
     private val zoomOut: Button
 
     /** Bumped for every draw request: a late result of an older one is thrown away. */
-    private var drawId = 0
+    @Volatile private var drawId = 0
     private var page = 0
     private var zoomIndex = 0
-    private var closed = false
+    @Volatile private var closed = false
     private var firstShown = false
     private var lastActivity = 0L
 
@@ -242,9 +242,11 @@ class PdfReaderDialog(
         val zoom = ZOOMS[zoomIndex]
         worker.execute {
             if (isStale(id)) return@execute
+            // Throwable, not Exception: a bitmap that does not fit is an OutOfMemoryError, and on
+            // an older phone even an ordinary tall page can be one. It is the recoverable error.
             val bitmap = try {
                 render(index, viewWidth, zoom)
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
                 null
             }
             main.post {
@@ -273,7 +275,7 @@ class PdfReaderDialog(
         if (have) return
         val bitmap = try {
             render(index, viewWidth, 1f)
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             return
         }
         main.post {
@@ -304,13 +306,10 @@ class PdfReaderDialog(
         if (zoom == 1f && cached != null && !cached.isRecycled) return cached
         val pdfPage = renderer.openPage(index)
         try {
-            var width = (viewWidth * zoom).toInt().coerceAtLeast(1)
-            var height = (width.toLong() * pdfPage.height / pdfPage.width).toInt().coerceAtLeast(1)
-            // Never more than MAX_PIXELS: a very tall or very zoomed page is drawn smaller.
-            while (width.toLong() * height > MAX_PIXELS && width > 1) {
-                width = (width * 0.9f).toInt().coerceAtLeast(1)
-                height = (width.toLong() * pdfPage.height / pdfPage.width).toInt().coerceAtLeast(1)
-            }
+            // Never more than MAX_PIXELS, and an extreme shape is refused (the caller shows the
+            // recoverable error): a MediaBox of [0 0 1 2e9] must not become a bitmap.
+            val (width, height) = PageSize.of(viewWidth, zoom, pdfPage.width, pdfPage.height, MAX_PIXELS)
+                ?: throw IllegalArgumentException("page shape")
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             bitmap.eraseColor(Color.WHITE)
             pdfPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)

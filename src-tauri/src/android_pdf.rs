@@ -71,6 +71,8 @@ pub(crate) fn prepare(
         return Err(VaultError::PdfMobileTooLarge);
     }
     let mut buffer = crate::LimitedBuffer::new(MAX_BYTES);
+    // One allocation of the right size: a growing buffer would leave unwiped copies behind.
+    buffer.bytes.reserve_exact(record.plaintext_size as usize);
     let exported = store.export(record_id, &mut buffer);
     if buffer.over {
         return Err(VaultError::PdfMobileTooLarge);
