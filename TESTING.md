@@ -424,6 +424,13 @@ and point the camera at something harmless. Sound is recorded: anyone talking ne
    itself, saved: "Saved. There was no more room." (If the disk fills before it can stop, the message says the video is kept as an unfinished recording and will be finished when there is room. On iOS and Android the free space myCarlos sees can be less than Settings shows, because it leaves out what the system can reclaim.)
 10. **Hide a video** from its details while it plays: the player stops.
 
+11. **Backups with videos.** In Security, under the backup, read "About … GB, of which videos …" before saving.
+    Tick **Leave videos out**: the size drops, and the note says the videos will not be brought back.
+    Save it, then **Restore backup** from the start screen on a second device or after setting the vault
+    aside: it says "This backup was made without videos…" before you agree. After restoring, the videos are
+    listed with the hidden documents as missing files, and everything else opens as before. Save a backup
+    without ticking the box and check the videos come back and play.
+
 **Windows (WebView2).** Windows has no per-app prompt for the microphone: "Let desktop apps access your
 microphone" in Settings > Privacy decides. Switch it off and check the dialog says where to look. On an
 **N or KN edition** without the Media Feature Pack, expect the "isn't available" line.
