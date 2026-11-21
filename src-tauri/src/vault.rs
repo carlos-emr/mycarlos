@@ -44,6 +44,8 @@ pub(crate) use delivery::AidFiling;
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+// The recording core (#359 PR 1): the commands and screen that call it come next.
+#[allow(dead_code)]
 mod recording;
 
 use ai_results::StoredAiResult;
@@ -7897,6 +7899,7 @@ enum Removable {
     AtomicWriteLeftover,
     /// An unfinished recording's tail, journal or superseded object, or a
     /// recording's object that recovery found nothing complete in (#359).
+    #[allow(dead_code)] // constructed by the recording core, which has no caller yet
     Recording,
 }
 
