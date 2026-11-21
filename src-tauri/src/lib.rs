@@ -8013,7 +8013,7 @@ mod historical_identifier_export_tests {
 
         // A clean text: the copy is the file a save writes, byte for byte, and the copy did not
         // use up the ticket, so the save still works afterwards.
-        let clean = "FAKE plain text with no identifier.";
+        let clean = "plain text with no identifier.";
         let approved = tauri::async_runtime::block_on(vault_export_text_copy(
             app.state(),
             app.state(),
