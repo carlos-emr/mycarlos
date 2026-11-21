@@ -1133,9 +1133,11 @@ fn medicine_change(sentence: &str) -> Option<MedicineChange> {
                 w.chars().count() >= 4
                     && !STOP.contains(&w.as_str())
                     && !STEP_STOP.contains(&w.as_str())
-                    && (generic_ok
-                        .then(|| MEDICINE_WORDS.contains(&w.as_str()))
-                        .unwrap_or(!GENERIC_MEDICINE_WORDS.contains(&w.as_str())))
+                    && if generic_ok {
+                        MEDICINE_WORDS.contains(&w.as_str())
+                    } else {
+                        !GENERIC_MEDICINE_WORDS.contains(&w.as_str())
+                    }
                     && !w.chars().all(|c| c.is_ascii_digit())
             })
             .collect()
