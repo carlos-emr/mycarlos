@@ -56,6 +56,21 @@ async function fakeNative(page: Page, locale: string, linked = true) {
           command === "plugin:window|set_theme"
         )
           return;
+        // Video (#359): nothing waiting to be finished, and no document
+        // starts as an MP4 does.
+        if (command === "vault_video_pending")
+          return { recordings: [], unreadable: 0 };
+        if (command === "vault_is_video") return false;
+        // The backup's size, with and without videos (#359): no video here.
+        if (command === "vault_backup_size")
+          return {
+            totalBytes: 4096,
+            withoutVideosBytes: 4096,
+            videoBytes: 0,
+            videoCount: 0,
+          };
+        if (command === "vault_left_out_records") return [];
+
         // Files shared to myCarlos are looked for on focus (#49): none.
         if (command === "received_list")
           return { files: [], notice: { dropped: 0, refusedShares: 0 } };

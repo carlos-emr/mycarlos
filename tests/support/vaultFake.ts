@@ -1396,6 +1396,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // files: nothing is waiting to be finished, and no document starts
           // as an MP4 does. Answering these keeps the photo flow, which asks
           // both, from being reported as an unfaked bridge command.
+          case "vault_video_space":
+            refuseLocked();
+            return { freeBytes: 50 * 1024 ** 3, level: "ok", canRecord: true };
           case "vault_video_pending":
             refuseLocked();
             return { recordings: [], unreadable: 0 };
@@ -1535,6 +1538,24 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { added: 1, refused: 0, receiptsPending: 0, issues: [] };
           // Nothing in the fake documents names a person.
           // --- Security: encrypted backup ---
+          // The size the backup would have, with and without videos (#359):
+          // the fake holds no video.
+          case "vault_backup_size": {
+            refuseLocked();
+            const bytes = snapshot.records.reduce(
+              (sum, record) => sum + record.plaintextSize,
+              4096,
+            );
+            return {
+              totalBytes: bytes,
+              withoutVideosBytes: bytes,
+              videoBytes: 0,
+              videoCount: 0,
+            };
+          }
+          case "vault_left_out_records":
+            refuseLocked();
+            return [];
           case "vault_backup_pick":
             refusePaused();
             return makePick("backup");

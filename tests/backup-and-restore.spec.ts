@@ -91,7 +91,10 @@ test("Save a backup saves where the patient chose and says so, and a cancelled p
     ),
   ).toBeVisible();
   expect(
-    (await fakeCommands(page)).filter((c) => c.startsWith("vault_backup_")),
+    // The size the screen shows (#359) is a read, not a backup step.
+    (await fakeCommands(page)).filter(
+      (c) => c.startsWith("vault_backup_") && c !== "vault_backup_size",
+    ),
   ).toEqual(["vault_backup_pick"]);
 
   // Saved: the picker, then the backup to what was picked, then said.
@@ -103,7 +106,7 @@ test("Save a backup saves where the patient chose and says so, and a cancelled p
     ),
   ).toBeVisible();
   expect(await fakeCalls(page, "vault_backup_picked")).toEqual([
-    { request: { pickId: FAKE_IDS.backupPick } },
+    { request: { pickId: FAKE_IDS.backupPick, leaveVideosOut: false } },
   ]);
   // The vault itself is untouched by a backup.
   await expect(save).toBeEnabled();
