@@ -44,6 +44,9 @@ pub(crate) use delivery::AidFiling;
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+// The recording core (#359 PR 1): the commands and screen that call it come next.
+#[allow(dead_code)]
+mod recording;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
@@ -1029,6 +1032,9 @@ pub struct VaultStore {
     /// The folder this run of the app last set a vault aside in, for the
     /// next vault created (#71's third part). In memory only.
     last_set_aside: Mutex<Option<String>>,
+    /// Recordings in progress (#359), by record id. In memory only; each has a journal
+    /// in `recordings/`. A lock parks them.
+    recordings: Mutex<HashMap<Uuid, recording::ActiveRecording>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1054,6 +1060,7 @@ impl VaultStore {
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+            recordings: Mutex::new(HashMap::new()),
             push_inbox: Mutex::new(Default::default()),
         }
     }
@@ -1344,6 +1351,9 @@ impl VaultStore {
             let mut guard = poisoned.into_inner();
             self.invalidate_collection_cache();
             self.portal_session.fetch_add(1, Ordering::AcqRel);
+            // A recording keeps its own copy of the keys: park it (and so drop
+            // them) with the session, not after it.
+            self.park_recordings();
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
@@ -1745,6 +1755,9 @@ impl VaultStore {
             // the two and be left unlocked with no deadline.
             let due = due();
             if due {
+                // A recording in progress is parked first: its last frame is sealed
+                // and its journal says so, so that the next unlock can finish it.
+                self.park_recordings();
                 self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
@@ -3915,6 +3928,10 @@ impl VaultStore {
                 .with_place(&set_aside_name(&target));
             record_in_session(&self.root, unlocked, vec![entry]);
         }
+        // A recording in progress is parked in the vault being set aside, and its
+        // keys dropped, before the session goes: it must not write into a vault
+        // that is no longer where it was.
+        self.park_recordings();
         *guard = None;
         self.idle.disarm();
         // How that vault's last session ended is nothing to the next one's.
@@ -7887,6 +7904,10 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
+    /// An unfinished recording's tail, journal or superseded object, or a
+    /// recording's object that recovery found nothing complete in (#359).
+    #[allow(dead_code)] // constructed by the recording core, which has no caller yet
+    Recording,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.
