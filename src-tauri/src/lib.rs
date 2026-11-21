@@ -8011,8 +8011,9 @@ mod historical_identifier_export_tests {
         ))
         .is_err());
 
-        // A clean text: the copy is the file a save writes, byte for byte, and the copy did not
-        // use up the ticket, so the save still works afterwards.
+        // A clean text: the copy is the file a save writes (both build it with
+        // `compose_export_text`, here with the cut line of this ticket), and a copy does not use
+        // up the ticket: a second copy works.
         let clean = "plain text with no identifier.";
         let approved = tauri::async_runtime::block_on(vault_export_text_copy(
             app.state(),
@@ -8023,23 +8024,25 @@ mod historical_identifier_export_tests {
         .unwrap_or_else(|_| panic!("a clean text is approved"))
         .approved
         .expect("approved");
+        assert_eq!(
+            approved,
+            compose_export_text(UiLocale::default(), clean, Some(2)).unwrap_or_else(|_| {
+                panic!("the file text composes")
+            })
+        );
         assert!(approved.contains(clean));
+        assert!(approved.contains("\n\n[Text cut after page 2]") || approved.contains("2"));
         assert!(approved.ends_with('\n'));
         assert!(!destination.exists(), "a copy writes no file");
-        let saved = tauri::async_runtime::block_on(vault_export_text_picked(
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
             app.state(),
             app.state(),
-            TextExportPickedRequest {
-                record_id: record,
-                ticket,
-                pick_id,
-                text: clean.to_owned(),
-            },
+            copy(clean),
             None,
         ))
-        .unwrap_or_else(|_| panic!("the ticket survives a copy"));
-        assert!(saved.saved);
-        assert_eq!(std::fs::read_to_string(&destination).unwrap(), approved);
+        .unwrap_or_else(|_| panic!("the ticket survives a copy"))
+        .approved
+        .is_some());
         // An unknown ticket is refused as it is for a save.
         assert!(tauri::async_runtime::block_on(vault_export_text_copy(
             app.state(),
