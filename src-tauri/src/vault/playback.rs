@@ -445,6 +445,13 @@ impl VaultStore {
         if !looks_like_token(token) {
             return Err(PlaybackRefusal::UnknownToken);
         }
+        // A session a panic left half-updated is dropped now, which ends every
+        // playback with it, not whenever something else next takes the session.
+        // (Only then: the session is held for a whole transfer, and a read must
+        // not wait behind one.)
+        if self.unlocked.is_poisoned() {
+            drop(self.session());
+        }
         let mut tokens = self.playback.lock().unwrap_or_else(PoisonError::into_inner);
         let session = tokens.get_mut(token).ok_or(PlaybackRefusal::UnknownToken)?;
         let total = session.total_len();
@@ -1068,11 +1075,14 @@ mod tests {
             panic!("synthetic panic while holding the vault mutex");
         })
         .join();
-        assert!(matches!(store.snapshot(), Err(VaultError::Locked)));
+        assert!(store.unlocked.is_poisoned());
+        // Nothing else has touched the session: serving itself ends the playback.
         assert_eq!(
             serve(&store, &opened.token, Some("bytes=0-9")),
             Err(PlaybackRefusal::UnknownToken)
         );
+        assert!(!store.unlocked.is_poisoned());
+        assert!(store.playback.lock().unwrap().is_empty());
     }
 
     #[test]

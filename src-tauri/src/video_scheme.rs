@@ -96,6 +96,17 @@ pub fn answer(store: &VaultStore, method: &str, path: &str, range: Option<&str>)
     }
 }
 
+/// Only the app's own window may ask: any other webview gets the same 404.
+pub fn webview_allowed(label: &str) -> bool {
+    label == "main"
+}
+
+/// The bare 404 for a request that is not to be answered (a webview that may not
+/// ask, or no vault yet): the same headers as every other answer.
+pub fn refused() -> Response<Vec<u8>> {
+    into_response(bare(404))
+}
+
 /// The webview's request, answered.
 pub fn respond(store: &VaultStore, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let range = request
@@ -107,12 +118,15 @@ pub fn respond(store: &VaultStore, request: &Request<Vec<u8>>) -> Response<Vec<u
         (true, None) => Some("invalid"),
         _ => range,
     };
-    let reply = answer(
+    into_response(answer(
         store,
         request.method().as_str(),
         request.uri().path(),
         range,
-    );
+    ))
+}
+
+fn into_response(reply: Reply) -> Response<Vec<u8>> {
     let mut response = Response::builder().status(reply.status);
     for (name, value) in &reply.headers {
         response = response.header(*name, value);
@@ -148,6 +162,29 @@ mod tests {
         }
         let record = store.recording_stop(id, 6).unwrap().unwrap();
         (store, record)
+    }
+
+    #[test]
+    fn only_the_main_window_may_ask_and_a_refusal_is_as_bare_as_any_404() {
+        assert!(webview_allowed("main"));
+        for label in ["", "Main", "main ", "other", "main-2", "popup"] {
+            assert!(!webview_allowed(label), "{label:?}");
+        }
+        let refusal = refused();
+        assert_eq!(refusal.status(), 404);
+        assert!(refusal.body().is_empty());
+        assert_eq!(refusal.headers()["cache-control"], "no-store");
+        assert_eq!(refusal.headers()["x-content-type-options"], "nosniff");
+        // The scheme's registration asks both questions, off the UI thread.
+        let library = include_str!("lib.rs");
+        let registration = library
+            .split("register_asynchronous_uri_scheme_protocol(")
+            .nth(1)
+            .expect("the scheme is registered asynchronously");
+        let registration = &registration[..registration.find(".setup(").unwrap()];
+        assert!(registration.contains("webview_allowed(context.webview_label())"));
+        assert!(registration.contains("spawn_blocking("));
+        assert!(registration.contains("video_scheme::refused()"));
     }
 
     #[test]
