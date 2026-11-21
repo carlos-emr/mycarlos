@@ -333,6 +333,14 @@ export async function fakeVault(
                 available: true,
               });
               return { imported: ["scan"], skippedDuplicates: [] };
+            // Video (#359): nothing is waiting to be finished, and no
+            // document starts as an MP4 does.
+            case "vault_video_space":
+              return { freeBytes: 50 * 1024 ** 3, level: "ok", canRecord: true };
+            case "vault_video_pending":
+              return { recordings: [], unreadable: 0 };
+            case "vault_is_video":
+              return false;
             case "vault_touch":
             case "vault_set_auto_lock":
             case "plugin:window|set_theme":

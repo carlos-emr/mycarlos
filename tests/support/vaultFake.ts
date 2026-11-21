@@ -1396,6 +1396,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // files: nothing is waiting to be finished, and no document starts
           // as an MP4 does. Answering these keeps the photo flow, which asks
           // both, from being reported as an unfaked bridge command.
+          case "vault_video_space":
+            refuseLocked();
+            return { freeBytes: 50 * 1024 ** 3, level: "ok", canRecord: true };
           case "vault_video_pending":
             refuseLocked();
             return { recordings: [], unreadable: 0 };
