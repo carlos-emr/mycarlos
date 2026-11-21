@@ -127,7 +127,7 @@ never saved anywhere else; it is sent from myCarlos only if the patient chooses 
 are turned off at Stop, when the recording window closes, when the vault locks and when the app is
 hidden, and a badge shows that recording (or a pause) is on for as long as it is. A pause keeps
 the camera and microphone on, and says so. About 1 GB of free room is needed to start, the dialog
-warns when room runs low, and a recording is saved, not lost, when the room runs out. If myCarlos
+warns when room runs low, and a recording is saved, or kept to be finished when there is room, and never lost, when the room runs out. If myCarlos
 closes or locks during a recording, what was saved is kept: after a lock it is saved and the
 patient is told at the next unlock, and after a crash the patient is asked whether to keep it.
 Playing a video shows it in the app's own player, from the vault, and nothing is left behind. The

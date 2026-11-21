@@ -1114,6 +1114,8 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.lowOnRoomMinutes",
   "interface.RecordDialog.videoSavedNoRoom",
   "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
   "security.backup.size",
   "security.backup.sizeWithVideos",
   "security.backup.sizeNoVideos",
@@ -2469,6 +2471,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-videoSavedNoRoom",
   "interface.RecordDialog.videoKeptUnfinished":
     "interface-RecordDialog-videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom":
+    "interface-RecordingRecovery-finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom":
+    "interface-RecordingRecovery-stillNoRoom",
   "security.backup.size": "security-backup-size",
   "security.backup.sizeWithVideos": "security-backup-sizeWithVideos",
   "security.backup.sizeNoVideos": "security-backup-sizeNoVideos",
@@ -3707,6 +3713,8 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
   "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
   "interface.RecordDialog.videoKeptUnfinished": undefined;
+  "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
+  "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
   "security.backup.size": { size: FluentArgument };
   "security.backup.sizeWithVideos": {
     size: FluentArgument;

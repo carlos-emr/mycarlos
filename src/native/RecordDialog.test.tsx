@@ -681,6 +681,21 @@ describe("RecordDialog", () => {
     );
   });
 
+  it("says nothing was kept when a piece was refused and the vault then had no complete video", async () => {
+    // Stop itself did not fail: it answered that there is no video. That is not
+    // "kept unfinished".
+    const bridge = fakeBridge({
+      videoAppend: vi.fn(async () => {
+        throw { code: "no_space", message: "FAKE full" };
+      }),
+      videoStop: vi.fn(async () => ({ recordId: null })),
+    });
+    const { onSaved } = await recording(bridge);
+    act(() => recorder().emit(piece(100)));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(null, "space"));
+    expect(onSaved).not.toHaveBeenCalledWith(null, "unfinished");
+  });
+
   it("says the video is kept unfinished, not saved, when the vault could not finish it for want of room", async () => {
     // A write the disk refused, or a recording cut off mid-fragment: ending it
     // needs room to finish it, which is not there. The vault refuses Stop with

@@ -1,6 +1,6 @@
 import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
@@ -49,6 +49,9 @@ export interface PendingRecording {
   paused: boolean;
   /** A lock parked it (not a crash). */
   parked: boolean;
+  /** The patient ended it and it could not be finished for want of room: it is
+   * finished when there is room again. */
+  stopped: boolean;
 }
 
 export interface PendingRecordings {
@@ -1222,7 +1225,10 @@ export function createVaultBridge(): VaultBridge {
         "vault_video_open",
         { request: { recordId } },
       );
-      // The address the webview shows for the scheme on this platform.
+      // The address the webview shows for the scheme on this platform. Loaded
+      // here, when a video is opened, so that nothing else needs it: tests that
+      // stand in for the core module with `invoke` alone still load this file.
+      const { convertFileSrc } = await import("@tauri-apps/api/core");
       return {
         token: opened.token,
         totalBytes: opened.totalBytes,

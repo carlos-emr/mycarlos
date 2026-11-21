@@ -65,7 +65,7 @@ import { RecordDialog, type RecordEnd } from "./RecordDialog";
 import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
-import { videoRecordingAvailable } from "./video";
+import { isNoSpace, videoRecordingAvailable } from "./video";
 import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
@@ -1252,24 +1252,40 @@ export function VaultLibrary({
   const keepParked = (parked: PendingRecording[]) =>
     run(async () => {
       const kept: PendingRecording[] = [];
+      const waiting: PendingRecording[] = [];
       for (const recording of parked) {
-        const saved = await bridge.videoRecover(recording.id, true);
-        if (saved.recordId) kept.push(recording);
+        try {
+          const saved = await bridge.videoRecover(recording.id, true);
+          if (saved.recordId) kept.push(recording);
+        } catch (error) {
+          // Not enough room to finish it yet: it stays as it is, the others
+          // are still tried, and the notice says so (not a generic failure).
+          if (!isNoSpace(error)) throw error;
+          waiting.push(recording);
+        }
       }
       await refresh();
+      const told = [
+        ...kept.map((recording) =>
+          message(
+            recording.stopped
+              ? "interface.RecordingRecovery.finishedWithRoom"
+              : recording.paused
+                ? "interface.RecordingRecovery.savedLockedPaused"
+                : "interface.RecordingRecovery.savedLocked",
+            { name: recording.displayName },
+          ),
+        ),
+        ...waiting.map((recording) =>
+          message("interface.RecordingRecovery.stillNoRoom", {
+            name: recording.displayName,
+          }),
+        ),
+      ];
       setNotice(
-        kept.length === 0
+        told.length === 0
           ? message("interface.RecordingRecovery.nothingToKeep")
-          : joinText(
-              ...kept.map((recording) =>
-                message(
-                  recording.paused
-                    ? "interface.RecordingRecovery.savedLockedPaused"
-                    : "interface.RecordingRecovery.savedLocked",
-                  { name: recording.displayName },
-                ),
-              ),
-            ),
+          : joinText(...told),
       );
     });
   keepParkedRef.current = keepParked;

@@ -22,6 +22,7 @@ const recording = (
   startedAtMs: 1,
   paused: false,
   parked: false,
+  stopped: false,
   ...overrides,
 });
 

@@ -1113,6 +1113,8 @@
   "interface.RecordDialog.lowOnRoomMinutes",
   "interface.RecordDialog.videoSavedNoRoom",
   "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
   "security.backup.size",
   "security.backup.sizeWithVideos",
   "security.backup.sizeNoVideos",
