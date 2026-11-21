@@ -294,18 +294,20 @@ const FORM_CONTENT_LIMIT: usize = 16 * 1024 * 1024;
 struct FormBudget {
     forms: usize,
     operations: usize,
-    /// Decompressed bytes of every form drawn, each drawing counted.
+    /// Decoded (decompressed) bytes of every form drawn, each drawing counted.
     bytes: usize,
 }
 
 /// A form object read once, however often the page draws it.
 struct DecodedForm {
     operations: Vec<lopdf::content::Operation>,
-    resources: Option<lopdf::Dictionary>,
+    /// The decompressed length of its drawing, charged for each time it is drawn.
+    decoded_len: usize,
+    resources: Option<std::rc::Rc<lopdf::Dictionary>>,
     /// The form's own font names, and the names they were given in the page's fonts. A font
     /// that is not a font dictionary gets a name no font has, so its text is skipped, never
     /// read with another font.
-    fonts: Vec<(Vec<u8>, Vec<u8>)>,
+    fonts: std::collections::HashMap<Vec<u8>, Vec<u8>>,
     matrix: Option<Vec<lopdf::Object>>,
 }
 
@@ -313,6 +315,9 @@ struct DecodedForm {
 struct FormCache {
     forms: std::collections::HashMap<lopdf::ObjectId, std::rc::Rc<DecodedForm>>,
     fonts: Vec<(Vec<u8>, lopdf::Dictionary)>,
+    /// Every font entry of every form read, typed or not: bounded, and the number in the
+    /// generated names, so two entries never share a name.
+    font_entries: usize,
 }
 
 /// Replaces a page's drawing, in a private parsed copy that is never saved or rendered, by the same
@@ -349,11 +354,15 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
     let Ok((own, ids)) = document.get_page_resources(page_id) else {
         return false;
     };
-    let mut chain: Vec<Dictionary> = own.into_iter().cloned().collect();
-    chain.extend(
-        ids.into_iter()
-            .filter_map(|id| document.get_dictionary(id).ok().cloned()),
-    );
+    let mut chain: Vec<std::rc::Rc<Dictionary>> =
+        own.into_iter().cloned().map(std::rc::Rc::new).collect();
+    chain.extend(ids.into_iter().filter_map(|id| {
+        document
+            .get_dictionary(id)
+            .ok()
+            .cloned()
+            .map(std::rc::Rc::new)
+    }));
     let Ok(page_fonts) = document.get_page_fonts(page_id) else {
         return false;
     };
@@ -363,6 +372,7 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
             .into_iter()
             .map(|(name, font)| (name, font.clone()))
             .collect(),
+        font_entries: 0,
     };
     let mut out = Vec::new();
     let mut budget = FormBudget {
@@ -375,7 +385,8 @@ fn inline_form_objects(document: &mut lopdf::Document, page_id: lopdf::ObjectId)
         &chain,
         &operations,
         0,
-        &[],
+        &std::collections::HashMap::new(),
+        None,
         &mut cache,
         &mut out,
         &mut budget,
@@ -443,18 +454,20 @@ fn page_extraction(
 #[allow(clippy::too_many_arguments)]
 fn inline_operations(
     document: &lopdf::Document,
-    chain: &[lopdf::Dictionary],
+    chain: &[std::rc::Rc<lopdf::Dictionary>],
     operations: &[lopdf::content::Operation],
     depth: usize,
-    renamed: &[(Vec<u8>, Vec<u8>)],
+    renamed: &std::collections::HashMap<Vec<u8>, Vec<u8>>,
+    start_font: Option<&lopdf::content::Operation>,
     cache: &mut FormCache,
     out: &mut Vec<lopdf::content::Operation>,
     budget: &mut FormBudget,
 ) -> Option<()> {
     use lopdf::content::{Content, Operation};
-    use lopdf::{Dictionary, Object};
-    // This level's current font, as written out, selected again after each form.
-    let mut current_font: Option<Operation> = None;
+    use lopdf::Object;
+    // This level's current font, as written out, selected again after each form; a form starts
+    // with its caller's.
+    let mut current_font: Option<Operation> = start_font.cloned();
     for operation in operations {
         budget.operations += 1;
         if budget.operations > MAX_INLINED_OPERATIONS {
@@ -464,7 +477,7 @@ fn inline_operations(
             "Tf" => {
                 let mut operation = operation.clone();
                 if let Some(Object::Name(name)) = operation.operands.first() {
-                    if let Some((_, new)) = renamed.iter().find(|(old, _)| old == name) {
+                    if let Some(new) = renamed.get(name) {
                         operation.operands[0] = Object::Name(new.clone());
                     }
                 }
@@ -500,22 +513,21 @@ fn inline_operations(
                 let form = match cache.forms.get(&id) {
                     Some(form) => std::rc::Rc::clone(form),
                     None => {
-                        let inner = Content::decode(
-                            &stream
-                                .decompressed_content_with_limit(FORM_CONTENT_LIMIT)
-                                .ok()?,
-                        )
-                        .ok()?
-                        .operations;
+                        let decoded = stream
+                            .decompressed_content_with_limit(FORM_CONTENT_LIMIT)
+                            .ok()?;
+                        let decoded_len = decoded.len();
+                        let inner = Content::decode(&decoded).ok()?.operations;
                         let resources = stream
                             .dict
                             .get(b"Resources")
                             .ok()
                             .and_then(|object| document.dereference(object).ok())
                             .and_then(|(_, object)| object.as_dict().ok())
-                            .cloned();
+                            .cloned()
+                            .map(std::rc::Rc::new);
                         // The form's fonts join the page's once, however often it is drawn.
-                        let mut fonts = Vec::new();
+                        let mut fonts = std::collections::HashMap::new();
                         if let Some(font_resources) = resources
                             .as_ref()
                             .and_then(|own| own.get(b"Font").ok())
@@ -523,9 +535,14 @@ fn inline_operations(
                             .and_then(|(_, object)| object.as_dict().ok())
                         {
                             for (font_name, font) in font_resources.iter() {
+                                // Every entry counts, typed or not.
+                                cache.font_entries += 1;
+                                if cache.font_entries > MAX_INLINED_FONTS {
+                                    return None;
+                                }
                                 let new = format!(
                                     "MCForm{}_{}",
-                                    cache.fonts.len() + fonts.len(),
+                                    cache.font_entries,
                                     String::from_utf8_lossy(font_name)
                                 )
                                 .into_bytes();
@@ -540,12 +557,9 @@ fn inline_operations(
                                             .is_ok_and(|kind| kind == b"Font")
                                     });
                                 if let Some(font) = font {
-                                    if cache.fonts.len() >= MAX_INLINED_FONTS {
-                                        return None;
-                                    }
                                     cache.fonts.push((new.clone(), font.clone()));
                                 }
-                                fonts.push((font_name.clone(), new));
+                                fonts.insert(font_name.clone(), new);
                             }
                         }
                         let matrix = stream
@@ -560,6 +574,7 @@ fn inline_operations(
                             .cloned();
                         let form = std::rc::Rc::new(DecodedForm {
                             operations: inner,
+                            decoded_len,
                             resources,
                             fonts,
                             matrix,
@@ -568,20 +583,23 @@ fn inline_operations(
                         form
                     }
                 };
-                // Every drawing of a form counts its bytes: a big form drawn many times is bounded.
-                budget.bytes = budget.bytes.saturating_add(stream.content.len().max(1));
-                if budget.bytes > 4 * FORM_CONTENT_LIMIT {
+                // Every drawing of a form counts its decoded bytes: a big form drawn many times, or a
+                // small compressed one that expands, is bounded by what is written out.
+                budget.bytes = budget.bytes.saturating_add(form.decoded_len.max(1));
+                if budget.bytes > FORM_CONTENT_LIMIT {
                     return None;
                 }
-                let mut inner_renamed: Vec<(Vec<u8>, Vec<u8>)> = renamed.to_vec();
-                for (old, new) in &form.fonts {
-                    inner_renamed.retain(|(name, _)| name != old);
-                    inner_renamed.push((old.clone(), new.clone()));
-                }
-                let mut inner_chain: Vec<Dictionary> = chain.to_vec();
-                if let Some(own) = &form.resources {
-                    inner_chain.insert(0, own.clone());
-                }
+                let mut inner_renamed = renamed.clone();
+                inner_renamed.extend(
+                    form.fonts
+                        .iter()
+                        .map(|(old, new)| (old.clone(), new.clone())),
+                );
+                // The form's resources first, then its callers': shared, not copied.
+                let mut inner_chain: Vec<std::rc::Rc<lopdf::Dictionary>> =
+                    Vec::with_capacity(chain.len() + 1);
+                inner_chain.extend(form.resources.iter().cloned());
+                inner_chain.extend(chain.iter().cloned());
                 // q [Matrix cm] ... Q: the form's graphics state stays inside it.
                 out.push(Operation::new("q", vec![]));
                 if let Some(matrix) = &form.matrix {
@@ -593,6 +611,7 @@ fn inline_operations(
                     &form.operations,
                     depth + 1,
                     &inner_renamed,
+                    current_font.as_ref(),
                     cache,
                     out,
                     budget,
@@ -1465,7 +1484,12 @@ mod tests {
                 vec![1.into(), 0.into(), 0.into(), 1.into(), 5.into(), 5.into()],
             );
         }
-        let form = document.add_object(Stream::new(form_dict, form_operators.to_vec()));
+        let mut form_stream = Stream::new(form_dict, form_operators.to_vec());
+        if form_operators.len() > 1024 {
+            // A big drawing is stored compressed, as real files do.
+            form_stream.compress().unwrap();
+        }
+        let form = document.add_object(form_stream);
         let resources = document.add_object(dictionary! {
             "Font" => dictionary! { "F1" => font }, "XObject" => dictionary! { "Fm0" => form }
         });
@@ -1539,6 +1563,115 @@ mod tests {
             "{}",
             &text[..20.min(text.len())]
         );
+    }
+
+    #[test]
+    fn a_small_compressed_form_that_expands_is_bounded_by_what_it_writes_out() {
+        // About 8 KB of PDF that expands to 8 MiB, drawn 2,000 times: 16 GB if only the stored
+        // size were counted. Over the bound, so the page is read as it was, at once.
+        let bomb = format!("BT /F1 11 Tf ({}) Tj ET", "x".repeat(8 * 1024 * 1024));
+        let pdf = pdf_with_form_fonts(
+            &format!(
+                "BT /F1 11 Tf (Page text) Tj ET {}",
+                "/Fm0 Do ".repeat(2_000)
+            ),
+            bomb.as_bytes(),
+            &[],
+            false,
+        );
+        assert!(pdf.len() < 200_000, "stored small: {}", pdf.len());
+        let started = std::time::Instant::now();
+        assert_eq!(page_text(&pdf, 0).trim_end(), "Page text");
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+    }
+
+    #[test]
+    fn untyped_font_entries_count_against_the_bound_too() {
+        // 10,000 entries with no /Type /Font, drawn 2,000 times: every entry counts, so the page
+        // is read as it was, at once.
+        let fonts: Vec<(String, bool)> = (0..10_000).map(|n| (format!("G{n}"), false)).collect();
+        let pdf = pdf_with_form_fonts(
+            &format!(
+                "BT /F1 11 Tf (Page text) Tj ET {}",
+                "/Fm0 Do ".repeat(2_000)
+            ),
+            b"BT /G0 11 Tf (Form text) Tj ET",
+            &fonts,
+            false,
+        );
+        let started = std::time::Instant::now();
+        assert_eq!(page_text(&pdf, 0).trim_end(), "Page text");
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    }
+
+    #[test]
+    fn two_forms_with_a_skipped_font_entry_each_keep_their_own_fonts() {
+        // Each form lists an untyped entry first, then its own F1: one maps "A" to "B", the
+        // other to "C". Their generated names never collide, so each decodes with its own font.
+        use lopdf::{dictionary, Document, Object, Stream};
+        let mut document = Document::with_version("1.5");
+        let pages = document.new_object_id();
+        let page_font = document.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding"
+        });
+        let mut forms = dictionary! {};
+        for (name, mapped) in [("Fm0", b"B"), ("Fm1", b"C")] {
+            let untyped = document
+                .add_object(dictionary! { "Subtype" => "Type1", "BaseFont" => "Helvetica" });
+            let own = document.add_object(dictionary! {
+                "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+                "Encoding" => dictionary! {
+                    "Type" => "Encoding", "BaseEncoding" => "WinAnsiEncoding",
+                    "Differences" => vec![65.into(), Object::Name(mapped.to_vec())]
+                }
+            });
+            let form = document.add_object(Stream::new(
+                dictionary! {
+                    "Type" => "XObject", "Subtype" => "Form",
+                    "BBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                    // The untyped entry sorts before F1.
+                    "Resources" => dictionary! { "Font" => dictionary! { "A0" => untyped, "F1" => own } }
+                },
+                b"BT /F1 11 Tf (A) Tj ET".to_vec(),
+            ));
+            forms.set(name, form);
+        }
+        let resources = document.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => page_font }, "XObject" => forms
+        });
+        let content = document.add_object(Stream::new(
+            dictionary! {},
+            b"BT /F1 11 Tf (A) Tj ET /Fm0 Do /Fm1 Do".to_vec(),
+        ));
+        let page = document.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages, "Resources" => resources,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()], "Contents" => content
+        });
+        document.objects.insert(
+            pages,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1
+            }),
+        );
+        let catalog = document.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        document.trailer.set("Root", catalog);
+        let mut pdf = Vec::new();
+        document.save_to(&mut pdf).unwrap();
+        assert_eq!(page_text(&pdf, 0), "A\nB\nC\n");
+    }
+
+    #[test]
+    fn a_nested_form_starts_with_its_callers_font() {
+        // The inner form sets no font of its own and the outer form's F1 maps "A" to "B":
+        // the inner text is read with the outer form's font, not the page's.
+        let pdf = pdf_with_forms(
+            "/Fm0 Do",
+            &[
+                ("Fm0", "BT /F1 11 Tf ET /Fm1 Do", true, false),
+                ("Fm1", "BT (A) Tj ET", false, false),
+            ],
+        );
+        assert_eq!(page_text(&pdf, 0).trim(), "B");
     }
 
     #[test]
