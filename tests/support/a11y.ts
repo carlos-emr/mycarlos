@@ -187,7 +187,6 @@ export async function fakeVault(
             case "tray_waiting_status":
               return false;
             case "background_status":
-            case "background_status":
               return {
                 supported: false,
                 keepRunning: false,

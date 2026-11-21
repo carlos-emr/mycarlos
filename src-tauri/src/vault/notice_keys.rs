@@ -74,6 +74,12 @@ impl VaultStore {
     /// The real thing: this process's notice keys, the Portal over HTTPS, and a key that is
     /// finished told so with the key itself. `None` where the build keeps no notice keys.
     pub(crate) fn sync_notice_keys(&self) -> Option<Result<NoticeSync, VaultError>> {
+        // One sync at a time: unlock, a switch, a link and a wipe can each start one, and two
+        // that overlap would each make a key for the same link.
+        static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _turn = ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let keys = crate::notice_key::kept()?;
         let session = self.portal_link_ticket();
         Some(self.sync_notice_keys_with(

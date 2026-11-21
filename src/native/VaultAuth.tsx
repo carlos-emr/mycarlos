@@ -408,13 +408,14 @@ export function UnlockVault({
         <p className="vault-kicker">{t("auth.kicker")}</p>
         <h1 id="unlock-title">{t("unlock.title")}</h1>
         <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
-        {/* Shared files waiting: a count, never a name, since whoever is
-            looking on has not unlocked. */}
+        {/* A document waiting at a clinic (#230): one fixed sentence, nothing about it. */}
         {trayWaiting && (
           <p className="native-received-waiting" role="status">
             {t("native.tray.waiting")}
           </p>
         )}
+        {/* Shared files waiting: a count, never a name, since whoever is
+            looking on has not unlocked. */}
         {waiting > 0 && (
           <p className="native-received-waiting">
             {waiting === 1

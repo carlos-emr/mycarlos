@@ -60,15 +60,26 @@ pub(crate) trait WaitingPortal {
 pub(crate) struct Conditions {
     /// Tray mode on, and the icon is there.
     pub(crate) in_tray: bool,
+    /// The window is hidden in the tray, not just locked on screen: a patient looking at the
+    /// unlock screen is not served by a toast about something they can see by unlocking.
+    pub(crate) window_hidden: bool,
     /// The vault is locked (an open vault checks documents itself).
     pub(crate) locked: bool,
-    /// Tray notices are wanted: tray mode on and notices on.
+    /// Tray notices are wanted. In the thread this is "a notice key is kept": a key exists only
+    /// while tray mode and notices are both on, and it survives a restart, which the switches'
+    /// last values (kept in memory) do not.
     pub(crate) wanted: bool,
 }
 
 impl Conditions {
     pub(crate) fn may_run(self) -> bool {
-        self.in_tray && self.locked && self.wanted
+        self.in_tray && self.window_hidden && self.locked && self.wanted
+    }
+
+    /// Whether what was announced no longer stands: unlocked, or no key kept, or the tray gone.
+    /// (A merely visible window keeps the news; it only stops the asking.)
+    pub(crate) fn news_is_stale(self) -> bool {
+        !self.locked || !self.wanted || !self.in_tray
     }
 }
 
@@ -179,7 +190,9 @@ impl Poller {
                     any_waiting |= reply == Reply::Waiting;
                 }
                 Reply::TooSoon(seconds) => {
-                    slot.next_at = now + Duration::from_secs(seconds).max(FLOOR);
+                    // What the Portal says, from the floor to the ceiling: a hostile or broken
+                    // Retry-After cannot silence the poller for good.
+                    slot.next_at = now + Duration::from_secs(seconds).clamp(FLOOR, CEILING);
                 }
                 Reply::Gone => {
                     let id = entry.link_id;
@@ -274,7 +287,7 @@ pub(crate) mod driver {
     use crate::desktop_background::desktop::Background;
     use crate::notice_key;
     use std::sync::Arc;
-    use tauri::{AppHandle, Emitter};
+    use tauri::{AppHandle, Emitter, Manager};
 
     /// The page listens for this to show the line on the unlock screen.
     pub(crate) const EVENT: &str = "tray-waiting";
@@ -338,8 +351,23 @@ pub(crate) mod driver {
                 loop {
                     std::thread::sleep(LOOK);
                     let locked = is_locked();
-                    if !locked {
-                        // The patient unlocked: the news is theirs now, and the icon goes back.
+                    let keys = notice_key::kept();
+                    let wanted = keys
+                        .and_then(|keys| keys.entries().ok())
+                        .is_some_and(|entries| !entries.is_empty());
+                    let conditions = Conditions {
+                        in_tray: background.status().tray_ready,
+                        window_hidden: screens
+                            .app
+                            .get_webview_window("main")
+                            .is_some_and(|window| !window.is_visible().unwrap_or(true)),
+                        locked,
+                        wanted,
+                    };
+                    if conditions.news_is_stale() {
+                        // Unlocked, the last key wiped, or the tray gone: what was announced no
+                        // longer stands, and the icon, the unlock screen and the schedule start
+                        // over.
                         if waiting_now() {
                             WAITING.store(false, Ordering::SeqCst);
                             background.set_waiting(false);
@@ -348,15 +376,8 @@ pub(crate) mod driver {
                         poller.reset();
                         continue;
                     }
-                    let Some(keys) = notice_key::kept() else {
+                    let Some(keys) = keys else {
                         continue;
-                    };
-                    let in_tray = background.status().tray_ready;
-                    let wanted = keys.entries().map(|k| !k.is_empty()).unwrap_or(false);
-                    let conditions = Conditions {
-                        in_tray,
-                        locked,
-                        wanted,
                     };
                     let tick =
                         poller.tick(started.elapsed(), conditions, keys, &HttpWaiting, &mut unit);
@@ -390,6 +411,7 @@ mod tests {
 
     const IN_TRAY: Conditions = Conditions {
         in_tray: true,
+        window_hidden: true,
         locked: true,
         wanted: true,
     };
@@ -419,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn it_asks_nothing_unless_in_the_tray_locked_and_wanted() {
+    fn it_asks_nothing_unless_in_the_tray_hidden_locked_and_wanted() {
         let (_temp, keys) = keys(1);
         let portal = Script::new(&[]);
         for conditions in [
@@ -519,6 +541,42 @@ mod tests {
         assert_eq!(poller.next_due(Duration::ZERO), Some(FLOOR));
         poller.tick(FLOOR, IN_TRAY, &keys, &portal, &mut no_jitter);
         assert_eq!(poller.next_due(FLOOR), Some(Duration::from_secs(600)));
+    }
+
+    #[test]
+    fn too_soon_never_waits_past_the_ceiling() {
+        let (_temp, keys) = keys(1);
+        let portal = Script::new(&[Reply::TooSoon(u64::MAX / 4)]);
+        let mut poller = Poller::new();
+        poller.tick(Duration::ZERO, IN_TRAY, &keys, &portal, &mut no_jitter);
+        assert_eq!(poller.next_due(Duration::ZERO), Some(CEILING));
+    }
+
+    #[test]
+    fn what_was_announced_stands_only_while_locked_wanted_and_in_the_tray() {
+        assert!(!IN_TRAY.news_is_stale());
+        // A visible but locked window keeps the news (the patient is looking at it).
+        assert!(!Conditions {
+            window_hidden: false,
+            ..IN_TRAY
+        }
+        .news_is_stale());
+        for stale in [
+            Conditions {
+                locked: false,
+                ..IN_TRAY
+            },
+            Conditions {
+                wanted: false,
+                ..IN_TRAY
+            },
+            Conditions {
+                in_tray: false,
+                ..IN_TRAY
+            },
+        ] {
+            assert!(stale.news_is_stale());
+        }
     }
 
     #[test]

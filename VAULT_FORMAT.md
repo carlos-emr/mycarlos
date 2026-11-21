@@ -797,7 +797,7 @@ the populated waiting-key slots, and use a waiting key to ask each of those port
 something is waiting (Ben's decision, 5 November 2026). The keys are wiped when a link is gone,
 when notices or the tray are turned off,
 on vault reset or set-aside, when a different vault is opened, and at the first "not found" from the
-portal. Each wipe first has the key tell the portal it is finished (best effort, no retry) ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
+portal. Each wipe, except a different vault opening and a reset or set-aside, first has the key tell the portal it is finished (best effort, no retry) ([SECURITY_OPERATIONS](SECURITY_OPERATIONS.md),
 "Tray notices"). The file and the OS item are not in myCarlos portable backups. OS/device backup
 behavior is a separate platform property; restoring a myCarlos portable backup restores no
 waiting key. The next unlock makes and registers a new key before tray checks resume.

@@ -37,9 +37,10 @@ use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
 mod delivery;
+// Notice keys (#230): enrolled and wiped by the commands and the tray (tray_notices.rs).
+mod notice_keys;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
-mod notice_keys;
 mod remote_notices;
 pub(crate) use delivery::AidFiling;
 #[cfg(test)]

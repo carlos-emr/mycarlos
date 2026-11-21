@@ -192,8 +192,9 @@ turns them on keeps no key outside it (the 5 November note said "at link time" i
 
 **Revoking and wiping (as built).** The local waiting key is wiped (its slot in `notice-keys.v1`; the
 OS item too when no key is left), after the key tells the Portal it is finished with itself
-(`DELETE /api/mycarlos/availability/waiting`, best effort, the same in every case below and with
-or without the vault). **There is no retry:** a failed self-revocation leaves the Portal holding a
+(`DELETE /api/mycarlos/availability/waiting`, best effort, with or without the vault) in every case
+below **except two, which wipe without telling the Portal**: a different vault being opened
+(`notice_key::after_open`) and a vault reset or set-aside (`after_reset`). **There is no retry:** a failed self-revocation leaves the Portal holding a
 public key that nothing can sign for any more (the private half is gone), and the next
 registration for that device replaces it; removing the device in the portal revokes it at once.
 Local wiping does not confirm remote revocation. The cases, as the design listed them (the
