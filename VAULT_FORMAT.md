@@ -1263,7 +1263,10 @@ format number is taken.** What makes it a video is its contents.
   decides nothing. The bytes alone never decide: an iPhone's HEIC and AVIF photos, an M4A voice memo, a
   camera raw file and a PDF can carry `ftyp` where an MP4 does, and imports are stored without a type.
   Nothing else is called a video until importing videos is built. A record whose history piece is damaged is
-  not offered as a video; its file is kept as any document is.
+  not offered as a video; its file is kept as any document is. A video restored without its history (a
+  vault rebuilt from a backup that lacks the history pieces) likewise loses **Play video** but is kept, and
+  can still be saved out as any document can. A video restored from a backup that left its file out is not a
+  video to play either: its details show no error.
 - **Played from a synthetic head.** The player is served `ftyp`, `moov`, a `sidx` built in memory from the
   index, then the stored fragments: the stored bytes are unchanged, and the head is never stored. A
   recording longer than a `sidx` can index (65,535 fragments) groups fragments under one reference.
