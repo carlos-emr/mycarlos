@@ -138,14 +138,13 @@ describe("VideoViewer", () => {
     fireEvent(video, new Event("playing"));
     fireEvent(video, new Event("playing"));
     expect(onPlaying.mock.calls).toEqual([[true]]);
-    // Stuck waiting for data is not playing either; it says so again when it goes on.
+    // Stuck waiting for data is not playing either; it says so again when it
+    // goes on. `stalled` can fire while it still plays from its buffer: not
+    // the same.
     fireEvent(video, new Event("waiting"));
     fireEvent(video, new Event("playing"));
     fireEvent(video, new Event("stalled"));
-    fireEvent(video, new Event("playing"));
     expect(onPlaying.mock.calls.map(([playing]) => playing)).toEqual([
-      true,
-      false,
       true,
       false,
       true,

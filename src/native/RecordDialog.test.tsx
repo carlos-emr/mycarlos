@@ -493,6 +493,65 @@ describe("RecordDialog", () => {
     expect(late.getTracks().every((t) => t.readyState === "ended")).toBe(true);
   });
 
+  it("does not announce a pause the vault refused, and says why", async () => {
+    const bridge = fakeBridge({
+      videoPause: vi.fn(async () => {
+        throw { code: "storage", message: "FAKE refused" };
+      }),
+    });
+    await recording(bridge);
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() => expect(bridge.videoPause).toHaveBeenCalled());
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "Recording paused.",
+    );
+  });
+
+  it("does not announce a pause when a piece sent during it was refused", async () => {
+    const bridge = fakeBridge({
+      videoAppend: vi.fn(async () => {
+        throw { code: "storage", message: "FAKE refused" };
+      }),
+    });
+    const { onSaved } = await recording(bridge);
+    // The piece cut at the pause is the one the vault refuses.
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "failed"),
+    );
+    expect(bridge.videoPause).not.toHaveBeenCalled();
+    expect(screen.queryByText("Recording paused.")).toBeNull();
+  });
+
+  it("ends the vault's recording, and does not report one, when Cancel comes while it is starting", async () => {
+    let began!: (value: { recordingId: string }) => void;
+    const bridge = fakeBridge({
+      videoStart: vi.fn(
+        () =>
+          new Promise<{ recordingId: string }>((resolve) => (began = resolve)),
+      ),
+    });
+    const { onClose, onSaved } = open({}, bridge);
+    await readyToRecord();
+    fireEvent.click(button("Start recording"));
+    await waitFor(() => expect(bridge.videoStart).toHaveBeenCalledTimes(1));
+    fireEvent.click(button("Cancel"));
+    expect(onClose).toHaveBeenCalled();
+    // The vault answers after the dialog has gone.
+    await act(async () => began({ recordingId: "recording-1" }));
+    await waitFor(() =>
+      expect(bridge.videoStop).toHaveBeenCalledWith("recording-1"),
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(FakeRecorder.all).toHaveLength(0);
+    expect(
+      streams.every((s) =>
+        s.getTracks().every((t) => t.readyState === "ended"),
+      ),
+    ).toBe(true);
+  });
+
   it("waits for a pause that is on its way before it will resume, and does not send it twice", async () => {
     let finish!: () => void;
     const bridge = fakeBridge({
