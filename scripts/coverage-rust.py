@@ -171,6 +171,64 @@ def file_summaries(document):
     return dict(zip(paths, files))
 
 
+FLOOR_FILE = ROOT / "scripts/coverage-rust-floor.json"
+FLOOR_METRICS = ("lines", "regions")
+
+
+def percent(totals, metric):
+    """Covered share of an LLVM totals entry, in percent (0.0 for an empty denominator)."""
+    value = totals[metric]
+    return 100.0 * value["covered"] / value["count"] if value["count"] else 0.0
+
+
+def read_floor(path):
+    """The pinned floors: whole percents for lines and regions, from a small JSON file."""
+    document = json.loads(Path(path).read_text())
+    if document.get("schemaVersion") != 1:
+        raise RuntimeError(f"{path}: unsupported floor file version")
+    floors = {}
+    for metric in FLOOR_METRICS:
+        value = document.get(metric)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+            raise RuntimeError(f"{path}: {metric} must be a whole percent from 0 to 100")
+        floors[metric] = value
+    return floors
+
+
+def check_floors(totals, floors):
+    """Problems (empty when none) for every floored metric whose coverage is below its floor."""
+    return [f"{metric} coverage {percent(totals, metric):.2f}% is below the floor of {floor}%"
+            for metric, floor in floors.items() if percent(totals, metric) < floor]
+
+
+def ratcheted_floors(totals, current=None):
+    """New floors: the measured percent rounded down to a whole percent, never below the current floor."""
+    current = current or {}
+    return {metric: max(int(percent(totals, metric)), current.get(metric, 0)) for metric in FLOOR_METRICS}
+
+
+def write_floor(path, floors):
+    document = {"schemaVersion": 1, **floors}
+    Path(path).write_text(json.dumps(document, indent=2) + "\n")
+
+
+def report_totals(path):
+    document = json.loads(Path(path).read_text())
+    if document.get("type") != "llvm.coverage.json.export" or len(document.get("data", [])) != 1:
+        raise RuntimeError("unexpected LLVM JSON export structure")
+    return document["data"][0]["totals"]
+
+
+def requested_floors(args):
+    """Floors in force: the floor file's (when named), each overridden by an explicit option."""
+    floors = read_floor(args.floor_file) if args.floor_file else {}
+    for metric in FLOOR_METRICS:
+        explicit = getattr(args, f"fail_under_{metric}")
+        if explicit is not None:
+            floors[metric] = explicit
+    return floors
+
+
 def execute(args, pin, host, tools, versions):
     before = snapshot()
     directory = allocate()
@@ -275,8 +333,16 @@ def execute(args, pin, host, tools, versions):
         metadata["source_after"] = snapshot()
         if before != metadata["source_after"]:
             raise RuntimeError("source inputs changed during coverage; report is not a stable-source measurement")
-        metadata.update({"status": "passed", "totals": totals})
+        floors = requested_floors(args)
+        metadata.update({"status": "passed", "totals": totals, "floors": floors})
         print((directory / "report/summary.txt").read_text(), flush=True)
+        print("Measured: " + ", ".join(f"{metric} {percent(totals, metric):.2f}%" for metric in FLOOR_METRICS),
+              flush=True)
+        problems = check_floors(totals, floors)
+        if problems:
+            # The run itself is complete and kept; only the gate fails.
+            metadata["status"] = "below-floor"
+            raise RuntimeError("; ".join(problems))
         print(f"Coverage complete: {directory}", flush=True)
     except BaseException as error:
         metadata.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
@@ -290,13 +356,46 @@ def main():
     parser.add_argument("--check", action="store_true", help="check prerequisites only; no build or test")
     parser.add_argument("--jobs", type=int, choices=(1, 2), default=1, help="Cargo/LLVM jobs (default: 1)")
     parser.add_argument("--timeout-seconds", type=int, default=3600, help="total command budget, 60..14400 (default: 3600)")
+    parser.add_argument("--fail-under-lines", type=int, metavar="PERCENT",
+                        help="fail when line coverage is below this whole percent")
+    parser.add_argument("--fail-under-regions", type=int, metavar="PERCENT",
+                        help="fail when region coverage is below this whole percent")
+    parser.add_argument("--floor-file", metavar="PATH",
+                        help=f"pinned floors for both metrics, e.g. {FLOOR_FILE.relative_to(ROOT)}; "
+                             "explicit --fail-under-* options override it")
+    parser.add_argument("--check-report", metavar="COVERAGE_JSON",
+                        help="check an earlier run's report/coverage.json against the floors; no build or test")
+    parser.add_argument("--ratchet-report", metavar="COVERAGE_JSON",
+                        help="raise --floor-file to the whole percents of an earlier run's report/coverage.json; "
+                             "never lowers a floor")
     args = parser.parse_args()
     if not 60 <= args.timeout_seconds <= 14400:
         parser.error("--timeout-seconds must be between 60 and 14400")
+    for metric in FLOOR_METRICS:
+        value = getattr(args, f"fail_under_{metric}")
+        if value is not None and not 0 <= value <= 100:
+            parser.error(f"--fail-under-{metric} must be a whole percent from 0 to 100")
+    if args.ratchet_report and not args.floor_file:
+        parser.error("--ratchet-report needs --floor-file")
     def interrupted(signum, _frame):
         raise InterruptedError(f"received signal {signum}")
     signal.signal(signal.SIGTERM, interrupted)
     try:
+        if args.check_report or args.ratchet_report:
+            # Reports are plain JSON: no toolchain, build or test.
+            totals = report_totals(args.check_report or args.ratchet_report)
+            if args.check_report:
+                print("Measured: " + ", ".join(f"{metric} {percent(totals, metric):.2f}%"
+                                               for metric in FLOOR_METRICS))
+                problems = check_floors(totals, requested_floors(args))
+                if problems:
+                    raise RuntimeError("; ".join(problems))
+            else:
+                current = read_floor(args.floor_file) if Path(args.floor_file).exists() else {}
+                floors = ratcheted_floors(totals, current)
+                write_floor(args.floor_file, floors)
+                print(f"Floors now: {floors}")
+            return 0
         pin, host, tools, versions = prerequisites()
         if args.check:
             print(json.dumps({"toolchain": pin, "host": host,
