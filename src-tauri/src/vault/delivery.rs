@@ -2826,6 +2826,12 @@ impl VaultStore {
         } else if link.approval.is_none() {
             let mut next = link.clone();
             let version = http.contract_version(&link, &|| self.portal_link_ticket() != session);
+            // The same rule as a restart (nothing earlier here, so v2 when the portal lists it).
+            let version = if crate::portal_approval::stay_on_v1(&link) {
+                crate::portal_approval::CONTRACT_V1
+            } else {
+                version
+            };
             next.approval = Some(crate::portal_approval::create(&link, now, version)?);
             link = self.save_approval_state(&link, next, session, false)?;
         } else {

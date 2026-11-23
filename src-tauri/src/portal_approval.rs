@@ -580,18 +580,15 @@ mod native {
         }
     }
     /// Whether the next request for this device should stay on contract v1 even though the portal
-    /// lists v2: an earlier v2 request that no challenge ever answered (the clinic's CARLOS may
-    /// not take v2 yet, which the portal cannot tell), so a misconfiguration does not use up the
-    /// device's requests one unanswered day-long intent at a time.
+    /// lists v2: the most recent request (the one this next one replaces) was a v2 request that no
+    /// challenge ever answered (the clinic's CARLOS may not take v2 yet, which the portal cannot
+    /// tell), so a misconfiguration does not use up the device's requests one unanswered day-long
+    /// intent at a time. Only that most recent request counts: after a v1 request v2 is tried
+    /// again, so a clinic whose CARLOS gains v2 later is not kept on v1 for good.
     pub(crate) fn stay_on_v1(link: &StoredLink) -> bool {
-        link.approval
-            .iter()
-            .chain(link.approval_history.iter())
-            .any(|attempt| {
-                uses_contract_v2(attempt)
-                    && attempt.challenge.is_none()
-                    && attempt.acceptance.is_none()
-            })
+        link.approval.as_ref().is_some_and(|attempt| {
+            uses_contract_v2(attempt) && attempt.challenge.is_none() && attempt.acceptance.is_none()
+        })
     }
     /// The `approval_kind` of a challenge that asks the patient for the code
     /// their clinic emailed (clinic code v1).
@@ -1469,7 +1466,7 @@ mod native {
             }
         }
         #[test]
-        fn should_go_back_to_v1_after_a_v2_request_no_challenge_ever_answered() {
+        fn should_go_back_to_v1_after_an_unanswered_v2_request_and_try_v2_again_after_that() {
             let (_, mut link, _) = crate::portal_approval::first_fixture();
             let now = 1_792_454_400;
             assert!(!stay_on_v1(&link));
@@ -1487,12 +1484,14 @@ mod native {
             ));
             link.approval = Some(answered);
             assert!(!stay_on_v1(&link));
-            // A v2 request nothing answered, current or in the history: back to v1.
+            // A v2 request nothing answered, the most recent one: back to v1.
             link.approval = Some(v2.clone());
             assert!(stay_on_v1(&link));
+            // The next request, made under v1, ends the fallback: v2 is tried again, even with the
+            // old unanswered v2 request in the history (a clinic that gained v2 is not kept on v1).
             link.approval = Some(create(&link, now + 1, V1).unwrap());
             link.approval_history = vec![v2];
-            assert!(stay_on_v1(&link));
+            assert!(!stay_on_v1(&link));
         }
         #[test]
         fn should_sign_v2_only_when_the_portal_lists_it() {
