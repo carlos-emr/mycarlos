@@ -1729,13 +1729,17 @@ export function VaultLibrary({
   };
   // A whole person is hidden or restored in one step (#360): nothing is deleted, and the
   // person's documents, folders and AI answers leave or rejoin the library together.
-  const hidePerson = (id: string) => {
+  // Moved on when a hide that came from the handover dialog has finished: Security's Hand records
+  // over button takes the focus then (it is disabled while the hide runs).
+  const [handoverFocus, setHandoverFocus] = useState(0);
+  const hidePerson = (id: string, afterHide?: () => void) => {
     const name = profileName(id);
     void run(async () => {
       await bridge.hideProfile!(id);
       setSelectedIds([]);
       setActiveRecordId(null);
       await refresh();
+      afterHide?.();
       // Said to a screen reader (the polite line the library keeps for news), with no line on the
       // screen: the person leaving the lists is what shows.
       setSharedAnnouncement(
@@ -2985,6 +2989,7 @@ export function VaultLibrary({
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
                 onHandOver={() => setHandover("export")}
+                focusHandover={handoverFocus}
                 onAddFromFile={() => setHandover("import")}
                 hiddenPeople={snapshot.hiddenProfiles}
                 onHidePerson={bridge.hideProfile ? hidePerson : undefined}
@@ -3124,7 +3129,12 @@ export function VaultLibrary({
               onUnfinished={onUnfinishedHandover}
               // A person already hidden cannot be hidden again; otherwise the saved file offers it.
               onHidePerson={
-                handoverHidden || !bridge.hideProfile ? undefined : hidePerson
+                handoverHidden || !bridge.hideProfile
+                  ? undefined
+                  : (id) =>
+                      hidePerson(id, () =>
+                        setHandoverFocus((count) => count + 1),
+                      )
               }
               onClose={() => {
                 setHandover(null);

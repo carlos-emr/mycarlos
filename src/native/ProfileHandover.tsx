@@ -528,11 +528,12 @@ export function ProfileExportDialog({
                   <input
                     type="checkbox"
                     checked={hideAfter}
+                    aria-describedby="handover-hide-words"
                     onChange={(event) => setHideAfter(event.target.checked)}
                   />
                   {t("handover.export.hideOffer", { name: person.displayName })}
                 </label>
-                <p className="native-dialog-status">
+                <p id="handover-hide-words" className="native-dialog-status">
                   {t("hiddenPeople.confirm.body", { name: person.displayName })}
                 </p>
               </div>

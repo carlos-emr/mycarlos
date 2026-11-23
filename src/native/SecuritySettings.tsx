@@ -92,6 +92,10 @@ interface SecuritySettingsProps {
   onBackupSize?: () => Promise<BackupSize>;
   /** Hand a person's records over (#360); offered when there is a person to hand over. */
   onHandOver?: () => void;
+  /** Moved on each time the Hand records over button should take the focus once the library is
+   * no longer busy: after a handover dialog closed and hid the person it handed over, the button
+   * was disabled while focus came back to it. */
+  focusHandover?: number;
   /** Add a person from a handover file (#360). */
   onAddFromFile?: () => void;
   /** Hide a whole person, bring one back, and the people who are hidden (#360). */
@@ -219,6 +223,7 @@ export function SecuritySettings({
   onSetUpRecoveryKey,
   onSaveBackup,
   onHandOver,
+  focusHandover = 0,
   onAddFromFile,
   onBackupSize,
   onSpeedTest,
@@ -228,6 +233,20 @@ export function SecuritySettings({
 }: SecuritySettingsProps) {
   const { t } = useI18n();
   // The size a backup would be, with or without the videos (#359).
+  // The button that opened the handover takes the focus back once a hide that came from its dialog
+  // has finished (it is disabled while the library is busy).
+  const handoverRef = useRef<HTMLButtonElement | null>(null);
+  const handoverFocused = useRef(0);
+  useEffect(() => {
+    if (
+      focusHandover === 0 ||
+      busy ||
+      handoverFocused.current === focusHandover
+    )
+      return;
+    handoverFocused.current = focusHandover;
+    handoverRef.current?.focus();
+  }, [focusHandover, busy]);
   const [leaveVideosOut, setLeaveVideosOut] = useState(false);
   const [backupSize, setBackupSize] = useState<BackupSize | null>(null);
   const [sizePending, setSizePending] = useState(Boolean(onBackupSize));
@@ -801,6 +820,7 @@ export function SecuritySettings({
             <div>
               {onHandOver && (
                 <button
+                  ref={handoverRef}
                   className="button"
                   type="button"
                   aria-haspopup="dialog"

@@ -146,6 +146,10 @@ test("After the file is saved the person can be hidden in this vault: the offer 
     name: en("handover.export.hideOffer", { name: "FAKE Patient" }),
   });
   await expect(offer).not.toBeChecked();
+  // The words under the box are the box's description.
+  await expect(offer).toHaveAccessibleDescription(
+    en("hiddenPeople.confirm.body", { name: "FAKE Patient" }),
+  );
   await expect(
     dialog.getByText(
       en("hiddenPeople.confirm.body", { name: "FAKE Patient" }),
@@ -172,6 +176,14 @@ test("After the file is saved the person can be hidden in this vault: the offer 
   await expect
     .poll(() => fakeCalls(page, "vault_hide_profile"))
     .toHaveLength(1);
+  // The hide sets the library busy while focus goes back to where the dialog was opened from:
+  // once it has finished, focus is on that button, not lost to the page.
+  await expect(
+    page.getByRole("button", {
+      name: en("handover.export.button"),
+      exact: true,
+    }),
+  ).toBeFocused();
   await expect(
     page.getByRole("heading", { name: en("hiddenPeople.title"), level: 3 }),
   ).toBeVisible();
