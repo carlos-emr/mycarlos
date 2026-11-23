@@ -1156,5 +1156,9 @@
   "security.backup.sizeCalculating",
   "interface.hidden.videoLeftOut",
   "portal.deviceLine",
-  "portal.deviceLineLinked"
+  "portal.deviceLineLinked",
+  "interface.received.confirmTitleOne",
+  "interface.received.confirmTitleMany",
+  "interface.received.confirmBody",
+  "interface.received.import"
 ]

@@ -622,6 +622,10 @@ pub enum MessageId {
     InterfaceReaderZoom,
     InterfaceReceiveDropped,
     InterfaceReceiveRefused,
+    InterfaceReceivedConfirmBody,
+    InterfaceReceivedConfirmTitleMany,
+    InterfaceReceivedConfirmTitleOne,
+    InterfaceReceivedImport,
     InterfaceRecordPresentationImaging,
     InterfaceRecordPresentationPrescription,
     InterfaceRecordPresentationTestResult,
@@ -1784,6 +1788,10 @@ impl MessageId {
         Self::InterfaceReaderZoom,
         Self::InterfaceReceiveDropped,
         Self::InterfaceReceiveRefused,
+        Self::InterfaceReceivedConfirmBody,
+        Self::InterfaceReceivedConfirmTitleMany,
+        Self::InterfaceReceivedConfirmTitleOne,
+        Self::InterfaceReceivedImport,
         Self::InterfaceRecordPresentationImaging,
         Self::InterfaceRecordPresentationPrescription,
         Self::InterfaceRecordPresentationTestResult,
@@ -3270,6 +3278,10 @@ impl MessageId {
             Self::InterfaceReaderZoom => "interface-reader-zoom",
             Self::InterfaceReceiveDropped => "interface-receive-dropped",
             Self::InterfaceReceiveRefused => "interface-receive-refused",
+            Self::InterfaceReceivedConfirmBody => "interface-received-confirmBody",
+            Self::InterfaceReceivedConfirmTitleMany => "interface-received-confirmTitleMany",
+            Self::InterfaceReceivedConfirmTitleOne => "interface-received-confirmTitleOne",
+            Self::InterfaceReceivedImport => "interface-received-import",
             Self::InterfaceRecordPresentationImaging => "interface-recordPresentation-imaging",
             Self::InterfaceRecordPresentationPrescription => {
                 "interface-recordPresentation-prescription"
@@ -5436,6 +5448,10 @@ impl MessageId {
             "interface.hidden.videoLeftOut" => Some(Self::InterfaceHiddenVideoLeftOut),
             "portal.deviceLine" => Some(Self::PortalDeviceLine),
             "portal.deviceLineLinked" => Some(Self::PortalDeviceLineLinked),
+            "interface.received.confirmTitleOne" => Some(Self::InterfaceReceivedConfirmTitleOne),
+            "interface.received.confirmTitleMany" => Some(Self::InterfaceReceivedConfirmTitleMany),
+            "interface.received.confirmBody" => Some(Self::InterfaceReceivedConfirmBody),
+            "interface.received.import" => Some(Self::InterfaceReceivedImport),
             _ => None,
         }
     }

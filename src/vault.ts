@@ -357,6 +357,9 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
+  /** Named by a program started with its path (Open with, a second launch): the patient is asked
+   * before it is added. A file shared from another app is added as it arrives. */
+  needsConfirm?: boolean;
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -694,7 +697,11 @@ export interface VaultBridge {
   listReceived(): Promise<ReceivedState>;
   /** Adds every waiting file to Shared with me; a file that is not a PDF is
    * forgotten and named. If anything else fails, they all keep waiting. */
-  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Adds the waiting files to Shared with me: exactly `ids` (the files the patient confirmed)
+   * when given, otherwise every waiting file. */
+  acceptReceived(ids?: string[]): Promise<ReceivedAcceptOutcome>;
+  /** Forgets the waiting files the patient cancelled; nothing was stored. */
+  discardReceived(ids: string[]): Promise<number>;
   /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
@@ -1281,7 +1288,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, password },
       }),
     listReceived: () => invoke<ReceivedState>("received_list"),
-    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    acceptReceived: (ids) =>
+      ids
+        ? invoke<ReceivedAcceptOutcome>("received_accept", {
+            request: { ids },
+          })
+        : invoke<ReceivedAcceptOutcome>("received_accept"),
+    discardReceived: (ids) =>
+      invoke<number>("received_discard", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },

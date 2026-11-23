@@ -4525,8 +4525,8 @@ struct ReceivedAcceptOutcome {
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
-/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
-/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// renderer asks at start, after an unlock, when notified of an arrival, and whenever the
+/// window comes back to the front. Names stay off the lock screen: the renderer shows a count
 /// there.
 #[tauri::command]
 fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
@@ -4534,6 +4534,30 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
         files: received.list(),
         notice: received.take_notice(),
     }
+}
+
+/// The files the patient confirmed adding (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedAcceptRequest {
+    ids: Vec<Uuid>,
+}
+
+/// The files the patient said No to (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedDiscardRequest {
+    ids: Vec<Uuid>,
+}
+
+/// Forgets the waiting files the patient cancelled: nothing was stored, so nothing is left. A file
+/// that arrived since, or one an import has taken, is not touched.
+#[tauri::command]
+fn received_discard(
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedDiscardRequest,
+) -> usize {
+    received.forget(&request.ids)
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
@@ -4544,9 +4568,16 @@ async fn received_accept(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     received: State<'_, Arc<ReceivedFiles>>,
+    request: Option<ReceivedAcceptRequest>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
     let store = store.pin();
-    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    // With `ids`, exactly the files the patient confirmed (a file that arrived since waits for its
+    // own question); without, every waiting file, as for files shared from another app.
+    let ids: Vec<Uuid> = match request {
+        Some(request) => request.ids,
+        // Never a file named by a path: those are added only after the patient confirms them.
+        None => received.ids_needing_no_question(),
+    };
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
             imported: Vec::new(),
@@ -6102,6 +6133,55 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
+// Fixed, payload-free notification: paths, names and even counts stay out of this channel.
+#[cfg(windows)]
+const RECEIVED_CHANGED_SCRIPT: &str =
+    "window.dispatchEvent(new Event('mycarlos-received-changed'));";
+
+#[cfg(windows)]
+fn notify_received(app: &tauri::AppHandle) {
+    let app = app.clone();
+    // Wry can execute UI dispatch inline on the window thread. Post UI work
+    // from an async worker instead; never wait for JavaScript or open files in that callback.
+    let _notification = tauri::async_runtime::spawn(async move {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.eval(RECEIVED_CHANGED_SCRIPT);
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        // Missing/destroying windows leave the queue intact. Mount/focus/unlock also refresh.
+    });
+}
+
+/// What a second launch on Windows says when it cannot hand what was opened to
+/// the myCarlos already running (#133): fixed text, never a path or file name,
+/// in the Windows display language when myCarlos has it, else English.
+/// `language` is a Windows LANGID: the primary language in the low 10 bits and
+/// the sublanguage above it, which tells Traditional from Simplified Chinese.
+#[cfg(any(windows, test))]
+fn handoff_failed_text(language: u16) -> (&'static str, &'static str) {
+    let text = match (language & 0x3ff, language >> 10) {
+        // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
+        (0x0c, _) => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
+        (0x0a, _) => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
+        (0x15, _) => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
+        (0x16, _) => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        // LANG_CHINESE: Traditional for Taiwan, Hong Kong, Macau and zh-Hant;
+        // Simplified for the rest (China, Singapore, zh-Hans).
+        (0x04, 0x01 | 0x03 | 0x05 | 0x1f) => "myCarlos 已開啟，但無法與其連線。未新增任何內容。請關閉 myCarlos，然後重試。",
+        (0x04, _) => "myCarlos 已打开，但无法与其连接。未添加任何内容。请关闭 myCarlos，然后重试。",
+        _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
+    };
+    ("myCarlos", text)
+}
+
+/// The Windows display language, as a LANGID.
+#[cfg(windows)]
+fn windows_display_language() -> u16 {
+    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() }
+}
+
 // Keep one generated context for every runtime. On macOS the macro also
 // embeds the application Info.plist, whose process-wide symbol must be unique.
 // Tests use this same production configuration and capability authority.
@@ -6111,7 +6191,25 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    // Queue before plugins or any webview exist. A callback during startup keeps its
+    // files in this same Arc, after initial argv and before ordinary vault setup.
+    let received = Arc::new(ReceivedFiles::default());
+    #[cfg(any(windows, target_os = "linux"))]
+    received.receive_command_line(std::env::args_os());
+    let builder = tauri::Builder::default().manage(Arc::clone(&received));
+    #[cfg(windows)]
+    let builder = {
+        let (title, text) = handoff_failed_text(windows_display_language());
+        builder.plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(move |app, args, _cwd| {
+                    received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
+                    notify_received(app);
+                })
+                .handoff_failed_message(title, text)
+                .build(),
+        )
+    };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
     builder
@@ -6262,14 +6360,8 @@ pub fn run() {
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
-            app.manage(Arc::new(ReceivedFiles::default()));
-            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
-            // second launch while the app is open is not forwarded yet (#53).
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                let (offered, sources) = received::accept_command_line(std::env::args_os());
-                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
-            }
+            // The startup receipt of files named on the command line, and a second launch's, belong
+            // to `run` (#133): the received files are managed there, before any plugin.
             let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             let idle_app = app.handle().clone();
@@ -6350,6 +6442,7 @@ pub fn run() {
             vault_import_picked,
             received_list,
             received_accept,
+            received_discard,
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
@@ -6415,6 +6508,39 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    #[test]
+    fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
+        let (title, english) = handoff_failed_text(0x09);
+        assert_eq!(title, "myCarlos");
+        assert!(english.starts_with("myCarlos is already open, but it couldn't be reached."));
+        // A language myCarlos does not have (German) falls back to English.
+        assert_eq!(handoff_failed_text(0x07), (title, english));
+        for (language, start) in [
+            (0x0c, "myCarlos est déjà ouvert"),
+            (0x0a, "myCarlos ya está abierto"),
+            (0x15, "myCarlos jest już uruchomiony"),
+            (0x16, "O myCarlos já está aberto"),
+            // Full LANGIDs: the sublanguage picks the Chinese script.
+            (0x040c, "myCarlos est déjà ouvert"),
+            (0x0804, "myCarlos 已打开"),
+            (0x1004, "myCarlos 已打开"),
+            (0x0004, "myCarlos 已打开"),
+            (0x0404, "myCarlos 已開啟"),
+            (0x0c04, "myCarlos 已開啟"),
+            (0x1404, "myCarlos 已開啟"),
+            (0x7c04, "myCarlos 已開啟"),
+        ] {
+            let (title, text) = handoff_failed_text(language);
+            assert_eq!(title, "myCarlos");
+            assert!(text.starts_with(start), "{language:#x}");
+        }
+        // Fixed text only: never a path or a file name.
+        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16, 0x0804, 0x0404] {
+            let text = handoff_failed_text(language).1;
+            assert!(!text.contains('\\') && !text.contains('/') && !text.contains(':'));
+        }
+    }
 
     #[test]
     fn does_not_return_a_page_for_a_cancelled_view_ticket() {

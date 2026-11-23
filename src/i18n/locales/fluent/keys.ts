@@ -1158,6 +1158,10 @@ export const MESSAGE_KEYS = [
   "interface.hidden.videoLeftOut",
   "portal.deviceLine",
   "portal.deviceLineLinked",
+  "interface.received.confirmTitleOne",
+  "interface.received.confirmTitleMany",
+  "interface.received.confirmBody",
+  "interface.received.import",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2554,6 +2558,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
   "portal.deviceLine": "portal-deviceLine",
   "portal.deviceLineLinked": "portal-deviceLineLinked",
+  "interface.received.confirmTitleOne": "interface-received-confirmTitleOne",
+  "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
+  "interface.received.confirmBody": "interface-received-confirmBody",
+  "interface.received.import": "interface-received-import",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3834,6 +3842,10 @@ export interface MessageArgsByKey {
   "interface.hidden.videoLeftOut": undefined;
   "portal.deviceLine": { device: FluentArgument };
   "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
+  "interface.received.confirmTitleOne": { name: FluentArgument };
+  "interface.received.confirmTitleMany": { count: FluentArgument };
+  "interface.received.confirmBody": undefined;
+  "interface.received.import": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
