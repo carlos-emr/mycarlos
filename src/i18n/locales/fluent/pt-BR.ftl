@@ -56,7 +56,7 @@ comfort-continue = Continuar
 
 comfort-intro = Escolha o que for melhor para você antes de configurar. Cada escolha vale na hora.
 
-comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } em { $preferences } e { $autoLock } em { $security }.
+comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } e { $appearance } em { $preferences }, e { $autoLock } em { $security }.
 
 comfort-sample = É assim que o texto aparece no myCarlos. Pressione − ou + até ficar fácil de ler.
 
@@ -1204,8 +1204,6 @@ security-backup-title = Cópia de segurança criptografada
 
 security-copies-body = As exportações e capturas de tela ficam fora da proteção do cofre. Ocultar um documento no myCarlos não apaga essas cópias nem o prontuário médico original da clínica.
 
-security-copies-title = Cópias legíveis e capturas de tela
-
 security-devBuild-body = Use apenas arquivos fictícios.
 
 security-devBuild-title = Versão de desenvolvimento.
@@ -1332,31 +1330,31 @@ sidebar-settings = Configurações
 
 sidebar-storage = Cofre local criptografado
 
-textSize-announce = Tamanho do texto { $percent }
+textSize-announce = Zoom do aplicativo { $percent }
 
-textSize-between = { $typed }% fica entre dois tamanhos, então o tamanho é { $size }.
+textSize-between = { $typed }% fica entre dois níveis de zoom, então o zoom é { $size }.
 
-textSize-box = Tamanho do texto em porcentagem
+textSize-box = Zoom do aplicativo em porcentagem
 
 textSize-followsDevice = Aqui, o tamanho do texto segue o seu dispositivo: o ajuste de tamanho do texto dele ou o zoom do navegador.
 
-textSize-help = Aumenta ou diminui tudo no myCarlos, de { $min }% a { $max }%. O myCarlos lembra o tamanho neste dispositivo. Você também pode manter a tecla { $modifier } pressionada e pressionar mais, menos ou 0.
+textSize-help = Aumenta ou diminui o texto, os botões e outros itens no myCarlos, de { $min }% a { $max }%. O myCarlos lembra a sua configuração neste dispositivo. Use { $modifier } com + ou − para aumentar ou diminuir, ou { $modifier } com 0 para voltar a 100%.
 
 textSize-key-command = Comando
 
-textSize-larger = Texto maior
+textSize-larger = Aumentar zoom
 
-textSize-largest = O maior tamanho é { $max }%.
+textSize-largest = O maior zoom é { $max }%.
 
 textSize-notNumber = Digite um número de { $min } a { $max }.
 
-textSize-reset = Voltar ao tamanho normal
+textSize-reset = Voltar a 100%
 
-textSize-smaller = Texto menor
+textSize-smaller = Diminuir zoom
 
-textSize-smallest = O menor tamanho é { $min }%.
+textSize-smallest = O menor zoom é { $min }%.
 
-textSize-title = Tamanho do texto
+textSize-title = Zoom do aplicativo
 
 unlock-autoLock =
     { $count ->
@@ -1377,12 +1375,12 @@ unlock-title = Desbloqueie seu cofre
 
 unlock-waiting =
     { $count ->
-    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
-    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
-    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
     }
 
-unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
 
 language-error-formatting = O myCarlos não conseguiu exibir esta mensagem corretamente. Escolha outro idioma ou reinicie o aplicativo e confira seus registros antes de tentar novamente.
 
@@ -1468,7 +1466,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Clínicas conectadas.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1501,6 +1499,10 @@ portal-defaultDeviceName = myCarlos no { $platform }
 portal-deviceCode = Código do dispositivo
 
 portal-deviceName = Nome deste dispositivo
+
+portal-deviceLine = Dispositivo: { $device }
+
+portal-deviceLineLinked = Dispositivo: { $device }, vinculado em { $date }
 
 portal-deviceDetailsShow = Mostrar os detalhes do dispositivo
 
@@ -1564,7 +1566,7 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-title = Documentos da clínica
+portal-title = Clínicas conectadas
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
 
@@ -1580,13 +1582,13 @@ rename-title-profile = Renomear a pasta da pessoa
 
 portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
 
-portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Clínicas conectadas.
 
 portal-connecting = Conectando e solicitando a aprovação da clínica…
 
 portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
 
-portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Clínicas conectadas, indica o que fazer em seguida.
 
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 
@@ -1885,9 +1887,25 @@ ai-notInstalled-openPreferences = Abrir as configurações do assistente de IA
 
 aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médico.
 
+aiHelper-resultLabelShort = Rascunho de IA
+
+aiHelper-resultLabelHide = Não mostrar novamente
+
+aiHelper-resultLabelInfo = O que significa “Rascunho de IA”
+
+ai-label-settingsTitle = Aviso nas respostas da IA
+
+ai-label-settingsBody = Cada resposta da IA informa que foi escrita por IA e pode conter erros. Depois de “Não mostrar novamente”, uma etiqueta curta “Rascunho de IA” substitui a frase completa. A etiqueta nunca é removida. A escolha fica guardada neste dispositivo e recomeça se o modelo ou a ferramenta mudar.
+
+ai-label-settingsShowFull = Mostrar o aviso completo novamente
+
+ai-label-settingsFullShown = O aviso completo é mostrado em cada resposta da IA.
+
+ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrada nas respostas da IA para as quais você a escolheu.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Ver no documento
+ai-summary-showInDocument = Mostrar-me no documento
 
 ai-summary-folded = O resumo está recolhido para dar espaço à página.
 
@@ -2033,6 +2051,19 @@ ai-explain-ready = A explicação está pronta.
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 
 ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
+ai-error-memoryNumbers = Não há memória livre suficiente para o assistente de IA agora. Ele precisa de cerca de { $needed } GB de memória livre; agora há { $free } GB. Feche outros programas e tente de novo.
+ai-error-memoryUnknown = Não há memória livre suficiente para o assistente de IA agora. Ele precisa de cerca de { $needed } GB de memória livre, e este computador não soube dizer quanta há livre. Feche outros programas e tente de novo.
+ai-speed-title = Velocidade neste computador
+ai-speed-note = Isto executa o assistente de IA uma vez sobre um texto inventado e curto, e exige bastante do processador por um ou dois minutos. Não envia nada a lugar nenhum nem usa nada seu. Você pode interromper a qualquer momento.
+ai-speed-button = Verificar a velocidade deste computador
+ai-speed-working = Verificando a velocidade…
+ai-speed-cancel = Interromper a verificação
+ai-speed-result = Medido neste computador: o assistente de IA lê cerca de { $read } palavras por segundo e escreve cerca de { $write }.
+ai-speed-cancelled = A verificação foi interrompida. Nada foi guardado.
+ai-speed-none = Ainda não verificada.
+ai-speed-failed = Não foi possível medir a velocidade. Tente de novo.
+ai-speed-estimate = Neste computador, isto pode levar até cerca de { $minutes } min.
+ai-speed-estimateLong = Neste computador, um documento tão longo pode não terminar no tempo dado ao assistente de IA.
 
 ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
 
@@ -2198,6 +2229,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = outra forma { $n }
 
 interface-AnonymizePreview-pasteTitle = Recolocar os dados
 
@@ -2218,6 +2250,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (confira com o original)
 interface-AnonymizePreview-possibleNames = Palavras que podem ser nomes
 
 interface-AnonymizePreview-removeWord = Remover “{ $word }”
+interface-AnonymizePreview-eponymTitle = Estes podem ser termos médicos
+interface-AnonymizePreview-eponymOne = Isto pode ser um termo médico: { $phrase }
+interface-AnonymizePreview-eponymKeep = Manter
+interface-AnonymizePreview-eponymKeepAll = Manter todos “{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = Removido: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nada foi removido ainda.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nome
+   *[other] { $count } nomes
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médico
+   *[other] { $count } médicos
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clínica
+   *[other] { $count } clínicas
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } número do cartão de saúde
+   *[other] { $count } números do cartão de saúde
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } número do prontuário
+   *[other] { $count } números do prontuário
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } número de seguro social
+   *[other] { $count } números de seguro social
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } data de nascimento
+   *[other] { $count } datas de nascimento
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } idade
+   *[other] { $count } idades
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } endereço
+   *[other] { $count } endereços
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } código postal
+   *[other] { $count } códigos postais
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } número de telefone
+   *[other] { $count } números de telefone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } endereço de e-mail
+   *[other] { $count } endereços de e-mail
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } endereço da web
+   *[other] { $count } endereços da web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } data ambígua
+   *[other] { $count } datas ambíguas
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removido por você
+   *[other] { $count } removidos por você
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } data substituída
+   *[other] { $count } datas substituídas
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } palavra para verificar
+   *[other] { $count } palavras para verificar
+}
+
+interface-AnonymizePreview-toCheckHelp = Ficam destacadas as palavras que começam com letra maiúscula no meio de uma frase e os números com três ou mais dígitos. Podem identificar alguém. Isso não encontra tudo. Não pega nomes escritos em maiúsculas, nomes no início de uma linha, nomes em escritas sem maiúsculas (como chinês, coreano ou árabe) nem nomes que também são meses, medicamentos ou termos médicos (como “June” ou “Bell”). Selecione uma palavra destacada, escolha Remover e leia todo o texto você mesmo.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” pode identificar alguém.
+
+interface-AnonymizePreview-savedFileNote = O arquivo salvo não é protegido pelo myCarlos. Ele não tem nomes, mas contém os detalhes médicos. Exclua-o quando terminar.
+
+interface-AnonymizePreview-pasteWhereNote = O lugar onde você colar isto decide o que será guardado: um serviço de chat pode guardar ou aprender com o texto, dependendo das configurações da sua conta.
+
+interface-AnonymizePreview-copy = Copiar o texto
+
+interface-AnonymizePreview-copied = O texto foi copiado.
+
+interface-AnonymizePreview-copyFailed = Não foi possível copiar o texto.
+
+interface-AnonymizePreview-copyWarning = O texto copiado pode ficar neste dispositivo: o histórico da área de transferência do Windows e a sincronização da área de transferência entre dispositivos podem guardar uma cópia.
 
 interface-AnonymizePreview-removeSelected = Remover o texto selecionado
 
@@ -2262,13 +2403,27 @@ notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois q
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
 notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
-notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Clínicas conectadas e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
 noticesStep-title = Avisos da sua clínica
 noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.
 noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, em { $preferences }: { $notices }.
 noticesStep-done = Concluído
 noticesStep-notNow = Agora não
+
+background-title = Execução em segundo plano
+background-keepRunning = Manter o myCarlos em segundo plano depois que eu fechar a janela dele
+background-keepRunningHelp = Ao fechar a janela, o myCarlos pode continuar em segundo plano com um ícone na área de notificação (na barra de menus, no Mac). O cofre é bloqueado quando a janela fecha e continua bloqueado até você abrir o myCarlos e desbloqueá-lo. Escolha Sair no ícone para fechar o myCarlos por completo.
+background-startAtLogin = Iniciar o myCarlos quando eu entrar neste computador
+background-startAtLoginHelp = O myCarlos inicia quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano, com o cofre bloqueado. Com ela desativada, a janela dele abre.
+background-paused = Enquanto o cofre está bloqueado, o myCarlos não consegue verificar novos documentos da clínica. Desbloqueie-o para verificar.
+background-unavailable = Um ícone em segundo plano não está disponível neste computador. O myCarlos fecha por completo quando você fecha a janela dele.
+background-error = Não foi possível alterar esta configuração. Ela continua como estava.
+native-tray-open = Abrir o myCarlos
+native-tray-quit = Sair do myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Há um novo documento esperando. Desbloqueie o myCarlos para vê-lo.
 
 ai-summary-again = Resumir de novo
 
@@ -2319,6 +2474,109 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+interface-received-confirmTitleOne = Importar { $name } para Compartilhados comigo?
+
+interface-received-confirmTitleMany = Importar { $count } documentos para Compartilhados comigo?
+
+interface-received-confirmBody = Nada é adicionado até você escolher Importar. Cancelar não deixa nada.
+
+interface-received-import = Importar
+
+reader-android-opening = Abrindo o documento…
+
+reader-android-failed = O myCarlos não conseguiu mostrar este documento. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-tooLarge = Este PDF tem mais de 20 MB. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-unavailable = Este dispositivo não permite que o myCarlos abra documentos aqui. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-page = Página { $page } de { $total }, imagem da carta
+
+reader-android-pageStatus = Página { $page } de { $total }
+reader-android-pageFailed = Não foi possível mostrar a página { $page } de { $total }.
+
+reader-android-previous = Página anterior
+
+reader-android-next = Próxima página
+
+reader-android-zoomIn = Aumentar o zoom
+
+reader-android-zoomOut = Diminuir o zoom
+
+interface-video-name = Vídeo, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Gravar um vídeo
+interface-RecordDialog-unavailable = A gravação de vídeo não está disponível neste dispositivo.
+interface-RecordDialog-why = Por quê?
+interface-RecordDialog-startingTheCameraAndMicrophone = Iniciando a câmera e o microfone…
+interface-RecordDialog-theVideoIsRecordedWithSound = O vídeo é gravado com som. Pessoas por perto podem ser ouvidas. Só você pode abri-lo.
+interface-RecordDialog-yourPhoneAsksOnce = Seu celular pergunta uma vez se o myCarlos pode usar a câmera e o microfone. Eles ficam ligados só enquanto você grava. Desligam quando você para, fecha esta janela ou o myCarlos bloqueia.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = A câmera e o microfone ficam ligados só enquanto você grava. Desligam quando você para, fecha esta janela ou o myCarlos bloqueia.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = A câmera e o microfone estão ligados, mas nada é gravado até você escolher Iniciar gravação.
+interface-RecordDialog-pictureQuality = Qualidade da imagem
+interface-RecordDialog-standard = Padrão (720p)
+interface-RecordDialog-high = Alta (1080p)
+interface-RecordDialog-aboutStandardPerHour = Cerca de 1,1 GB por hora
+interface-RecordDialog-aboutHighPerHour = Cerca de 2,5 a 4 GB por hora
+interface-RecordDialog-useTheCameraAndMicrophone = Usar a câmera e o microfone
+interface-RecordDialog-startRecording = Iniciar gravação
+interface-RecordDialog-recording = Gravando
+interface-RecordDialog-paused = Em pausa
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = Em pausa. A câmera e o microfone continuam ligados.
+interface-RecordDialog-recorded = Gravado: { $time }
+interface-RecordDialog-recordingAt = Gravando em { $height }p
+interface-RecordDialog-pauseRecording = Pausar gravação
+interface-RecordDialog-resumeRecording = Retomar gravação
+interface-RecordDialog-stopAndSave = Parar e salvar
+interface-RecordDialog-stopAndSaveTheVideo = Parar e salvar o vídeo?
+interface-RecordDialog-keepRecording = Continuar gravando
+interface-RecordDialog-savingTheVideo = Salvando o vídeo…
+interface-RecordDialog-recordingPaused = Gravação em pausa.
+interface-RecordDialog-recordingResumed = Gravação retomada.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = Este dispositivo não consegue gravar vídeo em um formato que o myCarlos possa salvar.
+interface-RecordDialog-videoNeedsBoth = Um vídeo precisa da câmera e do microfone.
+interface-RecordDialog-nothingWasRecorded = Nada foi gravado, então nenhum vídeo foi salvo.
+interface-RecordDialog-videoSaved = Vídeo salvo: { $name }
+interface-RecordDialog-videoSavedStopped = A gravação parou porque o dispositivo informou um problema. O que foi gravado foi salvo: { $name }
+interface-RecordDialog-videoSavedHidden = A gravação parou porque o myCarlos foi ocultado. O que foi gravado foi salvo: { $name }
+interface-RecordDialog-videoSavedSlow = A gravação parou porque o vídeo não pôde ser salvo com rapidez suficiente. O que foi gravado foi salvo: { $name }
+interface-VideoViewer-video = Vídeo
+interface-VideoViewer-player = Player de vídeo: { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = Não foi possível reproduzir este vídeo.
+interface-VideoViewer-keys = A barra de espaço reproduz ou pausa. As setas para a esquerda e para a direita avançam ou voltam { $seconds } segundos. As setas para cima e para baixo mudam o volume. M silencia.
+interface-VideoViewer-playVideo = Reproduzir vídeo
+interface-VideoHelp-title = Por que não consigo gravar vídeo aqui?
+interface-VideoHelp-engine = Gravar vídeo exige que o mecanismo web integrado deste dispositivo grave vídeo MP4 com som. O mecanismo deste dispositivo não oferece isso.
+interface-VideoHelp-systems = No Windows, as edições N e KN deixam de fora os recursos de mídia até você adicionar o Media Feature Pack da Microsoft. No Linux, o myCarlos precisa dos plug-ins do GStreamer dos pacotes gstreamer1.0-plugins-bad e gstreamer1.0-plugins-ugly. Celulares com Android 7 ou anterior e iPhones com iOS anterior ao 14.5 não conseguem gravar vídeo MP4 no app.
+interface-VideoHelp-restWorks = Fotos e documentos funcionam como sempre. Uma atualização mais nova do sistema pode incluir a gravação de vídeo.
+interface-RecordingRecovery-closed = O myCarlos fechou enquanto você gravava. Manter o vídeo que foi salvo?
+interface-RecordingRecovery-closedPaused = O myCarlos fechou enquanto uma gravação estava em pausa. Manter o vídeo que foi salvo?
+interface-RecordingRecovery-name = Gravação: { $name }
+interface-RecordingRecovery-askLater = Perguntar depois
+interface-RecordingRecovery-delete = Excluir
+interface-RecordingRecovery-keep = Manter o vídeo
+interface-RecordingRecovery-kept = Vídeo mantido: { $name }
+interface-RecordingRecovery-nothingToKeep = Nada completo havia sido salvo, então não havia vídeo para manter.
+interface-RecordingRecovery-deleted = A gravação inacabada foi excluída.
+interface-RecordingRecovery-deleteSure = Excluir esta gravação? Isso não pode ser desfeito.
+interface-RecordingRecovery-savedLocked = O myCarlos bloqueou enquanto você gravava. O vídeo foi salvo: { $name }
+interface-RecordingRecovery-savedLockedPaused = O myCarlos bloqueou enquanto uma gravação estava em pausa. O vídeo foi salvo: { $name }
+interface-RecordDialog-videoSavedFailed = A gravação parou porque uma parte não pôde ser salva. O que foi salvo antes disso foi mantido: { $name }
+interface-RecordDialog-notEnoughRoom = Não há espaço suficiente para gravar um vídeo. Cerca de 1 GB precisa estar livre. Libere espaço neste dispositivo e escolha Tentar de novo.
+interface-RecordDialog-lowOnRoom = O espaço está acabando. A gravação é salva quando não houver mais espaço.
+interface-RecordDialog-lowOnRoomMinutes = O espaço está acabando: restam cerca de { $minutes } minutos de gravação. A gravação é salva quando não houver mais espaço.
+interface-RecordDialog-videoSavedNoRoom = Salvo. Não havia mais espaço: { $name }
+interface-RecordDialog-videoKeptUnfinished = Não havia mais espaço, então o vídeo não pôde ser concluído. Ele foi mantido como uma gravação inacabada: libere espaço e o myCarlos a concluirá na próxima vez que você desbloquear.
+interface-RecordingRecovery-finishedWithRoom = Há espaço de novo, então seu vídeo inacabado foi concluído: { $name }
+interface-RecordingRecovery-stillNoRoom = Ainda não há espaço suficiente para concluir seu vídeo inacabado: { $name }. Libere espaço; ele foi mantido.
+security-backup-size = Cerca de { $size }.
+security-backup-sizeWithVideos = Cerca de { $size }, dos quais { $videos } são vídeos.
+security-backup-sizeNoVideos = Cerca de { $size }, sem vídeos.
+security-backup-leaveVideosOut = Deixar os vídeos de fora
+security-backup-leaveVideosOutHelp = O backup não conterá seus vídeos. Se você restaurá-lo, os vídeos não voltam.
+restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta todo o resto, e seus vídeos não estarão lá. Eles aparecem entre os documentos ocultos, como arquivos ausentes.
+security-backup-sizeCalculating = Calculando o tamanho do backup…
+interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
 
 handover-section-title = Entregar os registros de uma pessoa
 

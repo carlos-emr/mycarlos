@@ -372,11 +372,22 @@ impl VaultStore {
         &self,
         session: u64,
     ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
+        self.check_documents_using(session, Instant::now, || {
+            std::thread::sleep(Duration::from_millis(20))
+        })
+    }
+
+    /// `check_documents` with its clock and its wait between tries given, so a test can drive the
+    /// shared-admission wait (up to 10 s, then `DocumentCheckBusy`) without sleeping.
+    pub(super) fn check_documents_using(
+        &self,
+        session: u64,
+        now: impl Fn() -> Instant,
+        pause: impl FnMut(),
+    ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
         let _running = self
             .collection
-            .manual_acquire(&self.portal_check_running, Instant::now, || {
-                std::thread::sleep(Duration::from_millis(20))
-            })
+            .manual_acquire(&self.portal_check_running, now, pause)
             .ok_or(VaultError::DocumentCheckBusy)?;
         let result = crate::portal_pickup::check(self, session);
         if result.as_ref().is_ok_and(|r| r.issues.is_empty()) {
@@ -3599,6 +3610,41 @@ mod approval_recovery_tests {
         assert!(store
             .connect_portal_using(session, || finish_connect_link(&store, session), &http)
             .is_ok());
+    }
+
+    #[test]
+    fn a_document_check_waits_for_other_portal_work_then_refuses_and_leaves_it_running() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let running = store.start_portal_work().unwrap();
+        // The wait is the shared guard's: ten tries a second apart, then busy. The clock moves
+        // only when the check pauses, so no real time passes.
+        let clock = std::cell::Cell::new(Instant::now());
+        let pauses = std::cell::Cell::new(0u32);
+        let error = store
+            .check_documents_using(
+                session,
+                || clock.get(),
+                || {
+                    pauses.set(pauses.get() + 1);
+                    clock.set(clock.get() + Duration::from_secs(1));
+                },
+            )
+            .err()
+            .unwrap();
+        assert!(matches!(error, VaultError::DocumentCheckBusy));
+        assert_eq!(pauses.get(), 10);
+        // The refusal took nothing from the work that was running, and local records still read.
+        assert!(
+            store.start_portal_work().is_err(),
+            "the other work still holds the guard"
+        );
+        assert!(store.snapshot().unwrap().portal_links.is_empty());
+        drop(running);
+        assert!(
+            store.start_portal_work().is_ok(),
+            "the guard is free once that work ends"
+        );
     }
 
     #[test]

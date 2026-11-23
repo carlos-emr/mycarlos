@@ -42,7 +42,7 @@ export async function checkClinicDocuments({
         const asked = links.find((link) => link.id === issue.linkId);
         if (asked) waits?.wait(asked.portalBase, undefined, session);
       }
-      // Clinic documents then lists the device with the earlier attempts.
+      // Connected clinics then lists the device with the earlier attempts.
       if (issue.code === "portal_device_removed")
         waits?.deviceRemoved(issue.linkId, session);
     }
@@ -137,7 +137,7 @@ const retryHelps = (error: unknown) => {
  * button is named only when checking again can help, and not twice.
  * `counted` names the links the check speaks for (those the clinic has
  * approved): a device still waiting for approval has its state on its own
- * card under Clinic documents. A device the portal removed is said whatever
+ * card under Connected clinics. A device the portal removed is said whatever
  * its approval: that is not a state of waiting, and nothing but linking it
  * again can help.
  */

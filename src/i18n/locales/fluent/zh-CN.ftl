@@ -56,7 +56,7 @@ comfort-continue = 继续
 
 comfort-intro = 请在设置前选择适合您的项目。每项设置会立即生效。
 
-comfort-later = 您随时可以在 { $settings } 中变更这些设置：在 { $preferences } 中调整 { $textSize }，并在 { $security } 中调整 { $autoLock }。
+comfort-later = 您随时可以在 { $settings } 中变更这些设置：在 { $preferences } 中调整 { $textSize } 和 { $appearance }，并在 { $security } 中调整 { $autoLock }。
 
 comfort-sample = 这是 myCarlos 中的文本外观。请按 − 或 +，调整到容易阅读的大小。
 
@@ -1064,8 +1064,6 @@ security-backup-title = 加密备份
 
 security-copies-body = 导出文件和屏幕截屏不受保险库保护。在 myCarlos 中隐藏文档不会删除这些副本或诊所的原始病历。
 
-security-copies-title = 可读副本和屏幕截屏
-
 security-devBuild-body = 仅使用合成文件。
 
 security-devBuild-title = 开发版本。
@@ -1182,31 +1180,31 @@ sidebar-settings = 设置
 
 sidebar-storage = 加密的本机保险库
 
-textSize-announce = 文本大小 { $percent }
+textSize-announce = 应用缩放 { $percent }
 
-textSize-between = { $typed }% 介于尺寸之间，因此调整为 { $size }。
+textSize-between = { $typed }% 介于缩放级别之间，因此调整为 { $size }。
 
-textSize-box = 文本大小百分比
+textSize-box = 应用缩放百分比
 
 textSize-followsDevice = 此处的文本大小会依照设备设置或浏览器缩放比例调整。
 
-textSize-help = 调整 myCarlos 中所有内容的大小，范围为 { $min }% 到 { $max }%。myCarlos 会记住这台设备上的设置。您也可以按住 { $modifier }，再按加号、减号或 0。
+textSize-help = 放大或缩小 myCarlos 中的文字、按钮和其他项目，范围为 { $min }% 到 { $max }%。myCarlos 会记住这台设备上的设置。按 { $modifier } 加 + 或 − 可缩放，按 { $modifier } 加 0 可恢复为 100%。
 
 textSize-key-command = Command
 
-textSize-larger = 放大文本
+textSize-larger = 放大
 
-textSize-largest = 最大尺寸为 { $max }%。
+textSize-largest = 最大缩放为 { $max }%。
 
 textSize-notNumber = 请输入 { $min } 到 { $max } 之间的数字。
 
-textSize-reset = 恢复正常大小
+textSize-reset = 恢复为 100%
 
-textSize-smaller = 缩小文本
+textSize-smaller = 缩小
 
-textSize-smallest = 最小尺寸为 { $min }%。
+textSize-smallest = 最小缩放为 { $min }%。
 
-textSize-title = 文本大小
+textSize-title = 应用缩放
 
 unlock-autoLock = 闲置 { $count } 分钟后，以及 myCarlos 隐藏时（例如缩到最小或移至背景），保险库就会锁定。
 
@@ -1220,9 +1218,9 @@ unlock-submit = 解锁
 
 unlock-title = 解锁保险库
 
-unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，它们会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它们加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
-unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，它会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
 language-error-formatting = myCarlos 无法正确显示此消息。请选择其他语言或重新启动应用，并在重试前检查您的记录。
 
@@ -1308,7 +1306,7 @@ portal-approvalCancelled = 此批准请求已取消。请先检查最新状态�
 
 portal-approvalContact = 需要核实诊所的批准状态。请联系诊所了解后续步骤。
 
-portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「诊所文档」。
+portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「已连接的诊所」。
 
 portal-approvalMissing = 门户网站上找不到您已保存的批准请求。请重新发送已保存的请求。
 
@@ -1341,6 +1339,10 @@ portal-defaultDeviceName = { $platform } 上的 myCarlos
 portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
+
+portal-deviceLine = 设备：{ $device }
+
+portal-deviceLineLinked = 设备：{ $device }，关联于 { $date }
 
 portal-deviceDetailsShow = 显示设备详情
 
@@ -1400,7 +1402,7 @@ portal-serviceDate = 服务日期：{ $date }
 
 portal-serviceDateLabel = 服务日期
 
-portal-title = 诊所文档
+portal-title = 已连接的诊所
 
 rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
 
@@ -1416,13 +1418,13 @@ rename-title-profile = 重命名此人的文件夹
 
 portal-connectConsent = 此操作会连接此设备并发送批准请求。诊所必须先批准此设备，设备才能接收文档。
 
-portal-connected = 设备已关联。可在「安全」的「诊所文档」下查看其批准状态。
+portal-connected = 设备已关联。可在「安全」的「已连接的诊所」下查看其批准状态。
 
 portal-connecting = 正在连接并申请诊所批准…
 
 portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
 
-portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「已连接的诊所」下的批准状态，了解下一步操作。
 
 portal-retryApproval = 重试已保存的批准请求
 
@@ -1697,9 +1699,25 @@ ai-notInstalled-openPreferences = 打开 AI 助手设置
 
 aiHelper-resultLabel = 由 AI 撰写，可能有误。请向您的医生核实。
 
+aiHelper-resultLabelShort = AI 草稿
+
+aiHelper-resultLabelHide = 不再显示
+
+aiHelper-resultLabelInfo = “AI 草稿”是什么意思
+
+ai-label-settingsTitle = AI 回答上的提示
+
+ai-label-settingsBody = 每条 AI 回答都会说明由 AI 撰写、可能有误。选择“不再显示”后，完整的句子会由简短的“AI 草稿”标签代替。标签不会被移除。此选择保存在本设备上，模型或工具更换后会重新开始。
+
+ai-label-settingsShowFull = 再次显示完整提示
+
+ai-label-settingsFullShown = 每条 AI 回答都显示完整提示。
+
+ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的“AI 草稿”标签。
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = 在文档中显示
+ai-summary-showInDocument = 在文档中指给我看
 
 ai-summary-folded = 摘要已收起，以便为页面留出空间。
 
@@ -1835,6 +1853,19 @@ ai-explain-ready = 解释已生成。
 ai-failed = AI 助手未能完成。请重试。
 
 ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。
+ai-error-memoryNumbers = 目前可用内存不足，AI 助手无法运行。它需要约 { $needed } GB 可用内存，而现在只有 { $free } GB 可用。请关闭其他程序后重试。
+ai-error-memoryUnknown = 目前可用内存不足，AI 助手无法运行。它需要约 { $needed } GB 可用内存，而此电脑无法告知现有多少可用内存。请关闭其他程序后重试。
+ai-speed-title = 此电脑上的速度
+ai-speed-note = 这会在一小段虚构的文字上运行一次 AI 助手，并在一两分钟内较多占用处理器。不会向任何地方发送任何内容，也不会用到您的任何资料。您可以随时停止。
+ai-speed-button = 检查此电脑的速度
+ai-speed-working = 正在检查速度…
+ai-speed-cancel = 停止检查
+ai-speed-result = 在此电脑上测得：AI 助手每秒约读取 { $read } 个词，约写出 { $write } 个。
+ai-speed-cancelled = 检查已停止，未保存任何内容。
+ai-speed-none = 尚未检查。
+ai-speed-failed = 无法测出速度。请重试。
+ai-speed-estimate = 在此电脑上，这最多可能需要约 { $minutes } 分钟。
+ai-speed-estimateLong = 在此电脑上，这么长的文档可能无法在 AI 助手获得的时间内完成。
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
 
@@ -1996,6 +2027,7 @@ interface-AnonymizePreview-placeholder-manual = 已移除
 interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之后 { $days } 天
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = 其他写法 { $n }
 
 interface-AnonymizePreview-pasteTitle = 放回信息
 
@@ -2016,6 +2048,64 @@ interface-AnonymizePreview-pasteFlaggedSr = （请与原文核对）
 interface-AnonymizePreview-possibleNames = 可能是姓名的词
 
 interface-AnonymizePreview-removeWord = 移除“{ $word }”
+interface-AnonymizePreview-eponymTitle = 这些可能是医学术语
+interface-AnonymizePreview-eponymOne = 这可能是医学术语：{ $phrase }
+interface-AnonymizePreview-eponymKeep = 保留
+interface-AnonymizePreview-eponymKeepAll = 全部保留“{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
+
+interface-AnonymizePreview-removedSummaryNone = 尚未移除任何内容。
+
+interface-AnonymizePreview-removedCount-name = { $count } 个姓名
+
+interface-AnonymizePreview-removedCount-doctor = { $count } 位医生
+
+interface-AnonymizePreview-removedCount-clinic = { $count } 家诊所
+
+interface-AnonymizePreview-removedCount-healthCard = { $count } 个医保卡号
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count } 个病历号
+
+interface-AnonymizePreview-removedCount-sin = { $count } 个社会保险号
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count } 个出生日期
+
+interface-AnonymizePreview-removedCount-age = { $count } 个年龄
+
+interface-AnonymizePreview-removedCount-address = { $count } 个地址
+
+interface-AnonymizePreview-removedCount-postalCode = { $count } 个邮政编码
+
+interface-AnonymizePreview-removedCount-phone = { $count } 个电话号码
+
+interface-AnonymizePreview-removedCount-email = { $count } 个电子邮件地址
+
+interface-AnonymizePreview-removedCount-web = { $count } 个网址
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count } 个不明确的日期
+
+interface-AnonymizePreview-removedCount-manual = { $count } 项由您移除的内容
+
+interface-AnonymizePreview-removedCount-date = { $count } 个已替换的日期
+
+interface-AnonymizePreview-toCheck = { $count } 个词需要检查
+
+interface-AnonymizePreview-toCheckHelp = 高亮显示的是：在使用大写字母的文字（如英文、法文）中，句子中间以大写字母开头的词，以及三位或更多位的数字。它们可能识别出某个人。这并不能找出所有内容：它找不到全大写的姓名、位于行首的姓名、用没有大写字母的文字（如中文、韩文、阿拉伯文）写的姓名，以及同时是月份、药物或医学术语的姓名（如“June”、“Bell”）。请选择一个高亮的词，再选择“移除”，并自己阅读全部文本。
+
+interface-AnonymizePreview-checkPicked = “{ $word }”可能识别出某个人。
+
+interface-AnonymizePreview-savedFileNote = 保存的文件不受 myCarlos 保护。其中没有姓名，但包含医疗详情。用完后请将其删除。
+
+interface-AnonymizePreview-pasteWhereNote = 您把它粘贴到哪里，决定了什么会被保留：聊天服务可能会保存它，或根据您的账户设置从中学习。
+
+interface-AnonymizePreview-copy = 复制文本
+
+interface-AnonymizePreview-copied = 文本已复制。
+
+interface-AnonymizePreview-copyFailed = 无法复制文本。
+
+interface-AnonymizePreview-copyWarning = 复制的文本可能会留在此设备上：Windows 剪贴板历史记录和设备间的剪贴板同步可能会保留一份副本。
 
 interface-AnonymizePreview-removeSelected = 移除选中的文本
 
@@ -2060,13 +2150,27 @@ notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoNeedsNotices = 请先允许文档到达通知，才能开启此选项。
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
-notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
+notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“已连接的诊所”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
 noticesStep-title = 来自诊所的通知
 noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。
 noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变更这些设置：{ $notices }。
 noticesStep-done = 完成
 noticesStep-notNow = 暂不
+
+background-title = 后台运行
+background-keepRunning = 关闭窗口后让 myCarlos 继续在后台运行
+background-keepRunningHelp = 关闭窗口后，myCarlos 可以在后台继续运行，并在通知区域（Mac 上为菜单栏）显示一个图标。保险库会在窗口关闭时锁定，并保持锁定，直到您打开 myCarlos 并解锁。从图标中选择“退出”可完全关闭 myCarlos。
+background-startAtLogin = 登录此电脑时启动 myCarlos
+background-startAtLoginHelp = 您登录此电脑时，myCarlos 会启动。上面的选项开启时，它会在后台静默启动，保险库保持锁定；关闭时，它的窗口会打开。
+background-paused = 保险库锁定期间，myCarlos 无法检查诊所的新文档。解锁后即可检查。
+background-unavailable = 此电脑不支持后台图标。关闭窗口时，myCarlos 会完全关闭。
+background-error = 无法更改此设置，它保持原样。
+native-tray-open = 打开 myCarlos
+native-tray-quit = 退出 myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = 有一份新文档在等待。请解锁 myCarlos 查看。
 
 ai-summary-again = 重新生成摘要
 
@@ -2117,6 +2221,109 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 添加曾用全名
 personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。
+
+interface-received-confirmTitleOne = 要将 { $name } 导入“与我分享”吗？
+
+interface-received-confirmTitleMany = 要将 { $count } 份文档导入“与我分享”吗？
+
+interface-received-confirmBody = 在您选择“导入”之前不会添加任何内容。取消不会留下任何内容。
+
+interface-received-import = 导入
+
+reader-android-opening = 正在打开文档…
+
+reader-android-failed = myCarlos 无法显示此文档。请保存一份副本，用其他应用阅读。
+
+reader-android-tooLarge = 此 PDF 超过 20 MB。请保存一份副本，用其他应用阅读。
+
+reader-android-unavailable = 此设备不允许 myCarlos 在这里打开文档。请保存一份副本，用其他应用阅读。
+
+reader-android-page = 第 { $page } 页，共 { $total } 页，信件的图片
+
+reader-android-pageStatus = 第 { $page } 页，共 { $total } 页
+reader-android-pageFailed = 无法显示第 { $page } 页，共 { $total } 页。
+
+reader-android-previous = 上一页
+
+reader-android-next = 下一页
+
+reader-android-zoomIn = 放大
+
+reader-android-zoomOut = 缩小
+
+interface-video-name = 视频，{ $date }，{ $time }.mp4
+interface-RecordDialog-recordAVideo = 录制视频
+interface-RecordDialog-unavailable = 此设备上无法录制视频。
+interface-RecordDialog-why = 为什么？
+interface-RecordDialog-startingTheCameraAndMicrophone = 正在启动相机和麦克风…
+interface-RecordDialog-theVideoIsRecordedWithSound = 视频会连同声音一起录制，附近的人声也可能被录入。只有您可以打开它。
+interface-RecordDialog-yourPhoneAsksOnce = 手机会询问一次 myCarlos 是否可以使用相机和麦克风。它们只在录制时开启，停止录制、关闭此窗口或 myCarlos 锁定时会关闭。
+interface-RecordDialog-theCameraAndMicrophoneAreOn = 相机和麦克风只在录制时开启，停止录制、关闭此窗口或 myCarlos 锁定时会关闭。
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = 相机和麦克风已开启，但在您选择“开始录制”之前不会录制任何内容。
+interface-RecordDialog-pictureQuality = 画质
+interface-RecordDialog-standard = 标准（720p）
+interface-RecordDialog-high = 高（1080p）
+interface-RecordDialog-aboutStandardPerHour = 每小时约 1.1 GB
+interface-RecordDialog-aboutHighPerHour = 每小时约 2.5 至 4 GB
+interface-RecordDialog-useTheCameraAndMicrophone = 使用相机和麦克风
+interface-RecordDialog-startRecording = 开始录制
+interface-RecordDialog-recording = 正在录制
+interface-RecordDialog-paused = 已暂停
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = 已暂停。相机和麦克风仍处于开启状态。
+interface-RecordDialog-recorded = 已录制 { $time }
+interface-RecordDialog-recordingAt = 正在以 { $height }p 录制
+interface-RecordDialog-pauseRecording = 暂停录制
+interface-RecordDialog-resumeRecording = 继续录制
+interface-RecordDialog-stopAndSave = 停止并保存
+interface-RecordDialog-stopAndSaveTheVideo = 停止并保存视频？
+interface-RecordDialog-keepRecording = 继续录制
+interface-RecordDialog-savingTheVideo = 正在保存视频…
+interface-RecordDialog-recordingPaused = 录制已暂停。
+interface-RecordDialog-recordingResumed = 录制已继续。
+interface-RecordDialog-thisDeviceCannotRecordMp4 = 此设备无法以 myCarlos 能保存的格式录制视频。
+interface-RecordDialog-videoNeedsBoth = 视频需要同时使用相机和麦克风。
+interface-RecordDialog-nothingWasRecorded = 没有录到任何内容，因此未保存视频。
+interface-RecordDialog-videoSaved = 视频已保存：{ $name }
+interface-RecordDialog-videoSavedStopped = 录制已停止，因为设备报告了问题。已录制的内容已保存：{ $name }
+interface-RecordDialog-videoSavedHidden = 录制已停止，因为 myCarlos 被隐藏。已录制的内容已保存：{ $name }
+interface-RecordDialog-videoSavedSlow = 录制已停止，因为视频无法足够快地保存。已录制的内容已保存：{ $name }
+interface-VideoViewer-video = 视频
+interface-VideoViewer-player = 视频播放器：{ $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = 无法播放此视频。
+interface-VideoViewer-keys = 空格键播放或暂停。左右方向键快退或快进 { $seconds } 秒。上下方向键调节音量。M 键静音。
+interface-VideoViewer-playVideo = 播放视频
+interface-VideoHelp-title = 为什么我无法在此录制视频？
+interface-VideoHelp-engine = 录制视频需要此设备内置的网页引擎能够录制带声音的 MP4 视频，而此设备的引擎不支持。
+interface-VideoHelp-systems = 在 Windows 上，N 和 KN 版本在添加 Microsoft 媒体功能包之前不含媒体功能。在 Linux 上，myCarlos 需要软件包 gstreamer1.0-plugins-bad 和 gstreamer1.0-plugins-ugly 中的 GStreamer 插件。Android 7 或更早版本的手机，以及 iOS 14.5 之前的 iPhone，无法在应用中录制 MP4 视频。
+interface-VideoHelp-restWorks = 照片和文档照常使用。较新的系统更新可能会增加视频录制功能。
+interface-RecordingRecovery-closed = myCarlos 在您录制时关闭了。要保留已保存的视频吗？
+interface-RecordingRecovery-closedPaused = myCarlos 在录制暂停时关闭了。要保留已保存的视频吗？
+interface-RecordingRecovery-name = 录制：{ $name }
+interface-RecordingRecovery-askLater = 稍后再问
+interface-RecordingRecovery-delete = 删除
+interface-RecordingRecovery-keep = 保留视频
+interface-RecordingRecovery-kept = 已保留视频：{ $name }
+interface-RecordingRecovery-nothingToKeep = 没有保存任何完整的内容，因此没有可保留的视频。
+interface-RecordingRecovery-deleted = 未完成的录制已删除。
+interface-RecordingRecovery-deleteSure = 要删除此录制吗？此操作无法撤销。
+interface-RecordingRecovery-savedLocked = myCarlos 在您录制时锁定了。视频已保存：{ $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos 在录制暂停时锁定了。视频已保存：{ $name }
+interface-RecordDialog-videoSavedFailed = 录制已停止，因为其中一部分无法保存。此前已保存的内容已保留：{ $name }
+interface-RecordDialog-notEnoughRoom = 没有足够的空间录制视频，需要约 1 GB 的可用空间。请在此设备上释放一些空间，然后选择“重试”。
+interface-RecordDialog-lowOnRoom = 剩余空间不多。空间用完时，录制内容会被保存。
+interface-RecordDialog-lowOnRoomMinutes = 剩余空间不多：大约还能录制 { $minutes } 分钟。空间用完时，录制内容会被保存。
+interface-RecordDialog-videoSavedNoRoom = 已保存。空间已用完：{ $name }
+interface-RecordDialog-videoKeptUnfinished = 空间已用完，视频无法完成。它已作为未完成的录制保留：请释放一些空间，下次解锁时 myCarlos 会完成它。
+interface-RecordingRecovery-finishedWithRoom = 现在又有空间了，因此您未完成的视频已完成：{ $name }
+interface-RecordingRecovery-stillNoRoom = 空间仍然不足，无法完成您未完成的视频：{ $name }。请释放一些空间；它已保留。
+security-backup-size = 约 { $size }。
+security-backup-sizeWithVideos = 约 { $size }，其中视频占 { $videos }。
+security-backup-sizeNoVideos = 约 { $size }，不含视频。
+security-backup-leaveVideosOut = 不包含视频
+security-backup-leaveVideosOutHelp = 备份将不包含您的视频。如果您恢复该备份，视频不会恢复。
+restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它会带回其他所有内容，但您的视频不会在其中。它们会作为缺失的文件列在隐藏文档中。
+security-backup-sizeCalculating = 正在计算备份大小…
+interface-hidden-videoLeftOut = 备份中未包含的视频
 
 handover-section-title = 移交某人的记录
 
