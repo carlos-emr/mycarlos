@@ -4151,6 +4151,16 @@ async fn vault_backup_pick(
 
 /// How big a backup would be, and how much of it is video, asked before the
 /// patient chooses where to save it.
+/// "Not now" on the backup reminder: it stays away for 14 days.
+#[tauri::command]
+async fn vault_backup_reminder_snooze(store: State<'_, StoreHandle>) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| {
+        store.snooze_backup_reminder(crate::now_ms())
+    })
+    .await
+}
+
 #[tauri::command]
 async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
     let store = store.pin();
@@ -4229,7 +4239,7 @@ async fn vault_backup_picked(
             now_ms(),
             &plan,
         )?;
-        store.record_backup_saved(&place);
+        store.record_backup_saved(&place, leave_videos_out);
         Ok(())
     })
     .await
@@ -6813,6 +6823,7 @@ pub fn run() {
             vault_recover,
             vault_backup_pick,
             vault_backup_size,
+            vault_backup_reminder_snooze,
             vault_left_out_records,
             vault_backup_picked,
             vault_restore_pick,

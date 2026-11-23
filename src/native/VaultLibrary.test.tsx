@@ -2348,26 +2348,25 @@ describe("the AI helper's notice before the reader's first Summary", () => {
 });
 
 describe("backup reminder", () => {
-  const withDocuments = (count = 1): VaultSnapshot => ({
+  const DAY = 24 * 60 * 60 * 1000;
+  const withDocuments = (
+    count = 1,
+    backupReminder?: VaultSnapshot["backupReminder"],
+    importedAtMs = 1,
+  ): VaultSnapshot => ({
     ...snapshot,
     sharedProfileId: "FAKE-shared-for-backup-reminder",
-    records: Array.from({ length: count }, (_, index) =>
-      record(`FAKE-doc-${index}`, `FAKE Letter ${index}`, []),
-    ),
+    ...(backupReminder ? { backupReminder } : {}),
+    records: Array.from({ length: count }, (_, index) => ({
+      ...record(`FAKE-doc-${index}`, `FAKE Letter ${index}`, []),
+      importedAtMs,
+    })),
   });
   const note = () =>
     screen.queryByRole("note", { name: humanText("Backup reminder") });
-  const reset = () => {
-    try {
-      window.localStorage.removeItem("mycarlos.backupReminder.v1");
-    } catch {
-      // Storage unavailable: nothing to clear.
-    }
-  };
-  afterEach(reset);
+  const today = Math.floor(Date.now() / DAY);
 
   it("shows for a vault with documents and no backup, says plainly what a lost computer means, and offers the backup", () => {
-    reset();
     renderLibrary(withDocuments());
     expect(note()).toHaveHumanTextContent(
       "You have not made a myCarlos backup of this vault yet.",
@@ -2380,38 +2379,68 @@ describe("backup reminder", () => {
     ).toBeVisible();
   });
 
-  it("is not shown for an empty vault", () => {
-    reset();
+  it("is not shown for an empty vault, or a recent whole backup", () => {
     renderLibrary(snapshot);
+    expect(note()).toBeNull();
+    cleanup();
+    renderLibrary(withDocuments(1, { savedDay: today - 1 }));
     expect(note()).toBeNull();
   });
 
-  it("Not now puts it away, keeps focus on the page heading, and it stays away after the library opens again", async () => {
-    reset();
-    const { setNotice } = renderLibrary(withDocuments());
+  it("Not now asks the native side to snooze it, refreshes, and keeps focus on the page heading", async () => {
+    const snooze = vi.fn().mockResolvedValue(undefined);
+    const { setNotice } = renderLibrary(withDocuments(), 0, {
+      snoozeBackupReminder: snooze,
+    });
     fireEvent.click(
       within(note()!).getByRole("button", { name: humanText("Not now") }),
     );
-    expect(note()).toBeNull();
+    await waitFor(() => expect(snooze).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(setNotice).toHaveBeenCalled());
     expect(document.activeElement?.tagName).toBe("H1");
-    expect(setNotice).toHaveBeenCalled();
-    cleanup();
-    renderLibrary(withDocuments());
+  });
+
+  it("follows what the snapshot says: a snooze, an old backup, another vault or slot", () => {
+    const view = renderLibrary(
+      withDocuments(1, { snoozedUntilDay: today + 5 }),
+    );
+    expect(note()).toBeNull();
+    // Another vault (or slot) has no backup: the note is back with no page reload.
+    view.rerenderSnapshot(withDocuments(1, { savedDay: today - 40 }));
+    expect(note()).toHaveHumanTextContent("Your last myCarlos backup was on");
+    view.rerenderSnapshot(withDocuments(1, { savedDay: today - 1 }));
     expect(note()).toBeNull();
   });
 
-  it("comes back when the last backup is old", () => {
-    reset();
-    window.localStorage.setItem(
-      "mycarlos.backupReminder.v1",
-      JSON.stringify({
-        "FAKE-shared-for-backup-reminder": {
-          savedAtMs: Date.now() - 31 * 24 * 60 * 60 * 1000,
-          documentsThen: 1,
-        },
+  it("counts documents added after the backup's day, from their own dates", () => {
+    renderLibrary(
+      withDocuments(20, { savedDay: today - 2 }, (today - 1) * DAY + 1),
+    );
+    expect(note()).toHaveHumanTextContent("20 documents have been added");
+  });
+
+  it("a backup that left the videos out does not satisfy it", () => {
+    renderLibrary(withDocuments(1, { partialDay: today }));
+    expect(note()).toHaveHumanTextContent("left your videos out");
+  });
+
+  it("Make an encrypted backup opens Security with the Save backup button focused", async () => {
+    renderLibrary(withDocuments(), 0, {
+      backupSize: vi.fn().mockResolvedValue({
+        totalBytes: 10,
+        withoutVideosBytes: 10,
+        videoBytes: 0,
+        videoCount: 0,
+      }),
+    });
+    fireEvent.click(
+      within(note()!).getByRole("button", {
+        name: humanText("Make an encrypted backup"),
       }),
     );
-    renderLibrary(withDocuments());
-    expect(note()).toHaveHumanTextContent("Your last myCarlos backup was on");
+    const save = await screen.findByRole("button", {
+      name: humanText("Save encrypted backup…"),
+    });
+    await waitFor(() => expect(save).toHaveFocus());
   });
 });

@@ -1209,7 +1209,9 @@ export const MESSAGE_KEYS = [
   "backupReminder.never",
   "backupReminder.old",
   "backupReminder.many",
-  "backupReminder.phone",
+  "backupReminder.partial",
+  "backupReminder.ios",
+  "backupReminder.android",
   "backupReminder.computer",
   "backupReminder.make",
   "backupReminder.notNow",
@@ -2689,7 +2691,9 @@ const FLUENT_IDS_BY_KEY = {
   "backupReminder.never": "backupReminder-never",
   "backupReminder.old": "backupReminder-old",
   "backupReminder.many": "backupReminder-many",
-  "backupReminder.phone": "backupReminder-phone",
+  "backupReminder.partial": "backupReminder-partial",
+  "backupReminder.ios": "backupReminder-ios",
+  "backupReminder.android": "backupReminder-android",
   "backupReminder.computer": "backupReminder-computer",
   "backupReminder.make": "backupReminder-make",
   "backupReminder.notNow": "backupReminder-notNow",
@@ -4035,7 +4039,9 @@ export interface MessageArgsByKey {
   "backupReminder.never": undefined;
   "backupReminder.old": { date: FluentArgument };
   "backupReminder.many": { count: FluentArgument };
-  "backupReminder.phone": undefined;
+  "backupReminder.partial": undefined;
+  "backupReminder.ios": undefined;
+  "backupReminder.android": undefined;
   "backupReminder.computer": undefined;
   "backupReminder.make": undefined;
   "backupReminder.notNow": undefined;

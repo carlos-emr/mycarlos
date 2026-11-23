@@ -2546,9 +2546,13 @@ backupReminder-many = { $count ->
        *[other] { $count } documents have been added since your last myCarlos backup.
     }
 
-backupReminder-phone = On a phone, your vault is not part of iCloud or the phone’s own backups. If you lose or replace this phone without a myCarlos backup, you lose your vault.
+backupReminder-partial = Your last myCarlos backup left your videos out, so it does not hold everything.
 
-backupReminder-computer = Your vault is kept only on this computer, not in the computer’s own backups. If this computer is lost or replaced without a myCarlos backup, you lose your vault.
+backupReminder-ios = On an iPhone or iPad, your vault is not part of iCloud or the device’s own backups. If you lose or replace this device without a myCarlos backup, you lose your vault.
+
+backupReminder-android = On an Android phone or tablet, your vault is not part of the device’s own backups. If you lose or replace this device without a myCarlos backup, you lose your vault.
+
+backupReminder-computer = Your vault is kept only on this computer. If this computer is lost, replaced or reset without a myCarlos backup, and your own computer backups do not include myCarlos’s folder, you lose your vault.
 
 backupReminder-make = Make an encrypted backup
 

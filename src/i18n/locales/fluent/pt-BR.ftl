@@ -2581,9 +2581,13 @@ backupReminder-many = { $count ->
        *[other] { $count } documentos foram adicionados desde o seu último backup do myCarlos.
     }
 
-backupReminder-phone = Em um celular, seu cofre não faz parte do iCloud nem dos backups do próprio celular. Se você perder ou trocar este celular sem um backup do myCarlos, perde o seu cofre.
+backupReminder-partial = Seu último backup do myCarlos deixou de fora os seus vídeos, então não contém tudo.
 
-backupReminder-computer = Seu cofre é guardado somente neste computador, e não nos backups do próprio computador. Se este computador for perdido ou trocado sem um backup do myCarlos, você perde o seu cofre.
+backupReminder-ios = Em um iPhone ou iPad, seu cofre não faz parte do iCloud nem dos backups do próprio dispositivo. Se você perder ou trocar este dispositivo sem um backup do myCarlos, perde o seu cofre.
+
+backupReminder-android = Em um celular ou tablet Android, seu cofre não faz parte dos backups do próprio dispositivo. Se você perder ou trocar este dispositivo sem um backup do myCarlos, perde o seu cofre.
+
+backupReminder-computer = Seu cofre é guardado somente neste computador. Se este computador for perdido, trocado ou redefinido sem um backup do myCarlos, e os seus próprios backups do computador não incluírem a pasta do myCarlos, você perde o seu cofre.
 
 backupReminder-make = Fazer um backup criptografado
 

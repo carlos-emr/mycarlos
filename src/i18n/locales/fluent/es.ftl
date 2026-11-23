@@ -2581,9 +2581,13 @@ backupReminder-many = { $count ->
        *[other] Se han añadido { $count } documentos desde su última copia de seguridad de myCarlos.
     }
 
-backupReminder-phone = En un teléfono, su bóveda no forma parte de iCloud ni de las copias de seguridad del propio teléfono. Si pierde o cambia este teléfono sin una copia de seguridad de myCarlos, pierde su bóveda.
+backupReminder-partial = Su última copia de seguridad de myCarlos dejó fuera sus vídeos, así que no contiene todo.
 
-backupReminder-computer = Su bóveda se guarda solo en este ordenador, no en las copias de seguridad del propio ordenador. Si este ordenador se pierde o se cambia sin una copia de seguridad de myCarlos, pierde su bóveda.
+backupReminder-ios = En un iPhone o iPad, su bóveda no forma parte de iCloud ni de las copias de seguridad del propio dispositivo. Si pierde o cambia este dispositivo sin una copia de seguridad de myCarlos, pierde su bóveda.
+
+backupReminder-android = En un teléfono o tableta Android, su bóveda no forma parte de las copias de seguridad del propio dispositivo. Si pierde o cambia este dispositivo sin una copia de seguridad de myCarlos, pierde su bóveda.
+
+backupReminder-computer = Su bóveda se guarda solo en este ordenador. Si este ordenador se pierde, se cambia o se restablece sin una copia de seguridad de myCarlos, y las copias de seguridad de su propio ordenador no incluyen la carpeta de myCarlos, pierde su bóveda.
 
 backupReminder-make = Hacer una copia de seguridad cifrada
 

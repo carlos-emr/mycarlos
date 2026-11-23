@@ -68,15 +68,9 @@ import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
 import { isNoSpace, videoRecordingAvailable } from "./video";
-import { isPhone, namedAsPdf, photoName } from "./photo";
-import { BackupReminderNote } from "./BackupReminderNote";
-import {
-  dueBackupReminder,
-  readBackupMemory,
-  rememberBackup,
-  snoozeBackupReminder,
-  SNOOZE_DAYS,
-} from "./backupReminder";
+import { namedAsPdf, photoName } from "./photo";
+import { BackupReminderNote, type BackupDevice } from "./BackupReminderNote";
+import { dueBackupReminder, SNOOZE_DAYS } from "./backupReminder";
 import { LibraryItems } from "./LibraryItems";
 import {
   NAME_INPUT_MAX_LENGTH,
@@ -482,12 +476,12 @@ export function VaultLibrary({
   }, [section]);
   // People whose reminder was put off until the vault next opens.
   const [detailsNotNow, setDetailsNotNow] = useState<string[]>([]);
-  // The backup reminder: what this device remembers of backups of this vault (a device
-  // preference; the vault itself holds nothing for it).
-  const backupVaultKey = snapshot.sharedProfileId ?? "vault";
-  const [backupMemory, setBackupMemory] = useState(() =>
-    readBackupMemory(backupVaultKey),
-  );
+  // "Make an encrypted backup" on the backup reminder opens Security with the Save backup
+  // button focused, once; leaving Security forgets the request.
+  const [focusBackup, setFocusBackup] = useState(false);
+  useEffect(() => {
+    if (section !== "security") setFocusBackup(false);
+  }, [section]);
   const sharedProfileId = snapshot.sharedProfileId;
   // Everything the people hold, for the sidebar's tree: not Shared with me's.
   const peopleFolders = useMemo(
@@ -677,9 +671,21 @@ export function VaultLibrary({
           (person) =>
             missingDetails(person) && !detailsNotNow.includes(person.id),
         ));
+  // What the backup reminder remembers comes with the snapshot, from the native side (days only),
+  // so another vault or slot, a restore or a backup made anywhere changes it at once.
   const backupReminder = readOnly
     ? null
-    : dueBackupReminder(snapshot.records.length, backupMemory, Date.now());
+    : dueBackupReminder(
+        snapshot.records.map((record) => record.importedAtMs),
+        snapshot.backupReminder ?? {},
+        Date.now(),
+      );
+  const backupDevice: BackupDevice =
+    cameraPlatform === "ios"
+      ? "ios"
+      : cameraPlatform === "android"
+        ? "android"
+        : "computer";
   const sharedRecords = useMemo(
     () =>
       snapshot.records.filter(
@@ -1566,9 +1572,6 @@ export function VaultLibrary({
       let saved: SavedBackup | undefined;
       try {
         saved = await bridge.saveBackupToPicked(pickId, leaveVideosOut);
-        setBackupMemory(
-          rememberBackup(backupVaultKey, snapshot.records.length, Date.now()),
-        );
       } catch (error) {
         // On Android the steps may name no file, and this save may have been
         // over the one they say to keep, now emptied: a new backup comes
@@ -2175,23 +2178,27 @@ export function VaultLibrary({
                 {backupReminder && (
                   <BackupReminderNote
                     reminder={backupReminder}
-                    phone={Boolean(cameraPlatform && isPhone(cameraPlatform))}
+                    device={backupDevice}
                     busy={busy}
-                    onMake={openSecurity}
-                    onNotNow={() => {
-                      setBackupMemory(
-                        snoozeBackupReminder(backupVaultKey, Date.now()),
-                      );
-                      // The note is gone: say so, and keep the place.
-                      setNotice(
-                        deferredText(() =>
-                          translateNow("backupReminder.postponed", {
-                            days: SNOOZE_DAYS,
-                          }),
-                        ),
-                      );
-                      pageHeadingRef.current?.focus();
+                    onMake={() => {
+                      setFocusBackup(true);
+                      openSecurity();
                     }}
+                    onNotNow={() =>
+                      void run(async () => {
+                        await bridge.snoozeBackupReminder?.();
+                        await refresh();
+                        // The note is gone: say so, and keep the place.
+                        setNotice(
+                          deferredText(() =>
+                            translateNow("backupReminder.postponed", {
+                              days: SNOOZE_DAYS,
+                            }),
+                          ),
+                        );
+                        pageHeadingRef.current?.focus();
+                      })
+                    }
                   />
                 )}
                 <div className="native-profile-row">
@@ -2932,6 +2939,7 @@ export function VaultLibrary({
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
                 }
                 detailsFor={detailsFor}
+                focusBackup={focusBackup}
                 recoveryKeySetAtMs={snapshot.recoveryKeySetAtMs ?? null}
                 recoveryKeyLabel={snapshot.recoveryKeyLabel ?? null}
                 oldBackupsGuide={oldBackupsGuide}

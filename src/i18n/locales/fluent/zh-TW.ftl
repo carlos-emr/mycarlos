@@ -2325,9 +2325,13 @@ backupReminder-old = 您上一次 myCarlos 備份是在 { $date }。
 
 backupReminder-many = 自上次 myCarlos 備份以來，已新增 { $count } 份文件。
 
-backupReminder-phone = 在手機上，您的保險庫不屬於 iCloud 或手機本身的備份。若遺失或更換這支手機而沒有 myCarlos 備份，您將失去保險庫。
+backupReminder-partial = 您上一次 myCarlos 備份未包含影片，所以並不完整。
 
-backupReminder-computer = 您的保險庫只保存在這部電腦上，不在電腦本身的備份中。若這部電腦遺失或被更換而沒有 myCarlos 備份，您將失去保險庫。
+backupReminder-ios = 在 iPhone 或 iPad 上，您的保險庫不屬於 iCloud 或裝置本身的備份。若遺失或更換這部裝置而沒有 myCarlos 備份，您將失去保險庫。
+
+backupReminder-android = 在 Android 手機或平板上，您的保險庫不屬於裝置本身的備份。若遺失或更換這部裝置而沒有 myCarlos 備份，您將失去保險庫。
+
+backupReminder-computer = 您的保險庫只保存在這部電腦上。若這部電腦遺失、被更換或被重設，而沒有 myCarlos 備份，且您自己的電腦備份不包含 myCarlos 的資料夾，您將失去保險庫。
 
 backupReminder-make = 製作加密備份
 

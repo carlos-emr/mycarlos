@@ -60,6 +60,8 @@ interface SecuritySettingsProps {
     id: string,
     details: PersonDetails,
   ) => Promise<boolean>;
+  /** Focus the Save backup button once, from the library's backup reminder. */
+  focusBackup?: boolean;
   /** A person whose Edit details opens, from the library's reminder (#234). */
   detailsFor?: { profileId: string } | null;
   hiddenCount: number;
@@ -191,6 +193,7 @@ export function SecuritySettings({
   people = [],
   onUpdateProfileDetails,
   detailsFor,
+  focusBackup = false,
   recoveryKeySetAtMs,
   recoveryKeyLabel = null,
   oldBackupsGuide = null,
@@ -205,6 +208,11 @@ export function SecuritySettings({
   onDialogChange,
 }: SecuritySettingsProps) {
   const { t } = useI18n();
+  // From the library's backup reminder: the Save backup button takes the focus (once).
+  const saveBackupRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (focusBackup) saveBackupRef.current?.focus();
+  }, [focusBackup]);
   // The size a backup would be, with or without the videos (#359).
   const [leaveVideosOut, setLeaveVideosOut] = useState(false);
   const [backupSize, setBackupSize] = useState<BackupSize | null>(null);
@@ -602,6 +610,7 @@ export function SecuritySettings({
           </div>
           <div>
             <button
+              ref={saveBackupRef}
               className="button"
               type="button"
               disabled={busy || readOnly}

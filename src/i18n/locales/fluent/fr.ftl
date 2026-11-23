@@ -2581,9 +2581,13 @@ backupReminder-many = { $count ->
        *[other] { $count } documents ont été ajoutés depuis votre dernière sauvegarde myCarlos.
     }
 
-backupReminder-phone = Sur un téléphone, votre coffre ne fait partie ni d’iCloud ni des sauvegardes du téléphone lui-même. Si vous perdez ou remplacez ce téléphone sans sauvegarde myCarlos, vous perdez votre coffre.
+backupReminder-partial = Votre dernière sauvegarde myCarlos a laissé de côté vos vidéos : elle ne contient donc pas tout.
 
-backupReminder-computer = Votre coffre n’est conservé que sur cet ordinateur, et non dans les sauvegardes de l’ordinateur lui-même. Si cet ordinateur est perdu ou remplacé sans sauvegarde myCarlos, vous perdez votre coffre.
+backupReminder-ios = Sur un iPhone ou un iPad, votre coffre ne fait partie ni d’iCloud ni des sauvegardes de l’appareil lui-même. Si vous perdez ou remplacez cet appareil sans sauvegarde myCarlos, vous perdez votre coffre.
+
+backupReminder-android = Sur un téléphone ou une tablette Android, votre coffre ne fait pas partie des sauvegardes de l’appareil lui-même. Si vous perdez ou remplacez cet appareil sans sauvegarde myCarlos, vous perdez votre coffre.
+
+backupReminder-computer = Votre coffre n’est conservé que sur cet ordinateur. Si cet ordinateur est perdu, remplacé ou réinitialisé sans sauvegarde myCarlos, et que vos propres sauvegardes d’ordinateur n’incluent pas le dossier de myCarlos, vous perdez votre coffre.
 
 backupReminder-make = Faire une sauvegarde chiffrée
 

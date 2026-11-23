@@ -1582,6 +1582,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // --- Security: encrypted backup ---
           // The size the backup would have, with and without videos (#359):
           // the fake holds no video.
+          case "vault_backup_reminder_snooze":
+            refuseLocked();
+            return null;
           case "vault_backup_size": {
             refuseLocked();
             const bytes = snapshot.records.reduce(

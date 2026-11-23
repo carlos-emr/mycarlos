@@ -2662,9 +2662,13 @@ backupReminder-many = { $count ->
        *[other] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokumentów.
     }
 
-backupReminder-phone = Na telefonie Twój sejf nie jest częścią iCloud ani kopii zapasowych samego telefonu. Jeśli zgubisz lub wymienisz ten telefon bez kopii zapasowej myCarlos, stracisz sejf.
+backupReminder-partial = Ostatnia kopia zapasowa myCarlos pominęła Twoje filmy, więc nie zawiera wszystkiego.
 
-backupReminder-computer = Twój sejf jest przechowywany tylko na tym komputerze, a nie w kopiach zapasowych samego komputera. Jeśli ten komputer zostanie zgubiony lub wymieniony bez kopii zapasowej myCarlos, stracisz sejf.
+backupReminder-ios = Na iPhonie lub iPadzie Twój sejf nie jest częścią iCloud ani kopii zapasowych samego urządzenia. Jeśli zgubisz lub wymienisz to urządzenie bez kopii zapasowej myCarlos, stracisz sejf.
+
+backupReminder-android = Na telefonie lub tablecie z Androidem Twój sejf nie jest częścią kopii zapasowych samego urządzenia. Jeśli zgubisz lub wymienisz to urządzenie bez kopii zapasowej myCarlos, stracisz sejf.
+
+backupReminder-computer = Twój sejf jest przechowywany tylko na tym komputerze. Jeśli ten komputer zostanie zgubiony, wymieniony lub zresetowany bez kopii zapasowej myCarlos, a Twoje własne kopie zapasowe komputera nie obejmują folderu myCarlos, stracisz sejf.
 
 backupReminder-make = Zrób zaszyfrowaną kopię zapasową
 

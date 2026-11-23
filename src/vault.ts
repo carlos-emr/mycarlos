@@ -168,6 +168,12 @@ export interface VaultSnapshot {
   recoveryKeySetAtMs?: number | null;
   /** Its short label, which its kit shows (not secret), if it has one. */
   recoveryKeyLabel?: string | null;
+  /** What the backup reminder remembers: days only, kept natively beside the vault. */
+  backupReminder?: {
+    savedDay?: number;
+    partialDay?: number;
+    snoozedUntilDay?: number;
+  };
   /** The reserved profile that files shared to myCarlos wait in (#61): shown
    * as the "Shared with me" folder, never as a person. In `profiles` once the
    * first file has arrived. */
@@ -576,6 +582,8 @@ export interface VaultBridge {
   ): Promise<SavedBackup>;
   /** How big a backup would be, with or without the videos (#359). */
   backupSize(): Promise<BackupSize>;
+  /** "Not now" on the backup reminder: it stays away for 14 days. */
+  snoozeBackupReminder?(): Promise<void>;
   /** The records a backup was made without the file of (ids). */
   leftOutRecords(): Promise<string[]>;
   /** Asks which backup to restore, while no vault is open. */
@@ -1202,6 +1210,7 @@ export function createVaultBridge(): VaultBridge {
         request: { pickId, leaveVideosOut },
       }),
     backupSize: () => invoke<BackupSize>("vault_backup_size"),
+    snoozeBackupReminder: () => invoke<void>("vault_backup_reminder_snooze"),
     leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),

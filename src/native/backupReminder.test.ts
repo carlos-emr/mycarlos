@@ -3,134 +3,110 @@ import {
   REMIND_AFTER_DAYS,
   REMIND_AFTER_DOCUMENTS,
   SNOOZE_DAYS,
+  dayOf,
+  dayStartMs,
   dueBackupReminder,
-  readBackupMemory,
-  rememberBackup,
-  snoozeBackupReminder,
 } from "./backupReminder";
 
 const DAY = 24 * 60 * 60 * 1000;
-const NOW = Date.UTC(2026, 10, 24);
-
-function fakeStorage(initial?: string): Storage {
-  const items = new Map<string, string>(
-    initial === undefined ? [] : [["mycarlos.backupReminder.v1", initial]],
-  );
-  return {
-    get length() {
-      return items.size;
-    },
-    clear: () => items.clear(),
-    getItem: (key) => items.get(key) ?? null,
-    key: (index) => [...items.keys()][index] ?? null,
-    removeItem: (key) => void items.delete(key),
-    setItem: (key, value) => void items.set(key, value),
-  };
-}
+const NOW = Date.UTC(2026, 10, 24, 15);
+const TODAY = dayOf(NOW);
+const dates = (count: number, at = NOW) =>
+  Array.from({ length: count }, () => at);
 
 describe("when the backup reminder is due", () => {
   it("is never due for an empty vault", () => {
-    expect(dueBackupReminder(0, {}, NOW)).toBeNull();
+    expect(dueBackupReminder([], {}, NOW)).toBeNull();
   });
 
   it("is due when documents are there and no backup was made", () => {
-    expect(dueBackupReminder(1, {}, NOW)).toEqual({ kind: "never" });
+    expect(dueBackupReminder(dates(1), {}, NOW)).toEqual({ kind: "never" });
   });
 
-  it("is due once the last backup is 30 days old, not before", () => {
-    const saved = NOW - REMIND_AFTER_DAYS * DAY;
+  it("a backup that left the videos out does not satisfy it", () => {
+    expect(dueBackupReminder(dates(1), { partialDay: TODAY }, NOW)).toEqual({
+      kind: "partial",
+    });
+    // A whole one beside it does.
     expect(
-      dueBackupReminder(5, { savedAtMs: saved + 1, documentsThen: 5 }, NOW),
+      dueBackupReminder(dates(1), { partialDay: TODAY, savedDay: TODAY }, NOW),
     ).toBeNull();
-    expect(
-      dueBackupReminder(5, { savedAtMs: saved, documentsThen: 5 }, NOW),
-    ).toEqual({ kind: "old", savedAtMs: saved });
   });
 
-  it("is due after 20 new documents, not 19", () => {
-    const memory = { savedAtMs: NOW - DAY, documentsThen: 10 };
+  it("is due once the last whole backup is 30 days old, not before", () => {
+    const old = TODAY - REMIND_AFTER_DAYS;
     expect(
-      dueBackupReminder(10 + REMIND_AFTER_DOCUMENTS - 1, memory, NOW),
+      dueBackupReminder(dates(3, dayStartMs(old)), { savedDay: old + 1 }, NOW),
     ).toBeNull();
-    expect(dueBackupReminder(10 + REMIND_AFTER_DOCUMENTS, memory, NOW)).toEqual(
-      { kind: "many", added: REMIND_AFTER_DOCUMENTS },
-    );
+    expect(
+      dueBackupReminder(dates(3, dayStartMs(old)), { savedDay: old }, NOW),
+    ).toEqual({
+      kind: "old",
+      savedDay: old,
+    });
+  });
+
+  it("is due after 20 documents added after the backup's day, not 19, and not those of the same day", () => {
+    const state = { savedDay: TODAY - 1 };
+    const later = (count: number) => dates(count, dayStartMs(TODAY));
+    expect(
+      dueBackupReminder(later(REMIND_AFTER_DOCUMENTS - 1), state, NOW),
+    ).toBeNull();
+    expect(
+      dueBackupReminder(later(REMIND_AFTER_DOCUMENTS), state, NOW),
+    ).toEqual({
+      kind: "many",
+      added: REMIND_AFTER_DOCUMENTS,
+    });
+    // Twenty documents the day of the backup itself are not "since".
+    expect(
+      dueBackupReminder(
+        dates(REMIND_AFTER_DOCUMENTS, dayStartMs(TODAY - 1) + 3_600_000),
+        state,
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("deleting twenty and adding twenty counts twenty, not zero (dates, not a count)", () => {
+    const state = { savedDay: TODAY - 2 };
+    const replaced = dates(REMIND_AFTER_DOCUMENTS, dayStartMs(TODAY - 1));
+    expect(dueBackupReminder(replaced, state, NOW)).toEqual({
+      kind: "many",
+      added: REMIND_AFTER_DOCUMENTS,
+    });
   });
 
   it("takes other limits when asked", () => {
-    const memory = { savedAtMs: NOW - 8 * DAY, documentsThen: 0 };
+    const state = { savedDay: TODAY - 8 };
     expect(
-      dueBackupReminder(3, memory, NOW, { days: 7, documents: 99 }),
-    ).toEqual({ kind: "old", savedAtMs: memory.savedAtMs });
-    expect(
-      dueBackupReminder(3, { ...memory, savedAtMs: NOW }, NOW, {
-        days: 99,
-        documents: 3,
+      dueBackupReminder(dates(3, NOW - 9 * DAY), state, NOW, {
+        days: 7,
+        documents: 99,
       }),
-    ).toEqual({ kind: "many", added: 3 });
+    ).toEqual({
+      kind: "old",
+      savedDay: TODAY - 8,
+    });
   });
 
-  it("does not call a backup dated in the future old", () => {
+  it("does not let a clock set back hide it: a backup day in the future is old", () => {
+    expect(dueBackupReminder(dates(2), { savedDay: TODAY + 5 }, NOW)).toEqual({
+      kind: "old",
+      savedDay: TODAY + 5,
+    });
+  });
+
+  it("stays away for the snooze, then comes back; a snooze longer than the app sets is over", () => {
+    const until = TODAY + SNOOZE_DAYS;
     expect(
-      dueBackupReminder(2, { savedAtMs: NOW + DAY, documentsThen: 2 }, NOW),
+      dueBackupReminder(dates(2), { snoozedUntilDay: until }, NOW),
     ).toBeNull();
-  });
-
-  it("stays away for the snooze, then comes back", () => {
-    const snoozedUntilMs = NOW + SNOOZE_DAYS * DAY;
-    expect(dueBackupReminder(2, { snoozedUntilMs }, NOW)).toBeNull();
     expect(
-      dueBackupReminder(2, { snoozedUntilMs }, snoozedUntilMs - 1),
-    ).toBeNull();
-    expect(dueBackupReminder(2, { snoozedUntilMs }, snoozedUntilMs)).toEqual({
-      kind: "never",
-    });
-  });
-});
-
-describe("what the device remembers", () => {
-  it("remembers a backup per vault, and a snooze for 14 days", () => {
-    const storage = fakeStorage();
-    rememberBackup("vault-a", 12, NOW, storage);
-    expect(readBackupMemory("vault-a", storage)).toEqual({
-      savedAtMs: NOW,
-      documentsThen: 12,
-    });
-    expect(readBackupMemory("vault-b", storage)).toEqual({});
-    snoozeBackupReminder("vault-a", NOW, storage);
-    expect(readBackupMemory("vault-a", storage).snoozedUntilMs).toBe(
-      NOW + 14 * DAY,
-    );
-  });
-
-  it("a new backup ends a snooze", () => {
-    const storage = fakeStorage();
-    snoozeBackupReminder("v", NOW, storage);
-    rememberBackup("v", 3, NOW + DAY, storage);
-    expect(readBackupMemory("v", storage)).toEqual({
-      savedAtMs: NOW + DAY,
-      documentsThen: 3,
-    });
-  });
-
-  it("reads nothing from damaged or foreign storage, and never throws", () => {
-    expect(readBackupMemory("v", fakeStorage("not json"))).toEqual({});
-    expect(readBackupMemory("v", fakeStorage("[1,2]"))).toEqual({});
+      dueBackupReminder(dates(2), { snoozedUntilDay: TODAY }, NOW),
+    ).toEqual({ kind: "never" });
     expect(
-      readBackupMemory(
-        "v",
-        fakeStorage(
-          JSON.stringify({ v: { savedAtMs: "soon", documentsThen: -4 } }),
-        ),
-      ),
-    ).toEqual({});
-    expect(readBackupMemory("v", null)).toEqual({});
-    const failing = {
-      ...fakeStorage(),
-      setItem: () => {
-        throw new Error("full");
-      },
-    } as Storage;
-    expect(() => rememberBackup("v", 1, NOW, failing)).not.toThrow();
+      dueBackupReminder(dates(2), { snoozedUntilDay: until + 1 }, NOW),
+    ).toEqual({ kind: "never" });
   });
 });
