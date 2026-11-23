@@ -2253,6 +2253,8 @@ impl VaultStore {
             if cancelled() {
                 return Err(VaultError::Portal(LinkError::Cancelled));
             }
+            // Gone between the early check above and this commit (a second removal won the
+            // race): nothing to do, and `false` makes this commit write nothing of its own.
             let Some(index) = manifest.portal_links.iter().position(|l| l.id == link_id) else {
                 return Ok(false);
             };
@@ -8591,12 +8593,24 @@ impl VaultStore {
         self.session().as_ref().map(|open| open.manifest.vault_id)
     }
 
-    /// The ids of the clinic links in the open vault (none when locked).
-    pub(crate) fn linked_ids(&self) -> HashSet<Uuid> {
-        self.session()
-            .as_ref()
-            .map(|open| open.manifest.portal_links.iter().map(|l| l.id).collect())
-            .unwrap_or_default()
+    /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the
+    /// vault id and its links under ONE session guard and doing the wipe inside it, so a lock in
+    /// between cannot turn into a sweep with an empty link set that wipes every live key. Returns
+    /// false, and sweeps nothing, when the vault is locked.
+    pub(crate) fn sweep_notice_keys(&self) -> bool {
+        self.with_open_links(crate::notice_key::sweep_removed_links)
+    }
+
+    /// Calls `f` with the open vault's id and its link ids while holding the session guard; false
+    /// (and `f` not called) when locked.
+    fn with_open_links(&self, f: impl FnOnce(Uuid, &HashSet<Uuid>)) -> bool {
+        let guard = self.session();
+        let Some(open) = guard.as_ref() else {
+            return false;
+        };
+        let links: HashSet<Uuid> = open.manifest.portal_links.iter().map(|l| l.id).collect();
+        f(open.manifest.vault_id, &links);
+        true
     }
 }
 

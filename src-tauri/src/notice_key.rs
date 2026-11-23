@@ -514,10 +514,17 @@ pub(crate) fn kept() -> Option<&'static NoticeKeys<Box<dyn WrapKeyStore>>> {
 /// After a vault opens: any other vault's keys go. Nothing makes keys yet,
 /// so nothing is owed to the Portal; their revocation comes with its route
 /// (#87, step 3 of #230).
-pub(crate) fn after_open(vault_id: Uuid, links: &std::collections::HashSet<Uuid>) {
+pub(crate) fn after_open(vault_id: Uuid) {
     if let Some(keys) = kept() {
         let _ = keys.keep_only_vault(vault_id);
-        // Keys whose link was removed before their wipe finished (#160).
+    }
+}
+
+/// Keys of this vault whose link is not in `links`: a removal's key wipe that did not finish (#160).
+/// Only ever called from `VaultStore::sweep_notice_keys`, which holds the vault's session guard, so
+/// `links` is the vault's real link set at that instant and the vault cannot lock under it.
+pub(crate) fn sweep_removed_links(vault_id: Uuid, links: &std::collections::HashSet<Uuid>) {
+    if let Some(keys) = kept() {
         let _ = keys.keep_only_links(vault_id, links);
     }
 }

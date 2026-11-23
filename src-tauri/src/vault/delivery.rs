@@ -8050,6 +8050,23 @@ mod approval_recovery_tests {
         store.remove_portal_link(Uuid::new_v4(), session).unwrap();
         assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
     }
+    /// #160 review: the notice-key sweep reads the vault id and its links under one guard, so a
+    /// locked vault gives no sweep (never one with an empty link set), and an open one is swept
+    /// with exactly its links.
+    #[test]
+    fn should_not_sweep_notice_keys_when_the_vault_is_locked() {
+        let (_temp, store, other, _) = setup(false);
+        let mut seen = None;
+        assert!(store.with_open_links(|vault, links| seen = Some((vault, links.clone()))));
+        let (vault, links) = seen.unwrap();
+        assert_eq!(Some(vault), store.open_vault_id());
+        assert!(links.contains(&other.id));
+        store.lock();
+        let mut called = false;
+        assert!(!store.with_open_links(|_, _| called = true));
+        assert!(!called, "a locked vault must give no sweep");
+        assert!(!store.sweep_notice_keys());
+    }
     /// #160: a link with a filed document keeps its keys (its custody proof is checked with them at
     /// every unlock), so removing it is refused and nothing changes.
     #[test]
