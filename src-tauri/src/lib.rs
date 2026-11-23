@@ -1363,6 +1363,18 @@ fn collapse_whitespace(text: &str) -> zeroize::Zeroizing<String> {
     zeroize::Zeroizing::new(text.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
+/// `text` in lower case, character by character, into a buffer that is overwritten when it goes.
+/// Per character, as the reader folds: `str::to_lowercase` reads a Greek capital sigma at the end
+/// of a word as a final sigma, which would refuse a term the reader found. The buffer is sized
+/// for the longest expansion (one character to three bytes from two), so it never moves.
+fn fold_case(text: &str) -> zeroize::Zeroizing<String> {
+    let mut folded = zeroize::Zeroizing::new(String::with_capacity(text.len() * 2));
+    for char in text.chars() {
+        folded.extend(char.to_lowercase());
+    }
+    folded
+}
+
 impl ShownPages {
     fn list(&self) -> std::sync::MutexGuard<'_, Vec<ShownPage>> {
         self.0
@@ -1424,7 +1436,7 @@ impl ShownPages {
             return Some(wanted);
         }
         let term = collapse_whitespace(term);
-        if !term.is_empty() && !wanted.to_lowercase().contains(&*term.to_lowercase()) {
+        if !term.is_empty() && !fold_case(&wanted).contains(fold_case(&term).as_str()) {
             return None;
         }
         self.list()
@@ -4582,13 +4594,18 @@ async fn vault_view_page(
     let ticket = pdf_view::ViewTicket::new();
     let session = picks.session();
     let result = run_blocking(store.inner(), move |store| {
-        let size = store
-            .snapshot()?
+        let snapshot = store.snapshot()?;
+        let record = snapshot
             .records
             .iter()
             .find(|record| record.id == record_id)
-            .ok_or(VaultError::NotFound)?
-            .plaintext_size;
+            .ok_or(VaultError::NotFound)?;
+        // A hidden document is not shown, so a view that began before it was hidden cannot note
+        // its page afterwards (#240).
+        if record.hidden.is_some() {
+            return Err(VaultError::NotFound);
+        }
+        let size = record.plaintext_size;
         if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
             return Err(VaultError::PdfTooLarge);
         }
@@ -8736,6 +8753,18 @@ mod photo_command_tests {
             accepts(session, here, "anything", " \n ").as_deref(),
             Some("")
         );
+        // A Greek capital sigma at the end of a word folds as the reader folds it (to σ), so a
+        // term found on the page is not refused for the context's final-sigma form.
+        shown.note(
+            &|| session,
+            session,
+            other,
+            0,
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+        );
+        assert!(accepts(session, other, "οδυσσεασ", "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.").is_some());
+        shown.forget_record(other);
         // A sentence that does not hold the term is refused, though it is the page's own.
         assert!(accepts(session, here, "pneumonia", "has a fake condition.").is_none());
         // Words the pages never held, a sentence stitched from two, another document's pages, and
@@ -8867,6 +8896,8 @@ mod photo_command_tests {
         let view = body("async fn vault_view_page(");
         assert!(view.contains("note_shown_page("));
         assert!(view.find("note_shown_page(").unwrap() > view.find("ticket.is_current()").unwrap());
+        // A hidden document is not drawn at all.
+        assert!(view.contains("record.hidden.is_some()"));
         // Hiding a document, one or several, forgets its pages and stops a page being drawn.
         for command in [
             "async fn vault_hide_record(",
