@@ -1231,6 +1231,20 @@ p {
 .native-reader-ai .ai-label-short .ai-label {
   margin: 0;
 }
+.native-reader-ai .native-reader-ai-about {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-bottom: 12px;
+}
+.native-reader-ai .native-reader-ai-about h4,
+.native-reader-ai .native-reader-ai-about p {
+  margin: 0;
+}
+.native-reader-ai .native-reader-ai-about p {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
 .native-reader-ai .ai-meta {
   color: var(--ink-soft);
   font-size: 0.875rem;
@@ -2604,7 +2618,7 @@ p {
 
 /* #67: bigger by default in the app. Body text is 16px; counts, dates, captions and
    other secondary text stay at 14px, the floor. Every button, tick box, field and link
-   is a target of at least 44px. Text size in Preferences still scales all of it. */
+   is a target of at least 44px. App zoom in Preferences still scales all of it. */
 .native-vault-page
   :is(
     .button,
@@ -4338,8 +4352,22 @@ button:disabled,
   font-size: 0.875rem;
 }
 
+/* Connected clinics is full width, and reads like the other Security sections: the same
+   2px side inset as a settings row, a heading laid out as theirs is (below), and the text
+   under it in the same soft colour and line. */
 .portal-documents {
   margin-block-end: 2rem;
+  padding-inline: 2px;
+}
+/* In Security the clinics sit between two lists of settings. */
+.setting-list + .portal-documents {
+  margin-block-start: 1.25rem;
+}
+.portal-documents > p {
+  max-width: 700px;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  line-height: 1.5;
 }
 .portal-link {
   margin-block: 1.25rem;
@@ -4347,10 +4375,14 @@ button:disabled,
   border: 1px solid var(--line);
   border-radius: 0.5rem;
 }
-/* #124 review: "Clinic documents" is a Security section like the others, so
+/* #124 review: "Connected clinics" is a Security section like the others, so
    its heading has their size (.setting-row h2), and a clinic's name in its
    card is no larger than that heading. */
 .portal-documents > h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--ink);
   font-size: 1rem;
@@ -4386,7 +4418,7 @@ button:disabled,
   overflow-wrap: anywhere;
   font-family: monospace;
 }
-/* Clinic documents lists working links only; earlier attempts and each card's device code and
+/* Connected clinics lists working links only; earlier attempts and each card's device code and
    fingerprint wait behind a button and a disclosure. */
 .portal-device-details {
   margin-block: 0.75rem;
@@ -4401,7 +4433,8 @@ button:disabled,
 .portal-earlier-toggle {
   margin-block: 0.25rem 1rem;
 }
-.portal-address {
+.portal-address,
+.portal-device-line {
   overflow-wrap: anywhere;
 }
 .portal-documents .native-inline-form {

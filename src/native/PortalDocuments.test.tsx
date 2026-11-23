@@ -142,7 +142,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ]),
     );
     expect(bridge.connectPortal).toHaveBeenCalledOnce();
@@ -209,7 +209,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Clinic documents, says what to do next.",
+        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Connected clinics, says what to do next.",
       ]),
     );
     await userEvent
@@ -237,7 +237,7 @@ describe("native clinic document controls", () => {
     ],
     [
       "approval_expired",
-      "This approval request expired. To ask again for this device, go to Security, under Clinic documents.",
+      "This approval request expired. To ask again for this device, go to Security, under Connected clinics.",
       "portal.approvalExpired",
     ],
     [
@@ -280,7 +280,7 @@ describe("native clinic document controls", () => {
       const form = await fillConnectForm();
       await act(async () => fireEvent.submit(form));
       const guidance =
-        "Device linked. Its approval status in Security, under Clinic documents, says what to do next.";
+        "Device linked. Its approval status in Security, under Connected clinics, says what to do next.";
       await waitFor(() =>
         expect(noticeCalls(props.setNotice)).toContainEqual([
           `${reason} ${guidance}`,
@@ -392,6 +392,49 @@ describe("native clinic document controls", () => {
     expect(screen.queryByText(incomplete)).not.toBeInTheDocument();
   });
 
+  it("tells two cards for the same address apart by device name and the day linked (#160)", async () => {
+    const day = (iso: string) => new Date(iso).getTime();
+    const second: PortalLinkSummary = {
+      ...link,
+      id: "second-link",
+      deviceName: "FAKE reception desktop",
+      deviceKeyId: "FAKE_second",
+      linkedAtMs: day("2026-11-12T12:00:00Z"),
+    };
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [
+          { ...link, linkedAtMs: day("2026-10-03T12:00:00Z") },
+          second,
+        ],
+      },
+    });
+    const cards = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.closest(".portal-link") as HTMLElement);
+    expect(cards).toHaveLength(2);
+    const lines = cards.map(
+      (card) => card.querySelector(".portal-device-line")!.textContent,
+    );
+    // Same clinic, same address; the lines differ, and each names its device and day.
+    expect(lines[0]).not.toBe(lines[1]);
+    expect(lines[0]).toContain("myCarlos on Windows");
+    expect(lines[0]).toMatch(/Oct\w* 3, 2026/);
+    expect(lines[1]).toContain("FAKE reception desktop");
+    expect(lines[1]).toMatch(/Nov\w* 12, 2026/);
+  });
+
+  it("shows only the device name when the link's day is not known", () => {
+    fixture({ snapshot: { ...snapshot, portalLinks: [link] } });
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).toContain("myCarlos on Windows");
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).not.toMatch(/linked/);
+  });
+
   it("lists a device a check found removed with the earlier attempts, for the session", async () => {
     const approved: PortalLinkSummary = {
       ...link,
@@ -449,7 +492,7 @@ describe("native clinic document controls", () => {
     expect(props.setNotice).toHaveBeenCalledOnce();
     expect(noticeCalls(props.setNotice)).toEqual([
       [
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ],
     ]);
   });
@@ -584,10 +627,10 @@ describe("native clinic document controls", () => {
     const input = screen.getByLabelText("Device code") as HTMLInputElement;
     expect(input.selectionEnd! - input.selectionStart!).toBe(deviceCode.length);
     if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
-      const section = screen.getByRole("region", { name: "Clinic documents" });
+      const section = screen.getByRole("region", { name: "Connected clinics" });
       await page.viewport(1100, Math.ceil(section.scrollHeight) + 50);
       await page
-        .getByRole("region", { name: "Clinic documents" })
+        .getByRole("region", { name: "Connected clinics" })
         .screenshot({ path: "portal-pending-after.png" });
     }
     await page.viewport(360, 780);
@@ -601,11 +644,11 @@ describe("native clinic document controls", () => {
       expect(field.scrollHeight).toBeLessThanOrEqual(field.clientHeight + 2);
       if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
         const section = screen.getByRole("region", {
-          name: "Clinic documents",
+          name: "Connected clinics",
         });
         await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
         await page
-          .getByRole("region", { name: "Clinic documents" })
+          .getByRole("region", { name: "Connected clinics" })
           .screenshot({ path: "portal-pending-narrow-200.png" });
       }
     } finally {
@@ -2196,11 +2239,11 @@ describe("the code a clinic emails (#141)", () => {
       expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
       if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
         const section = screen.getByRole("region", {
-          name: "Clinic documents",
+          name: "Connected clinics",
         });
         await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
         await page
-          .getByRole("region", { name: "Clinic documents" })
+          .getByRole("region", { name: "Connected clinics" })
           .screenshot({ path: "portal-code-narrow-200.png" });
       }
     } finally {
@@ -2589,7 +2632,7 @@ describe("what a screen reader is told in the clinic panel (clinic audit)", () =
   const mismatch =
     "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.";
   const panelHeading = () =>
-    screen.getByRole("heading", { name: "Clinic documents" });
+    screen.getByRole("heading", { name: "Connected clinics" });
 
   it("takes focus to a code's field when it needs correcting, so the reason is heard (S1)", async () => {
     const { bridge, props, rerender } = fixture({

@@ -56,6 +56,9 @@ export interface ReaderAi {
   /** Stops a text read still going: the panel closed before it ended. */
   cancelText: () => void;
   onOpenPreferences: () => void;
+  /** Opens the full notice about the AI helper (#355). The Summary section offers it from the
+   * moment it opens, before any summary exists. */
+  onOpenAiNotice?: () => void;
   /** The answers kept with this document, where the vault keeps them. */
   kept?: KeptAnswers;
   /** Runs `open` once the patient may use the helper: at once, or after the
@@ -532,6 +535,21 @@ export function ReaderAiPanel({
       )}
       {/* Hidden, never removed, while folded: the answer and its state stay. */}
       <div id="reader-ai-whole" ref={wholeRef} hidden={folded}>
+        {/* About the AI helper (#355): its heading, the privacy paragraph and the button that
+          opens the notice, there as the Summary opens and before any summary is made. */}
+        {tool === "summary" && ai.onOpenAiNotice && (
+          <div className="native-reader-ai-about">
+            <h4>{t("aiHelper.notice.title")}</h4>
+            <p>{t("aiHelper.notice.introShare")}</p>
+            <button
+              className="button"
+              type="button"
+              onClick={ai.onOpenAiNotice}
+            >
+              {t("aiHelper.notice.title")}
+            </button>
+          </div>
+        )}
         {/* Said in the app's language, only when it is not English: the summary
           below is in English (`SUMMARY_LANGUAGE`). */}
         {tool === "summary" && lang !== SUMMARY_LANGUAGE && (
