@@ -68,9 +68,6 @@ interface SecuritySettingsProps {
   onOpenHidden: () => void;
   focusAuditEntry?: boolean;
   onOpenAuditHistory: () => void;
-  /** Opens the notice about the AI helper (#72), when the helper is offered
-   * on this platform. */
-  onOpenAiHelperNotice?: () => void;
   /** When the recovery key was set up, or null if there is none. */
   recoveryKeySetAtMs: number | null;
   /** Its short label, which its kit shows. */
@@ -84,12 +81,25 @@ interface SecuritySettingsProps {
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
   onSpeedTest: () => Promise<SpeedTestReport>;
+  /** Whether to show the speed test, for testers. Only a development build
+   * does by default: not Evaluation or release builds. */
+  showSpeedTest?: boolean;
   /** Where the profile dialogs are drawn: beside the library's other dialogs,
    * outside the page it makes inert while one is open. Without it, in place. */
   dialogHost?: HTMLElement | null;
   /** Told when a profile dialog opens and closes, so the library can make the
    * rest of the page inert. */
   onDialogChange?: (open: boolean) => void;
+}
+
+/** The speed test is for testers: a development build shows it, and so does a
+ * build made with VITE_SHOW_SPEED_TEST=1 (the browser tests set it, so that
+ * they can reach it). Evaluation and release builds do not. Exported for its
+ * test. */
+export function speedTestShownByBuild(): boolean {
+  return (
+    import.meta.env.DEV === true || import.meta.env.VITE_SHOW_SPEED_TEST === "1"
+  );
 }
 
 /** One line a tester can copy into the benchmark record. */
@@ -174,7 +184,6 @@ export function SecuritySettings({
   onOpenHidden,
   focusAuditEntry = false,
   onOpenAuditHistory,
-  onOpenAiHelperNotice,
   people = [],
   onUpdateProfileDetails,
   detailsFor,
@@ -186,6 +195,7 @@ export function SecuritySettings({
   onSetUpRecoveryKey,
   onSaveBackup,
   onSpeedTest,
+  showSpeedTest = speedTestShownByBuild(),
   dialogHost,
   onDialogChange,
 }: SecuritySettingsProps) {
@@ -338,7 +348,6 @@ export function SecuritySettings({
       <p className="status-line" role="status" aria-live="polite">
         {notice}
       </p>
-      {clinicDocuments}
       <div className="setting-list">
         <section className="setting-row">
           <div>
@@ -351,101 +360,82 @@ export function SecuritySettings({
             <p>{translateNow("security.encryption.body")}</p>
           </div>
         </section>
-        {/* #71: the privacy notice says what is kept. */}
-        <section
-          className="setting-row kept-setting"
-          aria-labelledby="what-is-kept"
-        >
-          <div>
-            <h2 id="what-is-kept">
-              {translateNow("interface.SecuritySettings.whatMyCarlosKeeps")}
-            </h2>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
-              )}
-            </p>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
-              )}
-            </p>
-            <p>
-              {translateNow(
-                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
-              )}
-            </p>
-          </div>
-          {/* Its controls on the right, as in the other rows. */}
-          <div className="kept-entries">
-            <button
-              ref={hiddenEntryRef}
-              className="button hidden-settings-entry"
-              type="button"
-              onClick={onOpenHidden}
-            >
-              <Icon name="hidden" />
-              <span className="hidden-entry-copy">
-                {translateNow("interface.HiddenDocuments.hidden")}{" "}
-                <SpokenCount count={hiddenCount} />{" "}
-                <span className="hidden-entry-scope">{hiddenScopeName}</span>
-              </span>
-            </button>
-            <button
-              ref={auditEntryRef}
-              className="button hidden-settings-entry"
-              type="button"
-              onClick={onOpenAuditHistory}
-            >
-              <Icon name="clock" />
-              <span className="hidden-entry-copy">
-                {translateNow("interface.history.title")}
-              </span>
-            </button>
-          </div>
-        </section>
-        {onOpenAiHelperNotice && (
-          <section className="native-setting">
-            <h3>{translateNow("aiHelper.notice.title")}</h3>
-            <p className="section-intro">
-              {translateNow("aiHelper.notice.introShare")}
-            </p>
-            <button
-              className="button"
-              type="button"
-              onClick={onOpenAiHelperNotice}
-            >
-              {translateNow("aiHelper.notice.title")}
-            </button>
-          </section>
-        )}
         <section className="setting-row native-setting-form">
           <div>
-            <div className="native-auto-lock-heading">
-              <h2>
-                {translateNow("security.autoLock.title")}{" "}
-                <span className="state-pill">
-                  {translateNow("security.autoLock.minutes", {
-                    count: autoLockMinutes,
-                  })}
-                </span>
-              </h2>
-              <button
-                className="button"
-                type="button"
-                onClick={() => void onLock()}
-              >
-                {translateNow("security.lockNow")}
-              </button>
-            </div>
-            <p>{translateNow("security.autoLock.body")}</p>
+            <h2>{translateNow("security.passphrase.title")}</h2>
+            <p>
+              {translateNow("security.passphrase.rules", {
+                min: MIN_PASSPHRASE_CHARS,
+              })}
+            </p>
+            <p>{translateNow("security.passphrase.copies")}</p>
           </div>
-          <div>
-            <AutoLockSetting
-              minutes={autoLockMinutes}
-              onMinutes={onAutoLockMinutes}
-            />
-          </div>
+          <form onSubmit={submitPassphrase}>
+            <label>
+              {translateNow("security.passphrase.current")}
+              <SecretInput
+                aria-label={translateNow("security.passphrase.current")}
+                required
+                type="password"
+                autoComplete="current-password"
+                value={currentPassphrase}
+                onChange={(event) => setCurrentPassphrase(event.target.value)}
+              />
+            </label>
+            <label>
+              {translateNow("passphrase.new.label")}
+              <SecretInput
+                aria-label={translateNow("passphrase.new.label")}
+                required
+                type="password"
+                autoComplete="new-password"
+                value={newPassphrase}
+                onChange={(event) => setNewPassphrase(event.target.value)}
+              />
+            </label>
+            <label>
+              {translateNow("passphrase.confirmNew.label")}
+              <SecretInput
+                aria-label={translateNow("passphrase.confirmNew.label")}
+                required
+                type="password"
+                autoComplete="new-password"
+                value={newPassphraseConfirmation}
+                onChange={(event) =>
+                  setNewPassphraseConfirmation(event.target.value)
+                }
+              />
+            </label>
+            {currentPassphraseTooLong && (
+              <p role="alert">
+                {translateNow("security.passphrase.currentTooLong")}
+              </p>
+            )}
+            {newPassphraseConfirmation &&
+              newPassphrase !== newPassphraseConfirmation && (
+                <p role="alert">
+                  {translateNow("security.passphrase.mismatch")}
+                </p>
+              )}
+            {newPassphraseTooLong && (
+              <p role="alert">
+                {translateNow("security.passphrase.newTooLong")}
+              </p>
+            )}
+            {newPassphraseTooShort && newPassphraseConfirmation && (
+              <p role="alert">
+                {translateNow("security.passphrase.newTooShort", {
+                  min: MIN_PASSPHRASE_CHARS,
+                })}
+              </p>
+            )}
+            <button
+              className="button"
+              disabled={busy || readOnly || passphraseFormInvalid}
+            >
+              {translateNow("security.passphrase.submit")}
+            </button>
+          </form>
         </section>
         <section className="setting-row">
           <div>
@@ -552,113 +542,36 @@ export function SecuritySettings({
         </section>
         <section className="setting-row native-setting-form">
           <div>
-            <h2>{translateNow("security.passphrase.title")}</h2>
-            <p>
-              {translateNow("security.passphrase.rules", {
-                min: MIN_PASSPHRASE_CHARS,
-              })}
-            </p>
-            <p>{translateNow("security.passphrase.copies")}</p>
-          </div>
-          <form onSubmit={submitPassphrase}>
-            <label>
-              {translateNow("security.passphrase.current")}
-              <SecretInput
-                aria-label={translateNow("security.passphrase.current")}
-                required
-                type="password"
-                autoComplete="current-password"
-                value={currentPassphrase}
-                onChange={(event) => setCurrentPassphrase(event.target.value)}
-              />
-            </label>
-            <label>
-              {translateNow("passphrase.new.label")}
-              <SecretInput
-                aria-label={translateNow("passphrase.new.label")}
-                required
-                type="password"
-                autoComplete="new-password"
-                value={newPassphrase}
-                onChange={(event) => setNewPassphrase(event.target.value)}
-              />
-            </label>
-            <label>
-              {translateNow("passphrase.confirmNew.label")}
-              <SecretInput
-                aria-label={translateNow("passphrase.confirmNew.label")}
-                required
-                type="password"
-                autoComplete="new-password"
-                value={newPassphraseConfirmation}
-                onChange={(event) =>
-                  setNewPassphraseConfirmation(event.target.value)
-                }
-              />
-            </label>
-            {currentPassphraseTooLong && (
-              <p role="alert">
-                {translateNow("security.passphrase.currentTooLong")}
-              </p>
-            )}
-            {newPassphraseConfirmation &&
-              newPassphrase !== newPassphraseConfirmation && (
-                <p role="alert">
-                  {translateNow("security.passphrase.mismatch")}
-                </p>
-              )}
-            {newPassphraseTooLong && (
-              <p role="alert">
-                {translateNow("security.passphrase.newTooLong")}
-              </p>
-            )}
-            {newPassphraseTooShort && newPassphraseConfirmation && (
-              <p role="alert">
-                {translateNow("security.passphrase.newTooShort", {
-                  min: MIN_PASSPHRASE_CHARS,
-                })}
-              </p>
-            )}
-            <button
-              className="button"
-              disabled={busy || readOnly || passphraseFormInvalid}
-            >
-              {translateNow("security.passphrase.submit")}
-            </button>
-          </form>
-        </section>
-        {/* For testers, in the evaluation builds: to be taken out, with its
-            command, before a release to patients. */}
-        <section className="setting-row native-setting-form">
-          <div>
-            <h2>{translateNow("security.speed.title")}</h2>
-            <p>{translateNow("security.speed.body")}</p>
+            <div className="native-auto-lock-heading">
+              <h2>
+                {translateNow("security.autoLock.title")}{" "}
+                <span className="state-pill">
+                  {translateNow("security.autoLock.minutes", {
+                    count: autoLockMinutes,
+                  })}
+                </span>
+              </h2>
+              <button
+                className="button"
+                type="button"
+                onClick={() => void onLock()}
+              >
+                {translateNow("security.lockNow")}
+              </button>
+            </div>
+            <p>{translateNow("security.autoLock.body")}</p>
           </div>
           <div>
-            <button
-              className="button"
-              type="button"
-              disabled={busy || speedTest.running}
-              onClick={() => void runSpeedTest()}
-            >
-              {translateNow("security.speed.run")}
-            </button>
-            <p className="native-dialog-status" role="status">
-              {speedTest.running
-                ? translateNow("security.speed.measuring")
-                : resolveText(speedTest.result)}
-            </p>
-            {speedTest.failed && (
-              <p role="alert">{resolveText(speedTest.failed)}</p>
-            )}
+            <AutoLockSetting
+              minutes={autoLockMinutes}
+              onMinutes={onAutoLockMinutes}
+            />
           </div>
         </section>
-        <section className="setting-row">
-          <div>
-            <h2>{translateNow("security.copies.title")}</h2>
-            <p>{translateNow("security.copies.body")}</p>
-          </div>
-        </section>
+      </div>
+      {/* Connected clinics, between the settings of this vault and the people in it. */}
+      {clinicDocuments}
+      <div className="setting-list">
         <section className="setting-row native-setting-form native-profile-settings">
           <div>
             <h2>{translateNow("security.profiles.title")}</h2>
@@ -762,6 +675,91 @@ export function SecuritySettings({
               dialogHost,
             )}
         </section>
+        {/* #71: the privacy notice says what is kept. */}
+        <section
+          className="setting-row kept-setting"
+          aria-labelledby="what-is-kept"
+        >
+          <div>
+            <h2 id="what-is-kept">
+              {translateNow("interface.SecuritySettings.whatMyCarlosKeeps")}
+            </h2>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.myCarlosNeverDeletesADocumentHidingOne",
+              )}
+            </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.myCarlosAlsoKeepsAHistoryWhenThe",
+              )}
+            </p>
+            <p>
+              {translateNow(
+                "interface.SecuritySettings.startingAgainOrRestoringABackupOver",
+              )}
+            </p>
+            {/* The copies text is part of this section (it says what stays
+                outside the vault's protection). */}
+            <p>{translateNow("security.copies.body")}</p>
+          </div>
+          {/* Its controls on the right, as in the other rows. */}
+          <div className="kept-entries">
+            <button
+              ref={hiddenEntryRef}
+              className="button hidden-settings-entry"
+              type="button"
+              onClick={onOpenHidden}
+            >
+              <Icon name="hidden" />
+              <span className="hidden-entry-copy">
+                {translateNow("interface.HiddenDocuments.hidden")}{" "}
+                <SpokenCount count={hiddenCount} />{" "}
+                <span className="hidden-entry-scope">{hiddenScopeName}</span>
+              </span>
+            </button>
+            <button
+              ref={auditEntryRef}
+              className="button hidden-settings-entry"
+              type="button"
+              onClick={onOpenAuditHistory}
+            >
+              <Icon name="clock" />
+              <span className="hidden-entry-copy">
+                {translateNow("interface.history.title")}
+              </span>
+            </button>
+          </div>
+        </section>
+        {/* For testers: only in a development build (import.meta.env.DEV),
+            so that Evaluation and release builds do not show it. To be taken
+            out, with its command, before a release to patients. */}
+        {showSpeedTest && (
+          <section className="setting-row native-setting-form">
+            <div>
+              <h2>{translateNow("security.speed.title")}</h2>
+              <p>{translateNow("security.speed.body")}</p>
+            </div>
+            <div>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || speedTest.running}
+                onClick={() => void runSpeedTest()}
+              >
+                {translateNow("security.speed.run")}
+              </button>
+              <p className="native-dialog-status" role="status">
+                {speedTest.running
+                  ? translateNow("security.speed.measuring")
+                  : resolveText(speedTest.result)}
+              </p>
+              {speedTest.failed && (
+                <p role="alert">{resolveText(speedTest.failed)}</p>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

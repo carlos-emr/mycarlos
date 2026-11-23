@@ -1176,8 +1176,6 @@ security-backup-title = Encrypted backup
 
 security-copies-body = Exports and screenshots leave vault protection. Hiding a document in myCarlos does not erase those copies or the clinic's source medical record.
 
-security-copies-title = Readable copies and screenshots
-
 security-devBuild-body = Use synthetic files only.
 
 security-devBuild-title = Development build.
@@ -1302,31 +1300,31 @@ sidebar-settings = Settings
 
 sidebar-storage = Encrypted local vault
 
-textSize-announce = Text size { $percent }
+textSize-announce = App zoom { $percent }
 
-textSize-between = { $typed }% is between sizes, so it is { $size }.
+textSize-between = { $typed }% is between zoom levels, so it is { $size }.
 
-textSize-box = Text size in percent
+textSize-box = App zoom in percent
 
 textSize-followsDevice = Here, text size follows your device: its own text size setting, or the browser's zoom.
 
-textSize-help = Makes everything in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers the size on this device. You can also hold { $modifier } and press plus, minus or 0.
+textSize-help = Make text, buttons, and other items in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers your setting on this device. Use { $modifier } with + or − to zoom, or { $modifier } with 0 to reset to 100%.
 
 textSize-key-command = Command
 
-textSize-larger = Larger text
+textSize-larger = Zoom in
 
-textSize-largest = The largest size is { $max }%.
+textSize-largest = The largest zoom is { $max }%.
 
 textSize-notNumber = Type a number from { $min } to { $max }.
 
-textSize-reset = Back to normal size
+textSize-reset = Back to 100%
 
-textSize-smaller = Smaller text
+textSize-smaller = Zoom out
 
-textSize-smallest = The smallest size is { $min }%.
+textSize-smallest = The smallest zoom is { $min }%.
 
-textSize-title = Text size
+textSize-title = App zoom
 
 unlock-autoLock =
     { $count ->
@@ -1436,7 +1434,7 @@ portal-approvalCancelled = This approval request was cancelled. Check for update
 
 portal-approvalContact = Clinic approval needs to be checked. Contact your clinic for next steps.
 
-portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Clinic documents.
+portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Connected clinics.
 
 portal-approvalMissing = Your saved approval request was not found on the portal. Send the saved request again.
 
@@ -1469,6 +1467,10 @@ portal-defaultDeviceName = myCarlos on { $platform }
 portal-deviceCode = Device code
 
 portal-deviceName = Name for this device
+
+portal-deviceLine = Device: { $device }
+
+portal-deviceLineLinked = Device: { $device }, linked { $date }
 
 portal-deviceDetailsShow = Show device details
 
@@ -1532,7 +1534,7 @@ portal-serviceDate = Service date: { $date }
 
 portal-serviceDateLabel = Service date
 
-portal-title = Clinic documents
+portal-title = Connected clinics
 
 rename-help-profile = This changes only the displayed folder name. The person's folders and documents stay where they are.
 
@@ -1548,13 +1550,13 @@ rename-title-profile = Rename person's folder
 
 portal-connectConsent = This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.
 
-portal-connected = Device linked. Its approval status is shown in Security, under Clinic documents.
+portal-connected = Device linked. Its approval status is shown in Security, under Connected clinics.
 
 portal-connecting = Connecting and requesting clinic approval…
 
 portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
 
-portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Connected clinics, says what to do next.
 
 portal-retryApproval = Retry saved approval request
 
@@ -2233,7 +2235,7 @@ notifications-helpAutomatic = Windows can show a generic notice after a clinic d
 notifications-autoAllow = Check for clinic documents automatically while unlocked
 notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
-notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
+notifications-autoPaused = Automatic checks need a manual check to continue. Open Connected clinics and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
 noticesStep-title = Notices from your clinic
 noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.

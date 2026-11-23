@@ -46,7 +46,7 @@ describe("ComfortSetup (#69)", () => {
     delete document.documentElement.dataset.theme;
   });
 
-  it("offers Text size with a sample, and the lock delay, each applied at once", async () => {
+  it("offers App zoom with a sample, and the lock delay, each applied at once", async () => {
     const user = userEvent.setup();
     const { onAutoLockMinutes, onDone, setZoom } = show(true);
     expect(
@@ -63,7 +63,7 @@ describe("ComfortSetup (#69)", () => {
 
     // The same control as Settings: the size changes as it is pressed.
     await user.click(
-      screen.getByRole("button", { name: humanText("Larger text") }),
+      screen.getByRole("button", { name: humanText("Zoom in") }),
     );
     expect(setZoom).toHaveBeenLastCalledWith(1.1);
 
@@ -85,9 +85,7 @@ describe("ComfortSetup (#69)", () => {
 
   it("puts the usual settings back when they are asked for, and goes on", () => {
     const { onAutoLockMinutes, onDone, zoom } = show(true, 9);
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Larger text") }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: humanText("Zoom in") }));
     expect(zoom.level()).toBe(1.1);
     fireEvent.click(
       screen.getByRole("button", { name: humanText("Use the usual settings") }),
@@ -100,7 +98,7 @@ describe("ComfortSetup (#69)", () => {
   it("says where text size comes from where myCarlos does not set it", () => {
     const { onDone } = show(false);
     expect(
-      screen.queryByRole("button", { name: humanText("Larger text") }),
+      screen.queryByRole("button", { name: humanText("Zoom in") }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(humanText(/text size follows your device/)),

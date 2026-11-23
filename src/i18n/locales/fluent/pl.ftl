@@ -1232,8 +1232,6 @@ security-backup-title = Zaszyfrowana kopia zapasowa
 
 security-copies-body = Wyeksportowane pliki i zrzuty ekranu nie są objęte ochroną sejfu. Ukrycie dokumentu w myCarlos nie usuwa tych kopii ani źródłowej dokumentacji medycznej w przychodni.
 
-security-copies-title = Czytelne kopie i zrzuty ekranu
-
 security-devBuild-body = Proszę używać wyłącznie fikcyjnych plików.
 
 security-devBuild-title = Wersja rozwojowa.
@@ -1362,31 +1360,31 @@ sidebar-settings = Ustawienia
 
 sidebar-storage = Lokalny zaszyfrowany sejf
 
-textSize-announce = Rozmiar tekstu { $percent }
+textSize-announce = Powiększenie aplikacji { $percent }
 
-textSize-between = { $typed }% wypada między rozmiarami, więc ustawiono { $size }.
+textSize-between = { $typed }% wypada między poziomami powiększenia, więc ustawiono { $size }.
 
-textSize-box = Rozmiar tekstu w procentach
+textSize-box = Powiększenie aplikacji w procentach
 
 textSize-followsDevice = Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.
 
-textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym urządzeniu. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
+textSize-help = Powiększa lub pomniejsza tekst, przyciski i inne elementy w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje to ustawienie na tym urządzeniu. Użyj { $modifier } z + lub −, aby powiększać lub pomniejszać, albo { $modifier } z 0, aby wrócić do 100%.
 
 textSize-key-command = Command
 
-textSize-larger = Większy tekst
+textSize-larger = Powiększ
 
-textSize-largest = Największy rozmiar to { $max }%.
+textSize-largest = Największe powiększenie to { $max }%.
 
 textSize-notNumber = Proszę wpisać liczbę od { $min } do { $max }.
 
-textSize-reset = Przywróć normalny rozmiar
+textSize-reset = Wróć do 100%
 
-textSize-smaller = Mniejszy tekst
+textSize-smaller = Pomniejsz
 
-textSize-smallest = Najmniejszy rozmiar to { $min }%.
+textSize-smallest = Najmniejsze powiększenie to { $min }%.
 
-textSize-title = Rozmiar tekstu
+textSize-title = Powiększenie aplikacji
 
 unlock-autoLock =
     { $count ->
@@ -1500,7 +1498,7 @@ portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Prosz�
 
 portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Proszę skontaktować się z przychodnią, aby ustalić dalsze kroki.
 
-portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Dokumenty z przychodni.
+portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Połączone przychodnie.
 
 portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Proszę wysłać ponownie zapisaną prośbę.
 
@@ -1533,6 +1531,10 @@ portal-defaultDeviceName = myCarlos na { $platform }
 portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
+
+portal-deviceLine = Urządzenie: { $device }
+
+portal-deviceLineLinked = Urządzenie: { $device }, połączono { $date }
 
 portal-deviceDetailsShow = Pokaż szczegóły urządzenia
 
@@ -1598,7 +1600,7 @@ portal-serviceDate = Data świadczenia: { $date }
 
 portal-serviceDateLabel = Data świadczenia
 
-portal-title = Dokumenty z przychodni
+portal-title = Połączone przychodnie
 
 rename-help-profile = Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.
 
@@ -1614,13 +1616,13 @@ rename-title-profile = Zmień nazwę folderu osoby
 
 portal-connectConsent = Ta czynność łączy to urządzenie i wysyła prośbę o zatwierdzenie. Przychodnia musi zatwierdzić urządzenie, zanim będzie ono mogło odbierać dokumenty.
 
-portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni.
+portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz na stronie Bezpieczeństwo, w sekcji Połączone przychodnie.
 
 portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…
 
 portal-errorBusy = Trwa inna operacja związana z przychodnią. Proszę poczekać, aż się zakończy, i spróbować ponownie.
 
-portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
+portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Połączone przychodnie, wskazuje, co zrobić dalej.
 
 portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
@@ -2314,7 +2316,7 @@ notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
 notifications-autoNeedsNotices = Aby to włączyć, najpierw należy zezwolić na powiadomienia o nowych dokumentach.
 notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
-notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
+notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Połączone przychodnie” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
 noticesStep-title = Powiadomienia z przychodni
 noticesStep-intro = Przychodnia jest połączona. myCarlos może powiadamiać o nowych dokumentach. Nic nie zostanie włączone bez zaznaczenia.

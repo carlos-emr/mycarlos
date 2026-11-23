@@ -1064,8 +1064,6 @@ security-backup-title = 加密備份
 
 security-copies-body = 匯出檔案和螢幕截圖不受保險庫保護。在 myCarlos 中隱藏文件不會刪除這些副本或診所的原始病歷。
 
-security-copies-title = 可讀副本和螢幕截圖
-
 security-devBuild-body = 僅使用合成檔案。
 
 security-devBuild-title = 開發版本。
@@ -1182,31 +1180,31 @@ sidebar-settings = 設定
 
 sidebar-storage = 加密的本機保險庫
 
-textSize-announce = 文字大小 { $percent }
+textSize-announce = 應用程式縮放 { $percent }
 
-textSize-between = { $typed }% 介於尺寸之間，因此調整為 { $size }。
+textSize-between = { $typed }% 介於縮放等級之間，因此調整為 { $size }。
 
-textSize-box = 文字大小百分比
+textSize-box = 應用程式縮放百分比
 
 textSize-followsDevice = 此處的文字大小會依照裝置設定或瀏覽器縮放比例調整。
 
-textSize-help = 調整 myCarlos 中所有內容的大小，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。您也可以按住 { $modifier }，再按加號、減號或 0。
+textSize-help = 放大或縮小 myCarlos 中的文字、按鈕和其他項目，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。按 { $modifier } 加 + 或 − 可縮放，按 { $modifier } 加 0 可恢復為 100%。
 
 textSize-key-command = Command
 
-textSize-larger = 放大文字
+textSize-larger = 放大
 
-textSize-largest = 最大尺寸為 { $max }%。
+textSize-largest = 最大縮放為 { $max }%。
 
 textSize-notNumber = 請輸入 { $min } 到 { $max } 之間的數字。
 
-textSize-reset = 恢復正常大小
+textSize-reset = 恢復為 100%
 
-textSize-smaller = 縮小文字
+textSize-smaller = 縮小
 
-textSize-smallest = 最小尺寸為 { $min }%。
+textSize-smallest = 最小縮放為 { $min }%。
 
-textSize-title = 文字大小
+textSize-title = 應用程式縮放
 
 unlock-autoLock = 閒置 { $count } 分鐘後，以及 myCarlos 隱藏時（例如縮到最小或移至背景），保險庫就會鎖定。
 
@@ -1308,7 +1306,7 @@ portal-approvalCancelled = 此核准請求已取消。請先檢查最新狀態�
 
 portal-approvalContact = 需要確認診所的核准狀態。請聯絡診所了解後續步驟。
 
-portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「診所文件」。
+portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「已連線的診所」。
 
 portal-approvalMissing = 入口網站上找不到您已儲存的核准請求。請重新傳送已儲存的請求。
 
@@ -1341,6 +1339,10 @@ portal-defaultDeviceName = { $platform } 上的 myCarlos
 portal-deviceCode = 裝置代碼
 
 portal-deviceName = 此裝置的名稱
+
+portal-deviceLine = 裝置：{ $device }
+
+portal-deviceLineLinked = 裝置：{ $device }，連結於 { $date }
 
 portal-deviceDetailsShow = 顯示裝置詳細資料
 
@@ -1400,7 +1402,7 @@ portal-serviceDate = 服務日期：{ $date }
 
 portal-serviceDateLabel = 服務日期
 
-portal-title = 診所文件
+portal-title = 已連線的診所
 
 rename-help-profile = 這只會變更顯示的資料夾名稱。此人的資料夾和文件仍會留在原處。
 
@@ -1416,13 +1418,13 @@ rename-title-profile = 重新命名此人的資料夾
 
 portal-connectConsent = 此操作會連線此裝置並傳送核准請求。診所必須先核准此裝置，裝置才能接收文件。
 
-portal-connected = 裝置已連結。可在「安全性」的「診所文件」下查看其核准狀態。
+portal-connected = 裝置已連結。可在「安全性」的「已連線的診所」下查看其核准狀態。
 
 portal-connecting = 正在連線並申請診所核准…
 
 portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
 
-portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「已連線的診所」下的核准狀態，了解下一步操作。
 
 portal-retryApproval = 重試已儲存的核准請求
 
@@ -2066,7 +2068,7 @@ notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoNeedsNotices = 請先允許文件送達通知，才能開啟此選項。
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
-notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
+notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「已連線的診所」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
 noticesStep-title = 來自診所的通知
 noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
