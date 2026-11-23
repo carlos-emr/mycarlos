@@ -71,6 +71,14 @@ In a native build, additionally:
 8. On Android, use a test document provider that fails after accepting some bytes. Confirm the app
    says the destination may contain a partial readable copy, then inspect and delete that
    destination before retrying. A provider-backed destination is not an atomic export.
+9. On a Mac (#52, "Open With"): with the built app in place, check that a PDF's Finder **Open With**
+   menu lists myCarlos, from Finder and from a Mail attachment's right-click menu, whether
+   myCarlos is running or not, and that the file arrives at **Unlock to add** (a locked vault
+   keeps it until unlocked). On a Mac whose default PDF app is Preview, confirm double-clicking a
+   PDF still opens Preview and **Get Info > Open with** still shows Preview. Record the macOS
+   version and the Mac's model. `node scripts/check-macos-pdf-association.mjs <myCarlos.app>`
+   checks the built app's `Info.plist` for the same thing (role Viewer, rank Alternate, one PDF
+   type, nothing exported).
 
 The Rust suite automates abrupt process termination after an encrypted chunk write, completed
 staging, object rename, each redundant manifest write, and each deletion boundary. It also covers
