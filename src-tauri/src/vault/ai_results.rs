@@ -153,7 +153,7 @@ fn valid_text(text: &str, max_chars: usize) -> bool {
         && !text.chars().any(char::is_control)
 }
 
-fn valid_fields(
+pub(super) fn valid_fields(
     tool: AiTool,
     lang: &str,
     term: Option<&str>,

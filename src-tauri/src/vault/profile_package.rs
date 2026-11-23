@@ -66,7 +66,8 @@ use super::{
     decode_key_text, derive_passphrase_key, encode_key_text, kdf_config_with_salt, object_aad,
     unwrap_secret, valid_birth_date, valid_kdf_config, valid_record_name, validate_new_passphrase,
     wrap_secret, HmacSha256, KdfConfig, SecretKey, VaultError, WrappedSecret, CHUNK_SIZE,
-    MAX_PASSPHRASE_BYTES, OBJECT_MAGIC, RECOVERY_KEY_BYTES, RECOVERY_KEY_CHECK_LABEL,
+    CROCKFORD_ALPHABET, MAX_PASSPHRASE_BYTES, OBJECT_MAGIC, RECOVERY_KEY_BYTES,
+    RECOVERY_KEY_CHECK_LABEL,
 };
 
 /// 16 bytes, like the backup's.
@@ -586,6 +587,7 @@ struct PackageKeys {
     manifest: SecretKey,
     object: SecretKey,
     tag: SecretKey,
+    receipt: SecretKey,
 }
 
 fn expand(hkdf: &Hkdf<Sha256>, label: &[u8]) -> Result<SecretKey, PackageError> {
@@ -606,6 +608,7 @@ fn derive_package_keys(
         manifest: expand(&hkdf, b"mycarlos/profile-package/v1/manifest")?,
         object: expand(&hkdf, b"mycarlos/profile-package/v1/object")?,
         tag: expand(&hkdf, b"mycarlos/profile-package/v1/tag")?,
+        receipt: expand(&hkdf, b"mycarlos/profile-package/v1/receipt")?,
     })
 }
 
@@ -1303,6 +1306,12 @@ pub(crate) struct PackageReader<R: Read> {
     /// Where the first object's entry starts: the manifest's authenticated size gives
     /// every later offset, so the end of the file can be found without reading objects.
     objects_start: u64,
+    /// What `verify_tail` found in the digests entry (authenticated by the tag): each
+    /// object's plaintext size and SHA-256, before any object has been read.
+    tail_digests: Option<Vec<ObjectRead>>,
+    /// Set while an object stream is open and cleared when it finishes: a reader whose
+    /// stream was dropped part way has lost its place and refuses everything.
+    poisoned: bool,
 }
 
 /// What a package has been checked to be, once its whole has been: the only value
@@ -1312,6 +1321,7 @@ pub(crate) struct Verified {
     package_id: Uuid,
     manifest: PackageManifest,
     objects: Vec<ObjectRead>,
+    receipt_code: String,
 }
 
 impl std::fmt::Debug for Verified {
@@ -1323,6 +1333,13 @@ impl std::fmt::Debug for Verified {
 }
 
 impl Verified {
+    /// The short code the receiving end shows and the source can recompute from the file and
+    /// its key (`PackageReader::receipt_code`): it shows that someone holding both ran the
+    /// import and saw the same package, not that the data is still there.
+    pub(crate) fn receipt_code(&self) -> &str {
+        &self.receipt_code
+    }
+
     pub(crate) fn package_id(&self) -> Uuid {
         self.package_id
     }
@@ -1457,6 +1474,53 @@ fn read_small_entry(
     Ok(data)
 }
 
+/// The plaintext size and hash a digests entry holds, as an `ObjectRead`.
+fn read_of_digest(digest: &DigestEntry) -> ObjectRead {
+    let mut sha256 = [0_u8; 32];
+    if let Ok(bytes) = BASE64.decode(&digest.sha256) {
+        if bytes.len() == 32 {
+            sha256.copy_from_slice(&bytes);
+        }
+    }
+    ObjectRead {
+        id: digest.id,
+        size: digest.size,
+        sha256,
+    }
+}
+
+/// A short code from the package id, the number of objects and a hash of every object's size
+/// and plaintext hash, under a key only the package's key gives: 8 characters, in two groups
+/// of 4. The importing vault shows it; the source recomputes it from the file and the key.
+fn receipt_code_of(keys: &PackageKeys, package_id: Uuid, objects: &[ObjectRead]) -> String {
+    let mut total = Sha256::new();
+    for object in objects {
+        total.update(object.size.to_be_bytes());
+        total.update(object.sha256);
+    }
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(&*keys.receipt)
+        .expect("HMAC accepts a key of any length");
+    mac.update(b"mycarlos-profile-receipt-v1:");
+    mac.update(package_id.as_bytes());
+    mac.update(&(objects.len() as u64).to_be_bytes());
+    mac.update(&total.finalize());
+    let bytes = mac.finalize().into_bytes();
+    // 40 bits as 8 five-bit symbols.
+    let mut bits = 0_u64;
+    for byte in &bytes[..5] {
+        bits = (bits << 8) | u64::from(*byte);
+    }
+    let symbols: Vec<char> = (0..8)
+        .rev()
+        .map(|i| char::from(CROCKFORD_ALPHABET[((bits >> (i * 5)) & 31) as usize]))
+        .collect();
+    format!(
+        "{}-{}",
+        symbols[..4].iter().collect::<String>(),
+        symbols[4..].iter().collect::<String>()
+    )
+}
+
 impl<R: Read> PackageReader<R> {
     /// Opens the package with its key: checks the magic and the format,
     /// unwraps the package key (a wrong key is [`PackageError::WrongKey`]) and
@@ -1524,6 +1588,8 @@ impl<R: Read> PackageReader<R> {
             entries,
             read: Vec::new(),
             objects_start,
+            tail_digests: None,
+            poisoned: false,
         })
     }
 
@@ -1537,6 +1603,9 @@ impl<R: Read> PackageReader<R> {
 
     /// The object [`Self::read_object`] will read next.
     pub(crate) fn next_object(&self) -> Option<PackageObject> {
+        if self.poisoned {
+            return None;
+        }
         self.pending.get(self.next).copied()
     }
 
@@ -1552,98 +1621,82 @@ impl<R: Read> PackageReader<R> {
         sink: &mut dyn Write,
         still_open: &dyn Fn() -> bool,
     ) -> Result<ObjectRead, PackageError> {
+        let mut stream = self.object_stream(still_open)?;
+        let mut buffer = Zeroizing::new(vec![0_u8; 64 * 1024]);
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => sink.write_all(&buffer[..read])?,
+                Err(error) => return Err(stream.failure.take().unwrap_or(error.into())),
+            }
+        }
+        stream.finish()
+    }
+
+    /// The next object as a stream the caller pulls plaintext from, as an import
+    /// re-encrypts it: each chunk is authenticated before any of it is returned, and the
+    /// object only counts as read once [`ObjectStream::finish`] has checked that the stream
+    /// was read to its end and that the entry holds exactly it. A stream dropped before that
+    /// leaves the reader unusable. What it yields is **not yet trusted** (see `finish`).
+    pub(crate) fn object_stream<'a>(
+        &'a mut self,
+        still_open: &'a dyn Fn() -> bool,
+    ) -> Result<ObjectStream<'a, R>, PackageError> {
+        if self.poisoned {
+            return Err(PackageError::Invalid);
+        }
         let object = self.next_object().ok_or(PackageError::Invalid)?;
         let expected_length = encrypted_object_len(object.size).ok_or(PackageError::TooLarge)?;
+        self.poisoned = true;
         let (kind, name, length) =
             read_entry_header(&mut self.inner)?.ok_or(PackageError::Unreadable)?;
         if kind != KIND_OBJECT || name != object_name(object.id) || length != expected_length {
             return Err(PackageError::Unreadable);
         }
         let key = object_key(&self.keys, object.id)?;
-        let mut entry_hash = Sha256::new();
-        let mut plain_hash = Sha256::new();
-        let mut limited = (&mut self.inner).take(length);
-        let mut hashed = HashingRead {
-            inner: &mut limited,
-            hasher: &mut entry_hash,
+        let mut stream = ObjectStream {
+            cipher: XChaCha20Poly1305::new((&*key).into()),
+            reader: self,
+            object,
+            name,
+            length,
+            remaining: length,
+            nonce_prefix: [0_u8; 16],
+            entry_hash: Sha256::new(),
+            plain_hash: Sha256::new(),
+            index: 0,
+            total: 0,
+            buffer: Zeroizing::new(Vec::new()),
+            position: 0,
+            done: false,
+            still_open,
+            failure: None,
         };
         let mut header = [0_u8; 25];
-        read_exact_or_unreadable(&mut hashed, &mut header)?;
+        stream.take_exact(&mut header)?;
         if &header[..5] != OBJECT_MAGIC
             || u32::from_be_bytes([header[5], header[6], header[7], header[8]]) as usize
                 != CHUNK_SIZE
         {
             return Err(PackageError::Unreadable);
         }
-        let nonce_prefix = &header[9..25];
-        let cipher = XChaCha20Poly1305::new((&*key).into());
-        let mut total = 0_u64;
-        let mut index = 0_u64;
-        loop {
-            if !still_open() {
-                return Err(PackageError::Cancelled);
-            }
-            let mut frame = [0_u8; 5];
-            read_exact_or_unreadable(&mut hashed, &mut frame)?;
-            let frame_length =
-                u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;
-            if !(16..=CHUNK_SIZE + 16).contains(&frame_length) || frame[4] > 1 {
-                return Err(PackageError::Unreadable);
-            }
-            let final_chunk = frame[4] == 1;
-            let mut ciphertext = vec![0_u8; frame_length];
-            read_exact_or_unreadable(&mut hashed, &mut ciphertext)?;
-            let mut nonce = [0_u8; 24];
-            nonce[..16].copy_from_slice(nonce_prefix);
-            nonce[16..].copy_from_slice(&index.to_be_bytes());
-            let aad = object_aad(self.package_id, object.id, index, final_chunk);
-            let plaintext = Zeroizing::new(
-                cipher
-                    .decrypt(
-                        XNonce::from_slice(&nonce),
-                        Payload {
-                            msg: &ciphertext,
-                            aad: &aad,
-                        },
-                    )
-                    .map_err(|_| PackageError::Unreadable)?,
-            );
-            total = total
-                .checked_add(plaintext.len() as u64)
-                .ok_or(PackageError::Unreadable)?;
-            if total > object.size {
-                return Err(PackageError::Unreadable);
-            }
-            plain_hash.update(&plaintext);
-            for part in plaintext.chunks(64 * 1024) {
-                sink.write_all(part)?;
-            }
-            if final_chunk {
-                break;
-            }
-            index = index.checked_add(1).ok_or(PackageError::Unreadable)?;
-        }
-        // The entry holds exactly its object: nothing left over, and the size
-        // the manifest gave.
-        let mut leftover = [0_u8; 1];
-        let leftover_read = hashed.read(&mut leftover)?;
-        if leftover_read != 0 || total != object.size {
-            return Err(PackageError::Unreadable);
-        }
-        let read = ObjectRead {
-            id: object.id,
-            size: object.size,
-            sha256: plain_hash.finalize().into(),
-        };
-        self.entries.push(TrailerEntry {
-            kind: KIND_OBJECT,
-            name,
-            length,
-            sha256: BASE64.encode(entry_hash.finalize()),
-        });
-        self.read.push(read.clone());
-        self.next += 1;
-        Ok(read)
+        stream.nonce_prefix.copy_from_slice(&header[9..25]);
+        Ok(stream)
+    }
+
+    /// What `verify_tail` found: each object's plaintext size and SHA-256, authenticated by
+    /// the package's tag, known before any object is read. An import compares these with
+    /// what the vault holds to find a package it has already taken.
+    pub(crate) fn tail_digests(&self) -> Option<&[ObjectRead]> {
+        self.tail_digests.as_deref()
+    }
+
+    /// The receipt code, from what `verify_tail` found: what the source recomputes from the
+    /// file and the key to read the code the receiving end showed.
+    pub(crate) fn receipt_code(&self) -> Option<String> {
+        self.tail_digests
+            .as_ref()
+            .map(|digests| receipt_code_of(&self.keys, self.package_id, digests))
     }
 
     /// Checks the whole package, once every object has been read: the digests
@@ -1655,7 +1708,7 @@ impl<R: Read> PackageReader<R> {
     /// Returns each object's plaintext SHA-256, so that the caller can compare
     /// what it stored.
     pub(crate) fn finish(mut self) -> Result<Verified, PackageError> {
-        if self.next != self.pending.len() {
+        if self.poisoned || self.next != self.pending.len() {
             return Err(PackageError::Invalid);
         }
         let tail = read_tail(&mut self.inner, &self.keys, &self.header, self.package_id)?;
@@ -1672,11 +1725,168 @@ impl<R: Read> PackageReader<R> {
         if tail.digests.objects != expected || tail.trailer.entries != self.entries {
             return Err(PackageError::Unreadable);
         }
+        let receipt_code = receipt_code_of(&self.keys, self.package_id, &self.read);
         Ok(Verified {
             package_id: self.package_id,
             manifest: self.manifest,
             objects: self.read,
+            receipt_code,
         })
+    }
+}
+
+/// One object of a package, read as a stream (see `PackageReader::object_stream`).
+pub(crate) struct ObjectStream<'a, R: Read> {
+    reader: &'a mut PackageReader<R>,
+    object: PackageObject,
+    name: String,
+    length: u64,
+    /// Bytes of the entry not yet read.
+    remaining: u64,
+    cipher: XChaCha20Poly1305,
+    nonce_prefix: [u8; 16],
+    entry_hash: Sha256,
+    plain_hash: Sha256,
+    index: u64,
+    total: u64,
+    /// The chunk in hand, and how much of it has been returned.
+    buffer: Zeroizing<Vec<u8>>,
+    position: usize,
+    /// The final chunk has been read and checked.
+    done: bool,
+    still_open: &'a dyn Fn() -> bool,
+    /// What went wrong, as what it was: the `io::Error` the caller sees cannot say.
+    failure: Option<PackageError>,
+}
+
+impl<R: Read> ObjectStream<'_, R> {
+    /// Reads exactly `buffer.len()` bytes of the entry, never past its declared length.
+    fn take_exact(&mut self, buffer: &mut [u8]) -> Result<(), PackageError> {
+        if buffer.len() as u64 > self.remaining {
+            return Err(PackageError::Unreadable);
+        }
+        read_exact_or_unreadable(&mut self.reader.inner, buffer)?;
+        self.entry_hash.update(&*buffer);
+        self.remaining -= buffer.len() as u64;
+        Ok(())
+    }
+
+    /// Decrypts the next chunk into the buffer.
+    fn fill(&mut self) -> Result<(), PackageError> {
+        if !(self.still_open)() {
+            return Err(PackageError::Cancelled);
+        }
+        let mut frame = [0_u8; 5];
+        self.take_exact(&mut frame)?;
+        let frame_length = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;
+        if !(16..=CHUNK_SIZE + 16).contains(&frame_length) || frame[4] > 1 {
+            return Err(PackageError::Unreadable);
+        }
+        let final_chunk = frame[4] == 1;
+        // A length the entry cannot hold is refused before anything is allocated for it.
+        if frame_length as u64 > self.remaining {
+            return Err(PackageError::Unreadable);
+        }
+        let mut ciphertext = vec![0_u8; frame_length];
+        self.take_exact(&mut ciphertext)?;
+        let mut nonce = [0_u8; 24];
+        nonce[..16].copy_from_slice(&self.nonce_prefix);
+        nonce[16..].copy_from_slice(&self.index.to_be_bytes());
+        let aad = object_aad(
+            self.reader.package_id,
+            self.object.id,
+            self.index,
+            final_chunk,
+        );
+        let plaintext = Zeroizing::new(
+            self.cipher
+                .decrypt(
+                    XNonce::from_slice(&nonce),
+                    Payload {
+                        msg: &ciphertext,
+                        aad: &aad,
+                    },
+                )
+                .map_err(|_| PackageError::Unreadable)?,
+        );
+        self.total = self
+            .total
+            .checked_add(plaintext.len() as u64)
+            .ok_or(PackageError::Unreadable)?;
+        if self.total > self.object.size {
+            return Err(PackageError::Unreadable);
+        }
+        self.plain_hash.update(&plaintext);
+        self.buffer = plaintext;
+        self.position = 0;
+        if final_chunk {
+            // The entry holds exactly its object: nothing left over, and the size the
+            // manifest gave.
+            if self.remaining != 0 || self.total != self.object.size {
+                return Err(PackageError::Unreadable);
+            }
+            self.done = true;
+        } else {
+            self.index = self.index.checked_add(1).ok_or(PackageError::Unreadable)?;
+        }
+        Ok(())
+    }
+
+    /// Ends the object: it must have been read to its end, and then it counts as read.
+    /// Returns its plaintext size and SHA-256.
+    pub(crate) fn finish(self) -> Result<ObjectRead, PackageError> {
+        if !self.done || self.position != self.buffer.len() {
+            return Err(PackageError::Invalid);
+        }
+        let read = ObjectRead {
+            id: self.object.id,
+            size: self.object.size,
+            sha256: self.plain_hash.finalize().into(),
+        };
+        let reader = self.reader;
+        reader.entries.push(TrailerEntry {
+            kind: KIND_OBJECT,
+            name: self.name,
+            length: self.length,
+            sha256: BASE64.encode(self.entry_hash.finalize()),
+        });
+        reader.read.push(read.clone());
+        reader.next += 1;
+        reader.poisoned = false;
+        Ok(read)
+    }
+
+    /// What went wrong with the last failed read, as what it was.
+    pub(crate) fn take_failure(&mut self) -> Option<PackageError> {
+        self.failure.take()
+    }
+}
+
+impl<R: Read> Read for ObjectStream<'_, R> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        loop {
+            if self.position < self.buffer.len() {
+                let count = out.len().min(self.buffer.len() - self.position);
+                out[..count].copy_from_slice(&self.buffer[self.position..self.position + count]);
+                self.position += count;
+                return Ok(count);
+            }
+            if self.done || out.is_empty() {
+                return Ok(0);
+            }
+            if self.failure.is_some() {
+                return Err(io::Error::other("package read failed"));
+            }
+            if let Err(error) = self.fill() {
+                let interrupted = error == PackageError::Cancelled;
+                self.failure = Some(error);
+                return Err(if interrupted {
+                    io::Error::from(io::ErrorKind::Interrupted)
+                } else {
+                    io::Error::other("package read failed")
+                });
+            }
+        }
     }
 }
 
@@ -1693,6 +1903,9 @@ impl<R: Read + Seek> PackageReader<R> {
     /// [`Self::finish`] do), so it is no replacement for `finish`. The reader's place
     /// is put back, so objects can be read after it.
     pub(crate) fn verify_tail(&mut self) -> Result<(), PackageError> {
+        if self.poisoned {
+            return Err(PackageError::Invalid);
+        }
         let here = self.inner.stream_position()?;
         let result = self.verify_tail_at();
         self.inner.seek(SeekFrom::Start(here))?;
@@ -1736,6 +1949,7 @@ impl<R: Read + Seek> PackageReader<R> {
                         && Some(entry.length) == encrypted_object_len(object.size)
                 });
         if digests_match && listed {
+            self.tail_digests = Some(tail.digests.objects.iter().map(read_of_digest).collect());
             Ok(())
         } else {
             Err(PackageError::Unreadable)

@@ -52,6 +52,8 @@ mod original_pdf;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_export;
 #[cfg_attr(not(test), allow(dead_code))]
+mod profile_import;
+#[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
 
 use ai_results::StoredAiResult;
@@ -7244,6 +7246,18 @@ fn encrypt_object(
     object_key: &[u8; 32],
     fingerprint_key: &[u8; 32],
 ) -> Result<EncryptedObject, VaultError> {
+    encrypt_object_from(&mut *reader, path, context, object_key, fingerprint_key)
+}
+
+/// `encrypt_object` from a reader the caller keeps: a profile import pulls each document out
+/// of a handover package as a stream that borrows the package's reader.
+fn encrypt_object_from(
+    reader: &mut dyn Read,
+    path: &Path,
+    context: ObjectContext,
+    object_key: &[u8; 32],
+    fingerprint_key: &[u8; 32],
+) -> Result<EncryptedObject, VaultError> {
     let file = open_private_new(path)?;
     let mut writer = BufWriter::new(file);
     let mut nonce_prefix = [0_u8; 16];
@@ -7258,14 +7272,14 @@ fn encrypt_object(
     mac.update(context.profile_id.as_bytes());
     let mut current = Zeroizing::new(vec![0_u8; CHUNK_SIZE]);
     let mut next = Zeroizing::new(vec![0_u8; CHUNK_SIZE]);
-    let mut current_len = read_chunk(&mut reader, &mut current)?;
+    let mut current_len = read_chunk(&mut *reader, &mut current)?;
     let mut total = 0_u64;
     let mut index = 0_u64;
     loop {
         let next_len = if current_len == 0 && index == 0 {
             0
         } else {
-            read_chunk(&mut reader, &mut next)?
+            read_chunk(&mut *reader, &mut next)?
         };
         let final_chunk = next_len == 0;
         mac.update(&current[..current_len]);

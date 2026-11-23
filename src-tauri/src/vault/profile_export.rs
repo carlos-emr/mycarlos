@@ -600,6 +600,10 @@ fn error_of_package(error: PackageError) -> VaultError {
         PackageError::Cancelled => VaultError::Cancelled,
         PackageError::WeakPassphrase => VaultError::WeakPassphrase,
         PackageError::Storage => VaultError::Storage,
+        // A key (or passphrase) that does not open the package: said as the vault says it.
+        PackageError::WrongKey => VaultError::WrongPassphrase,
+        PackageError::NewerFormat => VaultError::NewerFormat,
+        PackageError::TooLarge => VaultError::Invalid,
         _ => VaultError::Invalid,
     }
 }

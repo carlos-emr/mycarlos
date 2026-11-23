@@ -1451,3 +1451,126 @@ fn the_history_and_the_evidence_carry_none_of_the_vaults_ids() {
         Err(PackageError::Invalid)
     ));
 }
+
+// ---------------------------------------------------------------------------
+// Import (#360 PR 4): objects as streams, the digests before the objects, the receipt code
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_object_can_be_pulled_as_a_stream_and_counts_only_once_finished() {
+    let fixture = fixture(&[CHUNK_SIZE + 9, 40, 0]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    let mut got = Vec::new();
+    while reader.next_object().is_some() {
+        let mut stream = reader.object_stream(&open).unwrap();
+        let mut data = Vec::new();
+        // Small reads, as a re-encryptor that reads a chunk at a time would make.
+        let mut piece = [0_u8; 1000];
+        loop {
+            let read = stream.read(&mut piece).unwrap();
+            if read == 0 {
+                break;
+            }
+            data.extend_from_slice(&piece[..read]);
+        }
+        let read = stream.finish().unwrap();
+        assert_eq!(read.size, data.len() as u64);
+        got.push(data);
+    }
+    assert_eq!(got, fixture_objects(&fixture));
+    assert!(reader.finish().is_ok());
+}
+
+#[test]
+fn a_stream_dropped_early_leaves_the_reader_unusable_and_an_unfinished_one_is_refused() {
+    let fixture = fixture(&[2 * CHUNK_SIZE, 40]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    {
+        let mut stream = reader.object_stream(&open).unwrap();
+        let mut piece = [0_u8; 10];
+        stream.read_exact(&mut piece).unwrap();
+        // Not read to its end: finishing it is refused.
+        assert!(matches!(stream.finish(), Err(PackageError::Invalid)));
+    }
+    assert!(reader.next_object().is_none());
+    assert!(matches!(
+        reader.object_stream(&open),
+        Err(PackageError::Invalid)
+    ));
+    assert!(matches!(reader.verify_tail(), Err(PackageError::Invalid)));
+    assert!(matches!(reader.finish(), Err(PackageError::Invalid)));
+}
+
+#[test]
+fn a_damaged_or_stopped_stream_says_what_went_wrong() {
+    let fixture = fixture(&[2 * CHUNK_SIZE]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let object = spans(&bytes)
+        .into_iter()
+        .find(|entry| entry.0 == KIND_OBJECT)
+        .unwrap();
+    let mut flipped = bytes.clone();
+    flipped[object.2 + 3 + object.1.len() + 8 + 25 + 5 + 100] ^= 1;
+    let mut reader = PackageReader::open(Cursor::new(&flipped), PackageSecret::Key(&key)).unwrap();
+    let mut stream = reader.object_stream(&open).unwrap();
+    let mut sink = Vec::new();
+    assert!(stream.read_to_end(&mut sink).is_err());
+    assert_eq!(stream.take_failure(), Some(PackageError::Unreadable));
+
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    let stopped = || false;
+    let mut stream = reader.object_stream(&stopped).unwrap();
+    assert!(stream.read(&mut [0_u8; 10]).is_err());
+    assert_eq!(stream.take_failure(), Some(PackageError::Cancelled));
+}
+
+#[test]
+fn the_digests_are_known_before_any_object_is_read_and_agree_with_what_is_read() {
+    let fixture = fixture(&[10, CHUNK_SIZE + 1]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    assert!(reader.tail_digests().is_none());
+    reader.verify_tail().unwrap();
+    let before: Vec<ObjectRead> = reader.tail_digests().unwrap().to_vec();
+    while reader.next_object().is_some() {
+        reader.read_object(&mut io::sink(), &open).unwrap();
+    }
+    let verified = reader.finish().unwrap();
+    assert_eq!(before, verified.objects());
+}
+
+#[test]
+fn the_receipt_code_is_the_same_from_the_import_and_from_the_source_and_differs_per_package() {
+    let fixture = fixture(&[10, 5_000]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    // The importer's: after reading everything.
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    while reader.next_object().is_some() {
+        reader.read_object(&mut io::sink(), &open).unwrap();
+    }
+    let imported = reader.finish().unwrap().receipt_code().to_owned();
+    // The source's: from the file and the key, without reading an object.
+    let mut again = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    assert!(again.receipt_code().is_none());
+    again.verify_tail().unwrap();
+    assert_eq!(again.receipt_code().unwrap(), imported);
+    // Eight characters of the key's alphabet in two groups.
+    assert_eq!(imported.len(), 9);
+    assert_eq!(imported.as_bytes()[4], b'-');
+    assert!(imported
+        .chars()
+        .filter(|c| *c != '-')
+        .all(|c| CROCKFORD_ALPHABET.contains(&(c as u8))));
+    // Another export of the same documents is another package: another code.
+    let other = write_package(&fixture, &key);
+    let mut reader = PackageReader::open(Cursor::new(&other), PackageSecret::Key(&key)).unwrap();
+    reader.verify_tail().unwrap();
+    assert_ne!(reader.receipt_code().unwrap(), imported);
+}

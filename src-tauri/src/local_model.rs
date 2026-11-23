@@ -358,7 +358,7 @@ fn has_avx2() -> bool {
 }
 
 #[cfg(unix)]
-fn free_disk(dir: &Path) -> Option<u64> {
+pub(crate) fn free_disk(dir: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     // The folder may not exist yet: ask about the nearest one that does.
     let mut probe = dir;
@@ -375,7 +375,7 @@ fn free_disk(dir: &Path) -> Option<u64> {
 }
 
 #[cfg(windows)]
-fn free_disk(dir: &Path) -> Option<u64> {
+pub(crate) fn free_disk(dir: &Path) -> Option<u64> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
@@ -391,7 +391,7 @@ fn free_disk(dir: &Path) -> Option<u64> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn free_disk(_dir: &Path) -> Option<u64> {
+pub(crate) fn free_disk(_dir: &Path) -> Option<u64> {
     None
 }
 
