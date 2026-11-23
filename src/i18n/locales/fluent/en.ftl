@@ -655,7 +655,7 @@ library-folder-items =
 
 library-folder-label = { $name } folder
 
-library-folder-open = Open { $name }
+library-folder-open = { $name }, open folder
 
 library-folder-rename = Rename folder { $name }
 
@@ -872,7 +872,7 @@ notice-created = Encrypted vault created. Set up a recovery key, so that a forgo
 
 notice-createdThenLocked = Your vault was created, then locked before its recovery key could be made. Unlock it to set one up.
 
-notice-dropRefused = To import PDFs, unlock your vault and use { $button }. Drag and drop moves documents already in myCarlos.
+notice-dropRefused = To import PDFs, unlock your vault and use “{ $button }”. Drag and drop moves documents already in myCarlos.
 
 notice-eraseCancelled = Nothing changed: the vault was not set aside.
 
@@ -1906,6 +1906,13 @@ ai-model-reads =
     [one] Reads about { $pages } page at a time (about { $characters } characters of English text). Less for tables and some languages.
    *[other] Reads about { $pages } pages at a time (about { $characters } characters of English text). Less for tables and some languages.
     }
+
+ai-model-readsEstimate = An estimate until you next use this model.
+ai-model-loadCheck = Checking that this model runs on this computer…
+ai-model-loadCheckCannotRun = This computer could not run this model. Try again later, or choose another model.
+ai-model-loadCheckMemory = There isn't enough free memory to try this model now. Close some other programs, then try again.
+ai-model-loadCheckReady = This model started on this computer.
+ai-model-loadCheckRetry = Try again
 
 ai-model-where = Where to get the file
 
