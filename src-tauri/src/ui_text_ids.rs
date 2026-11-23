@@ -893,6 +893,8 @@ pub enum MessageId {
     PortalDeviceCode,
     PortalDeviceDetailsHide,
     PortalDeviceDetailsShow,
+    PortalDeviceLine,
+    PortalDeviceLineLinked,
     PortalDeviceName,
     PortalDeviceRemoved,
     PortalEarlierHide,
@@ -1053,7 +1055,6 @@ pub enum MessageId {
     SecurityBackupSave,
     SecurityBackupTitle,
     SecurityCopiesBody,
-    SecurityCopiesTitle,
     SecurityDevBuildBody,
     SecurityDevBuildTitle,
     SecurityEncryptionBody,
@@ -2027,6 +2028,8 @@ impl MessageId {
         Self::PortalDeviceCode,
         Self::PortalDeviceDetailsHide,
         Self::PortalDeviceDetailsShow,
+        Self::PortalDeviceLine,
+        Self::PortalDeviceLineLinked,
         Self::PortalDeviceName,
         Self::PortalDeviceRemoved,
         Self::PortalEarlierHide,
@@ -2187,7 +2190,6 @@ impl MessageId {
         Self::SecurityBackupSave,
         Self::SecurityBackupTitle,
         Self::SecurityCopiesBody,
-        Self::SecurityCopiesTitle,
         Self::SecurityDevBuildBody,
         Self::SecurityDevBuildTitle,
         Self::SecurityEncryptionBody,
@@ -3493,6 +3495,8 @@ impl MessageId {
             Self::PortalDeviceCode => "portal-deviceCode",
             Self::PortalDeviceDetailsHide => "portal-deviceDetailsHide",
             Self::PortalDeviceDetailsShow => "portal-deviceDetailsShow",
+            Self::PortalDeviceLine => "portal-deviceLine",
+            Self::PortalDeviceLineLinked => "portal-deviceLineLinked",
             Self::PortalDeviceName => "portal-deviceName",
             Self::PortalDeviceRemoved => "portal-deviceRemoved",
             Self::PortalEarlierHide => "portal-earlierHide",
@@ -3653,7 +3657,6 @@ impl MessageId {
             Self::SecurityBackupSave => "security-backup-save",
             Self::SecurityBackupTitle => "security-backup-title",
             Self::SecurityCopiesBody => "security-copies-body",
-            Self::SecurityCopiesTitle => "security-copies-title",
             Self::SecurityDevBuildBody => "security-devBuild-body",
             Self::SecurityDevBuildTitle => "security-devBuild-title",
             Self::SecurityEncryptionBody => "security-encryption-body",
@@ -4472,7 +4475,6 @@ impl MessageId {
             "security.backup.save" => Some(Self::SecurityBackupSave),
             "security.backup.title" => Some(Self::SecurityBackupTitle),
             "security.copies.body" => Some(Self::SecurityCopiesBody),
-            "security.copies.title" => Some(Self::SecurityCopiesTitle),
             "security.devBuild.body" => Some(Self::SecurityDevBuildBody),
             "security.devBuild.title" => Some(Self::SecurityDevBuildTitle),
             "security.encryption.body" => Some(Self::SecurityEncryptionBody),
@@ -5324,6 +5326,8 @@ impl MessageId {
             "interface.RecordingRecovery.stillNoRoom" => {
                 Some(Self::InterfaceRecordingRecoveryStillNoRoom)
             }
+            "portal.deviceLine" => Some(Self::PortalDeviceLine),
+            "portal.deviceLineLinked" => Some(Self::PortalDeviceLineLinked),
             _ => None,
         }
     }

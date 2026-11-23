@@ -314,9 +314,12 @@ On every platform:
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-9. In **Security**, under **Speed test, for testers**, choose **Run speed test** three times, a
-   minute apart, staying on that screen while it runs. Send the three lines it gives with the
-   device's make and model and its system's version. `ARGON2_BENCHMARK.md` says how to record them.
+9. The Evaluation downloads do not show the speed test: **Speed test, for testers** is in
+   development builds only (owner decision, 20 Nov 2026). Device benchmarks are collected by a
+   developer from a development build (`npm run tauri dev`, `npm run tauri android dev` or
+   `npm run tauri ios dev`) or from a build made with `VITE_SHOW_SPEED_TEST=1`;
+   `ARGON2_BENCHMARK.md` says how to run it and record the lines. Check that **Security** in the
+   Evaluation download has no **Speed test, for testers** section.
 10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
@@ -514,12 +517,13 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
-Then turn the screen reader off and check text size:
+Then turn the screen reader off and check app zoom (and, on a phone, the device's own text size):
 
 - **Windows, macOS, Linux:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
   up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
-  down. Ctrl + 0 (Command + 0) resets it. After unlocking, **Settings → Preferences** shows the
-  size, with **−** and **+** buttons and a box to type a size, that do the same. Also try Windows
+  down. Ctrl + 0 (Command + 0) resets it. After unlocking, **Settings → Preferences → App zoom**
+  shows the zoom, with **−** and **+** buttons ("Zoom out" and "Zoom in") and a box to type a
+  percentage, that do the same. Also try Windows
   **Settings → Accessibility → Text size** and report whether the app follows it.
 - **Windows, macOS, Linux, the size is remembered (new, and not yet tried by anyone):**
   1. Press Ctrl + plus once (Command + plus on a Mac). Does the size change by one step, or by
@@ -528,17 +532,17 @@ Then turn the screen reader off and check text size:
      left it, without first showing at 100%. The next Ctrl + plus (Command + plus) should go one
      step on.
   3. Go to the largest size (400%) with the window at its smallest. Can you still unlock? Before
-     unlocking, Ctrl + 0 (Command + 0) is the way back; after, also **Settings → Preferences →
-     Back to normal size**.
+     unlocking, Ctrl + 0 (Command + 0) is the way back; after, also **Settings → Preferences → App zoom →
+     Back to 100%**.
   4. On Windows, hold Ctrl and turn the mouse wheel one notch: one step. On Linux, report how
      many notches one step takes (Linux reports the wheel differently; one is expected, more is
      possible). On a touchpad, scroll with two fingers while holding Ctrl, and pinch: the size
      should change slowly or not at all, never jump to the largest. On a touch screen, pinching is not
      expected to zoom any more; use the buttons in **Settings → Preferences**, after unlocking.
   5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
-  6. In **Settings → Preferences**, with a screen reader on, press **+** (read as "Larger text"):
-     it should say the new size. Type 150 in the box and press Enter: it should say 150%. Press
-     **Back to normal size**: the focus should move to **+**, not be lost.
+  6. In **Settings → Preferences**, with a screen reader on, press **+** (read as "Zoom in"):
+     it should say the new zoom ("App zoom 110%"). Type 150 in the box and press Enter: it should say 150%. Press
+     **Back to 100%**: the focus should move to **+**, not be lost.
   7. Type 130 in the box and press Enter: the size goes to 125% and a line under the box says why.
      Type 500: 400%, the largest. Type `abc`: nothing changes, and the box says to type a number
      from 80 to 400. Press Escape while typing: the box goes back to the size shown.
@@ -874,7 +878,7 @@ save), `src-tauri/src/text_recheck.rs` (the native re-check) and
 
 ## Appearance and Windows high contrast
 
-Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
+Use sample data only. Appearance is under **Settings → Preferences**, beside App zoom,
 including on a phone. The separate browser demonstration follows the device automatically;
 it has no Preferences screen. This is still a synthetic-data evaluation, not approval for PHI.
 
@@ -896,7 +900,7 @@ it has no Preferences screen. This is still a synthetic-data evaluation, not app
    keyboard focus against their actual backgrounds. Automated axe checks do not cover every state
    or replace native screen-reader and contrast-theme testing.
 6. Try the phone layout and the smallest desktop window at 400% text size. Appearance must not
-   remove Text size controls, move auto-lock out of Security, or change reduced-motion behavior.
+   remove App zoom controls, move auto-lock out of Security, or change reduced-motion behavior.
 7. In the browser demonstration, compare the synthetic paper preview across light/dark: the paper
    and its content remain unchanged while the surrounding app changes. Native documents still use
    **Save a copy**; no PDF viewer is added. A recovery kit printed from either appearance must have

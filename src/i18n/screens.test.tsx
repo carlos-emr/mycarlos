@@ -450,6 +450,7 @@ describe("the first setup's comfort screen in each language", () => {
           translate(locale, "comfort.later", {
             settings: tr("sidebar.settings"),
             textSize: tr("textSize.title"),
+            appearance: tr("appearance.title"),
             preferences: tr("sidebar.preferences"),
             autoLock: tr("security.autoLock.title"),
             security: tr("security.title"),

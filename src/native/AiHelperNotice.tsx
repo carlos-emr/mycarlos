@@ -4,7 +4,8 @@ import { useModalFocus } from "../useModalFocus";
 
 /** The notice about the AI helper (#72, AI_HELPER_NOTICE.md): shown before
  * the first export and before the first Summary or Explain with a model in a
- * session, and from Security at any time. Its text is part A's, word for
+ * session, and at any time from the AI helper settings or the reader's
+ * Summary section (#355). Its text is part A's, word for
  * word, in the app's language. Remembering that it was read, per vault, is a
  * later format step; for now it is shown once per unlocked session. */
 export function AiHelperNotice({
@@ -13,7 +14,8 @@ export function AiHelperNotice({
   answersKept = false,
   onClose,
 }: {
-  /** "continue" before a first use; "close" from Security. */
+  /** "continue" before a first use; "close" when opened from the AI helper
+   * settings or the reader's Summary section. */
   action: "continue" | "close";
   /** The model can run on this computer: the notice says what the AI here
    * does (part D) as well as how text is saved for another service. */

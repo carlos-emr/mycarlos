@@ -526,7 +526,6 @@ export const MESSAGE_KEYS = [
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -1130,6 +1129,8 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.videoKeptUnfinished",
   "interface.RecordingRecovery.finishedWithRoom",
   "interface.RecordingRecovery.stillNoRoom",
+  "portal.deviceLine",
+  "portal.deviceLineLinked",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1765,7 +1766,6 @@ const FLUENT_IDS_BY_KEY = {
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
-  "security.copies.title": "security-copies-title",
   "security.devBuild.body": "security-devBuild-body",
   "security.devBuild.title": "security-devBuild-title",
   "security.encryption.body": "security-encryption-body",
@@ -2498,6 +2498,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordingRecovery-finishedWithRoom",
   "interface.RecordingRecovery.stillNoRoom":
     "interface-RecordingRecovery-stillNoRoom",
+  "portal.deviceLine": "portal-deviceLine",
+  "portal.deviceLineLinked": "portal-deviceLineLinked",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2540,6 +2542,7 @@ export interface MessageArgsByKey {
   "comfort.continue": undefined;
   "comfort.intro": undefined;
   "comfort.later": {
+    appearance: FluentArgument;
     autoLock: FluentArgument;
     preferences: FluentArgument;
     security: FluentArgument;
@@ -3095,7 +3098,6 @@ export interface MessageArgsByKey {
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
-  "security.copies.title": undefined;
   "security.devBuild.body": undefined;
   "security.devBuild.title": undefined;
   "security.encryption.body": undefined;
@@ -3746,6 +3748,8 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.videoKeptUnfinished": undefined;
   "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
   "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
+  "portal.deviceLine": { device: FluentArgument };
+  "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -525,7 +525,6 @@
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -1128,5 +1127,7 @@
   "interface.RecordDialog.videoSavedNoRoom",
   "interface.RecordDialog.videoKeptUnfinished",
   "interface.RecordingRecovery.finishedWithRoom",
-  "interface.RecordingRecovery.stillNoRoom"
+  "interface.RecordingRecovery.stillNoRoom",
+  "portal.deviceLine",
+  "portal.deviceLineLinked"
 ]

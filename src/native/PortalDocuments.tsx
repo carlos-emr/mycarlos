@@ -8,7 +8,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  formatDate,
   formatDeviceName,
+  getLocale,
   useI18n,
   useTextState,
   message,
@@ -883,6 +885,20 @@ export function PortalDocuments({
           {link.clinicName ?? link.portalBase}
         </h3>
         <p className="portal-address">{link.portalBase}</p>
+        {/* Which of several cards for the same address this is: the device's name and the day it
+            was linked (#160). Both are text: the name is what the patient typed. */}
+        <p className="portal-device-line">
+          {link.linkedAtMs
+            ? t("portal.deviceLineLinked", {
+                device: link.deviceName,
+                date: formatDate(
+                  new Date(link.linkedAtMs),
+                  { dateStyle: "medium" },
+                  getLocale(),
+                ),
+              })
+            : t("portal.deviceLine", { device: link.deviceName })}
+        </p>
         <p>{stateText(cardState(link, live))}</p>
         <RefusedDeliveries
           link={link}

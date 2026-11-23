@@ -3223,7 +3223,7 @@ mod tests {
         // reserve, although the real prompt fits it with about 150 to spare.
         const TEMPLATE_TOKENS: usize = 30;
         for (_, language) in crate::model_helper::LANGUAGES {
-            let words = crate::model_helper::SYSTEM_PROMPT.len()
+            let words = crate::model_helper::summary_system_prompt().len()
                 + crate::model_helper::summary_prompt(language, crate::model_helper::MAX_SENTENCES)
                     .len();
             assert!(
