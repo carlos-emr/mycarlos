@@ -33,7 +33,7 @@ an archive with no native library, or no mode at all is a finding, not a pass.
   `myCarlos-Evaluation-Android.apk`: the gate fails it with `debuggable`, `usesCleartextTraffic` and both native
   libraries "not stripped", and finds no stub or cloud marker in it (correct: CI builds without them).
 - **Made-up artifacts:** every other case is tested with fixtures built in the test (a zip writer, a binary XML
-  writer, a protobuf XML writer, plists, ELF-looking bytes), all FAKE: `npm run test:release-safety`, 13 cases.
+  writer, a protobuf XML writer, plists, ELF-looking bytes), all FAKE: `npm run test:release-safety`, 20 cases.
 
 ## Not verified, and needs the first real release build
 
@@ -55,3 +55,24 @@ The workflow steps are patches for Ben under `/root/supervisor/for-ben/`: `mycar
 (tests and `--source` on every pull request; apply after patches 1, 2 and 4) and the iOS release workflow
 (`mycarlos-422-5-...`) runs the gate on the IPA. The Android release script (`scripts/build-android-release.sh`,
 #425) runs it on the bundle before it is copied out.
+
+## How the source checks work (after the review of #432)
+
+- `Cargo.toml` is **parsed** (a small TOML reader for the subset Cargo uses), so the order of its tables does not
+  matter. The **default feature closure** is resolved through the feature graph, including `dep/feature` and
+  `dep?/feature` spellings (`default = ["tauri/devtools"]`, or `default = ["dev"]` with `dev = ["ai-helper-stub"]`).
+  Every non-dev dependency's `features` are read in the inline, table (`[dependencies.tauri]`) and per-target forms.
+- `tauri.conf.json` `build.features` and its build commands, and `.cargo/config.toml` aliases, are read too.
+- Every command in **all** package scripts, workflows and shell scripts is tokenised (quotes, backslash-newlines,
+  YAML steps): `-F x`, `-Fx`, `--features=x`, quoted space- or comma-separated lists, `--all-features` and
+  `--cfg 'feature=...'` are all found, whatever the file is called. A forbidden feature on `cargo test`, `clippy`,
+  `check`, `doc` and the like is fine (CI tests the stub); on anything else it is a finding. No file is skipped
+  silently: `src-tauri/Cargo.toml`, `tauri.conf.json` and `package.json` are required, and finding no command at all
+  is a finding.
+- A manifest value that must be false is refused unless it is **literally false**: a `@bool/...` reference, an
+  entity spelling of true, or any other value is a finding. Attributes are keyed by namespace, so
+  `tools:debuggable="false"` cannot overwrite `android:debuggable="true"`.
+- Native libraries are judged by their **ELF section headers** (`.symtab`, `.debug_*`), never by text in the file.
+- **Bounded input:** the plain-XML scanner is linear and refuses over 1 MiB; one zip entry may inflate to at most
+  1 GiB; a string index outside the pool, a truncated protobuf field and a runaway varint are errors. 20 tests,
+  one for each false pass the review reproduced.
