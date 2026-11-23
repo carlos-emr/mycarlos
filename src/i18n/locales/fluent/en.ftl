@@ -56,7 +56,7 @@ comfort-continue = Continue
 
 comfort-intro = Choose what suits you before you set up. Each choice works at once.
 
-comfort-later = You can change these any time in { $settings }: { $textSize } under { $preferences }, and { $autoLock } under { $security }.
+comfort-later = You can change these any time in { $settings }: { $textSize } and { $appearance } under { $preferences }, and { $autoLock } under { $security }.
 
 comfort-sample = This is how text looks in myCarlos. Press − or + until it is easy to read.
 
@@ -1987,6 +1987,19 @@ ai-explain-ready = The explanation is ready.
 ai-failed = The AI helper could not finish. Try again.
 
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
+ai-error-memoryNumbers = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free and { $free } GB is free. Close some other programs, then try again.
+ai-error-memoryUnknown = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free, and this computer could not say how much is free. Close some other programs, then try again.
+ai-speed-title = Speed on this computer
+ai-speed-note = This runs the AI helper once on a short made-up text and uses the processor hard for about a minute or two. It sends nothing anywhere and uses nothing of yours. You can stop it at any time.
+ai-speed-button = Check this computer's speed
+ai-speed-working = Checking the speed…
+ai-speed-cancel = Stop the check
+ai-speed-result = Measured on this computer: the AI helper reads about { $read } words a second and writes about { $write }.
+ai-speed-cancelled = The check was stopped. Nothing was kept.
+ai-speed-none = Not checked yet.
+ai-speed-failed = The speed could not be measured. Try again.
+ai-speed-estimate = On this computer, this may take up to about { $minutes } min.
+ai-speed-estimateLong = On this computer, a document this long may not finish in the time the AI helper is given.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 
@@ -2155,6 +2168,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = other form { $n }
 
 interface-AnonymizePreview-pasteTitle = Put the details back
 
@@ -2276,3 +2290,62 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+interface-video-name = Video, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Record a video
+interface-RecordDialog-unavailable = Video recording isn't available on this device.
+interface-RecordDialog-why = Why?
+interface-RecordDialog-startingTheCameraAndMicrophone = Starting the camera and microphone…
+interface-RecordDialog-theVideoIsRecordedWithSound = The video is recorded with sound. People near you may be heard. Only you can open it.
+interface-RecordDialog-yourPhoneAsksOnce = Your phone asks once whether myCarlos may use the camera and the microphone. They are on only while you record. They turn off when you stop, close this window, or myCarlos locks.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = The camera and microphone are on only while you record. They turn off when you stop, close this window, or myCarlos locks.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = The camera and microphone are on, but nothing is recorded until you choose Start recording.
+interface-RecordDialog-pictureQuality = Picture quality
+interface-RecordDialog-standard = Standard (720p)
+interface-RecordDialog-high = High (1080p)
+interface-RecordDialog-aboutStandardPerHour = About 1.1 GB an hour
+interface-RecordDialog-aboutHighPerHour = About 2.5 to 4 GB an hour
+interface-RecordDialog-useTheCameraAndMicrophone = Use the camera and microphone
+interface-RecordDialog-startRecording = Start recording
+interface-RecordDialog-recording = Recording
+interface-RecordDialog-paused = Paused
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = Paused. Camera and microphone are still on.
+interface-RecordDialog-recorded = Recorded { $time }
+interface-RecordDialog-recordingAt = Recording at { $height }p
+interface-RecordDialog-pauseRecording = Pause recording
+interface-RecordDialog-resumeRecording = Resume recording
+interface-RecordDialog-stopAndSave = Stop and save
+interface-RecordDialog-stopAndSaveTheVideo = Stop and save the video?
+interface-RecordDialog-keepRecording = Keep recording
+interface-RecordDialog-savingTheVideo = Saving the video…
+interface-RecordDialog-recordingPaused = Recording paused.
+interface-RecordDialog-recordingResumed = Recording resumed.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = This device can't record video in a form myCarlos can save.
+interface-RecordDialog-videoNeedsBoth = A video needs both the camera and the microphone.
+interface-RecordDialog-nothingWasRecorded = Nothing was recorded, so no video was saved.
+interface-RecordDialog-videoSaved = Video saved: { $name }
+interface-RecordDialog-videoSavedStopped = Recording stopped because the device reported a problem. What was recorded was saved: { $name }
+interface-RecordDialog-videoSavedHidden = Recording stopped because myCarlos was hidden. What was recorded was saved: { $name }
+interface-RecordDialog-videoSavedSlow = Recording stopped because the video could not be saved fast enough. What was recorded was saved: { $name }
+interface-VideoViewer-video = Video
+interface-VideoViewer-player = Video player: { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = This video could not be played.
+interface-VideoViewer-keys = Space plays or pauses. Left and right arrows skip { $seconds } seconds. Up and down change the volume. M mutes.
+interface-VideoViewer-playVideo = Play video
+interface-VideoHelp-title = Why can't I record video here?
+interface-VideoHelp-engine = Recording a video needs this device's built-in web engine to record MP4 video with sound. This device's engine does not offer that.
+interface-VideoHelp-systems = On Windows, the N and KN editions leave out the media features until you add Microsoft's Media Feature Pack. On Linux, myCarlos needs the GStreamer plug-ins in the packages gstreamer1.0-plugins-bad and gstreamer1.0-plugins-ugly. Phones with Android 7 or older, and iPhones with iOS before 14.5, cannot record MP4 video in the app.
+interface-VideoHelp-restWorks = Photos and documents work as usual. A newer system update may add video recording.
+interface-RecordingRecovery-closed = myCarlos closed while you were recording. Keep the video that was saved?
+interface-RecordingRecovery-closedPaused = myCarlos closed while a recording was paused. Keep the video that was saved?
+interface-RecordingRecovery-name = Recording: { $name }
+interface-RecordingRecovery-askLater = Ask me later
+interface-RecordingRecovery-delete = Delete it
+interface-RecordingRecovery-keep = Keep the video
+interface-RecordingRecovery-kept = Video kept: { $name }
+interface-RecordingRecovery-nothingToKeep = Nothing complete had been saved, so there was no video to keep.
+interface-RecordingRecovery-deleted = The unfinished recording was deleted.
+interface-RecordingRecovery-deleteSure = Delete this recording? It can't be undone.
+interface-RecordingRecovery-savedLocked = myCarlos locked while you were recording. The video was saved: { $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos locked while a recording was paused. The video was saved: { $name }
+interface-RecordDialog-videoSavedFailed = Recording stopped because part of it could not be saved. What was saved before that is kept: { $name }
