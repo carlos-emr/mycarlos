@@ -365,6 +365,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
             imported: ["shared-record"],
             skippedDuplicates: [],
             notPdf: [],
+            unreadable: [],
           };
         }
         // The Text size setting asks the webview to zoom; the page zoom here stands in for it.

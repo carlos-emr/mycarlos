@@ -1503,8 +1503,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
 
   // Waiting files go into Shared with me as soon as the vault is open (#61).
-  // One that is not a PDF is not added and is named; anything else keeps them
-  // all waiting for the next ask.
+  // One that is not a PDF, or that could not be opened or read, is not added
+  // and is named, and the others are added. Anything else keeps them all
+  // waiting for the next ask, and is said (except a lock or a cancel, which
+  // are the vault closing).
   const accepting = useRef(false);
   acceptSharedRef.current = async () => {
     if (status !== "unlocked" || !inSession() || accepting.current) return;
@@ -1524,7 +1526,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         ...outcome.notPdf.map((name) =>
           translateNow("interface.notice.notPdf", { name }),
         ),
-        ...(outcome.unreadable ?? []).map((name) =>
+        ...outcome.unreadable.map((name) =>
           translateNow("interface.notice.receivedNotOpened", { name }),
         ),
         ...outcome.skippedDuplicates.map((name) =>
@@ -1533,12 +1535,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       ];
       if (
         outcome.notPdf.length ||
-        (outcome.unreadable?.length ?? 0) ||
+        outcome.unreadable.length ||
         outcome.skippedDuplicates.length
       )
         setSessionNotice(deferredText(() => said().join(" ")));
-    } catch {
-      // They keep waiting: the next ask tries again.
+    } catch (error) {
+      // They keep waiting: the next ask tries again. Said, unless it is the
+      // vault locking or the work cancelled: without a word, no space, a
+      // paused vault or damage would mean the files never appear.
+      if (
+        inSession() &&
+        !hasVaultErrorCode(error, "locked") &&
+        !hasVaultErrorCode(error, "cancelled")
+      )
+        setSessionNotice(deferredText(() => vaultErrorMessage(error)));
     } finally {
       accepting.current = false;
       // A newer unlock may have asked while these files were still taken.

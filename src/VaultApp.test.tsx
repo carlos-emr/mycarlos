@@ -179,9 +179,12 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       files: [],
       notice: { dropped: 0, refusedShares: 0 },
     }),
-    acceptReceived: vi
-      .fn()
-      .mockResolvedValue({ imported: [], skippedDuplicates: [], notPdf: [] }),
+    acceptReceived: vi.fn().mockResolvedValue({
+      imported: [],
+      skippedDuplicates: [],
+      notPdf: [],
+      unreadable: [],
+    }),
     moveToPerson: vi.fn().mockResolvedValue({ moved: [], alreadyThere: [] }),
     viewPage: vi
       .fn()
@@ -1106,6 +1109,7 @@ describe("durable vault UI", () => {
           imported: added.map((file) => `record-${file.id}`),
           skippedDuplicates: [],
           notPdf,
+          unreadable: [],
         };
       }),
       moveToPerson: vi.fn(
@@ -2586,10 +2590,50 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(
         humanText(
-          "FAKE_Gone.pdf could not be opened (it may have been moved or deleted), so myCarlos did not add it.",
+          "FAKE_Gone.pdf could not be opened or read, so myCarlos did not add it. Share it again if you still need it.",
         ),
       ),
     ).toBeVisible();
+    expect(
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 2 new"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("says when the waiting files could not be added for a reason of the vault's, and stays quiet for a lock (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, arrive } = sharedVault(["Jamie"], ["FAKE_Letter.pdf"]);
+    const normal = vi.mocked(bridge.acceptReceived).getMockImplementation()!;
+    let failure: unknown = null;
+    vi.mocked(bridge.acceptReceived).mockImplementation(async () => {
+      if (failure) throw failure;
+      return normal();
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await screen.findByRole("button", {
+      name: humanText("Shared with me, 1 new"),
+    });
+    const focus = () =>
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+      });
+    // A lock is the vault closing: nothing is said.
+    failure = { code: "locked", message: "FAKE locked" };
+    arrive("FAKE_Scan.pdf");
+    focus();
+    await waitFor(() =>
+      expect(vi.mocked(bridge.acceptReceived)).toHaveBeenCalledTimes(2),
+    );
+    expect(screen.queryByText("FAKE locked")).not.toBeInTheDocument();
+    // Anything else keeps the files waiting and is said, not swallowed.
+    failure = { code: "FAKE_unknown", message: "FAKE disk trouble" };
+    focus();
+    expect(await screen.findByText("FAKE disk trouble")).toBeVisible();
+    // The files kept waiting: the next ask adds them.
+    failure = null;
+    focus();
     expect(
       await screen.findByRole("button", {
         name: humanText("Shared with me, 2 new"),
