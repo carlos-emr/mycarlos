@@ -1375,12 +1375,12 @@ unlock-title = Déverrouiller votre coffre-fort
 
 unlock-waiting =
     { $count ->
-    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
-    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
-    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
     }
 
-unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
 
 language-error-formatting = myCarlos n’a pas pu afficher ce message correctement. Choisissez une autre langue ou redémarrez l’application, puis vérifiez vos dossiers avant de réessayer.
 
@@ -1904,7 +1904,7 @@ ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affic
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Voir dans le document
+ai-summary-showInDocument = Me montrer dans le document
 
 ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
 
@@ -2249,6 +2249,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (à vérifier avec l’original)
 interface-AnonymizePreview-possibleNames = Mots qui pourraient être des noms
 
 interface-AnonymizePreview-removeWord = Retirer « { $word } »
+interface-AnonymizePreview-eponymTitle = Ces mots pourraient être des termes médicaux
+interface-AnonymizePreview-eponymOne = Ceci pourrait être un terme médical : { $phrase }
+interface-AnonymizePreview-eponymKeep = Garder
+interface-AnonymizePreview-eponymKeepAll = Tout garder « { $phrase } »
+
+interface-AnonymizePreview-removedSummary = Retiré : { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Rien n’a encore été retiré.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nom
+   *[other] { $count } noms
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médecin
+   *[other] { $count } médecins
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinique
+   *[other] { $count } cliniques
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numéro de carte santé
+   *[other] { $count } numéros de carte santé
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numéro de dossier
+   *[other] { $count } numéros de dossier
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numéro d'assurance sociale
+   *[other] { $count } numéros d'assurance sociale
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date de naissance
+   *[other] { $count } dates de naissance
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } âge
+   *[other] { $count } âges
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adresse
+   *[other] { $count } adresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } code postal
+   *[other] { $count } codes postaux
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numéro de téléphone
+   *[other] { $count } numéros de téléphone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adresse courriel
+   *[other] { $count } adresses courriel
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adresse web
+   *[other] { $count } adresses web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } date ambiguë
+   *[other] { $count } dates ambiguës
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } retiré par vous
+   *[other] { $count } retirés par vous
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date remplacée
+   *[other] { $count } dates remplacées
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } mot à vérifier
+   *[other] { $count } mots à vérifier
+}
+
+interface-AnonymizePreview-toCheckHelp = Surlignés : les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus. Ils peuvent identifier quelqu’un. Cette aide ne trouve pas tout. Elle manque les noms écrits en majuscules, les noms au début d’une ligne, les noms écrits dans une écriture sans majuscules (chinois, coréen ou arabe, par exemple) et les noms qui sont aussi des mois, des médicaments ou des termes médicaux (comme « Juin » ou « Bell »). Sélectionnez un mot surligné, puis choisissez Retirer, et lisez vous-même tout le texte.
+
+interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
+
+interface-AnonymizePreview-savedFileNote = Le fichier enregistré n’est pas protégé par myCarlos. Il ne contient aucun nom, mais il contient les détails médicaux. Supprimez-le lorsque vous avez terminé.
+
+interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez décide de ce qui est conservé : un service de clavardage peut le garder ou s’en servir pour apprendre, selon les paramètres de votre compte.
+
+interface-AnonymizePreview-copy = Copier le texte
+
+interface-AnonymizePreview-copied = Le texte a été copié.
+
+interface-AnonymizePreview-copyFailed = Le texte n’a pas pu être copié.
+
+interface-AnonymizePreview-copyWarning = Le texte copié peut rester sur cet appareil : l’historique du presse-papiers de Windows et la synchronisation du presse-papiers entre appareils peuvent en garder une copie.
 
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 
@@ -2301,6 +2410,20 @@ noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, 
 noticesStep-done = Terminé
 noticesStep-notNow = Pas maintenant
 
+background-title = Exécution en arrière-plan
+background-keepRunning = Laisser myCarlos s’exécuter en arrière-plan après la fermeture de sa fenêtre
+background-keepRunningHelp = Lorsque vous fermez la fenêtre, myCarlos peut rester en arrière-plan avec une icône dans la zone de notification (la barre des menus sur un Mac). Votre coffre se verrouille à la fermeture de la fenêtre et reste verrouillé jusqu’à ce que vous ouvriez myCarlos et le déverrouilliez. Choisissez Quitter dans l’icône pour fermer complètement myCarlos.
+background-startAtLogin = Démarrer myCarlos à l’ouverture de ma session sur cet ordinateur
+background-startAtLoginHelp = myCarlos démarre lorsque vous ouvrez votre session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan, coffre verrouillé. S’il est désactivé, sa fenêtre s’ouvre.
+background-paused = Tant que votre coffre est verrouillé, myCarlos ne peut pas vérifier les nouveaux documents de la clinique. Déverrouillez-le pour vérifier.
+background-unavailable = Une icône d’arrière-plan n’est pas disponible sur cet ordinateur. myCarlos se ferme complètement lorsque vous fermez sa fenêtre.
+background-error = Ce réglage n’a pas pu être modifié. Il reste tel qu’il était.
+native-tray-open = Ouvrir myCarlos
+native-tray-quit = Quitter myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Un nouveau document est en attente. Déverrouillez myCarlos pour le voir.
+
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
@@ -2350,6 +2473,14 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+interface-received-confirmTitleOne = Importer { $name } dans Partagés avec moi ?
+
+interface-received-confirmTitleMany = Importer { $count } documents dans Partagés avec moi ?
+
+interface-received-confirmBody = Rien n’est ajouté tant que vous n’avez pas choisi Importer. Annuler ne laisse rien.
+
+interface-received-import = Importer
 
 reader-android-opening = Ouverture du document…
 

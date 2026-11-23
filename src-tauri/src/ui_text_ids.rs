@@ -153,6 +153,14 @@ pub enum MessageId {
     AppearanceSystem,
     AppearanceTitle,
     AuthKicker,
+    BackgroundError,
+    BackgroundKeepRunning,
+    BackgroundKeepRunningHelp,
+    BackgroundPaused,
+    BackgroundStartAtLogin,
+    BackgroundStartAtLoginHelp,
+    BackgroundTitle,
+    BackgroundUnavailable,
     BoxCurrentPassphrase,
     BoxFolderName,
     BoxName,
@@ -202,11 +210,20 @@ pub enum MessageId {
     FrameWindowLabel,
     HiddenBackToSecurity,
     InterfaceAiHelperNoticeContinue,
+    InterfaceAnonymizePreviewCheckPicked,
     InterfaceAnonymizePreviewClose,
     InterfaceAnonymizePreviewConfirmBody,
     InterfaceAnonymizePreviewConfirmTitle,
+    InterfaceAnonymizePreviewCopied,
+    InterfaceAnonymizePreviewCopy,
+    InterfaceAnonymizePreviewCopyFailed,
+    InterfaceAnonymizePreviewCopyWarning,
     InterfaceAnonymizePreviewCutPages,
     InterfaceAnonymizePreviewEmptyPages,
+    InterfaceAnonymizePreviewEponymKeep,
+    InterfaceAnonymizePreviewEponymKeepAll,
+    InterfaceAnonymizePreviewEponymOne,
+    InterfaceAnonymizePreviewEponymTitle,
     InterfaceAnonymizePreviewFailedPages,
     InterfaceAnonymizePreviewFooterNote,
     InterfaceAnonymizePreviewHeaderNote,
@@ -238,6 +255,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewPasteLabel,
     InterfaceAnonymizePreviewPasteResult,
     InterfaceAnonymizePreviewPasteTitle,
+    InterfaceAnonymizePreviewPasteWhereNote,
     InterfaceAnonymizePreviewPhrase,
     InterfaceAnonymizePreviewPhraseNotFound,
     InterfaceAnonymizePreviewPlaceholderAddress,
@@ -262,15 +280,36 @@ pub enum MessageId {
     InterfaceAnonymizePreviewRemovePhrase,
     InterfaceAnonymizePreviewRemoveSelected,
     InterfaceAnonymizePreviewRemoveWord,
+    InterfaceAnonymizePreviewRemovedCountAddress,
+    InterfaceAnonymizePreviewRemovedCountAge,
+    InterfaceAnonymizePreviewRemovedCountClinic,
+    InterfaceAnonymizePreviewRemovedCountDate,
+    InterfaceAnonymizePreviewRemovedCountDateOfBirth,
+    InterfaceAnonymizePreviewRemovedCountDoctor,
+    InterfaceAnonymizePreviewRemovedCountEmail,
+    InterfaceAnonymizePreviewRemovedCountHealthCard,
+    InterfaceAnonymizePreviewRemovedCountManual,
+    InterfaceAnonymizePreviewRemovedCountName,
+    InterfaceAnonymizePreviewRemovedCountPhone,
+    InterfaceAnonymizePreviewRemovedCountPostalCode,
+    InterfaceAnonymizePreviewRemovedCountRecordNumber,
+    InterfaceAnonymizePreviewRemovedCountSin,
+    InterfaceAnonymizePreviewRemovedCountUnclearDate,
+    InterfaceAnonymizePreviewRemovedCountWeb,
     InterfaceAnonymizePreviewRemovedKind,
     InterfaceAnonymizePreviewRemovedPlaces,
+    InterfaceAnonymizePreviewRemovedSummary,
+    InterfaceAnonymizePreviewRemovedSummaryNone,
     InterfaceAnonymizePreviewReplaced,
     InterfaceAnonymizePreviewSave,
     InterfaceAnonymizePreviewSaveCancelled,
     InterfaceAnonymizePreviewSaved,
+    InterfaceAnonymizePreviewSavedFileNote,
     InterfaceAnonymizePreviewSelectFirst,
     InterfaceAnonymizePreviewTextRegion,
     InterfaceAnonymizePreviewTitle,
+    InterfaceAnonymizePreviewToCheck,
+    InterfaceAnonymizePreviewToCheckHelp,
     InterfaceAnonymizePreviewUndo,
     InterfaceCameraDialogCameraReady,
     InterfaceCameraDialogCameraView,
@@ -622,6 +661,10 @@ pub enum MessageId {
     InterfaceReaderZoom,
     InterfaceReceiveDropped,
     InterfaceReceiveRefused,
+    InterfaceReceivedConfirmBody,
+    InterfaceReceivedConfirmTitleMany,
+    InterfaceReceivedConfirmTitleOne,
+    InterfaceReceivedImport,
     InterfaceRecordPresentationImaging,
     InterfaceRecordPresentationPrescription,
     InterfaceRecordPresentationTestResult,
@@ -756,6 +799,10 @@ pub enum MessageId {
     NativeSetAsideMobile,
     NativeSetAsideTitle,
     NativeSetAsideWarning,
+    NativeTrayOpen,
+    NativeTrayQuit,
+    NativeTrayTooltip,
+    NativeTrayWaiting,
     NativeVaultKeep,
     NoticeAutoLockSet,
     NoticeBackupCutOff,
@@ -1316,6 +1363,14 @@ impl MessageId {
         Self::AppearanceSystem,
         Self::AppearanceTitle,
         Self::AuthKicker,
+        Self::BackgroundError,
+        Self::BackgroundKeepRunning,
+        Self::BackgroundKeepRunningHelp,
+        Self::BackgroundPaused,
+        Self::BackgroundStartAtLogin,
+        Self::BackgroundStartAtLoginHelp,
+        Self::BackgroundTitle,
+        Self::BackgroundUnavailable,
         Self::BoxCurrentPassphrase,
         Self::BoxFolderName,
         Self::BoxName,
@@ -1365,11 +1420,20 @@ impl MessageId {
         Self::FrameWindowLabel,
         Self::HiddenBackToSecurity,
         Self::InterfaceAiHelperNoticeContinue,
+        Self::InterfaceAnonymizePreviewCheckPicked,
         Self::InterfaceAnonymizePreviewClose,
         Self::InterfaceAnonymizePreviewConfirmBody,
         Self::InterfaceAnonymizePreviewConfirmTitle,
+        Self::InterfaceAnonymizePreviewCopied,
+        Self::InterfaceAnonymizePreviewCopy,
+        Self::InterfaceAnonymizePreviewCopyFailed,
+        Self::InterfaceAnonymizePreviewCopyWarning,
         Self::InterfaceAnonymizePreviewCutPages,
         Self::InterfaceAnonymizePreviewEmptyPages,
+        Self::InterfaceAnonymizePreviewEponymKeep,
+        Self::InterfaceAnonymizePreviewEponymKeepAll,
+        Self::InterfaceAnonymizePreviewEponymOne,
+        Self::InterfaceAnonymizePreviewEponymTitle,
         Self::InterfaceAnonymizePreviewFailedPages,
         Self::InterfaceAnonymizePreviewFooterNote,
         Self::InterfaceAnonymizePreviewHeaderNote,
@@ -1401,6 +1465,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewPasteLabel,
         Self::InterfaceAnonymizePreviewPasteResult,
         Self::InterfaceAnonymizePreviewPasteTitle,
+        Self::InterfaceAnonymizePreviewPasteWhereNote,
         Self::InterfaceAnonymizePreviewPhrase,
         Self::InterfaceAnonymizePreviewPhraseNotFound,
         Self::InterfaceAnonymizePreviewPlaceholderAddress,
@@ -1425,15 +1490,36 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewRemovePhrase,
         Self::InterfaceAnonymizePreviewRemoveSelected,
         Self::InterfaceAnonymizePreviewRemoveWord,
+        Self::InterfaceAnonymizePreviewRemovedCountAddress,
+        Self::InterfaceAnonymizePreviewRemovedCountAge,
+        Self::InterfaceAnonymizePreviewRemovedCountClinic,
+        Self::InterfaceAnonymizePreviewRemovedCountDate,
+        Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth,
+        Self::InterfaceAnonymizePreviewRemovedCountDoctor,
+        Self::InterfaceAnonymizePreviewRemovedCountEmail,
+        Self::InterfaceAnonymizePreviewRemovedCountHealthCard,
+        Self::InterfaceAnonymizePreviewRemovedCountManual,
+        Self::InterfaceAnonymizePreviewRemovedCountName,
+        Self::InterfaceAnonymizePreviewRemovedCountPhone,
+        Self::InterfaceAnonymizePreviewRemovedCountPostalCode,
+        Self::InterfaceAnonymizePreviewRemovedCountRecordNumber,
+        Self::InterfaceAnonymizePreviewRemovedCountSin,
+        Self::InterfaceAnonymizePreviewRemovedCountUnclearDate,
+        Self::InterfaceAnonymizePreviewRemovedCountWeb,
         Self::InterfaceAnonymizePreviewRemovedKind,
         Self::InterfaceAnonymizePreviewRemovedPlaces,
+        Self::InterfaceAnonymizePreviewRemovedSummary,
+        Self::InterfaceAnonymizePreviewRemovedSummaryNone,
         Self::InterfaceAnonymizePreviewReplaced,
         Self::InterfaceAnonymizePreviewSave,
         Self::InterfaceAnonymizePreviewSaveCancelled,
         Self::InterfaceAnonymizePreviewSaved,
+        Self::InterfaceAnonymizePreviewSavedFileNote,
         Self::InterfaceAnonymizePreviewSelectFirst,
         Self::InterfaceAnonymizePreviewTextRegion,
         Self::InterfaceAnonymizePreviewTitle,
+        Self::InterfaceAnonymizePreviewToCheck,
+        Self::InterfaceAnonymizePreviewToCheckHelp,
         Self::InterfaceAnonymizePreviewUndo,
         Self::InterfaceCameraDialogCameraReady,
         Self::InterfaceCameraDialogCameraView,
@@ -1785,6 +1871,10 @@ impl MessageId {
         Self::InterfaceReaderZoom,
         Self::InterfaceReceiveDropped,
         Self::InterfaceReceiveRefused,
+        Self::InterfaceReceivedConfirmBody,
+        Self::InterfaceReceivedConfirmTitleMany,
+        Self::InterfaceReceivedConfirmTitleOne,
+        Self::InterfaceReceivedImport,
         Self::InterfaceRecordPresentationImaging,
         Self::InterfaceRecordPresentationPrescription,
         Self::InterfaceRecordPresentationTestResult,
@@ -1919,6 +2009,10 @@ impl MessageId {
         Self::NativeSetAsideMobile,
         Self::NativeSetAsideTitle,
         Self::NativeSetAsideWarning,
+        Self::NativeTrayOpen,
+        Self::NativeTrayQuit,
+        Self::NativeTrayTooltip,
+        Self::NativeTrayWaiting,
         Self::NativeVaultKeep,
         Self::NoticeAutoLockSet,
         Self::NoticeBackupCutOff,
@@ -2479,6 +2573,14 @@ impl MessageId {
             Self::AppearanceSystem => "appearance-system",
             Self::AppearanceTitle => "appearance-title",
             Self::AuthKicker => "auth-kicker",
+            Self::BackgroundError => "background-error",
+            Self::BackgroundKeepRunning => "background-keepRunning",
+            Self::BackgroundKeepRunningHelp => "background-keepRunningHelp",
+            Self::BackgroundPaused => "background-paused",
+            Self::BackgroundStartAtLogin => "background-startAtLogin",
+            Self::BackgroundStartAtLoginHelp => "background-startAtLoginHelp",
+            Self::BackgroundTitle => "background-title",
+            Self::BackgroundUnavailable => "background-unavailable",
             Self::BoxCurrentPassphrase => "box-currentPassphrase",
             Self::BoxFolderName => "box-folderName",
             Self::BoxName => "box-name",
@@ -2528,13 +2630,24 @@ impl MessageId {
             Self::FrameWindowLabel => "frame-window-label",
             Self::HiddenBackToSecurity => "hidden-backToSecurity",
             Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
+            Self::InterfaceAnonymizePreviewCheckPicked => "interface-AnonymizePreview-checkPicked",
             Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
             Self::InterfaceAnonymizePreviewConfirmBody => "interface-AnonymizePreview-confirmBody",
             Self::InterfaceAnonymizePreviewConfirmTitle => {
                 "interface-AnonymizePreview-confirmTitle"
             }
+            Self::InterfaceAnonymizePreviewCopied => "interface-AnonymizePreview-copied",
+            Self::InterfaceAnonymizePreviewCopy => "interface-AnonymizePreview-copy",
+            Self::InterfaceAnonymizePreviewCopyFailed => "interface-AnonymizePreview-copyFailed",
+            Self::InterfaceAnonymizePreviewCopyWarning => "interface-AnonymizePreview-copyWarning",
             Self::InterfaceAnonymizePreviewCutPages => "interface-AnonymizePreview-cutPages",
             Self::InterfaceAnonymizePreviewEmptyPages => "interface-AnonymizePreview-emptyPages",
+            Self::InterfaceAnonymizePreviewEponymKeep => "interface-AnonymizePreview-eponymKeep",
+            Self::InterfaceAnonymizePreviewEponymKeepAll => {
+                "interface-AnonymizePreview-eponymKeepAll"
+            }
+            Self::InterfaceAnonymizePreviewEponymOne => "interface-AnonymizePreview-eponymOne",
+            Self::InterfaceAnonymizePreviewEponymTitle => "interface-AnonymizePreview-eponymTitle",
             Self::InterfaceAnonymizePreviewFailedPages => "interface-AnonymizePreview-failedPages",
             Self::InterfaceAnonymizePreviewFooterNote => "interface-AnonymizePreview-footerNote",
             Self::InterfaceAnonymizePreviewHeaderNote => "interface-AnonymizePreview-headerNote",
@@ -2588,6 +2701,9 @@ impl MessageId {
             Self::InterfaceAnonymizePreviewPasteLabel => "interface-AnonymizePreview-pasteLabel",
             Self::InterfaceAnonymizePreviewPasteResult => "interface-AnonymizePreview-pasteResult",
             Self::InterfaceAnonymizePreviewPasteTitle => "interface-AnonymizePreview-pasteTitle",
+            Self::InterfaceAnonymizePreviewPasteWhereNote => {
+                "interface-AnonymizePreview-pasteWhereNote"
+            }
             Self::InterfaceAnonymizePreviewPhrase => "interface-AnonymizePreview-phrase",
             Self::InterfaceAnonymizePreviewPhraseNotFound => {
                 "interface-AnonymizePreview-phraseNotFound"
@@ -2650,9 +2766,63 @@ impl MessageId {
                 "interface-AnonymizePreview-removeSelected"
             }
             Self::InterfaceAnonymizePreviewRemoveWord => "interface-AnonymizePreview-removeWord",
+            Self::InterfaceAnonymizePreviewRemovedCountAddress => {
+                "interface-AnonymizePreview-removedCount-address"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountAge => {
+                "interface-AnonymizePreview-removedCount-age"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountClinic => {
+                "interface-AnonymizePreview-removedCount-clinic"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDate => {
+                "interface-AnonymizePreview-removedCount-date"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth => {
+                "interface-AnonymizePreview-removedCount-dateOfBirth"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountDoctor => {
+                "interface-AnonymizePreview-removedCount-doctor"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountEmail => {
+                "interface-AnonymizePreview-removedCount-email"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountHealthCard => {
+                "interface-AnonymizePreview-removedCount-healthCard"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountManual => {
+                "interface-AnonymizePreview-removedCount-manual"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountName => {
+                "interface-AnonymizePreview-removedCount-name"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountPhone => {
+                "interface-AnonymizePreview-removedCount-phone"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountPostalCode => {
+                "interface-AnonymizePreview-removedCount-postalCode"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountRecordNumber => {
+                "interface-AnonymizePreview-removedCount-recordNumber"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountSin => {
+                "interface-AnonymizePreview-removedCount-sin"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountUnclearDate => {
+                "interface-AnonymizePreview-removedCount-unclearDate"
+            }
+            Self::InterfaceAnonymizePreviewRemovedCountWeb => {
+                "interface-AnonymizePreview-removedCount-web"
+            }
             Self::InterfaceAnonymizePreviewRemovedKind => "interface-AnonymizePreview-removedKind",
             Self::InterfaceAnonymizePreviewRemovedPlaces => {
                 "interface-AnonymizePreview-removedPlaces"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummary => {
+                "interface-AnonymizePreview-removedSummary"
+            }
+            Self::InterfaceAnonymizePreviewRemovedSummaryNone => {
+                "interface-AnonymizePreview-removedSummaryNone"
             }
             Self::InterfaceAnonymizePreviewReplaced => "interface-AnonymizePreview-replaced",
             Self::InterfaceAnonymizePreviewSave => "interface-AnonymizePreview-save",
@@ -2660,9 +2830,14 @@ impl MessageId {
                 "interface-AnonymizePreview-saveCancelled"
             }
             Self::InterfaceAnonymizePreviewSaved => "interface-AnonymizePreview-saved",
+            Self::InterfaceAnonymizePreviewSavedFileNote => {
+                "interface-AnonymizePreview-savedFileNote"
+            }
             Self::InterfaceAnonymizePreviewSelectFirst => "interface-AnonymizePreview-selectFirst",
             Self::InterfaceAnonymizePreviewTextRegion => "interface-AnonymizePreview-textRegion",
             Self::InterfaceAnonymizePreviewTitle => "interface-AnonymizePreview-title",
+            Self::InterfaceAnonymizePreviewToCheck => "interface-AnonymizePreview-toCheck",
+            Self::InterfaceAnonymizePreviewToCheckHelp => "interface-AnonymizePreview-toCheckHelp",
             Self::InterfaceAnonymizePreviewUndo => "interface-AnonymizePreview-undo",
             Self::InterfaceCameraDialogCameraReady => "interface-CameraDialog-cameraReady",
             Self::InterfaceCameraDialogCameraView => "interface-CameraDialog-cameraView",
@@ -3272,6 +3447,10 @@ impl MessageId {
             Self::InterfaceReaderZoom => "interface-reader-zoom",
             Self::InterfaceReceiveDropped => "interface-receive-dropped",
             Self::InterfaceReceiveRefused => "interface-receive-refused",
+            Self::InterfaceReceivedConfirmBody => "interface-received-confirmBody",
+            Self::InterfaceReceivedConfirmTitleMany => "interface-received-confirmTitleMany",
+            Self::InterfaceReceivedConfirmTitleOne => "interface-received-confirmTitleOne",
+            Self::InterfaceReceivedImport => "interface-received-import",
             Self::InterfaceRecordPresentationImaging => "interface-recordPresentation-imaging",
             Self::InterfaceRecordPresentationPrescription => {
                 "interface-recordPresentation-prescription"
@@ -3414,6 +3593,10 @@ impl MessageId {
             Self::NativeSetAsideMobile => "native-setAside-mobile",
             Self::NativeSetAsideTitle => "native-setAside-title",
             Self::NativeSetAsideWarning => "native-setAside-warning",
+            Self::NativeTrayOpen => "native-tray-open",
+            Self::NativeTrayQuit => "native-tray-quit",
+            Self::NativeTrayTooltip => "native-tray-tooltip",
+            Self::NativeTrayWaiting => "native-tray-waiting",
             Self::NativeVaultKeep => "native-vault-keep",
             Self::NoticeAutoLockSet => "notice-autoLockSet",
             Self::NoticeBackupCutOff => "notice-backupCutOff",
@@ -5117,6 +5300,93 @@ impl MessageId {
             "interface.AnonymizePreview.removeWord" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveWord)
             }
+            "interface.AnonymizePreview.eponymTitle" => {
+                Some(Self::InterfaceAnonymizePreviewEponymTitle)
+            }
+            "interface.AnonymizePreview.eponymOne" => {
+                Some(Self::InterfaceAnonymizePreviewEponymOne)
+            }
+            "interface.AnonymizePreview.eponymKeep" => {
+                Some(Self::InterfaceAnonymizePreviewEponymKeep)
+            }
+            "interface.AnonymizePreview.eponymKeepAll" => {
+                Some(Self::InterfaceAnonymizePreviewEponymKeepAll)
+            }
+            "interface.AnonymizePreview.removedSummary" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummary)
+            }
+            "interface.AnonymizePreview.removedCount.name" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountName)
+            }
+            "interface.AnonymizePreview.removedCount.doctor" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDoctor)
+            }
+            "interface.AnonymizePreview.removedCount.clinic" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountClinic)
+            }
+            "interface.AnonymizePreview.removedCount.healthCard" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountHealthCard)
+            }
+            "interface.AnonymizePreview.removedCount.recordNumber" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountRecordNumber)
+            }
+            "interface.AnonymizePreview.removedCount.sin" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountSin)
+            }
+            "interface.AnonymizePreview.removedCount.dateOfBirth" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDateOfBirth)
+            }
+            "interface.AnonymizePreview.removedCount.age" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountAge)
+            }
+            "interface.AnonymizePreview.removedCount.address" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountAddress)
+            }
+            "interface.AnonymizePreview.removedCount.postalCode" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountPostalCode)
+            }
+            "interface.AnonymizePreview.removedCount.phone" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountPhone)
+            }
+            "interface.AnonymizePreview.removedCount.email" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountEmail)
+            }
+            "interface.AnonymizePreview.removedCount.web" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountWeb)
+            }
+            "interface.AnonymizePreview.removedCount.unclearDate" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountUnclearDate)
+            }
+            "interface.AnonymizePreview.removedCount.manual" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountManual)
+            }
+            "interface.AnonymizePreview.removedCount.date" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedCountDate)
+            }
+            "interface.AnonymizePreview.removedSummaryNone" => {
+                Some(Self::InterfaceAnonymizePreviewRemovedSummaryNone)
+            }
+            "interface.AnonymizePreview.toCheck" => Some(Self::InterfaceAnonymizePreviewToCheck),
+            "interface.AnonymizePreview.toCheckHelp" => {
+                Some(Self::InterfaceAnonymizePreviewToCheckHelp)
+            }
+            "interface.AnonymizePreview.checkPicked" => {
+                Some(Self::InterfaceAnonymizePreviewCheckPicked)
+            }
+            "interface.AnonymizePreview.savedFileNote" => {
+                Some(Self::InterfaceAnonymizePreviewSavedFileNote)
+            }
+            "interface.AnonymizePreview.pasteWhereNote" => {
+                Some(Self::InterfaceAnonymizePreviewPasteWhereNote)
+            }
+            "interface.AnonymizePreview.copy" => Some(Self::InterfaceAnonymizePreviewCopy),
+            "interface.AnonymizePreview.copied" => Some(Self::InterfaceAnonymizePreviewCopied),
+            "interface.AnonymizePreview.copyFailed" => {
+                Some(Self::InterfaceAnonymizePreviewCopyFailed)
+            }
+            "interface.AnonymizePreview.copyWarning" => {
+                Some(Self::InterfaceAnonymizePreviewCopyWarning)
+            }
             "interface.AnonymizePreview.removeSelected" => {
                 Some(Self::InterfaceAnonymizePreviewRemoveSelected)
             }
@@ -5272,6 +5542,18 @@ impl MessageId {
             "personDetails.notNow" => Some(Self::PersonDetailsNotNow),
             "personDetails.notSaved" => Some(Self::PersonDetailsNotSaved),
             "ai.summaryTooLarge" => Some(Self::AiSummaryTooLarge),
+            "background.title" => Some(Self::BackgroundTitle),
+            "background.keepRunning" => Some(Self::BackgroundKeepRunning),
+            "background.keepRunningHelp" => Some(Self::BackgroundKeepRunningHelp),
+            "background.startAtLogin" => Some(Self::BackgroundStartAtLogin),
+            "background.startAtLoginHelp" => Some(Self::BackgroundStartAtLoginHelp),
+            "background.paused" => Some(Self::BackgroundPaused),
+            "background.unavailable" => Some(Self::BackgroundUnavailable),
+            "background.error" => Some(Self::BackgroundError),
+            "native.tray.open" => Some(Self::NativeTrayOpen),
+            "native.tray.quit" => Some(Self::NativeTrayQuit),
+            "native.tray.tooltip" => Some(Self::NativeTrayTooltip),
+            "native.tray.waiting" => Some(Self::NativeTrayWaiting),
             "personDetails.previousTitle" => Some(Self::PersonDetailsPreviousTitle),
             "personDetails.previousHelp" => Some(Self::PersonDetailsPreviousHelp),
             "personDetails.previousEntry" => Some(Self::PersonDetailsPreviousEntry),
@@ -5440,6 +5722,10 @@ impl MessageId {
             "interface.hidden.videoLeftOut" => Some(Self::InterfaceHiddenVideoLeftOut),
             "portal.deviceLine" => Some(Self::PortalDeviceLine),
             "portal.deviceLineLinked" => Some(Self::PortalDeviceLineLinked),
+            "interface.received.confirmTitleOne" => Some(Self::InterfaceReceivedConfirmTitleOne),
+            "interface.received.confirmTitleMany" => Some(Self::InterfaceReceivedConfirmTitleMany),
+            "interface.received.confirmBody" => Some(Self::InterfaceReceivedConfirmBody),
+            "interface.received.import" => Some(Self::InterfaceReceivedImport),
             _ => None,
         }
     }

@@ -1406,13 +1406,13 @@ unlock-title = Odblokuj sejf
 
 unlock-waiting =
     { $count ->
-    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
-    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
     }
 
-unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
 language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Proszę wybrać inny język lub uruchomić aplikację ponownie, a przed kolejną próbą sprawdzić swoje dokumenty.
 
@@ -1945,7 +1945,7 @@ ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana pr
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Pokaż w dokumencie
+ai-summary-showInDocument = Pokaż mi w dokumencie
 
 ai-summary-folded = Podsumowanie jest zwinięte, żeby zrobić miejsce dla strony.
 
@@ -2296,6 +2296,149 @@ interface-AnonymizePreview-pasteFlaggedSr = (sprawdź z oryginałem)
 interface-AnonymizePreview-possibleNames = Słowa, które mogą być nazwiskami
 
 interface-AnonymizePreview-removeWord = Usuń „{ $word }”
+interface-AnonymizePreview-eponymTitle = To mogą być terminy medyczne
+interface-AnonymizePreview-eponymOne = To może być termin medyczny: { $phrase }
+interface-AnonymizePreview-eponymKeep = Zachowaj
+interface-AnonymizePreview-eponymKeepAll = Zachowaj wszystkie „{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = Usunięto: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Jeszcze nic nie usunięto.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } imię i nazwisko
+    [few] { $count } imiona i nazwiska
+    [many] { $count } imion i nazwisk
+   *[other] { $count } imienia i nazwiska
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } lekarz
+    [few] { $count } lekarze
+    [many] { $count } lekarzy
+   *[other] { $count } lekarza
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } przychodnia
+    [few] { $count } przychodnie
+    [many] { $count } przychodni
+   *[other] { $count } przychodni
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numer karty zdrowia
+    [few] { $count } numery kart zdrowia
+    [many] { $count } numerów kart zdrowia
+   *[other] { $count } numeru karty zdrowia
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numer dokumentacji
+    [few] { $count } numery dokumentacji
+    [many] { $count } numerów dokumentacji
+   *[other] { $count } numeru dokumentacji
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numer ubezpieczenia społecznego
+    [few] { $count } numery ubezpieczenia społecznego
+    [many] { $count } numerów ubezpieczenia społecznego
+   *[other] { $count } numeru ubezpieczenia społecznego
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } data urodzenia
+    [few] { $count } daty urodzenia
+    [many] { $count } dat urodzenia
+   *[other] { $count } daty urodzenia
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } wiek
+    [few] { $count } wieki
+    [many] { $count } wieków
+   *[other] { $count } wieku
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adres
+    [few] { $count } adresy
+    [many] { $count } adresów
+   *[other] { $count } adresu
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } kod pocztowy
+    [few] { $count } kody pocztowe
+    [many] { $count } kodów pocztowych
+   *[other] { $count } kodu pocztowego
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numer telefonu
+    [few] { $count } numery telefonów
+    [many] { $count } numerów telefonów
+   *[other] { $count } numeru telefonu
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adres e-mail
+    [few] { $count } adresy e-mail
+    [many] { $count } adresów e-mail
+   *[other] { $count } adresu e-mail
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adres strony internetowej
+    [few] { $count } adresy stron internetowych
+    [many] { $count } adresów stron internetowych
+   *[other] { $count } adresu strony internetowej
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } niejednoznaczna data
+    [few] { $count } niejednoznaczne daty
+    [many] { $count } niejednoznacznych dat
+   *[other] { $count } niejednoznacznej daty
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } usunięte przez Ciebie
+    [few] { $count } usunięte przez Ciebie
+    [many] { $count } usunięte przez Ciebie
+   *[other] { $count } usunięte przez Ciebie
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } data zastąpiona
+    [few] { $count } daty zastąpione
+    [many] { $count } dat zastąpionych
+   *[other] { $count } daty zastąpionej
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } słowo do sprawdzenia
+    [few] { $count } słowa do sprawdzenia
+    [many] { $count } słów do sprawdzenia
+   *[other] { $count } słowa do sprawdzenia
+}
+
+interface-AnonymizePreview-toCheckHelp = Podświetlone są słowa pisane wielką literą w środku zdania oraz liczby co najmniej trzycyfrowe. Mogą kogoś identyfikować. To nie wykrywa wszystkiego. Pomija imiona i nazwiska zapisane wielkimi literami, na początku wiersza, w pismach bez wielkich liter (np. chińskim, koreańskim lub arabskim) oraz takie, które są też nazwami miesięcy, leków lub terminami medycznymi (np. „June” albo „Bell”). Wybierz podświetlone słowo, potem Usuń, i sam przeczytaj cały tekst.
+
+interface-AnonymizePreview-checkPicked = „{ $word }” może kogoś identyfikować.
+
+interface-AnonymizePreview-savedFileNote = Zapisany plik nie jest chroniony przez myCarlos. Nie ma w nim imion i nazwisk, ale zawiera dane medyczne. Usuń go, gdy skończysz.
+
+interface-AnonymizePreview-pasteWhereNote = To, gdzie to wkleisz, decyduje o tym, co zostanie zachowane: usługa czatu może to przechowywać lub się na tym uczyć, zależnie od ustawień Twojego konta.
+
+interface-AnonymizePreview-copy = Kopiuj tekst
+
+interface-AnonymizePreview-copied = Tekst został skopiowany.
+
+interface-AnonymizePreview-copyFailed = Nie udało się skopiować tekstu.
+
+interface-AnonymizePreview-copyWarning = Skopiowany tekst może pozostać na tym urządzeniu: historia schowka w systemie Windows i synchronizacja schowka między urządzeniami mogą zachować jego kopię.
 
 interface-AnonymizePreview-removeSelected = Usuń zaznaczony tekst
 
@@ -2348,6 +2491,20 @@ noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings 
 noticesStep-done = Gotowe
 noticesStep-notNow = Nie teraz
 
+background-title = Praca w tle
+background-keepRunning = Utrzymuj myCarlos w tle po zamknięciu jego okna
+background-keepRunningHelp = Po zamknięciu okna myCarlos może pozostać w tle z ikoną w obszarze powiadomień (na komputerze Mac — na pasku menu). Sejf blokuje się wraz z zamknięciem okna i pozostaje zablokowany, dopóki nie otworzysz myCarlos i go nie odblokujesz. Wybierz z ikony polecenie Zakończ, aby całkowicie zamknąć myCarlos.
+background-startAtLogin = Uruchamiaj myCarlos po zalogowaniu się na tym komputerze
+background-startAtLoginHelp = myCarlos uruchamia się po zalogowaniu się na tym komputerze. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem. Gdy jest wyłączony, otwiera się jego okno.
+background-paused = Gdy sejf jest zablokowany, myCarlos nie może sprawdzać nowych dokumentów z przychodni. Odblokuj go, aby sprawdzić.
+background-unavailable = Ikona w tle nie jest dostępna na tym komputerze. myCarlos zamyka się całkowicie po zamknięciu jego okna.
+background-error = Nie udało się zmienić tego ustawienia. Pozostaje bez zmian.
+native-tray-open = Otwórz myCarlos
+native-tray-quit = Zakończ myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Czeka nowy dokument. Odblokuj myCarlos, aby go zobaczyć.
+
 ai-summary-again = Podsumuj ponownie
 
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
@@ -2397,6 +2554,14 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+interface-received-confirmTitleOne = Zaimportować { $name } do Udostępnione mi?
+
+interface-received-confirmTitleMany = Zaimportować dokumenty ({ $count }) do Udostępnione mi?
+
+interface-received-confirmBody = Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Anulowanie nie zostawia niczego.
+
+interface-received-import = Importuj
 
 reader-android-opening = Otwieranie dokumentu…
 

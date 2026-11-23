@@ -1218,9 +1218,9 @@ unlock-submit = 解锁
 
 unlock-title = 解锁保险库
 
-unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，它们会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它们加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
-unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，它会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
 language-error-formatting = myCarlos 无法正确显示此消息。请选择其他语言或重新启动应用，并在重试前检查您的记录。
 
@@ -1711,7 +1711,7 @@ ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的�
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = 在文档中显示
+ai-summary-showInDocument = 在文档中指给我看
 
 ai-summary-folded = 摘要已收起，以便为页面留出空间。
 
@@ -2042,6 +2042,64 @@ interface-AnonymizePreview-pasteFlaggedSr = （请与原文核对）
 interface-AnonymizePreview-possibleNames = 可能是姓名的词
 
 interface-AnonymizePreview-removeWord = 移除“{ $word }”
+interface-AnonymizePreview-eponymTitle = 这些可能是医学术语
+interface-AnonymizePreview-eponymOne = 这可能是医学术语：{ $phrase }
+interface-AnonymizePreview-eponymKeep = 保留
+interface-AnonymizePreview-eponymKeepAll = 全部保留“{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
+
+interface-AnonymizePreview-removedSummaryNone = 尚未移除任何内容。
+
+interface-AnonymizePreview-removedCount-name = { $count } 个姓名
+
+interface-AnonymizePreview-removedCount-doctor = { $count } 位医生
+
+interface-AnonymizePreview-removedCount-clinic = { $count } 家诊所
+
+interface-AnonymizePreview-removedCount-healthCard = { $count } 个医保卡号
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count } 个病历号
+
+interface-AnonymizePreview-removedCount-sin = { $count } 个社会保险号
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count } 个出生日期
+
+interface-AnonymizePreview-removedCount-age = { $count } 个年龄
+
+interface-AnonymizePreview-removedCount-address = { $count } 个地址
+
+interface-AnonymizePreview-removedCount-postalCode = { $count } 个邮政编码
+
+interface-AnonymizePreview-removedCount-phone = { $count } 个电话号码
+
+interface-AnonymizePreview-removedCount-email = { $count } 个电子邮件地址
+
+interface-AnonymizePreview-removedCount-web = { $count } 个网址
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count } 个不明确的日期
+
+interface-AnonymizePreview-removedCount-manual = { $count } 项由您移除的内容
+
+interface-AnonymizePreview-removedCount-date = { $count } 个已替换的日期
+
+interface-AnonymizePreview-toCheck = { $count } 个词需要检查
+
+interface-AnonymizePreview-toCheckHelp = 高亮显示的是：在使用大写字母的文字（如英文、法文）中，句子中间以大写字母开头的词，以及三位或更多位的数字。它们可能识别出某个人。这并不能找出所有内容：它找不到全大写的姓名、位于行首的姓名、用没有大写字母的文字（如中文、韩文、阿拉伯文）写的姓名，以及同时是月份、药物或医学术语的姓名（如“June”、“Bell”）。请选择一个高亮的词，再选择“移除”，并自己阅读全部文本。
+
+interface-AnonymizePreview-checkPicked = “{ $word }”可能识别出某个人。
+
+interface-AnonymizePreview-savedFileNote = 保存的文件不受 myCarlos 保护。其中没有姓名，但包含医疗详情。用完后请将其删除。
+
+interface-AnonymizePreview-pasteWhereNote = 您把它粘贴到哪里，决定了什么会被保留：聊天服务可能会保存它，或根据您的账户设置从中学习。
+
+interface-AnonymizePreview-copy = 复制文本
+
+interface-AnonymizePreview-copied = 文本已复制。
+
+interface-AnonymizePreview-copyFailed = 无法复制文本。
+
+interface-AnonymizePreview-copyWarning = 复制的文本可能会留在此设备上：Windows 剪贴板历史记录和设备间的剪贴板同步可能会保留一份副本。
 
 interface-AnonymizePreview-removeSelected = 移除选中的文本
 
@@ -2094,6 +2152,20 @@ noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变
 noticesStep-done = 完成
 noticesStep-notNow = 暂不
 
+background-title = 后台运行
+background-keepRunning = 关闭窗口后让 myCarlos 继续在后台运行
+background-keepRunningHelp = 关闭窗口后，myCarlos 可以在后台继续运行，并在通知区域（Mac 上为菜单栏）显示一个图标。保险库会在窗口关闭时锁定，并保持锁定，直到您打开 myCarlos 并解锁。从图标中选择“退出”可完全关闭 myCarlos。
+background-startAtLogin = 登录此电脑时启动 myCarlos
+background-startAtLoginHelp = 您登录此电脑时，myCarlos 会启动。上面的选项开启时，它会在后台静默启动，保险库保持锁定；关闭时，它的窗口会打开。
+background-paused = 保险库锁定期间，myCarlos 无法检查诊所的新文档。解锁后即可检查。
+background-unavailable = 此电脑不支持后台图标。关闭窗口时，myCarlos 会完全关闭。
+background-error = 无法更改此设置，它保持原样。
+native-tray-open = 打开 myCarlos
+native-tray-quit = 退出 myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = 有一份新文档在等待。请解锁 myCarlos 查看。
+
 ai-summary-again = 重新生成摘要
 
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
@@ -2143,6 +2215,14 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 添加曾用全名
 personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。
+
+interface-received-confirmTitleOne = 要将 { $name } 导入“与我分享”吗？
+
+interface-received-confirmTitleMany = 要将 { $count } 份文档导入“与我分享”吗？
+
+interface-received-confirmBody = 在您选择“导入”之前不会添加任何内容。取消不会留下任何内容。
+
+interface-received-import = 导入
 
 reader-android-opening = 正在打开文档…
 

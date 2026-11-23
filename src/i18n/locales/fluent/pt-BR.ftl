@@ -1375,12 +1375,12 @@ unlock-title = Desbloqueie seu cofre
 
 unlock-waiting =
     { $count ->
-    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
-    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
-    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
     }
 
-unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
 
 language-error-formatting = O myCarlos não conseguiu exibir esta mensagem corretamente. Escolha outro idioma ou reinicie o aplicativo e confira seus registros antes de tentar novamente.
 
@@ -1904,7 +1904,7 @@ ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrad
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Ver no documento
+ai-summary-showInDocument = Mostrar-me no documento
 
 ai-summary-folded = O resumo está recolhido para dar espaço à página.
 
@@ -2249,6 +2249,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (confira com o original)
 interface-AnonymizePreview-possibleNames = Palavras que podem ser nomes
 
 interface-AnonymizePreview-removeWord = Remover “{ $word }”
+interface-AnonymizePreview-eponymTitle = Estes podem ser termos médicos
+interface-AnonymizePreview-eponymOne = Isto pode ser um termo médico: { $phrase }
+interface-AnonymizePreview-eponymKeep = Manter
+interface-AnonymizePreview-eponymKeepAll = Manter todos “{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = Removido: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nada foi removido ainda.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nome
+   *[other] { $count } nomes
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médico
+   *[other] { $count } médicos
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clínica
+   *[other] { $count } clínicas
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } número do cartão de saúde
+   *[other] { $count } números do cartão de saúde
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } número do prontuário
+   *[other] { $count } números do prontuário
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } número de seguro social
+   *[other] { $count } números de seguro social
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } data de nascimento
+   *[other] { $count } datas de nascimento
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } idade
+   *[other] { $count } idades
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } endereço
+   *[other] { $count } endereços
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } código postal
+   *[other] { $count } códigos postais
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } número de telefone
+   *[other] { $count } números de telefone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } endereço de e-mail
+   *[other] { $count } endereços de e-mail
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } endereço da web
+   *[other] { $count } endereços da web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } data ambígua
+   *[other] { $count } datas ambíguas
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removido por você
+   *[other] { $count } removidos por você
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } data substituída
+   *[other] { $count } datas substituídas
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } palavra para verificar
+   *[other] { $count } palavras para verificar
+}
+
+interface-AnonymizePreview-toCheckHelp = Ficam destacadas as palavras que começam com letra maiúscula no meio de uma frase e os números com três ou mais dígitos. Podem identificar alguém. Isso não encontra tudo. Não pega nomes escritos em maiúsculas, nomes no início de uma linha, nomes em escritas sem maiúsculas (como chinês, coreano ou árabe) nem nomes que também são meses, medicamentos ou termos médicos (como “June” ou “Bell”). Selecione uma palavra destacada, escolha Remover e leia todo o texto você mesmo.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” pode identificar alguém.
+
+interface-AnonymizePreview-savedFileNote = O arquivo salvo não é protegido pelo myCarlos. Ele não tem nomes, mas contém os detalhes médicos. Exclua-o quando terminar.
+
+interface-AnonymizePreview-pasteWhereNote = O lugar onde você colar isto decide o que será guardado: um serviço de chat pode guardar ou aprender com o texto, dependendo das configurações da sua conta.
+
+interface-AnonymizePreview-copy = Copiar o texto
+
+interface-AnonymizePreview-copied = O texto foi copiado.
+
+interface-AnonymizePreview-copyFailed = Não foi possível copiar o texto.
+
+interface-AnonymizePreview-copyWarning = O texto copiado pode ficar neste dispositivo: o histórico da área de transferência do Windows e a sincronização da área de transferência entre dispositivos podem guardar uma cópia.
 
 interface-AnonymizePreview-removeSelected = Remover o texto selecionado
 
@@ -2301,6 +2410,20 @@ noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, e
 noticesStep-done = Concluído
 noticesStep-notNow = Agora não
 
+background-title = Execução em segundo plano
+background-keepRunning = Manter o myCarlos em segundo plano depois que eu fechar a janela dele
+background-keepRunningHelp = Ao fechar a janela, o myCarlos pode continuar em segundo plano com um ícone na área de notificação (na barra de menus, no Mac). O cofre é bloqueado quando a janela fecha e continua bloqueado até você abrir o myCarlos e desbloqueá-lo. Escolha Sair no ícone para fechar o myCarlos por completo.
+background-startAtLogin = Iniciar o myCarlos quando eu entrar neste computador
+background-startAtLoginHelp = O myCarlos inicia quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano, com o cofre bloqueado. Com ela desativada, a janela dele abre.
+background-paused = Enquanto o cofre está bloqueado, o myCarlos não consegue verificar novos documentos da clínica. Desbloqueie-o para verificar.
+background-unavailable = Um ícone em segundo plano não está disponível neste computador. O myCarlos fecha por completo quando você fecha a janela dele.
+background-error = Não foi possível alterar esta configuração. Ela continua como estava.
+native-tray-open = Abrir o myCarlos
+native-tray-quit = Sair do myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Há um novo documento esperando. Desbloqueie o myCarlos para vê-lo.
+
 ai-summary-again = Resumir de novo
 
 ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
@@ -2350,6 +2473,14 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+interface-received-confirmTitleOne = Importar { $name } para Compartilhados comigo?
+
+interface-received-confirmTitleMany = Importar { $count } documentos para Compartilhados comigo?
+
+interface-received-confirmBody = Nada é adicionado até você escolher Importar. Cancelar não deixa nada.
+
+interface-received-import = Importar
 
 reader-android-opening = Abrindo o documento…
 
