@@ -119,4 +119,17 @@ describe("the kept terms are named to the native re-check (#366)", () => {
     const [range] = keptEponymRanges(more);
     expect(more.toSend.slice(range.start, range.end)).toBe("Bell's palsy");
   });
+
+  it("names the right places when the text holds a letter whose fold is longer (ß, ﬁ)", () => {
+    const r = run("Straße ﬁle: Peter Bell: Bell's palsy.", ["Peter Bell"]);
+    const part = r.onDevice.removed.filter((p) => p.eponym)[0];
+    const kept = keepAsMedicalTerm(r, part.sentStart, part.sentEnd);
+    const [range] = keptEponymRanges(kept);
+    expect(kept.toSend.slice(range.start, range.end)).toBe("Bell's palsy");
+  });
+
+  it("does not offer a name made of several words on its own", () => {
+    const r = run("Anne De Quervain saw De Quervain.", ["Anne De Quervain"]);
+    expect(r.onDevice.removed.some((p) => p.eponym)).toBe(false);
+  });
 });

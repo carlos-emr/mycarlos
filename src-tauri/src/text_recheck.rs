@@ -1105,6 +1105,18 @@ fn name_words_of(phrase: &str) -> Vec<String> {
     words
 }
 
+/// One word, with or without a possessive ending: "graves'", "holter", "basedow-graves".
+fn is_lone_possessive(phrase: &str) -> bool {
+    let body = phrase
+        .strip_suffix("'s")
+        .or_else(|| phrase.strip_suffix('\''))
+        .unwrap_or(phrase);
+    !body.is_empty()
+        && body
+            .chars()
+            .all(|c| c.is_alphabetic() || is_combining_mark(c) || c == '-')
+}
+
 fn utf16_slice(units: &[u16], start: u32, end: u32) -> Option<String> {
     let (start, end) = (start as usize, end as usize);
     if start >= end || end > units.len() {
@@ -1121,11 +1133,17 @@ pub(crate) fn without_kept_terms(text: &str, hits: Vec<Hit>, kept: &[Hit]) -> Ve
         return hits;
     }
     let units: Vec<u16> = text.encode_utf16().collect();
+    // A range that is only a name, or a name and its possessive ("Graves'", "Holter"), is no
+    // medical phrase: it is a person's name or relation, and is never believed (the page's rule).
     let accepted: Vec<(Hit, Vec<String>)> = kept
         .iter()
         .filter(|range| range.end > range.start && range.end - range.start <= MAX_KEPT_UNITS)
         .filter_map(|range| {
-            let words = name_words_of(&guard_key(&utf16_slice(&units, range.start, range.end)?));
+            let phrase = guard_key(&utf16_slice(&units, range.start, range.end)?);
+            if is_lone_possessive(&phrase) {
+                return None;
+            }
+            let words = name_words_of(&phrase);
             (!words.is_empty()).then_some((*range, words))
         })
         .collect();
@@ -1273,8 +1291,11 @@ mod tests {
         let text = "Pat Graves' disease";
         let hits = identifier_hits(text, &names, &[]);
         // The phrase range covers the first name too, but only the name word is spared.
-        let left = without_kept_terms(text, hits.clone(), &[Hit { start: 0, end: 19 }]);
-        assert_eq!(ranges(&left), ranges(&hits));
+        let spared = without_kept_terms(text, hits.clone(), &[Hit { start: 4, end: 19 }]);
+        assert!(spared.is_empty(), "{spared:?}");
+        // A range that takes in the first name too is no phrase of the list: nothing is spared.
+        let whole = without_kept_terms(text, hits.clone(), &[Hit { start: 0, end: 19 }]);
+        assert_eq!(ranges(&whole), ranges(&hits));
         // Too many claims, or one beyond the length limit, spare nothing.
         let many = vec![Hit { start: 4, end: 19 }; MAX_KEPT_RANGES + 1];
         assert_eq!(without_kept_terms(text, hits.clone(), &many), hits);
@@ -1283,5 +1304,21 @@ mod tests {
             end: 4_000,
         }];
         assert_eq!(without_kept_terms(text, hits.clone(), &long), hits);
+    }
+
+    #[test]
+    fn a_name_alone_or_with_its_possessive_is_never_a_kept_phrase() {
+        let names = vec!["FAKE Pat Graves".to_owned(), "FAKE Ann Holter".to_owned()];
+        // "Graves'" is on the list as a form, but it is only the name and a possessive.
+        let text = "Graves' son drove. Holter ran.";
+        let hits = identifier_hits(text, &names, &[]);
+        assert_eq!(ranges(&hits), [(0, 6), (19, 25)]);
+        for claim in [
+            [Hit { start: 0, end: 7 }],
+            [Hit { start: 19, end: 25 }],
+            [Hit { start: 0, end: 25 }],
+        ] {
+            assert_eq!(without_kept_terms(text, hits.clone(), &claim), hits);
+        }
     }
 }

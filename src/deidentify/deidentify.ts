@@ -4301,6 +4301,9 @@ const GUARD_APOSTROPHE = /[’‘`´]/gu;
 const guardKey = (value: string) =>
   fold(value).toLowerCase().replace(GUARD_APOSTROPHE, "'");
 const EPONYM_FORMS = new Map<string, string[]>();
+// Forms made up from a name alone ("de quervain", "wolff-parkinson-white"): they guard the name
+// from removal, but are never offered as "a medical term" (the native check has no such phrase).
+const BARE_NAME_FORMS = new Set<string>();
 for (const entry of allowList.eponyms) {
   // An eponym named for several people stands alone too: "Wolff-Parkinson-White".
   const together =
@@ -4316,8 +4319,12 @@ for (const entry of allowList.eponyms) {
       const forms = EPONYM_FORMS.get(key) ?? [];
       // A name of several words is also guarded as it stands alone
       // ("Wolff-Parkinson-White", "De Quervain"), not only inside a phrase.
-      if (/[\s-]/u.test(whole)) forms.push(whole);
+      if (/[\s-]/u.test(whole)) {
+        forms.push(whole);
+        BARE_NAME_FORMS.add(whole);
+      }
       forms.push(...together);
+      for (const form of together) BARE_NAME_FORMS.add(form);
       for (const form of entry.forms) forms.push(guardKey(form));
       EPONYM_FORMS.set(key, forms);
     }
@@ -4462,10 +4469,21 @@ function eponymPhraseAt(
   if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
     return null;
   const from = Math.max(0, start - GUARD_REACH);
-  const guarded = guardKey(text.slice(from, end + GUARD_REACH));
-  // The guard folds letters one for one (as isMedicalTerm assumes), so positions line up.
-  const spanStart = start - from;
-  const spanEnd = end - from;
+  const windowText = text.slice(from, end + GUARD_REACH);
+  // The window as the guard reads it. A letter whose fold is longer or shorter (a ligature, "ß")
+  // moves the folded positions, so the word's span and the phrase found are carried between the
+  // folded copy and the document's own text through the copy's own map.
+  const matching = matchingCopy(windowText);
+  const guarded = matching.copy.toLowerCase().replace(GUARD_APOSTROPHE, "'");
+  if (guarded.length !== matching.copy.length) return null;
+  const copyAt = (offset: number) => {
+    let index = 0;
+    while (index < matching.copy.length && matching.toSource[index] < offset)
+      index += 1;
+    return index;
+  };
+  const spanStart = copyAt(start - from);
+  const spanEnd = copyAt(end - from);
   // The longest phrase that holds the word ("Graves' disease", not "Graves'").
   let best: { at: number; length: number } | null = null;
   for (const key of new Set([
@@ -4475,7 +4493,7 @@ function eponymPhraseAt(
     const forms = EPONYM_FORMS.get(key);
     if (!forms) continue;
     for (const form of forms) {
-      if (form === guardKey(word)) continue;
+      if (form === guardKey(word) || BARE_NAME_FORMS.has(form)) continue;
       for (
         let at = guarded.indexOf(form);
         at >= 0;
@@ -4490,7 +4508,12 @@ function eponymPhraseAt(
     }
   }
   if (best) {
-    const phrase = text.slice(from + best.at, from + best.at + best.length);
+    const [phraseStart, phraseEnd] = toSourceRange(
+      matching,
+      best.at,
+      best.at + best.length,
+    );
+    const phrase = windowText.slice(phraseStart, phraseEnd);
     // Only a word with a possessive ("Graves' son", "Bell's wife") is a person's relation, not a
     // term: it is offered only inside a phrase that names the condition ("Graves' disease").
     if (/^[\p{L}\p{M}-]+(?:['’‘`´]s?)?$/u.test(phrase)) return null;
@@ -5044,17 +5067,27 @@ export function keptEponymRanges(
 ): { start: number; end: number }[] {
   const phrases = deidentified.onDevice.keptEponyms ?? [];
   if (phrases.length === 0) return [];
-  // The guard folds letters one for one, so positions line up (see eponymPhraseAt).
-  const text = guardKey(deidentified.toSend);
+  // The matching copy knows where each of its letters came from, so a letter whose fold is longer
+  // or shorter (a ligature, "ß") cannot shift a range. A lower-casing that changes the length
+  // (rare) gives no ranges: the native check then refuses, never spares.
+  const matching = matchingCopy(deidentified.toSend);
+  const folded = matching.copy.toLowerCase().replace(GUARD_APOSTROPHE, "'");
+  if (folded.length !== matching.copy.length) return [];
   const ranges: { start: number; end: number }[] = [];
   for (const phrase of new Set(phrases.map(guardKey))) {
     if (!phrase) continue;
     for (
-      let at = text.indexOf(phrase);
-      at >= 0;
-      at = text.indexOf(phrase, at + 1)
-    )
-      ranges.push({ start: at, end: at + phrase.length });
+      let found = folded.indexOf(phrase);
+      found >= 0;
+      found = folded.indexOf(phrase, found + 1)
+    ) {
+      const [start, end] = toSourceRange(
+        matching,
+        found,
+        found + phrase.length,
+      );
+      ranges.push({ start, end });
+    }
   }
   return ranges.sort((a, b) => a.start - b.start).slice(0, 200);
 }
