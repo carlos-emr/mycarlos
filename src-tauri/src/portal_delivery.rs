@@ -862,44 +862,42 @@ fn reading_aid_view(
     aid_json: &str,
     manifest_compact: &str,
 ) -> Option<ReadingAidView> {
-    {
-        let json: serde_json::Value = serde_json::from_str(aid_json).ok()?;
-        let (payload, _) = split_compact(manifest_compact, 16 * 1024).ok()?;
-        let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
-        let text = |v: &serde_json::Value, key: &str| v.get(key)?.as_str().map(str::to_owned);
-        let points = json
-            .get("points")?
-            .as_array()?
-            .iter()
-            .map(|point| {
-                Some(ReadingAidPoint {
-                    text: text(point, "text")?,
-                    evidence: point
-                        .get("evidence")?
-                        .as_array()?
-                        .iter()
-                        .map(|e| e.as_str().map(str::to_owned))
-                        .collect::<Option<Vec<_>>>()?,
-                })
+    let json: serde_json::Value = serde_json::from_str(aid_json).ok()?;
+    let (payload, _) = split_compact(manifest_compact, 16 * 1024).ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+    let text = |v: &serde_json::Value, key: &str| v.get(key)?.as_str().map(str::to_owned);
+    let points = json
+        .get("points")?
+        .as_array()?
+        .iter()
+        .map(|point| {
+            Some(ReadingAidPoint {
+                text: text(point, "text")?,
+                evidence: point
+                    .get("evidence")?
+                    .as_array()?
+                    .iter()
+                    .map(|e| e.as_str().map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()?,
             })
-            .collect::<Option<Vec<_>>>()?;
-        let notice = json.get("notice")?;
-        Some(ReadingAidView {
-            delivery_id: delivery_id.to_owned(),
-            language: text(&json, "language")?,
-            reviewed_at_ms: claims
-                .pointer("/approval/reviewed_at")?
-                .as_u64()?
-                .checked_mul(1000)?,
-            notice: ReadingAidNotice {
-                version: text(notice, "version")?,
-                heading: text(notice, "heading")?,
-                body: text(notice, "body")?,
-            },
-            overview: text(&json, "overview")?,
-            points,
         })
-    }
+        .collect::<Option<Vec<_>>>()?;
+    let notice = json.get("notice")?;
+    Some(ReadingAidView {
+        delivery_id: delivery_id.to_owned(),
+        language: text(&json, "language")?,
+        reviewed_at_ms: claims
+            .pointer("/approval/reviewed_at")?
+            .as_u64()?
+            .checked_mul(1000)?,
+        notice: ReadingAidNotice {
+            version: text(notice, "version")?,
+            heading: text(notice, "heading")?,
+            body: text(notice, "body")?,
+        },
+        overview: text(&json, "overview")?,
+        points,
+    })
 }
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
