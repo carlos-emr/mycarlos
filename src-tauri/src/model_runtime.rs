@@ -2363,6 +2363,12 @@ pub mod engine_testing {
         }
 
         /// How the last answer was made: prompt and answer tokens, and their times.
+        /// The last card the helper sent, as text (and why it was not kept, when it was not), for
+        /// measuring by hand.
+        pub fn last_card(&self) -> String {
+            format!("{:?}", self.runner.last_card())
+        }
+
         pub fn last_stats(&self) -> String {
             self.runner.last_stats().map_or_else(
                 || "no stats".to_owned(),
