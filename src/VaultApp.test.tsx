@@ -167,6 +167,40 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
     isPhoto: vi.fn().mockResolvedValue(false),
+    videoStart: vi.fn().mockResolvedValue({ recordingId: "recording-1" }),
+    videoAppend: vi.fn().mockResolvedValue({
+      storedBytes: 0,
+      fragments: 0,
+      hasVideo: null,
+      hasAudio: null,
+      nextSequence: 1,
+      space: "ok",
+      freeBytes: null,
+    }),
+    videoPause: vi.fn().mockResolvedValue(undefined),
+    videoResume: vi.fn().mockResolvedValue(undefined),
+    videoStop: vi.fn().mockResolvedValue({ recordId: null }),
+    leftOutRecords: vi.fn().mockResolvedValue([]),
+    backupSize: vi.fn().mockResolvedValue({
+      totalBytes: 1000,
+      withoutVideosBytes: 1000,
+      videoBytes: 0,
+      videoCount: 0,
+    }),
+    videoSpace: vi.fn().mockResolvedValue({
+      freeBytes: null,
+      level: "unknown",
+      canRecord: true,
+    }),
+    videoPending: vi.fn().mockResolvedValue({ recordings: [], unreadable: 0 }),
+    videoRecover: vi.fn().mockResolvedValue({ recordId: null }),
+    isVideo: vi.fn().mockResolvedValue(false),
+    videoOpen: vi.fn().mockResolvedValue({
+      token: "0".repeat(64),
+      url: "mycarlos-video://localhost/FAKE",
+      totalBytes: 0,
+    }),
+    videoClose: vi.fn().mockResolvedValue(undefined),
     isLockedPdf: vi.fn().mockResolvedValue(false),
     unlockPdf: vi.fn(),
     viewPhoto: vi
@@ -11655,11 +11689,11 @@ describe("clinic connection operations", () => {
   it.each([
     [
       "picker",
-      "No files selected. Nothing changed. Device linked. Its approval status is shown in Security, under Clinic documents.",
+      "No files selected. Nothing changed. Device linked. Its approval status is shown in Security, under Connected clinics.",
     ],
     [
       "transfer",
-      "1 document encrypted and added. Device linked. Its approval status is shown in Security, under Clinic documents.",
+      "1 document encrypted and added. Device linked. Its approval status is shown in Security, under Connected clinics.",
     ],
   ] as const)(
     "adds a clinic result that arrives during an import's %s after the import's own result",
@@ -11914,7 +11948,7 @@ describe("clinic connection operations", () => {
         await vi.advanceTimersByTimeAsync(ANNOUNCE_DELAY_MS);
       });
       const clinicNotice =
-        "Device linked. Its approval status is shown in Security, under Clinic documents.";
+        "Device linked. Its approval status is shown in Security, under Connected clinics.";
       if (nextAction === "announce")
         expect(within(details).getByRole("status")).toHaveHumanTextContent(
           `FAKE_Camera.jpg was saved in myCarlos. ${clinicNotice}`,
@@ -12060,7 +12094,7 @@ describe("clinic connection operations", () => {
     );
     expect(
       await screen.findByText(
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ),
     ).toBeVisible();
     // The result can render before clinic admission is released. Wait for
@@ -14206,7 +14240,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
       await pass(ANNOUNCE_DELAY_MS);
       await pass(0);
       // Checked, for the status the clinic may have given while myCarlos
-      // was closed; the card under Clinic documents says the rest.
+      // was closed; the card under Connected clinics says the rest.
       expect(bridge.checkDocuments).toHaveBeenCalledOnce();
       expect(said()).toBe(UNLOCKED);
       expect(bridge.requestDeviceApproval).not.toHaveBeenCalled();
@@ -14258,7 +14292,7 @@ describe("checks for new clinic documents after unlocking (#128)", () => {
         // A clinic is linked: the form is behind this button (#145).
         return screen.getByRole("button", { name: "Link another clinic" });
       },
-      { name: "Clinic documents", level: 2 },
+      { name: "Connected clinics", level: 2 },
     ],
     [
       "a device's Copy device code",
@@ -14607,7 +14641,7 @@ describe("Automatic arrival snapshot ownership", () => {
     });
     expect(bridge.snapshot).toHaveBeenCalledTimes(initial);
   });
-  it("refreshes when Security (where Clinic documents lives) opens and keeps that route until the patient leaves", async () => {
+  it("refreshes when Security (where Connected clinics lives) opens and keeps that route until the patient leaves", async () => {
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi.fn(async () => captureSnapshot(supported)),

@@ -314,9 +314,12 @@ On every platform:
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-9. In **Security**, under **Speed test, for testers**, choose **Run speed test** three times, a
-   minute apart, staying on that screen while it runs. Send the three lines it gives with the
-   device's make and model and its system's version. `ARGON2_BENCHMARK.md` says how to record them.
+9. The Evaluation downloads do not show the speed test: **Speed test, for testers** is in
+   development builds only (owner decision, 20 Nov 2026). Device benchmarks are collected by a
+   developer from a development build (`npm run tauri dev`, `npm run tauri android dev` or
+   `npm run tauri ios dev`) or from a build made with `VITE_SHOW_SPEED_TEST=1`;
+   `ARGON2_BENCHMARK.md` says how to run it and record the lines. Check that **Security** in the
+   Evaluation download has no **Speed test, for testers** section.
 10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
@@ -392,6 +395,95 @@ On the iOS Simulator, also check the items in [issue #5](https://github.com/carl
 Developers can find a fuller checklist, including large files and interrupted transfers, in
 [EVALUATION.md](EVALUATION.md); it needs a development setup.
 
+## Recording and playing a video (#359)
+
+Use **made-up people and documents only** (a person named "FAKE Patient", a filing folder of your own),
+and point the camera at something harmless. Sound is recorded: anyone talking near the device is heard.
+
+**On every platform**
+
+1. In **My records** choose **Record a video**. Where the webview cannot record MP4 the button is
+   replaced by "Video recording isn't available on this device" and a **Why?** that explains: check
+   that, and that **Take a photo** still works.
+2. In the dialog read the notice about sound, then choose **Use the camera and microphone**. The system
+   (or, on Windows and Linux, the app alone) allows it; nothing is recorded yet. Then **Start recording**.
+3. Check the **Recording** badge and the **Recorded 0:07** time. Press **Pause recording**: the badge says
+   **Paused**, the note says the camera and microphone are still on, the time stops, and a screen reader
+   says "Recording paused." **Resume recording**: it counts on.
+4. **Stop and save.** The video appears in the list; open it and choose **Play video**. Seek by the bar
+   and with the arrow keys; check that it neither starts by itself nor repeats, that sound plays, and that
+   the time shown is the time you recorded **without** the pause.
+5. Close the player, then **Lock now** while a video is open: the player goes and nothing plays.
+6. **Idle lock.** Set the automatic lock to 1 minute. Record for 2 minutes without touching the screen:
+   it must **not** lock. Pause and wait: it **must** lock about a minute later, and after unlocking the
+   video that was saved is there with a note.
+7. **A crash.** Start recording, then end myCarlos from the system (kill it). Open it again and unlock: it
+   asks "myCarlos closed while you were recording. Keep the video that was saved?" with **Keep the video**
+   focused. Try **Delete it**: it asks again and says it cannot be undone. Keep it and play it.
+8. **Hiding while recording.** Switch to another app while recording: the recording ends and is saved.
+9. **Room.** On a device or volume with little free space (a small disk image is enough), **Record a video**
+   with under 1 GB free: the dialog says there is not enough room and neither the camera nor the
+   microphone turns on. With a little more, record until it warns about the room left and then stops by
+   itself, saved: "Saved. There was no more room." (If the disk fills before it can stop, the message says the video is kept as an unfinished recording and will be finished when there is room. On iOS and Android the free space myCarlos sees can be less than Settings shows, because it leaves out what the system can reclaim.)
+10. **Hide a video** from its details while it plays: the player stops.
+
+11. **Backups with videos.** In Security, under the backup, read "About … GB, of which videos …" before saving.
+    Tick **Leave videos out**: the size drops, and the note says the videos will not be brought back.
+    Save it, then **Restore backup** from the start screen on a second device or after setting the vault
+    aside: it says "This backup was made without videos…" before you agree. After restoring, the videos are
+    listed with the hidden documents as missing files, and everything else opens as before. Save a backup
+    without ticking the box and check the videos come back and play.
+
+**Windows (WebView2).** Windows has no per-app prompt for the microphone: "Let desktop apps access your
+microphone" in Settings > Privacy decides. Switch it off and check the dialog says where to look. On an
+**N or KN edition** without the Media Feature Pack, expect the "isn't available" line.
+
+**macOS.** The system asks for the camera and the microphone with the texts in the dialog's explanation.
+An unsigned build without the hardened runtime asks; a signed one needs the camera and audio-input
+entitlements (not yet signed, #24).
+
+**Linux (WebKitGTK).** Install `gstreamer1.0-plugins-bad` and `gstreamer1.0-plugins-ugly` (and
+`gstreamer1.0-libav`) first: without them there is no Record. Nothing asks: the app allows the camera and
+microphone for its own pages. Check that the screen is never offered.
+
+**Android.** A phone with Android 7 or older shows the "isn't available" line. Otherwise the phone asks once
+for the camera and the microphone (also try **Don't ask again** and check the message). Rotate the phone
+while recording, take a call (the recording ends and is saved), and lock the phone.
+
+**iPhone and iPad.** From iOS 14.5; before that, the "isn't available" line. The simulator has no camera:
+use a real device. The prompt text is the one in the dialog's explanation.
+
+### Camera and microphone on Apple devices (the Wry patch, #359 PR 7)
+
+myCarlos carries a patch to Wry (`src-tauri/vendor/wry.patch`) so that on a Mac, an iPhone and an iPad the
+webview answers a camera and microphone request as the other platforms do: **video, alone or with sound, from
+myCarlos's own page, and nothing else**. The decision itself is tested on any computer; the Apple code that
+asks it is compiled and run only on an Apple device, so it needs these checks. Use the CI's macOS build and an
+iPhone or iPad build (not `tauri dev`: the development server is refused on purpose, so the camera does not
+work there).
+
+1. **A photo** (My records, **Take a photo**): the system asks for the camera once; the preview appears; take a
+   photo. It must work as before the patch.
+2. **A video with sound** (**Record a video**): the system asks for the camera and then the microphone, once each;
+   recording, pause, resume and stop work, and the sound is in the saved video.
+3. **Denied in Settings.** Turn the camera off for myCarlos in System Settings (macOS: Privacy & Security;
+   iOS: Settings > myCarlos), then try again: the dialog says it could not start, and the camera light stays
+   off. Turn it back on.
+4. **Nothing turns on by itself.** Open myCarlos, open every screen except the photo and video dialogs, and
+   watch the camera light and the orange or green indicator: it must stay off. After closing a dialog or
+   locking, it must go off at once.
+5. **Not from another page.** This is the one the patch adds, and cannot be tried from the app's own screens:
+   it is covered by the unit tests of the decision. If you have a debugging build with the Safari Web
+   Inspector attached, run `navigator.mediaDevices.getUserMedia({audio:true})` in the console: it must be
+   refused (sound alone), where before the patch it asked the system.
+6. **Both versions.** Repeat 1 and 2 on the oldest macOS and iOS you have. The patched method exists only on
+   macOS 12 and later and iOS 15 and later: on macOS 10.13 to 11 and on iOS 14.5 to 14.8 (the app's lower end)
+   WebKit never calls it, so its own default answers and step 5 will not show the patch's refusal there. Note
+   which of those you tried; if they matter, the minimums are the thing to raise.
+
+If any of 1 to 3 fails, the patch is wrong for that system: the delegate method is the only place to look
+(`src-tauri/vendor/wry/src/wkwebview/class/wry_web_view_ui_delegate.rs`).
+
 ## Accessibility checks
 
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to
@@ -463,12 +555,13 @@ With the screen reader on, using only the keyboard (or only swipes on a phone), 
 8. **Keyboard.** You can reach every button, can always see where the focus is, and never get
    stuck.
 
-Then turn the screen reader off and check text size:
+Then turn the screen reader off and check app zoom (and, on a phone, the device's own text size):
 
 - **Windows, macOS, Linux:** at the window's starting size, press Ctrl + plus (Command + plus on a Mac)
   up to 200%. The text grows, nothing is cut off or overlaps, and the page scrolls only up and
-  down. Ctrl + 0 (Command + 0) resets it. After unlocking, **Settings → Preferences** shows the
-  size, with **−** and **+** buttons and a box to type a size, that do the same. Also try Windows
+  down. Ctrl + 0 (Command + 0) resets it. After unlocking, **Settings → Preferences → App zoom**
+  shows the zoom, with **−** and **+** buttons ("Zoom out" and "Zoom in") and a box to type a
+  percentage, that do the same. Also try Windows
   **Settings → Accessibility → Text size** and report whether the app follows it.
 - **Windows, macOS, Linux, the size is remembered (new, and not yet tried by anyone):**
   1. Press Ctrl + plus once (Command + plus on a Mac). Does the size change by one step, or by
@@ -477,17 +570,17 @@ Then turn the screen reader off and check text size:
      left it, without first showing at 100%. The next Ctrl + plus (Command + plus) should go one
      step on.
   3. Go to the largest size (400%) with the window at its smallest. Can you still unlock? Before
-     unlocking, Ctrl + 0 (Command + 0) is the way back; after, also **Settings → Preferences →
-     Back to normal size**.
+     unlocking, Ctrl + 0 (Command + 0) is the way back; after, also **Settings → Preferences → App zoom →
+     Back to 100%**.
   4. On Windows, hold Ctrl and turn the mouse wheel one notch: one step. On Linux, report how
      many notches one step takes (Linux reports the wheel differently; one is expected, more is
      possible). On a touchpad, scroll with two fingers while holding Ctrl, and pinch: the size
      should change slowly or not at all, never jump to the largest. On a touch screen, pinching is not
      expected to zoom any more; use the buttons in **Settings → Preferences**, after unlocking.
   5. On a Mac, Control with the wheel is the system's own zoom and myCarlos leaves it alone.
-  6. In **Settings → Preferences**, with a screen reader on, press **+** (read as "Larger text"):
-     it should say the new size. Type 150 in the box and press Enter: it should say 150%. Press
-     **Back to normal size**: the focus should move to **+**, not be lost.
+  6. In **Settings → Preferences**, with a screen reader on, press **+** (read as "Zoom in"):
+     it should say the new zoom ("App zoom 110%"). Type 150 in the box and press Enter: it should say 150%. Press
+     **Back to 100%**: the focus should move to **+**, not be lost.
   7. Type 130 in the box and press Enter: the size goes to 125% and a line under the box says why.
      Type 500: 400%, the largest. Type `abc`: nothing changes, and the box says to type a number
      from 80 to 400. Press Escape while typing: the box goes back to the size shown.
@@ -787,11 +880,49 @@ Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-
 4. Lock the vault, or let it lock, while a document is open: the reader closes with the library.
 5. With a screen reader, each page picture is named "Page N of M"; read the page with **Text on this
    page**. A scanned page may have no text. That is a limitation of this first version.
-6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+6. On an iPhone, **Read** says documents cannot be shown on this device yet; use **Save a copy**. On
+   Android, **Read** opens the native reader (see "Android PDF reader" below).
 
 The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
 the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
 **Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
+
+## Android PDF reader (#358)
+
+**Read** on Android opens a separate native window drawn with Android's `PdfRenderer`, not the app's
+web page and not the desktop helper. Use FAKE PDFs only (several pages, a scanned one, a large one,
+and a password-protected one).
+
+1. Unlock, open a document's details and choose **Read**. A full-screen reader opens with the
+   document name, **Close**, **Previous page**, **Next page**, **Zoom in**, **Zoom out** and
+   "Page N of M". Swipe sideways to turn a page, double-tap to zoom, pinch to change zoom, drag to
+   pan a page that is bigger than the screen.
+2. **Close** (or the back button) returns to the library. Lock the vault, let it lock, switch to
+   another app or press Home while reading: the reader closes and does not come back by itself.
+3. A password-protected PDF, a damaged PDF and one over 20 MB each show a message with **Close**;
+   nothing is left open. Check that no file for the document appears in the app's storage
+   (`adb shell run-as <package> ls -R cache files`) after reading.
+4. Set automatic lock to one minute. Reading (touching the reader) keeps the vault open; leaving it
+   alone lets the vault lock and the reader closes.
+5. **Known gap, said plainly:** a page is a picture. **TalkBack can say "Page N of M, picture of the
+   letter" and operate the buttons, but it cannot read the letter's text**, because `PdfRenderer`
+   gives pictures only and the desktop text extraction does not run on Android. The AI helper and
+   "Show in document" are computers-only, so Android shows the original only. A person who needs
+   the text must use **Save a copy** and a reader app of their choice. Record what TalkBack does on
+   your phone.
+5a. **memfd on Android 8 to 10 (API 26 to 29), for Ben's device test:** the reader makes its in-memory
+   file with the raw `memfd_create` system call. Some vendors' seccomp filters on those versions may
+   kill the call (a signal, SIGSYS) rather than return an error, which the app cannot catch. Open a
+   letter on the oldest phone available; a crash on open, not a "cannot show this document"
+   message, is this. Android 11 and later return an error that the app handles.
+6. Neither the app window nor this reader window sets `FLAG_SECURE`: screenshots and the recent-apps
+   picture are allowed everywhere, by the owner's decision of 20 Nov 2026 (the patient's choice).
+   Take a screenshot of an open letter on a test phone and expect it to work.
+
+Automatic checks: the Rust tests cover the bounded export, the cancel/activity gates and the sealed
+in-memory file (and that a refused memfd never falls back to a file); vitest covers the reader
+screen and the bridge; the Android build compiles the Kotlin. The `PdfRenderer` drawing itself, the
+gestures and TalkBack need a phone or the emulator test (`connectedDebugAndroidTest`).
 
 ## Preparing a document's text for an AI (#72, computers only)
 
@@ -823,7 +954,7 @@ save), `src-tauri/src/text_recheck.rs` (the native re-check) and
 
 ## Appearance and Windows high contrast
 
-Use sample data only. Appearance is under **Settings → Preferences**, beside Text size,
+Use sample data only. Appearance is under **Settings → Preferences**, beside App zoom,
 including on a phone. The separate browser demonstration follows the device automatically;
 it has no Preferences screen. This is still a synthetic-data evaluation, not approval for PHI.
 
@@ -845,7 +976,7 @@ it has no Preferences screen. This is still a synthetic-data evaluation, not app
    keyboard focus against their actual backgrounds. Automated axe checks do not cover every state
    or replace native screen-reader and contrast-theme testing.
 6. Try the phone layout and the smallest desktop window at 400% text size. Appearance must not
-   remove Text size controls, move auto-lock out of Security, or change reduced-motion behavior.
+   remove App zoom controls, move auto-lock out of Security, or change reduced-motion behavior.
 7. In the browser demonstration, compare the synthetic paper preview across light/dark: the paper
    and its content remain unchanged while the surrounding app changes. Native documents still use
    **Save a copy**; no PDF viewer is added. A recovery kit printed from either appearance must have

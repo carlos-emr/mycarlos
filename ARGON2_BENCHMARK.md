@@ -2,8 +2,8 @@
 
 - **Purpose:** tune copied-vault guessing cost without making patient unlock unusable
 - **Current parameters:** Argon2id v1.3, 64 MiB, 3 iterations, 4 lanes, 32-byte output
-- **Status:** repeatable harness and an in-app speed test implemented; representative
-  physical-device results open
+- **Status:** repeatable harness and an in-app speed test (development builds only)
+  implemented; representative physical-device results open
 
 Run the benchmark in release mode on an otherwise idle target:
 
@@ -21,14 +21,25 @@ only.
 ## On the device: the speed test in the app
 
 The Rust test harness above cannot run on a phone, so the app carries the same measurement, on every
-platform the app runs on. The Windows, macOS and Android evaluation downloads install on a device.
-The iOS download runs only in the Simulator, whose lines say "Simulator"; an iPhone needs a build
-signed for it (see `TESTING.md`). An Android emulator's line looks like a phone's, so always name
-the device. Write down the source commit from the download's `BUILD.txt` as well.
+platform the app runs on. The speed test is in development builds only (owner decision, 20 Nov
+2026): the Evaluation downloads and release builds do not show it, so device benchmarks are
+collected by a developer from one of these builds:
+
+- a development build: `npm run tauri dev` on a computer, `npm run tauri android dev` on an
+  Android device or emulator, or `npm run tauri ios dev` on macOS for an iPhone or the Simulator
+  (see `README.md` for each platform's setup);
+- a build made with `VITE_SHOW_SPEED_TEST=1` set in the environment of its frontend build, for
+  example a release-mode `npm run tauri build` (or `tauri android build`) run with that variable,
+  when the numbers must come from optimized code on a device without live reload.
+
+Note in the record which kind of build gave the line. Simulator lines say "Simulator"; an Android
+emulator's line looks like a phone's, so always name the device. Write down the source commit
+(`git rev-parse HEAD`) as well.
 
 1. Close other apps, and let the device cool if it is warm. Stay on the Security screen while the
    test runs, and do nothing else in the app: leaving it loses the result.
-2. Open myCarlos, unlock any vault (a throwaway one will do), and open **Security**.
+2. Open myCarlos from that build, unlock any vault (a throwaway one will do), and open
+   **Security**.
 3. Under **Speed test, for testers**, choose **Run speed test** and wait for the line below it. It
    takes a few seconds, longer on an older phone.
 4. Copy the line into the table below, with the device's make and model, its operating system's
@@ -48,10 +59,10 @@ passphrase operation. A competing operation asks you to wait and try again; it i
 Manual and idle locking remain available while the test runs: a lock ends the test after the run
 under way, and the next unlock does not have to wait for the rest.
 
-**Which build.** The evaluation downloads are debug builds in which the key derivation itself is
-compiled at the same optimization level as in a release (see the `dev` profile in
-`src-tauri/Cargo.toml`), with checks a release leaves out and without a release's link-time
-optimization. Their lines end "Evaluation build." and
+**Which build.** A development build (`tauri dev`), like the evaluation downloads, is a debug
+build in which the key derivation itself is compiled at the same optimization level as in a
+release (see the `dev` profile in `src-tauri/Cargo.toml`), with checks a release leaves out and
+without a release's link-time optimization. Its lines end "Evaluation build." and
 may fill the table below, marked as such. A release build should be no slower, for that reason;
 how much faster has **not been measured**. The runs on the development container (below) differ
 more from one run to the next than from one kind of build to the other, so they cannot tell. To

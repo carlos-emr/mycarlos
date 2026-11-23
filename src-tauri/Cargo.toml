@@ -67,17 +67,25 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tokio = { version = "1", features = ["time", "macros"] }
-unicode-normalization = "0.1"
+unicode-normalization = "=0.1.25"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 x509-cert = "=0.2.5"
 x25519-dalek = { version = "=2.0.1", default-features = false, features = ["alloc", "static_secrets", "zeroize"] }
 zeroize = { version = "1", features = ["derive"] }
 zxcvbn = { version = "3.1.1", default-features = false }
+# Pinned exactly with unicode-normalization: they decide how a vault name is folded, and the registry
+# stores hashes of the folded names (vault_registry.rs `NORMALISATION_VERSION`, golden test). A bump
+# that changes one output must raise that number, not slip in.
+caseless = "=0.2.2"
+subtle = "2"
 
 # Match the WebKitGTK bindings already used by the pinned Tauri/Wry runtime. The PDF helper's
 # sandbox on Linux (#63): Landlock where the kernel has it, and a seccomp filter it cannot run
 # without. Pinned: each update is a reviewed change (DEPENDENCY_REVIEW).
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-android-pdf = { path = "android-pdf" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
@@ -187,6 +195,8 @@ opt-level = 1
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
+# Wry with its macOS/iOS camera-and-microphone decision narrowed (#359 PR 7).
+wry = { path = "vendor/wry" }
 
 [[test]]
 name = "model_helper"
