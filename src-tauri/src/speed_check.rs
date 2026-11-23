@@ -72,6 +72,11 @@ pub(crate) fn measure(stats: &Stats) -> Option<Speed> {
     speed.in_range().then_some(speed)
 }
 
+/// Whether the helper read the prompt on `threads` threads: the count a speed is kept under.
+pub(crate) fn read_on(stats: &Stats, threads: u32) -> bool {
+    stats.batch_threads == threads
+}
+
 /// The fixed FAKE request: a made-up term in a made-up sentence, about 300 tokens of prompt and an
 /// answer of up to the helper's explain limit.
 pub(crate) fn check_request() -> ExplainRequest {
@@ -246,6 +251,17 @@ mod tests {
             ..stats(300, 2_000, 60, 24_000)
         };
         assert_eq!(measure(&mostly_cached), None);
+    }
+
+    #[test]
+    fn a_speed_is_kept_only_under_the_thread_count_the_prompt_was_read_on() {
+        let on_three = Stats {
+            batch_threads: 3,
+            ..stats(300, 30_000, 60, 24_000)
+        };
+        assert!(read_on(&on_three, 3));
+        assert!(!read_on(&on_three, 4));
+        assert!(!read_on(&Stats::default(), 3));
     }
 
     #[test]

@@ -2331,6 +2331,18 @@ async fn ai_speed_check(
             memory: None,
         });
     };
+    // Kept only under the thread count it was read on: a check whose helper ran on another count
+    // than the app's own now (it changed since the helper started) is no measurement for this key.
+    if !speed_check::read_on(&stats, speed_threads()) {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    }
     if !keep_speed(&models, sha256, speed, now_ms()) {
         return Err(ai_error(model_runtime::AiError::Storage));
     }
@@ -2338,8 +2350,9 @@ async fn ai_speed_check(
 }
 
 /// The thread count a speed is kept and found under: the app's own (`model_runtime::threads`),
-/// never what one answer happened to use (the helper may use fewer on a short prompt). One key for
-/// the check that saves it and the question that reads it.
+/// which is the count the helper reads a prompt on (`Stats::batch_threads`), never the answer's
+/// own count (a fixed few, at most 3). One key for the check that saves it and the question that
+/// reads it.
 fn speed_threads() -> u32 {
     model_runtime::threads()
 }
