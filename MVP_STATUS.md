@@ -169,7 +169,11 @@ privacy, accessibility, or clinical review.
       an in-app speed test for devices, and the result template are in
       [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md); physical results remain.
 - [ ] Take the speed test for testers (the `kdf_benchmark` command and its section in Security)
-      out of builds released to patients.
+      out of builds released to patients. Its section in Security is now shown in development
+      builds only (owner decision, 20 Nov 2026): the Evaluation downloads no longer show it, and
+      device benchmarks are collected by developers from `npm run tauri dev` or a build made with
+      `VITE_SHOW_SPEED_TEST=1` (see [`ARGON2_BENCHMARK.md`](ARGON2_BENCHMARK.md)). The
+      `kdf_benchmark` command itself is still compiled into every build.
 - [ ] Inspect platform logs, crash artifacts, app-switcher snapshots, and backups for plaintext
       canaries. Recursive application-storage canary inspection is automated.
 - [x] State the current evaluation's passphrase-only permanent-loss behavior and the limits of

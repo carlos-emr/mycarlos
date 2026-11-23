@@ -2174,14 +2174,15 @@ pub mod engine_testing {
             "maxQuoteChars": model_helper::MAX_QUOTE_CHARS,
         });
         let caps_text = caps.to_string();
+        let system = model_helper::summary_system_prompt();
         let mut hash = Sha256::new();
-        for part in [model_helper::SYSTEM_PROMPT, &prompt, &grammar, &caps_text] {
+        for part in [system.as_str(), &prompt, &grammar, &caps_text] {
             hash.update((part.len() as u64).to_le_bytes());
             hash.update(part.as_bytes());
         }
         Ok(serde_json::json!({
             "fingerprint": format!("{:x}", hash.finalize()),
-            "systemPrompt": model_helper::SYSTEM_PROMPT,
+            "systemPrompt": system,
             "summaryPrompt": prompt,
             "grammar": grammar,
             "caps": caps,

@@ -33,6 +33,9 @@ export const FAKE_CLINIC = "FAKE Clinic";
 export const FAKE_CLINIC_DOCUMENT = "FAKE Clinic letter.pdf";
 /** The device code of the first link made, or of the link set up. */
 export const FAKE_DEVICE_CODE = "FAKE-DEVICE-1";
+/** A link code for which the fake's `vault_portal_connect` links the device but
+ * answers with an approval error (#136): the request to the clinic failed. */
+export const FAKE_APPROVAL_FAILS_CODE = "FAKE-CODE-APPROVAL-FAILS";
 /** Labels of the vault's recovery key, and of a key being set up. */
 export const FAKE_KEY_LABEL = "FAKE-KEY1";
 /** What the fake device reports for the passphrase speed test (#39): round
@@ -1434,20 +1437,27 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return copy(made);
           }
           // #136: links this device and asks the clinic to approve it in one
-          // native call. Not modelled yet: an approval request that fails
-          // after the link was made (native answers the new link with
-          // `approvalError` beside it).
+          // native call. The code FAKE_APPROVAL_FAILS_CODE models a request
+          // that fails after the link was made: native answers the new link,
+          // not yet requested, with `approvalError` beside it (the same
+          // string as the exported constant below, which page code cannot see).
           case "vault_portal_connect": {
             const links = (snapshot.portalLinks ??= []);
+            const failed = request.code === "FAKE-CODE-APPROVAL-FAILS";
             const made = {
               ...link(links.length + 1, request.portalBase ?? "", false),
               deviceName: request.deviceName ?? "",
               profileId: request.profileId ?? null,
-              approvalRequested: true,
-              approvalStatus: "pending",
+              approvalRequested: !failed,
+              approvalStatus: failed ? null : "pending",
             };
             links.push(made);
-            return { link: copy(made), approvalError: null };
+            return {
+              link: copy(made),
+              approvalError: failed
+                ? { code: "approval_contact_clinic", message: "FAKE outcome" }
+                : null,
+            };
           }
           case "vault_request_device_approval": {
             const found = snapshot.portalLinks?.find(
