@@ -183,15 +183,7 @@ impl VaultStore {
                 records,
                 dropped_answers,
                 receipt_code,
-            } = self.stage_package(
-                &mut reader,
-                &package,
-                &plan,
-                &stage,
-                &keys,
-                vault_id,
-                now_ms,
-            )?;
+            } = self.stage_package(reader, &package, &plan, &stage, &keys, vault_id, now_ms)?;
             if cancelled() {
                 return Err(VaultError::Cancelled);
             }
@@ -200,13 +192,15 @@ impl VaultStore {
 
             // 2. The new manifest, checked as a manifest read from disk is.
             let (next, summary) = plan.assemble(
-                link_package.then_some(package_id),
                 &package,
                 records,
                 &unlocked.manifest,
-                dropped_answers,
-                receipt_code,
-                now_ms,
+                Facts {
+                    package_id: link_package.then_some(package_id),
+                    dropped_answers,
+                    receipt_code,
+                    now_ms,
+                },
             )?;
             validate_manifest_structure(&next, vault_id).map_err(|_| VaultError::Invalid)?;
             let size = serde_json::to_vec(&next)
@@ -623,18 +617,30 @@ fn plan_import(
     })
 }
 
+/// What an import learned that the new manifest records.
+struct Facts {
+    /// The file's id, to link the person to it; none for a second copy of a file already taken.
+    package_id: Option<Uuid>,
+    dropped_answers: usize,
+    receipt_code: String,
+    now_ms: u64,
+}
+
 impl Plan {
     /// The manifest after the import, and what it did.
     fn assemble(
         &self,
-        package_id: Option<Uuid>,
         package: &PackageManifest,
         staged: Vec<StagedRecord>,
         current: &Manifest,
-        dropped_answers: usize,
-        receipt_code: String,
-        now_ms: u64,
+        facts: Facts,
     ) -> Result<(Manifest, ProfileImported), VaultError> {
+        let Facts {
+            package_id,
+            dropped_answers,
+            receipt_code,
+            now_ms,
+        } = facts;
         let mut next = current.clone();
         // Deliveries this vault holds, filed or carried: a second record of one is refused, so
         // evidence for one it has is dropped (the document still comes).
@@ -726,9 +732,7 @@ impl Plan {
                 carried,
             });
         }
-        let excerpt = self
-            .excerpt(package, &new_records)
-            .filter(|_| package_id.is_some());
+        let excerpt = self.excerpt(package).filter(|_| package_id.is_some());
         summary.history_entries = excerpt.as_ref().map_or(0, Vec::len);
         let (full_name, birth_date, previous_full_names) = self.details.clone();
         next.profiles.push(PatientProfile {
@@ -792,20 +796,28 @@ impl Plan {
         kept
     }
 
-    /// The old history, on this vault's record ids: only entries about a document that came,
-    /// at most `MAX_IMPORTED_HISTORY`, each one this vault's own rules accept.
-    fn excerpt(
-        &self,
-        package: &PackageManifest,
-        records: &[StoredRecord],
-    ) -> Option<Vec<ImportedHistoryEntry>> {
+    /// The old history, on this vault's record ids: only entries about a document that came
+    /// (the package names it by the package's own id, which maps to the one made here), at
+    /// most `MAX_IMPORTED_HISTORY`, each one this vault's own rules accept. An entry that names
+    /// no document of the package is dropped, never kept pointing at nothing.
+    fn excerpt(&self, package: &PackageManifest) -> Option<Vec<ImportedHistoryEntry>> {
         let history = package.history.as_ref()?;
-        let known: HashSet<Uuid> = records.iter().map(|record| record.id).collect();
+        let mapped: HashMap<Uuid, Uuid> = package
+            .records
+            .iter()
+            .zip(&self.records)
+            .map(|(source, ids)| (source.id, ids.record_id))
+            .collect();
         let mut kept: Vec<ImportedHistoryEntry> = history
             .iter()
             .take(MAX_HISTORY_ENTRIES)
             .filter_map(|value| serde_json::from_value::<ImportedHistoryEntry>(value.clone()).ok())
-            .filter(|entry| entry.valid() && entry.record_id.is_none_or(|id| known.contains(&id)))
+            .filter_map(|mut entry| {
+                if let Some(id) = entry.record_id {
+                    entry.record_id = Some(*mapped.get(&id)?);
+                }
+                entry.valid().then_some(entry)
+            })
             .collect();
         if kept.len() > MAX_IMPORTED_HISTORY {
             kept.drain(..kept.len() - MAX_IMPORTED_HISTORY);
@@ -936,7 +948,7 @@ mod tests {
     use std::io::Cursor;
 
     const PASSWORD: &str = "correct horse battery staple 9173";
-    const TARGET_PASSWORD: &str = "another long fake passphrase 4417";
+    const TARGET_PASSWORD: &str = "cobalt-meadow-lantern-prism-8264-vexed";
     const CHILD_MARKER: &[u8] = b"FAKE-CHILD-DOCUMENT-BYTES";
     const PARENT_MARKER: &[u8] = b"FAKE-PARENT-ONLY-BYTES-31";
 
@@ -1053,9 +1065,7 @@ mod tests {
     fn target_vault() -> (tempfile::TempDir, VaultStore) {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
-        store
-            .create(TARGET_PASSWORD, "FAKE Child's Own Vault", 1)
-            .unwrap();
+        store.create(TARGET_PASSWORD, "FAKE Target", 1).unwrap();
         (temp, store)
     }
 
@@ -1404,6 +1414,7 @@ mod tests {
         let (bytes, _) = export_bytes(&source, &key);
         let (_temp, target) = target_vault();
         let generation_before = generation(&target);
+        let files_before = object_files(&target);
         // A reader that sets the cancel flag part way through, as a lock does.
         struct Cancelling<'a> {
             inner: Cursor<Vec<u8>>,
@@ -1437,7 +1448,7 @@ mod tests {
         assert!(matches!(result, Err(VaultError::Cancelled)), "{result:?}");
         target.cancel_io.store(false, Ordering::Release);
         assert_eq!(generation(&target), generation_before);
-        assert!(object_files(&target).is_empty());
+        assert_eq!(object_files(&target), files_before);
         assert!(staging_is_empty(&target));
     }
 
@@ -1552,12 +1563,14 @@ mod tests {
             &key,
         );
         let generation_before = generation(&target);
+        let files_before = object_files(&target);
         assert!(matches!(
             take(&target, &bytes, &key, &options()),
             Err(VaultError::Invalid)
         ));
         assert_eq!(generation(&target), generation_before);
-        assert!(object_files(&target).is_empty() && staging_is_empty(&target));
+        assert_eq!(object_files(&target), files_before);
+        assert!(staging_is_empty(&target));
     }
 
     #[test]
@@ -1690,11 +1703,12 @@ mod tests {
         let (key, _) = generate_package_key();
         let (bytes, _) = export_bytes(&source, &key);
         let (_temp, target) = target_vault();
+        let files_before = object_files(&target);
         target.lock();
         assert!(matches!(
             take(&target, &bytes, &key, &options()),
             Err(VaultError::Locked)
         ));
-        assert!(object_files(&target).is_empty());
+        assert_eq!(object_files(&target), files_before);
     }
 }

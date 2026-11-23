@@ -1574,3 +1574,32 @@ fn the_receipt_code_is_the_same_from_the_import_and_from_the_source_and_differs_
     reader.verify_tail().unwrap();
     assert_ne!(reader.receipt_code().unwrap(), imported);
 }
+
+#[test]
+fn the_kind_of_key_is_read_from_the_header_without_any_secret() {
+    let fixture = fixture(&[3]);
+    let key = key();
+    let with_key = write_package(&fixture, &key);
+    assert_eq!(
+        package_key_kind(Cursor::new(&with_key)).unwrap(),
+        KeyKind::Key
+    );
+    let with_passphrase = write_with(&fixture, PackageSecret::Passphrase(PASSPHRASE)).unwrap();
+    assert_eq!(
+        package_key_kind(Cursor::new(&with_passphrase)).unwrap(),
+        KeyKind::Passphrase
+    );
+    // Not a package, cut short, or from a newer myCarlos: said as such.
+    assert!(matches!(
+        package_key_kind(Cursor::new(b"not a package at all".as_slice())),
+        Err(PackageError::Unreadable)
+    ));
+    assert!(matches!(
+        package_key_kind(Cursor::new(&with_key[..30])),
+        Err(PackageError::Unreadable)
+    ));
+    assert!(matches!(
+        package_key_kind(Cursor::new(newer_header_package())),
+        Err(PackageError::NewerFormat)
+    ));
+}

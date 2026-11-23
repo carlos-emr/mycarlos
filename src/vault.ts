@@ -240,6 +240,47 @@ export interface SavedProfileExport {
   summary: ProfileExportSummary;
 }
 
+/** A person this vault already holds, from the same handover file or the same documents. */
+export interface ProfileAlreadyHere {
+  profileId: string;
+  /** "package": the same file. "content": the same original PDFs, whatever the file. */
+  by: "package" | "content";
+  matchingDocuments: number;
+}
+
+/** What a handover file holds, from its header, manifest and end: no document is read. */
+export interface ProfileImportPreview {
+  exportedAtMs: number;
+  displayName: string;
+  fullName: string | null;
+  birthDate: string | null;
+  documents: number;
+  hidden: number;
+  folders: number;
+  aiAnswers: number;
+  withClinicEvidence: number;
+  historyEntries: number;
+  plaintextBytes: number;
+  alreadyHere: ProfileAlreadyHere | null;
+}
+
+/** What an import did, in counts; "alreadyHere" means nothing was written. */
+export interface ProfileImportOutcome {
+  status: "imported" | "alreadyHere";
+  profileId: string | null;
+  documents: number;
+  folders: number;
+  hidden: number;
+  aiAnswers: number;
+  aiAnswersDropped: number;
+  evidenceKept: number;
+  evidenceDropped: number;
+  historyEntries: number;
+  /** The short code the source can recompute from the file and its key. */
+  receiptCode: string | null;
+  alreadyHere: ProfileAlreadyHere | null;
+}
+
 /** Today on the patient's own calendar, as `YYYY-MM-DD`. */
 export function localDateText(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -525,6 +566,24 @@ export interface VaultBridge {
   ): Promise<string | null>;
   /** Writes the export to the chosen place, read back and checked before it replaces anything. */
   saveProfileExportToPicked(pickId: string): Promise<SavedProfileExport>;
+  /** Asks which handover file to read (#360); null if the picker was cancelled. */
+  pickProfileImportSource(): Promise<string | null>;
+  /** Whether the file opens with a generated key or a typed passphrase, from its header. */
+  profileImportKeyKind(pickId: string): Promise<"key" | "passphrase">;
+  /** Opens the file with its key (or passphrase) and says what it holds. Nothing is written. */
+  inspectProfileImport(request: {
+    pickId: string;
+    key?: string;
+    passphrase?: string;
+  }): Promise<ProfileImportPreview>;
+  /** Makes a person from the file, or says nothing was written (already here). */
+  importProfile(request: {
+    pickId: string;
+    key?: string;
+    passphrase?: string;
+    displayName?: string;
+    allowDuplicate?: boolean;
+  }): Promise<ProfileImportOutcome>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -1073,6 +1132,16 @@ export function createVaultBridge(): VaultBridge {
       invoke<SavedProfileExport>("vault_profile_export_picked", {
         request: { pickId },
       }),
+    pickProfileImportSource: () =>
+      invoke<string | null>("vault_profile_import_pick"),
+    profileImportKeyKind: (pickId) =>
+      invoke<"key" | "passphrase">("vault_profile_import_key_kind", {
+        request: { pickId },
+      }),
+    inspectProfileImport: (request) =>
+      invoke<ProfileImportPreview>("vault_profile_import_inspect", { request }),
+    importProfile: (request) =>
+      invoke<ProfileImportOutcome>("vault_profile_import", { request }),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>

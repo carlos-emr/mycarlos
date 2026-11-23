@@ -146,6 +146,10 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     prepareProfileExport: vi.fn(),
     pickProfileExportDestination: vi.fn().mockResolvedValue(null),
     saveProfileExportToPicked: vi.fn(),
+    pickProfileImportSource: vi.fn().mockResolvedValue(null),
+    profileImportKeyKind: vi.fn(),
+    inspectProfileImport: vi.fn(),
+    importProfile: vi.fn(),
     pickRestoreSource: vi.fn().mockResolvedValue(null),
     inspectRestore: vi.fn().mockResolvedValue({
       replaces: "nothing",

@@ -43,7 +43,11 @@ mod delivery;
 mod remote_notices;
 pub(crate) use delivery::AidFiling;
 pub(crate) use profile_export::{ExportOptions, ExportReport};
-pub(crate) use profile_package::{generate_package_key, PackageSecret};
+pub(crate) use profile_import::{AlreadyHere, DuplicateBy, ImportOptions, ImportResult};
+pub(crate) use profile_package::{
+    generate_package_key, package_key_kind, parse_package_key, KeyKind as PackageKeyKind,
+    PackageError, PackageSecret,
+};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;

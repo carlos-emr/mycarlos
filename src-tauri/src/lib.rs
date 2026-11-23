@@ -1281,6 +1281,8 @@ struct PendingPicks {
     /// A person's export that has been prepared (#360): the person, the choices and the key,
     /// held here so that the key never has to come back from the renderer. Ends at lock.
     profile_exports: PickTable<PendingProfileExport>,
+    /// A handover file the patient chose to read (#360), kept for its inspect and its import.
+    profile_imports: PickTable<tauri_plugin_fs::FilePath>,
     /// A prepared export with the place the patient chose for it.
     profile_export_picks: PickTable<(PendingProfileExport, tauri_plugin_fs::FilePath)>,
     restores: PickTable<tauri_plugin_fs::FilePath>,
@@ -1649,6 +1651,7 @@ impl PendingPicks {
         self.exports.clear();
         self.backups.clear();
         self.profile_exports.clear();
+        self.profile_imports.clear();
         self.profile_export_picks.clear();
         self.restores.clear();
         self.texts.clear();
@@ -4043,6 +4046,304 @@ async fn vault_profile_export_picked(
     .await
 }
 
+/// Asks which handover file to read (#360). Nothing is read until the patient gives its key.
+#[tauri::command]
+async fn vault_profile_import_pick(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+) -> CommandResult<Option<Uuid>> {
+    let session = picks.session();
+    // Only into a vault that can take it.
+    run_blocking(store.inner(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    // No filter: a phone's picker filters by file type, and a handover file has none it knows.
+    let source =
+        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_file())
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    if picks.session() != session {
+        return Err(VaultError::Locked.into());
+    }
+    Ok(Some(picks.profile_imports.store(session, source)))
+}
+
+/// A handover file opened for reading and seeking: a regular file, opened without following a
+/// link or waiting on a pipe or a device, or the document an Android provider gives.
+fn open_profile_import_source(
+    app: &tauri::AppHandle,
+    source: tauri_plugin_fs::FilePath,
+) -> Result<std::io::BufReader<std::fs::File>, VaultError> {
+    if let Ok(path) = source.clone().into_path() {
+        return vault::open_regular_read(&path)
+            .map(std::io::BufReader::new)
+            .map_err(|_| VaultError::Invalid);
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    app.fs()
+        .open(source, options)
+        .map(std::io::BufReader::new)
+        .map_err(|_| VaultError::Invalid)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportKeyRequest {
+    pick_id: Uuid,
+}
+
+/// Whether the chosen file opens with a generated key or a typed passphrase, from its header
+/// alone: so that the screen asks for the right one. Says "newer" for a file from a newer
+/// myCarlos, and `invalid` for anything that is not a handover file.
+#[tauri::command]
+async fn vault_profile_import_key_kind(
+    app: tauri::AppHandle,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportKeyRequest,
+) -> CommandResult<&'static str> {
+    let source = picks
+        .profile_imports
+        .peek_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = open_profile_import_source(&app, source)?;
+        match vault::package_key_kind(file)? {
+            vault::PackageKeyKind::Key => Ok("key"),
+            vault::PackageKeyKind::Passphrase => Ok("passphrase"),
+        }
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(|error: VaultError| error.into())
+}
+
+/// What opens a file, as typed: a key is read (case, spaces and dashes do not matter) and its
+/// check characters catch a typo before anything is tried; a recovery key typed here is said
+/// to be one. The distinct codes are for the screen to word; their message is the generic one
+/// until it does.
+enum ProfileImportSecretValue {
+    Key(Zeroizing<[u8; 16]>),
+    Passphrase(Zeroizing<String>),
+}
+
+impl ProfileImportSecretValue {
+    /// The key or the passphrase a patient typed for a handover file: exactly one.
+    fn parse(key: Option<String>, passphrase: Option<String>) -> Result<Self, PublicError> {
+        match (key, passphrase) {
+            (Some(text), None) => {
+                let text = Zeroizing::new(text);
+                vault::parse_package_key(&text)
+                    .map(Self::Key)
+                    .map_err(|error| {
+                        let mut public = PublicError::from(VaultError::Invalid);
+                        public.code = match error {
+                            vault::PackageError::RecoveryKeyEntered => {
+                                "package_key_is_recovery_key"
+                            }
+                            _ => "package_key_typo",
+                        };
+                        public
+                    })
+            }
+            (None, Some(passphrase)) => Ok(Self::Passphrase(Zeroizing::new(passphrase))),
+            _ => Err(VaultError::Invalid.into()),
+        }
+    }
+
+    fn as_secret(&self) -> vault::PackageSecret<'_> {
+        match self {
+            Self::Key(key) => vault::PackageSecret::Key(key),
+            Self::Passphrase(passphrase) => vault::PackageSecret::Passphrase(passphrase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportInspectRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    passphrase: Option<String>,
+}
+
+/// A person this vault already holds, from the same file or the same documents.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileAlreadyHere {
+    profile_id: Uuid,
+    /// "package" (the same file) or "content" (the same original PDFs).
+    by: &'static str,
+    matching_documents: usize,
+}
+
+impl From<vault::AlreadyHere> for ProfileAlreadyHere {
+    fn from(found: vault::AlreadyHere) -> Self {
+        Self {
+            profile_id: found.profile_id,
+            by: match found.by {
+                vault::DuplicateBy::Package => "package",
+                vault::DuplicateBy::Content => "content",
+            },
+            matching_documents: found.matching_documents,
+        }
+    }
+}
+
+/// What a handover file holds, as its person's label and counts. Names no document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileImportPreview {
+    exported_at_ms: u64,
+    display_name: String,
+    full_name: Option<String>,
+    birth_date: Option<String>,
+    documents: usize,
+    hidden: usize,
+    folders: usize,
+    ai_answers: usize,
+    with_clinic_evidence: usize,
+    history_entries: usize,
+    plaintext_bytes: u64,
+    already_here: Option<ProfileAlreadyHere>,
+}
+
+/// Opens the chosen file with its key and says what it holds and whether this vault has it.
+/// Refuses a file that is cut short, altered or extended, or from a newer myCarlos. Nothing is
+/// written. The pick stays for `vault_profile_import`.
+#[tauri::command]
+async fn vault_profile_import_inspect(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportInspectRequest,
+) -> CommandResult<ProfileImportPreview> {
+    let source = picks
+        .profile_imports
+        .peek_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
+    run_blocking(store.inner(), move |store| {
+        let file = open_profile_import_source(&app, source)?;
+        let preview = store.inspect_profile_package(file, secret.as_secret())?;
+        Ok(ProfileImportPreview {
+            exported_at_ms: preview.exported_at_ms,
+            display_name: preview.display_name,
+            full_name: preview.full_name,
+            birth_date: preview.birth_date,
+            documents: preview.documents,
+            hidden: preview.hidden,
+            folders: preview.folders,
+            ai_answers: preview.ai_answers,
+            with_clinic_evidence: preview.with_clinic_evidence,
+            history_entries: preview.history_entries,
+            plaintext_bytes: preview.plaintext_bytes,
+            already_here: preview.already_here.map(ProfileAlreadyHere::from),
+        })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    passphrase: Option<String>,
+    /// What to call the person here; the file's label when none.
+    #[serde(default)]
+    display_name: Option<String>,
+    /// Make the person although this vault already has them.
+    #[serde(default)]
+    allow_duplicate: bool,
+}
+
+/// What an import did, in counts that name no document, and the receipt code the source can
+/// recompute from the file and its key.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileImportOutcome {
+    /// "imported", or "alreadyHere" (nothing was written).
+    status: &'static str,
+    profile_id: Option<Uuid>,
+    documents: usize,
+    folders: usize,
+    hidden: usize,
+    ai_answers: usize,
+    ai_answers_dropped: usize,
+    evidence_kept: usize,
+    evidence_dropped: usize,
+    history_entries: usize,
+    receipt_code: Option<String>,
+    already_here: Option<ProfileAlreadyHere>,
+}
+
+/// Makes a person from the chosen file: staged, re-encrypted under this vault's keys, verified,
+/// published and committed together, or not at all.
+#[tauri::command]
+async fn vault_profile_import(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportRequest,
+) -> CommandResult<ProfileImportOutcome> {
+    let source = picks
+        .profile_imports
+        .take(request.pick_id, picks.session())
+        .ok_or(VaultError::NotFound)?;
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
+    let options = vault::ImportOptions {
+        display_name: request.display_name,
+        allow_duplicate: request.allow_duplicate,
+    };
+    run_blocking(store.inner(), move |store| {
+        let file = open_profile_import_source(&app, source)?;
+        let result = store.import_profile_package(file, secret.as_secret(), &options, now_ms())?;
+        Ok(match result {
+            vault::ImportResult::Imported(done) => ProfileImportOutcome {
+                status: "imported",
+                profile_id: Some(done.profile_id),
+                documents: done.documents,
+                folders: done.folders,
+                hidden: done.hidden,
+                ai_answers: done.ai_answers,
+                ai_answers_dropped: done.ai_answers_dropped,
+                evidence_kept: done.evidence_kept,
+                evidence_dropped: done.evidence_dropped,
+                history_entries: done.history_entries,
+                receipt_code: Some(done.receipt_code),
+                already_here: None,
+            },
+            vault::ImportResult::AlreadyHere(found) => ProfileImportOutcome {
+                status: "alreadyHere",
+                profile_id: None,
+                documents: 0,
+                folders: 0,
+                hidden: 0,
+                ai_answers: 0,
+                ai_answers_dropped: 0,
+                evidence_kept: 0,
+                evidence_dropped: 0,
+                history_entries: 0,
+                receipt_code: None,
+                already_here: Some(found.into()),
+            },
+        })
+    })
+    .await
+}
+
 /// Asks which backup to restore. Only while no vault is open.
 #[tauri::command]
 async fn vault_restore_pick(
@@ -5889,6 +6190,10 @@ pub fn run() {
             vault_profile_export_prepare,
             vault_profile_export_pick,
             vault_profile_export_picked,
+            vault_profile_import_pick,
+            vault_profile_import_key_kind,
+            vault_profile_import_inspect,
+            vault_profile_import,
             vault_restore_pick,
             vault_restore_inspect,
             vault_restore,

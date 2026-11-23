@@ -518,7 +518,9 @@ pub(crate) enum PackageSecret<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-enum KeyKind {
+/// What opens a package, as its header says (it is not secret): a generated key or a typed
+/// passphrase. A screen asks for the one that fits.
+pub(crate) enum KeyKind {
     Key,
     Passphrase,
 }
@@ -1267,20 +1269,6 @@ impl<W: Write> PackageWriter<W> {
 // Reading
 // ---------------------------------------------------------------------------
 
-/// Hashes what is read through it.
-struct HashingRead<'a, R: Read> {
-    inner: &'a mut R,
-    hasher: &'a mut Sha256,
-}
-
-impl<R: Read> Read for HashingRead<'_, R> {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let read = self.inner.read(buffer)?;
-        self.hasher.update(&buffer[..read]);
-        Ok(read)
-    }
-}
-
 /// What reading one object found: its plaintext size and SHA-256, which the
 /// package's digests must agree with before the package is trusted.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1521,32 +1509,45 @@ fn receipt_code_of(keys: &PackageKeys, package_id: Uuid, objects: &[ObjectRead])
     )
 }
 
+/// Reads the magic and the header, the part of a package that needs no key: its format is this
+/// build's (a newer one is `NewerFormat`) and it is well formed.
+fn read_header(inner: &mut impl Read) -> Result<(PackageHeader, Vec<u8>), PackageError> {
+    let mut magic = [0_u8; 16];
+    read_exact_or_unreadable(inner, &mut magic)?;
+    if &magic != PACKAGE_MAGIC {
+        return Err(PackageError::Unreadable);
+    }
+    let mut length = [0_u8; 4];
+    read_exact_or_unreadable(inner, &mut length)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if length == 0 || length > MAX_HEADER_BYTES {
+        return Err(PackageError::Unreadable);
+    }
+    let mut header_bytes = vec![0_u8; length];
+    read_exact_or_unreadable(inner, &mut header_bytes)?;
+    check_format(&header_bytes)?;
+    let header: PackageHeader =
+        serde_json::from_slice(&header_bytes).map_err(|_| PackageError::Unreadable)?;
+    match (&header.key_kind, &header.kdf) {
+        (KeyKind::Key, None) => {}
+        (KeyKind::Passphrase, Some(config)) if valid_kdf_config(config) => {}
+        _ => return Err(PackageError::Unreadable),
+    }
+    Ok((header, header_bytes))
+}
+
+/// Whether a package is opened with a generated key or a typed passphrase, from its header
+/// alone and before any secret is asked for: so that a screen can ask for the right one.
+pub(crate) fn package_key_kind(mut source: impl Read) -> Result<KeyKind, PackageError> {
+    read_header(&mut source).map(|(header, _)| header.key_kind)
+}
+
 impl<R: Read> PackageReader<R> {
     /// Opens the package with its key: checks the magic and the format,
     /// unwraps the package key (a wrong key is [`PackageError::WrongKey`]) and
     /// reads and validates the manifest. Nothing else is read.
     pub(crate) fn open(mut inner: R, secret: PackageSecret<'_>) -> Result<Self, PackageError> {
-        let mut magic = [0_u8; 16];
-        read_exact_or_unreadable(&mut inner, &mut magic)?;
-        if &magic != PACKAGE_MAGIC {
-            return Err(PackageError::Unreadable);
-        }
-        let mut length = [0_u8; 4];
-        read_exact_or_unreadable(&mut inner, &mut length)?;
-        let length = u32::from_be_bytes(length) as usize;
-        if length == 0 || length > MAX_HEADER_BYTES {
-            return Err(PackageError::Unreadable);
-        }
-        let mut header_bytes = vec![0_u8; length];
-        read_exact_or_unreadable(&mut inner, &mut header_bytes)?;
-        check_format(&header_bytes)?;
-        let header: PackageHeader =
-            serde_json::from_slice(&header_bytes).map_err(|_| PackageError::Unreadable)?;
-        match (&header.key_kind, &header.kdf) {
-            (KeyKind::Key, None) => {}
-            (KeyKind::Passphrase, Some(config)) if valid_kdf_config(config) => {}
-            _ => return Err(PackageError::Unreadable),
-        }
+        let (header, header_bytes) = read_header(&mut inner)?;
         // A key of the wrong kind is simply a key that does not open it.
         let matches_kind = matches!(
             (&header.key_kind, secret),
