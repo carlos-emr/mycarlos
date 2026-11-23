@@ -5426,11 +5426,13 @@ fn benchmark_kdf(still_open: &dyn Fn() -> bool) -> Result<KdfBenchmark, VaultErr
     })
 }
 
-/// What one passphrase derivation costs: the Argon2 settings of a vault header, ordered so that a
-/// dearer cost is greater (memory first, then passes, then lanes). An unlock by name runs decoy
-/// derivations at the dearest cost any real vault in the attempt has, never a cheaper one, so a
-/// decoy cannot be told from a real derivation by its time (#357, PR 4a).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// What one passphrase derivation costs: the Argon2 settings of a vault header. An unlock by name
+/// runs decoy derivations at the dearest cost any real vault in the attempt has, never a cheaper
+/// one, so a decoy cannot be told from a real derivation by its time (#357, PR 4a). "Dearest" is
+/// the per-field maximum (more memory, more passes, more lanes each only add work), not a
+/// lexicographic order: with costs (64 MiB, 3, 4) and (32 MiB, 9, 4) the decoy runs (64 MiB, 9, 4),
+/// at least as dear as either.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DeriveCost {
     memory_kib: u32,
     iterations: u32,
@@ -5456,9 +5458,13 @@ impl DeriveCost {
         }
     }
 
-    /// The dearer of two costs.
+    /// The cost at least as dear as both: each setting's maximum.
     pub(crate) fn dearer(self, other: DeriveCost) -> DeriveCost {
-        self.max(other)
+        DeriveCost {
+            memory_kib: self.memory_kib.max(other.memory_kib),
+            iterations: self.iterations.max(other.iterations),
+            lanes: self.lanes.max(other.lanes),
+        }
     }
 }
 
@@ -5489,7 +5495,7 @@ const DECOY_SALT: [u8; 16] = *b"mycarlos-decoy-1";
 pub(crate) mod test_costs {
     use super::*;
 
-    /// A cost dearer than today's, which no header may carry yet.
+    /// A cost with more memory than today's, which no header may carry yet.
     pub(crate) fn dearer() -> DeriveCost {
         DeriveCost {
             memory_kib: ARGON_MEMORY_KIB * 2,
@@ -5501,6 +5507,57 @@ pub(crate) mod test_costs {
     /// The cost a new vault's header is written with.
     pub(crate) fn written_with() -> DeriveCost {
         DeriveCost::of(&kdf_config_with_salt([0; 16]))
+    }
+
+    /// The tripwire's other half: `valid_kdf_config` refuses every setting but today's, so a header
+    /// can never carry a cost that differs from `DeriveCost::DECOY`, which is what lets the decoy
+    /// cost be one constant. It also means `read_header_for_passphrase` makes exactly ONE derivation
+    /// per distinct header config, i.e. one for a vault: the plan counts one derivation per slot.
+    /// If this test must change, the decoy rule in `unlock_plan.rs` has to be revisited with it.
+    #[test]
+    fn valid_kdf_config_refuses_anything_but_the_decoy_cost() {
+        let good = kdf_config_with_salt([1; 16]);
+        assert!(valid_kdf_config(&good));
+        assert_eq!(DeriveCost::of(&good), DeriveCost::DECOY);
+        for change in [
+            |c: &mut KdfConfig| c.memory_kib += 1,
+            |c: &mut KdfConfig| c.memory_kib = 8,
+            |c: &mut KdfConfig| c.iterations += 1,
+            |c: &mut KdfConfig| c.iterations = 1,
+            |c: &mut KdfConfig| c.lanes += 1,
+            |c: &mut KdfConfig| c.lanes = 1,
+            |c: &mut KdfConfig| c.algorithm = "argon2i".to_owned(),
+            |c: &mut KdfConfig| c.version = 16,
+        ] {
+            let mut config = good.clone();
+            change(&mut config);
+            assert!(!valid_kdf_config(&config));
+        }
+    }
+
+    #[test]
+    fn dearest_is_the_per_field_maximum_not_a_lexicographic_order() {
+        let a = DeriveCost {
+            memory_kib: 64 * 1024,
+            iterations: 3,
+            lanes: 4,
+        };
+        let b = DeriveCost {
+            memory_kib: 32 * 1024,
+            iterations: 9,
+            lanes: 2,
+        };
+        let both = a.dearer(b);
+        assert_eq!(
+            both,
+            DeriveCost {
+                memory_kib: 64 * 1024,
+                iterations: 9,
+                lanes: 4,
+            }
+        );
+        assert_eq!(b.dearer(a), both);
+        assert_eq!(both.dearer(a), both);
     }
 
     /// One decoy derivation at the smallest cost Argon2 accepts.

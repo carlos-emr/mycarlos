@@ -149,9 +149,16 @@ fn legacy_counts_path(data_dir: &Path) -> PathBuf {
 }
 
 /// Brings the counts from the old place to the new one, once: copies a readable old file, never
-/// deletes it, and never replaces a file already at the new place (that one is newer). A file that is
-/// missing, not a plain file, too big or not counts is not copied, which only starts the count again
-/// (the counts are a gentle wait, not a secret). Failures are ignored for the same reason.
+/// deletes it, and never replaces a file already at the new place (that one is newer; the write
+/// itself refuses to overwrite, so a copy of myCarlos started at the same moment cannot lose its
+/// counts to this one). A file that is missing, not a plain file, too big or not counts is not
+/// copied, which only starts the count again (the counts are a gentle wait, not a secret). Failures
+/// are ignored for the same reason.
+///
+/// **Downgrade limit:** an older build used after this one keeps writing the OLD file, which this
+/// build no longer reads; going back to this build later finds the new file (older counts) and does
+/// not copy again. So a downgrade and an upgrade can restore an old, shorter wait. It only undoes a
+/// gentle wait on the same device, never opens a vault.
 pub fn migrate_counts(data_dir: &Path) {
     let new = counts_path(data_dir);
     if std::fs::symlink_metadata(&new).is_ok() {
@@ -164,7 +171,16 @@ pub fn migrate_counts(data_dir: &Path) {
         return;
     };
     if let Ok(bytes) = serde_json::to_vec(&counts) {
-        let _ = atomic_bytes(&new, &bytes);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        // DisallowOverwrite: the rename fails rather than replace a file that appeared meanwhile.
+        let _ = atomicwrites::AtomicFile::new(&new, atomicwrites::DisallowOverwrite)
+            .write_with_options(|file| std::io::Write::write_all(file, &bytes), options);
     }
 }
 

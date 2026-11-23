@@ -15,9 +15,17 @@
 //!   this is a guard for the day a vault may differ). Limit, stated: a name that matched NO vault
 //!   cannot know a dearer cost it was not told about, so a device holding vaults with different costs
 //!   would show a difference between a name that matched a dearer vault and one that matched nothing.
-//!   `valid_kdf_config` refuses such headers today, and `decoy_cost_is_what_vaults_are_written_with`
-//!   fails the build the day that changes.
+//!   `valid_kdf_config` refuses such headers today (`valid_kdf_config_refuses_anything_but_the_decoy_cost`
+//!   pins that, and so the assumption of one derivation per slot), and
+//!   `decoy_cost_is_what_vaults_are_written_with` fails the build if a new header's cost drifts from
+//!   the decoy's.
 //! - If two vaults with the name share the passphrase, the first in registry order opens.
+//! - **What this module does NOT yet equalise: disk reads.** A decoy reads nothing, while a real
+//!   vault's derivation first reads its header files and tries each copy, so the attempt's I/O (and
+//!   its atime and inotify trace) still grows with the number of matches. Counting derivations is
+//!   necessary, not sufficient. PR 4b closes this by reading the headers of EVERY registry slot (or
+//!   a fixed number) before any derivation, whatever the name matched, and handing the pre-read
+//!   header to the real derivation; until then the claim above is about derivations only.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::vault::DeriveCost;
@@ -215,7 +223,7 @@ mod tests {
     #[test]
     fn decoys_run_at_the_dearest_cost_a_real_derivation_reported_and_never_less_than_the_default() {
         let dearer = DeriveCost::DECOY.dearer(crate::vault::test_costs::dearer());
-        assert!(dearer > DeriveCost::DECOY);
+        assert_ne!(dearer, DeriveCost::DECOY);
         let (registry, _) = registry_with(2);
         let plan = registry.plan_for("sam");
         let seen = RefCell::new(Vec::new());

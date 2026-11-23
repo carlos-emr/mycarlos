@@ -156,9 +156,15 @@ alone); a try the app is killed during stays counted, so that killing it is no w
 The right secret clears the count (opening the vault either way clears both of its counts), even if
 reading the vault's state after it fails. Creating, erasing or restoring a vault clears the vault's
 two counts, as they were about the vault it replaces; the count for backups stays, as the same
-backup files can still be tried. The counts, and when the last wrong try was, are kept in
-`attempts.json` beside the vault, written as the vault's own files are: private to the user, staged
-in an `.atomicwrite*` folder beside it and renamed over it, and on macOS, Linux, iOS and Android the
+backup files can still be tried. (With several vaults on one device, #357, the counts are the
+DEVICE's: one set for every vault and for a name that matches none.) The counts, and when the last
+wrong try was, are kept in `attempts.json` directly in the app's local data folder, beside the
+vault registry and OUTSIDE `vault-home` (earlier builds kept it inside `vault-home`, the folder a
+vault backup may copy, where restoring the folder would have reset or restored an old wait). It is
+copied over once at start, never deleted from the old place and never replacing a file already at the
+new one; an older build used after that keeps writing the old file, which this build no longer
+reads, so a downgrade and an upgrade again can restore an old wait. It is written as the vault's
+own files are: private to the user, staged in an `.atomicwrite*` folder beside it and renamed over it, and on macOS, Linux, iOS and Android the
 folder synced (Windows relies on its filesystem journal), so that closing and reopening myCarlos, or
 a power cut, does not clear them. The file is read only as a plain file of at most 4 KiB, never
 through a link, and each time the counts are needed rather than as the app starts, so that another
@@ -209,6 +215,10 @@ them (a backup, a snapshot), and with it the master key. See "Known limits befor
 ## Files and transactions
 
 ```text
+attempts.json             the device's wrong tries in a row at a secret, and when the last was (no
+                          secret); in the app's local data folder beside vault-home, not in it
+.atomicwrite*/            attempts.json being written, renamed over it once complete; one a
+                          killed write left holds only counts, and stays
 vault-home/               holds only what the vault manages; back up as a whole
   vault-v1.lock           stable OS lock file; never rename or delete while the app is running
   set-aside/<UTC yyyymmddThhmmssZ>-<uuid>/  a whole vault set aside by a reset or a restore,
@@ -218,9 +228,8 @@ vault-home/               holds only what the vault manages; back up as a whole
   .restore-<uuid>/        a backup being restored, not yet verified; removed at the next start
   vault-v1.restore-ready/ a verified restore about to replace the vault; finished at the next start
   pending-exports/<uuid>  one per desktop export not yet cleaned up, naming its staging folder
-  attempts.json           wrong tries in a row at a secret, and when the last was (no secret)
-  .atomicwrite*/          attempts.json being written, renamed over it once complete; one a
-                          killed write left holds only counts, and stays
+  attempts.json           LEGACY (before #357): wrong tries in a row at a secret; no longer read
+                          once copied to the data folder's own attempts.json (below), never removed
   vault-v1/
     header-0.json        non-secret KDF configuration, wrapped master key, optional recovery-key
                          envelope (format 2), and keyed integrity tag
