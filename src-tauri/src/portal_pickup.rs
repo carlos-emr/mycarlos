@@ -296,6 +296,8 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
+    // What an earlier check filed for a hidden person and nobody took is not this check's.
+    store.clear_arrived_for_hidden();
     let links = store.delivery_links(session)?;
     // Refusals whose deliveries have expired are no longer offered (#143).
     // Only tidying: an expired refusal is ignored anyway, so a failure to
@@ -471,6 +473,7 @@ where
                         Ok((record_id, added)) => {
                             result.added += usize::from(added);
                             if added && store.take_arrived_for_hidden(record_id) {
+                                // No clinic name yet: said without one, never as an empty name.
                                 result.for_hidden.push(
                                     link.clinic
                                         .as_ref()

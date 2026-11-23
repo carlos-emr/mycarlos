@@ -119,6 +119,10 @@ export interface VaultSnapshot {
   profiles: PatientProfile[];
   /** The people who are hidden (#360); absent in a fake that has none. */
   hiddenProfiles?: HiddenProfile[];
+  /** Documents of hidden people whose file is missing (#360): counted, never named. The vault
+   * is read-only until they are dealt with, so the confirmation to hide the damaged
+   * documents says so. */
+  hiddenPeopleDamaged?: number;
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
@@ -422,6 +426,9 @@ export interface AuditHistoryView {
    * Native code always sends it; it is optional so that a view without it is
    * read the safe way, with the damage notice and the gap. */
   everyEventShown?: boolean;
+  /** Entries left out for being about a hidden person (#360): counted, never named, and
+   * shown again once the person is restored. */
+  aboutHiddenPeople?: number;
 }
 
 /** An audit event that native code authenticated from the start of the history chain. */
@@ -687,7 +694,10 @@ export interface VaultBridge {
    * whose encrypted file is still missing, so the vault leaves recovery
    * mode. Refused when the vault's own list differs. Resolves to the ids
    * hidden. */
-  hideUnavailableRecords(confirmed: string[]): Promise<string[]>;
+  hideUnavailableRecords(
+    confirmed: string[],
+    hiddenPeopleDocuments?: number,
+  ): Promise<string[]>;
   /** Whether a stored PDF may be locked with a password (#54): a scan of its
    * names only, so the details can offer Unlock. */
   isLockedPdf(recordId: string): Promise<boolean>;
@@ -1389,9 +1399,9 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>
       invoke<void>("vault_unhide_record", { request: { recordId } }),
-    hideUnavailableRecords: (confirmed) =>
+    hideUnavailableRecords: (confirmed, hiddenPeopleDocuments = 0) =>
       invoke<string[]>("vault_hide_unavailable_records", {
-        request: { confirmed },
+        request: { confirmed, hiddenPeopleDocuments },
       }),
     reset: (confirmation) =>
       invoke<boolean>("vault_reset", {

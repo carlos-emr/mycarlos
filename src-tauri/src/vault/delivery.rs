@@ -1703,6 +1703,14 @@ impl VaultStore {
         result
     }
 
+    /// Forgets what earlier commits noted for the check to say (`take_arrived_for_hidden`).
+    pub(crate) fn clear_arrived_for_hidden(&self) {
+        self.arrived_for_hidden
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
+
     /// Whether the document just filed as `record_id` was for a person who is hidden, and so
     /// waits in Shared with me (#360, section 8.6). Said once: the flag is taken.
     pub(crate) fn take_arrived_for_hidden(&self, record_id: Uuid) -> bool {

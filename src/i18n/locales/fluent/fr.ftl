@@ -2582,3 +2582,23 @@ portal-arrivedForHidden =
         [one] Un document est arrivé de { $clinic } et se trouve dans Partagés avec moi. La personne concernée est masquée.
        *[other] { $count } documents sont arrivés de { $clinic } et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
     }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] Cela masque aussi { $count } document endommagé d'une personne masquée. Il n'est pas listé ici, pour ne pas montrer qui est masqué.
+       *[other] Cela masque aussi { $count } documents endommagés de personnes masquées. Ils ne sont pas listés ici, pour ne pas montrer qui est masqué.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } entrée concernant une personne masquée n'est pas affichée. Elle est conservée et réaffichée quand la personne est rétablie.
+       *[other] { $count } entrées concernant des personnes masquées ne sont pas affichées. Elles sont conservées et réaffichées quand les personnes sont rétablies.
+    }
+
+interface-history-how-personHidden = Classé dans Partagés avec moi pendant que la personne était masquée
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] Un document est arrivé et se trouve dans Partagés avec moi. La personne concernée est masquée.
+       *[other] { $count } documents sont arrivés et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
+    }

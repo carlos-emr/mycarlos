@@ -2638,3 +2638,26 @@ portal-arrivedForHidden =
         [few] Z { $clinic } dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
        *[other] Z { $clinic } dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
     }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] To ukrywa także { $count } uszkodzony dokument ukrytej osoby. Nie ma go na liście, aby nie pokazywać, kto jest ukryty.
+        [few] To ukrywa także { $count } uszkodzone dokumenty ukrytych osób. Nie ma ich na liście, aby nie pokazywać, kto jest ukryty.
+       *[other] To ukrywa także uszkodzone dokumenty ukrytych osób: { $count }. Nie ma ich na liście, aby nie pokazywać, kto jest ukryty.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } wpis o ukrytej osobie nie jest pokazany. Jest zachowany i pojawi się ponownie po przywróceniu osoby.
+        [few] { $count } wpisy o ukrytych osobach nie są pokazane. Są zachowane i pojawią się ponownie po przywróceniu osób.
+       *[other] Niepokazane wpisy o ukrytych osobach: { $count }. Są zachowane i pojawią się ponownie po przywróceniu osób.
+    }
+
+interface-history-how-personHidden = Zapisany w Udostępnione mi, gdy osoba była ukryta
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] Dotarł dokument i jest w Udostępnione mi. Osoba, której dotyczy, jest ukryta.
+        [few] Dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+       *[other] Dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+    }

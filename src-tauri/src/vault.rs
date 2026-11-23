@@ -930,6 +930,10 @@ pub struct VaultSnapshot {
     /// The hidden people, for Security's Hidden people list and nothing else: a name, when,
     /// and how many documents. Their documents and folders are in no list.
     pub hidden_profiles: Vec<HiddenProfile>,
+    /// How many documents of hidden people have a missing file (an anonymous count, #360): they
+    /// are in no list, yet the vault is read-only until they are dealt with, so the
+    /// confirmation to hide the damaged documents says "and N of a hidden person".
+    pub hidden_people_damaged: usize,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
     pub portal_linking_enabled: bool,
@@ -2009,10 +2013,53 @@ impl VaultStore {
     /// count and head), as `verify` checks; a damaged padding piece makes it false too.
     /// `every_event_shown` is true when `entries` then `later` are still that whole chain, so
     /// only pieces without events are damaged (#120 C1).
+    #[cfg(test)]
     pub fn history_view(&self) -> Result<HistoryView, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         self.history_view_in_session(unlocked)
+    }
+
+    /// `history_view` for Security's screen (#360): the entries about a hidden person (their
+    /// own, their documents' and their folders') are left out and counted in
+    /// `about_hidden_people`, so a glance at the history does not name who is hidden. They are
+    /// still in the vault, and shown again once the person is restored.
+    pub fn history_view_for_display(&self) -> Result<HistoryView, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let mut view = self.history_view_in_session(unlocked)?;
+        let manifest = &unlocked.manifest;
+        let people: HashSet<Uuid> = manifest
+            .profiles
+            .iter()
+            .filter(|profile| profile.hidden.is_some())
+            .map(|profile| profile.id)
+            .collect();
+        if people.is_empty() {
+            return Ok(view);
+        }
+        let records: HashSet<Uuid> = manifest
+            .records
+            .iter()
+            .filter(|record| people.contains(&record.profile_id))
+            .map(|record| record.id)
+            .collect();
+        let folders: HashSet<Uuid> = manifest
+            .folders
+            .iter()
+            .filter(|folder| people.contains(&folder.profile_id))
+            .map(|folder| folder.id)
+            .collect();
+        let about = |entry: &HistoryEntry| {
+            entry.profile_id.is_some_and(|id| people.contains(&id))
+                || entry.record_id.is_some_and(|id| records.contains(&id))
+                || entry.folder_id.is_some_and(|id| folders.contains(&id))
+        };
+        let before = view.entries.len() + view.later.len();
+        view.entries.retain(|entry| !about(entry));
+        view.later.retain(|entry| !about(entry));
+        view.about_hidden_people = before - view.entries.len() - view.later.len();
+        Ok(view)
     }
 
     fn history_view_in_session(&self, unlocked: &UnlockedVault) -> Result<HistoryView, VaultError> {
@@ -2029,6 +2076,7 @@ impl VaultStore {
                 later: Vec::new(),
                 complete,
                 every_event_shown: complete,
+                about_hidden_people: 0,
             });
         }
         let keys = derive_keys(manifest.vault_id, &unlocked.master_key)?;
@@ -2111,6 +2159,7 @@ impl VaultStore {
             later,
             complete,
             every_event_shown,
+            about_hidden_people: 0,
         })
     }
 
@@ -2151,6 +2200,15 @@ impl VaultStore {
                 .filter(|profile| profile.hidden.is_none())
                 .cloned()
                 .collect(),
+            hidden_people_damaged: unlocked
+                .manifest
+                .records
+                .iter()
+                .filter(|record| {
+                    unlocked.unavailable.contains(&record.id)
+                        && unlocked.manifest.person_is_hidden(record.profile_id)
+                })
+                .count(),
             hidden_profiles: unlocked
                 .manifest
                 .profiles
@@ -3653,6 +3711,11 @@ impl VaultStore {
     /// visible again, since no document's own `hidden` was touched. Returns the documents that
     /// arrived for them from a linked clinic while they were hidden and now wait in Shared with
     /// me, so the screen can offer to move them back (`arrived_while_hidden`).
+    ///
+    /// Refused while the vault is read-only for any reason, lost files included: a commit needs
+    /// every file the manifest names, so the way out of lost files is the ordinary confirmation
+    /// to hide the damaged documents, which also covers those of hidden people
+    /// (`hide_unavailable_records_covering`); the person can be restored right after.
     pub fn restore_profile(&self, profile_id: Uuid) -> Result<Vec<ArrivedWhileHidden>, VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
@@ -3694,7 +3757,9 @@ impl VaultStore {
     /// found from the history (a delivery for a hidden person is filed in Shared with me with
     /// the intended person on its entry, `how` "personHidden") and still where they were
     /// filed: one the patient has since moved, hidden or renamed into another place is not
-    /// offered. A history that cannot be read in full offers nothing: restoring never waits on it.
+    /// offered. It reads the entries that check out, from the start of the chain and from its
+    /// pinned end (`history_view`): a history with a damaged part offers what it can prove, and
+    /// one that cannot be read at all offers nothing. Restoring never waits on it.
     fn arrived_while_hidden(
         &self,
         unlocked: &UnlockedVault,
@@ -3788,9 +3853,23 @@ impl VaultStore {
     ///
     /// `confirmed` is the set of documents the patient was shown as damaged
     /// when they agreed. If the session's set differs, nothing is removed.
+    #[cfg(test)]
     pub fn hide_unavailable_records(
         &self,
         confirmed: &[Uuid],
+        now_ms: u64,
+    ) -> Result<Vec<Uuid>, VaultError> {
+        self.hide_unavailable_records_covering(confirmed, 0, now_ms)
+    }
+
+    /// `hide_unavailable_records`, where the patient's confirmation also covered
+    /// `hidden_people_documents` damaged documents of hidden people, who are in no list and so
+    /// are counted, never named (#360). If that count differs from the session's, nothing is
+    /// removed. The ids confirmed are those of people who are shown.
+    pub fn hide_unavailable_records_covering(
+        &self,
+        confirmed: &[Uuid],
+        hidden_people_documents: usize,
         now_ms: u64,
     ) -> Result<Vec<Uuid>, VaultError> {
         let mut guard = self.session();
@@ -3837,7 +3916,18 @@ impl VaultStore {
         }
         // The screen may not have caught up with an earlier refusal.
         let confirmed: HashSet<Uuid> = confirmed.iter().copied().collect();
-        if confirmed != unlocked.unavailable {
+        let (of_hidden_people, shown_to_patient): (Vec<Uuid>, Vec<Uuid>) =
+            unlocked.unavailable.iter().copied().partition(|id| {
+                unlocked
+                    .manifest
+                    .records
+                    .iter()
+                    .find(|record| record.id == *id)
+                    .is_some_and(|record| unlocked.manifest.person_is_hidden(record.profile_id))
+            });
+        if confirmed != shown_to_patient.into_iter().collect::<HashSet<Uuid>>()
+            || hidden_people_documents != of_hidden_people.len()
+        {
             return Err(VaultError::RemovalChanged);
         }
         // Hidden documents are format 2 only, and their entries format 3: a
@@ -6907,6 +6997,8 @@ pub struct HistoryView {
     /// start of the chain to its pinned count and head. True when complete; when not, the
     /// damaged pieces held none of the events (padding, say), so nothing is missing between.
     pub every_event_shown: bool,
+    /// How many entries `history_view_for_display` left out for being about a hidden person.
+    pub about_hidden_people: usize,
 }
 
 /// The entries in one segment. `Corrupt` when its object is gone or does not
@@ -17939,6 +18031,7 @@ mod tests {
                 later: Vec::new(),
                 complete: true,
                 every_event_shown: true,
+                about_hidden_people: 0,
             }
         );
     }

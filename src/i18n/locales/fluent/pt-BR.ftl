@@ -2582,3 +2582,23 @@ portal-arrivedForHidden =
         [one] Chegou um documento de { $clinic } e está em Compartilhados comigo. A pessoa a quem se destina está oculta.
        *[other] Chegaram { $count } documentos de { $clinic } e estão em Compartilhados comigo. As pessoas a quem se destinam estão ocultas.
     }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] Isto também oculta { $count } documento danificado de uma pessoa oculta. Ele não aparece na lista, para não mostrar quem está oculto.
+       *[other] Isto também oculta { $count } documentos danificados de pessoas ocultas. Eles não aparecem na lista, para não mostrar quem está oculto.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } entrada sobre uma pessoa oculta não é mostrada. Ela é mantida e aparece de novo quando a pessoa é restaurada.
+       *[other] { $count } entradas sobre pessoas ocultas não são mostradas. Elas são mantidas e aparecem de novo quando as pessoas são restauradas.
+    }
+
+interface-history-how-personHidden = Arquivado em Compartilhados comigo enquanto a pessoa estava oculta
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] Chegou um documento e está em Compartilhados comigo. A pessoa a quem se destina está oculta.
+       *[other] Chegaram { $count } documentos e estão em Compartilhados comigo. As pessoas a quem se destinam estão ocultas.
+    }
