@@ -3,6 +3,9 @@
 // vitest.coverage.config.ts and the minimums below together (and COVERAGE.md says why). Lowering
 // the config without lowering this test fails here, and lowering both shows in review as an
 // edit to a file whose only job is to say "not lower".
+//
+// It also pins what the percentage is measured over (the include and exclude lists) and how the
+// script runs, so that a floor cannot be met by measuring less or by overriding a flag.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -11,10 +14,53 @@ import { test } from "node:test";
 // below those rounded down (a margin for work already in flight); raise it as coverage rises.
 const MINIMUM = { statements: 93, branches: 91, functions: 89, lines: 94 };
 
-const config = readFileSync(
+// What the percentage covers (COVERAGE.md "What the percentage measures"). Widening an exclusion
+// is a visible edit to this list, not a quiet one to the config.
+const INCLUDE = ["src/**/*.{ts,tsx}"];
+const EXCLUDE = [
+  "src/**/*.test.{ts,tsx}",
+  "src/test/**",
+  "src/**/*.d.ts",
+  "src/i18n/locales/fluent/keys.ts",
+];
+
+// The script CI runs: exactly this, with no `--coverage.*` override flag after it.
+const SCRIPT = "vitest run --config vitest.coverage.config.ts";
+
+/** The text with `//` and block comments removed. A quote is honoured, so the `/**` inside a glob
+ * string is not taken for a comment, and a commented-out value cannot be read as the real one. */
+export function stripComments(text) {
+  let out = "";
+  let at = 0;
+  while (at < text.length) {
+    const c = text[at];
+    const next = text[at + 1];
+    if (c === '"' || c === "'" || c === "`") {
+      let end = at + 1;
+      while (end < text.length && text[end] !== c) {
+        if (text[end] === "\\") end++;
+        end++;
+      }
+      out += text.slice(at, end + 1);
+      at = end + 1;
+    } else if (c === "/" && next === "/") {
+      while (at < text.length && text[at] !== "\n") at++;
+    } else if (c === "/" && next === "*") {
+      const end = text.indexOf("*/", at + 2);
+      at = end < 0 ? text.length : end + 2;
+    } else {
+      out += c;
+      at++;
+    }
+  }
+  return out;
+}
+
+const source = readFileSync(
   new URL("../vitest.coverage.config.ts", import.meta.url),
   "utf8",
 );
+const config = stripComments(source);
 
 function thresholds() {
   const block = /thresholds\s*:\s*\{([^}]*)\}/.exec(config);
@@ -22,6 +68,35 @@ function thresholds() {
     block,
     "vitest.coverage.config.ts has no coverage.thresholds block",
   );
+  const found = {};
+  for (const entry of block[1].matchAll(/(\w+)\s*:\s*([\d.]+)\s*,?/g)) {
+    found[entry[1]] = Number(entry[2]);
+  }
+  return found;
+}
+
+function stringList(name) {
+  const block = new RegExp(`\\b${name}\\s*:\\s*\\[([^\\]]*)\\]`).exec(config);
+  assert.ok(block, `vitest.coverage.config.ts has no ${name} list`);
+  return [...block[1].matchAll(/"([^"]*)"/g)].map((entry) => entry[1]);
+}
+
+test("a comment is not read as a value, and a glob is not read as a comment", () => {
+  assert.equal(stripComments("a // b\nc"), "a \nc");
+  assert.equal(stripComments("a /* b */ c"), "a  c");
+  assert.equal(stripComments('"src/**/*.ts" // x'), '"src/**/*.ts" ');
+  assert.equal(stripComments("'a\\'//b' // c"), "'a\\'//b' ");
+  assert.equal(stripComments("a /* never closed"), "a ");
+  assert.deepEqual(
+    thresholdsFrom(
+      "thresholds: { lines: 94, /* lines: 10, */ // lines: 5,\n }",
+    ),
+    { lines: 94 },
+  );
+});
+
+function thresholdsFrom(text) {
+  const block = /thresholds\s*:\s*\{([^}]*)\}/.exec(stripComments(text));
   const found = {};
   for (const entry of block[1].matchAll(/(\w+)\s*:\s*([\d.]+)\s*,?/g)) {
     found[entry[1]] = Number(entry[2]);
@@ -68,5 +143,30 @@ test("the floor is not weakened another way", () => {
     config,
     /reportOnFailure\s*:\s*true/,
     "keep reportOnFailure off: a failed run is not a measured one",
+  );
+  assert.doesNotMatch(
+    config,
+    /\bperFile\s*:\s*false/,
+    "keep the floor on the whole report",
+  );
+});
+
+test("what is measured is the include and exclude lists written here", () => {
+  assert.deepEqual(stringList("include"), INCLUDE, "coverage.include changed");
+  assert.deepEqual(
+    stringList("exclude"),
+    EXCLUDE,
+    "coverage.exclude changed: widening an exclusion lowers what the floor covers",
+  );
+});
+
+test("the coverage script runs the config with no override flag", () => {
+  const scripts = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ).scripts;
+  assert.equal(
+    scripts["test:coverage:frontend"],
+    SCRIPT,
+    "a --coverage.* flag (or any change) on the script could switch the floor off",
   );
 });
