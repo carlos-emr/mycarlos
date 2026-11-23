@@ -59,6 +59,9 @@ fi
 bundle="${bundles[0]}"
 
 node scripts/check-android-page-alignment.mjs "$bundle"
+# The release safety gate (needs scripts/check-release-safety.mjs, a separate change): no stub,
+# dev, debug or cleartext settings, a right application id, a clean frontend build.
+node scripts/check-release-safety.mjs --source --android "$bundle" --dist dist
 mkdir -p release-out/android
 out="release-out/android/myCarlos-$version-$code.aab"
 cp "$bundle" "$out"
