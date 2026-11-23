@@ -7887,22 +7887,22 @@ mod approval_recovery_tests {
         let (_temp, store, other, _) = setup(false);
         let (link, _, _) = add_signed_pending_delivery(&store);
         let session = store.portal_link_ticket();
-        assert!(store
-            .delivery_links(session)
-            .unwrap()
-            .iter()
-            .any(|l| l.id == link.id));
         store.stop_checking_portal_link(link.id, session).unwrap();
-        assert!(!store
-            .delivery_links(session)
-            .unwrap()
-            .iter()
-            .any(|l| l.id == link.id));
+        // The link stays, with its keys: a stopped clinic is never asked again.
         assert!(store
             .delivery_links(session)
             .unwrap()
             .iter()
-            .any(|l| l.id == other.id));
+            .any(|l| l.id == link.id && l.stopped_at_ms.is_some()));
+        assert!(matches!(
+            store.refresh_device_approval(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == other.id && l.stopped_at_ms.is_none()));
         assert_eq!(history_count(&store, HistoryEvent::PortalLinkStopped), 1);
         let history = crate::vault::history_events_for_test(&store).len();
         store.stop_checking_portal_link(link.id, session).unwrap();
@@ -7917,11 +7917,10 @@ mod approval_recovery_tests {
         assert_eq!(shown.records.len(), 1);
         // Still not asked, and its documents' custody still verifies at unlock.
         let session = store.portal_link_ticket();
-        assert!(!store
-            .delivery_links(session)
-            .unwrap()
-            .iter()
-            .any(|l| l.id == link.id));
+        assert!(matches!(
+            store.refresh_device_approval(link.id, session),
+            Err(VaultError::Invalid)
+        ));
         // An incomplete attempt cannot be stopped: it is removed instead.
         let pending = crate::portal_link::StoredLink::pending(
             "https://portal.example.test",
@@ -7969,11 +7968,11 @@ mod approval_recovery_tests {
         let store = restart(store);
         assert!(flag(&store));
         let session = store.portal_link_ticket();
-        assert!(!store
-            .delivery_links(session)
-            .unwrap()
-            .iter()
-            .any(|l| l.id == link.id));
+        // Not asked again after a restart, and said as removed.
+        assert!(matches!(
+            store.refresh_device_approval(link.id, session),
+            Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
+        ));
     }
     /// #160 stage 3: the bulk button removes every incomplete attempt and nothing else.
     #[test]
