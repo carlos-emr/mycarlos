@@ -5492,10 +5492,9 @@ async fn vault_video_stop(
 /// How much room there is to record: asked before the camera and microphone are
 /// turned on, and again on every resume.
 #[tauri::command]
-async fn vault_video_space(
-    store: State<'_, Arc<VaultStore>>,
-) -> CommandResult<vault::RecordingSpace> {
-    run_blocking(store.inner(), VaultStore::recording_space).await
+async fn vault_video_space(store: State<'_, StoreHandle>) -> CommandResult<vault::RecordingSpace> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recording_space).await
 }
 
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
