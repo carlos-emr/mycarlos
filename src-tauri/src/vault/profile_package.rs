@@ -1228,8 +1228,8 @@ impl<W: Write> PackageWriter<W> {
                 }
             })
             .collect();
-        let digests = serde_json::to_vec(&Digests { objects: written })
-            .map_err(|_| PackageError::Storage)?;
+        let digests =
+            serde_json::to_vec(&Digests { objects: written }).map_err(|_| PackageError::Storage)?;
         let class = manifest_class(digests.len()).ok_or(PackageError::TooLarge)?;
         let sealed = seal_padded(
             &self.keys.manifest,

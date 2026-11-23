@@ -209,6 +209,37 @@ export interface SavedBackup {
   bytes: number | null;
 }
 
+/** What a person's export holds, in counts; it names no document (#360). */
+export interface ProfileExportSummary {
+  documents: number;
+  /** Of the documents, hidden by the patient: they arrive hidden. */
+  hidden: number;
+  folders: number;
+  aiAnswers: number;
+  withClinicEvidence: number;
+  /** Hidden as damaged: their file cannot be read, so they are not in it. */
+  leftOutDamaged: number;
+  /** Clinic evidence that would not stand up alone: the document goes without it. */
+  evidenceLeftOut: number;
+  historyEntries: number;
+  plaintextBytes: number;
+}
+
+/** A prepared export: the key it will be made under is shown once. */
+export interface ProfileExportPrepared {
+  exportId: string;
+  /** The generated key, 7 groups of 4; null when the patient typed a passphrase. */
+  generatedKey: string | null;
+  summary: ProfileExportSummary;
+}
+
+/** A saved handover file: its name where the platform says it, its size, and what it holds. */
+export interface SavedProfileExport {
+  name: string | null;
+  bytes: number | null;
+  summary: ProfileExportSummary;
+}
+
 /** Today on the patient's own calendar, as `YYYY-MM-DD`. */
 export function localDateText(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -480,6 +511,20 @@ export interface VaultBridge {
   pickBackupDestination(localDate?: string): Promise<string | null>;
   /** Saves the backup, and says what was written. */
   saveBackupToPicked(pickId: string): Promise<SavedBackup>;
+  /** Prepares one person's export (#360): says what it holds and makes the key. Nothing is
+   * written. A typed passphrase is checked at once. */
+  prepareProfileExport(request: {
+    profileId: string;
+    includeHistory: boolean;
+    passphrase?: string;
+  }): Promise<ProfileExportPrepared>;
+  /** Asks where to save a prepared export; null if the picker was cancelled. */
+  pickProfileExportDestination(
+    exportId: string,
+    localDate?: string,
+  ): Promise<string | null>;
+  /** Writes the export to the chosen place, read back and checked before it replaces anything. */
+  saveProfileExportToPicked(pickId: string): Promise<SavedProfileExport>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -1016,6 +1061,18 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
     saveBackupToPicked: (pickId) =>
       invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
+    prepareProfileExport: (request) =>
+      invoke<ProfileExportPrepared>("vault_profile_export_prepare", {
+        request,
+      }),
+    pickProfileExportDestination: (exportId, localDate) =>
+      invoke<string | null>("vault_profile_export_pick", {
+        request: { exportId, localDate },
+      }),
+    saveProfileExportToPicked: (pickId) =>
+      invoke<SavedProfileExport>("vault_profile_export_picked", {
+        request: { pickId },
+      }),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>

@@ -74,18 +74,8 @@ impl VaultStore {
     ) -> Result<Written<W>, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        if unlocked.recovery.is_some() {
-            return Err(VaultError::RecoveryMode);
-        }
+        let profile = Self::exportable_profile(unlocked, profile_id)?;
         let manifest = &unlocked.manifest;
-        let profile = manifest
-            .profiles
-            .iter()
-            .find(|profile| profile.id == profile_id)
-            .ok_or(VaultError::NotFound)?;
-        if profile.id == shared_profile_id(manifest.vault_id) {
-            return Err(VaultError::Invalid);
-        }
         let cancelled = || self.cancel_io.load(Ordering::Acquire);
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -98,20 +88,7 @@ impl VaultStore {
 
         let (package, mut report, sources) =
             self.build_package_manifest(unlocked, profile, options, now_ms)?;
-        let context: Vec<&str> = [
-            Some(profile.display_name.as_str()),
-            profile.full_name.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .chain(
-            profile
-                .previous_full_names
-                .iter()
-                .flatten()
-                .map(String::as_str),
-        )
-        .collect();
+        let context = Self::name_words(profile);
         let mut writer = PackageWriter::create(sink, secret, &context)?;
         report.package_id = writer.package_id();
         writer.write_manifest(&package)?;
@@ -151,6 +128,95 @@ impl VaultStore {
             report,
             digests,
         })
+    }
+
+    /// What an export of `profile_id` would hold, in counts, without writing anything: the
+    /// same checks and the same manifest as the export itself (and a history excerpt that is
+    /// counted, not kept).
+    pub(crate) fn profile_export_preview(
+        &self,
+        profile_id: Uuid,
+        options: ExportOptions,
+    ) -> Result<ExportReport, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let profile = Self::exportable_profile(unlocked, profile_id)?;
+        let (_, report, _) = self.build_package_manifest(unlocked, profile, options, 0)?;
+        Ok(report)
+    }
+
+    /// Whether `passphrase` may protect a package of `profile_id`: the vault's rules for a new
+    /// passphrase (the person's own names are not allowed in it), and not the vault's own.
+    /// Asked when the export is prepared, so that a refusal comes before anything else is.
+    pub(crate) fn check_package_passphrase(
+        &self,
+        profile_id: Uuid,
+        passphrase: &str,
+    ) -> Result<(), VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let profile = Self::exportable_profile(unlocked, profile_id)?;
+        let context = Self::name_words(profile);
+        validate_new_passphrase(passphrase, &context)?;
+        if self.is_vault_passphrase(unlocked, passphrase)? {
+            return Err(VaultError::WeakPassphrase);
+        }
+        Ok(())
+    }
+
+    /// As `export_profile_atomic`, into a file already open for reading and writing and
+    /// empty, as an Android document provider gives one: written, flushed and read back in
+    /// place. There is no rename: a failure leaves that document as it is, which may be empty.
+    pub(crate) fn export_profile_to_open_file(
+        &self,
+        profile_id: Uuid,
+        options: ExportOptions,
+        secret: PackageSecret<'_>,
+        file: &mut fs::File,
+        place: &str,
+        now_ms: u64,
+    ) -> Result<ExportReport, VaultError> {
+        let report = self.write_and_verify(profile_id, options, secret, file, now_ms)?;
+        self.record_profile_exported(profile_id, place);
+        Ok(report)
+    }
+
+    /// The person to export: here, and a person (Shared with me is not one).
+    fn exportable_profile(
+        unlocked: &UnlockedVault,
+        profile_id: Uuid,
+    ) -> Result<&PatientProfile, VaultError> {
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let manifest = &unlocked.manifest;
+        let profile = manifest
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or(VaultError::NotFound)?;
+        if profile.id == shared_profile_id(manifest.vault_id) {
+            return Err(VaultError::Invalid);
+        }
+        Ok(profile)
+    }
+
+    /// The words of a person's own names, which a typed passphrase may not contain.
+    fn name_words(profile: &PatientProfile) -> Vec<&str> {
+        [
+            Some(profile.display_name.as_str()),
+            profile.full_name.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(
+            profile
+                .previous_full_names
+                .iter()
+                .flatten()
+                .map(String::as_str),
+        )
+        .collect()
     }
 
     /// Saves a package to a file the patient chose: written beside the destination, **read
@@ -689,7 +755,7 @@ mod tests {
             v.store.export(*id, &mut out).unwrap();
             expected.push(out);
         }
-        expected.insert(1 + 0, b"{\"v\":1}".to_vec());
+        expected.insert(1, b"{\"v\":1}".to_vec());
         // Record 0, then its AI answer, then records 1 and 2.
         let order = [&expected[0], &expected[1], &expected[2], &expected[3]];
         assert_eq!(objects.len(), 4);
@@ -837,6 +903,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)] // A simulated lost file, in a test vault.
     fn a_missing_document_file_fails_the_export_and_names_the_document() {
         let v = vault();
         let record = v.child_records[0];

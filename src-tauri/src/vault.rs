@@ -42,6 +42,8 @@ mod delivery;
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
 pub(crate) use delivery::AidFiling;
+pub(crate) use profile_export::{ExportOptions, ExportReport};
+pub(crate) use profile_package::{generate_package_key, PackageSecret};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;

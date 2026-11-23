@@ -822,6 +822,17 @@ trailer  0xff | length (u32) | JSON {format, packageId, entries[]} | HMAC-SHA-25
   the trailer, an entry swapped, repeated or missing, a trailer that lists what the file does not hold, or a
   declared length past the limits (checked before anything is allocated).
 
+#### Exporting one person (#360 PR 3)
+
+`vault::profile_export` writes one person's documents to a package; three commands (`vault_profile_export_prepare`, `_pick`, `_picked`) wrap it, and the screens are a later pull request.
+
+- **What goes in:** the person's identity details and former names, their folders, and every document with its name, source label, media type, dates and folders; the original PDF of a signed document; every AI answer, shown and superseded; the clinic evidence (`carried`, built from the filed delivery and the link by `carried::from_filed`, which checks it stands up on its own); and the history excerpt, the latest 2,000 record-level events about the documents that go (a switch, on by default). A document the patient hid arrives hidden. A hidden **person** can be exported (the package never carries the person's flag: a handed-over profile arrives visible).
+- **What is left out, and counted:** a document hidden as damaged (its file cannot be read), and clinic evidence that would not stand up alone (the document still goes). Shared with me is not a person and is refused, as is recovery mode.
+- **One pass, one snapshot.** The session is held as for a backup, so the package reflects one generation of the manifest, and a lock or a cancel stops it between chunks. Each document is decrypted a chunk at a time into the package's encryptor; nothing readable is kept. Every id in the package is made by the writer.
+- **Read back before success.** The file is written beside the destination (never inside the vault home), flushed, rewound and read back with its key: the end and the tag first, then every object decrypted and hashed, then the whole verified, and it must hold exactly the objects, sizes and hashes the writer saw. Only then is it renamed over the destination; a failure at any step leaves the destination as it was and no temporary file. On an Android document provider (no rename) it is written and read back in place. The history entry (`profileExported`: the person and the place, no document names) is taken after that.
+- **Keys.** The key is generated at `prepare` (7 groups of 4, shown once, held only in the app's memory until the file is written, never stored in the vault) or the patient's typed passphrase, checked at `prepare` against the vault's rules for a new passphrase (the person's own names may not be in it) and **refused if it is the vault's own** (tried against the vault's header; a file that holds one person's documents must not open with the key to all of them).
+- **Not here yet:** the screens, the key's printing, the phone share sheet, import, and the "Hide this person" offer.
+
 ## Settings kept outside the vault
 
 The following device preferences are kept in the webview's own storage, not in the vault, so that

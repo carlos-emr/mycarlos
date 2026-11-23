@@ -3693,7 +3693,8 @@ mod approval_recovery_tests {
     /// receipt readback tests must keep bytes, digests and lengths coherent.
     /// This verifies the package envelope at its reference clock, not a new
     /// confined PDF-helper or installed-app delivery proof.
-    pub(super) fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+    pub(super) fn vault_with_readable_pair_original(
+    ) -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
         let (temp, store, link, record_id) = vault_with_pair_original();
         let pair = pair_fixture();
         let outer: wire::Outer =

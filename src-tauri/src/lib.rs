@@ -1278,6 +1278,11 @@ struct PendingPicks {
     imports: PickTable<(ImportRequest, Vec<tauri_plugin_fs::FilePath>)>,
     exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
     backups: PickTable<tauri_plugin_fs::FilePath>,
+    /// A person's export that has been prepared (#360): the person, the choices and the key,
+    /// held here so that the key never has to come back from the renderer. Ends at lock.
+    profile_exports: PickTable<PendingProfileExport>,
+    /// A prepared export with the place the patient chose for it.
+    profile_export_picks: PickTable<(PendingProfileExport, tauri_plugin_fs::FilePath)>,
     restores: PickTable<tauri_plugin_fs::FilePath>,
     /// The AI helper's preview tickets (#72, AI-02): one per text read, bound
     /// to the record and the session; gone at lock, when the document is
@@ -1643,6 +1648,8 @@ impl PendingPicks {
         self.imports.clear();
         self.exports.clear();
         self.backups.clear();
+        self.profile_exports.clear();
+        self.profile_export_picks.clear();
         self.restores.clear();
         self.texts.clear();
         self.text_exports.clear();
@@ -3766,6 +3773,257 @@ async fn vault_backup_picked(
     })
 }
 
+/// What a person's export needs once it has been prepared: who, whether the history excerpt
+/// goes, and the key the package is made under. The key is held only here, and zeroed when
+/// the last copy goes.
+#[derive(Clone)]
+struct PendingProfileExport {
+    profile_id: Uuid,
+    include_history: bool,
+    secret: ProfileExportSecret,
+}
+
+#[derive(Clone)]
+enum ProfileExportSecret {
+    Key(Zeroizing<[u8; 16]>),
+    Passphrase(Zeroizing<String>),
+}
+
+impl ProfileExportSecret {
+    fn as_secret(&self) -> vault::PackageSecret<'_> {
+        match self {
+            Self::Key(key) => vault::PackageSecret::Key(key),
+            Self::Passphrase(passphrase) => vault::PackageSecret::Passphrase(passphrase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileExportPrepareRequest {
+    profile_id: Uuid,
+    include_history: bool,
+    /// A passphrase the patient typed for the package. None: a key is generated.
+    #[serde(default)]
+    passphrase: Option<String>,
+}
+
+/// What a person's export holds, in counts. Names no document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileExportSummary {
+    documents: usize,
+    hidden: usize,
+    folders: usize,
+    ai_answers: usize,
+    with_clinic_evidence: usize,
+    left_out_damaged: usize,
+    evidence_left_out: usize,
+    history_entries: usize,
+    plaintext_bytes: u64,
+}
+
+impl From<&vault::ExportReport> for ProfileExportSummary {
+    fn from(report: &vault::ExportReport) -> Self {
+        Self {
+            documents: report.documents,
+            hidden: report.hidden,
+            folders: report.folders,
+            ai_answers: report.ai_answers,
+            with_clinic_evidence: report.with_clinic_evidence,
+            left_out_damaged: report.left_out_damaged,
+            evidence_left_out: report.evidence_left_out,
+            history_entries: report.history_entries,
+            plaintext_bytes: report.plaintext_bytes,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileExportPrepared {
+    export_id: Uuid,
+    /// The generated key as it is shown (7 groups of 4), once; none when the patient typed a
+    /// passphrase of their own. It is not stored in the vault: lost, the person exports again.
+    generated_key: Option<String>,
+    summary: ProfileExportSummary,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileExportPickRequest {
+    export_id: Uuid,
+    #[serde(default)]
+    local_date: Option<String>,
+}
+
+/// What a saved handover file was: its name where the platform says it, its size, and what it holds.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedProfileExport {
+    name: Option<String>,
+    bytes: Option<u64>,
+    summary: ProfileExportSummary,
+}
+
+/// Prepares one person's export (#360): says what it would hold and makes the key. Nothing is
+/// written. A typed passphrase is checked here, so a weak one, or the vault's own, is refused
+/// before anything is asked.
+#[tauri::command]
+async fn vault_profile_export_prepare(
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileExportPrepareRequest,
+) -> CommandResult<ProfileExportPrepared> {
+    let session = picks.session();
+    let options = vault::ExportOptions {
+        include_history: request.include_history,
+    };
+    let profile_id = request.profile_id;
+    let (secret, generated_key) = match request.passphrase {
+        Some(passphrase) => {
+            let passphrase = Zeroizing::new(passphrase);
+            let typed = passphrase.clone();
+            run_blocking(store.inner(), move |store| {
+                store.check_package_passphrase(profile_id, &typed)
+            })
+            .await?;
+            (ProfileExportSecret::Passphrase(passphrase), None)
+        }
+        None => {
+            let (key, text) = vault::generate_package_key();
+            (ProfileExportSecret::Key(key), Some((*text).clone()))
+        }
+    };
+    let report = run_blocking(store.inner(), move |store| {
+        store.profile_export_preview(profile_id, options)
+    })
+    .await?;
+    let pending = PendingProfileExport {
+        profile_id,
+        include_history: request.include_history,
+        secret,
+    };
+    Ok(ProfileExportPrepared {
+        export_id: picks.profile_exports.store(session, pending),
+        generated_key,
+        summary: ProfileExportSummary::from(&report),
+    })
+}
+
+/// Asks where to save a prepared export. The file name is generic: it names no person.
+#[tauri::command]
+async fn vault_profile_export_pick(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileExportPickRequest,
+) -> CommandResult<Option<Uuid>> {
+    let session = picks.session();
+    // The patient reads the key off the screen and may take a while; the preparation keeps
+    // as long as a text preview does.
+    let pending = picks
+        .profile_exports
+        .peek_within(request.export_id, session, TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let date = request
+        .local_date
+        .as_deref()
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms()), str::to_owned);
+    // Nothing is asked for unless there is a writable vault.
+    run_blocking(store.inner(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let name = format!("mycarlos-handover-{date}.mycarlosprofile");
+    let _open = ActivityHold::new(store.idle());
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().set_file_name(name).blocking_save_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(destination.map(|destination| {
+        // The preparation is spent: a second destination needs a new key.
+        picks.profile_exports.take(request.export_id, session);
+        picks
+            .profile_export_picks
+            .store(session, (pending, destination))
+    }))
+}
+
+/// Writes the prepared export to the place chosen: read back with its key and checked before
+/// it replaces anything.
+#[tauri::command]
+async fn vault_profile_export_picked(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickRequest,
+) -> CommandResult<SavedProfileExport> {
+    let (pending, destination) = picks
+        .profile_export_picks
+        .take(request.pick_id, picks.session())
+        .ok_or(VaultError::NotFound)?;
+    let options = vault::ExportOptions {
+        include_history: pending.include_history,
+    };
+    if let Ok(path) = destination.clone().into_path() {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        return run_blocking(store.inner(), move |store| {
+            let report = store.export_profile_atomic(
+                pending.profile_id,
+                options,
+                pending.secret.as_secret(),
+                &path,
+                now_ms(),
+            )?;
+            Ok(SavedProfileExport {
+                name,
+                bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
+                summary: ProfileExportSummary::from(&report),
+            })
+        })
+        .await;
+    }
+    // Android content providers give a document, not a path: it is opened for reading and
+    // writing, written, and read back in place. (A failure may leave the document empty:
+    // nothing is renamed over it, so nothing earlier survives there.)
+    let place = destination.to_string();
+    run_blocking(store.inner(), move |store| {
+        let mut options_open = OpenOptions::new();
+        options_open
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true);
+        let opening = Opening::new(store.idle());
+        let mut file = app
+            .fs()
+            .open(destination, options_open)
+            .map_err(|_| VaultError::Storage)?;
+        drop(opening);
+        let report = store.export_profile_to_open_file(
+            pending.profile_id,
+            options,
+            pending.secret.as_secret(),
+            &mut file,
+            &place,
+            now_ms(),
+        )?;
+        let bytes = file.metadata().ok().map(|metadata| metadata.len());
+        Ok(SavedProfileExport {
+            name: None,
+            bytes,
+            summary: ProfileExportSummary::from(&report),
+        })
+    })
+    .await
+}
+
 /// Asks which backup to restore. Only while no vault is open.
 #[tauri::command]
 async fn vault_restore_pick(
@@ -5609,6 +5867,9 @@ pub fn run() {
             vault_recover,
             vault_backup_pick,
             vault_backup_picked,
+            vault_profile_export_prepare,
+            vault_profile_export_pick,
+            vault_profile_export_picked,
             vault_restore_pick,
             vault_restore_inspect,
             vault_restore,
