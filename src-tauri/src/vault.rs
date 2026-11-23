@@ -2324,6 +2324,12 @@ impl VaultStore {
             if link.stopped_at_ms.is_some() {
                 return Ok(false);
             }
+            // The portal still holds a subscription for this device while a destination is
+            // enrolled or a revocation is queued: stopping would strand it. Refused until the
+            // patient turns notices off, as for a removal.
+            if manifest.remote_notices.has_destination_for(link_id) {
+                return Err(VaultError::Invalid);
+            }
             link.stopped_at_ms = Some(crate::now_ms());
             let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkStopped, crate::now_ms());
             entry.portal_link_id = Some(link_id);

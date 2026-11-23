@@ -1146,8 +1146,15 @@ export function PortalDocuments({
         )}
         {link.clinicRemoved && !stopped && <p>{t("portal.deviceRemoved")}</p>}
         {!readOnly &&
+          link.hasDocuments &&
+          link.noticesEnrolled &&
+          !link.incomplete && (
+            <p className="portal-remove-kept">{t("portal.removeNotices")}</p>
+          )}
+        {!readOnly &&
           bridge.stopCheckingPortalLink &&
           link.hasDocuments &&
+          !link.noticesEnrolled &&
           !link.incomplete &&
           !removed && (
             <button
