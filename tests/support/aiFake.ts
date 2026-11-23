@@ -30,6 +30,10 @@ export const AI_COMMANDS = {
   // Adding and removing the model (root-4a's side of the agreement).
   catalog: "ai_model_catalog",
   models: "ai_models",
+  // Each model's limits for the settings (model limits).
+  limits: "ai_model_limits",
+  // Loading the model in use once, when it is chosen or added (D218).
+  check: "ai_model_check",
   use: "ai_model_use",
   addPicked: "ai_model_add_picked",
   download: "ai_model_download",
@@ -117,6 +121,12 @@ export interface FakeAiSetup {
   /** The last page a summary reads, by its index, as the helper's own fit
    * would (#301). Default: every page. */
   readUpTo?: number;
+  /** Whether the helper has run the models in this session, so their limits
+   * are confirmed (model limits). Default: not yet. */
+  limitsConfirmed?: boolean;
+  /** What loading the model in use once says when it is chosen or added
+   * (D218). Default: it runs, and its limits are then confirmed. */
+  loadCheck?: "ready" | "cannotRun" | "memory" | "damaged" | "skipped";
   /** The one accepted model, as ai_model_catalog lists it: by default a
    * FAKE entry; a spec can give the real model's name, size and licence. */
   catalog?: Partial<FakeCatalogEntry>;
@@ -235,6 +245,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       const cancelled: { command: string; by: string }[] = [];
       const holds = new Set<string>();
       let held: Held[] = [];
+      // The rows a load check found running in this window (D218).
+      const checkedRows = new Set<number>();
       let tickets = 0;
       const refusal = (code: string, messageKey: string) => ({
         code,
@@ -379,6 +391,20 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
         switch (command) {
           case c.modelStatus:
             return structuredClone(modelStatus());
+          // As native: the catalogue's capacity per offered row, not confirmed
+          // until the helper has run it; no memory figure is ever shown.
+          case c.limits:
+            return modelRows
+              .filter((row) => row.offered !== false && row.model.capacity)
+              .map((row) => ({
+                index: row.index,
+                capacity: structuredClone(row.model.capacity),
+                confirmed: setup.limitsConfirmed || checkedRows.has(row.index),
+                trainedContext: null,
+                parameters: null,
+                fileBytes: row.model.sizeBytes,
+                neededBytes: 0,
+              }));
           case c.catalog:
             return modelRows
               .filter((row) => row.offered !== false)
@@ -389,6 +415,25 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
                 (row) => row.offered !== false || row.state !== "notDownloaded",
               )
               .map(({ offered: _offered, ...row }) => structuredClone(row));
+          // As native: only the row in use, nothing while an answer is asked;
+          // a model that runs has made its context, so its limits are
+          // confirmed (D218).
+          case c.check: {
+            const row = modelRows.find(
+              (entry) => entry.index === request.index,
+            );
+            if (
+              !row?.inUse ||
+              row.state !== "installed" ||
+              held.some(
+                (entry) =>
+                  entry.command === c.summarize || entry.command === c.explain,
+              )
+            )
+              return "skipped";
+            if (setup.loadCheck === "ready") checkedRows.add(row.index);
+            return setup.loadCheck;
+          }
           case c.use: {
             const row = modelRows.find(
               (entry) => entry.index === request.index,
@@ -813,6 +858,8 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
       knownDetails: setup.knownDetails ?? {},
       explanation: setup.explanation ?? null,
       readUpTo: setup.readUpTo ?? null,
+      limitsConfirmed: setup.limitsConfirmed ?? false,
+      loadCheck: setup.loadCheck ?? "ready",
       pickId: fakeUuid(1100),
       progressEvent: "ai-model-add-progress",
       // As ai_model_catalog lists the one accepted model. FAKE: no file.

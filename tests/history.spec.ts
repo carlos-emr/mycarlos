@@ -55,7 +55,7 @@ test("after adding, renaming, moving, hiding and backing up, the history lists e
   await fakePickFiles(page, ["FAKE Scan.pdf"]);
   await page
     .getByRole("button", {
-      name: en("interface.VaultApp.chooseFilesToImport"),
+      name: en("interface.VaultLibrary.new"),
       exact: true,
     })
     .click();

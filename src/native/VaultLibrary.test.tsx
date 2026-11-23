@@ -563,7 +563,7 @@ describe("VaultLibrary search", () => {
     ]);
     expect(
       within(rows[0]).getByRole("button", {
-        name: humanText("Open FAKE June"),
+        name: humanText("FAKE June, open folder"),
       }),
     ).toHaveHumanAccessibleDescription(
       "1 item In My records / FAKE Lab results / FAKE 2026",
@@ -836,7 +836,9 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
     // Whose folder it is, for a screen reader.
-    expect(letters).toHaveHumanAccessibleName("FAKE Letters (FAKE Avery) 0");
+    expect(letters).toHaveHumanAccessibleName(
+      "FAKE Letters (FAKE Avery) 0 documents",
+    );
     const avery = within(library).getByRole("button", {
       name: humanText(/^FAKE Avery/),
     });
@@ -1429,7 +1431,9 @@ describe("Audit history keeps Security's Hidden location", () => {
       openFolder(/^Shared with me/);
       fireEvent.click(screen.getByRole("button", { name: "Security" }));
       expect(
-        screen.getByRole("button", { name: /^Hidden 1 Shared with me/ }),
+        screen.getByRole("button", {
+          name: humanText(/^Hidden 1 document Shared with me/),
+        }),
       ).toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Audit history" }));
       await screen.findByText("There are no history events.");
@@ -1439,7 +1443,7 @@ describe("Audit history keeps Security's Hidden location", () => {
         }),
       );
       const hidden = screen.getByRole("button", {
-        name: /^Hidden 1 Shared with me/,
+        name: humanText(/^Hidden 1 document Shared with me/),
       });
       if (route === "back")
         expect(
@@ -1904,10 +1908,15 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       const lock = within(
         document.querySelector(".titlebar") as HTMLElement,
       ).getByRole("button");
-      // WCAG 2.5.3: the name is the words on the button, so saying "click"
-      // and what it shows works by voice; the state before them is not read.
+      // WCAG 2.5.3: the button shows exactly the words it is named by, so
+      // saying "click" and what it shows works by voice. The vault's state is
+      // shown beside it in the pill, as text, not as part of the button (#149).
       expect(lock).toHaveHumanAccessibleName(lockNow);
-      expect(lock).toHaveHumanTextContent(
+      expect(lock).toHaveHumanTextContent(lockNow);
+      const pill = document.querySelector(
+        ".titlebar .native-lock-pill",
+      ) as HTMLElement;
+      expect(pill).toHaveHumanTextContent(
         `${translate(locale, "library.lock.unlocked")} · ${lockNow}`,
       );
       const label = translate(locale, "interface.VaultLibrary.sortBy");
