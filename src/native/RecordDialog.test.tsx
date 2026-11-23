@@ -303,11 +303,12 @@ describe("RecordDialog", () => {
       screen.getByText("Paused. Camera and microphone are still on."),
     ).toBeVisible();
     await waitFor(() => expect(status).toHaveTextContent("Recording paused."));
-    // The tracks are open but disabled: nothing flows while paused.
+    // The camera and microphone are open, and the picture stays on (the person can still see
+    // themselves); the sound is silenced, and nothing is recorded: the recorder is paused.
     const tracks = streams[0]!.getTracks();
-    expect(tracks.every((t) => t.readyState === "live" && !t.enabled)).toBe(
-      true,
-    );
+    expect(tracks.every((t) => t.readyState === "live")).toBe(true);
+    expect(streams[0]!.getVideoTracks().every((t) => t.enabled)).toBe(true);
+    expect(streams[0]!.getAudioTracks().every((t) => !t.enabled)).toBe(true);
     // Stop is still there.
     expect(button("Stop and save")).toBeVisible();
 
@@ -326,6 +327,91 @@ describe("RecordDialog", () => {
     expect(button("Pause recording")).toBeVisible();
     // The piece cut at the pause went to the vault, so it can be kept safe.
     expect(bridge.videoAppend).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the live camera preview on while paused, and goes back to the same picture on resume", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    const preview = () =>
+      document.querySelector<HTMLVideoElement>("video.camera-view")!;
+    expect(preview().srcObject).toBe(streams[0]);
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(bridge.videoPause).toHaveBeenCalledWith("recording-1"),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
+    );
+    // The preview is the same stream, shown, and its picture is not switched off (a disabled
+    // video track shows black).
+    expect(preview().srcObject).toBe(streams[0]);
+    expect(preview()).toBeVisible();
+    for (const track of streams[0]!.getVideoTracks()) {
+      expect(track.readyState).toBe("live");
+      expect(track.enabled).toBe(true);
+    }
+    // Nothing was taken away from the recorder's stream either: the same tracks go on.
+    expect(recorder().stream).toBe(streams[0]);
+    fireEvent.click(button("Resume recording"));
+    await waitFor(() =>
+      expect(bridge.videoResume).toHaveBeenCalledWith("recording-1"),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Recording resumed.",
+      ),
+    );
+    expect(preview().srcObject).toBe(streams[0]);
+    expect(streams[0]!.getAudioTracks().every((t) => t.enabled)).toBe(true);
+  });
+
+  it("appends nothing while paused, takes only the piece cut at the pause, and goes on after resume", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    // A piece while recording is sent.
+    recorder().emit(new Blob([new Uint8Array(5).fill(1)]));
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(1));
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
+    );
+    // The piece cut at the pause went too (the recorder's requestData).
+    expect(bridge.videoAppend).toHaveBeenCalledTimes(2);
+    // A recorder that sends frames or sound anyway while paused is not heard.
+    recorder().emit(new Blob([new Uint8Array(7).fill(2)]));
+    recorder().emit(new Blob([new Uint8Array(7).fill(3)]));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(bridge.videoAppend).toHaveBeenCalledTimes(2);
+    fireEvent.click(button("Resume recording"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Recording resumed.",
+      ),
+    );
+    // After the resume pieces are taken again, in the same recording and the next sequence.
+    recorder().emit(new Blob([new Uint8Array(9).fill(4)]));
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(3));
+    const sequences = bridge.videoAppend.mock.calls.map((call) => call[1]);
+    expect(sequences).toEqual([0, 1, 2]);
+    expect(
+      bridge.videoAppend.mock.calls.every((call) => call[0] === "recording-1"),
+    ).toBe(true);
+  });
+
+  it("still saves the last piece when the recording is stopped while paused", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
+    );
+    const before = bridge.videoAppend.mock.calls.length;
+    fireEvent.click(button("Stop and save"));
+    await waitFor(() => expect(bridge.videoStop).toHaveBeenCalled());
+    // The recorder's last piece, at the stop, is kept.
+    expect(bridge.videoAppend.mock.calls.length).toBe(before + 1);
   });
 
   it("shows the time recorded as text that is not a live region", async () => {

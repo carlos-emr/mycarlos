@@ -147,6 +147,9 @@ export function RecordDialog({
   const sendingRef = useRef<Promise<void> | null>(null);
   const failedSendRef = useRef<unknown>(null);
   const finishingRef = useRef(false);
+  // The piece cut when the pause was pressed has yet to come (a real recorder delivers it a moment
+  // later, already paused): it is the one piece a paused recording takes.
+  const pausePieceRef = useRef(false);
   // The latest `finish`, for callbacks made before it exists and kept across renders.
   const finishRef = useRef<(why: RecordEnd) => Promise<void>>(async () => {});
 
@@ -286,6 +289,16 @@ export function RecordDialog({
 
   const onPiece = useCallback(
     (data: Blob) => {
+      // Nothing is recorded while paused: a recorder is paused to stop frames and sound, and a piece
+      // that comes anyway is not kept. The exceptions are the piece cut at the pause and the last one
+      // as the recording ends.
+      if (
+        recorderRef.current?.state === "paused" &&
+        !pausePieceRef.current &&
+        !finishingRef.current
+      )
+        return;
+      pausePieceRef.current = false;
       if (data.size === 0) return;
       unsentRef.current.push(data);
       unsentBytesRef.current += data.size;
@@ -438,8 +451,11 @@ export function RecordDialog({
     }
   };
 
-  const setTracksEnabled = (enabled: boolean) => {
-    for (const track of streamRef.current?.getTracks() ?? [])
+  // While paused the camera keeps showing (the person can still see themselves before going
+  // on), so its track stays on; only the microphone is silenced. Nothing is recorded meanwhile:
+  // the recorder is paused, which is what stops frames and sound being appended.
+  const setMicrophoneEnabled = (enabled: boolean) => {
+    for (const track of streamRef.current?.getAudioTracks() ?? [])
       track.enabled = enabled;
   };
 
@@ -450,6 +466,7 @@ export function RecordDialog({
     setChanging(true);
     // What was cut so far goes to the vault before the pause, so the vault
     // can keep it safe through the pause.
+    pausePieceRef.current = true;
     try {
       recorder.requestData();
     } catch {
@@ -457,7 +474,7 @@ export function RecordDialog({
     }
     recorder.pause();
     clock.stop();
-    setTracksEnabled(false);
+    setMicrophoneEnabled(false);
     setStage("paused");
     await sendNext();
     // A piece the vault refused on the way ends the recording (see sendNext):
@@ -504,7 +521,8 @@ export function RecordDialog({
     }
     setChanging(false);
     setProblem(null);
-    setTracksEnabled(true);
+    pausePieceRef.current = false;
+    setMicrophoneEnabled(true);
     recorder.resume();
     clock.start();
     setStage("recording");
