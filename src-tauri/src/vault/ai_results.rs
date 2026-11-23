@@ -70,7 +70,7 @@ pub(super) struct StoredAiResult {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) superseded: bool,
     /// The answer came in a handover file (#360), not from this computer's model: the screens
-    /// say "from an imported file". Format 14 only.
+    /// say "from an imported file". A handover-format field (#360): forbidden below `MANIFEST_FORMAT_PROFILE_HANDOVER`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) imported: bool,
 }
@@ -293,7 +293,7 @@ pub(super) fn validate<'a>(
         .count();
     let shown = record.ai_results.len() - hidden;
     if format_version < MANIFEST_FORMAT_AI_RESULTS
-        // Provenance is a format 14 field: an older build would drop it.
+        // Provenance belongs to the handover format: an older build would drop it.
         || (format_version < MANIFEST_FORMAT_PROFILE_HANDOVER
             && record.ai_results.iter().any(|result| result.imported))
         || shown > MAX_SHOWN_AI_RESULTS_PER_RECORD

@@ -2170,7 +2170,7 @@ mod tests {
     }
 
     #[test]
-    fn imported_answers_say_so_and_the_flag_is_a_format_14_field() {
+    fn imported_answers_say_so_and_the_flag_is_a_handover_format_field() {
         let source = source_vault();
         let (key, _) = generate_package_key();
         let (bytes, _) = export_bytes(&source, &key);
@@ -2194,9 +2194,9 @@ mod tests {
         assert!(serde_json::to_string(&info)
             .unwrap()
             .contains("\"imported\":true"));
-        // Below format 14 a manifest holding one is refused: an older build would drop it.
+        // Below the handover format a manifest holding one is refused: an older build would drop it.
         let mut manifest = target.session().as_ref().unwrap().manifest.clone();
-        manifest.format_version = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+        manifest.format_version = MANIFEST_FORMAT_PROFILE_HANDOVER - 1;
         for profile in &mut manifest.profiles {
             profile.imported_from = None;
             profile.imported_history = None;
