@@ -694,10 +694,14 @@ impl Drop for PassphraseRequest {
     }
 }
 
+/// Writes the backup to a place the patient chose, optionally leaving the videos
+/// out (#359).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickRequest {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupWriteRequest {
     pick_id: Uuid,
+    #[serde(default)]
+    leave_videos_out: bool,
 }
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
@@ -3882,13 +3886,31 @@ async fn vault_backup_pick(
     Ok(destination.map(|destination| picks.backups.store(session, destination)))
 }
 
+/// How big a backup would be, and how much of it is video, asked before the
+/// patient chooses where to save it.
+#[tauri::command]
+async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.backup_size()).await
+}
+
+/// The records a backup was made without the file of, for the Hidden list to say
+/// why a video's file is missing: those whose latest history event is "hidden,
+/// left out of the backup".
+#[tauri::command]
+async fn vault_left_out_records(store: State<'_, StoreHandle>) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.left_out_records()).await
+}
+
 #[tauri::command]
 async fn vault_backup_picked(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: PickRequest,
+    request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let leave_videos_out = request.leave_videos_out;
     let store = store.pin();
     let destination = picks
         .backups
@@ -3903,7 +3925,7 @@ async fn vault_backup_picked(
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.arc(), move |store| {
-            store.backup_atomic(&path, now_ms())?;
+            store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
             Ok(SavedBackup {
                 name,
                 bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
@@ -3924,7 +3946,8 @@ async fn vault_backup_picked(
     run_blocking(store.arc(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
-        store.verify_for_backup()?;
+        let plan = store.plan_backup(leave_videos_out)?;
+        store.verify_for_backup_planned(&plan)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -3935,12 +3958,13 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup(
+        store.backup_planned(
             std::io::BufWriter::new(Counted {
                 inner: output,
                 bytes: counted,
             }),
             now_ms(),
+            &plan,
         )?;
         store.record_backup_saved(&place);
         Ok(())
@@ -6124,6 +6148,8 @@ pub fn run() {
             vault_recovery_key_cancel,
             vault_recover,
             vault_backup_pick,
+            vault_backup_size,
+            vault_left_out_records,
             vault_backup_picked,
             vault_restore_pick,
             vault_restore_inspect,
@@ -7848,6 +7874,7 @@ mod tests {
             replaces,
             differs_from_this_device: differs,
             document_count: 3,
+            left_out: 0,
             fingerprint: [0; 32],
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
@@ -8444,7 +8471,7 @@ mod tests {
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
-            let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupWriteRequest>(&payload);
             let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);

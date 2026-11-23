@@ -1129,6 +1129,14 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.videoKeptUnfinished",
   "interface.RecordingRecovery.finishedWithRoom",
   "interface.RecordingRecovery.stillNoRoom",
+  "security.backup.size",
+  "security.backup.sizeWithVideos",
+  "security.backup.sizeNoVideos",
+  "security.backup.leaveVideosOut",
+  "security.backup.leaveVideosOutHelp",
+  "restore.leftOut",
+  "security.backup.sizeCalculating",
+  "interface.hidden.videoLeftOut",
   "portal.deviceLine",
   "portal.deviceLineLinked",
 ] as const;
@@ -2498,6 +2506,14 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordingRecovery-finishedWithRoom",
   "interface.RecordingRecovery.stillNoRoom":
     "interface-RecordingRecovery-stillNoRoom",
+  "security.backup.size": "security-backup-size",
+  "security.backup.sizeWithVideos": "security-backup-sizeWithVideos",
+  "security.backup.sizeNoVideos": "security-backup-sizeNoVideos",
+  "security.backup.leaveVideosOut": "security-backup-leaveVideosOut",
+  "security.backup.leaveVideosOutHelp": "security-backup-leaveVideosOutHelp",
+  "restore.leftOut": "restore-leftOut",
+  "security.backup.sizeCalculating": "security-backup-sizeCalculating",
+  "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
   "portal.deviceLine": "portal-deviceLine",
   "portal.deviceLineLinked": "portal-deviceLineLinked",
 } as const satisfies Record<MessageKey, string>;
@@ -3748,6 +3764,17 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.videoKeptUnfinished": undefined;
   "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
   "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
+  "security.backup.size": { size: FluentArgument };
+  "security.backup.sizeWithVideos": {
+    size: FluentArgument;
+    videos: FluentArgument;
+  };
+  "security.backup.sizeNoVideos": { size: FluentArgument };
+  "security.backup.leaveVideosOut": undefined;
+  "security.backup.leaveVideosOutHelp": undefined;
+  "restore.leftOut": undefined;
+  "security.backup.sizeCalculating": undefined;
+  "interface.hidden.videoLeftOut": undefined;
   "portal.deviceLine": { device: FluentArgument };
   "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
 }

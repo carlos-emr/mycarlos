@@ -1128,6 +1128,14 @@
   "interface.RecordDialog.videoKeptUnfinished",
   "interface.RecordingRecovery.finishedWithRoom",
   "interface.RecordingRecovery.stillNoRoom",
+  "security.backup.size",
+  "security.backup.sizeWithVideos",
+  "security.backup.sizeNoVideos",
+  "security.backup.leaveVideosOut",
+  "security.backup.leaveVideosOutHelp",
+  "restore.leftOut",
+  "security.backup.sizeCalculating",
+  "interface.hidden.videoLeftOut",
   "portal.deviceLine",
   "portal.deviceLineLinked"
 ]

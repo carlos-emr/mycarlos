@@ -1270,11 +1270,57 @@ format number is taken.** What makes it a video is its contents.
 - **Played from a synthetic head.** The player is served `ftyp`, `moov`, a `sidx` built in memory from the
   index, then the stored fragments: the stored bytes are unchanged, and the head is never stored. A
   recording longer than a `sidx` can index (65,535 fragments) groups fragments under one reference.
-- **Not carried (yet).** A video is a document in a backup and an export like any other, streamed without
-  being held whole. A backup of a vault with hours of video is very large; PR 6 of #359 adds its size
-  beforehand and "leave videos out" (backup container format 2), which is the next format number to be
-  taken and is not this change.
+- **In a backup.** A video is a document in a backup and an export like any other, streamed without being
+  held whole. A backup of a vault with hours of video is very large, so the backup screen shows its size
+  beforehand and offers to leave the videos out: that is **backup container format 2**, below. It is not a
+  vault format and takes no manifest format number.
 - **An older myCarlos** opens a vault that holds videos and shows them as documents it cannot read as
   PDFs or photos; they stay exportable. It does not know `recordings/` (see above); a vault with an
   unfinished recording in it was not opened with an older build here, and the first newer unlock finishes
   or asks about it.
+
+## Backup container format 2: videos left out (#359)
+
+A backup is `MYCARLOS-BACKUP\n` (format 1) as described under "Portable encrypted backup". When the patient
+chooses to leave the videos out, the backup is **format 2**; an ordinary backup stays format 1.
+
+```text
+"MYCARLOS-BACKUP2\n"                    17 bytes (the first 16 differ from format 1's magic)
+entry*   kind 1 header | kind 2 manifest | kind 4 note | kind 3 object ...
+         the note ("left-out.json", right after the manifest): JSON {"omitted": [record id, ...]}
+trailer  as format 1, with format 2 and "omitted": [record id, ...] (ids, never names)
+         HMAC-SHA-256 tag over the 17-byte magic and the trailer
+```
+
+- **What it holds.** The same entries as a format-1 backup except the objects of the omitted records (the
+  videos myCarlos recorded: the history says they were added with the camera and the file starts as an MP4
+  does, never the bytes alone, so an iPhone HEIC photo, an M4A voice memo or a camera raw file is never
+  omitted; a video the patient hid stays in the backup, since restoring a document the patient hid needs its
+  file and marking it as missing would erase that choice; their history, names and sizes are in the manifest
+  as usual). The videos are found once for each save and the same list is used for the size, the check and
+  the write.
+  The trailer still lists every entry's length and SHA-256 (the note included) and is authenticated as
+  before, so a damaged or altered backup is found: one flipped bit anywhere, a cut, or an addition is refused.
+- **Its manifest** is the vault's, encrypted as any manifest is, with each omitted record marked
+  **hidden as damaged** (the existing mark for a document whose file is missing, which a restore accepts
+  without the file and which keeps the record restorable if the file comes back). The vault being backed up
+  is not changed.
+- **Told before it is restored.** The note comes right after the manifest, so the restore screen can say
+  "This backup was made without videos" from the first part of the file, before the patient agrees. The note
+  must list only records of the manifest that the manifest already marks as lacking their file, or the backup
+  is refused.
+- **On restore** the other documents are byte-identical; each omitted record is a record with its name, date
+  and folders and no file, listed with the hidden documents as a missing file, and the restored vault's
+  history says, once for each, that it was hidden as left out of the backup (`how` "leftOutOfBackup"). The
+  restored vault can be backed up again; the omitted videos stay marked. The vault the restore replaces is
+  set aside, never erased, so a video that was in it is in the set-aside copy.
+- **An older build** refuses a format-2 backup as not a backup (its first 16 bytes are not the magic it
+  knows), the safe outcome: it would find a manifest naming files the backup lacks.
+- **Size shown first.** The screen adds the real sizes of the files it would copy (plus about 160 bytes an
+  entry for the headers and the trailer): "About 14.2 GB, of which videos 12.9 GB". One question gives both
+  sizes, with and without the videos (the one without is sized with the manifest as the backup will hold it,
+  never undercounted), so ticking the box needs no second one, and the screen asks once for each set of
+  documents. A destination the app cannot measure (an Android document provider) is not checked; a failure
+  there says whether the earlier file at that place was emptied. Before any byte is written to a chosen file, the room at its destination is checked
+  against that size.
+
