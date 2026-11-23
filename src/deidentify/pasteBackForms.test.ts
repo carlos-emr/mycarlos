@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { deidentify, restoreChecked } from "./deidentify";
+import plCatalogue from "../i18n/locales/fluent/pl.ftl?raw";
+import { DEFAULT_NOTES, deidentify, restoreChecked } from "./deidentify";
 
 // Paste-back puts each placeholder back as the words that stood there, never the first form's
 // words: "Bell" after "Peter Bell" must not come back as "Peter Bell" (#214). FAKE names only.
@@ -74,5 +75,29 @@ describe("each form of a name is put back as it was written", () => {
     expect(restoreChecked(result.toSend, result).text).toBe(
       "Peter Bell and Ann Cole; Bell and Cole.",
     );
+  });
+});
+
+describe("the wording of the note on another form of a name", () => {
+  it("never contains a given name, so a person called Inna does not make the note a name (pl)", () => {
+    // The Polish words were "inna forma" ("another form"), and "Inna" is a given name: a known
+    // person called Inna made every such note count as her name.
+    const notes = {
+      ...DEFAULT_NOTES,
+      otherForm: (n: number) => `wariant ${n}`,
+    };
+    const result = deidentify("Inna Zielińska came. Later Zielińska left.", {
+      knownNames: ["Inna Zielińska"],
+      notes,
+    });
+    expect(result.toSend).toBe(
+      "[NAME 1] came. Later [NAME 1, wariant 1] left.",
+    );
+    expect(restoreChecked(result.toSend, result).text).toBe(
+      "Inna Zielińska came. Later Zielińska left.",
+    );
+    // The word is not in the Polish catalogue any more.
+    expect(plCatalogue).toContain("note-otherForm = wariant { $n }");
+    expect(plCatalogue).not.toMatch(/inna forma/i);
   });
 });
