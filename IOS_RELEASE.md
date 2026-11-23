@@ -59,8 +59,39 @@ attribute), and that nothing happens off iOS. **Not tested: on an iPhone.** A de
 unlock, then on a computer make an encrypted Finder backup and look in it for the app's `Library/Application
 Support` folder (it must be absent), or inspect with `xattr -l` on a development build.
 
+## TestFlight workflow (draft for Ben: a patch, not applied)
+
+`mycarlos-422-5-ios-release-workflow-20261124.patch` (in `/root/supervisor/for-ben/`, a new file under `.github/`,
+so Ben's to apply) adds `mycarlos-ios-release.yml`: a signed archive for TestFlight. It starts **only by hand**
+(`workflow_dispatch`): no `pull_request`, `pull_request_target` or push trigger, so a fork's code can never reach
+the secrets. It runs in the **`ios-release` environment** (create it with required reviewers and "deployment
+branches: main only"; the job also refuses any other ref), reads the repository with `contents: read` only,
+pins every action by SHA like the other workflows, selects and **requires Xcode 26** (Apple needs the iOS 26
+SDK since 28 April 2026), builds with `tauri ios build --export-method app-store-connect --build-number N`,
+re-runs the privacy check on the built app, keeps the IPA as an artifact, and uploads to TestFlight only if
+the `upload` input is ticked. Its keychain and profile are removed at the end.
+
+**The secrets Ben must create, as secrets of the `ios-release` environment (not of the repository):**
+
+| Secret                                      | What                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `APPLE_DISTRIBUTION_CERTIFICATE_P12_BASE64` | the Apple Distribution certificate with its private key, exported as `.p12`, base64 of the file |
+| `APPLE_DISTRIBUTION_CERTIFICATE_PASSWORD`   | the password set when exporting that `.p12`                                                     |
+| `APPLE_APP_STORE_PROFILE_BASE64`            | the App Store provisioning profile for the app's bundle id, base64 of the `.mobileprovision`    |
+| `APPLE_TEAM_ID`                             | the ten-character team id                                                                       |
+| `APP_STORE_CONNECT_API_KEY_ID`              | the key id of an App Store Connect API key (role: App Manager or Developer)                     |
+| `APP_STORE_CONNECT_API_ISSUER_ID`           | the issuer id shown with the API keys                                                           |
+| `APP_STORE_CONNECT_API_KEY_P8`              | the contents of the `AuthKey_<id>.p8` file                                                      |
+
+Needs an Apple Developer Program account, the app record in App Store Connect and the bundle id registered
+(the bundle id is still `ca.carlos.mycarlos`, and the product name "myCarlos Evaluation"; both are Ben's
+decisions before the first upload). **Not run anywhere**: the `CHECK` comments mark what the first real run
+will most likely need fixed (the hosted runner label that carries Xcode 26, Tauri's exact signing options for
+the generated project, and `altool`, which Apple has deprecated in favour of the App Store Connect API or
+Transporter and which still works for upload).
+
 ## Not done here
 
-Xcode 26, signing and TestFlight (task 5, a workflow patch), the `isExcludedFromBackup` result for a vault
+The first real run of the TestFlight workflow, the `isExcludedFromBackup` result for a vault
 restored from a file the patient picked (it lands in the same folder), the app name and bundle id, and the
 privacy policy URL the store listing needs.
