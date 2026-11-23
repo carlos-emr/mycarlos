@@ -25,6 +25,8 @@ well.
 
 ## The libraries the apps are built with
 
+The app lists every shipped library with its licence and licence text under **Settings > Preferences > About > Open-source notices**, with myCarlos's own licence and where to get its source. The list is generated from the locked SBOMs and checked against them; see [NOTICES.md](NOTICES.md).
+
 Some libraries that Tauri brings in carry the terms of the Apache License 2.0 with no alternative
 that GPL version 2 would accept: `tao` (its window layer), under Apache-2.0 alone, in every build; `dpi`, which
 declares "Apache-2.0 AND MIT", so that both sets of terms apply, in every build; and

@@ -4951,3 +4951,63 @@ button:disabled,
   margin: 0;
   padding: 14px 20px 6px;
 }
+
+/* Open-source notices: a searchable list of libraries, each opening to its licence texts. */
+.open-source-notices .notice-address {
+  overflow-wrap: anywhere;
+}
+.open-source-notices .notice-search {
+  display: grid;
+  gap: 6px;
+  max-width: 460px;
+  margin: 8px 0;
+}
+.open-source-notices .notice-search input {
+  min-height: 44px;
+  padding: 8px 12px;
+  font: inherit;
+  color: inherit;
+  background: var(--surface, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.notice-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.notice-entry {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.notice-entry summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 14px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.notice-version,
+.notice-licence,
+.notice-kind {
+  color: var(--ink-soft);
+}
+.notice-file {
+  margin: 12px 0 4px;
+  font-size: 0.95rem;
+}
+.notice-text {
+  max-height: 320px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}

@@ -2569,3 +2569,53 @@ security-backup-leaveVideosOutHelp = O backup não conterá seus vídeos. Se voc
 restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta todo o resto, e seus vídeos não estarão lá. Eles aparecem entre os documentos ocultos, como arquivos ausentes.
 security-backup-sizeCalculating = Calculando o tamanho do backup…
 interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
+
+notices-about-title = Sobre o myCarlos
+
+notices-about-body = As bibliotecas com que o myCarlos é construído, a licença sob a qual é compartilhado e onde obter o código-fonte.
+
+notices-open = Avisos de código aberto
+
+notices-title = Avisos de código aberto
+
+notices-back = Voltar para Preferências
+
+notices-intro = O myCarlos é software livre, construído com bibliotecas de código aberto. Cada biblioteca é compartilhada sob a própria licença. Os avisos e os textos das licenças estão listados aqui.
+
+notices-own-title = Licença do myCarlos
+
+notices-own-body = O myCarlos é software livre sob a Licença Pública Geral Affero do GNU, versão 3 ou (à sua escolha) qualquer versão posterior. Você pode usá-lo, estudá-lo, compartilhá-lo e modificá-lo nesses termos.
+
+notices-own-show = Mostrar o texto completo da licença
+
+notices-source-title = Obter o código-fonte
+
+notices-source-body = O código-fonte completo desta versão do myCarlos, com as instruções para compilá-lo, está disponível no endereço abaixo. Digite-o em um navegador. Se não conseguir acessá-lo, peça o código-fonte a quem lhe entregou o myCarlos.
+
+notices-list-title = Bibliotecas e ferramentas
+
+notices-loading = Carregando os avisos…
+
+notices-failed = Não foi possível carregar os avisos. Feche e abra esta página novamente para tentar de novo.
+
+notices-search = Pesquisar bibliotecas por nome ou licença
+
+notices-count-all = { $total } bibliotecas e ferramentas
+
+notices-count-filtered = { $count } de { $total } bibliotecas e ferramentas
+
+notices-none = Nenhuma biblioteca corresponde à sua pesquisa.
+
+notices-noText = A licença desta biblioteca não exige que um texto seja incluído.
+
+notices-kind-javascript = Biblioteca JavaScript
+
+notices-kind-rust = Biblioteca Rust
+
+notices-kind-bundled = Incluída no myCarlos
+
+notices-copy = Copiar o endereço
+
+notices-copied = Endereço copiado.
+
+notices-copyFailed = Selecione o endereço inteiro e copie-o.

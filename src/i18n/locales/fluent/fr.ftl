@@ -2569,3 +2569,53 @@ security-backup-leaveVideosOutHelp = La sauvegarde ne contiendra pas vos vidéos
 restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer ramène tout le reste, et vos vidéos n’y seront pas. Elles figurent parmi les documents masqués, comme des fichiers manquants.
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
+
+notices-about-title = À propos de myCarlos
+
+notices-about-body = Les bibliothèques avec lesquelles myCarlos est construit, la licence sous laquelle il est partagé et où obtenir son code source.
+
+notices-open = Avis sur les logiciels libres
+
+notices-title = Avis sur les logiciels libres
+
+notices-back = Retour aux préférences
+
+notices-intro = myCarlos est un logiciel libre, construit avec des bibliothèques libres. Chaque bibliothèque est partagée sous sa propre licence. Leurs avis et textes de licence sont listés ici.
+
+notices-own-title = Licence de myCarlos
+
+notices-own-body = myCarlos est un logiciel libre sous la licence publique générale GNU Affero, version 3 ou (à votre choix) toute version ultérieure. Vous pouvez l’utiliser, l’étudier, le partager et le modifier selon ces conditions.
+
+notices-own-show = Afficher le texte complet de la licence
+
+notices-source-title = Obtenir le code source
+
+notices-source-body = Le code source complet de cette version de myCarlos, avec les instructions pour le compiler, est disponible à l’adresse ci-dessous. Saisissez-la dans un navigateur web. Si vous ne pouvez pas y accéder, demandez le code source à la personne qui vous a remis myCarlos.
+
+notices-list-title = Bibliothèques et outils
+
+notices-loading = Chargement des avis…
+
+notices-failed = Les avis n’ont pas pu être chargés. Fermez puis rouvrez cette page pour réessayer.
+
+notices-search = Rechercher les bibliothèques par nom ou par licence
+
+notices-count-all = { $total } bibliothèques et outils
+
+notices-count-filtered = { $count } sur { $total } bibliothèques et outils
+
+notices-none = Aucune bibliothèque ne correspond à votre recherche.
+
+notices-noText = La licence de cette bibliothèque n’exige pas qu’un texte soit joint.
+
+notices-kind-javascript = Bibliothèque JavaScript
+
+notices-kind-rust = Bibliothèque Rust
+
+notices-kind-bundled = Fournie avec myCarlos
+
+notices-copy = Copier l’adresse
+
+notices-copied = Adresse copiée.
+
+notices-copyFailed = Sélectionnez toute l’adresse et copiez-la.

@@ -2649,3 +2649,53 @@ security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich
 restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
+
+notices-about-title = O myCarlos
+
+notices-about-body = Biblioteki, z których zbudowano myCarlos, licencja, na jakiej jest udostępniany, i miejsce, gdzie można pobrać jego kod źródłowy.
+
+notices-open = Informacje o oprogramowaniu open source
+
+notices-title = Informacje o oprogramowaniu open source
+
+notices-back = Wróć do preferencji
+
+notices-intro = myCarlos to wolne oprogramowanie zbudowane z bibliotek open source. Każda biblioteka jest udostępniana na własnej licencji. Ich informacje i teksty licencji znajdziesz poniżej.
+
+notices-own-title = Licencja myCarlos
+
+notices-own-body = myCarlos to wolne oprogramowanie na licencji GNU Affero General Public License w wersji 3 lub (według Twojego wyboru) dowolnej późniejszej. Możesz go używać, badać, udostępniać i zmieniać na tych warunkach.
+
+notices-own-show = Pokaż pełny tekst licencji
+
+notices-source-title = Pobierz kod źródłowy
+
+notices-source-body = Pełny kod źródłowy tej wersji myCarlos wraz z instrukcją budowania jest dostępny pod adresem poniżej. Wpisz go w przeglądarce internetowej. Jeśli nie możesz się z nim połączyć, poproś o kod źródłowy osobę, od której dostałeś myCarlos.
+
+notices-list-title = Biblioteki i narzędzia
+
+notices-loading = Wczytywanie informacji…
+
+notices-failed = Nie udało się wczytać informacji. Zamknij tę stronę i otwórz ją ponownie, aby spróbować jeszcze raz.
+
+notices-search = Szukaj bibliotek według nazwy lub licencji
+
+notices-count-all = Biblioteki i narzędzia: { $total }
+
+notices-count-filtered = { $count } z { $total } bibliotek i narzędzi
+
+notices-none = Żadna biblioteka nie pasuje do wyszukiwania.
+
+notices-noText = Licencja tej biblioteki nie wymaga dołączenia tekstu.
+
+notices-kind-javascript = Biblioteka JavaScript
+
+notices-kind-rust = Biblioteka Rust
+
+notices-kind-bundled = Dołączone do myCarlos
+
+notices-copy = Kopiuj adres
+
+notices-copied = Adres skopiowany.
+
+notices-copyFailed = Zaznacz cały adres i skopiuj go.

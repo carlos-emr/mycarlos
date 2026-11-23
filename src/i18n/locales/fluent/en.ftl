@@ -2534,3 +2534,53 @@ security-backup-leaveVideosOutHelp = The backup will not contain your videos. If
 restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
+
+notices-about-title = About myCarlos
+
+notices-about-body = The libraries myCarlos is built with, the licence it is shared under, and where to get its source code.
+
+notices-open = Open-source notices
+
+notices-title = Open-source notices
+
+notices-back = Back to Preferences
+
+notices-intro = myCarlos is free software, built with open-source libraries. Each library is shared under its own licence. Their notices and licence texts are listed here.
+
+notices-own-title = myCarlos’s own licence
+
+notices-own-body = myCarlos is free software under the GNU Affero General Public License, version 3 or (at your option) any later version. You may use, study, share and change it under those terms.
+
+notices-own-show = Show the full licence text
+
+notices-source-title = Get the source code
+
+notices-source-body = The complete source code of this version of myCarlos, with the instructions to build it, is available at the address below. Type it into a web browser. If you cannot reach it, ask whoever gave you myCarlos for the source.
+
+notices-list-title = Libraries and tools
+
+notices-loading = Loading the notices…
+
+notices-failed = The notices could not be loaded. Close and reopen this page to try again.
+
+notices-search = Search the libraries by name or licence
+
+notices-count-all = { $total } libraries and tools
+
+notices-count-filtered = { $count } of { $total } libraries and tools
+
+notices-none = No library matches your search.
+
+notices-noText = This library’s licence does not ask for a text to be included.
+
+notices-kind-javascript = JavaScript library
+
+notices-kind-rust = Rust library
+
+notices-kind-bundled = Bundled with myCarlos
+
+notices-copy = Copy the address
+
+notices-copied = Address copied.
+
+notices-copyFailed = Select the whole address and copy it.

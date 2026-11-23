@@ -49,6 +49,7 @@ import {
 } from "./RecoveryKeySetup";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
+import { OpenSourceNotices } from "./OpenSourceNotices";
 import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
@@ -96,6 +97,7 @@ type NativeSection =
   | "history"
   | "security"
   | "preferences"
+  | "notices"
   | "ai";
 /** The phone's tabs. Records holds the people and Shared with me, as the
  * sidebar's top-level folders do on a computer (Ben, 21 Oct). */
@@ -2014,7 +2016,8 @@ export function VaultLibrary({
                     section === value ||
                     (value === "records" && inShared) ||
                     (value === "security" &&
-                      (section === "hidden" || section === "history"))
+                      (section === "hidden" || section === "history")) ||
+                    (value === "preferences" && section === "notices")
                       ? "page"
                       : undefined
                   }
@@ -2837,7 +2840,15 @@ export function VaultLibrary({
               />
             )}
 
-            {section === "preferences" && <PreferencesSettings />}
+            {section === "preferences" && (
+              <PreferencesSettings
+                onOpenNotices={() => setSection("notices")}
+              />
+            )}
+
+            {section === "notices" && (
+              <OpenSourceNotices onBack={() => setSection("preferences")} />
+            )}
 
             {section === "ai" && computer && (
               <AiSettings

@@ -1,0 +1,38 @@
+[
+  {
+    "name": "llama.cpp and ggml",
+    "version": "0.1.160 (vendored by llama-cpp-sys-2, built into the AI helper on computers)",
+    "license": "MIT",
+    "source": "https://github.com/ggml-org/llama.cpp",
+    "textFrom": [
+      {
+        "package": "llama-cpp-sys-2@0.1.160",
+        "file": "llama.cpp/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "Foxit standard PDF fonts (from PDFium)",
+    "version": "embedded by hayro-interpret 0.8.0 (the `embed-fonts` feature)",
+    "license": "BSD-3-Clause",
+    "source": "https://pdfium.googlesource.com/pdfium",
+    "textFrom": [
+      {
+        "package": "hayro-interpret@0.8.0",
+        "file": "assets/LICENSE_FOXIT"
+      }
+    ]
+  },
+  {
+    "name": "CGATS001Compat, ProPhoto and Lab colour profiles",
+    "version": "embedded by hayro-interpret 0.8.0 and hayro-jpeg2000 0.4.1",
+    "license": "CC0-1.0",
+    "source": "https://github.com/LaurenzV/hayro",
+    "textFrom": [
+      {
+        "package": "hayro-interpret@0.8.0",
+        "file": "assets/CGATS_LICENSE.txt"
+      }
+    ]
+  }
+]
