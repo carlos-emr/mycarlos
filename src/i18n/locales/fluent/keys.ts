@@ -859,6 +859,8 @@ export const MESSAGE_KEYS = [
   "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
+  "ai.error.memoryNumbers",
+  "ai.error.memoryUnknown",
   "ai.error.busy",
   "ai.error.storage",
   "ai.summary.pagesMissing",
@@ -2050,6 +2052,8 @@ const FLUENT_IDS_BY_KEY = {
   "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
+  "ai.error.memoryNumbers": "ai-error-memoryNumbers",
+  "ai.error.memoryUnknown": "ai-error-memoryUnknown",
   "ai.error.busy": "ai-error-busy",
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
@@ -3262,6 +3266,8 @@ export interface MessageArgsByKey {
   "ai.explain.ready": undefined;
   "ai.failed": undefined;
   "ai.error.memory": undefined;
+  "ai.error.memoryNumbers": { free: FluentArgument; needed: FluentArgument };
+  "ai.error.memoryUnknown": { needed: FluentArgument };
   "ai.error.busy": undefined;
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;

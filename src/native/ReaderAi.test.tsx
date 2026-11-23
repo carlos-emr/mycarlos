@@ -1111,11 +1111,16 @@ describe("the reader's AI helper", () => {
 
   // Refused as the native side refuses (lib.rs ai_error): a code and the key
   // of its words, passed on by the real bridge.
-  const refusingModel = (code: string, messageKey?: string) => {
+  const refusingModel = (
+    code: string,
+    messageKey?: string,
+    extra: Record<string, unknown> = {},
+  ) => {
     const refusal = {
       code,
       message: "FAKE native words",
       ...(messageKey === undefined ? {} : { messageKey }),
+      ...extra,
     };
     return nativeLocalModel({
       aiModelStatus: async () => ({ state: "installed", model: FAKE_MODEL }),
@@ -1200,6 +1205,85 @@ describe("the reader's AI helper", () => {
       expect(alert.textContent).not.toContain("FAKE native words");
     },
   );
+
+  // The refusal for memory says how much is needed and how much is free (#305): the need rounded
+  // up and the free amount rounded down, so it never claims to be closer to enough than it is.
+  it("says how much memory is needed and how much is free", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_641_000_000, availableBytes: 1_949_999_999 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "There isn't enough free memory for the AI helper right now. It needs about 3.7 GB free and 1.9 GB is free. Close some other programs, then try again.",
+    );
+  });
+
+  it("says so when this computer could not say how much is free", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_600_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "There isn't enough free memory for the AI helper right now. It needs about 3.6 GB free, and this computer could not say how much is free. Close some other programs, then try again.",
+    );
+  });
+
+  it("says the numbers in the language chosen after the refusal", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 2_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByRole("alert");
+    act(() => setLocaleOverride("fr"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+      "Il lui faut environ 3,6 Go de mémoire libre; il en reste 2,0 Go.",
+    );
+  });
+
+  it("keeps another refusal's own words even when it carries a stray memory field", async () => {
+    renderReader(
+      refusingModel("aiBusy", "ai.error.busy", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 1_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(OWN_WORDS[2][2]);
+    expect(alert.textContent).not.toContain("GB");
+  });
+
+  it("ignores numbers that are not numbers", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: "lots", availableBytes: -1 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      OWN_WORDS[1][2],
+    );
+  });
 
   it("says a refusal's own words in the language chosen after it", async () => {
     renderReader(refusingModel("aiMemory", "ai.error.memory"));

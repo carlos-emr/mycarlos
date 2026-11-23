@@ -159,6 +159,8 @@ struct PublicError {
     note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
     retry_after_ms: Option<u64>,
+    /// For an AI refusal for lack of memory: what the start needs and what is free (#305).
+    memory: Option<model_runtime::MemoryShortfall>,
 }
 
 // Keep the established IPC fields and omission rules; only user-facing text is formatted.
@@ -178,6 +180,8 @@ impl Serialize for PublicError {
             note_key: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             retry_after_ms: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            memory: Option<model_runtime::MemoryShortfall>,
         }
         let text = |key| {
             UiLocale::En
@@ -192,6 +196,7 @@ impl Serialize for PublicError {
             note: self.note_key.map(text),
             note_key: self.note_key,
             retry_after_ms: self.retry_after_ms,
+            memory: self.memory,
         }
         .serialize(serializer)
     }
@@ -205,6 +210,7 @@ impl From<ui_text::UiTextError> for PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -266,6 +272,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: Some(left_ms),
+            memory: None,
         }
     }
 
@@ -276,6 +283,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -305,6 +313,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -315,6 +324,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -628,6 +638,7 @@ impl From<VaultError> for PublicError {
             record_id,
             note_key: None,
             retry_after_ms,
+            memory: None,
         }
     }
 }
@@ -2583,7 +2594,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
     let message_key = match error {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
-        AiError::Memory => "ai.error.memory",
+        AiError::Memory(_) => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
         AiError::SummaryTooLarge => "ai.summaryTooLarge",
@@ -2595,6 +2606,11 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        // How much a refusal for memory needed and how much was free (#305).
+        memory: match error {
+            AiError::Memory(shortfall) => shortfall,
+            _ => None,
+        },
     }
 }
 
@@ -2709,6 +2725,7 @@ async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTest
             note_key: None,
             record_id: None,
             retry_after_ms: None,
+            memory: None,
         })??;
     let RuntimeInfo {
         platform,
@@ -2971,6 +2988,7 @@ fn audit_history_result(result: CommandResult<vault::HistoryView>) -> CommandRes
                 record_id: None,
                 note_key: None,
                 retry_after_ms: None,
+                memory: None,
             })
         }
         Err(error) => Err(error),
@@ -3104,6 +3122,7 @@ fn approval_check_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms,
+        memory: None,
     }
 }
 
@@ -3155,6 +3174,7 @@ fn approval_code_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        memory: None,
     }
 }
 
@@ -6451,6 +6471,36 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_for_memory_carries_what_was_needed_and_what_was_free() {
+        use model_runtime::{AiError, MemoryShortfall};
+        let refusal = ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_641_000_000,
+            available_bytes: Some(1_950_000_000),
+        })));
+        assert_eq!(refusal.code, "aiMemory");
+        let sent = serde_json::to_value(&refusal).unwrap();
+        assert_eq!(sent["code"], "aiMemory");
+        assert_eq!(sent["messageKey"], "ai.error.memory");
+        assert_eq!(sent["memory"]["neededBytes"], 3_641_000_000u64);
+        assert_eq!(sent["memory"]["availableBytes"], 1_950_000_000u64);
+        // A computer that could not say what is free sends only the need.
+        let unknown = serde_json::to_value(ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_000_000_000,
+            available_bytes: None,
+        }))))
+        .unwrap();
+        assert_eq!(unknown["memory"]["neededBytes"], 3_000_000_000u64);
+        assert!(unknown["memory"].get("availableBytes").is_none());
+        // Every other refusal, and a memory refusal with no numbers, sends none.
+        for error in [AiError::Memory(None), AiError::Busy, AiError::Failed] {
+            assert!(serde_json::to_value(ai_error(error))
+                .unwrap()
+                .get("memory")
+                .is_none());
+        }
+    }
+
+    #[test]
     fn ai_errors_carry_their_code_and_words_the_catalogue_has() {
         use model_runtime::AiError;
         for (error, code, words) in [
@@ -6460,7 +6510,7 @@ mod tests {
                 "isn't on this device",
             ),
             (AiError::Damaged, "aiDamaged", "isn't on this device"),
-            (AiError::Memory, "aiMemory", "enough free memory"),
+            (AiError::Memory(None), "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
             (
@@ -7217,7 +7267,7 @@ mod tests {
         // and a failure, as an answer stopped at its limit ends.
         for ending in [
             Ok(()),
-            Err(AiError::Memory),
+            Err(AiError::Memory(None)),
             Err(AiError::Cancelled),
             Err(AiError::Failed),
         ] {

@@ -5,6 +5,8 @@ pub const FORMATTING_FAILURE_EN: &str =
 pub enum MessageId {
     AiErrorBusy,
     AiErrorMemory,
+    AiErrorMemoryNumbers,
+    AiErrorMemoryUnknown,
     AiErrorStorage,
     AiExplainBox,
     AiExplainHint,
@@ -1060,6 +1062,8 @@ impl MessageId {
     pub const ALL: &'static [Self] = &[
         Self::AiErrorBusy,
         Self::AiErrorMemory,
+        Self::AiErrorMemoryNumbers,
+        Self::AiErrorMemoryUnknown,
         Self::AiErrorStorage,
         Self::AiExplainBox,
         Self::AiExplainHint,
@@ -2115,6 +2119,8 @@ impl MessageId {
         match self {
             Self::AiErrorBusy => "ai-error-busy",
             Self::AiErrorMemory => "ai-error-memory",
+            Self::AiErrorMemoryNumbers => "ai-error-memoryNumbers",
+            Self::AiErrorMemoryUnknown => "ai-error-memoryUnknown",
             Self::AiErrorStorage => "ai-error-storage",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
@@ -4570,6 +4576,8 @@ impl MessageId {
             "ai.explain.ready" => Some(Self::AiExplainReady),
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
+            "ai.error.memoryNumbers" => Some(Self::AiErrorMemoryNumbers),
+            "ai.error.memoryUnknown" => Some(Self::AiErrorMemoryUnknown),
             "ai.error.busy" => Some(Self::AiErrorBusy),
             "ai.error.storage" => Some(Self::AiErrorStorage),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),

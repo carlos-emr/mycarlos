@@ -1827,6 +1827,8 @@ ai-explain-ready = 解釋已產生。
 ai-failed = AI 助理未能完成。請重試。
 
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
+ai-error-memoryNumbers = 目前可用記憶體不足，AI 助理無法執行。它需要約 { $needed } GB 可用記憶體，而現在只有 { $free } GB 可用。請關閉其他程式後重試。
+ai-error-memoryUnknown = 目前可用記憶體不足，AI 助理無法執行。它需要約 { $needed } GB 可用記憶體，而此電腦無法告知目前有多少可用記憶體。請關閉其他程式後重試。
 
 ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
 

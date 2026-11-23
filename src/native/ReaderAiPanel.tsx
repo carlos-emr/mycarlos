@@ -14,6 +14,7 @@ import {
 } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
+import { gigabytes, memoryShortfall } from "../ai/memoryWords";
 import { useSummaryProgress } from "./useSummaryProgress";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
@@ -101,11 +102,29 @@ export function ReaderAiPanel({
   onReturnFocus: () => void;
 }) {
   const { t } = useI18n();
+  /** The refusal for memory with its numbers (#305): what a start needs and what is free. */
+  const memoryText = (
+    shortfall: ReturnType<typeof memoryShortfall>,
+  ): string => {
+    if (!shortfall) return t("ai.error.memory");
+    const needed = gigabytes(shortfall.needed, "up");
+    return shortfall.available === null
+      ? t("ai.error.memoryUnknown", { needed })
+      : t("ai.error.memoryNumbers", {
+          needed,
+          free: gigabytes(shortfall.available, "down"),
+        });
+  };
   const lang = getLocale();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [working, setWorking] = useState(false);
   // The last run's failure, said in the panel's alert; null when none.
   const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
+  // Only a refusal for memory carries numbers that matter; read once per render.
+  const failedMemory =
+    failed && hasVaultErrorCode(failed.failure, "aiMemory")
+      ? memoryShortfall(failed.failure)
+      : null;
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   // A document longer than the model reads at a time, waiting for the
@@ -630,11 +649,13 @@ export function ReaderAiPanel({
         )}
         {failed && (
           <p role="alert">
-            {t(
-              Object.entries(OWN_WORDS).find(([code]) =>
-                hasVaultErrorCode(failed.failure, code),
-              )?.[1] ?? "ai.failed",
-            )}
+            {failedMemory
+              ? memoryText(failedMemory)
+              : t(
+                  Object.entries(OWN_WORDS).find(([code]) =>
+                    hasVaultErrorCode(failed.failure, code),
+                  )?.[1] ?? "ai.failed",
+                )}
           </p>
         )}
         {noText && <p>{t("ai.summary.noText")}</p>}
