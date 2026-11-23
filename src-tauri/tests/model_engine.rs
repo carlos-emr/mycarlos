@@ -456,6 +456,45 @@ fn a_real_model_from_the_environment_summarizes_fake_documents() {
     runner.stop();
 }
 
+/// By hand, with a real model (`MYCARLOS_TEST_MODEL`, and `MYCARLOS_TEST_CHAT_FORMAT` as above):
+/// one start, no answer. Prints the card the helper sent (`context made`, the cache size, the
+/// weights) and the helper process's memory (`VmHWM`, the peak resident size; `VmRSS`; `VmPeak`),
+/// for checking the memory formula against a real run (#305). Run it under `model.lock`, pinned to
+/// as many CPUs as the helper has threads.
+#[test]
+#[ignore = "needs a real model file; run by hand with --ignored --nocapture"]
+fn a_real_model_loads_and_reports_its_card_and_peak_memory() {
+    let model = std::path::PathBuf::from(
+        std::env::var_os("MYCARLOS_TEST_MODEL").expect("MYCARLOS_TEST_MODEL"),
+    );
+    let format =
+        std::env::var("MYCARLOS_TEST_CHAT_FORMAT").unwrap_or_else(|_| "builtin".to_owned());
+    let started = std::time::Instant::now();
+    let runner = ModelRunner::start_with(executable(), &model, &format)
+        .unwrap_or_else(|error| panic!("{error}"));
+    println!("started in {:.1} s", started.elapsed().as_secs_f64());
+    println!("card: {}", runner.last_card());
+    let me = std::process::id();
+    for entry in std::fs::read_dir("/proc").unwrap().flatten() {
+        let Ok(status) = std::fs::read_to_string(entry.path().join("status")) else {
+            continue;
+        };
+        let field = |name: &str| {
+            status
+                .lines()
+                .find(|line| line.starts_with(name))
+                .map(|line| line.trim().to_owned())
+        };
+        if field("PPid:").is_some_and(|line| line.ends_with(&format!("\t{me}"))) {
+            println!("helper pid {}:", entry.file_name().to_string_lossy());
+            for name in ["Name:", "VmPeak:", "VmHWM:", "VmRSS:", "VmData:"] {
+                println!("  {}", field(name).unwrap_or_default());
+            }
+        }
+    }
+    runner.stop();
+}
+
 /// By hand, with a real model (`MYCARLOS_TEST_MODEL`): an answer read from a put-back prefix
 /// after another document is word for word the answer a fresh helper gives, for a summary and
 /// for an explanation after it, so nothing of the first document carries over. Never in CI:

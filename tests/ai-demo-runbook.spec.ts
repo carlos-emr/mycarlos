@@ -132,7 +132,8 @@ async function aiSettings(page: Page) {
     await named(page.locator("body"), "AI helper", "step 3 (sidebar)")
   ).click();
   return page.locator("section.setting-row").filter({
-    has: page.getByRole("heading", { name: /AI helper/ }),
+    // "^": the settings also have an "About the AI helper" row.
+    has: page.getByRole("heading", { name: /^AI helper/ }),
   });
 }
 

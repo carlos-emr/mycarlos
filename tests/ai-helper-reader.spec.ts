@@ -290,8 +290,24 @@ test.describe("with a model on this device", () => {
     const marked = reader.locator(".native-reader-text mark");
     await expect(marked).toHaveText(fakePageText(LETTER, 2));
     await expect(marked).toBeFocused();
-    // Tab: the next control after the marked words, the summary's first
-    // Show me in the document; never the reader's Close at the top.
+    // Tab: the next control after the marked words: the Summary's "About the
+    // AI helper" button (#355), then the warning's "Don't show this again"
+    // (#351), then the summary's first Show in document; never the
+    // reader's Close at the top.
+    await page.keyboard.press("Tab");
+    await expect(
+      summaryPanel.getByRole("button", {
+        name: en("aiHelper.notice.title"),
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      summaryPanel.getByRole("button", {
+        name: en("aiHelper.resultLabelHide"),
+        exact: true,
+      }),
+    ).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(show.first()).toBeFocused();
     await expect(

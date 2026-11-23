@@ -85,10 +85,10 @@ test("Security: clinic documents, profiles and the open section are named and re
   await unlocked(page);
   await openSection(page, "Security");
 
-  const clinic = page.getByRole("region", { name: "Clinic documents" });
+  const clinic = page.getByRole("region", { name: "Connected clinics" });
   await expect(clinic).toMatchAriaSnapshot(`
-    - region "Clinic documents":
-      - heading "Clinic documents" [level=2]
+    - region "Connected clinics":
+      - heading "Connected clinics" [level=2]
       - textbox "Portal HTTPS address"
       - textbox "Linking code"
       - textbox "Name for this device"
@@ -143,7 +143,7 @@ test("Security: clinic documents, profiles and the open section are named and re
   // main's card after Connect: the request is sent, the clinic's answer is
   // awaited, and the device's code and fingerprint are under a disclosure.
   await expect(clinic).toMatchAriaSnapshot(`
-    - region "Clinic documents":
+    - region "Connected clinics":
       - heading "FAKE Family Clinic" [level=3]
       - paragraph: /[Aa]pproval request/
       - group: Show device details
@@ -152,7 +152,7 @@ test("Security: clinic documents, profiles and the open section are named and re
   `);
   await clinic.getByText("Show device details").click();
   await expect(clinic).toMatchAriaSnapshot(`
-    - region "Clinic documents":
+    - region "Connected clinics":
       - group:
         - textbox "Device code"
         - button "Copy device code"
@@ -168,9 +168,9 @@ test("Security: a clinic waiting to approve this device says so", async ({
   await fakeVault(page, "unlocked", { portal: "awaiting" });
   await unlocked(page);
   await openSection(page, "Security");
-  const clinic = page.getByRole("region", { name: "Clinic documents" });
+  const clinic = page.getByRole("region", { name: "Connected clinics" });
   await expect(clinic).toMatchAriaSnapshot(`
-    - region "Clinic documents":
+    - region "Connected clinics":
       - heading "FAKE Family Clinic" [level=3]
       - paragraph: /Approval request/
       - button "Retry saved approval request"

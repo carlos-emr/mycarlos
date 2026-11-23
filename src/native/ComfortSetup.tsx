@@ -1,3 +1,5 @@
+import { useAppearance } from "../AppearanceProvider";
+import { AppearanceSetting } from "./AppearanceSetting";
 import { LanguageSetting } from "./LanguageSetting";
 import { AutoLockSetting } from "./AutoLockSetting";
 import { DEFAULT_AUTO_LOCK_MINUTES } from "./autoLock";
@@ -21,6 +23,7 @@ export function ComfortSetup({
   onDone: () => void;
 }) {
   const native = useNativeZoom();
+  const appearance = useAppearance();
   const { t } = useI18n();
   return (
     <VaultAuthFrame state="Setting up">
@@ -46,7 +49,7 @@ export function ComfortSetup({
               </div>
             </section>
           )}
-          {/* Appearance (#47 / PR #60) goes here once it is in. */}
+          <AppearanceSetting />
           <section className="setting-row native-setting-form">
             <div>
               <h2>{t("security.autoLock.title")}</h2>
@@ -64,6 +67,7 @@ export function ComfortSetup({
           {t("comfort.later", {
             settings: t("sidebar.settings"),
             textSize: t("textSize.title"),
+            appearance: t("appearance.title"),
             preferences: t("sidebar.preferences"),
             autoLock: t("security.autoLock.title"),
             security: t("security.title"),
@@ -78,6 +82,7 @@ export function ComfortSetup({
             type="button"
             onClick={() => {
               native?.zoom.request("reset");
+              appearance?.set("system");
               onAutoLockMinutes(DEFAULT_AUTO_LOCK_MINUTES);
               onDone();
             }}

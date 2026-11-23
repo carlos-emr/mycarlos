@@ -1,7 +1,7 @@
 import { translate } from "./support/fluent";
 import { expect, test, type Page } from "@playwright/test";
 
-// #124 review points: Clinic documents in Security at 360 px, at 100% and
+// #124 review points: Connected clinics in Security at 360 px, at 100% and
 // 200% default text. The native side is faked with one FAKE clinic whose
 // device is approved, or with no clinic linked; any command this view should
 // not send fails the test.
@@ -56,6 +56,21 @@ async function fakeNative(page: Page, locale: string, linked = true) {
           command === "plugin:window|set_theme"
         )
           return;
+        // Video (#359): nothing waiting to be finished, and no document
+        // starts as an MP4 does.
+        if (command === "vault_video_pending")
+          return { recordings: [], unreadable: 0 };
+        if (command === "vault_is_video") return false;
+        // The backup's size, with and without videos (#359): no video here.
+        if (command === "vault_backup_size")
+          return {
+            totalBytes: 4096,
+            withoutVideosBytes: 4096,
+            videoBytes: 0,
+            videoCount: 0,
+          };
+        if (command === "vault_left_out_records") return [];
+
         // Files shared to myCarlos are looked for on focus (#49): none.
         if (command === "received_list")
           return { files: [], notice: { dropped: 0, refusedShares: 0 } };
@@ -81,7 +96,7 @@ const rootSize = (page: Page) =>
   page.evaluate(() => getComputedStyle(document.documentElement).fontSize);
 
 for (const text of [16, 32])
-  test(`gives Clinic documents Security's heading size at 360px with ${text}px default text`, async ({
+  test(`gives Connected clinics Security's heading size at 360px with ${text}px default text`, async ({
     page,
     context,
   }, testInfo) => {
@@ -92,7 +107,7 @@ for (const text of [16, 32])
     await fakeNative(page, "en");
     await page.goto("/");
     await openSecurity(page, "en");
-    const title = page.getByRole("heading", { name: "Clinic documents" });
+    const title = page.getByRole("heading", { name: "Connected clinics" });
     await expect(title).toBeVisible();
     expect(await rootSize(page)).toBe(`${text}px`);
     const sizes = await page.evaluate(() => {

@@ -178,12 +178,17 @@ export interface PlaceholderNotes {
   daysAfter: (days: number, label: string, number: number) => string;
   /** An age of 90 or over: the age itself stays on the device. */
   ageOver90: string;
+  /** A person's name written in another form than the first one the text showed ("Bell" after
+   * "Peter Bell"): the first other form is 1, the next 2. The number before it still names the
+   * person; the note only keeps the forms apart so each is put back as it was written. */
+  otherForm: (n: number) => string;
 }
 
 export const DEFAULT_NOTES: PlaceholderNotes = {
   daysAfter: (days, label, number) =>
     `${days} ${days === 1 ? "day" : "days"} after ${label} ${number}`,
   ageOver90: "90+",
+  otherForm: (n) => `other form ${n}`,
 };
 
 export const DEFAULT_LABELS: PlaceholderLabels = {
@@ -4797,6 +4802,7 @@ function build(
     }
     return number;
   };
+  const formsOf = new Map<string, Map<string, number>>();
   const placeholder = (finding: Finding, original: string) => {
     const kind = finding.kind as Exclude<RemovedKind, "manual">;
     // A doctor is one placeholder by surname: "Dr. Blake Sample" and "Dr.
@@ -4812,11 +4818,31 @@ function build(
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
     const number = numberFor(kind, kind, identity);
-    return noted(
-      labels[kind],
-      number,
-      kind === "age" ? notes.ageOver90 : undefined,
-    );
+    // A known person written in another form (a surname after the full name, or the full name
+    // after a surname) keeps the person's number and takes a note of its own: paste-back puts
+    // each placeholder back as the words that stood there, never the first form's words.
+    let note = kind === "age" ? notes.ageOver90 : undefined;
+    if (kind === "name" && finding.person) {
+      const form = [
+        ...new Set(
+          fold(original)
+            .toLowerCase()
+            .split(/[^\p{L}\p{N}'’-]+/u)
+            .filter(Boolean),
+        ),
+      ]
+        .sort()
+        .join(" ");
+      const forms = formsOf.get(finding.person) ?? new Map<string, number>();
+      formsOf.set(finding.person, forms);
+      let index = forms.get(form);
+      if (index === undefined) {
+        index = forms.size;
+        forms.set(form, index);
+      }
+      if (index > 0) note = notes.otherForm(index);
+    }
+    return noted(labels[kind], number, note);
   };
 
   // Dates (#72): none is sent. Each distinct whole date gets a number in
@@ -4856,6 +4882,36 @@ function build(
     const number = numberFor("date", "unclearDate", `date:${iso}`);
     if (earliest && iso === earliest[0]) earliestNumber = number;
   });
+  // A day and a month with no year ("Jan 28", "14 février", "2月14日") is numbered in month-and-day
+  // order after the dated ones, whichever the text names first, so "Jan 28" comes before "Feb 14".
+  // Nothing says which year each belongs to, so none is given and no gap is counted: the order
+  // among them is the calendar order within one year, and says nothing about the dated ones.
+  //
+  // Unless they run across the new year: "Seen Dec 28; review Jan 4" is probably Jan 4 of the next
+  // year, so numbering Jan 4 below Dec 28 would tell an AI that reads lower numbers as earlier that
+  // the review came first. When a yearless date named later in the text falls six or more months
+  // before one named earlier, the calendar order within one year is not known to be the order in
+  // time, and they keep the order the text names them in.
+  const inTextOrder = [
+    ...new Set(
+      [...readings.values()]
+        .filter((reading) => reading.kind === "partial")
+        .map((reading) => reading.key)
+        .filter((key) => key.startsWith("md")),
+    ),
+  ];
+  const monthOf = (key: string) => Number(key.slice(2, 4));
+  const crossesNewYear = inTextOrder.some((later, at) =>
+    inTextOrder
+      .slice(0, at)
+      .some((earlier) => monthOf(earlier) - monthOf(later) >= 6),
+  );
+  const yearless = crossesNewYear ? inTextOrder : [...inTextOrder].sort();
+  for (const key of yearless)
+    numberFor("date", "unclearDate", `partial:${key}`);
+  // Other partial dates (a month and year, a year alone) are not numbered above: each takes the next
+  // number as it is first met in the text, after the dated and yearless ones, with no gap (nothing
+  // says how far each is from another date, and their order in the text is the only order known).
   const datePlaceholder = (reading: DateReading) => {
     if (reading.kind === "full") {
       const number = numberFor("date", "unclearDate", `date:${reading.iso}`);
@@ -5151,6 +5207,7 @@ interface Mark {
   number: number;
   ageOver90?: true;
   daysAfter?: { days: number; ref: number };
+  otherForm?: number;
 }
 
 function readMark(
@@ -5169,6 +5226,15 @@ function readMark(
   const note = inner[2];
   if (note === undefined) return { number };
   if (note === notes.ageOver90) return { number, ageOver90: true };
+  // Another form of a name ("other form 2"): read the number from the note's digits and check that
+  // the note is exactly what this export's words write for it, so no wording is formatted blind
+  // and a hundredth form reads as well as the second.
+  const formDigits = /^\D*(\d+)\D*$/u.exec(note);
+  if (formDigits) {
+    const n = Number(formDigits[1]);
+    if (Number.isSafeInteger(n) && n >= 1 && notes.otherForm(n) === note)
+      return { number, otherForm: n };
+  }
   // A gap note: find its two numbers by writing it again. A language may
   // group the digits of a long gap ("1,234", "1 234").
   const values = new Set<number>();
@@ -5206,13 +5272,15 @@ function spellings(
   const noteIn = (language: PlaceholderVocabulary) =>
     mark.ageOver90
       ? language.notes.ageOver90
-      : mark.daysAfter
-        ? language.notes.daysAfter(
-            mark.daysAfter.days,
-            language.labels.unclearDate,
-            mark.daysAfter.ref,
-          )
-        : undefined;
+      : mark.otherForm
+        ? language.notes.otherForm(mark.otherForm)
+        : mark.daysAfter
+          ? language.notes.daysAfter(
+              mark.daysAfter.days,
+              language.labels.unclearDate,
+              mark.daysAfter.ref,
+            )
+          : undefined;
   const result = new Set<string>();
   for (const language of languages) {
     const word = language.labels[kind];
@@ -5239,9 +5307,11 @@ export interface RestoredPart {
  * (#72), on the device, and says what it could not (never guessing): each
  * placeholder of this export, written exactly as it was sent, becomes what it
  * stood for. A placeholder-shaped text that is not one of this export's, or
- * one of this export's whose note after the number was changed or left out,
- * is left as written and marked "flagged". A date that stood in several
- * spellings comes back as the first one. Ambiguous placeholders from older
+ * one of this export's whose note after the number was changed, is left as
+ * written and marked "flagged". A name's note that was left out is not an
+ * error: "[NAME 1]" is put back as the first form of that person seen (the
+ * note only tells the other forms apart), never as words the text did not
+ * have. A date that stood in several spellings comes back as the first one. Ambiguous placeholders from older
  * snapshots (literal source markers or conflicting manual IDs) stay
  * unresolved, and are flagged.
  *
