@@ -1,11 +1,15 @@
 {
-  "about": "Shared cases for putting placeholders back into an AI answer (#72). Run by the TypeScript restoreChecked (src/deidentify/restoreFixture.test.ts) and by the Rust restore (src-tauri/src/cloud_ai/restore.rs), so the two cannot drift. English words only; FAKE names and dates only. `removed` is in text order: what each placeholder stood for. A placeholder is put back as the FIRST original written for it; anything placeholder-shaped that is not exactly one of these is left as written and listed in `flagged`.",
+  "about": "Shared cases for putting placeholders back into an AI answer (#72). Run by the TypeScript restoreChecked (src/deidentify/restoreFixture.test.ts) and by the Rust restore (src-tauri/src/cloud_ai/restore.rs), so the two cannot drift. English words only; FAKE names and dates only. `removed` is in text order: what each placeholder stood for. A placeholder is put back as the FIRST original written for it; anything placeholder-shaped that is not exactly one of these is left as written and listed in `flagged`. `source` (optional) is the document's own text: a mark whose base already stands in it is never put back.",
   "labels": ["NAME", "DATE", "AGE"],
   "cases": [
     {
       "name": "a placeholder is put back, and each one every time it stands",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        }
       ],
       "answer": "[NAME 1] has a fever. Ask whether [NAME 1] needs a visit.",
       "text": "FAKE Peter Bell has a fever. Ask whether FAKE Peter Bell needs a visit.",
@@ -14,8 +18,16 @@
     {
       "name": "two people and the longer number first",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Ann Cole" },
-        { "kind": "name", "replacement": "[NAME 10]", "original": "FAKE Sam Reed" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Ann Cole"
+        },
+        {
+          "kind": "name",
+          "replacement": "[NAME 10]",
+          "original": "FAKE Sam Reed"
+        }
       ],
       "answer": "[NAME 10] and [NAME 1] were seen.",
       "text": "FAKE Sam Reed and FAKE Ann Cole were seen.",
@@ -24,8 +36,16 @@
     {
       "name": "another form of the same person keeps its own words",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" },
-        { "kind": "name", "replacement": "[NAME 1, other form 1]", "original": "FAKE Bell" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        },
+        {
+          "kind": "name",
+          "replacement": "[NAME 1, other form 1]",
+          "original": "FAKE Bell"
+        }
       ],
       "answer": "[NAME 1, other form 1] is stable; [NAME 1] agreed.",
       "text": "FAKE Bell is stable; FAKE Peter Bell agreed.",
@@ -34,7 +54,11 @@
     {
       "name": "a possessive stays outside the placeholder",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        }
       ],
       "answer": "[NAME 1]'s chart says [NAME 1]'s test was normal.",
       "text": "FAKE Peter Bell's chart says FAKE Peter Bell's test was normal.",
@@ -43,8 +67,16 @@
     {
       "name": "a date with its note is put back exactly as sent",
       "removed": [
-        { "kind": "date", "replacement": "[DATE 1]", "original": "2026-01-10" },
-        { "kind": "date", "replacement": "[DATE 2, 14 days after DATE 1]", "original": "2026-01-24" }
+        {
+          "kind": "date",
+          "replacement": "[DATE 1]",
+          "original": "2026-01-10"
+        },
+        {
+          "kind": "date",
+          "replacement": "[DATE 2, 14 days after DATE 1]",
+          "original": "2026-01-24"
+        }
       ],
       "answer": "Seen [DATE 1], review [DATE 2, 14 days after DATE 1].",
       "text": "Seen 2026-01-10, review 2026-01-24.",
@@ -53,8 +85,16 @@
     {
       "name": "a changed or dropped note is left as written and flagged",
       "removed": [
-        { "kind": "date", "replacement": "[DATE 1]", "original": "2026-01-10" },
-        { "kind": "date", "replacement": "[DATE 2, 14 days after DATE 1]", "original": "2026-01-24" }
+        {
+          "kind": "date",
+          "replacement": "[DATE 1]",
+          "original": "2026-01-10"
+        },
+        {
+          "kind": "date",
+          "replacement": "[DATE 2, 14 days after DATE 1]",
+          "original": "2026-01-24"
+        }
       ],
       "answer": "Review [DATE 2, 15 days after DATE 1] or [DATE 2].",
       "text": "Review [DATE 2, 15 days after DATE 1] or [DATE 2].",
@@ -63,7 +103,11 @@
     {
       "name": "a placeholder that is not this export's is flagged, never guessed",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        }
       ],
       "answer": "[NAME 1] and [NAME 9] and [CLINIC 3] met.",
       "text": "FAKE Peter Bell and [NAME 9] and [CLINIC 3] met.",
@@ -72,8 +116,16 @@
     {
       "name": "near misses are flagged: other brackets, case, and a bare mark",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" },
-        { "kind": "date", "replacement": "[DATE 2]", "original": "2026-02-02" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        },
+        {
+          "kind": "date",
+          "replacement": "[DATE 2]",
+          "original": "2026-02-02"
+        }
       ],
       "answer": "(NAME 1) saw [name 1] on DATE 2 and [ DATE 2 ].",
       "text": "(NAME 1) saw [name 1] on DATE 2 and [ DATE 2 ].",
@@ -82,7 +134,11 @@
     {
       "name": "words that only look like a mark are plain text",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        }
       ],
       "answer": "The name 1 is common. A [list] of items, [1] and the DATES 2025.",
       "text": "The name 1 is common. A [list] of items, [1] and the DATES 2025.",
@@ -91,8 +147,16 @@
     {
       "name": "the first original written for a placeholder wins",
       "removed": [
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE Peter Bell" },
-        { "kind": "name", "replacement": "[NAME 1]", "original": "FAKE PETER BELL" }
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        },
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE PETER BELL"
+        }
       ],
       "answer": "[NAME 1] came.",
       "text": "FAKE Peter Bell came.",
@@ -103,6 +167,70 @@
       "removed": [],
       "answer": "The result is within range.",
       "text": "The result is within range.",
+      "flagged": []
+    },
+    {
+      "name": "a mark that already stands in the document's own text is not put back",
+      "source": "The form says [NAME 1] in its header.",
+      "removed": [
+        {
+          "kind": "name",
+          "replacement": "[NAME 1]",
+          "original": "FAKE Peter Bell"
+        }
+      ],
+      "answer": "[NAME 1] was seen.",
+      "text": "[NAME 1] was seen.",
+      "flagged": ["[NAME 1]"]
+    },
+    {
+      "name": "a mark whose note-less base stands in the source is not put back",
+      "source": "see [NAME 1] above",
+      "removed": [
+        {
+          "kind": "name",
+          "replacement": "[NAME 1, other form 1]",
+          "original": "FAKE Bell"
+        }
+      ],
+      "answer": "[NAME 1, other form 1] is stable.",
+      "text": "[NAME 1, other form 1] is stable.",
+      "flagged": ["[NAME 1, other form 1]"]
+    },
+    {
+      "name": "a manual mark given to two different details is not put back",
+      "removed": [
+        {
+          "kind": "manual",
+          "replacement": "[NAME 5]",
+          "original": "FAKE Ann Cole"
+        },
+        {
+          "kind": "manual",
+          "replacement": "[NAME 5]",
+          "original": "FAKE Sam Reed"
+        }
+      ],
+      "answer": "[NAME 5] came.",
+      "text": "[NAME 5] came.",
+      "flagged": ["[NAME 5]"]
+    },
+    {
+      "name": "an automatic name shared by two spellings is still put back as the first",
+      "removed": [
+        {
+          "kind": "name",
+          "replacement": "[NAME 5]",
+          "original": "FAKE Ann Cole"
+        },
+        {
+          "kind": "name",
+          "replacement": "[NAME 5]",
+          "original": "FAKE A. Cole"
+        }
+      ],
+      "answer": "[NAME 5] came.",
+      "text": "FAKE Ann Cole came.",
       "flagged": []
     }
   ]

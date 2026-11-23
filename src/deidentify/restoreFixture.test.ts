@@ -13,6 +13,7 @@ import {
 
 const sentFor = (
   removed: { kind: string; replacement: string; original: string }[],
+  source = "",
 ): Deidentified => {
   const parts = removed.map((part, index) => ({
     kind: part.kind as RemovedKind | "date",
@@ -31,7 +32,7 @@ const sentFor = (
       dayFirst: true,
       labels: DEFAULT_LABELS,
       notes: DEFAULT_NOTES,
-      source: "",
+      source,
       cleaning: { replacedRuns: 0, droppedCodePoints: 0 },
     },
   } as unknown as Deidentified;
@@ -46,7 +47,10 @@ describe("the shared restore cases (#72)", () => {
   it.each(fixture.cases.map((entry) => [entry.name, entry] as const))(
     "%s",
     (_name, entry) => {
-      const result = restoreChecked(entry.answer, sentFor(entry.removed));
+      const result = restoreChecked(
+        entry.answer,
+        sentFor(entry.removed, "source" in entry ? entry.source : ""),
+      );
       expect(result.text).toBe(entry.text);
       expect(result.flagged).toEqual(entry.flagged);
     },

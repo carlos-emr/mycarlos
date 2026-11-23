@@ -8,13 +8,126 @@
 //! step by one shared fixture, `tests/fixtures/cloud-restore-cases.json`, that this module's test
 //! and `src/deidentify/restoreFixture.test.ts` both run.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-/// What one placeholder of this export stood for.
-#[derive(Clone, Debug)]
+use zeroize::Zeroize;
+
+/// The most placeholders, and the most bytes of replacement and of original, a send may carry
+/// (the page supplies them; `validate_removed` is the native side's check).
+pub(crate) const MAX_REMOVED: usize = 5_000;
+const MAX_REPLACEMENT_BYTES: usize = 120;
+const MAX_ORIGINAL_BYTES: usize = 2_000;
+const MAX_ORIGINALS_TOTAL_BYTES: usize = 512 * 1024;
+/// The document's own text, as the page read it, for the "marker already in the source" rule.
+pub(crate) const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
+
+/// What one placeholder of this export stood for. Personal text: zeroed on drop, never printed.
+#[derive(Clone)]
 pub(crate) struct Removed {
     pub replacement: String,
     pub original: String,
+    /// A mark the patient added by hand (kind "manual"): old snapshots could give one mark to two
+    /// different details, and then it is not put back.
+    pub manual: bool,
+}
+
+impl Drop for Removed {
+    fn drop(&mut self) {
+        self.original.zeroize();
+        self.replacement.zeroize();
+    }
+}
+
+impl std::fmt::Debug for Removed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Removed(..)")
+    }
+}
+
+/// Why the list the page sent is refused.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RemovedError {
+    TooMany,
+    TooLarge,
+    /// A replacement that is not exactly one placeholder of a known word, or that does not stand
+    /// in the text that was sent.
+    BadReplacement,
+    /// An original that is empty or holds a forbidden code point.
+    BadOriginal,
+    BadLabels,
+}
+
+/// The placeholder words ("NAME", "DATE"): a few short plain words.
+pub(crate) fn labels_ok(labels: &[String]) -> bool {
+    !labels.is_empty()
+        && labels.len() <= 16
+        && labels.iter().all(|word| {
+            !word.is_empty()
+                && word.len() <= 32
+                && !word.starts_with(|c: char| c.is_ascii_digit())
+                && !word
+                    .chars()
+                    .any(|c| c.is_control() || matches!(c, '[' | ']' | ',' | ' ' | '(' | ')'))
+        })
+}
+
+/// What the native side can check of a list it did not make: every replacement is exactly one
+/// placeholder of this export's words and stands in the text that is being sent, the sizes are
+/// bounded, and no original holds a forbidden code point. It cannot know that an original is what
+/// the document said at that place (the page holds the document), so a compromised page can still
+/// choose what a mark stands for: that is the stated residual of AI-06, not a check made here.
+pub(crate) fn validate_removed(
+    removed: &[Removed],
+    sent: &str,
+    labels: &[String],
+) -> Result<(), RemovedError> {
+    if !labels_ok(labels) {
+        return Err(RemovedError::BadLabels);
+    }
+    if removed.len() > MAX_REMOVED {
+        return Err(RemovedError::TooMany);
+    }
+    let mut total = 0usize;
+    for part in removed {
+        if part.replacement.len() > MAX_REPLACEMENT_BYTES
+            || part.original.len() > MAX_ORIGINAL_BYTES
+        {
+            return Err(RemovedError::TooLarge);
+        }
+        total += part.original.len();
+        if total > MAX_ORIGINALS_TOTAL_BYTES {
+            return Err(RemovedError::TooLarge);
+        }
+        if part.original.is_empty()
+            || !crate::text_recheck::forbidden_ranges(&part.original).is_empty()
+        {
+            return Err(RemovedError::BadOriginal);
+        }
+        let exact = placeholder_shape(&part.replacement) == Some(part.replacement.len());
+        let word = part
+            .replacement
+            .strip_prefix('[')
+            .and_then(|inner| inner.split(' ').next());
+        if !exact
+            || !word.is_some_and(|word| labels.iter().any(|label| label == word))
+            || !sent.contains(part.replacement.as_str())
+        {
+            return Err(RemovedError::BadReplacement);
+        }
+    }
+    Ok(())
+}
+
+/// The mark without its note: "[DATE 2, 14 days after DATE 1]" is "[DATE 2]" (the page's `baseOf`).
+fn base_of(replacement: &str) -> String {
+    let Some(body) = replacement.strip_suffix(']') else {
+        return replacement.to_owned();
+    };
+    let boundary = body.rfind(['[', ']']).map_or(0, |at| at + 1);
+    match body[boundary..].find(',') {
+        Some(comma) => format!("{}]", &body[..boundary + comma]),
+        None => replacement.to_owned(),
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -25,12 +138,47 @@ pub(crate) struct Restored {
 }
 
 /// `labels` are this export's placeholder words ("NAME", "DATE"): a mark written with one of them
-/// and a number, in brackets or bare, is flagged when it is not exactly one of the keys.
-pub(crate) fn restore(answer: &str, removed: &[Removed], labels: &[&str]) -> Restored {
+/// and a number, in brackets or bare, is flagged when it is not exactly one of the keys. `source`
+/// is the document's text: a mark whose base already stands in it, and a manual mark given to two
+/// different details, are never put back (the page's two "ambiguous marker" rules).
+pub(crate) fn restore(
+    answer: &str,
+    removed: &[Removed],
+    source: &str,
+    labels: &[&str],
+) -> Restored {
     let mut back: HashMap<&str, &str> = HashMap::new();
+    let manual: HashSet<&str> = removed
+        .iter()
+        .filter(|part| part.manual)
+        .map(|part| part.replacement.as_str())
+        .collect();
+    let mut conflicting: HashSet<&str> = HashSet::new();
     for part in removed {
-        back.entry(part.replacement.as_str())
-            .or_insert(part.original.as_str());
+        // An empty mark would match everywhere and never advance.
+        if part.replacement.is_empty() {
+            continue;
+        }
+        match back.get(part.replacement.as_str()) {
+            Some(previous) => {
+                if manual.contains(part.replacement.as_str()) && *previous != part.original {
+                    conflicting.insert(part.replacement.as_str());
+                }
+            }
+            None => {
+                back.insert(part.replacement.as_str(), part.original.as_str());
+            }
+        }
+    }
+    for part in removed {
+        let base = base_of(&part.replacement);
+        let comma_form = format!("{},", base.trim_end_matches(']'));
+        if conflicting.contains(part.replacement.as_str())
+            || source.contains(&base)
+            || source.contains(&comma_form)
+        {
+            back.remove(part.replacement.as_str());
+        }
     }
     // Longest first, so "[NAME 1]" never stands inside "[NAME 10]"'s place.
     let mut keys: Vec<&str> = back.keys().copied().collect();
@@ -177,9 +325,11 @@ mod tests {
                 .map(|part| Removed {
                     replacement: part["replacement"].as_str().unwrap().to_owned(),
                     original: part["original"].as_str().unwrap().to_owned(),
+                    manual: part["kind"] == "manual",
                 })
                 .collect();
-            let result = restore(case["answer"].as_str().unwrap(), &removed, &labels);
+            let source = case["source"].as_str().unwrap_or("");
+            let result = restore(case["answer"].as_str().unwrap(), &removed, source, &labels);
             let name = case["name"].as_str().unwrap();
             assert_eq!(result.text, case["text"].as_str().unwrap(), "{name}");
             let flagged: Vec<&str> = case["flagged"]
@@ -198,15 +348,18 @@ mod tests {
             Removed {
                 replacement: "[NAME 1]".into(),
                 original: "FAKE Peter Bell".into(),
+                manual: false,
             },
             Removed {
                 replacement: "[NAME 1, other form 1]".into(),
                 original: "FAKE Bell".into(),
+                manual: false,
             },
         ];
         let out = restore(
             "[NAME 1, other form 1], [NAME 1], [NAME 1, other form 1], [NAME 1].",
             &removed,
+            "",
             &["NAME"],
         );
         assert_eq!(
@@ -218,8 +371,95 @@ mod tests {
 
     #[test]
     fn text_with_multibyte_characters_and_no_marks_passes_through() {
-        let out = restore("Résumé: 患者は元気です。[NAME 1]é", &[], &["NAME"]);
+        let out = restore("Résumé: 患者は元気です。[NAME 1]é", &[], "", &["NAME"]);
         assert_eq!(out.text, "Résumé: 患者は元気です。[NAME 1]é");
         assert_eq!(out.flagged, ["[NAME 1]"]);
+    }
+
+    fn part(replacement: &str, original: &str) -> Removed {
+        Removed {
+            replacement: replacement.into(),
+            original: original.into(),
+            manual: false,
+        }
+    }
+
+    fn labels() -> Vec<String> {
+        vec!["NAME".into(), "DATE".into()]
+    }
+
+    #[test]
+    fn an_empty_replacement_neither_loops_nor_matches() {
+        let removed = [part("", "FAKE Peter Bell")];
+        let out = restore("the [NAME 1] saw the doctor", &removed, "", &["NAME"]);
+        assert_eq!(out.text, "the [NAME 1] saw the doctor");
+        assert_eq!(out.flagged, ["[NAME 1]"]);
+    }
+
+    #[test]
+    fn the_list_the_page_sends_is_checked_before_anything_is_kept() {
+        let sent = "Patient [NAME 1] on [DATE 2, 14 days after DATE 1].";
+        let good = [
+            part("[NAME 1]", "FAKE Peter Bell"),
+            part("[DATE 2, 14 days after DATE 1]", "2026-05-01"),
+        ];
+        assert_eq!(validate_removed(&good, sent, &labels()), Ok(()));
+        for bad in [
+            part("", "x"),
+            part("the", "FAKE text"),
+            part(" ", "x"),
+            part("[NAME 1] and more", "x"),
+            part("[NAME 9]", "FAKE Peter Bell"),
+            part("[OTHER 1]", "FAKE Peter Bell"),
+            part("[1 NAME]", "FAKE Peter Bell"),
+        ] {
+            assert_eq!(
+                validate_removed(&[bad], sent, &labels()),
+                Err(RemovedError::BadReplacement)
+            );
+        }
+        assert_eq!(
+            validate_removed(&[part("[NAME 1]", "")], sent, &labels()),
+            Err(RemovedError::BadOriginal)
+        );
+        assert_eq!(
+            validate_removed(&[part("[NAME 1]", "a\u{202e}b")], sent, &labels()),
+            Err(RemovedError::BadOriginal)
+        );
+        assert_eq!(
+            validate_removed(&[part("[NAME 1]", &"x".repeat(2_001))], sent, &labels()),
+            Err(RemovedError::TooLarge)
+        );
+        let many: Vec<Removed> = (0..=MAX_REMOVED)
+            .map(|_| part("[NAME 1]", "FAKE"))
+            .collect();
+        assert_eq!(
+            validate_removed(&many, sent, &labels()),
+            Err(RemovedError::TooMany)
+        );
+        assert_eq!(
+            validate_removed(&good, sent, &[]),
+            Err(RemovedError::BadLabels)
+        );
+        assert_eq!(
+            validate_removed(&good, sent, &["a b".to_owned()]),
+            Err(RemovedError::BadLabels)
+        );
+    }
+
+    #[test]
+    fn a_removed_part_never_prints_its_text() {
+        let shown = format!("{:?}", part("[NAME 1]", "FAKE Peter Bell"));
+        assert!(
+            !shown.contains("Peter") && !shown.contains("NAME"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn the_base_of_a_mark_drops_its_note() {
+        assert_eq!(base_of("[DATE 2, 14 days after DATE 1]"), "[DATE 2]");
+        assert_eq!(base_of("[NAME 1]"), "[NAME 1]");
+        assert_eq!(base_of("[NAME 1, other form 2]"), "[NAME 1]");
     }
 }

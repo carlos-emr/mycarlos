@@ -133,6 +133,12 @@ struct RawSentence {
     quote: String,
 }
 
+/// The provider's request id, when it is plain: kept on failures too, so a patient can quote it.
+pub(crate) fn clean_request_id(id: Option<&str>) -> Option<String> {
+    id.filter(|id| !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_graphic()))
+        .map(str::to_owned)
+}
+
 /// An answer, or why there is none.
 pub(crate) fn interpret(response: &ProviderResponse) -> Result<Answer, Failure> {
     match response.status {
@@ -191,10 +197,7 @@ pub(crate) fn interpret(response: &ProviderResponse) -> Result<Answer, Failure> 
     let usage = message.usage;
     Ok(Answer {
         sentences,
-        request_id: response
-            .request_id
-            .clone()
-            .filter(|id| id.len() <= 128 && id.bytes().all(|b| b.is_ascii_graphic())),
+        request_id: clean_request_id(response.request_id.as_deref()),
         input_tokens: usage.as_ref().and_then(|usage| usage.input_tokens),
         output_tokens: usage.as_ref().and_then(|usage| usage.output_tokens),
     })

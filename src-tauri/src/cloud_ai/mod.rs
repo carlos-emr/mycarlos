@@ -23,3 +23,10 @@ pub(crate) mod request;
 pub(crate) mod response;
 pub(crate) mod restore;
 pub(crate) mod send;
+
+// Until the live contract check pins the VERIFY values (the `anthropic-version` header and the
+// shape of `output_config.format`, see TESTING.md), a release build cannot have the feature on.
+#[cfg(all(feature = "cloud-ai", not(debug_assertions)))]
+compile_error!(
+    "the cloud-ai feature is not for release builds until the VERIFY values in cloud_ai/request.rs are pinned (#72)"
+);

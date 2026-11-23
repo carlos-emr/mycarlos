@@ -16,10 +16,11 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::request::{self, build_summary_request, Estimate, ProviderRequest, RequestError};
-use super::response::{interpret, Failure, ProviderResponse};
-use super::restore::{restore, Removed};
+use super::response::{clean_request_id, interpret, Failure, ProviderResponse};
+use super::restore::{self, restore, Removed, RemovedError};
 use crate::history::{HistoryEntry, HistoryEvent};
 use crate::text_recheck::{self, Hit};
+use crate::ui_text::UiLocale;
 use crate::vault::{KnownIdentifiers, VaultError, VaultStore};
 
 /// Why a request got no response at all.
@@ -105,6 +106,8 @@ pub(crate) enum PrepareError {
     Recheck(Vec<Hit>),
     UnknownModel,
     BadText,
+    /// The list of what was removed, or the placeholder words, failed the native check.
+    BadRemoved(RemovedError),
     Vault(VaultError),
 }
 
@@ -115,7 +118,10 @@ pub(crate) struct Prepared {
     key_id: Uuid,
     model_id: &'static str,
     model_label: &'static str,
-    language: String,
+    language: UiLocale,
+    labels: Vec<String>,
+    /// The document's own text, for the paste-back's ambiguous-marker rule.
+    source: Zeroizing<String>,
     text: Zeroizing<String>,
     removed: Vec<Removed>,
     estimate: Estimate,
@@ -137,16 +143,34 @@ impl Prepared {
     }
 }
 
+/// What the page asks to send. Everything in it is checked by `prepare`; none is believed.
+pub(crate) struct PrepareRequest<'a> {
+    pub record_id: Uuid,
+    pub key_id: Uuid,
+    pub model_id: &'a str,
+    pub language: UiLocale,
+    pub text: &'a str,
+    /// The document's own text, for the paste-back's ambiguous-marker rule.
+    pub source: &'a str,
+    pub labels: Vec<String>,
+    pub removed: Vec<Removed>,
+}
+
 /// Re-checks `text` and keeps it for one send. The checks are a save's: a hit refuses.
 pub(crate) fn prepare(
     vault: &impl SendVault,
-    record_id: Uuid,
-    key_id: Uuid,
-    model_id: &str,
-    language: &str,
-    text: &str,
-    removed: Vec<Removed>,
+    request: PrepareRequest<'_>,
 ) -> Result<Prepared, PrepareError> {
+    let PrepareRequest {
+        record_id,
+        key_id,
+        model_id,
+        language,
+        text,
+        source,
+        labels,
+        removed,
+    } = request;
     let model = request::model(model_id).ok_or(PrepareError::UnknownModel)?;
     if text.is_empty() || text.len() > request::MAX_TEXT_BYTES {
         return Err(PrepareError::BadText);
@@ -167,6 +191,11 @@ pub(crate) fn prepare(
     if !hits.is_empty() {
         return Err(PrepareError::Recheck(hits));
     }
+    // The list the page sent is checked here: nothing else it says is believed.
+    if source.len() > restore::MAX_SOURCE_BYTES {
+        return Err(PrepareError::BadText);
+    }
+    restore::validate_removed(&removed, text, &labels).map_err(PrepareError::BadRemoved)?;
     // The key must exist (and be readable) now, so that a send does not fail late.
     vault.key_label(key_id).map_err(PrepareError::Vault)?;
     Ok(Prepared {
@@ -174,7 +203,9 @@ pub(crate) fn prepare(
         key_id,
         model_id: model.id,
         model_label: model.label,
-        language: language.to_owned(),
+        language,
+        labels,
+        source: Zeroizing::new(source.to_owned()),
         text: Zeroizing::new(text.to_owned()),
         removed,
         estimate: request::estimate(text, model),
@@ -182,13 +213,36 @@ pub(crate) fn prepare(
 }
 
 /// A sentence of the answer, with the real details put back.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct RestoredSentence {
     pub text: String,
     pub quote: String,
 }
 
-#[derive(Debug)]
+impl Drop for RestoredSentence {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.text.zeroize();
+        self.quote.zeroize();
+    }
+}
+
+impl std::fmt::Debug for RestoredSentence {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RestoredSentence(..)")
+    }
+}
+
+impl std::fmt::Debug for Sent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Sent")
+            .field("sentences", &self.sentences.len())
+            .field("flagged", &self.flagged.len())
+            .finish()
+    }
+}
+
 pub(crate) struct Sent {
     pub sentences: Vec<RestoredSentence>,
     /// Placeholder-shaped text that was not put back, as written: for the screen to mark.
@@ -219,7 +273,7 @@ fn event(kind: HistoryEvent, record: Uuid, at_ms: u64) -> HistoryEntry {
 }
 
 /// Confirms, records, sends, validates, restores and records the answer. `now_ms` is the clock
-/// (a fake in tests). `labels` are the placeholder words of the export (for the restore).
+/// (a fake in tests).
 pub(crate) fn send(
     vault: &impl SendVault,
     transport: &impl Transport,
@@ -227,7 +281,6 @@ pub(crate) fn send(
     prepared: Prepared,
     cancel: &AtomicBool,
     now_ms: impl Fn() -> u64,
-    labels: &[&str],
 ) -> Result<Sent, SendError> {
     if cancel.load(Ordering::Acquire) {
         return Err(SendError::Failed(Failure::Cancelled));
@@ -253,7 +306,7 @@ pub(crate) fn send(
     let provider_request = build_summary_request(
         &secret,
         prepared.model_id,
-        &prepared.language,
+        prepared.language,
         &prepared.text,
     )
     .map_err(SendError::Request)?;
@@ -264,8 +317,13 @@ pub(crate) fn send(
     sent.detail = Some(prepared.model_id.to_owned());
     vault.record(sent).map_err(SendError::History)?;
 
+    // The provider's request id is kept on failures too: it is how the patient quotes the call.
+    let mut failed_request_id = None;
     let outcome = match transport.send(&provider_request, cancel) {
-        Ok(response) => interpret(&response).map(|answer| (answer, response.request_id.clone())),
+        Ok(response) => {
+            failed_request_id = clean_request_id(response.request_id.as_deref());
+            interpret(&response).map(|answer| (answer, response.request_id.clone()))
+        }
         Err(TransportFailure::Cancelled) => Err(Failure::Cancelled),
         Err(TransportFailure::Unreachable { maybe_arrived }) => {
             Err(Failure::Unreachable { maybe_arrived })
@@ -286,7 +344,12 @@ pub(crate) fn send(
                     .map_or("-".to_owned(), |n| n.to_string()),
             ));
         }
-        Err(failure) => answered.detail = Some(failure.name().to_owned()),
+        Err(failure) => {
+            answered.detail = Some(match &failed_request_id {
+                Some(id) => format!("{} {id}", failure.name()),
+                None => failure.name().to_owned(),
+            })
+        }
     }
     // The answer is not lost for want of a second entry.
     let _ = vault.record(answered);
@@ -294,7 +357,8 @@ pub(crate) fn send(
     let (answer, _) = outcome.map_err(SendError::Failed)?;
     let mut flagged = Vec::new();
     let mut put_back = |text: &str| {
-        let restored = restore(text, &prepared.removed, labels);
+        let words: Vec<&str> = prepared.labels.iter().map(String::as_str).collect();
+        let restored = restore(text, &prepared.removed, &prepared.source, &words);
         flagged.extend(restored.flagged);
         restored.text
     };
@@ -444,18 +508,23 @@ mod tests {
         vec![Removed {
             replacement: "[NAME 1]".into(),
             original: "FAKE Morgan Example".into(),
+            manual: false,
         }]
     }
 
     fn prepared(vault: &FakeVault, text: &str) -> Result<Prepared, PrepareError> {
         prepare(
             vault,
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            "claude-opus-5-5",
-            "English",
-            text,
-            removed(),
+            PrepareRequest {
+                record_id: Uuid::new_v4(),
+                key_id: Uuid::new_v4(),
+                model_id: "claude-opus-5-5",
+                language: UiLocale::En,
+                text,
+                source: "",
+                labels: vec!["NAME".to_owned(), "DATE".to_owned()],
+                removed: removed(),
+            },
         )
     }
 
@@ -472,7 +541,6 @@ mod tests {
             prepared,
             &AtomicBool::new(false),
             || 5,
-            &["NAME", "DATE"],
         )
     }
 
@@ -605,12 +673,16 @@ mod tests {
         assert!(matches!(
             prepare(
                 &vault,
-                Uuid::new_v4(),
-                Uuid::new_v4(),
-                "gpt-4",
-                "English",
-                "x",
-                vec![]
+                PrepareRequest {
+                    record_id: Uuid::new_v4(),
+                    key_id: Uuid::new_v4(),
+                    model_id: "gpt-4",
+                    language: UiLocale::En,
+                    text: "x",
+                    source: "",
+                    labels: vec!["NAME".to_owned()],
+                    removed: vec![]
+                }
             ),
             Err(PrepareError::UnknownModel)
         ));
@@ -647,7 +719,12 @@ mod tests {
             // The send was recorded before, and the outcome after.
             let history = vault.history.borrow();
             assert_eq!(history.len(), 2);
-            assert_eq!(history[1].detail.as_deref(), Some(expected));
+            // A call that got a response keeps the provider's request id after the name.
+            let detail = history[1].detail.as_deref().unwrap();
+            assert!(
+                detail == expected || detail == format!("{expected} req_FAKE1"),
+                "{detail}"
+            );
         }
     }
 
@@ -662,15 +739,7 @@ mod tests {
         let prepared = prepared(&vault, "Patient [NAME 1] presents with fever.").unwrap();
         let cancelled = AtomicBool::new(true);
         assert!(matches!(
-            send(
-                &vault,
-                &transport,
-                &yes(),
-                prepared,
-                &cancelled,
-                || 5,
-                &["NAME"]
-            ),
+            send(&vault, &transport, &yes(), prepared, &cancelled, || 5,),
             Err(SendError::Failed(Failure::Cancelled))
         ));
         assert!(transport.calls.borrow().is_empty());
@@ -700,6 +769,55 @@ mod tests {
         assert!(
             !shown.contains("fever") && !shown.contains("NAME"),
             "{shown}"
+        );
+    }
+
+    #[test]
+    fn a_list_from_the_page_that_fails_the_native_check_refuses_the_prepare() {
+        let vault = FakeVault::new();
+        let go = |removed: Vec<Removed>| {
+            prepare(
+                &vault,
+                PrepareRequest {
+                    record_id: Uuid::new_v4(),
+                    key_id: Uuid::new_v4(),
+                    model_id: "claude-opus-5-5",
+                    language: UiLocale::En,
+                    text: "Patient [NAME 1] presents.",
+                    source: "",
+                    labels: vec!["NAME".to_owned()],
+                    removed,
+                },
+            )
+        };
+        let part = |replacement: &str| Removed {
+            replacement: replacement.to_owned(),
+            original: "FAKE Morgan Example".to_owned(),
+            manual: false,
+        };
+        // An empty mark (which once looped forever), a free word, and a mark not in the text.
+        for bad in ["", "the", "[NAME 7]"] {
+            assert!(
+                matches!(go(vec![part(bad)]), Err(PrepareError::BadRemoved(_))),
+                "{bad:?}"
+            );
+        }
+        assert!(go(vec![part("[NAME 1]")]).is_ok());
+        assert!(vault.history.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_failed_call_keeps_the_providers_request_id_in_its_history_entry() {
+        let vault = FakeVault::new();
+        let transport = FakeTransport {
+            vault: &vault,
+            calls: RefCell::new(vec![]),
+            reply: Ok((529, "{}".to_owned())),
+        };
+        let _ = run(&vault, &transport, &yes());
+        assert_eq!(
+            vault.history.borrow()[1].detail.as_deref(),
+            Some("busy req_FAKE1")
         );
     }
 }

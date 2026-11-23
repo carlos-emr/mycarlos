@@ -11,7 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::request::{ProviderRequest, CONNECT_SECONDS, HOST, TOTAL_SECONDS};
+use super::request::{
+    Method, ProviderRequest, CONNECT_SECONDS, MESSAGES_URL, MODELS_URL, TOTAL_SECONDS,
+};
 use super::response::{ProviderResponse, MAX_ANSWER_BYTES};
 use super::send::{Transport, TransportFailure};
 
@@ -47,19 +49,35 @@ impl Transport for HttpsTransport {
         request: &ProviderRequest,
         cancel: &AtomicBool,
     ) -> Result<ProviderResponse, TransportFailure> {
-        // Only the one host, whatever built the request.
-        if !request.url.starts_with(&format!("https://{HOST}/")) {
+        // Only the two addresses of the one host, whatever built the request.
+        let allowed = matches!(
+            (request.method, request.url),
+            (Method::Post, MESSAGES_URL) | (Method::Get, MODELS_URL)
+        );
+        if !allowed {
             return Err(TransportFailure::Unreachable {
                 maybe_arrived: false,
             });
         }
+        // Called only from a blocking thread (`spawn_blocking`), never from inside async code, so
+        // blocking on the runtime here cannot stall it.
         tauri::async_runtime::block_on(async {
             let client = client().map_err(|_| TransportFailure::Unreachable {
                 maybe_arrived: false,
             })?;
-            let mut builder = client.post(request.url).body(request.body.clone());
+            let mut builder = match request.method {
+                Method::Post => client.post(request.url).body(request.body.clone()),
+                Method::Get => client.get(request.url),
+            };
             for (name, value) in &request.headers {
-                builder = builder.header(*name, value.as_str());
+                // The key's header is marked sensitive so that no debug output or log can show it.
+                let mut value = reqwest::header::HeaderValue::from_str(value).map_err(|_| {
+                    TransportFailure::Unreachable {
+                        maybe_arrived: false,
+                    }
+                })?;
+                value.set_sensitive(*name == "x-api-key");
+                builder = builder.header(*name, value);
             }
             let pending = builder.send();
             tokio::pin!(pending);
