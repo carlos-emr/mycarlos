@@ -746,6 +746,10 @@ native-backup-noteEmptied = Plik w wybranym miejscu zapisu może być pusty lub 
 native-backup-noteUntouched = W wybranym miejscu zapisu może pozostać pusty plik (0 bajtów): można go usunąć. Proszę zachować każdą niepustą kopię zapasową.
 
 native-cancel = Anuluj
+native-cloud-send-title = Wysłać do { $provider }?
+native-cloud-send-body = Wysłać tekst dokumentu „{ $document }” do { $provider } ({ $host }), używając własnego klucza „{ $key }” i modelu { $model }? Wysyłany jest tylko tekst widoczny w podglądzie: około { $characters } znaków, około { $tokens } tokenów, za około { $cost }. O tym, jak długo { $provider } przechowuje tekst, decydują jego zasady dla Twojego konta; myCarlos ich nie widzi i nie może ich zmienić. Usunięte dane zostają na tym urządzeniu.
+native-cloud-send-keep = Nie wysyłaj
+native-cloud-send-go = Wyślij
 
 native-error-01 = myCarlos nie mógł teraz odczytać niektórych swoich plików, więc nie zapisano kopii zapasowej. Dokumenty nie zostały zmienione. Proszę zachować starsze kopie zapasowe i spróbować ponownie. Jeśli problem się powtórzy, proszę zamknąć i ponownie otworzyć myCarlos; na komputerze proszę także sprawdzić, czy dysk jest podłączony, oraz wstrzymać narzędzia synchronizacji lub program antywirusowy.
 
@@ -2540,3 +2544,11 @@ cloudAi-cancelled = Anulowano. Anthropic mógł już otrzymać tekst i może nal
 cloudAi-answerTitle = Odpowiedź
 cloudAi-answerLabel = Napisane przez AI, może zawierać błędy. Sprawdź to u lekarza.
 cloudAi-sendFailed = Nie udało się wysłać tekstu albo nie można było użyć odpowiedzi. Nic nie zostało zachowane.
+cloudAi-keyTest = Sprawdź ten klucz
+cloudAi-answerFlagged = Tych oznaczeń nie przywrócono, więc są pokazane tak, jak napisano: { $marks }.
+cloudAi-keyTestRunning = Sprawdzanie klucza…
+cloudAi-keyTestAccepted = Klucz został przyjęty.
+cloudAi-keyTestRejected = Klucz nie został przyjęty. Sprawdź go na swoim koncie.
+cloudAi-keyTestBusy = Usługa jest zajęta. Spróbuj później.
+cloudAi-keyTestUnexpected = Test dał nieoczekiwaną odpowiedź.
+cloudAi-keyTestUnreachable = Nie można połączyć się z usługą.

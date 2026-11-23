@@ -35,10 +35,37 @@ export interface CloudSendPrepared {
   modelLabel: string;
 }
 
-/** The answer, already checked and restored by the native side. */
+/** The answer, already checked and restored by the native side: each sentence with the quote it
+ * rests on, and any placeholder-shaped text that was not put back, as written. */
 export interface CloudSendAnswer {
-  text: string;
+  sentences: { text: string; quote: string }[];
+  flagged: string[];
 }
+
+/** What the page asks the native side to prepare. Everything in it is a claim the native side
+ * checks again (the re-check, the list of removed parts against the text, the language, the size);
+ * none of it is believed because the page said it. */
+export interface CloudPrepareRequest {
+  keyId: string;
+  recordId: string;
+  /** The app's language: the native side maps it to the language the answer is asked for in. */
+  language: string;
+  text: string;
+  /** The document's own text, for the paste-back's ambiguous-marker rule. */
+  source: string;
+  /** The placeholder words of this export ("NAME", "DATE"). */
+  labels: string[];
+  removed: { replacement: string; original: string; manual: boolean }[];
+}
+
+/** The key test's outcomes (`GET /v1/models`, no document). */
+export type CloudKeyTest =
+  | "accepted"
+  | "rejected"
+  | "busy"
+  | "unexpected"
+  | "unreachable"
+  | "cancelled";
 
 export interface CloudAiBridge {
   enabled: () => Promise<boolean>;
@@ -51,12 +78,11 @@ export interface CloudAiBridge {
     key: string;
   }) => Promise<CloudKeyInfo>;
   removeKey: (id: string) => Promise<void>;
+  /** The key test, only when the patient asks: one request with the key, no document. */
+  testKey: (id: string) => Promise<CloudKeyTest>;
   /** The native re-check and the size and cost, before anything is asked. A hit in the re-check
-   * rejects with `{ code: "recheck" }`. */
-  prepare: (request: {
-    keyId: string;
-    text: string;
-  }) => Promise<CloudSendPrepared>;
+   * rejects with `{ code: "recheck", hits }`. */
+  prepare: (request: CloudPrepareRequest) => Promise<CloudSendPrepared>;
   /** Sends one prepared text. Only the native side makes the request. */
   send: (exchangeId: string) => Promise<CloudSendAnswer>;
   /** Drops a prepared or running send. */
@@ -78,4 +104,13 @@ export function cloudKeyRefusal(error: unknown): CloudKeyRefusal | null {
       ? (error as { code?: unknown }).code
       : undefined;
   return REFUSALS.find((refusal) => refusal === code) ?? null;
+}
+
+/** The `code` an error from the native side carries, or null. */
+export function cloudErrorCode(error: unknown): string | null {
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return typeof code === "string" ? code : null;
 }

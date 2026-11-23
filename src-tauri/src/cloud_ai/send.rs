@@ -140,6 +140,10 @@ impl Prepared {
     pub(crate) fn estimate(&self) -> &Estimate {
         &self.estimate
     }
+
+    pub(crate) fn model_label(&self) -> &'static str {
+        self.model_label
+    }
 }
 
 /// What the page asks to send. Everything in it is checked by `prepare`; none is believed.

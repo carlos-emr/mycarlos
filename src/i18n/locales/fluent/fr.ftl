@@ -725,6 +725,10 @@ native-backup-noteEmptied = Le fichier à l’emplacement choisi peut être vide
 native-backup-noteUntouched = Un fichier vide (0 octet) peut rester à l’emplacement choisi; vous pouvez le supprimer. Conservez toute sauvegarde qui n’est pas vide.
 
 native-cancel = Annuler
+native-cloud-send-title = Envoyer à { $provider }?
+native-cloud-send-body = Envoyer le texte de « { $document } » à { $provider } ({ $host }), avec votre propre clé « { $key } » et le modèle { $model }? Seul le texte affiché dans l’aperçu est envoyé, environ { $characters } caractères, environ { $tokens } jetons, pour environ { $cost }. Les règles de { $provider } pour votre compte décident de la durée de conservation du texte; myCarlos ne peut ni les voir ni les modifier. Les renseignements retirés restent sur cet appareil.
+native-cloud-send-keep = Ne pas envoyer
+native-cloud-send-go = Envoyer
 
 native-error-01 = myCarlos n’a pas pu lire certains de ses fichiers à l’instant; aucune sauvegarde n’a donc été enregistrée. Vos documents n’ont pas été modifiés. Conservez vos anciennes sauvegardes. Réessayez. Si le problème se reproduit, fermez myCarlos et ouvrez-le de nouveau; sur un ordinateur, vérifiez aussi que le lecteur est connecté et suspendez tout outil de synchronisation ou antivirus.
 
@@ -2460,3 +2464,11 @@ cloudAi-cancelled = Annulé. Anthropic a peut-être déjà reçu le texte et peu
 cloudAi-answerTitle = Réponse
 cloudAi-answerLabel = Écrit par une IA, peut contenir des erreurs. Vérifiez auprès de votre médecin.
 cloudAi-sendFailed = Le texte n'a pas pu être envoyé, ou la réponse n'a pas pu être utilisée. Rien n'a été conservé.
+cloudAi-keyTest = Tester cette clé
+cloudAi-answerFlagged = Ces marques n’ont pas été remplacées et sont affichées telles quelles : { $marks }.
+cloudAi-keyTestRunning = Test de la clé…
+cloudAi-keyTestAccepted = La clé a été acceptée.
+cloudAi-keyTestRejected = La clé n’a pas été acceptée. Vérifiez-la dans votre compte.
+cloudAi-keyTestBusy = Le service est occupé. Réessayez plus tard.
+cloudAi-keyTestUnexpected = Le test a donné une réponse inattendue.
+cloudAi-keyTestUnreachable = Le service est inaccessible.

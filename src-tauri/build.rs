@@ -104,6 +104,18 @@ fn main() {
             "ai_summarize",
             "ai_explain",
             "ai_cancel",
+            // Declared in every build, granted by capabilities/cloud-ai.json, and registered only
+            // with the `cloud-ai` feature (src/cloud_ai/commands.rs): a build without it has the
+            // grants but no handlers, so a call is refused as an unknown command.
+            "cloud_ai_enabled",
+            "cloud_ai_set_enabled",
+            "cloud_key_list",
+            "cloud_key_add",
+            "cloud_key_remove",
+            "cloud_key_test",
+            "cloud_send_prepare",
+            "cloud_send",
+            "cloud_send_cancel",
             "kdf_benchmark",
             "vault_status",
             "vault_passphrase_rules",

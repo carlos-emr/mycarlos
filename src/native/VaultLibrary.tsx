@@ -1,3 +1,5 @@
+import { cloudAiBuild } from "../cloudAi";
+import { cloudAiNativeBridge } from "../cloudAiNative";
 import { missingDetails } from "./PersonDetails";
 import {
   useTextState,
@@ -2532,7 +2534,11 @@ export function VaultLibrary({
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "ai" && computer && (
-              <AiSettings aiStatus={aiStatus} onAiStatus={setAiStatus} />
+              <AiSettings
+                aiStatus={aiStatus}
+                onAiStatus={setAiStatus}
+                cloudAi={cloudAiBuild() ? cloudAiNativeBridge : null}
+              />
             )}
 
             {section === "security" && (
@@ -2820,6 +2826,7 @@ export function VaultLibrary({
             )}
           {anonymizeRecord && !aiNotice && (
             <AnonymizePreview
+              cloudAi={cloudAiBuild() ? cloudAiNativeBridge : null}
               record={anonymizeRecord}
               people={people}
               clinicNames={[

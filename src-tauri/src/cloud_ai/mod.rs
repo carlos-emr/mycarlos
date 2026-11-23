@@ -15,14 +15,21 @@
 //!   and the history entry for the answer. A `Transport` is the only thing that touches a network;
 //!   the tests supply a fake one.
 //!
-//! Not here, on purpose: the Tauri commands, the native dialog and the screens (later changes).
+//! - `keytest`: the explicit key test (`GET /v1/models`), no document;
+//! - `exchanges`: the one prepared send and the cancel flags;
+//! - `commands` (only with the feature): the Tauri commands and the native confirmation.
 
 #[cfg(feature = "cloud-ai")]
 pub(crate) mod client;
+pub(crate) mod exchanges;
+pub(crate) mod keytest;
 pub(crate) mod request;
 pub(crate) mod response;
 pub(crate) mod restore;
 pub(crate) mod send;
+
+#[cfg(feature = "cloud-ai")]
+pub(crate) mod commands;
 
 // Until the live contract check pins the VERIFY values (the `anthropic-version` header and the
 // shape of `output_config.format`, see TESTING.md), NO build may have the feature on (debug builds

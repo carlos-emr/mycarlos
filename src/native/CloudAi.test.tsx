@@ -5,10 +5,25 @@ import { humanText } from "../test/humanText";
 import type {
   CloudAiBridge,
   CloudKeyInfo,
+  CloudKeyTest,
+  CloudSendAnswer,
   CloudSendPrepared,
 } from "../cloudAi";
 import { CloudAiSetting } from "./CloudAiSetting";
 import { CloudSendStep } from "./CloudSendStep";
+
+// The step as the preview renders it: the text, the document's own text and what was removed.
+const Step = ({ bridge }: { bridge: CloudAiBridge }) => (
+  <CloudSendStep
+    bridge={bridge}
+    recordId="record-1"
+    text="FAKE text [NAME 1]"
+    source="FAKE text Morgan"
+    labels={["NAME"]}
+    removed={[{ replacement: "[NAME 1]", original: "Morgan", manual: false }]}
+    disabled={false}
+  />
+);
 
 // FAKE bridge: nothing here is a real key, a real network or a real vault.
 const FAKE_KEY = "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEa1b2";
@@ -21,6 +36,7 @@ function fakeBridge(initial: CloudKeyInfo[] = [], on = false) {
     prepare: 0,
     cancel: [] as string[],
     added: [] as string[],
+    tested: [] as string[],
   };
   const bridge: CloudAiBridge = {
     enabled: vi.fn(async () => enabled),
@@ -58,7 +74,19 @@ function fakeBridge(initial: CloudKeyInfo[] = [], on = false) {
     }),
     send: vi.fn(async () => {
       calls.send += 1;
-      return { text: "FAKE answer: <b>not markup</b> [NAME 1] is stable." };
+      return {
+        sentences: [
+          {
+            text: "FAKE answer: <b>not markup</b> Morgan is stable.",
+            quote: "x",
+          },
+        ],
+        flagged: ["[NAME 9]"],
+      };
+    }),
+    testKey: vi.fn(async (id: string): Promise<CloudKeyTest> => {
+      calls.tested.push(id);
+      return keys.find((key) => key.id === id) ? "accepted" : "rejected";
     }),
     cancel: vi.fn(async (id: string) => {
       calls.cancel.push(id);
@@ -78,7 +106,7 @@ describe("cloud AI is off in a normal build (#72)", () => {
   it("shows nothing and never asks the bridge", () => {
     const { bridge } = fakeBridge([home], true);
     const { container } = render(<CloudAiSetting bridge={bridge} />);
-    render(<CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />);
+    render(<Step bridge={bridge} />);
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByRole("button")).toBeNull();
     expect(bridge.enabled).not.toHaveBeenCalled();
@@ -164,6 +192,20 @@ describe("with the cloud AI flag on", () => {
       );
     });
 
+    it("tests a key only when asked, and says the outcome in words", async () => {
+      const user = userEvent.setup();
+      const { bridge, calls } = fakeBridge([home], true);
+      render(<CloudAiSetting bridge={bridge} />);
+      await screen.findByText(/Home laptop/);
+      expect(calls.tested).toEqual([]);
+      await user.click(screen.getByRole("button", { name: "Test this key" }));
+      expect(await screen.findByText("The key was accepted.")).toBeVisible();
+      expect(calls.tested).toEqual(["key-1"]);
+      bridge.testKey = vi.fn(async () => "rejected" as const);
+      await user.click(screen.getByRole("button", { name: "Test this key" }));
+      expect(await screen.findByText(/The key was not accepted/)).toBeVisible();
+    });
+
     it("removes a key only after a confirmation that says older backups still hold it", async () => {
       const user = userEvent.setup();
       const { bridge } = fakeBridge([home], true);
@@ -200,9 +242,7 @@ describe("with the cloud AI flag on", () => {
         [[], true],
       ] as const) {
         const { bridge } = fakeBridge([...keys], on);
-        const { unmount } = render(
-          <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-        );
+        const { unmount } = render(<Step bridge={bridge} />);
         await waitFor(() => expect(bridge.listKeys).toHaveBeenCalled());
         expect(
           screen.queryByRole("button", { name: /Send to my AI provider/ }),
@@ -214,9 +254,7 @@ describe("with the cloud AI flag on", () => {
     it("sends nothing until Send is confirmed, and Cancel drops the prepared text", async () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
-      render(
-        <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-      );
+      render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
@@ -238,9 +276,7 @@ describe("with the cloud AI flag on", () => {
     it("Escape sends nothing", async () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
-      render(
-        <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-      );
+      render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
@@ -253,9 +289,7 @@ describe("with the cloud AI flag on", () => {
     it("sends once on Send and shows the answer as plain text, labelled as written by AI", async () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
-      render(
-        <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-      );
+      render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
@@ -276,6 +310,56 @@ describe("with the cloud AI flag on", () => {
       expect(
         document.querySelector(".cloud-ai-answer-text")?.textContent,
       ).toContain("<b>not markup</b>");
+      // A mark that was not put back is said, as written.
+      expect(screen.getByText(/\[NAME 9\]/)).toBeVisible();
+    });
+
+    it("asks the native side to prepare with the document's own details, never a model or an address", async () => {
+      const user = userEvent.setup();
+      const { bridge } = fakeBridge([home], true);
+      render(<Step bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Send to my AI provider…" }),
+      );
+      await screen.findByRole("alertdialog");
+      const request = vi.mocked(bridge.prepare).mock.calls[0][0];
+      expect(Object.keys(request).sort()).toEqual([
+        "keyId",
+        "labels",
+        "language",
+        "recordId",
+        "removed",
+        "source",
+        "text",
+      ]);
+      expect(request).toMatchObject({
+        keyId: "key-1",
+        recordId: "record-1",
+        labels: ["NAME"],
+        removed: [
+          { replacement: "[NAME 1]", original: "Morgan", manual: false },
+        ],
+      });
+    });
+
+    it("says it was cancelled, not failed, when the native dialog is declined", async () => {
+      const user = userEvent.setup();
+      const { bridge } = fakeBridge([home], true);
+      bridge.send = vi.fn(async () => {
+        throw { code: "declined" };
+      });
+      render(<Step bridge={bridge} />);
+      await user.click(
+        await screen.findByRole("button", { name: "Send to my AI provider…" }),
+      );
+      await user.click(
+        within(await screen.findByRole("alertdialog")).getByRole("button", {
+          name: "Send",
+        }),
+      );
+      expect(await screen.findByRole("status")).not.toHaveTextContent(
+        "could not be sent",
+      );
     });
 
     it("says nothing was kept when the send fails, and offers Cancel while waiting", async () => {
@@ -284,13 +368,11 @@ describe("with the cloud AI flag on", () => {
       let reject: (error: unknown) => void = () => {};
       bridge.send = vi.fn(
         () =>
-          new Promise((_resolve, fail) => {
+          new Promise<CloudSendAnswer>((_resolve, fail) => {
             reject = fail;
           }),
       );
-      render(
-        <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-      );
+      render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
@@ -308,16 +390,14 @@ describe("with the cloud AI flag on", () => {
     it("a cancel while waiting says Anthropic may already have the text, and shows no answer", async () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
-      let resolve: (value: { text: string }) => void = () => {};
+      let resolve: (value: CloudSendAnswer) => void = () => {};
       bridge.send = vi.fn(
         () =>
-          new Promise<{ text: string }>((done) => {
+          new Promise<CloudSendAnswer>((done) => {
             resolve = done;
           }),
       );
-      render(
-        <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-      );
+      render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
@@ -330,7 +410,10 @@ describe("with the cloud AI flag on", () => {
       expect(
         await screen.findByText(/Anthropic may already have received the text/),
       ).toBeVisible();
-      resolve({ text: "FAKE late answer" });
+      resolve({
+        sentences: [{ text: "FAKE late answer", quote: "x" }],
+        flagged: [],
+      });
       await waitFor(() => expect(calls.cancel).toContain("exchange-1"));
       expect(screen.queryByText("FAKE late answer")).toBeNull();
     });
@@ -341,9 +424,7 @@ describe("with the cloud AI flag on", () => {
       bridge.prepare = vi.fn(async () => {
         throw { code: "recheck" };
       });
-      render(
-        <CloudSendStep bridge={bridge} text="FAKE text" disabled={false} />,
-      );
+      render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );

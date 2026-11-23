@@ -30,6 +30,7 @@ export function CloudAiSetting({ bridge }: { bridge: CloudAiBridge | null }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<CloudKeyInfo | null>(null);
   const [error, setError] = useTextState();
+  const [testStatus, setTestStatus] = useTextState();
   const [busy, setBusy] = useState(false);
   const active = cloudAiBuild() && bridge !== null;
   useEffect(() => {
@@ -53,6 +54,33 @@ export function CloudAiSetting({ bridge }: { bridge: CloudAiBridge | null }) {
       await bridge.setEnabled(on);
       setEnabled(on);
     } catch {
+      setError(message("cloudAi.err.generic"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // The key test is an explicit patient action: one request with this key, no document.
+  const testKey = async (key: CloudKeyInfo) => {
+    setBusy(true);
+    setError("");
+    setTestStatus(message("cloudAi.keyTestRunning"));
+    try {
+      const outcome = await bridge.testKey(key.id);
+      setTestStatus(
+        message(
+          outcome === "accepted"
+            ? "cloudAi.keyTestAccepted"
+            : outcome === "rejected"
+              ? "cloudAi.keyTestRejected"
+              : outcome === "busy"
+                ? "cloudAi.keyTestBusy"
+                : outcome === "unreachable"
+                  ? "cloudAi.keyTestUnreachable"
+                  : "cloudAi.keyTestUnexpected",
+        ),
+      );
+    } catch {
+      setTestStatus("");
       setError(message("cloudAi.err.generic"));
     } finally {
       setBusy(false);
@@ -102,6 +130,14 @@ export function CloudAiSetting({ bridge }: { bridge: CloudAiBridge | null }) {
                 <button
                   className="button"
                   type="button"
+                  disabled={busy || !enabled}
+                  onClick={() => void testKey(key)}
+                >
+                  {t("cloudAi.keyTest")}
+                </button>{" "}
+                <button
+                  className="button"
+                  type="button"
                   disabled={busy}
                   onClick={() => setRemoving(key)}
                 >
@@ -121,6 +157,11 @@ export function CloudAiSetting({ bridge }: { bridge: CloudAiBridge | null }) {
             {t("cloudAi.addKey")}
           </button>
         </p>
+        {testStatus && (
+          <p className="native-dialog-status" role="status">
+            {testStatus}
+          </p>
+        )}
         {error && (
           <p className="native-dialog-status" role="alert">
             {error}

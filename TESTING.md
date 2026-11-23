@@ -895,3 +895,38 @@ private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
 `unknown_signer` with no pins. Private captures, metadata and certificates are not committed
 or published, and the public fixture is not regenerated. This opt-in check is separate from
 the public fixture tests and does not establish a production authenticated clinic link.
+
+## Cloud AI: the one live contract check (#72, Ben only)
+
+The cloud AI send (the patient's own Anthropic key) is built and tested against fake transports
+only. Two values in `src-tauri/src/cloud_ai/request.rs` are marked VERIFY and have never been sent
+to the real service: the `anthropic-version` header and the shape of `output_config.format` (the
+JSON schema for the summary). No build may have the `cloud-ai` feature on until this check is
+done and `compile_error!` in `src-tauri/src/cloud_ai/mod.rs` is removed in the same change.
+
+Do this once, with a throwaway Anthropic account and key, never a real patient's text:
+
+1. In a scratch checkout build with
+   `cargo tauri dev --features cloud-ai-unverified-dev` and `VITE_CLOUD_AI=1`. (That feature
+   exists for local work only; no CI job or packaging step may enable it.)
+2. Unlock a vault that holds only FAKE documents. Settings, AI helper, Cloud AI: tick "I
+   understand", turn it on, add your throwaway key, and press **Test this key**. Expected: "The
+   key was accepted." (This is `GET /v1/models`; it confirms `anthropic-version` is accepted and
+   the key shape. A rejection says "The key was not accepted"; read the history entry, which holds
+   no key.) If the service names a different required version, change `ANTHROPIC_VERSION` only.
+3. Open a FAKE document, Anonymize, and press **Send to my AI provider…**. Read the page's
+   confirmation, then the native one: it must name Anthropic, the key's label, the model, the
+   document's title, the size and the cost, and only its "Send" button goes ahead (Cancel, Escape
+   and closing it send nothing: check each once).
+4. Expected after Send: a summary of at most 10 short sentences, each with its quote, the
+   placeholders put back on this device, and "Written by AI and may be wrong". If the service
+   refuses the request body (a 400 in the history entry's `invalidRequest`), the likely cause is
+   the `output_config.format` shape: adjust `summary_schema()` / `build_summary_request()` only,
+   and re-run the Rust tests in `cloud_ai::request`, then repeat this step.
+5. In Security, History: each send has `aiCloudSent` then `aiCloudAnswered` with the provider's
+   request id and token counts, and nothing else (no text, answer or key). Check there is no key
+   in any file the vault wrote (search the vault folder for `sk-ant`; there must be no hit, the
+   key being inside the encrypted manifest).
+6. Record the result in the #72 thread, remove the VERIFY comments and the `compile_error!`, and
+   change the CI lines (a `cargo clippy --features cloud-ai` job and a release-bundle check that
+   the feature is off) in the same change.

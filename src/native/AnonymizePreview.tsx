@@ -890,7 +890,15 @@ export function AnonymizePreview({
               {current && (
                 <CloudSendStep
                   bridge={cloudAi}
+                  recordId={record.id}
                   text={current.toSend}
+                  source={current.onDevice.source}
+                  labels={[...new Set(Object.values(current.onDevice.labels))]}
+                  removed={current.onDevice.removed.map((part) => ({
+                    replacement: part.replacement,
+                    original: part.original,
+                    manual: part.kind === "manual",
+                  }))}
                   disabled={busy || !ticket}
                 />
               )}

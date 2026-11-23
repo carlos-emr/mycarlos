@@ -704,6 +704,10 @@ native-backup-noteEmptied = The file where you chose to save may be empty or inc
 native-backup-noteUntouched = An empty file (0 bytes) may be left where you chose to save: you can delete it. Keep any backup that is not empty.
 
 native-cancel = Cancel
+native-cloud-send-title = Send to { $provider }?
+native-cloud-send-body = Send the text of “{ $document }” to { $provider } ({ $host }), using your own key “{ $key }” and the model { $model }? Only the text shown in the preview goes, about { $characters } characters, about { $tokens } tokens, at about { $cost }. { $provider }’s own rules for your account decide how long it keeps the text; myCarlos cannot see or change that. The details taken out stay on this device.
+native-cloud-send-keep = Do not send
+native-cloud-send-go = Send
 
 native-error-01 = myCarlos could not read some of its files just now, so no backup was saved. Your documents have not been changed. Keep your older backups. Try again. If it happens again, close myCarlos and open it again; on a computer, also check that the drive is connected and pause any sync or antivirus tool.
 
@@ -2425,3 +2429,11 @@ cloudAi-cancelled = Cancelled. Anthropic may already have received the text, and
 cloudAi-answerTitle = Answer
 cloudAi-answerLabel = Written by AI and may be wrong. Check with your doctor.
 cloudAi-sendFailed = The text could not be sent, or the answer could not be used. Nothing was kept.
+cloudAi-keyTest = Test this key
+cloudAi-answerFlagged = These marks were not put back, so they are shown as written: { $marks }.
+cloudAi-keyTestRunning = Testing the key…
+cloudAi-keyTestAccepted = The key was accepted.
+cloudAi-keyTestRejected = The key was not accepted. Check it in your account.
+cloudAi-keyTestBusy = The service is busy. Try again later.
+cloudAi-keyTestUnexpected = The test gave an answer that was not expected.
+cloudAi-keyTestUnreachable = The service could not be reached.

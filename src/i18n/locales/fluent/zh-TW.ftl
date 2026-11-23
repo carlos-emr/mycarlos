@@ -620,6 +620,10 @@ native-backup-noteEmptied = 您選擇的檔案可能為空或不完整；如果�
 native-backup-noteUntouched = 您選擇的儲存位置可能留下空檔案（0 位元組）；您可以刪除該檔案。請保留所有非空的備份。
 
 native-cancel = 取消
+native-cloud-send-title = 要傳送給 { $provider } 嗎？
+native-cloud-send-body = 要用您自己的金鑰「{ $key }」和模型 { $model }，把「{ $document }」的文字傳送給 { $provider }（{ $host }）嗎？只會傳送預覽中顯示的文字，約 { $characters } 個字元，約 { $tokens } 個 token，費用約 { $cost }。{ $provider } 會依其對您帳戶的規則決定保留文字多久；myCarlos 看不到也無法變更。已移除的資料會留在此裝置上。
+native-cloud-send-keep = 不傳送
+native-cloud-send-go = 傳送
 
 native-error-01 = myCarlos 剛才無法讀取部分檔案，因此沒有儲存備份。您的文件未受變更。請保留較舊的備份並重試。如果問題再次發生，請關閉 myCarlos 再重新開啟；在電腦上也請確認磁碟已連接，並暫停同步或防毒工具。
 
@@ -2207,3 +2211,11 @@ cloudAi-cancelled = 已取消。Anthropic 可能已經收到文字，並可能�
 cloudAi-answerTitle = 回答
 cloudAi-answerLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
 cloudAi-sendFailed = 無法傳送文字，或無法使用該回答。未保留任何內容。
+cloudAi-keyTest = 測試此金鑰
+cloudAi-answerFlagged = 這些標記未被還原，按原樣顯示：{ $marks }。
+cloudAi-keyTestRunning = 正在測試金鑰…
+cloudAi-keyTestAccepted = 金鑰已被接受。
+cloudAi-keyTestRejected = 金鑰未被接受。請在您的帳戶中檢查。
+cloudAi-keyTestBusy = 服務忙碌中，請稍後再試。
+cloudAi-keyTestUnexpected = 測試傳回了非預期的結果。
+cloudAi-keyTestUnreachable = 無法連線到服務。

@@ -312,6 +312,10 @@ export const MESSAGE_KEYS = [
   "native.backup.noteEmptied",
   "native.backup.noteUntouched",
   "native.cancel",
+  "native.cloud.send.title",
+  "native.cloud.send.body",
+  "native.cloud.send.keep",
+  "native.cloud.send.go",
   "native.error.01",
   "native.error.02",
   "native.error.03",
@@ -1121,6 +1125,14 @@ export const MESSAGE_KEYS = [
   "cloudAi.cancelled",
   "cloudAi.answerTitle",
   "cloudAi.answerLabel",
+  "cloudAi.keyTest",
+  "cloudAi.answerFlagged",
+  "cloudAi.keyTestRunning",
+  "cloudAi.keyTestAccepted",
+  "cloudAi.keyTestRejected",
+  "cloudAi.keyTestBusy",
+  "cloudAi.keyTestUnexpected",
+  "cloudAi.keyTestUnreachable",
   "cloudAi.sendFailed",
 ] as const;
 
@@ -1543,6 +1555,10 @@ const FLUENT_IDS_BY_KEY = {
   "native.backup.noteEmptied": "native-backup-noteEmptied",
   "native.backup.noteUntouched": "native-backup-noteUntouched",
   "native.cancel": "native-cancel",
+  "native.cloud.send.title": "native-cloud-send-title",
+  "native.cloud.send.body": "native-cloud-send-body",
+  "native.cloud.send.keep": "native-cloud-send-keep",
+  "native.cloud.send.go": "native-cloud-send-go",
   "native.error.01": "native-error-01",
   "native.error.02": "native-error-02",
   "native.error.03": "native-error-03",
@@ -2469,6 +2485,14 @@ const FLUENT_IDS_BY_KEY = {
   "cloudAi.cancelled": "cloudAi-cancelled",
   "cloudAi.answerTitle": "cloudAi-answerTitle",
   "cloudAi.answerLabel": "cloudAi-answerLabel",
+  "cloudAi.keyTest": "cloudAi-keyTest",
+  "cloudAi.answerFlagged": "cloudAi-answerFlagged",
+  "cloudAi.keyTestRunning": "cloudAi-keyTestRunning",
+  "cloudAi.keyTestAccepted": "cloudAi-keyTestAccepted",
+  "cloudAi.keyTestRejected": "cloudAi-keyTestRejected",
+  "cloudAi.keyTestBusy": "cloudAi-keyTestBusy",
+  "cloudAi.keyTestUnexpected": "cloudAi-keyTestUnexpected",
+  "cloudAi.keyTestUnreachable": "cloudAi-keyTestUnreachable",
   "cloudAi.sendFailed": "cloudAi-sendFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
@@ -2846,6 +2870,19 @@ export interface MessageArgsByKey {
   "native.backup.noteEmptied": undefined;
   "native.backup.noteUntouched": undefined;
   "native.cancel": undefined;
+  "native.cloud.send.title": { provider: FluentArgument };
+  "native.cloud.send.body": {
+    characters: FluentArgument;
+    cost: FluentArgument;
+    document: FluentArgument;
+    host: FluentArgument;
+    key: FluentArgument;
+    model: FluentArgument;
+    provider: FluentArgument;
+    tokens: FluentArgument;
+  };
+  "native.cloud.send.keep": undefined;
+  "native.cloud.send.go": undefined;
   "native.error.01": undefined;
   "native.error.02": undefined;
   "native.error.03": undefined;
@@ -3728,6 +3765,14 @@ export interface MessageArgsByKey {
   "cloudAi.cancelled": undefined;
   "cloudAi.answerTitle": undefined;
   "cloudAi.answerLabel": undefined;
+  "cloudAi.keyTest": undefined;
+  "cloudAi.answerFlagged": { marks: FluentArgument };
+  "cloudAi.keyTestRunning": undefined;
+  "cloudAi.keyTestAccepted": undefined;
+  "cloudAi.keyTestRejected": undefined;
+  "cloudAi.keyTestBusy": undefined;
+  "cloudAi.keyTestUnexpected": undefined;
+  "cloudAi.keyTestUnreachable": undefined;
   "cloudAi.sendFailed": undefined;
 }
 

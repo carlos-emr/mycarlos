@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { message, useI18n, useTextState } from "../i18n";
+import { getLocale } from "../i18n";
 import {
   cloudAiBuild,
+  cloudErrorCode,
   type CloudAiBridge,
   type CloudKeyInfo,
+  type CloudPrepareRequest,
+  type CloudSendAnswer,
   type CloudSendPrepared,
 } from "../cloudAi";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -16,19 +20,28 @@ import { ConfirmDialog } from "./ConfirmDialog";
  * never holds the key. */
 export function CloudSendStep({
   bridge,
+  recordId,
   text,
+  source,
+  labels,
+  removed,
   disabled,
 }: {
   bridge: CloudAiBridge | null;
+  recordId: string;
   /** The preview's text as it would be sent. */
   text: string;
+  /** The document's own text, and what was removed from it, for the restore on the native side. */
+  source: string;
+  labels: string[];
+  removed: CloudPrepareRequest["removed"];
   disabled: boolean;
 }) {
   const { t } = useI18n();
   const [ready, setReady] = useState<CloudKeyInfo | null>(null);
   const [prepared, setPrepared] = useState<CloudSendPrepared | null>(null);
   const [working, setWorking] = useState<string | null>(null);
-  const [answer, setAnswer] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<CloudSendAnswer | null>(null);
   const [status, setStatus] = useTextState();
   const [busy, setBusy] = useState(false);
   // What is in flight, so an unmount or a cancel drops it.
@@ -55,7 +68,15 @@ export function CloudSendStep({
     setBusy(true);
     setStatus("");
     try {
-      const next = await bridge.prepare({ keyId: ready.id, text });
+      const next = await bridge.prepare({
+        keyId: ready.id,
+        recordId,
+        language: getLocale(),
+        text,
+        source,
+        labels,
+        removed,
+      });
       exchange.current = next.exchangeId;
       setPrepared(next);
     } catch {
@@ -76,10 +97,17 @@ export function CloudSendStep({
     try {
       const result = await bridge.send(next.exchangeId);
       // A cancel while waiting means the answer is not shown.
-      if (exchange.current === next.exchangeId) setAnswer(result.text);
-    } catch {
+      if (exchange.current === next.exchangeId) setAnswer(result);
+    } catch (failure) {
       if (exchange.current === next.exchangeId)
-        setStatus(message("cloudAi.sendFailed"));
+        // Cancel or Escape in the native dialog sends nothing and says so, not "failed".
+        setStatus(
+          message(
+            cloudErrorCode(failure) === "declined"
+              ? "cloudAi.cancelled"
+              : "cloudAi.sendFailed",
+          ),
+        );
     } finally {
       if (exchange.current === next.exchangeId) exchange.current = null;
       setWorking(null);
@@ -132,7 +160,16 @@ export function CloudSendStep({
           <h3 id="cloud-ai-answer">{t("cloudAi.answerTitle")}</h3>
           <p>{t("cloudAi.answerLabel")}</p>
           {/* Plain text only: an answer is never read as markup. */}
-          <pre className="cloud-ai-answer-text">{answer}</pre>
+          <ul className="cloud-ai-answer-text">
+            {answer.sentences.map((sentence, index) => (
+              <li key={index}>{sentence.text}</li>
+            ))}
+          </ul>
+          {answer.flagged.length > 0 && (
+            <p>
+              {t("cloudAi.answerFlagged", { marks: answer.flagged.join(", ") })}
+            </p>
+          )}
         </section>
       )}
       {prepared && (

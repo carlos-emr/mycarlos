@@ -5549,6 +5549,8 @@ pub fn run() {
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
+            #[cfg(feature = "cloud-ai")]
+            app.manage(Arc::new(cloud_ai::commands::CloudSession::default()));
             app.manage(Arc::new(ReceivedFiles::default()));
             // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
             // second launch while the app is open is not forwarded yet (#53).
@@ -5583,6 +5585,24 @@ pub fn run() {
             ai_summarize,
             ai_explain,
             ai_cancel,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_ai_enabled,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_ai_set_enabled,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_list,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_add,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_remove,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_key_test,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_send_prepare,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_send,
+            #[cfg(feature = "cloud-ai")]
+            cloud_ai::commands::cloud_send_cancel,
             kdf_benchmark,
             vault_status,
             vault_passphrase_rules,
@@ -7533,6 +7553,53 @@ mod tests {
             );
             assert!(build_script.contains(&format!("\"{command}\"")));
         }
+    }
+
+    /// The cloud AI commands (#72) live in `cloud_ai/commands.rs`, compiled only with the `cloud-ai`
+    /// feature. Each is declared in build.rs (so its permission exists in every build), granted by
+    /// `capabilities/cloud-ai.json` and never by default.json, and registered here behind the feature.
+    #[test]
+    fn the_cloud_ai_commands_are_declared_granted_and_registered_together() {
+        let commands_source = include_str!("cloud_ai/commands.rs");
+        let build_script = include_str!("../build.rs");
+        let library = include_str!("lib.rs");
+        let cloud: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/cloud-ai.json")).unwrap();
+        let default: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let granted: Vec<&str> = cloud["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|permission| permission.as_str().unwrap())
+            .collect();
+        let marker = ["#[tauri", "::command]\npub(crate) async fn "].concat();
+        let names: Vec<&str> = commands_source
+            .split(&marker)
+            .skip(1)
+            .map(|rest| rest.split('(').next().unwrap())
+            .collect();
+        assert_eq!(names.len(), 9, "{names:?}");
+        assert_eq!(granted.len(), names.len());
+        for name in names {
+            let permission = format!("allow-{}", name.replace('_', "-"));
+            assert!(granted.contains(&permission.as_str()), "{name}");
+            assert!(build_script.contains(&format!("\"{name}\"")), "{name}");
+            assert!(
+                library.contains(&format!(
+                    "#[cfg(feature = \"cloud-ai\")]\n            cloud_ai::commands::{name},\n"
+                )),
+                "{name}"
+            );
+            // Never granted by default: a build with the feature off has no cloud grant to widen.
+            assert!(!default["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p.as_str() == Some(permission.as_str())));
+        }
+        // The window the grant is for is the one window.
+        assert_eq!(cloud["windows"], serde_json::json!(["main"]));
     }
 
     #[test]

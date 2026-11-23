@@ -725,6 +725,10 @@ native-backup-noteEmptied = O arquivo no local escolhido para salvar pode estar 
 native-backup-noteUntouched = Um arquivo vazio (0 bytes) pode ficar no local que você escolheu para salvar: você pode excluí-lo. Guarde qualquer cópia de segurança que não esteja vazia.
 
 native-cancel = Cancelar
+native-cloud-send-title = Enviar para { $provider }?
+native-cloud-send-body = Enviar o texto de “{ $document }” para { $provider } ({ $host }), com a sua própria chave “{ $key }” e o modelo { $model }? Só vai o texto mostrado na pré-visualização, cerca de { $characters } caracteres, cerca de { $tokens } tokens, por cerca de { $cost }. As regras de { $provider } para a sua conta decidem por quanto tempo ele guarda o texto; o myCarlos não pode vê-las nem alterá-las. Os dados removidos ficam neste dispositivo.
+native-cloud-send-keep = Não enviar
+native-cloud-send-go = Enviar
 
 native-error-01 = O myCarlos não conseguiu ler alguns dos seus arquivos agora, então nenhuma cópia de segurança foi salva. Seus documentos não foram alterados. Guarde suas cópias anteriores. Tente de novo. Se acontecer novamente, feche o myCarlos e abra-o de novo; no computador, verifique também se a unidade está conectada e pause qualquer ferramenta de sincronização ou antivírus.
 
@@ -2460,3 +2464,11 @@ cloudAi-cancelled = Cancelado. A Anthropic pode já ter recebido o texto e pode 
 cloudAi-answerTitle = Resposta
 cloudAi-answerLabel = Escrito por uma IA e pode conter erros. Confirme com seu médico.
 cloudAi-sendFailed = Não foi possível enviar o texto, ou a resposta não pôde ser usada. Nada foi guardado.
+cloudAi-keyTest = Testar esta chave
+cloudAi-answerFlagged = Estas marcas não foram recolocadas e aparecem como foram escritas: { $marks }.
+cloudAi-keyTestRunning = Testando a chave…
+cloudAi-keyTestAccepted = A chave foi aceita.
+cloudAi-keyTestRejected = A chave não foi aceita. Confira-a na sua conta.
+cloudAi-keyTestBusy = O serviço está ocupado. Tente mais tarde.
+cloudAi-keyTestUnexpected = O teste deu uma resposta inesperada.
+cloudAi-keyTestUnreachable = Não foi possível acessar o serviço.
