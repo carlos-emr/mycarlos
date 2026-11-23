@@ -176,7 +176,9 @@ mod tests {
         assert!(crate::ui_text_ids::MessageId::from_legacy_key(public.message_key).is_some());
     }
 
-    /// Creating, unlocking and recovering a vault refuse first, before anything is read or written.
+    /// Creating, unlocking, recovering and restoring a vault refuse before anything is read or
+    /// written: right after the store is pinned (the multi-vault seam's first statement, which
+    /// `vault_source` pins), and before the store is used.
     #[test]
     fn the_commands_that_open_a_vault_refuse_before_touching_it() {
         let lib = include_str!("lib.rs");
@@ -190,13 +192,22 @@ mod tests {
                 .find(&format!("async fn {command}(\n"))
                 .unwrap_or_else(|| panic!("{command} exists"));
             let body = &lib[start..start + 1500];
+            let pin = body
+                .find("let store = store.pin();")
+                .expect("it pins the store");
             let guard = body
                 .find("backup_exclusion::ensure()")
                 .unwrap_or_else(|| panic!("{command} calls the guard"));
-            let pin = body.find("store.pin()").expect("it pins the store");
+            assert!(pin < guard, "{command}: the store is pinned first");
+            let used = body
+                .find("store.arc()")
+                .into_iter()
+                .chain(body.find("run_blocking("))
+                .min()
+                .expect("it uses the store");
             assert!(
-                guard < pin,
-                "{command}: the guard comes before the store is touched"
+                guard < used,
+                "{command}: the guard comes before the store is used"
             );
         }
     }

@@ -2920,10 +2920,10 @@ async fn vault_create(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     // iOS: no vault is created or opened while the data folder cannot be kept out of device
     // backups; the flag is set again on every attempt (backup_exclusion.rs).
     backup_exclusion::ensure().map_err(PublicError::from)?;
-    let store = store.pin();
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -2951,10 +2951,10 @@ async fn vault_unlock(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     // iOS: no vault is created or opened while the data folder cannot be kept out of device
     // backups; the flag is set again on every attempt (backup_exclusion.rs).
     backup_exclusion::ensure().map_err(PublicError::from)?;
-    let store = store.pin();
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -3997,10 +3997,10 @@ async fn vault_recover(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
+    let store = store.pin();
     // iOS: no vault is created or opened while the data folder cannot be kept out of device
     // backups; the flag is set again on every attempt (backup_exclusion.rs).
     backup_exclusion::ensure().map_err(PublicError::from)?;
-    let store = store.pin();
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
@@ -4385,9 +4385,9 @@ async fn vault_restore(
     request: RestoreRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     // A restore writes a vault into the data folder: the same refusal as creating one.
     backup_exclusion::ensure().map_err(PublicError::from)?;
-    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
