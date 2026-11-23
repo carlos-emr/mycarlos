@@ -1064,6 +1064,8 @@ describe("video through the native vault (#359)", () => {
     // 70,000 bytes: more than one slice of the encoder, every byte different.
     const piece = Uint8Array.from({ length: 70_000 }, (_, n) => n % 251);
     await bridge.videoAppend("recording-1", 3, piece);
+    invoke.mockResolvedValue({ freeBytes: 1, level: "ok", canRecord: true });
+    await bridge.videoSpace();
     invoke.mockResolvedValue(undefined);
     await bridge.videoPause("recording-1");
     await bridge.videoResume("recording-1");
@@ -1073,6 +1075,7 @@ describe("video through the native vault (#359)", () => {
     expect(invoke.mock.calls.map(([name]) => name)).toEqual([
       "vault_video_start",
       "vault_video_append",
+      "vault_video_space",
       "vault_video_pause",
       "vault_video_resume",
       "vault_video_stop",
@@ -1095,7 +1098,7 @@ describe("video through the native vault (#359)", () => {
       c.charCodeAt(0),
     );
     expect(decoded).toEqual(piece);
-    expect(invoke.mock.calls[5]![1]).toEqual({
+    expect(invoke.mock.calls[6]![1]).toEqual({
       request: { recordingId: "recording-1", keep: true },
     });
   });

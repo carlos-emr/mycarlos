@@ -37,6 +37,7 @@ mod model_acl;
 mod quote_locate;
 mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod disk_space;
 mod safety;
 mod summary_contract;
 mod summary_progress;
@@ -693,10 +694,14 @@ impl Drop for PassphraseRequest {
     }
 }
 
+/// Writes the backup to a place the patient chose, optionally leaving the videos
+/// out (#359).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickRequest {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupWriteRequest {
     pick_id: Uuid,
+    #[serde(default)]
+    leave_videos_out: bool,
 }
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
@@ -2354,10 +2359,11 @@ async fn ai_summarize(
 #[tauri::command]
 async fn ai_speed_check(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     answer_id: Uuid,
 ) -> CommandResult<speed_check::Speed> {
+    let store = store.pin();
     let origin = store
         .answer_origin()
         .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
@@ -2365,7 +2371,7 @@ async fn ai_speed_check(
         .in_use_sha256()
         .ok_or_else(|| ai_error(model_runtime::AiError::NotInstalled))?;
     let stats = run_ai(
-        store.inner(),
+        store.arc(),
         origin,
         announce_answer(app, answer_id),
         move |runtime, ticket, watch| runtime.speed_check_for(ticket, watch),
@@ -3880,13 +3886,31 @@ async fn vault_backup_pick(
     Ok(destination.map(|destination| picks.backups.store(session, destination)))
 }
 
+/// How big a backup would be, and how much of it is video, asked before the
+/// patient chooses where to save it.
+#[tauri::command]
+async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.backup_size()).await
+}
+
+/// The records a backup was made without the file of, for the Hidden list to say
+/// why a video's file is missing: those whose latest history event is "hidden,
+/// left out of the backup".
+#[tauri::command]
+async fn vault_left_out_records(store: State<'_, StoreHandle>) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.left_out_records()).await
+}
+
 #[tauri::command]
 async fn vault_backup_picked(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: PickRequest,
+    request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let leave_videos_out = request.leave_videos_out;
     let store = store.pin();
     let destination = picks
         .backups
@@ -3901,7 +3925,7 @@ async fn vault_backup_picked(
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.arc(), move |store| {
-            store.backup_atomic(&path, now_ms())?;
+            store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
             Ok(SavedBackup {
                 name,
                 bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
@@ -3922,7 +3946,8 @@ async fn vault_backup_picked(
     run_blocking(store.arc(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
-        store.verify_for_backup()?;
+        let plan = store.plan_backup(leave_videos_out)?;
+        store.verify_for_backup_planned(&plan)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -3933,12 +3958,13 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup(
+        store.backup_planned(
             std::io::BufWriter::new(Counted {
                 inner: output,
                 bytes: counted,
             }),
             now_ms(),
+            &plan,
         )?;
         store.record_backup_saved(&place);
         Ok(())
@@ -5406,13 +5432,14 @@ struct VideoStarted {
 
 #[tauri::command]
 async fn vault_video_start(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoStartRequest,
 ) -> CommandResult<VideoStarted> {
+    let store = store.pin();
     if request.folder_ids.len() > MAX_VIDEO_FOLDERS {
         return Err(VaultError::Invalid.into());
     }
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store
             .recording_start(
                 request.profile_id,
@@ -5458,13 +5485,14 @@ fn decode_video_piece(data: &str) -> Result<Zeroizing<Vec<u8>>, VaultError> {
 
 #[tauri::command]
 async fn vault_video_append(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoAppendRequest,
 ) -> CommandResult<vault::RecordingProgress> {
+    let store = store.pin();
     let piece = decode_video_piece(&request.data)?;
     let (id, sequence) = (request.recording_id, request.sequence);
     drop(request);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.recording_append_numbered(id, Some(sequence), &piece)
     })
     .await
@@ -5478,10 +5506,11 @@ struct VideoRecordingRequest {
 
 #[tauri::command]
 async fn vault_video_pause(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordingRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.recording_pause(request.recording_id)
     })
     .await
@@ -5489,10 +5518,11 @@ async fn vault_video_pause(
 
 #[tauri::command]
 async fn vault_video_resume(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordingRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.recording_resume(request.recording_id)
     })
     .await
@@ -5508,10 +5538,11 @@ struct VideoSaved {
 
 #[tauri::command]
 async fn vault_video_stop(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordingRequest,
 ) -> CommandResult<VideoSaved> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store
             .recording_stop(request.recording_id, now_ms())
             .map(|record_id| VideoSaved { record_id })
@@ -5519,12 +5550,21 @@ async fn vault_video_stop(
     .await
 }
 
+/// How much room there is to record: asked before the camera and microphone are
+/// turned on, and again on every resume.
+#[tauri::command]
+async fn vault_video_space(store: State<'_, StoreHandle>) -> CommandResult<vault::RecordingSpace> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recording_space).await
+}
+
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
 #[tauri::command]
 async fn vault_video_pending(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
 ) -> CommandResult<vault::PendingRecordings> {
-    run_blocking(store.inner(), VaultStore::recordings_pending).await
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recordings_pending).await
 }
 
 #[derive(Deserialize)]
@@ -5538,10 +5578,11 @@ struct VideoRecoverRequest {
 /// delete it.
 #[tauri::command]
 async fn vault_video_recover(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecoverRequest,
 ) -> CommandResult<VideoSaved> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store
             .recording_recover(request.recording_id, request.keep, now_ms())
             .map(|record_id| VideoSaved { record_id })
@@ -5555,9 +5596,15 @@ struct VideoRecordRequest {
     record_id: Uuid,
 }
 
-/// Whether a record's file starts as an MP4 does (`ftyp` at byte 4), whatever it
-/// is called: the details ask this before offering Play video.
+/// Whether a record is a video myCarlos recorded: the history says it was added
+/// with the camera, and its file starts as an MP4 does (`ftyp` at byte 4). The
+/// origin decides, never the bytes alone: an iPhone's HEIC photo, an M4A voice
+/// memo and a camera raw file also carry `ftyp`, and are not videos. The
+/// details ask this before offering Play video.
 fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    if !store.added_with_camera(record_id)? {
+        return Ok(false);
+    }
     let mut start = FileStartN::<8>::default();
     let exported = store.read_for_view(record_id, &mut start);
     if start.complete() {
@@ -5568,23 +5615,22 @@ fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
 
 #[tauri::command]
 async fn vault_is_video(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordRequest,
 ) -> CommandResult<bool> {
-    run_blocking(store.inner(), move |store| {
-        is_video(store, request.record_id)
-    })
-    .await
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| is_video(store, request.record_id)).await
 }
 
 /// Opens a stored video for playback: the token the page puts in a `<video>`'s
 /// address, and the length of the file a player sees.
 #[tauri::command]
 async fn vault_video_open(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordRequest,
 ) -> CommandResult<vault::PlaybackOpened> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.playback_open(request.record_id)
     })
     .await
@@ -5599,10 +5645,11 @@ struct VideoCloseRequest {
 /// Ends one video's playback (the player closed). Locking ends every one.
 #[tauri::command]
 async fn vault_video_close(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoCloseRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.playback_close(&request.token);
         Ok(())
     })
@@ -5998,9 +6045,9 @@ pub fn run() {
             video_scheme::SCHEME,
             |context, request, responder| {
                 let store = video_scheme::webview_allowed(context.webview_label())
-                    .then(|| context.app_handle().try_state::<Arc<VaultStore>>())
+                    .then(|| context.app_handle().try_state::<StoreHandle>())
                     .flatten()
-                    .map(|store| Arc::clone(store.inner()));
+                    .map(|store| Arc::clone(store.arc()));
                 match store {
                     Some(store) => {
                         tauri::async_runtime::spawn_blocking(move || {
@@ -6194,6 +6241,8 @@ pub fn run() {
             vault_recovery_key_cancel,
             vault_recover,
             vault_backup_pick,
+            vault_backup_size,
+            vault_left_out_records,
             vault_backup_picked,
             vault_restore_pick,
             vault_restore_inspect,
@@ -6231,6 +6280,7 @@ pub fn run() {
             vault_video_pause,
             vault_video_resume,
             vault_video_stop,
+            vault_video_space,
             vault_video_pending,
             vault_video_recover,
             vault_is_video,
@@ -7951,6 +8001,7 @@ mod tests {
             replaces,
             differs_from_this_device: differs,
             document_count: 3,
+            left_out: 0,
             fingerprint: [0; 32],
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
@@ -8257,6 +8308,105 @@ mod tests {
         assert_eq!(recorded_speed_for(&store, &"cd".repeat(32)), None);
     }
 
+    /// Every command's `State<..>` parameter must be something the app manages: a command asking for
+    /// a type nobody manages panics ("state not managed") the first time it is called, and
+    /// nothing at build time says so (#393 made the vault `StoreHandle`; commands merged after it from
+    /// branches that began before it still asked for `Arc<VaultStore>`). Each managed type is listed
+    /// here with the text in the app's setup that manages it, so the list cannot drift from the code
+    /// in either direction: a new type fails until it is added WITH its evidence, and a removed
+    /// `manage` fails its evidence.
+    #[test]
+    fn every_state_a_command_asks_for_is_managed_by_the_setup() {
+        const MANAGED: &[(&str, &str)] = &[
+            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            (
+                "Arc<AttemptThrottle>",
+                "app.manage(Arc::new(AttemptThrottle::new(",
+            ),
+            ("Arc<local_model::Store>", "app.manage(models)"),
+            (
+                "Arc<ModelAddActive>",
+                "app.manage(Arc::new(ModelAddActive::default()))",
+            ),
+            (
+                "Arc<PendingPicks>",
+                "app.manage(Arc::new(PendingPicks::default()))",
+            ),
+            (
+                "Arc<ReceivedFiles>",
+                "app.manage(Arc::new(ReceivedFiles::default()))",
+            ),
+        ];
+        let library = include_str!("lib.rs");
+        let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let setup: String = startup.chars().filter(|c| !c.is_whitespace()).collect();
+        for (state, evidence) in MANAGED {
+            let evidence: String = evidence.chars().filter(|c| !c.is_whitespace()).collect();
+            assert!(
+                setup.contains(&evidence),
+                "{state} is no longer managed: {evidence}"
+            );
+        }
+        let command_marker = ["#[tauri", "::command]"].concat();
+        let mut asked = Vec::new();
+        for part in startup.split(&command_marker).skip(1) {
+            let Some(open) = part.find('(') else { continue };
+            let mut depth = 0usize;
+            let mut close = None;
+            for (index, c) in part[open..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(open + index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let params: String = part[open + 1..close.unwrap()]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            for (at, _) in params.match_indices("State<'") {
+                // `State<'_,TYPE>`: the type is everything after the first comma, up to the `>` that
+                // closes `State<`.
+                let rest = &params[at + 6..];
+                let comma = rest.find(',').unwrap();
+                let mut depth = 1usize;
+                let mut end = comma + 1;
+                for (index, c) in rest[comma + 1..].char_indices() {
+                    match c {
+                        '<' => depth += 1,
+                        '>' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = comma + 1 + index;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                asked.push(rest[comma + 1..end].to_owned());
+            }
+        }
+        assert!(
+            asked.len() > 100,
+            "the scan found only {} state parameters",
+            asked.len()
+        );
+        for state in &asked {
+            assert!(
+                MANAGED.iter().any(|(managed, _)| managed == state),
+                "a command asks for State<{state}>, which the setup does not manage: it would panic \
+                 \"state not managed\" when called"
+            );
+        }
+    }
+
     #[test]
     fn a_model_add_report_clears_only_the_run_it_reported() {
         let active = Arc::new(ModelAddActive::default());
@@ -8448,7 +8598,7 @@ mod tests {
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
-            let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupWriteRequest>(&payload);
             let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
@@ -9346,6 +9496,7 @@ mod photo_command_tests {
             "async fn vault_video_pause(",
             "async fn vault_video_resume(",
             "async fn vault_video_stop(",
+            "async fn vault_video_space(",
             "async fn vault_video_pending(",
             "async fn vault_video_recover(",
             "async fn vault_is_video(",
@@ -9380,7 +9531,19 @@ mod photo_command_tests {
         store.recording_append(id, &movie).unwrap();
         let video = store.recording_stop(id, 6).unwrap().unwrap();
         assert!(is_video(&store, video).unwrap());
-        // A photo, a PDF-like file and a tiny file are not.
+        // A photo, a PDF-like file and a tiny file are not, and neither is anything
+        // else that carries `ftyp` where an MP4 does and was imported: an iPhone's
+        // HEIC and AVIF photos, an M4A voice memo, a camera raw (CR3) and a PDF
+        // with `ftyp` in the same place.
+        let with_ftyp = |brand: &[u8; 4]| {
+            let mut bytes = vec![0, 0, 0, 0x18];
+            bytes.extend_from_slice(b"ftyp");
+            bytes.extend_from_slice(brand);
+            bytes.extend_from_slice(&[0; 12]);
+            bytes
+        };
+        let mut pdf = b"%PDF".to_vec();
+        pdf.extend_from_slice(b"ftyp FAKE junk, not an MP4");
         for (name, bytes) in [
             (
                 "FAKE a.jpg",
@@ -9388,6 +9551,13 @@ mod photo_command_tests {
             ),
             ("FAKE b.pdf", b"%PDF-1.7 FAKE".to_vec()),
             ("FAKE c.txt", b"hi".to_vec()),
+            ("FAKE d.heic", with_ftyp(b"heic")),
+            ("FAKE e.avif", with_ftyp(b"avif")),
+            ("FAKE f.m4a", with_ftyp(b"M4A ")),
+            ("FAKE g.cr3", with_ftyp(b"crx ")),
+            ("FAKE h.mov", with_ftyp(b"qt  ")),
+            ("FAKE i.mp4 (picked, not recorded)", with_ftyp(b"isom")),
+            ("FAKE j.pdf", pdf),
         ] {
             store
                 .import(

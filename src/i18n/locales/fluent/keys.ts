@@ -832,6 +832,14 @@ export const MESSAGE_KEYS = [
   "ai.notInstalled.body",
   "ai.notInstalled.openPreferences",
   "aiHelper.resultLabel",
+  "aiHelper.resultLabelShort",
+  "aiHelper.resultLabelHide",
+  "aiHelper.resultLabelInfo",
+  "ai.label.settingsTitle",
+  "ai.label.settingsBody",
+  "ai.label.settingsShowFull",
+  "ai.label.settingsFullShown",
+  "ai.label.settingsShortShown",
   "ai.result.meta",
   "ai.summary.showInDocument",
   "ai.summary.folded",
@@ -1122,6 +1130,21 @@ export const MESSAGE_KEYS = [
   "interface.RecordingRecovery.savedLocked",
   "interface.RecordingRecovery.savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
+  "security.backup.size",
+  "security.backup.sizeWithVideos",
+  "security.backup.sizeNoVideos",
+  "security.backup.leaveVideosOut",
+  "security.backup.leaveVideosOutHelp",
+  "restore.leftOut",
+  "security.backup.sizeCalculating",
+  "interface.hidden.videoLeftOut",
   "portal.deviceLine",
   "portal.deviceLineLinked",
   "interface.received.confirmTitleOne",
@@ -2100,6 +2123,14 @@ const FLUENT_IDS_BY_KEY = {
   "ai.notInstalled.body": "ai-notInstalled-body",
   "ai.notInstalled.openPreferences": "ai-notInstalled-openPreferences",
   "aiHelper.resultLabel": "aiHelper-resultLabel",
+  "aiHelper.resultLabelShort": "aiHelper-resultLabelShort",
+  "aiHelper.resultLabelHide": "aiHelper-resultLabelHide",
+  "aiHelper.resultLabelInfo": "aiHelper-resultLabelInfo",
+  "ai.label.settingsTitle": "ai-label-settingsTitle",
+  "ai.label.settingsBody": "ai-label-settingsBody",
+  "ai.label.settingsShowFull": "ai-label-settingsShowFull",
+  "ai.label.settingsFullShown": "ai-label-settingsFullShown",
+  "ai.label.settingsShortShown": "ai-label-settingsShortShown",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
   "ai.summary.folded": "ai-summary-folded",
@@ -2482,6 +2513,27 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordingRecovery-savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed":
     "interface-RecordDialog-videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom":
+    "interface-RecordDialog-notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom": "interface-RecordDialog-lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes":
+    "interface-RecordDialog-lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom":
+    "interface-RecordDialog-videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished":
+    "interface-RecordDialog-videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom":
+    "interface-RecordingRecovery-finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom":
+    "interface-RecordingRecovery-stillNoRoom",
+  "security.backup.size": "security-backup-size",
+  "security.backup.sizeWithVideos": "security-backup-sizeWithVideos",
+  "security.backup.sizeNoVideos": "security-backup-sizeNoVideos",
+  "security.backup.leaveVideosOut": "security-backup-leaveVideosOut",
+  "security.backup.leaveVideosOutHelp": "security-backup-leaveVideosOutHelp",
+  "restore.leftOut": "restore-leftOut",
+  "security.backup.sizeCalculating": "security-backup-sizeCalculating",
+  "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
   "portal.deviceLine": "portal-deviceLine",
   "portal.deviceLineLinked": "portal-deviceLineLinked",
   "interface.received.confirmTitleOne": "interface-received-confirmTitleOne",
@@ -3415,6 +3467,14 @@ export interface MessageArgsByKey {
   "ai.notInstalled.body": undefined;
   "ai.notInstalled.openPreferences": undefined;
   "aiHelper.resultLabel": undefined;
+  "aiHelper.resultLabelShort": undefined;
+  "aiHelper.resultLabelHide": undefined;
+  "aiHelper.resultLabelInfo": undefined;
+  "ai.label.settingsTitle": undefined;
+  "ai.label.settingsBody": undefined;
+  "ai.label.settingsShowFull": undefined;
+  "ai.label.settingsFullShown": undefined;
+  "ai.label.settingsShortShown": undefined;
   "ai.result.meta": {
     date: FluentArgument;
     model: FluentArgument;
@@ -3729,6 +3789,24 @@ export interface MessageArgsByKey {
   "interface.RecordingRecovery.savedLocked": { name: FluentArgument };
   "interface.RecordingRecovery.savedLockedPaused": { name: FluentArgument };
   "interface.RecordDialog.videoSavedFailed": { name: FluentArgument };
+  "interface.RecordDialog.notEnoughRoom": undefined;
+  "interface.RecordDialog.lowOnRoom": undefined;
+  "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
+  "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
+  "interface.RecordDialog.videoKeptUnfinished": undefined;
+  "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
+  "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
+  "security.backup.size": { size: FluentArgument };
+  "security.backup.sizeWithVideos": {
+    size: FluentArgument;
+    videos: FluentArgument;
+  };
+  "security.backup.sizeNoVideos": { size: FluentArgument };
+  "security.backup.leaveVideosOut": undefined;
+  "security.backup.leaveVideosOutHelp": undefined;
+  "restore.leftOut": undefined;
+  "security.backup.sizeCalculating": undefined;
+  "interface.hidden.videoLeftOut": undefined;
   "portal.deviceLine": { device: FluentArgument };
   "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
   "interface.received.confirmTitleOne": { name: FluentArgument };

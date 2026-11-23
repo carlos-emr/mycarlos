@@ -4,6 +4,9 @@ import {
   MP4_TYPES,
   QUALITIES,
   RecordedClock,
+  STOP_RESERVE_BYTES,
+  isNoSpace,
+  minutesLeft,
   deliveredHeight,
   formatClock,
   highQualityAvailable,
@@ -109,6 +112,30 @@ describe("the quality choice", () => {
     expect(deliveredHeight({ getSettings: () => ({}) })).toBeNull();
     expect(deliveredHeight({ getSettings: () => ({ height: 0 }) })).toBeNull();
     expect(deliveredHeight(undefined)).toBeNull();
+  });
+});
+
+describe("the room left", () => {
+  const MIB = 1024 * 1024;
+  it("is told in minutes from how fast this recording fills the disk, less the reserve", () => {
+    // 1 MiB a second for a minute: 60 MiB stored. 256 MiB is kept back.
+    expect(minutesLeft(256 * MIB + 600 * MIB, 60 * MIB, 60_000)).toBe(10);
+    expect(minutesLeft(256 * MIB + 59 * MIB, 60 * MIB, 60_000)).toBe(0);
+    expect(minutesLeft(100 * MIB, 60 * MIB, 60_000)).toBe(0);
+    expect(STOP_RESERVE_BYTES).toBe(256 * MIB);
+  });
+
+  it("says nothing until enough has been recorded to say, or when the room is not known", () => {
+    expect(minutesLeft(null, 60 * MIB, 60_000)).toBeNull();
+    expect(minutesLeft(10 ** 12, 60 * MIB, 4_999)).toBeNull();
+    expect(minutesLeft(10 ** 12, 0, 60_000)).toBeNull();
+  });
+
+  it("knows a refusal for want of room by its code", () => {
+    expect(isNoSpace({ code: "no_space", message: "x" })).toBe(true);
+    expect(isNoSpace({ code: "storage" })).toBe(false);
+    expect(isNoSpace(null)).toBe(false);
+    expect(isNoSpace("no_space")).toBe(false);
   });
 });
 

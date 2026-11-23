@@ -196,6 +196,8 @@ opt-level = 1
 [patch.crates-io]
 glib = { path = "vendor/glib" }
 tauri-plugin-single-instance = { path = "vendor/tauri-plugin-single-instance" }
+# Wry with its macOS/iOS camera-and-microphone decision narrowed (#359 PR 7).
+wry = { path = "vendor/wry" }
 
 [[test]]
 name = "model_helper"

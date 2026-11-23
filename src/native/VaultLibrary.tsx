@@ -10,12 +10,13 @@ import {
   type UiText,
   type MessageKey,
 } from "../i18n";
-import type { PendingRecording, PersonDetails } from "../vault";
+import type { BackupSize, PendingRecording, PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { sharedAddedText } from "./receivedNotice";
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -65,7 +66,7 @@ import { RecordDialog, type RecordEnd } from "./RecordDialog";
 import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
-import { videoRecordingAvailable } from "./video";
+import { isNoSpace, videoRecordingAvailable } from "./video";
 import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
@@ -1213,6 +1214,11 @@ export function VaultLibrary({
     run(async () => {
       setRecordOpen(false);
       const next = await refresh();
+      if (endedBy === "unfinished") {
+        // Kept, not lost: it is finished at the next unlock, when there is room.
+        setNotice(message("interface.RecordDialog.videoKeptUnfinished"));
+        return;
+      }
       const saved = recordId
         ? next.records.find((record) => record.id === recordId)
         : undefined;
@@ -1230,9 +1236,11 @@ export function VaultLibrary({
               ? "interface.RecordDialog.videoSavedHidden"
               : endedBy === "slow"
                 ? "interface.RecordDialog.videoSavedSlow"
-                : endedBy === "failed"
-                  ? "interface.RecordDialog.videoSavedFailed"
-                  : "interface.RecordDialog.videoSavedStopped",
+                : endedBy === "space"
+                  ? "interface.RecordDialog.videoSavedNoRoom"
+                  : endedBy === "failed"
+                    ? "interface.RecordDialog.videoSavedFailed"
+                    : "interface.RecordDialog.videoSavedStopped",
           { name: saved.displayName },
         ),
         recordId: saved.id,
@@ -1241,24 +1249,40 @@ export function VaultLibrary({
   const keepParked = (parked: PendingRecording[]) =>
     run(async () => {
       const kept: PendingRecording[] = [];
+      const waiting: PendingRecording[] = [];
       for (const recording of parked) {
-        const saved = await bridge.videoRecover(recording.id, true);
-        if (saved.recordId) kept.push(recording);
+        try {
+          const saved = await bridge.videoRecover(recording.id, true);
+          if (saved.recordId) kept.push(recording);
+        } catch (error) {
+          // Not enough room to finish it yet: it stays as it is, the others
+          // are still tried, and the notice says so (not a generic failure).
+          if (!isNoSpace(error)) throw error;
+          waiting.push(recording);
+        }
       }
       await refresh();
+      const told = [
+        ...kept.map((recording) =>
+          message(
+            recording.stopped
+              ? "interface.RecordingRecovery.finishedWithRoom"
+              : recording.paused
+                ? "interface.RecordingRecovery.savedLockedPaused"
+                : "interface.RecordingRecovery.savedLocked",
+            { name: recording.displayName },
+          ),
+        ),
+        ...waiting.map((recording) =>
+          message("interface.RecordingRecovery.stillNoRoom", {
+            name: recording.displayName,
+          }),
+        ),
+      ];
       setNotice(
-        kept.length === 0
+        told.length === 0
           ? message("interface.RecordingRecovery.nothingToKeep")
-          : joinText(
-              ...kept.map((recording) =>
-                message(
-                  recording.paused
-                    ? "interface.RecordingRecovery.savedLockedPaused"
-                    : "interface.RecordingRecovery.savedLocked",
-                  { name: recording.displayName },
-                ),
-              ),
-            ),
+          : joinText(...told),
       );
     });
   keepParkedRef.current = keepParked;
@@ -1454,7 +1478,55 @@ export function VaultLibrary({
       : [recordId],
   });
 
-  const saveBackup = () =>
+  // Which hidden records a backup was made without the file of, asked when the
+  // Hidden list opens (from the history, so that nothing more is stored).
+  const [leftOutIds, setLeftOutIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (section !== "hidden" || typeof bridge.leftOutRecords !== "function") {
+      return;
+    }
+    let current = true;
+    bridge.leftOutRecords().then(
+      (ids) => {
+        if (current) setLeftOutIds(new Set(ids));
+      },
+      () => {
+        if (current) setLeftOutIds(new Set());
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, section, hiddenRecords.length]);
+  // Asked for the screen that offers a backup: how big it would be.
+  // Told once for each set of documents, not each time Security opens or the box
+  // is ticked: working it out reads the start of the recorded videos. A failed
+  // answer is not kept.
+  const sizeAnswer = useRef<{
+    key: string;
+    answer: Promise<BackupSize>;
+  } | null>(null);
+  const documentsKey = records
+    .map(
+      (record) =>
+        `${record.id}${record.available ? "" : "-"}${record.hidden ? "h" : ""}`,
+    )
+    .join(",");
+  const backupSize = useCallback(() => {
+    if (sizeAnswer.current?.key === documentsKey) {
+      return sizeAnswer.current.answer;
+    }
+    const answer =
+      typeof bridge.backupSize === "function"
+        ? bridge.backupSize()
+        : Promise.reject(new Error("no backup size"));
+    sizeAnswer.current = { key: documentsKey, answer };
+    answer.catch(() => {
+      if (sizeAnswer.current?.answer === answer) sizeAnswer.current = null;
+    });
+    return answer;
+  }, [bridge, documentsKey]);
+  const saveBackup = (leaveVideosOut = false) =>
     run(async () => {
       // Named by the patient's own date, not the UTC one.
       const pickId = await bridge.pickBackupDestination(
@@ -1472,7 +1544,7 @@ export function VaultLibrary({
       }
       let saved: SavedBackup | undefined;
       try {
-        saved = await bridge.saveBackupToPicked(pickId);
+        saved = await bridge.saveBackupToPicked(pickId, leaveVideosOut);
       } catch (error) {
         // On Android the steps may name no file, and this save may have been
         // over the one they say to keep, now emptied: a new backup comes
@@ -2740,6 +2812,7 @@ export function VaultLibrary({
 
             {section === "hidden" && (
               <HiddenDocuments
+                leftOutIds={leftOutIds}
                 records={hiddenRecords}
                 rootName={hiddenScopeName}
                 onBack={backToSecurity}
@@ -2819,6 +2892,7 @@ export function VaultLibrary({
                 sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
+                onBackupSize={backupSize}
                 onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />

@@ -1919,6 +1919,22 @@ ai-notInstalled-openPreferences = Otwórz ustawienia asystenta AI
 
 aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.
 
+aiHelper-resultLabelShort = Szkic AI
+
+aiHelper-resultLabelHide = Nie pokazuj ponownie
+
+aiHelper-resultLabelInfo = Co oznacza „Szkic AI”
+
+ai-label-settingsTitle = Ostrzeżenie przy odpowiedziach AI
+
+ai-label-settingsBody = Każda odpowiedź AI informuje, że została napisana przez AI i może zawierać błędy. Po wybraniu „Nie pokazuj ponownie” pełne zdanie zastępuje krótka etykieta „Szkic AI”. Etykieta nigdy nie znika. Wybór jest zapamiętany na tym urządzeniu i zaczyna się od nowa, gdy zmieni się model lub narzędzie.
+
+ai-label-settingsShowFull = Pokaż ponownie pełne ostrzeżenie
+
+ai-label-settingsFullShown = Pełne ostrzeżenie jest pokazywane przy każdej odpowiedzi AI.
+
+ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana przy odpowiedziach AI, dla których ją wybrano.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
@@ -2440,3 +2456,18 @@ interface-RecordingRecovery-deleteSure = Usunąć to nagranie? Nie można tego c
 interface-RecordingRecovery-savedLocked = myCarlos został zablokowany podczas nagrywania. Film został zapisany: { $name }
 interface-RecordingRecovery-savedLockedPaused = myCarlos został zablokowany, gdy nagrywanie było wstrzymane. Film został zapisany: { $name }
 interface-RecordDialog-videoSavedFailed = Nagrywanie zatrzymano, ponieważ nie udało się zapisać jego części. To, co zapisano wcześniej, zostało zachowane: { $name }
+interface-RecordDialog-notEnoughRoom = Brak wystarczającej ilości miejsca na nagranie filmu. Wolny musi być około 1 GB. Zwolnij miejsce na tym urządzeniu, a potem wybierz Spróbuj ponownie.
+interface-RecordDialog-lowOnRoom = Zostaje mało miejsca. Nagranie zostanie zapisane, gdy miejsca zabraknie.
+interface-RecordDialog-lowOnRoomMinutes = Zostaje mało miejsca: około { $minutes } min nagrywania. Nagranie zostanie zapisane, gdy miejsca zabraknie.
+interface-RecordDialog-videoSavedNoRoom = Zapisano. Zabrakło miejsca: { $name }
+interface-RecordDialog-videoKeptUnfinished = Zabrakło miejsca, więc nie udało się dokończyć filmu. Jest zachowany jako nieukończone nagranie: zwolnij miejsce, a myCarlos dokończy go przy następnym odblokowaniu.
+interface-RecordingRecovery-finishedWithRoom = Znów jest miejsce, więc nieukończony film został dokończony: { $name }
+interface-RecordingRecovery-stillNoRoom = Nadal brakuje miejsca, by dokończyć nieukończony film: { $name }. Zwolnij miejsce; film jest zachowany.
+security-backup-size = Około { $size }.
+security-backup-sizeWithVideos = Około { $size }, z czego filmy to { $videos }.
+security-backup-sizeNoVideos = Około { $size }, bez filmów.
+security-backup-leaveVideosOut = Pomiń filmy
+security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich filmów. Jeśli ją przywrócisz, filmy nie wrócą.
+restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
+security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
+interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej

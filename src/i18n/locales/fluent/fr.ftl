@@ -1879,6 +1879,22 @@ ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
+aiHelper-resultLabelShort = Brouillon IA
+
+aiHelper-resultLabelHide = Ne plus afficher
+
+aiHelper-resultLabelInfo = Ce que signifie « Brouillon IA »
+
+ai-label-settingsTitle = Avertissement sur les réponses de l’IA
+
+ai-label-settingsBody = Chaque réponse de l’IA indique qu’elle a été écrite par une IA et peut contenir des erreurs. Après « Ne plus afficher », une courte étiquette « Brouillon IA » remplace la phrase complète. L’étiquette n’est jamais retirée. Le choix est gardé sur cet appareil et recommence si le modèle ou l’outil change.
+
+ai-label-settingsShowFull = Afficher de nouveau l’avertissement complet
+
+ai-label-settingsFullShown = L’avertissement complet est affiché sur chaque réponse de l’IA.
+
+ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affichée sur les réponses de l’IA pour lesquelles vous l’avez choisie.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document
@@ -2394,3 +2410,18 @@ interface-RecordingRecovery-deleteSure = Supprimer cet enregistrement ? Cette ac
 interface-RecordingRecovery-savedLocked = myCarlos s’est verrouillé pendant que vous enregistriez. La vidéo a été sauvegardée : { $name }
 interface-RecordingRecovery-savedLockedPaused = myCarlos s’est verrouillé pendant qu’un enregistrement était en pause. La vidéo a été sauvegardée : { $name }
 interface-RecordDialog-videoSavedFailed = L’enregistrement s’est arrêté car une partie n’a pas pu être sauvegardée. Ce qui l’avait été auparavant est conservé : { $name }
+interface-RecordDialog-notEnoughRoom = Il n’y a pas assez de place pour enregistrer une vidéo. Environ 1 Go doit être libre. Libérez de l’espace sur cet appareil, puis choisissez Réessayer.
+interface-RecordDialog-lowOnRoom = Il reste peu de place. L’enregistrement est sauvegardé quand il n’y a plus de place.
+interface-RecordDialog-lowOnRoomMinutes = Il reste peu de place : environ { $minutes } minutes d’enregistrement. L’enregistrement est sauvegardé quand il n’y a plus de place.
+interface-RecordDialog-videoSavedNoRoom = Sauvegardé. Il n’y avait plus de place : { $name }
+interface-RecordDialog-videoKeptUnfinished = Il n’y avait plus de place, donc la vidéo n’a pas pu être terminée. Elle est conservée comme enregistrement inachevé : libérez de l’espace, et myCarlos la terminera au prochain déverrouillage.
+interface-RecordingRecovery-finishedWithRoom = Il y a de nouveau de la place, votre vidéo inachevée a donc été terminée : { $name }
+interface-RecordingRecovery-stillNoRoom = Il n’y a toujours pas assez de place pour terminer votre vidéo inachevée : { $name }. Libérez de l’espace ; elle est conservée.
+security-backup-size = Environ { $size }.
+security-backup-sizeWithVideos = Environ { $size }, dont { $videos } de vidéos.
+security-backup-sizeNoVideos = Environ { $size }, sans les vidéos.
+security-backup-leaveVideosOut = Laisser de côté les vidéos
+security-backup-leaveVideosOutHelp = La sauvegarde ne contiendra pas vos vidéos. Si vous la restaurez, les vidéos ne reviennent pas.
+restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer ramène tout le reste, et vos vidéos n’y seront pas. Elles figurent parmi les documents masqués, comme des fichiers manquants.
+security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
+interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde

@@ -523,6 +523,9 @@ const SUMMARY_SAME_SENTENCE: &str =
      number with its unit, the date or time.";
 
 /// The summary request, with [`SLOT`] where the document goes.
+// The "Don't show this again" choice on the AI warning is remembered per tool and model (#351).
+// When this prompt changes enough to deserve the full warning again, raise `summary` in
+// `AI_TOOL_REVISION` (src/aiLabelPreference.ts).
 pub(crate) fn summary_prompt(language: &str, max_sentences: usize) -> String {
     format!(
         "Summarize this document for the patient in {language}, in at most {max_sentences} short \

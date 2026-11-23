@@ -340,6 +340,15 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "vault_video_pending")
           return { recordings: [], unreadable: 0 };
         if (command === "vault_is_video") return false;
+        // The backup's size, with and without videos (#359): no video here.
+        if (command === "vault_backup_size")
+          return {
+            totalBytes: 4096,
+            withoutVideosBytes: 4096,
+            videoBytes: 0,
+            videoCount: 0,
+          };
+        if (command === "vault_left_out_records") return [];
         // A PDF's details ask whether it is locked with a password (#54).
         if (command === "vault_is_locked_pdf") return false;
         // These FAKE PDFs carry no patient identity hint.

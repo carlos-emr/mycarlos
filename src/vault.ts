@@ -24,6 +24,20 @@ export interface RecordingProgress {
   hasAudio: boolean | null;
   /** The sequence number the next piece must carry. */
   nextSequence: number;
+  /** How much room there was when last looked at (about every 8 MiB). */
+  space: SpaceLevel;
+  freeBytes: number | null;
+}
+
+/** Plenty, low (under 512 MiB: warn), stop (under 256 MiB: end and save), or
+ * unknown (the volume could not be asked: nothing is refused on a guess). */
+export type SpaceLevel = "ok" | "low" | "stop" | "unknown";
+
+export interface RecordingSpace {
+  freeBytes: number | null;
+  level: SpaceLevel;
+  /** At least 1 GiB, or not known. */
+  canRecord: boolean;
 }
 
 /** One recording a crash or a lock left unfinished. */
@@ -35,6 +49,9 @@ export interface PendingRecording {
   paused: boolean;
   /** A lock parked it (not a crash). */
   parked: boolean;
+  /** The patient ended it and it could not be finished for want of room: it is
+   * finished when there is room again. */
+  stopped: boolean;
 }
 
 export interface PendingRecordings {
@@ -275,6 +292,22 @@ export interface RestorePreview {
   differsFromThisDevice: boolean;
   /** How many documents the backup holds. */
   documentCount: number;
+  /** How many records the backup leaves out: it was made without videos
+   * (#359), and restoring it brings back everything else but not those. Zero
+   * for an ordinary backup. */
+  leftOut: number;
+}
+
+/** How big a backup would be, before it is saved. */
+export interface BackupSize {
+  /** The file, about, with its videos. */
+  totalBytes: number;
+  /** The file, about, with the videos left out: both are given at once, so
+   * ticking the box needs no second question. */
+  withoutVideosBytes: number;
+  /** How much of what the vault holds is video that can be left out. */
+  videoBytes: number;
+  videoCount: number;
 }
 
 /** What opens a backup: the passphrase it was made with, or its recovery key. */
@@ -522,7 +555,14 @@ export interface VaultBridge {
    * name suggested. */
   pickBackupDestination(localDate?: string): Promise<string | null>;
   /** Saves the backup, and says what was written. */
-  saveBackupToPicked(pickId: string): Promise<SavedBackup>;
+  saveBackupToPicked(
+    pickId: string,
+    leaveVideosOut?: boolean,
+  ): Promise<SavedBackup>;
+  /** How big a backup would be, with or without the videos (#359). */
+  backupSize(): Promise<BackupSize>;
+  /** The records a backup was made without the file of (ids). */
+  leftOutRecords(): Promise<string[]>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -601,6 +641,9 @@ export interface VaultBridge {
   /** Ends the recording: the video is added to the library, or nothing is when
    * nothing complete was recorded (`recordId` is null). */
   videoStop(recordingId: string): Promise<VideoSaved>;
+  /** How much room there is to record. Asked before the camera and microphone
+   * are turned on, and again on every resume. */
+  videoSpace(): Promise<RecordingSpace>;
   /** The recordings a crash or a lock left unfinished. */
   videoPending(): Promise<PendingRecordings>;
   /** Keeps (`true`) or deletes (`false`) one of them. */
@@ -1096,8 +1139,12 @@ export function createVaultBridge(): VaultBridge {
       }),
     pickBackupDestination: (localDate) =>
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
-    saveBackupToPicked: (pickId) =>
-      invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
+    saveBackupToPicked: (pickId, leaveVideosOut = false) =>
+      invoke<SavedBackup>("vault_backup_picked", {
+        request: { pickId, leaveVideosOut },
+      }),
+    backupSize: () => invoke<BackupSize>("vault_backup_size"),
+    leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>
@@ -1185,6 +1232,7 @@ export function createVaultBridge(): VaultBridge {
       invoke<void>("vault_video_resume", { request: { recordingId } }),
     videoStop: (recordingId) =>
       invoke<VideoSaved>("vault_video_stop", { request: { recordingId } }),
+    videoSpace: () => invoke<RecordingSpace>("vault_video_space"),
     videoPending: () => invoke<PendingRecordings>("vault_video_pending"),
     videoRecover: (recordingId, keep) =>
       invoke<VideoSaved>("vault_video_recover", {

@@ -11,6 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BackupSize } from "../vault";
 import { page } from "vitest/browser";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
@@ -1110,5 +1111,120 @@ describe("SecuritySettings backup layout", () => {
     } finally {
       document.documentElement.style.fontSize = "";
     }
+  });
+});
+
+describe("the backup's size and leaving the videos out (#359)", () => {
+  const sizes = (videos: number) =>
+    vi.fn(async () => ({
+      totalBytes: 14_200_000_000,
+      withoutVideosBytes: videos > 0 ? 1_300_000_000 : 14_200_000_000,
+      videoBytes: videos > 0 ? 12_900_000_000 : 0,
+      videoCount: videos,
+    }));
+
+  it("shows how big the backup will be, and how much of it is video, before anything is saved", async () => {
+    setLocaleOverride("en");
+    const props = renderSettings({ onBackupSize: sizes(3) });
+    expect(
+      await screen.findByText(
+        humanText("About 14.2 GB, of which videos 12.9 GB."),
+      ),
+    ).toBeVisible();
+    expect(props.onSaveBackup).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("checkbox", { name: humanText("Leave videos out") }),
+    ).not.toBeChecked();
+  });
+
+  it("shows the size without the videos when the box is ticked, with no second question, and says what that means, and saves without them", async () => {
+    setLocaleOverride("en");
+    const onBackupSize = sizes(3);
+    const props = renderSettings({ onBackupSize });
+    const leave = await screen.findByRole("checkbox", {
+      name: humanText("Leave videos out"),
+    });
+    fireEvent.click(leave);
+    expect(
+      await screen.findByText(humanText("About 1.3 GB, without videos.")),
+    ).toBeVisible();
+    // Asked once: ticking the box does not ask again.
+    expect(onBackupSize).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(
+        humanText(
+          "The backup will not contain your videos. If you restore it, the videos are not brought back.",
+        ),
+      ),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(true);
+  });
+
+  it("says the size is being worked out until it is known", async () => {
+    setLocaleOverride("en");
+    let answer: (size: BackupSize) => void = () => {};
+    renderSettings({
+      onBackupSize: vi.fn(
+        () =>
+          new Promise<BackupSize>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+    });
+    expect(
+      await screen.findByText(
+        humanText("Working out how big the backup will be…"),
+      ),
+    ).toBeVisible();
+    act(() =>
+      answer({
+        totalBytes: 14_200_000_000,
+        withoutVideosBytes: 1_300_000_000,
+        videoBytes: 12_900_000_000,
+        videoCount: 3,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        humanText("About 14.2 GB, of which videos 12.9 GB."),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("Working out how big the backup will be…")),
+    ).toBeNull();
+  });
+
+  it("offers nothing to leave out when the vault holds no video", async () => {
+    setLocaleOverride("en");
+    const props = renderSettings({ onBackupSize: sizes(0) });
+    expect(await screen.findByText(humanText("About 14.2 GB."))).toBeVisible();
+    expect(
+      screen.queryByRole("checkbox", { name: humanText("Leave videos out") }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(false);
+  });
+
+  it("is in the patient's language and still saves when the size cannot be told", async () => {
+    setLocaleOverride("fr");
+    const props = renderSettings({
+      onBackupSize: vi.fn().mockRejectedValue(new Error("FAKE")),
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: /./ })).toBeNull(),
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.backup.save")),
+      }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(false);
+    setLocaleOverride("en");
   });
 });

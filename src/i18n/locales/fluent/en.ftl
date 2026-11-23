@@ -1843,6 +1843,22 @@ ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
+aiHelper-resultLabelShort = AI draft
+
+aiHelper-resultLabelHide = Don't show this again
+
+aiHelper-resultLabelInfo = What “AI draft” means
+
+ai-label-settingsTitle = Warning on AI answers
+
+ai-label-settingsBody = Each AI answer says it was written by AI and may be wrong. After “Don't show this again”, a short “AI draft” tag stands in for the full sentence. The tag is never removed. The choice is kept on this device, and starts over if the model or the tool changes.
+
+ai-label-settingsShowFull = Show the full warning again
+
+ai-label-settingsFullShown = The full warning is shown on every AI answer.
+
+ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document
@@ -2359,3 +2375,18 @@ interface-RecordingRecovery-deleteSure = Delete this recording? It can't be undo
 interface-RecordingRecovery-savedLocked = myCarlos locked while you were recording. The video was saved: { $name }
 interface-RecordingRecovery-savedLockedPaused = myCarlos locked while a recording was paused. The video was saved: { $name }
 interface-RecordDialog-videoSavedFailed = Recording stopped because part of it could not be saved. What was saved before that is kept: { $name }
+interface-RecordDialog-notEnoughRoom = There is not enough room to record a video. About 1 GB must be free. Free up some space on this device, then choose Try again.
+interface-RecordDialog-lowOnRoom = Running low on room. The recording is saved when there is no more room.
+interface-RecordDialog-lowOnRoomMinutes = Running low on room: about { $minutes } minutes of recording left. The recording is saved when there is no more room.
+interface-RecordDialog-videoSavedNoRoom = Saved. There was no more room: { $name }
+interface-RecordDialog-videoKeptUnfinished = There was no more room, so the video could not be finished. It is kept as an unfinished recording: free up some space, and myCarlos will finish it the next time you unlock.
+interface-RecordingRecovery-finishedWithRoom = There is room again, so your unfinished video was finished: { $name }
+interface-RecordingRecovery-stillNoRoom = There is still not enough room to finish your unfinished video: { $name }. Free up some space; it is kept.
+security-backup-size = About { $size }.
+security-backup-sizeWithVideos = About { $size }, of which videos { $videos }.
+security-backup-sizeNoVideos = About { $size }, without videos.
+security-backup-leaveVideosOut = Leave videos out
+security-backup-leaveVideosOutHelp = The backup will not contain your videos. If you restore it, the videos are not brought back.
+restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
+security-backup-sizeCalculating = Working out how big the backup will be…
+interface-hidden-videoLeftOut = Video left out of the backup

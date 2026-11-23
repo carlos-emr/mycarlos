@@ -187,6 +187,34 @@ export function videoName(now: Date): string {
   return formatVideoName(getLocale(), filenameText(date), filenameText(time));
 }
 
+/** What is kept back from the room that is left so that a recording can be
+ * finished: the last frame, the check, the manifest and the history. Matches
+ * the vault's own reserve. */
+export const STOP_RESERVE_BYTES = 256 * 1024 * 1024;
+
+/** About how many whole minutes of recording the room left will hold, from how
+ * fast this recording has been filling it; `null` until enough has been
+ * recorded to say. */
+export function minutesLeft(
+  freeBytes: number | null,
+  storedBytes: number,
+  elapsedMs: number,
+): number | null {
+  if (freeBytes === null || elapsedMs < 5_000 || storedBytes <= 0) return null;
+  const perSecond = storedBytes / (elapsedMs / 1000);
+  const usable = Math.max(0, freeBytes - STOP_RESERVE_BYTES);
+  return Math.max(0, Math.floor(usable / perSecond / 60));
+}
+
+/** Whether the vault refused for want of room. */
+export function isNoSpace(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "no_space"
+  );
+}
+
 /** The most unsent video the page keeps: past it the recording ends and what
  * was recorded is saved, so a stalled save cannot fill the webview's memory. */
 export const MAX_UNSENT_BYTES = 16 * 1024 * 1024;

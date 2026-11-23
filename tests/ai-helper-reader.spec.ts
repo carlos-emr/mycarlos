@@ -291,12 +291,20 @@ test.describe("with a model on this device", () => {
     await expect(marked).toHaveText(fakePageText(LETTER, 2));
     await expect(marked).toBeFocused();
     // Tab: the next control after the marked words: the Summary's "About the
-    // AI helper" button (#355), then the first Show in document; never the
+    // AI helper" button (#355), then the warning's "Don't show this again"
+    // (#351), then the summary's first Show in document; never the
     // reader's Close at the top.
     await page.keyboard.press("Tab");
     await expect(
       summaryPanel.getByRole("button", {
         name: en("aiHelper.notice.title"),
+        exact: true,
+      }),
+    ).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(
+      summaryPanel.getByRole("button", {
+        name: en("aiHelper.resultLabelHide"),
         exact: true,
       }),
     ).toBeFocused();
