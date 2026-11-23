@@ -27,6 +27,7 @@ const MAX_REDIRECTS: usize = 3;
 /// Whether a redirect from the pinned address may go to `target`: parsed by
 /// the same URL parser the HTTP client uses, then HTTPS on the default port,
 /// no credentials, and the pinned host or its CDN.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub(crate) fn redirect_allowed(pinned: &str, target: &str) -> bool {
     // A real CDN address never has a backslash; the URL standard reads one as
     // a path separator, which would hide what follows it. Refused before parsing.
@@ -50,6 +51,25 @@ pub(crate) fn redirect_allowed(pinned: &str, target: &str) -> bool {
             || REDIRECT_HOST_SUFFIXES
                 .iter()
                 .any(|suffix| host.ends_with(suffix) && host.len() > suffix.len()))
+}
+
+/// Where a redirect from `current` goes, or `None` when it must not be followed. An absolute
+/// `Location` is taken as it is; a relative one (`/path`, `?query`, `../file`, or `//host/path`) is
+/// joined onto the address that answered, with the URL parser the HTTP client uses. Either way the
+/// result must pass [`redirect_allowed`] on its own: the pinned host or its CDN, over HTTPS, so a
+/// relative redirect can only stay on a host that is already allowed.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+pub(crate) fn next_redirect(pinned: &str, current: &str, location: &str) -> Option<String> {
+    // The same refusal as `redirect_allowed`, before the join reads a backslash as a separator.
+    if location.is_empty()
+        || location.contains('\\')
+        || location.to_ascii_lowercase().contains("%5c")
+    {
+        return None;
+    }
+    let joined = reqwest::Url::parse(current).ok()?.join(location).ok()?;
+    let joined = String::from(joined);
+    redirect_allowed(pinned, &joined).then_some(joined)
 }
 
 /// The real network opener.
@@ -78,16 +98,12 @@ impl Opener for Https {
                 .map_err(|_| OpenerError::Network)?;
             let status = response.status();
             if status.is_redirection() {
-                let next = response
+                let location = response
                     .headers()
                     .get(reqwest::header::LOCATION)
                     .and_then(|v| v.to_str().ok())
-                    .ok_or(OpenerError::BadRedirect)?
-                    .to_owned();
-                if !redirect_allowed(pinned, &next) {
-                    return Err(OpenerError::BadRedirect);
-                }
-                url = next;
+                    .ok_or(OpenerError::BadRedirect)?;
+                url = next_redirect(pinned, &url, location).ok_or(OpenerError::BadRedirect)?;
                 continue;
             }
             let content_range = response
@@ -310,6 +326,86 @@ mod tests {
             "http://huggingface.co/x",
             "https://huggingface.co/y"
         ));
+    }
+
+    #[test]
+    fn a_relative_redirect_stays_on_an_allowed_host_over_https() {
+        let cdn = "https://us.aws.cdn.hf.co/xet-bridge-us/abc/file?x=1";
+        let followed = [
+            // Absolute, as the pinned host answers today.
+            (
+                PINNED,
+                "https://us.aws.cdn.hf.co/xet/abc?x=1",
+                "https://us.aws.cdn.hf.co/xet/abc?x=1",
+            ),
+            // Relative to the pinned host.
+            (
+                PINNED,
+                "/org/repo/resolve/other/file.gguf",
+                "https://huggingface.co/org/repo/resolve/other/file.gguf",
+            ),
+            (
+                PINNED,
+                "file2.gguf?download=true",
+                "https://huggingface.co/org/repo/resolve/0123abcd/file2.gguf?download=true",
+            ),
+            (
+                PINNED,
+                "../other/file.gguf",
+                "https://huggingface.co/org/repo/resolve/other/file.gguf",
+            ),
+            // Relative to the CDN that answered.
+            (
+                cdn,
+                "/xet-bridge-us/def/file?y=2",
+                "https://us.aws.cdn.hf.co/xet-bridge-us/def/file?y=2",
+            ),
+            (
+                cdn,
+                "?y=3",
+                "https://us.aws.cdn.hf.co/xet-bridge-us/abc/file?y=3",
+            ),
+            // Scheme-relative to an allowed host.
+            (
+                PINNED,
+                "//us.aws.cdn.hf.co/xet/abc",
+                "https://us.aws.cdn.hf.co/xet/abc",
+            ),
+        ];
+        for (current, location, expected) in followed {
+            assert_eq!(
+                next_redirect(PINNED, current, location).as_deref(),
+                Some(expected),
+                "{location}"
+            );
+        }
+        let refused = [
+            // Another host, however it is written.
+            (PINNED, "//evil.example/x"),
+            (PINNED, "//huggingface.co.evil.example/x"),
+            (PINNED, "https://evil.example/x"),
+            (cdn, "//evil.example/x"),
+            // Away from HTTPS, to another port, with credentials, or through a backslash.
+            (PINNED, "http://huggingface.co/x"),
+            (PINNED, "//huggingface.co:8443/x"),
+            (PINNED, "//user@huggingface.co/x"),
+            (PINNED, "/\\evil.example/x"),
+            (PINNED, "\\\\evil.example/x"),
+            (PINNED, "/%5Cevil.example/x"),
+            (PINNED, "ftp://huggingface.co/x"),
+            (PINNED, "data:text/plain,x"),
+            (PINNED, ""),
+        ];
+        for (current, location) in refused {
+            assert_eq!(next_redirect(PINNED, current, location), None, "{location}");
+        }
+        // A current address that is not itself valid joins nothing.
+        assert_eq!(next_redirect(PINNED, "not a url", "/x"), None);
+        // A pinned address that is not HTTPS follows nothing.
+        assert_eq!(
+            next_redirect("http://huggingface.co/x", "http://huggingface.co/x", "/y"),
+            None
+        );
     }
 
     /// Needs the network: `cargo test -- --ignored live_download`. Starts the
