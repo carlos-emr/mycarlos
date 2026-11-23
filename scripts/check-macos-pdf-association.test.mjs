@@ -60,6 +60,21 @@ test("a built Info.plist is accepted only when it is an alternate PDF viewer", (
     documentTypeProblems({ ...right, UTExportedTypeDeclarations: [{}] })[0],
     /exports/,
   );
+  // An entry with no content types at all, or with more than PDF, claims the wrong things.
+  assert.match(
+    documentTypeProblems(change({ LSItemContentTypes: undefined }))[0],
+    /content types/,
+  );
+  assert.match(
+    documentTypeProblems(
+      change({ LSItemContentTypes: ["com.adobe.pdf", "public.data"] }),
+    )[0],
+    /content types/,
+  );
+  assert.match(
+    documentTypeProblems(change({ LSHandlerRank: "None" }))[0],
+    /rank/,
+  );
   // Two entries are refused: nothing else may be claimed.
   assert.equal(
     documentTypeProblems({
@@ -91,6 +106,19 @@ test("a configuration that would take PDFs over is refused", () => {
   ]);
   assert.deepEqual(configProblems(config({ ext: ["pdf", "txt"] })), [
     "ext is not [pdf]",
+  ]);
+  assert.deepEqual(configProblems(config({ contentTypes: ["public.data"] })), [
+    "contentTypes is not absent or [com.adobe.pdf]",
+  ]);
+  assert.deepEqual(
+    configProblems(config({ contentTypes: ["com.adobe.pdf"] })),
+    [],
+  );
+  assert.deepEqual(configProblems(config({ rank: "None" })), [
+    "rank is not Alternate",
+  ]);
+  assert.deepEqual(configProblems(config({ rank: "Owner" })), [
+    "rank is not Alternate",
   ]);
   assert.deepEqual(configProblems({}), [
     "expected one bundle.fileAssociations entry",

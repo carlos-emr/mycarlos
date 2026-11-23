@@ -9,7 +9,7 @@
 // the app declares no type of its own that conforms to PDF, and that the camera purpose string
 // from src-tauri/Info.plist is still merged in.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,6 +52,14 @@ export function configProblems(config) {
   }
   const [one] = associations;
   if (JSON.stringify(one.ext) !== '["pdf"]') problems.push("ext is not [pdf]");
+  // Content types are inferred from the extension and MIME type (com.adobe.pdf); a file that
+  // names others claims more than PDFs.
+  if (
+    one.contentTypes !== undefined &&
+    JSON.stringify(one.contentTypes) !== '["com.adobe.pdf"]'
+  ) {
+    problems.push("contentTypes is not absent or [com.adobe.pdf]");
+  }
   if (one.mimeType !== "application/pdf")
     problems.push("mimeType is not application/pdf");
   if (one.role !== "Viewer") problems.push("role is not Viewer");
@@ -66,11 +74,19 @@ function main(argument) {
       JSON.parse(readFileSync(join(here, "..", "src-tauri", name), "utf8"));
     const problems = [
       ...configProblems(read("tauri.macos.conf.json")),
-      // Only macOS asks to open PDFs this way: the shared file has none, so Windows and
-      // Android builds do not become a PDF viewer through it.
-      ...(read("tauri.conf.json").bundle?.fileAssociations
-        ? ["tauri.conf.json must not declare fileAssociations"]
-        : []),
+      // Only macOS asks to open PDFs this way: the shared file and every other platform's file
+      // declare none, so Windows and Linux builds do not become a PDF viewer through it. (The
+      // Android Share menu is declared in tauri.android.conf.json, #50, by actions that do not
+      // include a view.)
+      ...[
+        "tauri.conf.json",
+        "tauri.windows.conf.json",
+        "tauri.linux.conf.json",
+        "tauri.ios.conf.json",
+      ]
+        .filter((name) => existsSync(join(here, "..", "src-tauri", name)))
+        .filter((name) => read(name).bundle?.fileAssociations)
+        .map((name) => `${name} must not declare fileAssociations`),
     ];
     return problems;
   }
