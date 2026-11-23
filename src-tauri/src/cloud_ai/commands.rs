@@ -153,16 +153,22 @@ pub(crate) async fn cloud_key_add(
     session: State<'_, Arc<CloudSession>>,
     request: CloudKeyAddRequest,
 ) -> CommandResult<CloudKeyInfo> {
-    // A key is added only after the patient turned cloud AI on in this session. (Removing one is
-    // always allowed: a patient must be able to delete a key.)
-    if !session.enabled(origin_of(&store)?) {
-        return Err(refuse("off"));
-    }
     let CloudKeyAddRequest {
         provider,
         label,
         mut key,
     } = request;
+    // A key is added only after the patient turned cloud AI on in this session. (Removing one is
+    // always allowed: a patient must be able to delete a key.) The typed key is zeroed on a
+    // refusal too.
+    let origin = match origin_of(&store) {
+        Ok(origin) if session.enabled(origin) => origin,
+        refused => {
+            key.zeroize();
+            return Err(refused.err().unwrap_or_else(|| refuse("off")));
+        }
+    };
+    let _ = origin;
     blocking(store.inner(), move |store| {
         let result = store.cloud_key_add(&provider, &label, &key, now_ms());
         key.zeroize();
@@ -206,7 +212,10 @@ pub(crate) async fn cloud_key_test(
     blocking(store.inner(), move |store| {
         // Under the id the page chose (if any), so that `cloud_send_cancel` can stop this one.
         let running = test_id.unwrap_or_else(Uuid::new_v4);
-        let cancel = session.exchanges.start_running_as(running);
+        let cancel = session
+            .exchanges
+            .start_running_as(running)
+            .ok_or_else(|| refuse("busy"))?;
         let outcome = test_key(store, &HttpsTransport, id, &cancel);
         session.exchanges.finish(running);
         outcome.map_err(PublicError::from)
@@ -303,6 +312,12 @@ pub(crate) async fn cloud_send_prepare(
                     model_label: prepared.model_label(),
                 };
                 let exchange_id = session.exchanges.put(origin, prepared, Instant::now());
+                // A lock that landed while this was being prepared: the old session's text and
+                // restore map are dropped now, not left waiting for a send that cannot come.
+                if store.answer_origin() != Some(origin) {
+                    session.exchanges.cancel(exchange_id);
+                    return Err(refuse("locked"));
+                }
                 Ok(PrepareOutcome {
                     prepared: Some(CloudSendPrepared {
                         exchange_id,
@@ -480,7 +495,7 @@ mod tests {
     fn a_lock_clears_what_is_prepared_turns_consent_off_and_stops_what_runs() {
         // The session's own parts, with plain values: the rules are in `Exchanges` and here.
         let session = CloudSession::default();
-        let flag = session.exchanges.start_running_as(Uuid::nil());
+        let flag = session.exchanges.start_running_as(Uuid::nil()).unwrap();
         // Consent is per unlocked session; set it through the same field the commands use.
         *session.consent.lock().unwrap() = None;
         session.lock();

@@ -1365,6 +1365,9 @@ impl VaultStore {
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
+            // The session is gone: a cloud AI session that began in it is over too (#72).
+            #[cfg(feature = "cloud-ai")]
+            crate::cloud_ai::on_lock();
             guard
         })
     }

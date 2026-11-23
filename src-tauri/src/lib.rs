@@ -2748,7 +2748,10 @@ async fn vault_create(
     let created = run_blocking(store.inner(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
-            .inspect(|_| picks.clear())
+            .inspect(|_| {
+                picks.clear();
+                cloud_ai_on_lock();
+            })
             .and_then(|_| store.snapshot());
         request.passphrase.zeroize();
         result
@@ -2778,7 +2781,10 @@ async fn vault_unlock(
                 // A pick can read the session after a lock clears it but pass its
                 // unlocked check before the lock lands. Starting a new session here
                 // leaves such a pick in the one that ended.
-                .inspect(|_| picks.clear());
+                .inspect(|_| {
+                    picks.clear();
+                    cloud_ai_on_lock();
+                });
             request.passphrase.zeroize();
             result
         }),
@@ -3553,7 +3559,10 @@ async fn vault_recover(
             let result = store
                 .recover(&request.recovery_key, &request.new_passphrase)
                 // As for unlock: a pick from the session that ended stays there.
-                .inspect(|_| picks.clear());
+                .inspect(|_| {
+                    picks.clear();
+                    cloud_ai_on_lock();
+                });
             request.recovery_key.zeroize();
             request.new_passphrase.zeroize();
             result

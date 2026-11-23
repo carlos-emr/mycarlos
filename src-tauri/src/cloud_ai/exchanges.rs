@@ -89,14 +89,16 @@ impl<T, O: Copy + PartialEq> Exchanges<T, O> {
         (id, flag)
     }
 
-    /// As `start_running`, under an id the page chose, so that it can cancel that one test.
-    pub(crate) fn start_running_as(&self, id: Uuid) -> Arc<AtomicBool> {
+    /// As `start_running`, under an id the page chose, so that it can cancel that one test. An id
+    /// already running (a send's, say) is refused: the page may not take over another's flag.
+    pub(crate) fn start_running_as(&self, id: Uuid) -> Option<Arc<AtomicBool>> {
+        let mut running = self.running.lock().unwrap_or_else(|e| e.into_inner());
+        if running.contains_key(&id) {
+            return None;
+        }
         let flag = Arc::new(AtomicBool::new(false));
-        self.running
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id, Arc::clone(&flag));
-        flag
+        running.insert(id, Arc::clone(&flag));
+        Some(flag)
     }
 
     pub(crate) fn finish(&self, id: Uuid) {
@@ -178,6 +180,21 @@ mod tests {
         ex.cancel(id);
         assert!(flag.load(Ordering::Acquire));
         ex.finish(id);
+    }
+
+    #[test]
+    fn a_page_chosen_id_cannot_take_over_a_running_send() {
+        let ex: Exchanges<String, u8> = Exchanges::default();
+        let now = Instant::now();
+        let id = ex.put(1, "a".into(), now);
+        let (_, send_flag) = ex.take(id, 1, now).unwrap();
+        assert!(ex.start_running_as(id).is_none());
+        // The send's own flag is the one a cancel still reaches.
+        ex.cancel(id);
+        assert!(send_flag.load(Ordering::Acquire));
+        let fresh = Uuid::new_v4();
+        assert!(ex.start_running_as(fresh).is_some());
+        assert!(ex.start_running_as(fresh).is_none());
     }
 
     #[test]
