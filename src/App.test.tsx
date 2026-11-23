@@ -390,7 +390,7 @@ describe("myCarlos Tauri evaluation", () => {
     expect(screen.getByText("Evaluation controls only.")).toBeVisible();
 
     const cloudBackup = screen.getByRole("button", {
-      name: "Backup to iCloud demo",
+      name: "Keep vault out of device backups demo",
     });
     expect(cloudBackup).toHaveAttribute("aria-pressed", "true");
     await user.click(cloudBackup);

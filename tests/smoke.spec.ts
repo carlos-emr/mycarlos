@@ -163,7 +163,7 @@ test("shows the purpose of the library navigation sections", async ({
 
   await openSection("security", "Security & backup");
   const cloudBackup = page.getByRole("button", {
-    name: "Backup to iCloud demo",
+    name: "Keep vault out of device backups demo",
   });
   await expect(cloudBackup).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({

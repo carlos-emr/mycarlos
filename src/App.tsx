@@ -1077,7 +1077,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   <section className="setting-row">
                     <div>
                       <h2>
-                        Backup to iCloud{" "}
+                        Keep the vault out of device backups{" "}
                         <span
                           className={`state-pill ${cloudBackup ? "" : "off"}`}
                         >
@@ -1085,14 +1085,15 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                         </span>
                       </h2>
                       <p>
-                        The production concept copies records while they are
-                        still scrambled, so the cloud provider cannot read them.
+                        In the real app the vault stays out of the phone's and
+                        computer's own backups; only a myCarlos encrypted backup
+                        that you make holds it.
                       </p>
                     </div>
                     <button
                       className={`toggle ${cloudBackup ? "" : "off"}`}
                       type="button"
-                      aria-label="Backup to iCloud demo"
+                      aria-label="Keep vault out of device backups demo"
                       aria-pressed={cloudBackup}
                       onClick={() => setCloudBackup((current) => !current)}
                     />
