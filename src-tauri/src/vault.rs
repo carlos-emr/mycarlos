@@ -1462,6 +1462,12 @@ impl VaultStore {
             .map_err(|_| VaultError::Busy)
     }
 
+    /// For tests: marks a key derivation as running until the value is dropped, as one does.
+    #[cfg(test)]
+    pub(crate) fn hold_kdf_work_for_test(&self) -> impl Drop + '_ {
+        self.start_kdf_work().expect("no derivation is running")
+    }
+
     pub fn benchmark_kdf(&self) -> Result<KdfBenchmark, VaultError> {
         self.benchmark_kdf_with(benchmark_kdf)
     }
@@ -1658,6 +1664,15 @@ impl VaultStore {
     /// the device, whatever the name matched, so the disk reads (and their atime and inotify trace)
     /// do not grow with the number of matches; the real derivation then works on what was read and
     /// touches no file. A vault that is open or busy is not touched: `Busy`.
+    ///
+    /// **A half-done reset is finished here for every vault the device has, not only the ones the
+    /// name matched.** That is acceptable, and deliberate: it is the same crash recovery an unlock
+    /// of that vault does first (`finish_pending_resets` completes an erase or a start-again the
+    /// patient already confirmed and that was cut off; it creates and reveals nothing), it happens
+    /// for EVERY vault whatever was typed, so it tells no name from another, and doing it only for
+    /// matches would make the disk traffic depend on the name, which is what the pre-read exists to
+    /// prevent. A failure there (`Err`) is treated by the caller as "not there", like any other
+    /// vault that cannot be read now.
     pub(crate) fn pre_read_headers(&self) -> Result<PreReadHeaders, VaultError> {
         if !self.is_at_rest() {
             return Err(VaultError::Busy);
@@ -5720,6 +5735,9 @@ impl DerivedUnlock {
 /// passphrase did not open the vault) or none could be (no vault, a busy key derivation, a reset
 /// that could not be finished): the unlock by name replaces a missing derivation with a decoy.
 pub(crate) struct DeriveFailure {
+    /// Why, for the tests that pin each reason. The unlock by name does not read it: every refusal
+    /// is one answer (`WrongPassphrase`), whatever the reason, so no reason can tell a name apart.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) error: VaultError,
     pub(crate) derived: bool,
 }

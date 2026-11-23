@@ -9137,6 +9137,19 @@ mod tests {
             assert!(build_script.contains(&format!("\"{command}\"")));
             not_granted += usize::from(!granted);
         }
+        // Registered and compiled, but not granted to the renderer until a screen calls them
+        // (least privilege): the grant arrives with the screen that needs it.
+        const WITHHELD: &[&str] = &["vault_unlock_named"];
+        for &command in WITHHELD {
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            assert!(
+                !permissions.contains(&grant.as_str()),
+                "{grant} is withheld until its screen exists (#357 PR 5)"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += 1;
+        }
         assert_eq!(
             permissions.len() + not_granted,
             library.matches(&command_marker).count()
@@ -9187,6 +9200,57 @@ mod tests {
     /// `State<'_, T>`, `State<'a, T>`, `State<T>` and `tauri::State<..>`. The older, narrower scan of
     /// the VaultStore type is `no_source_file_takes_or_manages_the_store_directly` in
     /// `vault_source.rs`, and `scripts/vault-store-handle-codemod.py` rewrites what that one finds.
+    #[test]
+    fn the_named_unlock_command_is_registered_but_not_granted_until_its_screen_exists() {
+        // Least privilege (#357 PR 4b): `vault_unlock_named` is declared and compiled, so the next
+        // PR's screen only needs a grant, but nothing in the renderer may call it before then. The
+        // grant is added with the screen (PR 5) and this test is then changed with it.
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let permissions: Vec<&str> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|permission| permission.as_str().unwrap())
+            .collect();
+        assert!(
+            !permissions.contains(&"allow-vault-unlock-named"),
+            "the renderer may not call vault_unlock_named before a screen needs it"
+        );
+        assert!(include_str!("../build.rs").contains("\"vault_unlock_named\""));
+        assert!(include_str!("lib.rs").contains("async fn vault_unlock_named("));
+    }
+
+    #[test]
+    fn a_failed_named_unlock_never_reaches_the_notice_keys() {
+        // `vault_unlock_named` follows an unlock with `after_open`, which deletes the notice keys of
+        // every OTHER vault. That must happen only once the unlock SUCCEEDED, so a wrong attempt,
+        // an unknown name or a refusal leaves every vault's keys alone. The notice-key store is a
+        // process-wide singleton that a unit test cannot install, so this guards the structure (the
+        // `?` on the unlock comes before the only call); PR 5 makes the keys per vault and adds the
+        // behavior test.
+        let library = include_str!("lib.rs");
+        let production = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let body = production
+            .split_once("async fn vault_unlock_named(")
+            .expect("the command exists")
+            .1
+            // Built here so that this text is not itself counted as a command by the capability test.
+            .split_once(["#[tauri", "::command]"].concat().as_str())
+            .expect("another command follows it")
+            .0;
+        let unlocked = body
+            .find(".await?;")
+            .expect("the unlock's failure is returned with `?`");
+        let follow_up = body.find("after_open(").expect("a success follows up");
+        assert!(unlocked < follow_up, "after_open runs only after the `?`");
+        assert!(
+            !body[..unlocked].contains("notice_key") && !body[..unlocked].contains("after_open"),
+            "nothing before the unlock's `?` may touch the notice keys"
+        );
+        assert_eq!(body.matches("after_open(").count(), 1);
+    }
+
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[

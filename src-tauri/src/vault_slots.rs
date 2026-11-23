@@ -33,7 +33,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::unlock_plan::{run_plan, RealOutcome};
@@ -85,6 +85,18 @@ pub(crate) struct VaultSlots {
     /// The registry as read at start (or, when there is none or it cannot be read, Main alone with
     /// no name, in memory only and never saved): what a typed name is looked up in.
     registry: Mutex<Registry>,
+    /// Set while an unlock by name is under way: one per device at a time (see `unlock_named`).
+    named_attempt: AtomicBool,
+}
+
+/// Held by the one unlock by name that is under way; releases the device on every path, a panic
+/// included.
+struct NamedAttempt<'a>(&'a AtomicBool);
+
+impl Drop for NamedAttempt<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 impl VaultSlots {
@@ -129,7 +141,16 @@ impl VaultSlots {
             current: AtomicUsize::new(current),
             changing: Mutex::new(()),
             registry_problem: problem,
+            named_attempt: AtomicBool::new(false),
         }
+    }
+
+    /// Takes the device's one place for an unlock by name, or `None` when one is already under way.
+    fn begin_named_attempt(&self) -> Option<NamedAttempt<'_>> {
+        self.named_attempt
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| NamedAttempt(&self.named_attempt))
     }
 
     /// A store for a slot, rooted in the slot's own folder, with its own notification ledger there.
@@ -236,15 +257,27 @@ impl VaultSlots {
     /// its store. **Every named attempt makes the same derivations** (`UnlockPlan`, `run_plan`): one
     /// per vault the name matched, then decoys up to the cap, with no early exit, so the time says
     /// nothing about the name; an unknown name, a name whose vault was never made and a wrong
-    /// passphrase are all `WrongPassphrase`. Only `Busy` (a key derivation or a transfer already
-    /// under way) is told apart, and nothing is opened then. Derivations happen with no lock held;
-    /// only the final install and the move of the pointer are done under [`unlock_into`]'s mutex.
+    /// passphrase are all `WrongPassphrase`.
+    ///
+    /// **One unlock by name at a time per device, taken before the name is looked up:** a second
+    /// attempt that overlaps gets `Busy` whatever it typed. Without that, two overlapping attempts
+    /// would answer `Busy` for a name that exists (its vault's derivation is already running) and
+    /// `WrongPassphrase` for one that does not, which would tell a name apart without a passphrase.
+    /// For the same reason a matched vault that cannot be read or derived for now (it is open, or
+    /// another derivation is running on it) is the same `WrongPassphrase` as an unknown name. Only
+    /// the refusal AFTER the right passphrase opened a vault is `Busy` again (the vault the screen
+    /// is on, or a transfer, is not at rest, `unlock_into`): whoever has both the name and the
+    /// passphrase is told. Derivations happen with no lock held; only the final install and the
+    /// move of the pointer are done under [`unlock_into`]'s mutex.
     pub(crate) fn unlock_named(
         &self,
         typed: &str,
         passphrase: &str,
         stop_work: impl FnOnce(),
     ) -> Result<Arc<VaultStore>, VaultError> {
+        let Some(_attempt) = self.begin_named_attempt() else {
+            return Err(VaultError::Busy);
+        };
         let plan = self.plan_for(typed);
         // Read what every vault of the device keeps on disk BEFORE any derivation, whatever the name
         // matched, so the attempt's disk reads do not grow with the matches (decoys read nothing).
@@ -252,7 +285,6 @@ impl VaultSlots {
             .nodes()
             .map(|node| (node.slot, node.store.pre_read_headers()))
             .collect();
-        let mut busy = false;
         let run = run_plan(
             &plan,
             |slot| {
@@ -262,12 +294,10 @@ impl VaultSlots {
                 let Some(at) = pre_read.iter().position(|(s, _)| *s == slot) else {
                     return RealOutcome::NotThere;
                 };
-                let headers = match pre_read.swap_remove(at).1 {
-                    Ok(headers) => headers,
-                    Err(error) => {
-                        busy |= matches!(error, VaultError::Busy);
-                        return RealOutcome::NotThere;
-                    }
+                // A vault that cannot be read for now (open, busy) is "not there": the answer is
+                // the same as for a name that matched nothing.
+                let Ok(headers) = pre_read.swap_remove(at).1 else {
+                    return RealOutcome::NotThere;
                 };
                 match store.derive_for_unlock(passphrase, headers) {
                     Ok(derived) => RealOutcome::Derived {
@@ -280,10 +310,7 @@ impl VaultSlots {
                         cost: crate::vault::DeriveCost::DECOY,
                         opened: None,
                     },
-                    Err(failure) => {
-                        busy |= matches!(failure.error, VaultError::Busy);
-                        RealOutcome::NotThere
-                    }
+                    Err(_) => RealOutcome::NotThere,
                 }
             },
             |cost| {
@@ -293,7 +320,6 @@ impl VaultSlots {
         );
         match run.winner {
             Some((slot, derived)) => self.unlock_into(slot, derived, stop_work),
-            None if busy => Err(VaultError::Busy),
             None => Err(VaultError::WrongPassphrase),
         }
     }
@@ -796,6 +822,124 @@ mod tests {
         // Two vaults share "Sam": the passphrase of either opens THAT one.
         let opened = slots.unlock_named("sam", OTHER_PASSWORD, || {}).unwrap();
         assert!(Arc::ptr_eq(&opened, slots.store_of(second).unwrap()));
+    }
+
+    #[test]
+    fn given_a_named_attempt_in_flight_when_another_comes_then_it_is_busy_whatever_the_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, _third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        let held = slots.begin_named_attempt().expect("the device is free");
+        assert!(
+            slots.begin_named_attempt().is_none(),
+            "one attempt at a time"
+        );
+        reset_counters();
+        // A name that exists, one that does not, with the right and with a wrong passphrase: the
+        // same answer, so an overlapping attempt tells no name apart.
+        for (name, passphrase) in [
+            ("second", OTHER_PASSWORD),
+            ("second", "a wrong passphrase 3318"),
+            ("nobody", OTHER_PASSWORD),
+            ("nobody", "a wrong passphrase 3318"),
+            ("", PASSWORD),
+        ] {
+            assert!(
+                matches!(
+                    slots.unlock_named(name, passphrase, || {}),
+                    Err(VaultError::Busy)
+                ),
+                "{name:?} with {passphrase}"
+            );
+        }
+        assert_eq!(
+            counters(),
+            (0, 0),
+            "a refused attempt reads and derives nothing"
+        );
+        assert!(open_vaults(&slots).is_empty());
+        // Once the first is over the device is free again, and the answers are the usual ones.
+        drop(held);
+        assert!(matches!(
+            slots.unlock_named("nobody", "a wrong passphrase 3318", || {}),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(slots.unlock_named("second", OTHER_PASSWORD, || {}).is_ok());
+    }
+
+    #[test]
+    fn given_an_attempt_that_ends_by_any_path_when_another_comes_then_the_device_is_free() {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, _third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        // A refused one, a successful one, and then another.
+        assert!(slots
+            .unlock_named("second", "wrong 1234 passphrase", || {})
+            .is_err());
+        assert!(slots.begin_named_attempt().is_some());
+        assert!(slots.unlock_named("second", OTHER_PASSWORD, || {}).is_ok());
+        assert!(slots.begin_named_attempt().is_some());
+        // A panic while it is held releases it too.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = slots.begin_named_attempt().unwrap();
+            panic!("FAKE: an attempt that panics");
+        }));
+        assert!(slots.begin_named_attempt().is_some());
+    }
+
+    #[test]
+    fn given_a_matched_vault_that_cannot_be_read_now_when_unlocked_by_name_then_it_is_wrong_passphrase_like_an_unknown_name(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, _third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        // Another derivation is running on the vault the name matches (even with the right
+        // passphrase): not `Busy`, which would tell the name exists.
+        let held = slots.store_of(second).unwrap().hold_kdf_work_for_test();
+        let existing = slots.unlock_named("second", OTHER_PASSWORD, || {});
+        let unknown = slots.unlock_named("nobody", OTHER_PASSWORD, || {});
+        assert!(matches!(existing, Err(VaultError::WrongPassphrase)));
+        assert!(matches!(unknown, Err(VaultError::WrongPassphrase)));
+        assert!(open_vaults(&slots).is_empty());
+        drop(held);
+        assert!(slots.unlock_named("second", OTHER_PASSWORD, || {}).is_ok());
+    }
+
+    #[test]
+    fn given_the_vault_the_name_matches_is_the_open_one_when_unlocked_by_name_then_it_is_wrong_passphrase_like_an_unknown_name(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        slots.current().unlock(PASSWORD).unwrap();
+        // The empty name is the default vault, which is open: it cannot be read for an unlock.
+        let open = slots.unlock_named("", PASSWORD, || {});
+        let unknown = slots.unlock_named("nobody", PASSWORD, || {});
+        assert!(matches!(open, Err(VaultError::WrongPassphrase)));
+        assert!(matches!(unknown, Err(VaultError::WrongPassphrase)));
+        assert_eq!(open_vaults(&slots), vec![SlotId::Main]);
+    }
+
+    #[test]
+    fn given_the_slot_machinery_when_read_then_it_never_touches_the_notice_keys() {
+        // A wrong named attempt (and a right one) must not wipe another vault's notice keys: only the
+        // command, after the unlock succeeded, reaches `notice_key::after_open` (see lib.rs). The
+        // notice-key store is a process-wide singleton that a unit test cannot install, so this
+        // guards the structure; PR 5 makes the keys per vault and adds the behavior test.
+        for (file, text) in [
+            ("vault_slots.rs", include_str!("vault_slots.rs")),
+            ("vault_source.rs", include_str!("vault_source.rs")),
+        ] {
+            let production = text.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+            assert!(
+                !production.contains("notice_key"),
+                "{file} touches the notice keys"
+            );
+        }
     }
 
     #[test]
