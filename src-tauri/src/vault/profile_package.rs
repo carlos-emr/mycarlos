@@ -891,6 +891,45 @@ impl<'a, W: Write> ObjectEncryptor<'a, W> {
     }
 }
 
+/// The plaintext of one object on its way into the package: encrypted as it comes, hashed,
+/// counted against the size the manifest gave, and stopped when the lock or a cancel says so.
+struct PushSink<'a, 'b, W: Write> {
+    encryptor: ObjectEncryptor<'a, W>,
+    plain_hash: Sha256,
+    remaining: u64,
+    still_open: &'b dyn Fn() -> bool,
+    /// The first thing that went wrong here, as what it was: the `io::Error` that reaches
+    /// the producer cannot say.
+    failure: Option<PackageError>,
+}
+
+impl<W: Write> Write for PushSink<'_, '_, W> {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        if self.failure.is_some() {
+            return Err(io::Error::other("package write failed"));
+        }
+        if !(self.still_open)() {
+            self.failure = Some(PackageError::Cancelled);
+            return Err(io::Error::from(io::ErrorKind::Interrupted));
+        }
+        if data.len() as u64 > self.remaining {
+            self.failure = Some(PackageError::Invalid);
+            return Err(io::Error::other("more than the manifest gave"));
+        }
+        self.plain_hash.update(data);
+        if let Err(error) = self.encryptor.push(data) {
+            self.failure = Some(error);
+            return Err(io::Error::other("package write failed"));
+        }
+        self.remaining -= data.len() as u64;
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Writes a package, in order, in one pass: header, manifest, every object the
 /// manifest lists, then the digests and the trailer. Nothing readable is kept
 /// anywhere: each chunk is encrypted as it is read from the source.
@@ -1064,18 +1103,44 @@ impl<W: Write> PackageWriter<W> {
         source: &mut dyn Read,
         still_open: &dyn Fn() -> bool,
     ) -> Result<(), PackageError> {
+        self.write_object_with(id, still_open, &mut |sink| {
+            let mut buffer = Zeroizing::new(vec![0_u8; 64 * 1024]);
+            loop {
+                if !still_open() {
+                    return Err(PackageError::Cancelled);
+                }
+                match source.read(&mut buffer) {
+                    Ok(0) => return Ok(()),
+                    Ok(read) => sink.write_all(&buffer[..read])?,
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        })
+    }
+
+    /// Streams the next object by letting `produce` write its plaintext into the sink it is
+    /// given, as a vault does when it reads a document: nothing readable is kept. Exactly
+    /// the size the manifest gave must be written (too much is refused as it is written,
+    /// too little when `produce` returns). `still_open` is asked on every write.
+    pub(crate) fn write_object_with(
+        &mut self,
+        id: Uuid,
+        still_open: &dyn Fn() -> bool,
+        produce: &mut dyn FnMut(&mut dyn Write) -> Result<(), PackageError>,
+    ) -> Result<(), PackageError> {
         if self.poisoned {
             return Err(PackageError::Invalid);
         }
-        let result = self.write_object_inner(id, source, still_open);
+        let result = self.write_object_inner(id, still_open, produce);
         self.guard(result)
     }
 
     fn write_object_inner(
         &mut self,
         caller_id: Uuid,
-        source: &mut dyn Read,
         still_open: &dyn Fn() -> bool,
+        produce: &mut dyn FnMut(&mut dyn Write) -> Result<(), PackageError>,
     ) -> Result<(), PackageError> {
         let object = self.next_object().ok_or(PackageError::Invalid)?;
         if object.id != caller_id {
@@ -1086,42 +1151,34 @@ impl<W: Write> PackageWriter<W> {
         let name = object_name(id);
         self.frame(KIND_OBJECT, &name, length)?;
         let key = object_key(&self.keys, id)?;
-        let mut plain_hash = Sha256::new();
         let mut tally = Tally {
             inner: &mut self.inner,
             hasher: Sha256::new(),
             written: 0,
         };
-        let mut encryptor = ObjectEncryptor::start(&mut tally, &key, self.package_id, id)?;
-        let mut buffer = Zeroizing::new(vec![0_u8; 64 * 1024]);
-        let mut remaining = object.size;
-        while remaining > 0 {
-            if !still_open() {
-                return Err(PackageError::Cancelled);
-            }
-            let wanted =
-                usize::try_from(remaining.min(buffer.len() as u64)).unwrap_or(buffer.len());
-            let read = match source.read(&mut buffer[..wanted]) {
-                Ok(0) => return Err(PackageError::Invalid),
-                Ok(read) => read,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error.into()),
-            };
-            plain_hash.update(&buffer[..read]);
-            encryptor.push(&buffer[..read])?;
-            remaining -= read as u64;
+        let encryptor = ObjectEncryptor::start(&mut tally, &key, self.package_id, id)?;
+        let mut sink = PushSink {
+            encryptor,
+            plain_hash: Sha256::new(),
+            remaining: object.size,
+            still_open,
+            failure: None,
+        };
+        let produced = produce(&mut sink);
+        // What the sink saw first is the cause; whatever the producer made of the failed
+        // write (an I/O error it reports as its own) is its echo.
+        if let Some(failure) = sink.failure.take() {
+            return Err(failure);
         }
-        // A source with more to give than it said is not what the manifest
-        // describes either.
-        let mut probe = [0_u8; 1];
-        loop {
-            match source.read(&mut probe) {
-                Ok(0) => break,
-                Ok(_) => return Err(PackageError::Invalid),
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error.into()),
-            }
+        produced?;
+        if sink.remaining != 0 {
+            return Err(PackageError::Invalid);
         }
+        let PushSink {
+            encryptor,
+            plain_hash,
+            ..
+        } = sink;
         encryptor.finish()?;
         if tally.written != length {
             return Err(PackageError::Storage);
@@ -1144,14 +1201,35 @@ impl<W: Write> PackageWriter<W> {
 
     /// Writes the digests and the trailer with its tag, and returns the sink.
     /// Refused unless every object the manifest lists was written.
-    pub(crate) fn finish(mut self) -> Result<W, PackageError> {
+    pub(crate) fn finish(self) -> Result<W, PackageError> {
+        self.finish_with_digests().map(|(sink, _)| sink)
+    }
+
+    /// As [`Self::finish`], and what the writer saw of each object: its plaintext size and
+    /// SHA-256, to be compared with what a reader finds in the finished file.
+    pub(crate) fn finish_with_digests(mut self) -> Result<(W, Vec<ObjectRead>), PackageError> {
         if self.poisoned || !self.manifest_written || self.next != self.pending.len() {
             return Err(PackageError::Invalid);
         }
-        let digests = serde_json::to_vec(&Digests {
-            objects: std::mem::take(&mut self.digests),
-        })
-        .map_err(|_| PackageError::Storage)?;
+        let written = std::mem::take(&mut self.digests);
+        let reads: Vec<ObjectRead> = written
+            .iter()
+            .map(|digest| {
+                let mut sha256 = [0_u8; 32];
+                if let Ok(bytes) = BASE64.decode(&digest.sha256) {
+                    if bytes.len() == 32 {
+                        sha256.copy_from_slice(&bytes);
+                    }
+                }
+                ObjectRead {
+                    id: digest.id,
+                    size: digest.size,
+                    sha256,
+                }
+            })
+            .collect();
+        let digests = serde_json::to_vec(&Digests { objects: written })
+            .map_err(|_| PackageError::Storage)?;
         let class = manifest_class(digests.len()).ok_or(PackageError::TooLarge)?;
         let sealed = seal_padded(
             &self.keys.manifest,
@@ -1178,7 +1256,7 @@ impl<W: Write> PackageWriter<W> {
         self.inner.write_all(&trailer)?;
         self.inner.write_all(&tag)?;
         self.inner.flush()?;
-        Ok(self.inner)
+        Ok((self.inner, reads))
     }
 }
 

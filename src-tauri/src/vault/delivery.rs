@@ -3647,7 +3647,7 @@ mod approval_recovery_tests {
     /// A vault holding the contract's original (delivery 6f1c2a7e): a real committed record
     /// (unit tests have no PDF helper for the contract's own document) whose custody is
     /// rewritten to the contract's original, with its receipt signed again.
-    fn vault_with_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+    pub(super) fn vault_with_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
         let pair = pair_fixture();
         let pair_link = wire::tests::fixture_link(&pair);
         let temp = tempfile::tempdir().unwrap();
@@ -3693,7 +3693,7 @@ mod approval_recovery_tests {
     /// receipt readback tests must keep bytes, digests and lengths coherent.
     /// This verifies the package envelope at its reference clock, not a new
     /// confined PDF-helper or installed-app delivery proof.
-    fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+    pub(super) fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
         let (temp, store, link, record_id) = vault_with_pair_original();
         let pair = pair_fixture();
         let outer: wire::Outer =
@@ -8610,4 +8610,11 @@ mod approval_recovery_tests {
 #[cfg(test)]
 pub(super) fn automatic_pending_fixture_for_test(store: &VaultStore, link: &StoredLink) -> Uuid {
     approval_recovery_tests::add_unsent_delivery_for(store, link)
+}
+
+/// A vault holding a delivered original from a linked clinic, for the handover export's tests.
+#[cfg(test)]
+pub(super) fn pair_original_fixture_for_test() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid)
+{
+    approval_recovery_tests::vault_with_readable_pair_original()
 }

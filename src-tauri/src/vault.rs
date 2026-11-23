@@ -48,6 +48,8 @@ mod original_pdf;
 // The profile handover package (#360 PR 1): its writer and reader are used by
 // the export and import commands of the later PRs.
 #[cfg_attr(not(test), allow(dead_code))]
+mod profile_export;
+#[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
 
 use ai_results::StoredAiResult;

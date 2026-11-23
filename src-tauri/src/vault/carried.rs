@@ -171,3 +171,49 @@ pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Op
         .then(|| clinic.clinic_name.clone())
     })
 }
+
+/// The clinic evidence of a filed delivery, as a handover carries it: the public and signed
+/// half of what the link and the record hold. None when the record holds none, when its link
+/// is not here, or when what would travel does not stand up on its own (`valid_carried`
+/// is the same check a vault makes when it reads it), so that nothing is exported that the
+/// receiving vault would refuse.
+pub(super) fn from_filed(
+    record: &StoredRecord,
+    links: &[StoredLink],
+) -> Option<crate::portal_delivery::Carried> {
+    use crate::portal_delivery::{Carried, CarriedAid, CarriedDelivery};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    let c = record.delivery.as_ref()?;
+    let link = links.iter().find(|l| l.id == c.link_id)?;
+    let (x25519, ed25519) = link.keys.public();
+    let carried = Carried {
+        clinic: link.clinic.clone()?,
+        device_x25519: URL_SAFE_NO_PAD.encode(x25519),
+        device_ed25519: URL_SAFE_NO_PAD.encode(ed25519),
+        delivery: CarriedDelivery {
+            outer: c.outer.clone(),
+            manifest: c.manifest.clone(),
+            manifest_compact: c.manifest_compact.clone(),
+            pdf_document_id: c.pdf_document_id.clone(),
+            pdf_version: c.pdf_version,
+            checked_at_ms: c.checked_at_ms,
+            anchor_head: c.anchor_head.clone(),
+            receipt: c.receipt.clone(),
+            receipt_outcome: c.receipt_outcome,
+        },
+        reading_aid: record.reading_aid.as_ref().map(|a| CarriedAid {
+            outer: a.outer.clone(),
+            manifest_compact: a.manifest_compact.clone(),
+            json: a.json.clone(),
+            checked_at_ms: a.checked_at_ms,
+            anchor_head: a.anchor_head.clone(),
+            receipt: a.receipt.clone(),
+            receipt_outcome: a.receipt_outcome,
+        }),
+    };
+    let mut probe = record.clone();
+    probe.delivery = None;
+    probe.reading_aid = None;
+    probe.carried = Some(carried.clone());
+    valid_carried(&probe).then_some(carried)
+}
