@@ -785,6 +785,7 @@
   "portal.approvalPickedUp",
   "portal.approvalReplyInvalid",
   "portal.approvalStillOpen",
+  "portal.approvalStaffOpen",
   "portal.approvalTimeLeft",
   "portal.approvalTimeOver",
   "portal.approvalTimeOverRestart",

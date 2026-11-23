@@ -1231,6 +1231,14 @@ The details request omits the list to preserve it; explicit `[]` clears it. Name
 
 Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.
 
+## Format 14: device approval contract v2
+
+This build understands manifest formats 1–14. Format 13 (previous full names, above) is a real format: a vault at 13 upgrades to 14 at its next writable unlock, in a commit of its own, like any older one. A format newer than 14 is refused as newer without being rewritten or interpreted. Format numbers are taken at merge (above): this one is 14 at the time of writing (mycarlos#144) and renumbers with the other queued bumps in merge order, with no gap. Header, object and backup container formats do not change.
+
+Nothing is added to the manifest's shape. A saved device approval request (`portalLinks[].approval` and `approvalHistory`) holds the device's signed intent, and under contract v2 that intent carries `"v": 2` and may last up to 86 400 seconds (a day) instead of 600, so that clinic staff can approve a device later in the day. Its challenge and acceptance carry `"v": 2` too, and a `staff_first` challenge may last a day (`expires_at` is exactly `min(issued_at + 86 400, intent.exp)`); a `code` challenge stays at 600. Fields, signatures and hash links are v1's. A build that only knows contract v1 reads a v2 intent as invalid and so refuses the vault, so a manifest declaring a format below 14 that holds a v2 request is damaged (`Corrupt`), and a build that knows 14 writes one only after the upgrade. Older builds refuse format 14 rather than read what they would call damaged.
+
+A device signs v2 only when the clinic's portal lists it (`GET /api/mycarlos/device-approval-versions` answers `{"versions":[1,2]}`); an older portal, or any answer that is not clear, means v1 and today's ten minutes. A request with no challenge yet is judged open for `min(exp, iat + 600)` whatever its intent allows, as the portal judges it.
+
 ## Video recordings in progress (#359, no format change)
 
 A recording is stored in the existing `MCVO1` object format, one 1 MiB frame at a time, so **header, object, manifest and backup formats do not change** and no format number is taken. It becomes a record only when it ends, in the same commit an import makes (history entry `imported`, how `camera`). Until then it lives in `recordings/`, beside `staging/` and not in it, because every unlock removes `staging/`.

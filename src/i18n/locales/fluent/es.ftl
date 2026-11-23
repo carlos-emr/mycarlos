@@ -1602,6 +1602,13 @@ portal-approvalReplyInvalid = No se pudo verificar la respuesta del portal de la
 
 portal-approvalStillOpen = Esta solicitud de aprobación sigue abierta en el portal de la clínica. Espere a que termine antes de iniciar otra.
 
+portal-approvalStaffOpen =
+    { $count ->
+    [one] Esta solicitud sigue abierta unas { $count } hora más. El personal de la clínica puede aprobar este dispositivo hasta entonces, y myCarlos lo comprueba de nuevo cada vez que usted desbloquea.
+    [many] Esta solicitud sigue abierta unas { $count } de horas más. El personal de la clínica puede aprobar este dispositivo hasta entonces, y myCarlos lo comprueba de nuevo cada vez que usted desbloquea.
+    *[other] Esta solicitud sigue abierta unas { $count } horas más. El personal de la clínica puede aprobar este dispositivo hasta entonces, y myCarlos lo comprueba de nuevo cada vez que usted desbloquea.
+    }
+
 portal-approvalTimeLeft =
     { $count ->
     [one] Tiempo restante para esta solicitud: aproximadamente { $count } minuto.

@@ -1252,6 +1252,39 @@ describe("automatic approval status checks (#131)", () => {
     expect(status()).toBeEmptyDOMElement();
   });
 
+  it("keeps checking slowly, past the 15-minute window, while the portal says a long (v2) request is still open, and stops when it ends", async () => {
+    // A staff request open for 3 hours by the portal's clock; every reply says how much is left.
+    const END = 3 * 60 * 60_000;
+    const { poll } = checked(() =>
+      reply(pending, { expiresInMs: Math.max(1, END - performance.now()) }),
+    );
+    await pass(15 * 60_000);
+    const atWindow = poll.mock.calls.length;
+    expect(atWindow).toBeGreaterThan(10);
+    // Past the window: one check every 5 minutes, not every minute, and no "stopped" note.
+    await pass(60 * 60_000);
+    const hour = poll.mock.calls.length - atWindow;
+    expect(hour).toBeGreaterThanOrEqual(11);
+    expect(hour).toBeLessThanOrEqual(13);
+    expect(screen.queryByText(STOPPED)).not.toBeInTheDocument();
+    expect(screen.getByText(AUTO)).toBeVisible();
+    // Hidden: nothing is asked while the page is not on screen.
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    const hidden = poll.mock.calls.length;
+    await pass(30 * 60_000);
+    expect(poll.mock.calls.length).toBe(hidden);
+    visibility.mockReturnValue("visible");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    // The request ends by the portal's clock: the checks end with it, they do not go on for ever.
+    await pass(END);
+    const ended = poll.mock.calls.length;
+    await pass(60 * 60_000);
+    expect(poll.mock.calls.length).toBeLessThanOrEqual(ended + 1);
+  });
+
   it("says each change once and politely, and approved only from the verified saved state", async () => {
     // A control the patient left focus on, which the checks leave alone.
     const code = () =>
@@ -1978,6 +2011,27 @@ describe("automatic approval status checks (#131)", () => {
         translate(locale, "portal.approvalTimeLeft", { count: 4 }),
       ])
         expect(screen.getByText(text)).toBeVisible();
+    }
+    act(() => setLocaleOverride(null));
+  });
+
+  it("says how long a request that staff may answer later stays open, not a minute countdown (#144)", async () => {
+    checked(() => reply(pending, { expiresInMs: 24 * 3_600_000 }));
+    await pass(10_000);
+    // A day left (a few seconds gone): said in hours, rounded, with where the answer is looked for.
+    expect(
+      screen.getByText(
+        translate("en", "portal.approvalStaffOpen", { count: 24 }),
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Time left for this request/)).toBeNull();
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByText(
+          translate(locale, "portal.approvalStaffOpen", { count: 24 }),
+        ),
+      ).toBeVisible();
     }
     act(() => setLocaleOverride(null));
   });

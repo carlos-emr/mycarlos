@@ -83,7 +83,12 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// model-file draft (#298) takes the next number when it merges. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+/// Format 14 (device approval contract v2, mycarlos#144): a saved approval request may be a
+/// v2 one, whose intent lasts up to a day. Its number is the next one at the time of writing and
+/// is taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"): a renumber changes
+/// this line, the section in VAULT_FORMAT.md and the tests that name 13 and 14.
+const MANIFEST_FORMAT_APPROVAL_V2: u32 = 14;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_APPROVAL_V2;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
@@ -5190,6 +5195,18 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    // Device approval contract v2 (#144): format 14. A build that does not know v2 reads its
+    // intent as invalid, so a manifest declaring an older format holds none.
+    if manifest.format_version < MANIFEST_FORMAT_APPROVAL_V2
+        && manifest.portal_links.iter().any(|link| {
+            link.approval
+                .iter()
+                .chain(link.approval_history.iter())
+                .any(crate::portal_approval::uses_contract_v2)
+        })
+    {
+        return Err(VaultError::Corrupt);
     }
     // Remembered refusals (#143): format 12, for a saved link, one per
     // delivery, and a bounded number per link.
@@ -17808,9 +17825,10 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS,
             // Their hidden answers capped apart, format 11.
             MANIFEST_FORMAT_AI_HIDDEN_CAP,
-            // Remembered refusals (#143), format 12: the last before previous
-            // full names (13).
+            // Remembered refusals (#143), format 12, and previous full names, format 13: the
+            // last before device approval contract v2 (14).
             MANIFEST_FORMAT_REFUSED,
+            MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

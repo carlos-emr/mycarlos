@@ -786,6 +786,7 @@ export const MESSAGE_KEYS = [
   "portal.approvalPickedUp",
   "portal.approvalReplyInvalid",
   "portal.approvalStillOpen",
+  "portal.approvalStaffOpen",
   "portal.approvalTimeLeft",
   "portal.approvalTimeOver",
   "portal.approvalTimeOverRestart",
@@ -2130,6 +2131,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.approvalPickedUp": "portal-approvalPickedUp",
   "portal.approvalReplyInvalid": "portal-approvalReplyInvalid",
   "portal.approvalStillOpen": "portal-approvalStillOpen",
+  "portal.approvalStaffOpen": "portal-approvalStaffOpen",
   "portal.approvalTimeLeft": "portal-approvalTimeLeft",
   "portal.approvalTimeOver": "portal-approvalTimeOver",
   "portal.approvalTimeOverRestart": "portal-approvalTimeOverRestart",
@@ -3557,6 +3559,7 @@ export interface MessageArgsByKey {
   "portal.approvalPickedUp": undefined;
   "portal.approvalReplyInvalid": undefined;
   "portal.approvalStillOpen": undefined;
+  "portal.approvalStaffOpen": { count: FluentArgument };
   "portal.approvalTimeLeft": { count: FluentArgument };
   "portal.approvalTimeOver": undefined;
   "portal.approvalTimeOverRestart": { button: FluentArgument };
