@@ -1677,6 +1677,14 @@ interface-history-event-profileCreated = Patient profile added
 
 interface-history-event-profileDetailsChanged = Personal details changed
 
+interface-history-event-profileExported = Person exported to a handover file
+
+interface-history-event-profileHidden = Person hidden
+
+interface-history-event-profileRestored = Person restored
+
+interface-history-event-profileImported = Person added from a handover file
+
 interface-history-event-readingAidFiled = Reading aid saved
 
 interface-history-event-recoveryKeySet = Recovery key set up

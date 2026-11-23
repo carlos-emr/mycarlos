@@ -53,6 +53,11 @@ export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   deliveryFiled: "interface.history.event.deliveryFiled",
   deliveryReceiptSettled: "interface.history.event.deliveryReceiptSettled",
   aiResultSaved: "interface.history.event.aiResultSaved",
+  // #360: a person handed over, hidden, restored or made from a handover file.
+  profileExported: "interface.history.event.profileExported",
+  profileHidden: "interface.history.event.profileHidden",
+  profileRestored: "interface.history.event.profileRestored",
+  profileImported: "interface.history.event.profileImported",
 };
 
 /** The title of an entry's event; never the formatting-failure text, even for an

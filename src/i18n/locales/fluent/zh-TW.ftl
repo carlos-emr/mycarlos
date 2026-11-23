@@ -1541,6 +1541,14 @@ interface-history-event-profileCreated = 病患檔案已新增
 
 interface-history-event-profileDetailsChanged = 個人資料已變更
 
+interface-history-event-profileExported = 已將此人匯出為交接檔案
+
+interface-history-event-profileHidden = 已隱藏此人
+
+interface-history-event-profileRestored = 已還原此人
+
+interface-history-event-profileImported = 已從交接檔案新增此人
+
 interface-history-event-readingAidFiled = 已儲存閱讀輔助
 
 interface-history-event-recoveryKeySet = 復原金鑰已設定

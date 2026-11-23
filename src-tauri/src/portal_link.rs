@@ -77,10 +77,7 @@ impl PrivateKeys {
 
     pub fn device_key_id(&self) -> String {
         let (x, ed) = self.public();
-        let mut digest = Sha256::new();
-        digest.update(b"mycarlos-device-key-v1");
-        digest.update(frame(&[&x, &ed]));
-        B64.encode(digest.finalize())
+        device_key_id_of(&x, &ed)
     }
 
     pub(crate) fn sign(&self, payload: &[u8]) -> String {
@@ -127,6 +124,16 @@ impl PrivateKeys {
         mac.update(head);
         Ok(hex(&mac.finalize().into_bytes()))
     }
+}
+
+/// The device key id the clinic knows a device by, from its two public keys. A device's own
+/// keys give it through `PrivateKeys::device_key_id`; carried clinic evidence (#360) holds only
+/// the public keys and checks the id with this.
+pub(crate) fn device_key_id_of(x25519: &[u8; 32], ed25519: &[u8; 32]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"mycarlos-device-key-v1");
+    digest.update(frame(&[x25519, ed25519]));
+    B64.encode(digest.finalize())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

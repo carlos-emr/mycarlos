@@ -1710,6 +1710,14 @@ interface-history-event-profileCreated = Profil patient ajouté
 
 interface-history-event-profileDetailsChanged = Renseignements personnels modifiés
 
+interface-history-event-profileExported = Personne exportée vers un fichier de transfert
+
+interface-history-event-profileHidden = Personne masquée
+
+interface-history-event-profileRestored = Personne restaurée
+
+interface-history-event-profileImported = Personne ajoutée depuis un fichier de transfert
+
 interface-history-event-readingAidFiled = Aide à la lecture enregistrée
 
 interface-history-event-recoveryKeySet = Clé de récupération configurée

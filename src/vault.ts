@@ -368,7 +368,11 @@ export interface AuditHistoryEntry {
     | "deliveryFiled"
     | "deliveryReceiptSettled"
     | "readingAidFiled"
-    | "aiResultSaved";
+    | "aiResultSaved"
+    | "profileExported"
+    | "profileHidden"
+    | "profileRestored"
+    | "profileImported";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
