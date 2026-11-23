@@ -17,7 +17,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::vault::VaultStore;
+use crate::vault::{VaultError, VaultStore};
 
 /// Where the vault that commands act on comes from.
 pub(crate) trait VaultSource: Send + Sync + 'static {
@@ -28,9 +28,37 @@ pub(crate) trait VaultSource: Send + Sync + 'static {
     /// Every store this source has made, for what must reach them all, such as stopping each store's
     /// document collection when the app exits.
     fn all(&self) -> Vec<Arc<VaultStore>>;
+
+    /// Called once a vault has locked: a source with several vaults moves the screen back to its
+    /// default vault, running `stop_work` first if it does move (what the app was doing for the old
+    /// vault, and what the OS offered the app, must not follow the owner into another vault). A
+    /// refusal (a transfer is still winding down) leaves the screen where it was; the next lock
+    /// tries again. The single vault has nowhere to go.
+    fn return_to_default(&self, _stop_work: &mut dyn FnMut()) {}
+
+    /// Unlocks the vault a typed `name` and `passphrase` stand for and makes it the current one,
+    /// giving its store (see `VaultSlots::unlock_named`). With the one vault there is no name: an
+    /// empty one is that vault's own passphrase unlock, and any other is "no such vault", reported
+    /// as a wrong passphrase.
+    fn unlock_named(
+        &self,
+        name: &str,
+        passphrase: &str,
+        _stop_work: &mut dyn FnMut(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        let store = self.current();
+        if !crate::vault_registry::normalise_name(name).is_empty() {
+            return Err(VaultError::WrongPassphrase);
+        }
+        store.unlock(passphrase)?;
+        Ok(Arc::clone(store))
+    }
 }
 
-/// The only vault the device has, as before: a source whose current store never changes.
+/// The only vault the device has, as before: a source whose current store never changes. The app
+/// itself uses `VaultSlots` now (one slot is the same thing); this is what the tests' mock apps and
+/// the seam tests manage.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct SingleVault {
     store: Arc<VaultStore>,
 }
@@ -50,18 +78,25 @@ impl VaultSource for SingleVault {
 #[derive(Clone)]
 pub(crate) struct StoreHandle {
     source: Arc<dyn VaultSource>,
+    /// The store a pinned handle is fixed to (see [`StoreHandle::pin`]); `None` follows the source.
+    pinned: Option<Arc<VaultStore>>,
 }
 
 impl StoreHandle {
+    #[cfg_attr(not(test), allow(dead_code))] // used by `single`, which the mock apps use
     pub(crate) fn new(source: impl VaultSource) -> Self {
         Self {
             source: Arc::new(source),
+            pinned: None,
         }
     }
 
     /// A handle over a source the caller keeps a share of (the document worker holds the same one).
     pub(crate) fn from_source(source: Arc<dyn VaultSource>) -> Self {
-        Self { source }
+        Self {
+            source,
+            pinned: None,
+        }
     }
 
     /// A handle fixed to the store that is current NOW. A command takes one at its start
@@ -69,10 +104,31 @@ impl StoreHandle {
     /// an `await`, acts on the same vault even if the screen switches meanwhile: a command that
     /// began on vault A never finishes on vault B.
     pub(crate) fn pin(&self) -> Self {
-        Self::single(Arc::clone(self.arc()))
+        Self {
+            source: Arc::clone(&self.source),
+            pinned: Some(Arc::clone(self.arc())),
+        }
     }
 
-    /// A handle for the one vault the device has.
+    /// See [`VaultSource::return_to_default`]. Goes to the source even on a pinned handle: it is
+    /// about where the screen goes, not about the store this command acts on.
+    pub(crate) fn return_to_default(&self, mut stop_work: impl FnMut()) {
+        self.source.return_to_default(&mut stop_work);
+    }
+
+    /// See [`VaultSource::unlock_named`]. Goes to the source even on a pinned handle: moving the
+    /// screen to the vault the name stands for is its whole purpose.
+    pub(crate) fn unlock_named(
+        &self,
+        name: &str,
+        passphrase: &str,
+        mut stop_work: impl FnMut(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        self.source.unlock_named(name, passphrase, &mut stop_work)
+    }
+
+    /// A handle for the one vault the device has (the tests' mock apps).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn single(store: Arc<VaultStore>) -> Self {
         Self::new(SingleVault { store })
     }
@@ -80,7 +136,9 @@ impl StoreHandle {
     /// The current store as the `Arc` the old `State<Arc<VaultStore>>::inner()` gave, for the calls
     /// that take `&Arc<VaultStore>` (`run_blocking`, `after_open`) or clone it into a worker.
     pub(crate) fn arc(&self) -> &Arc<VaultStore> {
-        self.source.current()
+        self.pinned
+            .as_ref()
+            .unwrap_or_else(|| self.source.current())
     }
 
     /// Every store the source has made (see [`VaultSource::all`]).
@@ -93,7 +151,7 @@ impl Deref for StoreHandle {
     type Target = Arc<VaultStore>;
 
     fn deref(&self) -> &Arc<VaultStore> {
-        self.source.current()
+        self.arc()
     }
 }
 

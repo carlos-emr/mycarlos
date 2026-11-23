@@ -25,6 +25,7 @@
     "allow-vault-passphrase-rules",
     "allow-vault-create",
     "allow-vault-unlock",
+    "allow-vault-unlock-named",
     "allow-vault-lock",
     "allow-vault-touch",
     "allow-vault-set-auto-lock",

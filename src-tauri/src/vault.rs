@@ -1640,6 +1640,96 @@ impl VaultStore {
         Ok(())
     }
 
+    /// Everything on disk an unlock by NAME reads from this vault, read in one place and BEFORE any
+    /// derivation (#357, PR 4b): the storage lock is taken and a half-done reset finished, as
+    /// `unlock` does, and the header files are read. An unlock by name does this for EVERY slot of
+    /// the device, whatever the name matched, so the disk reads (and their atime and inotify trace)
+    /// do not grow with the number of matches; the real derivation then works on what was read and
+    /// touches no file. A vault that is open or busy is not touched: `Busy`.
+    pub(crate) fn pre_read_headers(&self) -> Result<PreReadHeaders, VaultError> {
+        if !self.is_at_rest() {
+            return Err(VaultError::Busy);
+        }
+        let _storage_lock = acquire_storage_lock(&self.root)?;
+        finish_pending_resets(&self.root)?;
+        Ok(PreReadHeaders {
+            files: read_header_files(&self.root),
+        })
+    }
+
+    /// The first half of an unlock, for an unlock by NAME (#357, PR 4b): derives this vault's key
+    /// from the passphrase and the headers [`pre_read_headers`](Self::pre_read_headers) read, and
+    /// opens nothing, reads no file and takes no session lock, so it can be done for several vaults,
+    /// one after another, before one of them is installed
+    /// ([`install_unlock`](Self::install_unlock)). It marks a key derivation as running
+    /// (`kdf_running`), as `unlock` does, so a switch is refused meanwhile. The key it holds is
+    /// zeroized when the value is dropped, on every path, including one that never installs it.
+    ///
+    /// `unlock` itself is NOT built from these two: it holds the session lock across the derivation
+    /// and its behaviour (locking, error mapping, crash boundaries) is unchanged; the tests pin that
+    /// the pair opens a vault to the same state.
+    pub(crate) fn derive_for_unlock(
+        &self,
+        passphrase: &str,
+        pre: PreReadHeaders,
+    ) -> Result<DerivedUnlock, DeriveFailure> {
+        let _work = self.start_kdf_work().map_err(|error| DeriveFailure {
+            error,
+            derived: false,
+        })?;
+        if passphrase.len() > MAX_PASSPHRASE_BYTES {
+            return Err(DeriveFailure {
+                error: VaultError::Invalid,
+                derived: false,
+            });
+        }
+        // With no header there is nothing to derive against, and no derivation is made.
+        let nothing_to_derive = pre.files.candidates.is_empty();
+        match header_for_passphrase(&self.root, pre.files, passphrase) {
+            Ok((header, master_key, wrapping_key, header_unreadable)) => Ok(DerivedUnlock {
+                cost: DeriveCost::of(&header.kdf),
+                header,
+                master_key,
+                wrapping_key,
+                header_unreadable,
+            }),
+            Err(error) => Err(DeriveFailure {
+                error,
+                derived: !nothing_to_derive,
+            }),
+        }
+    }
+
+    /// The second half: opens the session from a key [`derive_for_unlock`](Self::derive_for_unlock)
+    /// made, the steps `unlock` takes once it has its key. The key is zeroized on every path out,
+    /// including an error (the fields drop with the value).
+    pub(crate) fn install_unlock(&self, derived: DerivedUnlock) -> Result<(), VaultError> {
+        let DerivedUnlock {
+            header,
+            master_key,
+            wrapping_key,
+            header_unreadable,
+            cost: _,
+        } = derived;
+        let mut guard = self.session();
+        let storage_lock = match guard.as_ref() {
+            Some(unlocked) => Arc::clone(&unlocked.storage_lock),
+            None => acquire_storage_lock(&self.root)?,
+        };
+        finish_pending_resets(&self.root)?;
+        self.cancel_io.store(false, Ordering::Release);
+        self.open_with_header(
+            &mut guard,
+            storage_lock,
+            header,
+            master_key,
+            wrapping_key,
+            header_unreadable,
+        )?;
+        self.record_unlock(&mut guard, "passphrase");
+        Ok(())
+    }
+
     /// Records the unlock that just opened the session in `guard` (#71),
     /// with how the session before it ended, as far as this run of the app
     /// knows. It can never keep the vault shut: if it cannot be written, the
@@ -5586,6 +5676,37 @@ fn benchmark_kdf(still_open: &dyn Fn() -> bool) -> Result<KdfBenchmark, VaultErr
     })
 }
 
+/// A vault's header files, read ahead of any derivation (see `VaultStore::pre_read_headers`).
+pub(crate) struct PreReadHeaders {
+    files: HeaderFiles,
+}
+
+/// The key material of one vault, derived from a typed passphrase and not yet installed (see
+/// `VaultStore::derive_for_unlock`). Every secret in it is `Zeroizing`, so dropping it wipes it:
+/// the install path, a refused switch and an error all end the same way.
+pub(crate) struct DerivedUnlock {
+    header: VaultHeader,
+    master_key: SecretKey,
+    wrapping_key: SecretKey,
+    header_unreadable: bool,
+    cost: DeriveCost,
+}
+
+impl DerivedUnlock {
+    /// What the derivation that made this cost.
+    pub(crate) fn cost(&self) -> DeriveCost {
+        self.cost
+    }
+}
+
+/// Why `derive_for_unlock` made no key, and whether a derivation was made all the same (the
+/// passphrase did not open the vault) or none could be (no vault, a busy key derivation, a reset
+/// that could not be finished): the unlock by name replaces a missing derivation with a decoy.
+pub(crate) struct DeriveFailure {
+    pub(crate) error: VaultError,
+    pub(crate) derived: bool,
+}
+
 /// What one passphrase derivation costs: the Argon2 settings of a vault header. An unlock by name
 /// runs decoy derivations at the dearest cost any real vault in the attempt has, never a cheaper
 /// one, so a decoy cannot be told from a real derivation by its time (#357, PR 4a). "Dearest" is
@@ -5609,7 +5730,6 @@ impl DeriveCost {
     };
 
     /// The cost of a header's settings (used by the unlock command, PR 4b).
-    #[cfg_attr(not(test), allow(dead_code))]
     fn of(config: &KdfConfig) -> DeriveCost {
         DeriveCost {
             memory_kib: config.memory_kib,
@@ -5632,8 +5752,9 @@ impl DeriveCost {
 /// work of a real derivation for an attempt whose name matched no vault (or fewer than the cap).
 /// The key is dropped (zeroized) at once. Takes the cost directly, not through
 /// `derive_passphrase_key`, which refuses any settings but today's.
-#[cfg_attr(not(test), allow(dead_code))] // called by the unlock command, PR 4b
 pub(crate) fn derive_decoy(passphrase: &str, cost: DeriveCost) -> Result<(), VaultError> {
+    #[cfg(test)]
+    DERIVATIONS.with(|count| count.set(count.get() + 1));
     let passphrase = normalize_passphrase(passphrase);
     let params = Params::new(cost.memory_kib, cost.iterations, cost.lanes, Some(32))
         .map_err(|_| VaultError::Corrupt)?;
@@ -5646,8 +5767,21 @@ pub(crate) fn derive_decoy(passphrase: &str, cost: DeriveCost) -> Result<(), Vau
     Ok(())
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Times the header files of a vault were read on this thread, for the test that checks an
+    /// unlock by name reads the same files whatever the name matched.
+    pub(crate) static HEADER_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Passphrase derivations (real and decoy) made on this thread, for the tests that count the
+    /// work of an unlock by name.
+    pub(crate) static DERIVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The salt decoys derive with: fixed, and not any vault's.
-#[cfg_attr(not(test), allow(dead_code))] // used by `derive_decoy`
 const DECOY_SALT: [u8; 16] = *b"mycarlos-decoy-1";
 
 /// What the unlock-plan tests need from this file's private items.
@@ -5734,6 +5868,8 @@ pub(crate) mod test_costs {
 }
 
 fn derive_passphrase_key(passphrase: &str, config: &KdfConfig) -> Result<SecretKey, VaultError> {
+    #[cfg(test)]
+    DERIVATIONS.with(|count| count.set(count.get() + 1));
     if !valid_kdf_config(config) {
         return Err(VaultError::Corrupt);
     }
@@ -6114,6 +6250,8 @@ struct HeaderFiles {
 }
 
 fn read_header_files(root: &Path) -> HeaderFiles {
+    #[cfg(test)]
+    HEADER_READS.with(|count| count.set(count.get() + 1));
     let mut files = HeaderFiles {
         candidates: Vec::new(),
         slot_unreadable: false,
@@ -6317,11 +6455,23 @@ fn read_header_for_passphrase(
     root: &Path,
     passphrase: &str,
 ) -> Result<(VaultHeader, SecretKey, SecretKey, bool), VaultError> {
+    header_for_passphrase(root, read_header_files(root), passphrase)
+}
+
+/// The second half of [`read_header_for_passphrase`], on header files already read: tries the
+/// passphrase against each readable header copy. Split so an unlock by name can read every slot's
+/// files first and derive afterwards (see `VaultStore::pre_read_headers`); `unlock` reads and then
+/// calls this at once, as it always did.
+fn header_for_passphrase(
+    root: &Path,
+    files: HeaderFiles,
+    passphrase: &str,
+) -> Result<(VaultHeader, SecretKey, SecretKey, bool), VaultError> {
     let HeaderFiles {
         mut candidates,
         slot_unreadable,
         file_unreadable,
-    } = read_header_files(root);
+    } = files;
     if candidates.is_empty() {
         return Err(if !root.exists() {
             VaultError::Missing
@@ -7644,6 +7794,95 @@ mod collection_object_tests {
         store.set_automatic_checks(true).ok().unwrap();
         store
     }
+    const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
+
+    /// `unlock` is untouched by the derive/install split (the older unlock tests above and below
+    /// run unchanged against it). These pin that the PAIR opens a vault to the same state and
+    /// reports the same errors, so an unlock by name and a plain unlock cannot drift apart.
+    #[test]
+    fn the_derive_and_install_pair_opens_a_vault_as_unlock_does() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let history_len = |store: &VaultStore| store.history_entries().unwrap().len();
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let by_unlock = store.snapshot().unwrap();
+        let after_unlock = history_len(&store);
+        store.lock();
+        let pre = store.pre_read_headers().unwrap();
+        let derived = store.derive_for_unlock(PASSWORD, pre).ok().unwrap();
+        assert_eq!(derived.cost(), DeriveCost::DECOY);
+        // Derived, not installed: still locked.
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        store.install_unlock(derived).unwrap();
+        let by_pair = store.snapshot().unwrap();
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        assert_eq!(by_unlock.profiles.len(), by_pair.profiles.len());
+        assert_eq!(by_unlock.profiles[0].id, by_pair.profiles[0].id);
+        // The same unlock is recorded, once, either way.
+        assert_eq!(history_len(&store), after_unlock + 1);
+    }
+
+    #[test]
+    fn the_derive_and_install_pair_reports_the_errors_unlock_reports() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        // No vault: `Missing` from both, and no derivation was made.
+        assert!(matches!(store.unlock(PASSWORD), Err(VaultError::Missing)));
+        let failure = store
+            .derive_for_unlock(PASSWORD, store.pre_read_headers().unwrap())
+            .err()
+            .unwrap();
+        assert!(matches!(failure.error, VaultError::Missing));
+        assert!(!failure.derived);
+
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        store.lock();
+        // A wrong passphrase: `WrongPassphrase` from both, and a derivation WAS made.
+        assert!(matches!(
+            store.unlock("the wrong passphrase 4411"),
+            Err(VaultError::WrongPassphrase)
+        ));
+        DERIVATIONS.with(|count| count.set(0));
+        let failure = store
+            .derive_for_unlock(
+                "the wrong passphrase 4411",
+                store.pre_read_headers().unwrap(),
+            )
+            .err()
+            .unwrap();
+        assert!(matches!(failure.error, VaultError::WrongPassphrase));
+        assert!(failure.derived);
+        assert_eq!(DERIVATIONS.with(std::cell::Cell::get), 1);
+        // A key derivation under way: `Busy`, nothing derived, in both.
+        store.test_hold_kdf(|| {
+            assert!(matches!(store.unlock(PASSWORD), Err(VaultError::Busy)));
+            assert!(!store.is_at_rest());
+            assert!(matches!(
+                store.pre_read_headers().err(),
+                Some(VaultError::Busy)
+            ));
+        });
+        // An over-long passphrase: `Invalid` from both.
+        let long = "x".repeat(MAX_PASSPHRASE_BYTES + 1);
+        assert!(matches!(store.unlock(&long), Err(VaultError::Invalid)));
+        let failure = store
+            .derive_for_unlock(&long, store.pre_read_headers().unwrap())
+            .err()
+            .unwrap();
+        assert!(matches!(failure.error, VaultError::Invalid));
+        assert!(!failure.derived);
+        // Nothing opened by any of it, and a key that was never installed opened nothing.
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        let spare = store
+            .derive_for_unlock(PASSWORD, store.pre_read_headers().unwrap())
+            .ok()
+            .unwrap();
+        drop(spare);
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+    }
+
     #[test]
     fn native_opt_out_suspends_new_cycle_before_persistence_and_drops_idle_resume() {
         let temp = tempfile::tempdir().unwrap();

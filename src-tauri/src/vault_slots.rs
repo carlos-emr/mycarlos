@@ -36,8 +36,11 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::vault::VaultStore;
-use crate::vault_registry::{slot_home, slot_store_root, Registry, RegistryError, SlotId};
+use crate::unlock_plan::{run_plan, RealOutcome};
+use crate::vault::{derive_decoy, VaultError, VaultStore};
+use crate::vault_registry::{
+    slot_home, slot_store_root, HashCost, Registry, RegistryError, SlotId, UnlockPlan,
+};
 use crate::vault_source::VaultSource;
 
 /// The notification ledger's file name in a slot's home (as it has always been for the Main slot).
@@ -79,6 +82,9 @@ pub(crate) struct VaultSlots {
     /// Held to add a slot or switch, so the two cannot interleave.
     changing: Mutex<()>,
     registry_problem: Option<RegistryError>,
+    /// The registry as read at start (or, when there is none or it cannot be read, Main alone with
+    /// no name, in memory only and never saved): what a typed name is looked up in.
+    registry: Mutex<Registry>,
 }
 
 impl VaultSlots {
@@ -110,7 +116,13 @@ impl VaultSlots {
             tail = &**node;
         }
         let current = slots.iter().position(|slot| *slot == default).unwrap_or(0);
+        // A registry that cannot be used is not shown to the unlock screen as anything: no typed
+        // name matches, as on a device with one vault.
+        let registry = registry.unwrap_or_else(|| {
+            Registry::with_main(HashCost::DEVICE).expect("the device cost is acceptable")
+        });
         VaultSlots {
+            registry: Mutex::new(registry),
             data_dir,
             app_id,
             head,
@@ -212,6 +224,133 @@ impl VaultSlots {
         Ok(())
     }
 
+    /// What an unlock attempt with a typed name must do (`Registry::plan_for`).
+    pub(crate) fn plan_for(&self, typed: &str) -> UnlockPlan {
+        self.registry
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .plan_for(typed)
+    }
+
+    /// Unlocks the vault a typed name and passphrase stand for, makes it the current one and gives
+    /// its store. **Every named attempt makes the same derivations** (`UnlockPlan`, `run_plan`): one
+    /// per vault the name matched, then decoys up to the cap, with no early exit, so the time says
+    /// nothing about the name; an unknown name, a name whose vault was never made and a wrong
+    /// passphrase are all `WrongPassphrase`. Only `Busy` (a key derivation or a transfer already
+    /// under way) is told apart, and nothing is opened then. Derivations happen with no lock held;
+    /// only the final install and the move of the pointer are done under [`unlock_into`]'s mutex.
+    pub(crate) fn unlock_named(
+        &self,
+        typed: &str,
+        passphrase: &str,
+        stop_work: impl FnOnce(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        let plan = self.plan_for(typed);
+        // Read what every vault of the device keeps on disk BEFORE any derivation, whatever the name
+        // matched, so the attempt's disk reads do not grow with the matches (decoys read nothing).
+        let mut pre_read: Vec<_> = self
+            .nodes()
+            .map(|node| (node.slot, node.store.pre_read_headers()))
+            .collect();
+        let mut busy = false;
+        let run = run_plan(
+            &plan,
+            |slot| {
+                let Some(store) = self.store_of(slot) else {
+                    return RealOutcome::NotThere;
+                };
+                let Some(at) = pre_read.iter().position(|(s, _)| *s == slot) else {
+                    return RealOutcome::NotThere;
+                };
+                let headers = match pre_read.swap_remove(at).1 {
+                    Ok(headers) => headers,
+                    Err(error) => {
+                        busy |= matches!(error, VaultError::Busy);
+                        return RealOutcome::NotThere;
+                    }
+                };
+                match store.derive_for_unlock(passphrase, headers) {
+                    Ok(derived) => RealOutcome::Derived {
+                        cost: derived.cost(),
+                        opened: Some(derived),
+                    },
+                    // The passphrase did not open it: a derivation was made, at the cost every
+                    // header has (`valid_kdf_config` allows no other), and nothing is held.
+                    Err(failure) if failure.derived => RealOutcome::Derived {
+                        cost: crate::vault::DeriveCost::DECOY,
+                        opened: None,
+                    },
+                    Err(failure) => {
+                        busy |= matches!(failure.error, VaultError::Busy);
+                        RealOutcome::NotThere
+                    }
+                }
+            },
+            |cost| {
+                // A decoy that fails to run still counts as run; the result is nothing.
+                let _ = derive_decoy(passphrase, cost);
+            },
+        );
+        match run.winner {
+            Some((slot, derived)) => self.unlock_into(slot, derived, stop_work),
+            None if busy => Err(VaultError::Busy),
+            None => Err(VaultError::WrongPassphrase),
+        }
+    }
+
+    /// Installs a key derived for `slot` and makes `slot` the current vault, when both the vault
+    /// the screen is on and `slot`'s are at rest (or `slot` already is the screen's). Under the
+    /// mutex a switch and an add also take, so **a key is only ever installed in the vault the
+    /// screen is moving to, and at most one vault is open**. A refusal (`Busy`) opens nothing and
+    /// drops the key (it is zeroized with the value). Order: stop the app's work for the old vault,
+    /// lock it, install the new key, move the pointer; and if the old vault began something between
+    /// the check and the install, the new vault is locked again and the pointer stays.
+    pub(crate) fn unlock_into(
+        &self,
+        slot: SlotId,
+        derived: crate::vault::DerivedUnlock,
+        stop_work: impl FnOnce(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        let _changing = self.changing.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(target) = self.nodes().position(|node| node.slot == slot) else {
+            return Err(VaultError::Storage);
+        };
+        let from = self.current.load(Ordering::Acquire);
+        let new = Arc::clone(&self.node_at(target).store);
+        if target == from {
+            new.install_unlock(derived)?;
+            return Ok(new);
+        }
+        let old = &self.node_at(from).store;
+        if !old.is_at_rest() || !new.is_at_rest() {
+            return Err(VaultError::Busy);
+        }
+        stop_work();
+        old.lock();
+        new.install_unlock(derived)?;
+        if !old.is_at_rest() {
+            new.lock();
+            return Err(VaultError::Busy);
+        }
+        self.current.store(target, Ordering::Release);
+        Ok(new)
+    }
+
+    /// Moves the screen back to the registry's default vault after a lock (Ben's Q2: a locked
+    /// screen starts on the default), running `stop_work` first if it moves. Nothing happens when it
+    /// is already there, or the default is not a slot this device has. A refusal leaves it where it
+    /// was, and the next lock tries again.
+    pub(crate) fn return_to_default(&self, stop_work: impl FnOnce()) {
+        let default = self
+            .registry
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .default_slot();
+        if let Some(default) = default.filter(|slot| *slot != self.current_slot()) {
+            let _ = self.switch(default, stop_work);
+        }
+    }
+
     /// One tick of the document worker, on the current store (see [`VaultStore::document_tick`]).
     /// `false` once the collection has been stopped for good.
     pub(crate) fn tick_documents(&self) -> bool {
@@ -245,6 +384,19 @@ impl VaultSource for VaultSlots {
 
     fn all(&self) -> Vec<Arc<VaultStore>> {
         self.nodes().map(|node| Arc::clone(&node.store)).collect()
+    }
+
+    fn return_to_default(&self, stop_work: &mut dyn FnMut()) {
+        VaultSlots::return_to_default(self, stop_work);
+    }
+
+    fn unlock_named(
+        &self,
+        name: &str,
+        passphrase: &str,
+        stop_work: &mut dyn FnMut(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        VaultSlots::unlock_named(self, name, passphrase, stop_work)
     }
 }
 
@@ -520,5 +672,250 @@ mod tests {
         // Not covered here: that a cycle binds its cache to its own vault id (`ResumeCache::bind`,
         // tested in document_collection_pickup) and that the worker ticks the store that is current
         // (`document_tick`, above). The Windows tick itself runs only on Windows.
+    }
+
+    const OTHER_PASSWORD: &str = "lantern-orbit-willow-cascade-572";
+
+    /// Makes a vault in `slot` with its own passphrase and locks it.
+    fn make_vault_with(slots: &VaultSlots, slot: SlotId, passphrase: &str) {
+        let store = slots.store_of(slot).unwrap();
+        store.create(passphrase, "FAKE Person", 1).unwrap();
+        store.lock();
+    }
+
+    fn reset_counters() {
+        crate::vault::DERIVATIONS.with(|count| count.set(0));
+        crate::vault::HEADER_READS.with(|count| count.set(0));
+    }
+
+    fn counters() -> (usize, usize) {
+        (
+            crate::vault::DERIVATIONS.with(Cell::get),
+            crate::vault::HEADER_READS.with(Cell::get),
+        )
+    }
+
+    fn open_vaults(slots: &VaultSlots) -> Vec<SlotId> {
+        slots
+            .slots()
+            .into_iter()
+            .filter(|slot| {
+                !slots.store_of(*slot).unwrap().is_at_rest()
+                    && matches!(
+                        slots.store_of(*slot).unwrap().status(),
+                        Ok(VaultStatus::Unlocked)
+                    )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn given_two_vaults_with_different_passphrases_when_unlocked_by_name_then_the_right_one_opens()
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        // The screen starts on the default (the third vault, none made yet).
+        assert_eq!(slots.current_slot(), third);
+        let stopped = Cell::new(0);
+
+        reset_counters();
+        let opened = slots
+            .unlock_named("  SECOND ", OTHER_PASSWORD, || {
+                stopped.set(stopped.get() + 1)
+            })
+            .unwrap();
+        assert!(Arc::ptr_eq(&opened, slots.store_of(second).unwrap()));
+        assert_eq!(slots.current_slot(), second);
+        assert_eq!(open_vaults(&slots), vec![second]);
+        assert_eq!(stopped.get(), 1, "the old vault's work was stopped once");
+        // One real derivation and the decoys: four, whatever the name matched; every vault's header
+        // files were read once, before any derivation.
+        assert_eq!(counters(), (DUPLICATE_NAME_CAP_FOR_TEST, 3));
+    }
+
+    const DUPLICATE_NAME_CAP_FOR_TEST: usize = crate::vault_registry::DUPLICATE_NAME_CAP;
+
+    #[test]
+    fn given_a_wrong_passphrase_or_an_unknown_name_when_unlocked_by_name_then_the_work_and_the_answer_are_the_same(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, _third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        let before = slots.current_slot();
+        for (name, passphrase) in [
+            ("second", "a wrong passphrase 3318"),
+            ("nobody", OTHER_PASSWORD),
+            ("nobody", "a wrong passphrase 3318"),
+            // A name whose vault was never made ("Third" is registered, its folder is empty).
+            ("third", OTHER_PASSWORD),
+        ] {
+            reset_counters();
+            let outcome = slots.unlock_named(name, passphrase, || {});
+            assert!(
+                matches!(outcome, Err(VaultError::WrongPassphrase)),
+                "{name}"
+            );
+            assert_eq!(
+                counters(),
+                (DUPLICATE_NAME_CAP_FOR_TEST, 3),
+                "{name} with {passphrase}"
+            );
+            assert!(open_vaults(&slots).is_empty());
+            assert_eq!(slots.current_slot(), before);
+        }
+    }
+
+    #[test]
+    fn given_0_1_and_2_vaults_with_the_name_when_unlocked_then_derivations_and_header_reads_are_equal(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        let first = registry.add_extra("Sam").unwrap();
+        let second = registry.add_extra("Sam").unwrap();
+        let lone = registry.add_extra("Lone").unwrap();
+        registry.save(temp.path()).unwrap();
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, first, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        make_vault_with(&slots, lone, "orchard-tundra-violin-meadow-215");
+        let mut seen = Vec::new();
+        // 0 matches, 1 match, 2 matches; each with a wrong passphrase so nothing opens or moves.
+        for name in ["Nobody", "Lone", "SAM"] {
+            reset_counters();
+            assert!(slots
+                .unlock_named(name, "wrong 99887766 passphrase", || {})
+                .is_err());
+            seen.push(counters());
+        }
+        assert_eq!(seen, vec![(DUPLICATE_NAME_CAP_FOR_TEST, 4); 3]);
+        // Two vaults share "Sam": the passphrase of either opens THAT one.
+        let opened = slots.unlock_named("sam", OTHER_PASSWORD, || {}).unwrap();
+        assert!(Arc::ptr_eq(&opened, slots.store_of(second).unwrap()));
+    }
+
+    #[test]
+    fn given_an_empty_name_when_unlocked_then_it_is_the_default_vault_with_one_derivation() {
+        let temp = tempfile::tempdir().unwrap();
+        let (_second, third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, third, PASSWORD);
+        reset_counters();
+        let opened = slots.unlock_named("", PASSWORD, || {}).unwrap();
+        assert!(Arc::ptr_eq(&opened, slots.store_of(third).unwrap()));
+        assert_eq!(counters().0, 1);
+        assert_eq!(open_vaults(&slots), vec![third]);
+    }
+
+    #[test]
+    fn given_a_vault_that_is_open_when_another_is_unlocked_by_name_then_it_is_refused_and_nothing_changes(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, _third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        slots.switch(SlotId::Main, || {}).unwrap();
+        slots.current().unlock(PASSWORD).unwrap();
+        let ran = Cell::new(false);
+        let outcome = slots.unlock_named("second", OTHER_PASSWORD, || ran.set(true));
+        assert!(matches!(outcome, Err(VaultError::Busy)));
+        assert!(!ran.get());
+        // The open vault is still open, the other still locked, the screen where it was.
+        assert_eq!(open_vaults(&slots), vec![SlotId::Main]);
+        assert_eq!(slots.current_slot(), SlotId::Main);
+    }
+
+    #[test]
+    fn given_a_switch_between_the_derivation_and_the_install_when_the_key_is_installed_then_only_the_winner_is_open(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        make_vault_with(&slots, third, "orchard-tundra-violin-meadow-215");
+        slots.switch(SlotId::Main, || {}).unwrap();
+        let derive = |slot: SlotId, passphrase: &str| {
+            let store = slots.store_of(slot).unwrap();
+            store
+                .derive_for_unlock(passphrase, store.pre_read_headers().unwrap())
+                .ok()
+                .unwrap()
+        };
+
+        // The key for `second` is derived while the screen is on Main; then the screen switches to
+        // `third`; the install then finds the screen on `third`, locks it, and opens `second`.
+        let key = derive(second, OTHER_PASSWORD);
+        slots.switch(third, || {}).unwrap();
+        slots.unlock_into(second, key, || {}).unwrap();
+        assert_eq!(open_vaults(&slots), vec![second]);
+        assert_eq!(slots.current_slot(), second);
+
+        // The same, but the vault the screen moved to was opened meanwhile: the install is refused,
+        // the key is dropped, and still only one vault is open.
+        slots.current().lock();
+        slots.switch(SlotId::Main, || {}).unwrap();
+        let key = derive(second, OTHER_PASSWORD);
+        slots.current().unlock(PASSWORD).unwrap();
+        assert!(matches!(
+            slots.unlock_into(second, key, || {}),
+            Err(VaultError::Busy)
+        ));
+        assert_eq!(open_vaults(&slots), vec![SlotId::Main]);
+        assert_eq!(slots.current_slot(), SlotId::Main);
+    }
+
+    #[test]
+    fn given_a_lock_when_the_screen_returns_to_the_default_then_it_moves_unless_something_is_open()
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let (second, third) = three_vault_device(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        slots.switch(second, || {}).unwrap();
+        // Already off the default: it goes back, stopping the work once.
+        let stopped = Cell::new(0);
+        slots.return_to_default(|| stopped.set(stopped.get() + 1));
+        assert_eq!(slots.current_slot(), third);
+        assert_eq!(stopped.get(), 1);
+        // Already there: nothing runs.
+        slots.return_to_default(|| stopped.set(stopped.get() + 1));
+        assert_eq!(stopped.get(), 1);
+        // A vault open on the screen is never left behind: the move is refused.
+        slots.switch(second, || {}).unwrap();
+        slots.current().unlock(OTHER_PASSWORD).unwrap();
+        slots.return_to_default(|| stopped.set(stopped.get() + 1));
+        assert_eq!(slots.current_slot(), second);
+        assert_eq!(stopped.get(), 1);
+    }
+
+    #[test]
+    fn given_one_vault_and_no_registry_when_a_name_is_typed_then_only_the_empty_name_opens_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let slots = slots_in(temp.path());
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        // Through the source the app uses, as `vault_unlock_named` does.
+        let handle = crate::vault_source::StoreHandle::single(Arc::clone(
+            slots.store_of(SlotId::Main).unwrap(),
+        ));
+        assert!(matches!(
+            handle.unlock_named("anyone", PASSWORD, || {}),
+            Err(VaultError::WrongPassphrase)
+        ));
+        let opened = handle.unlock_named("", PASSWORD, || {}).unwrap();
+        assert!(Arc::ptr_eq(&opened, slots.store_of(SlotId::Main).unwrap()));
+        // And through VaultSlots itself, with no registry file: a typed name matches nothing.
+        slots.current().lock();
+        assert!(matches!(
+            slots.unlock_named("anyone", PASSWORD, || {}),
+            Err(VaultError::WrongPassphrase)
+        ));
+        assert!(slots.unlock_named("", PASSWORD, || {}).is_ok());
     }
 }
