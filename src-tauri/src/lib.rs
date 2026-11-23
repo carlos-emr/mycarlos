@@ -3131,6 +3131,7 @@ async fn background_set_keep_running(
     store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<desktop_background::Status> {
+    let store = store.pin();
     #[cfg(desktop)]
     {
         let background = background_state(&app)?;
@@ -4187,6 +4188,7 @@ async fn vault_backup_picked(
     picks: State<'_, Arc<PendingPicks>>,
     request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let store = store.pin();
     let leave_videos_out = request.leave_videos_out;
     let store = store.pin();
     let destination = picks
@@ -5085,6 +5087,7 @@ async fn vault_read_android_pdf(
     request: AndroidPdfRequest,
     activity: tauri::ipc::Channel<()>,
 ) -> CommandResult<()> {
+    let store = store.pin();
     #[cfg(target_os = "android")]
     {
         let store = store.pin();
@@ -9053,10 +9056,16 @@ mod tests {
     /// Every command's `State<..>` parameter must be something the app manages: a command asking for
     /// a type nobody manages panics ("state not managed") the first time it is called, and
     /// nothing at build time says so (#393 made the vault `StoreHandle`; commands merged after it from
-    /// branches that began before it still asked for `Arc<VaultStore>`). Each managed type is listed
-    /// here with the text in the app's setup that manages it, so the list cannot drift from the code
-    /// in either direction: a new type fails until it is added WITH its evidence, and a removed
-    /// `manage` fails its evidence.
+    /// branches that began before it still asked for `Arc<VaultStore>`, #421). Each managed type is
+    /// listed here with the text in the app's `.setup` closure that manages it, so the list cannot
+    /// drift from the code in either direction: a new type fails until it is added WITH its evidence,
+    /// and a removed `manage` fails its evidence.
+    ///
+    /// Reads every source file under `src/` (a command in a module is found, not only one in
+    /// `lib.rs`), accepts `#[tauri::command(..)]` with arguments, and every spelling of the type:
+    /// `State<'_, T>`, `State<'a, T>`, `State<T>` and `tauri::State<..>`. The older, narrower scan of
+    /// the VaultStore type is `no_source_file_takes_or_manages_the_store_directly` in
+    /// `vault_source.rs`, and `scripts/vault-store-handle-codemod.py` rewrites what that one finds.
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
@@ -9074,28 +9083,112 @@ mod tests {
                 "Arc<PendingPicks>",
                 "app.manage(Arc::new(PendingPicks::default()))",
             ),
-            (
-                "Arc<ReceivedFiles>",
-                "app.manage(Arc::new(ReceivedFiles::default()))",
-            ),
+            ("Arc<ReceivedFiles>", ".manage(Arc::clone(&received))"),
         ];
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
-        let setup: String = startup.chars().filter(|c| !c.is_whitespace()).collect();
+        // The evidence must be in `run()`, which builds the app and its setup (ReceivedFiles is
+        // managed on the builder, before the setup closure, so files a start-up callback takes are not
+        // lost): a `manage` elsewhere (a test app, a helper) does not make the real app manage a type.
+        let run_text = startup.split_once("pub fn run() {").unwrap().1;
+        let setup: String = run_text
+            .split_once(".invoke_handler(")
+            .unwrap()
+            .0
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         for (state, evidence) in MANAGED {
             let evidence: String = evidence.chars().filter(|c| !c.is_whitespace()).collect();
             assert!(
                 setup.contains(&evidence),
-                "{state} is no longer managed: {evidence}"
+                "{state} is no longer managed by run(): {evidence}"
             );
         }
-        let command_marker = ["#[tauri", "::command]"].concat();
+
         let mut asked = Vec::new();
-        for part in startup.split(&command_marker).skip(1) {
-            let Some(open) = part.find('(') else { continue };
+        let mut folders = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(folder) = folders.pop() {
+            for item in std::fs::read_dir(&folder).unwrap() {
+                let path = item.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    // Not the tests: they define commands and apps of their own.
+                    for state in command_state_types(production_part(&source)) {
+                        asked.push((path.display().to_string(), state));
+                    }
+                }
+            }
+        }
+        assert!(
+            asked.len() > 100,
+            "the scan found only {} state parameters",
+            asked.len()
+        );
+        for (file, state) in &asked {
+            assert!(
+                MANAGED.iter().any(|(managed, _)| managed == state),
+                "{file}: a command asks for State<{state}>, which the setup does not manage: it \
+                 would panic \"state not managed\" when called"
+            );
+        }
+    }
+
+    #[test]
+    fn the_state_scan_reads_every_spelling_and_ignores_what_is_not_a_command() {
+        // The marker is assembled here so this text is not itself counted as a command.
+        let marker = ["#[tauri", "::command]"].concat();
+        let source = "\
+            @cmd@\n\
+            async fn a(picks: State<'_, Arc<ModelAddActive>>, x: u8) {}\n\
+            @cmdopen@(rename_all = \"snake_case\")]\n\
+            fn b(picks: tauri::State<'a, Arc<PendingPicks>>) {}\n\
+            @cmd@\n\
+            fn c(\n    one: State<Arc<ReceivedFiles>>,\n    two: tauri::State<'_,\n        Arc<local_model::Store>,\n    >,\n) {}\n\
+            @cmd@\n\
+            fn d<T: Send>(value: T) {}\n\
+            fn helper(state: State<'_, NotACommand>) {}\n"
+            .replace("@cmd@", &marker)
+            .replace("@cmdopen@", marker.trim_end_matches(']'));
+        assert_eq!(
+            command_state_types(&source),
+            vec![
+                "Arc<ModelAddActive>",
+                "Arc<PendingPicks>",
+                "Arc<ReceivedFiles>",
+                "Arc<local_model::Store>"
+            ]
+        );
+    }
+
+    /// `source` up to its main test module (`#[cfg(test)]` then `mod tests {`). Smaller inline test
+    /// modules before it are kept, so a command in one is read too.
+    fn production_part(source: &str) -> &str {
+        source
+            .split_once("\n#[cfg(test)]\nmod tests {")
+            .map_or(source, |(head, _)| head)
+    }
+
+    /// The `State<..>` types in the parameters of every command function (the Tauri command attribute) in `source`.
+    fn command_state_types(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for part in source.split("#[tauri::command").skip(1) {
+            // The attribute may carry arguments: `#[tauri::command(rename_all = "..")]`.
+            let Some(after_attribute) = part.find(']').map(|at| &part[at + 1..]) else {
+                continue;
+            };
+            let Some(fn_at) = after_attribute.find("fn ") else {
+                continue;
+            };
+            let signature = &after_attribute[fn_at..];
+            let Some(open) = signature.find('(') else {
+                continue;
+            };
             let mut depth = 0usize;
             let mut close = None;
-            for (index, c) in part[open..].char_indices() {
+            for (index, c) in signature[open..].char_indices() {
                 match c {
                     '(' => depth += 1,
                     ')' => {
@@ -9108,45 +9201,48 @@ mod tests {
                     _ => {}
                 }
             }
-            let params: String = part[open + 1..close.unwrap()]
+            let Some(close) = close else { continue };
+            let params: String = signature[open + 1..close]
                 .chars()
                 .filter(|c| !c.is_whitespace())
                 .collect();
-            for (at, _) in params.match_indices("State<'") {
-                // `State<'_,TYPE>`: the type is everything after the first comma, up to the `>` that
-                // closes `State<`.
-                let rest = &params[at + 6..];
-                let comma = rest.find(',').unwrap();
+            for (at, _) in params.match_indices("State<") {
+                // A word ending in `State` (`SomeState<..>`) is not Tauri's.
+                if params[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                {
+                    continue;
+                }
+                let mut rest = &params[at + "State<".len()..];
+                // An optional lifetime first: `'_,` or `'a,`.
+                if rest.starts_with('\'') {
+                    let Some(comma) = rest.find(',') else {
+                        continue;
+                    };
+                    rest = &rest[comma + 1..];
+                }
                 let mut depth = 1usize;
-                let mut end = comma + 1;
-                for (index, c) in rest[comma + 1..].char_indices() {
+                let mut end = rest.len();
+                for (index, c) in rest.char_indices() {
                     match c {
                         '<' => depth += 1,
                         '>' => {
                             depth -= 1;
                             if depth == 0 {
-                                end = comma + 1 + index;
+                                end = index;
                                 break;
                             }
                         }
                         _ => {}
                     }
                 }
-                asked.push(rest[comma + 1..end].to_owned());
+                // A trailing comma inside the generics (`Arc<X>,>`) is not part of the type.
+                found.push(rest[..end].trim_end_matches(',').to_owned());
             }
         }
-        assert!(
-            asked.len() > 100,
-            "the scan found only {} state parameters",
-            asked.len()
-        );
-        for state in &asked {
-            assert!(
-                MANAGED.iter().any(|(managed, _)| managed == state),
-                "a command asks for State<{state}>, which the setup does not manage: it would panic \
-                 \"state not managed\" when called"
-            );
-        }
+        found
     }
 
     #[test]
@@ -9494,7 +9590,7 @@ mod historical_identifier_export_tests {
             tauri_plugin_fs::FilePath::Path(destination.clone()),
         );
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .manage(picks)
             .build(production_context())
             .unwrap();
@@ -9607,7 +9703,7 @@ mod historical_identifier_export_tests {
             tauri_plugin_fs::FilePath::Path(destination.clone()),
         );
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .manage(picks)
             .build(production_context())
             .unwrap();
