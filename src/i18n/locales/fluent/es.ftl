@@ -2520,3 +2520,5 @@ handover-export-leave-confirm = Salir
 handover-export-error-weak = Esa frase de contraseña no se puede usar. Puede ser demasiado fácil de adivinar, contener el nombre de la persona o parecerse demasiado a la frase de contraseña de su bóveda o a su clave de recuperación. Elija otra.
 
 handover-unfinished = Una entrega no se terminó. Cualquier clave que haya copiado o anotado no abre nada. Para entregar los registros, empiece de nuevo para obtener una clave nueva.
+
+native-error-49 = Esta sesión desbloqueada ya probó el máximo de frases de contraseña para un archivo. Bloquee myCarlos y desbloquéelo de nuevo para seguir intentándolo, o deje que myCarlos cree una clave para el archivo.

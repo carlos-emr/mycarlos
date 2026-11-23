@@ -2573,3 +2573,5 @@ handover-export-leave-confirm = Wyjdź
 handover-export-error-weak = Tego hasła nie można użyć. Może być zbyt łatwe do odgadnięcia, zawierać imię osoby albo zbyt przypominać hasło Twojego sejfu lub klucz odzyskiwania. Wybierz inne.
 
 handover-unfinished = Przekazanie nie zostało zakończone. Żaden skopiowany ani zapisany klucz niczego nie otwiera. Aby przekazać dokumenty, zacznij od nowa i uzyskaj nowy klucz.
+
+native-error-49 = W tej odblokowanej sesji wypróbowano już maksymalną liczbę haseł dla pliku. Zablokuj myCarlos i odblokuj go ponownie, aby próbować dalej, albo pozwól, by myCarlos utworzył klucz dla pliku.

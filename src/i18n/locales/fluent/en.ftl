@@ -2485,3 +2485,5 @@ handover-export-leave-confirm = Leave
 handover-export-error-weak = That passphrase cannot be used. It may be too easy to guess, contain the person's name, or be too much like your vault's passphrase or recovery key. Choose another.
 
 handover-unfinished = A handover was not finished. Any key you copied or wrote down opens nothing. To hand the records over, start again to get a new key.
+
+native-error-49 = This unlocked session has already tried the most passphrases it can for a file. Lock myCarlos and unlock it again to keep trying, or let myCarlos make a key for the file instead.

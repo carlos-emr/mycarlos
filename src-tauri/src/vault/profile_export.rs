@@ -58,6 +58,10 @@ pub(crate) struct Written<W> {
     pub digests: Vec<ObjectRead>,
 }
 
+/// Typed package passphrases checked in one unlocked session (#360). Ordinary use is one or
+/// two tries; a guess of the vault's own passphrase costs an unlock for every five.
+pub(crate) const PACKAGE_PASSPHRASE_TRIES: u32 = 5;
+
 impl VaultStore {
     /// Writes `profile_id`'s documents to `sink` as a package under `secret`. Refused for the
     /// vault's recovery mode, a person that is not here, and Shared with me (which is no
@@ -148,7 +152,57 @@ impl VaultStore {
     /// Whether `passphrase` may protect a package of `profile_id`: the vault's rules for a new
     /// passphrase (the person's own names are not allowed in it), and not the vault's own.
     /// Asked when the export is prepared, so that a refusal comes before anything else is.
+    ///
+    /// Counted: the refusal of the vault's own passphrase is a way to test a guess of it, one
+    /// derivation each, from an unlocked device and without the unlock screen's throttle. So
+    /// at most `PACKAGE_PASSPHRASE_TRIES` typed passphrases are checked in one unlocked session
+    /// (every one that reaches the comparison with the vault's own counts); then
+    /// `PackagePassphraseTriesUsed` until the vault is locked and unlocked again, and guessing
+    /// costs an unlock per five tries. The generated key is not limited. A passphrase already
+    /// checked is not counted again when the same export is saved (`check_export`,
+    /// `export_profile`): it is the same try.
     pub(crate) fn check_package_passphrase(
+        &self,
+        profile_id: Uuid,
+        passphrase: &str,
+    ) -> Result<(), VaultError> {
+        if self.package_passphrase_tries.load(Ordering::Acquire) >= PACKAGE_PASSPHRASE_TRIES {
+            // Said whatever was typed, and before any work: it gives nothing away.
+            return Err(VaultError::PackagePassphraseTriesUsed);
+        }
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let profile = Self::exportable_profile(unlocked, profile_id)?;
+        let context = Self::name_words(profile);
+        validate_new_passphrase(passphrase, &context)?;
+        // Only a try that reaches the derivation is the oracle: a recovery key's shape, or
+        // more bytes than a passphrase may have, is refused by its form, whatever the vault's.
+        let derives =
+            !looks_like_recovery_key(passphrase) && passphrase.len() <= MAX_PASSPHRASE_BYTES;
+        if derives {
+            // Spent before the derivation, so a cancel or a crash during it is no free try.
+            self.package_passphrase_tries
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tries| {
+                    (tries < PACKAGE_PASSPHRASE_TRIES).then_some(tries + 1)
+                })
+                .map_err(|_| VaultError::PackagePassphraseTriesUsed)?;
+        }
+        match self.is_vault_passphrase(unlocked, passphrase) {
+            Ok(false) => Ok(()),
+            Ok(true) => Err(VaultError::WeakPassphrase),
+            Err(error) => {
+                // Asked to wait: no derivation ran, so nothing was tried.
+                if derives && matches!(error, VaultError::Busy) {
+                    self.package_passphrase_tries.fetch_sub(1, Ordering::AcqRel);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// The same rules as `check_package_passphrase`, for a passphrase it already accepted (the
+    /// export being saved): not counted again.
+    fn recheck_package_passphrase(
         &self,
         profile_id: Uuid,
         passphrase: &str,
@@ -199,7 +253,8 @@ impl VaultStore {
         secret: PackageSecret<'_>,
     ) -> Result<(), VaultError> {
         if let PackageSecret::Passphrase(passphrase) = secret {
-            self.check_package_passphrase(profile_id, passphrase)
+            // The one that was prepared (and counted), asked again as the file is opened.
+            self.recheck_package_passphrase(profile_id, passphrase)
         } else {
             let guard = self.session();
             let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -1431,6 +1486,74 @@ mod tests {
         );
         assert!(matches!(result, Err(VaultError::Invalid)));
         assert!(!home.join("handover.mycarlosprofile").exists());
+    }
+
+    #[test]
+    fn typed_package_passphrases_are_checked_five_times_per_unlocked_session() {
+        let v = vault();
+        let typed = |n: u32| format!("tiger-lamp-orbit-quartz-mellow-{n}");
+        // Five typed passphrases (a refusal of the vault's own counts as one) are checked.
+        for n in 0..PACKAGE_PASSPHRASE_TRIES - 1 {
+            assert!(v
+                .store
+                .check_package_passphrase(v.child, &typed(7391 + n))
+                .is_ok());
+        }
+        assert!(matches!(
+            v.store.check_package_passphrase(v.child, PASSWORD),
+            Err(VaultError::WeakPassphrase)
+        ));
+        // Then any typed passphrase is refused, a good one and the vault's own alike, with
+        // the same words: the sixth guess learns nothing.
+        for text in [typed(1).as_str(), PASSWORD, "short"] {
+            assert!(matches!(
+                v.store.check_package_passphrase(v.child, text),
+                Err(VaultError::PackagePassphraseTriesUsed)
+            ));
+        }
+        // The generated key is not limited, and a passphrase already prepared can still be
+        // saved: opening its destination is the same try, not another.
+        let (key, _) = generate_package_key();
+        let written = v
+            .store
+            .export_profile(
+                v.child,
+                WITH_HISTORY,
+                PackageSecret::Key(&key),
+                Vec::new(),
+                1,
+            )
+            .unwrap();
+        assert!(!written.sink.is_empty());
+        assert!(v
+            .store
+            .check_export(v.child, PackageSecret::Passphrase(&typed(7391)))
+            .is_ok());
+        // A lock and an unlock spend nothing of the next session's tries.
+        v.store.lock();
+        v.store.unlock(PASSWORD).unwrap();
+        assert!(v.store.check_package_passphrase(v.child, &typed(1)).is_ok());
+    }
+
+    #[test]
+    fn a_rules_refusal_or_a_wait_is_not_a_try() {
+        let v = vault();
+        for _ in 0..PACKAGE_PASSPHRASE_TRIES * 2 {
+            assert!(v.store.check_package_passphrase(v.child, "short").is_err());
+        }
+        let _other = v.store.start_kdf_work().unwrap();
+        for _ in 0..PACKAGE_PASSPHRASE_TRIES * 2 {
+            assert!(matches!(
+                v.store
+                    .check_package_passphrase(v.child, "tiger-lamp-orbit-quartz-mellow-7391"),
+                Err(VaultError::Busy)
+            ));
+        }
+        drop(_other);
+        assert!(v
+            .store
+            .check_package_passphrase(v.child, "tiger-lamp-orbit-quartz-mellow-7391")
+            .is_ok());
     }
 
     #[test]

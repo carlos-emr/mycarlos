@@ -735,6 +735,7 @@ pub enum MessageId {
     NativeError46,
     NativeError47,
     NativeError48,
+    NativeError49,
     NativeErrorSpeedTest,
     NativeFilterBackups,
     NativeFilterModels,
@@ -1880,6 +1881,7 @@ impl MessageId {
         Self::NativeError46,
         Self::NativeError47,
         Self::NativeError48,
+        Self::NativeError49,
         Self::NativeErrorSpeedTest,
         Self::NativeFilterBackups,
         Self::NativeFilterModels,
@@ -3303,6 +3305,7 @@ impl MessageId {
             Self::NativeError46 => "native-error-46",
             Self::NativeError47 => "native-error-47",
             Self::NativeError48 => "native-error-48",
+            Self::NativeError49 => "native-error-49",
             Self::NativeErrorSpeedTest => "native-error-speedTest",
             Self::NativeFilterBackups => "native-filter-backups",
             Self::NativeFilterModels => "native-filter-models",
@@ -5244,6 +5247,7 @@ impl MessageId {
             "handover.export.leave.confirm" => Some(Self::HandoverExportLeaveConfirm),
             "handover.export.error.weak" => Some(Self::HandoverExportErrorWeak),
             "handover.unfinished" => Some(Self::HandoverUnfinished),
+            "native.error.49" => Some(Self::NativeError49),
             _ => None,
         }
     }

@@ -1139,5 +1139,6 @@
   "handover.export.leave.body",
   "handover.export.leave.confirm",
   "handover.export.error.weak",
-  "handover.unfinished"
+  "handover.unfinished",
+  "native.error.49"
 ]

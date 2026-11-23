@@ -2290,3 +2290,5 @@ handover-export-leave-confirm = 離開
 handover-export-error-weak = 無法使用該口令。它可能太容易被猜到、包含此人的姓名，或與您保險庫的口令或復原金鑰太相似。請換一個。
 
 handover-unfinished = 有一次移交沒有完成。您複製或記下的任何金鑰都無法開啟任何內容。若要移交記錄，請重新開始以取得新的金鑰。
+
+native-error-49 = 此次解鎖期間已嘗試了檔案口令的最多次數。請鎖定 myCarlos 後重新解鎖以繼續嘗試，或改由 myCarlos 為檔案產生金鑰。

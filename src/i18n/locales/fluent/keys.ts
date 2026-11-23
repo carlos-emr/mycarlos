@@ -1141,6 +1141,7 @@ export const MESSAGE_KEYS = [
   "handover.export.leave.confirm",
   "handover.export.error.weak",
   "handover.unfinished",
+  "native.error.49",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2485,6 +2486,7 @@ const FLUENT_IDS_BY_KEY = {
   "handover.export.leave.confirm": "handover-export-leave-confirm",
   "handover.export.error.weak": "handover-export-error-weak",
   "handover.unfinished": "handover-unfinished",
+  "native.error.49": "native-error-49",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3747,6 +3749,7 @@ export interface MessageArgsByKey {
   "handover.export.leave.confirm": undefined;
   "handover.export.error.weak": undefined;
   "handover.unfinished": undefined;
+  "native.error.49": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

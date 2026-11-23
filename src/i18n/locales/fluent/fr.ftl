@@ -2520,3 +2520,5 @@ handover-export-leave-confirm = Quitter
 handover-export-error-weak = Cette phrase secrète ne peut pas être utilisée. Elle est peut-être trop facile à deviner, contient le nom de la personne ou ressemble trop à la phrase secrète de votre coffre ou à votre clé de récupération. Choisissez-en une autre.
 
 handover-unfinished = Une transmission n'a pas été terminée. Toute clé que vous avez copiée ou notée n'ouvre rien. Pour transmettre les dossiers, recommencez pour obtenir une nouvelle clé.
+
+native-error-49 = Cette session déverrouillée a déjà essayé le maximum de phrases secrètes pour un fichier. Verrouillez myCarlos puis déverrouillez-le de nouveau pour continuer, ou laissez myCarlos créer une clé pour le fichier.
