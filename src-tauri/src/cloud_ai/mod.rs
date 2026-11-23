@@ -25,8 +25,14 @@ pub(crate) mod restore;
 pub(crate) mod send;
 
 // Until the live contract check pins the VERIFY values (the `anthropic-version` header and the
-// shape of `output_config.format`, see TESTING.md), a release build cannot have the feature on.
-#[cfg(all(feature = "cloud-ai", not(debug_assertions)))]
+// shape of `output_config.format`, see TESTING.md), NO build may have the feature on (debug builds
+// ship too: the evaluation downloads are `tauri build --debug`). Local work opts in with
+// `cloud-ai-unverified-dev`, which no CI job or packaging step may enable.
+#[cfg(all(
+    feature = "cloud-ai",
+    not(test),
+    not(feature = "cloud-ai-unverified-dev")
+))]
 compile_error!(
-    "the cloud-ai feature is not for release builds until the VERIFY values in cloud_ai/request.rs are pinned (#72)"
+    "the cloud-ai feature builds nothing that ships until the VERIFY values in cloud_ai/request.rs are pinned (#72)"
 );

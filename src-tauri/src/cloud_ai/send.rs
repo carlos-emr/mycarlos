@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 
 use super::request::{self, build_summary_request, Estimate, ProviderRequest, RequestError};
 use super::response::{clean_request_id, interpret, Failure, ProviderResponse};
-use super::restore::{self, restore, Removed, RemovedError};
+use super::restore::{self, restore_with, Removed, RemovedError, Restorable};
 use crate::history::{HistoryEntry, HistoryEvent};
 use crate::text_recheck::{self, Hit};
 use crate::ui_text::UiLocale;
@@ -120,10 +120,9 @@ pub(crate) struct Prepared {
     model_label: &'static str,
     language: UiLocale,
     labels: Vec<String>,
-    /// The document's own text, for the paste-back's ambiguous-marker rule.
-    source: Zeroizing<String>,
     text: Zeroizing<String>,
-    removed: Vec<Removed>,
+    /// What can be put back, worked out once here.
+    restorable: Restorable,
     estimate: Estimate,
 }
 
@@ -196,6 +195,8 @@ pub(crate) fn prepare(
         return Err(PrepareError::BadText);
     }
     restore::validate_removed(&removed, text, &labels).map_err(PrepareError::BadRemoved)?;
+    let restorable = Restorable::new(&removed, source);
+    drop(removed);
     // The key must exist (and be readable) now, so that a send does not fail late.
     vault.key_label(key_id).map_err(PrepareError::Vault)?;
     Ok(Prepared {
@@ -205,9 +206,8 @@ pub(crate) fn prepare(
         model_label: model.label,
         language,
         labels,
-        source: Zeroizing::new(source.to_owned()),
         text: Zeroizing::new(text.to_owned()),
-        removed,
+        restorable,
         estimate: request::estimate(text, model),
     })
 }
@@ -262,7 +262,8 @@ pub(crate) enum SendError {
     Vault(VaultError),
     Request(RequestError),
     /// The send ended without an answer: said in plain words by the screen.
-    Failed(Failure),
+    /// The failure, and the provider's request id when a response carried one.
+    Failed(Failure, Option<String>),
 }
 
 fn event(kind: HistoryEvent, record: Uuid, at_ms: u64) -> HistoryEntry {
@@ -283,7 +284,7 @@ pub(crate) fn send(
     now_ms: impl Fn() -> u64,
 ) -> Result<Sent, SendError> {
     if cancel.load(Ordering::Acquire) {
-        return Err(SendError::Failed(Failure::Cancelled));
+        return Err(SendError::Failed(Failure::Cancelled, None));
     }
     let confirmation = Confirmation {
         provider: "Anthropic",
@@ -354,11 +355,12 @@ pub(crate) fn send(
     // The answer is not lost for want of a second entry.
     let _ = vault.record(answered);
 
-    let (answer, _) = outcome.map_err(SendError::Failed)?;
+    let (answer, _) =
+        outcome.map_err(|failure| SendError::Failed(failure, failed_request_id.clone()))?;
     let mut flagged = Vec::new();
     let mut put_back = |text: &str| {
         let words: Vec<&str> = prepared.labels.iter().map(String::as_str).collect();
-        let restored = restore(text, &prepared.removed, &prepared.source, &words);
+        let restored = restore_with(text, &prepared.restorable, &words);
         flagged.extend(restored.flagged);
         restored.text
     };
@@ -712,7 +714,7 @@ mod tests {
                 reply,
             };
             let result = run(&vault, &transport, &yes());
-            let Err(SendError::Failed(failure)) = result else {
+            let Err(SendError::Failed(failure, _)) = result else {
                 panic!("{expected}: {result:?}");
             };
             assert_eq!(failure.name(), expected);
@@ -740,7 +742,7 @@ mod tests {
         let cancelled = AtomicBool::new(true);
         assert!(matches!(
             send(&vault, &transport, &yes(), prepared, &cancelled, || 5,),
-            Err(SendError::Failed(Failure::Cancelled))
+            Err(SendError::Failed(Failure::Cancelled, None))
         ));
         assert!(transport.calls.borrow().is_empty());
         assert!(vault.history.borrow().is_empty());
@@ -803,6 +805,24 @@ mod tests {
             );
         }
         assert!(go(vec![part("[NAME 1]")]).is_ok());
+        // The document's own text is capped at the text cap, so no hostile source burns CPU.
+        let over = "x".repeat(restore::MAX_SOURCE_BYTES + 1);
+        assert!(matches!(
+            prepare(
+                &vault,
+                PrepareRequest {
+                    record_id: Uuid::new_v4(),
+                    key_id: Uuid::new_v4(),
+                    model_id: "claude-opus-5-5",
+                    language: UiLocale::En,
+                    text: "Patient [NAME 1] presents.",
+                    source: &over,
+                    labels: vec!["NAME".to_owned()],
+                    removed: vec![part("[NAME 1]")],
+                },
+            ),
+            Err(PrepareError::BadText)
+        ));
         assert!(vault.history.borrow().is_empty());
     }
 
@@ -814,10 +834,15 @@ mod tests {
             calls: RefCell::new(vec![]),
             reply: Ok((529, "{}".to_owned())),
         };
-        let _ = run(&vault, &transport, &yes());
+        let result = run(&vault, &transport, &yes());
         assert_eq!(
             vault.history.borrow()[1].detail.as_deref(),
             Some("busy req_FAKE1")
         );
+        // The screens get the same id to show.
+        assert!(matches!(
+            result,
+            Err(SendError::Failed(Failure::Busy, Some(ref id))) if id == "req_FAKE1"
+        ));
     }
 }

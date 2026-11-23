@@ -1,5 +1,7 @@
 //! Putting the real details back into an answer written from placeholder text (design 5.4), in
-//! Rust, so the restored text is never supplied by the page (the kept answer's rule, AI-06).
+//! Rust, so the answer text itself is never written by the page. What each mark stands for IS
+//! supplied by the page (it holds the document): `validate_removed` bounds that list, and a
+//! compromised page choosing what a mark stands for is the stated residual of AI-06.
 //!
 //! This is a port of the page's `restoreChecked` (src/deidentify/deidentify.ts) for the marks of
 //! one export in one language: each placeholder written exactly as it was sent becomes what it
@@ -19,7 +21,7 @@ const MAX_REPLACEMENT_BYTES: usize = 120;
 const MAX_ORIGINAL_BYTES: usize = 2_000;
 const MAX_ORIGINALS_TOTAL_BYTES: usize = 512 * 1024;
 /// The document's own text, as the page read it, for the "marker already in the source" rule.
-pub(crate) const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 
 /// What one placeholder of this export stood for. Personal text: zeroed on drop, never printed.
 #[derive(Clone)]
@@ -130,59 +132,97 @@ fn base_of(replacement: &str) -> String {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub(crate) struct Restored {
     pub text: String,
     /// Placeholder-shaped text that was not put back, as written.
     pub flagged: Vec<String>,
 }
 
+/// What can be put back for one export, worked out ONCE (at prepare, not per sentence): one entry
+/// per distinct mark (the first original written for it), without the marks that are ambiguous.
+/// Personal text: zeroed on drop, never printed.
+pub(crate) struct Restorable {
+    back: HashMap<String, String>,
+    /// Longest first, so "[NAME 1]" never stands inside "[NAME 10]"'s place.
+    keys: Vec<String>,
+}
+
+impl Drop for Restorable {
+    fn drop(&mut self) {
+        for value in self.back.values_mut() {
+            value.zeroize();
+        }
+    }
+}
+
+impl std::fmt::Debug for Restorable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Restorable")
+            .field("marks", &self.back.len())
+            .finish()
+    }
+}
+
+impl Restorable {
+    /// `source` is the document's text: a mark whose base already stands in it, and a manual mark
+    /// given to two different details, are never put back (the page's two "ambiguous marker"
+    /// rules). Linear in the marks, plus one search of `source` per distinct mark.
+    pub(crate) fn new(removed: &[Removed], source: &str) -> Self {
+        let manual: HashSet<&str> = removed
+            .iter()
+            .filter(|part| part.manual)
+            .map(|part| part.replacement.as_str())
+            .collect();
+        let mut back: HashMap<&str, &str> = HashMap::new();
+        let mut conflicting: HashSet<&str> = HashSet::new();
+        for part in removed {
+            // An empty mark would match everywhere and never advance.
+            if part.replacement.is_empty() {
+                continue;
+            }
+            match back.get(part.replacement.as_str()) {
+                Some(previous) => {
+                    if manual.contains(part.replacement.as_str()) && *previous != part.original {
+                        conflicting.insert(part.replacement.as_str());
+                    }
+                }
+                None => {
+                    back.insert(part.replacement.as_str(), part.original.as_str());
+                }
+            }
+        }
+        back.retain(|replacement, _| {
+            let base = base_of(replacement);
+            let comma_form = format!("{},", base.trim_end_matches(']'));
+            !(conflicting.contains(replacement)
+                || source.contains(&base)
+                || source.contains(&comma_form))
+        });
+        let back: HashMap<String, String> = back
+            .into_iter()
+            .map(|(replacement, original)| (replacement.to_owned(), original.to_owned()))
+            .collect();
+        let mut keys: Vec<String> = back.keys().cloned().collect();
+        keys.sort_by_key(|key| std::cmp::Reverse(key.len()));
+        Self { back, keys }
+    }
+}
+
 /// `labels` are this export's placeholder words ("NAME", "DATE"): a mark written with one of them
-/// and a number, in brackets or bare, is flagged when it is not exactly one of the keys. `source`
-/// is the document's text: a mark whose base already stands in it, and a manual mark given to two
-/// different details, are never put back (the page's two "ambiguous marker" rules).
+/// and a number, in brackets or bare, is flagged when it is not exactly one of the keys.
+#[cfg(test)]
 pub(crate) fn restore(
     answer: &str,
     removed: &[Removed],
     source: &str,
     labels: &[&str],
 ) -> Restored {
-    let mut back: HashMap<&str, &str> = HashMap::new();
-    let manual: HashSet<&str> = removed
-        .iter()
-        .filter(|part| part.manual)
-        .map(|part| part.replacement.as_str())
-        .collect();
-    let mut conflicting: HashSet<&str> = HashSet::new();
-    for part in removed {
-        // An empty mark would match everywhere and never advance.
-        if part.replacement.is_empty() {
-            continue;
-        }
-        match back.get(part.replacement.as_str()) {
-            Some(previous) => {
-                if manual.contains(part.replacement.as_str()) && *previous != part.original {
-                    conflicting.insert(part.replacement.as_str());
-                }
-            }
-            None => {
-                back.insert(part.replacement.as_str(), part.original.as_str());
-            }
-        }
-    }
-    for part in removed {
-        let base = base_of(&part.replacement);
-        let comma_form = format!("{},", base.trim_end_matches(']'));
-        if conflicting.contains(part.replacement.as_str())
-            || source.contains(&base)
-            || source.contains(&comma_form)
-        {
-            back.remove(part.replacement.as_str());
-        }
-    }
-    // Longest first, so "[NAME 1]" never stands inside "[NAME 10]"'s place.
-    let mut keys: Vec<&str> = back.keys().copied().collect();
-    keys.sort_by_key(|key| std::cmp::Reverse(key.len()));
+    restore_with(answer, &Restorable::new(removed, source), labels)
+}
+
+pub(crate) fn restore_with(answer: &str, restorable: &Restorable, labels: &[&str]) -> Restored {
     let mut words: Vec<&str> = labels.to_vec();
     words.sort_by_key(|word| std::cmp::Reverse(word.len()));
 
@@ -191,8 +231,12 @@ pub(crate) fn restore(
     let mut at = 0;
     while at < answer.len() {
         let rest = &answer[at..];
-        if let Some(key) = keys.iter().find(|key| rest.starts_with(**key)) {
-            text.push_str(back[key]);
+        if let Some(key) = restorable
+            .keys
+            .iter()
+            .find(|key| rest.starts_with(key.as_str()))
+        {
+            text.push_str(&restorable.back[key]);
             at += key.len();
         } else if let Some(end) = placeholder_shape(rest)
             .or_else(|| bracketed_near_miss(rest, &words))
@@ -208,6 +252,15 @@ pub(crate) fn restore(
         }
     }
     Restored { text, flagged }
+}
+
+impl std::fmt::Debug for Restored {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Restored")
+            .field("flagged", &self.flagged.len())
+            .finish()
+    }
 }
 
 /// The length of a placeholder-shaped mark at the start of `rest`: `[`, a word that does not start

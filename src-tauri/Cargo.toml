@@ -21,6 +21,9 @@ ai-helper-stub = []
 # The patient's own cloud AI key and, in later changes, the send path (#72, THREAT_MODEL AI-11 and
 # NET-05). Off by default and not in any release build until the #25 review signs off.
 cloud-ai = []
+# Local work on the cloud-ai feature before the live contract check (see cloud_ai/mod.rs): without
+# it a build with `cloud-ai` fails to compile. No CI job or packaging step may enable it.
+cloud-ai-unverified-dev = ["cloud-ai"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
