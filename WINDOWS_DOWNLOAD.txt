@@ -29,8 +29,10 @@ The app can link to a clinic's patient portal (Security > Connected clinics > Co
 request approval) to receive documents; link only to a test portal. It never connects to
 CARLOS EMR itself.
 Forgetting the passphrase loses access to this test vault.
-Uninstalling the app can leave its vault data behind. To erase the test vault, use Security >
-Erase entire vault before uninstalling. Reset does not delete any readable copies you exported.
+Uninstalling the app can leave its vault data behind. myCarlos has no erase button: Security >
+Set vault aside starts a new vault and keeps the old one encrypted on this computer. To remove a
+vault for good, close myCarlos and delete its folder (the app shows where). Neither step deletes any
+readable copies you exported.
 
 BUILD.txt identifies the source commit and GitHub build. SHA256SUMS.txt identifies the installer.
 Updates are manual: download and run the installer from a newer successful Windows native build.

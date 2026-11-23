@@ -137,9 +137,7 @@ describe("Settings > Security in each language", () => {
       renderSecurity();
       // Set-aside replaces destructive reset; Settings has no erase control.
       expect(
-        screen.queryByRole("heading", {
-          name: translate(locale, "security.erase.title"),
-        }),
+        screen.queryByRole("heading", { name: /erase entire vault/i }),
       ).toBeNull();
 
       expect(document.documentElement.lang).toBe(locale);

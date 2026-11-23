@@ -1074,14 +1074,6 @@ security-encryption-state = 已啟用 — 一律加密
 
 security-encryption-title = 加密
 
-security-erase-body = 永久刪除所有加密文件、檔案和資料夾。此操作無法復原。
-
-security-erase-show = 顯示重設控制項
-
-security-erase-submit = 清除整個保險庫
-
-security-erase-title = 清除整個保險庫
-
 security-lockNow = 立即鎖定
 
 security-oldBackups-deleteOlder = 請刪除較舊的備份：名稱開頭為「myCarlos backup」的檔案，以及您重新命名過的備份，但請保留新備份及其副本。這些檔案可能存放在您選擇的位置，例如資料夾、USB 隨身碟，或手機上的檔案 App 或雲端硬碟。

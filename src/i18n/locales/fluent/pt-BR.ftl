@@ -1214,14 +1214,6 @@ security-encryption-state = Ativada — sempre
 
 security-encryption-title = Criptografia
 
-security-erase-body = Exclui permanentemente todos os documentos, perfis e pastas criptografados. Isso não pode ser desfeito.
-
-security-erase-show = Mostrar os controles para apagar
-
-security-erase-submit = Apagar todo o cofre
-
-security-erase-title = Apagar todo o cofre
-
 security-lockNow = Bloquear agora
 
 security-oldBackups-deleteOlder = Exclua as cópias de segurança anteriores: os arquivos cujo nome começa com “myCarlos backup” e as que você renomeou, exceto a nova e as cópias dela. Elas estão onde você as salvou: uma pasta, um pen drive ou, no celular, o app Arquivos ou um armazenamento na nuvem.

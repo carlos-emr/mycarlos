@@ -1214,14 +1214,6 @@ security-encryption-state = Activé — toujours
 
 security-encryption-title = Chiffrement
 
-security-erase-body = Supprime définitivement tous les documents, profils et dossiers chiffrés. Cette action est irréversible.
-
-security-erase-show = Afficher les commandes d’effacement
-
-security-erase-submit = Effacer tout le coffre-fort
-
-security-erase-title = Effacer tout le coffre-fort
-
 security-lockNow = Verrouiller maintenant
 
 security-oldBackups-deleteOlder = Supprimez les anciennes sauvegardes : les fichiers dont le nom commence par « myCarlos backup », et celles que vous avez renommées, sauf la nouvelle et ses copies. Elles se trouvent là où vous les avez enregistrées : un dossier, une clé USB ou, sur un téléphone, l’application Fichiers ou un espace de stockage en nuage.
