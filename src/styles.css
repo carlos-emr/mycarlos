@@ -1214,6 +1214,37 @@ p {
   color: var(--ink);
   font-weight: 700;
 }
+/* "Don't show this again" and the short tag's info button sit beside the warning, 44px high. */
+.native-reader-ai .ai-label-hide,
+.native-reader-ai .ai-label-info {
+  margin-inline-start: 4px;
+  min-height: 44px;
+  font-weight: 600;
+}
+.native-reader-ai .ai-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.native-reader-ai .ai-label-row .ai-label,
+.native-reader-ai .ai-label-short .ai-label {
+  margin: 0;
+}
+.native-reader-ai .native-reader-ai-about {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-bottom: 12px;
+}
+.native-reader-ai .native-reader-ai-about h4,
+.native-reader-ai .native-reader-ai-about p {
+  margin: 0;
+}
+.native-reader-ai .native-reader-ai-about p {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
 .native-reader-ai .ai-meta {
   color: var(--ink-soft);
   font-size: 0.875rem;
@@ -2587,7 +2618,7 @@ p {
 
 /* #67: bigger by default in the app. Body text is 16px; counts, dates, captions and
    other secondary text stay at 14px, the floor. Every button, tick box, field and link
-   is a target of at least 44px. Text size in Preferences still scales all of it. */
+   is a target of at least 44px. App zoom in Preferences still scales all of it. */
 .native-vault-page
   :is(
     .button,
@@ -3524,6 +3555,81 @@ p {
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* Recording a video, and playing one (#359). */
+.record-video-dialog .record-quality {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.record-video-dialog .record-quality legend {
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+.record-quality-size {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+.record-state {
+  display: grid;
+  gap: 6px;
+}
+.record-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-weight: 700;
+  color: var(--red);
+}
+.record-badge .icon {
+  width: 18px;
+  height: 18px;
+}
+.record-badge-paused {
+  color: var(--ink);
+}
+.record-paused-note,
+.record-delivered {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.record-clock {
+  width: fit-content;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+.record-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+.video-viewer {
+  width: min(960px, 100%);
+}
+.video-frame {
+  padding: 12px 20px;
+}
+.video-player {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-sm);
+  background: var(--camera-view);
+}
+.video-unavailable {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+}
+.video-unavailable .link-action {
+  width: fit-content;
+}
 .photo-viewer-frame {
   max-height: 70vh;
   overflow: auto;
@@ -3868,6 +3974,145 @@ p {
   padding: 0;
   border: 0;
 }
+/* Appearance and Language: real radio buttons (one group, arrow keys, the name
+   and the checked state read as before) drawn as buttons. The radio itself is
+   the button's box: it fills its label with no browser ring, and the words and
+   the check mark sit over it. The chosen one has a fill, a heavier border and a
+   check mark, so it is told apart by more than colour. Appearance is a row that
+   wraps to two by two; Language is a grid of one, two or three columns, by the
+   room its own box has, so a narrow window or enlarged text gets one. */
+.setting-row.choice-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  container-type: inline-size;
+}
+.appearance-choice.choice-segmented,
+.appearance-choice.choice-grid {
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+.appearance-choice.choice-segmented {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.appearance-choice.choice-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Two buttons side by side need about 8.5rem each so that the longest word of a
+   choice (Contraste, Português) fits on one line: with less room, one column.
+   (320px at 100% is about 16.4rem: 2x2. With text at 150% or more it is under
+   12rem: one column.) */
+@container (max-width: 15.99rem) {
+  .appearance-choice.choice-segmented {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (min-width: 42rem) {
+  .appearance-choice.choice-segmented {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@container (min-width: 22rem) {
+  .appearance-choice.choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (min-width: 40rem) {
+  .appearance-choice.choice-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.choice-segmented .appearance-option,
+.choice-grid .appearance-option {
+  position: relative;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+}
+/* A mouse or trackpad needs less room than a finger. A device that also has a
+   touch screen (a touch laptop, a Surface) keeps 44px, as does anything else. */
+@media (pointer: fine) and (not (any-pointer: coarse)) {
+  .choice-segmented .appearance-option,
+  .choice-grid .appearance-option {
+    min-height: 36px;
+  }
+}
+.choice-segmented .appearance-option {
+  justify-content: center;
+  padding-inline: 1.25rem;
+  text-align: center;
+}
+/* In the row the words are centred, so the check mark sits in the button's
+   left padding instead of in the line, and choosing moves nothing. */
+.choice-segmented .choice-check {
+  position: absolute;
+  inset-inline-start: -1.125rem;
+  top: 50%;
+  margin-top: -0.5rem;
+}
+.appearance-choice.choice-segmented .appearance-option input,
+.appearance-choice.choice-grid .appearance-option input {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--control-line);
+  border-radius: inherit;
+  background: var(--paper);
+  cursor: pointer;
+}
+.appearance-choice.choice-segmented .appearance-option input:checked,
+.appearance-choice.choice-grid .appearance-option input:checked {
+  border-color: var(--green);
+  background: var(--green-soft);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+.appearance-choice.choice-segmented .appearance-option input:focus-visible,
+.appearance-choice.choice-grid .appearance-option input:focus-visible {
+  /* Inside the button's own box: .setting-list hides what runs past its edge, and
+     the rows' padding is 2px, so a ring drawn outside would be cut on the
+     outermost buttons (and on every button in one column). */
+  outline: 3px solid var(--focus);
+  outline-offset: -4px;
+}
+.choice-segmented .appearance-option > span,
+.choice-grid .appearance-option > span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  pointer-events: none;
+  /* A word breaks only when it cannot fit on a line of its own, never in the
+     middle of one that could (the row's base style allows a break anywhere). */
+  overflow-wrap: break-word;
+}
+.choice-check {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.appearance-option input:checked + span .choice-check {
+  visibility: visible;
+}
+/* A hint (Mandarin, beside Simplified Chinese) is a smaller second line. */
+.choice-hint {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
 :root[data-theme="high-contrast"]
   :is(button:disabled, .button[aria-disabled="true"]) {
   opacity: 1;
@@ -3993,6 +4238,24 @@ button:disabled,
     outline: 3px solid CanvasText;
     outline-offset: -6px;
   }
+  /* The chosen button of a Preferences choice: the system's selection colours,
+     with its check mark, the words over it in the matching text colour. */
+  .appearance-choice.choice-segmented .appearance-option input:checked,
+  .appearance-choice.choice-grid .appearance-option input:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  /* Focus on the chosen one is drawn inside its Highlight fill, in the text
+     colour that goes with it, so it still shows against the fill. */
+  .appearance-choice.choice-segmented .appearance-option input:checked:focus-visible,
+  .appearance-choice.choice-grid .appearance-option input:checked:focus-visible {
+    outline: 3px solid HighlightText;
+    outline-offset: -6px;
+  }
+  .appearance-option input:checked + span,
+  .appearance-option input:checked + span .choice-hint {
+    color: HighlightText;
+  }
   .text-size-box input[aria-invalid="true"] {
     outline: 2px solid CanvasText;
   }
@@ -4089,8 +4352,22 @@ button:disabled,
   font-size: 0.875rem;
 }
 
+/* Connected clinics is full width, and reads like the other Security sections: the same
+   2px side inset as a settings row, a heading laid out as theirs is (below), and the text
+   under it in the same soft colour and line. */
 .portal-documents {
   margin-block-end: 2rem;
+  padding-inline: 2px;
+}
+/* In Security the clinics sit between two lists of settings. */
+.setting-list + .portal-documents {
+  margin-block-start: 1.25rem;
+}
+.portal-documents > p {
+  max-width: 700px;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  line-height: 1.5;
 }
 .portal-link {
   margin-block: 1.25rem;
@@ -4098,10 +4375,14 @@ button:disabled,
   border: 1px solid var(--line);
   border-radius: 0.5rem;
 }
-/* #124 review: "Clinic documents" is a Security section like the others, so
+/* #124 review: "Connected clinics" is a Security section like the others, so
    its heading has their size (.setting-row h2), and a clinic's name in its
    card is no larger than that heading. */
 .portal-documents > h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--ink);
   font-size: 1rem;
@@ -4137,7 +4418,7 @@ button:disabled,
   overflow-wrap: anywhere;
   font-family: monospace;
 }
-/* Clinic documents lists working links only; earlier attempts and each card's device code and
+/* Connected clinics lists working links only; earlier attempts and each card's device code and
    fingerprint wait behind a button and a disclosure. */
 .portal-device-details {
   margin-block: 0.75rem;
@@ -4152,7 +4433,8 @@ button:disabled,
 .portal-earlier-toggle {
   margin-block: 0.25rem 1rem;
 }
-.portal-address {
+.portal-address,
+.portal-device-line {
   overflow-wrap: anywhere;
 }
 .portal-documents .native-inline-form {
@@ -4264,25 +4546,14 @@ button:disabled,
   gap: 6px;
   min-width: 0;
   margin-bottom: 16px;
+  container-type: inline-size;
 }
 .language-title {
   font-size: 0.875rem;
   font-weight: 700;
 }
-.language-choices-compact {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  min-width: 0;
-  width: 100%;
-  max-width: none;
-}
-.language-choices-compact .appearance-option {
-  flex: 1 1 9rem;
-  min-width: 0;
-}
 .language-choices-compact .appearance-error {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -4590,6 +4861,9 @@ button:disabled,
 .language-button .icon {
   flex: none;
 }
+/* In the language dialog the list lines up with the title above it: the same
+   20px as .dialog-head. */
 .native-language-dialog .language-compact {
   margin: 0;
+  padding: 14px 20px 6px;
 }

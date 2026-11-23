@@ -2,7 +2,10 @@ import { humanValue } from "./test/humanText";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+const convertFileSrc = vi.hoisted(() =>
+  vi.fn((path: string, scheme: string) => `${scheme}://localhost/${path}`),
+);
+vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc }));
 
 import { setLocaleOverride } from "./i18n";
 import { setDeviceLocale } from "./test/deviceLocale";
@@ -1047,5 +1050,89 @@ describe("localized native presentation contracts", () => {
     expect(vaultErrorMessage({ code: "toString", message: "Native." })).toBe(
       "Native.",
     );
+  });
+});
+
+describe("video through the native vault (#359)", () => {
+  beforeEach(() => invoke.mockReset());
+
+  it("sends the commands the native side registers, a piece as base64 with its number", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue({ recordingId: "recording-1" });
+    await bridge.videoStart("profile-1", ["folder-1"], "FAKE clip.mp4");
+    invoke.mockResolvedValue({ nextSequence: 4 });
+    // 70,000 bytes: more than one slice of the encoder, every byte different.
+    const piece = Uint8Array.from({ length: 70_000 }, (_, n) => n % 251);
+    await bridge.videoAppend("recording-1", 3, piece);
+    invoke.mockResolvedValue({ freeBytes: 1, level: "ok", canRecord: true });
+    await bridge.videoSpace();
+    invoke.mockResolvedValue(undefined);
+    await bridge.videoPause("recording-1");
+    await bridge.videoResume("recording-1");
+    invoke.mockResolvedValue({ recordId: "video-1" });
+    await bridge.videoStop("recording-1");
+    await bridge.videoRecover("recording-1", true);
+    expect(invoke.mock.calls.map(([name]) => name)).toEqual([
+      "vault_video_start",
+      "vault_video_append",
+      "vault_video_space",
+      "vault_video_pause",
+      "vault_video_resume",
+      "vault_video_stop",
+      "vault_video_recover",
+    ]);
+    expect(invoke.mock.calls[0]![1]).toEqual({
+      request: {
+        profileId: "profile-1",
+        folderIds: ["folder-1"],
+        name: "FAKE clip.mp4",
+      },
+    });
+    const append = invoke.mock.calls[1]![1] as {
+      request: { recordingId: string; sequence: number; data: string };
+    };
+    expect(append.request.recordingId).toBe("recording-1");
+    expect(append.request.sequence).toBe(3);
+    // The text decodes to exactly the bytes sent.
+    const decoded = Uint8Array.from(atob(append.request.data), (c) =>
+      c.charCodeAt(0),
+    );
+    expect(decoded).toEqual(piece);
+    expect(invoke.mock.calls[6]![1]).toEqual({
+      request: { recordingId: "recording-1", keep: true },
+    });
+  });
+
+  it("opens a video for playback by token and gives the address the platform shows", async () => {
+    const bridge = createVaultBridge();
+    const token = "a".repeat(64);
+    invoke.mockResolvedValue({ token, totalBytes: 123 });
+    const opened = await bridge.videoOpen("video-1");
+    expect(invoke).toHaveBeenCalledWith("vault_video_open", {
+      request: { recordId: "video-1" },
+    });
+    expect(opened).toEqual({
+      token,
+      totalBytes: 123,
+      url: `mycarlos-video://localhost/${token}`,
+    });
+    expect(convertFileSrc).toHaveBeenCalledWith(token, "mycarlos-video");
+    invoke.mockResolvedValue(undefined);
+    await bridge.videoClose(token);
+    expect(invoke).toHaveBeenLastCalledWith("vault_video_close", {
+      request: { token },
+    });
+  });
+
+  it("asks whether a document is a video and lists what a lock or a crash left", async () => {
+    const bridge = createVaultBridge();
+    invoke.mockResolvedValue(true);
+    expect(await bridge.isVideo("video-1")).toBe(true);
+    expect(invoke).toHaveBeenLastCalledWith("vault_is_video", {
+      request: { recordId: "video-1" },
+    });
+    invoke.mockResolvedValue({ recordings: [], unreadable: 0 });
+    await bridge.videoPending();
+    expect(invoke).toHaveBeenLastCalledWith("vault_video_pending");
   });
 });

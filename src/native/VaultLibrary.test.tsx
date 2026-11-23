@@ -1313,7 +1313,7 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Security" }));
     absent();
     expect(
-      screen.getByRole("heading", { name: "Clinic documents" }),
+      screen.getByRole("heading", { name: "Connected clinics" }),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
     absent();
@@ -2066,6 +2066,52 @@ describe("the AI helper's notice before the reader's first Summary", () => {
   const notice = () =>
     screen.queryByRole("dialog", { name: humanText("About the AI helper") });
 
+  it("is offered in the reader's Summary before any summary exists, opens by keyboard and gives the focus back (#355)", async () => {
+    const { reader } = await openReader({
+      state: "installed",
+      model: FAKE_MODEL,
+    });
+    fireEvent.click(
+      within(reader).getByRole("button", { name: humanText("Summary") }),
+    );
+    // The first time in a session the notice comes before the panel: continue past it.
+    const first = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    await waitFor(() =>
+      expect(
+        within(first).getByRole("button", { name: humanText("Continue") }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(
+      within(first).getByRole("button", { name: humanText("Continue") }),
+    );
+    // In the Summary section: its heading, the privacy paragraph and the button, with no
+    // summary shown yet.
+    const panel = await screen.findByRole("region", {
+      name: humanText("Summary in plain words"),
+    });
+    expect(
+      within(panel).getByRole("heading", {
+        name: humanText("About the AI helper"),
+      }),
+    ).toBeInTheDocument();
+    expect(panel).toHaveTextContent("never sends your documents");
+    const about = within(panel).getByRole("button", {
+      name: humanText("About the AI helper"),
+    });
+    about.focus();
+    const user = userEvent.setup();
+    await user.keyboard("{Enter}");
+    const shown = await screen.findByRole("dialog", {
+      name: humanText("About the AI helper"),
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(notice()).toBeNull());
+    await waitFor(() => expect(about).toHaveFocus());
+    expect(shown).not.toBeInTheDocument();
+  });
+
   it("comes first when a model is there, and nothing reaches the model before it closes", async () => {
     const { native, reader } = await openReader({
       state: "installed",
@@ -2171,20 +2217,21 @@ describe("the AI helper's notice before the reader's first Summary", () => {
       state: "installed",
       model: FAKE_MODEL,
     });
-    // Seen from Security while the model's status could not be read: the
-    // export's text only.
+    // Seen from the AI helper section (#355) while the model's status could
+    // not be read: the export's text only.
     fireEvent.click(
       within(reader).getByRole("button", { name: humanText("Close") }),
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("AI helper") }),
+    );
+    const aboutAi = await screen.findByRole("button", {
+      name: humanText("About the AI helper"),
+    });
+    // The AI helper section has read the status by now: the next read fails.
+    await waitFor(() => expect(native.aiModelStatus).toHaveBeenCalled());
     native.aiModelStatus.mockRejectedValueOnce(new Error("FAKE: no status"));
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Security") }),
-    );
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: humanText("About the AI helper"),
-      }),
-    );
+    fireEvent.click(aboutAi);
     const shareOnly = await screen.findByRole("dialog", {
       name: humanText("About the AI helper"),
     });
