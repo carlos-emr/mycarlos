@@ -41,6 +41,20 @@ fn receipt_fits(receipt: &Receipt, checked_at_ms: u64, anchor_head: &str) -> boo
         && wire::hash(&receipt.vault_head_link)
 }
 
+/// How long after a delivery expired its check may still be dated (clock skew between the
+/// clinic's server and the source device).
+const CHECK_GRACE_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// The time a carried check is dated is the package's to choose, so it is held to the
+/// delivery's own life: not before the clinic made it, not long after it expired.
+fn checked_within(created_at: u64, expires_at: u64, checked_at_ms: u64) -> bool {
+    checked_at_ms >= created_at.saturating_mul(1000)
+        && checked_at_ms
+            <= expires_at
+                .saturating_mul(1000)
+                .saturating_add(CHECK_GRACE_MS)
+}
+
 /// A carried record is checked again every time the manifest is read. It is a delivered
 /// original of one clinic, with the original PDF, and carries nothing a filed delivery has:
 /// the clinic's signed manifest under the snapshot's keys, the hash of the PDF, the source
@@ -97,6 +111,13 @@ pub(super) fn valid_carried(record: &StoredRecord) -> bool {
     {
         return false;
     }
+    if !checked_within(
+        c.manifest.created_at,
+        c.manifest.expires_at,
+        c.checked_at_ms,
+    ) {
+        return false;
+    }
     let Some(receipt) = signed_receipt(&c.receipt, &ed25519) else {
         return false;
     };
@@ -141,6 +162,13 @@ pub(super) fn valid_carried(record: &StoredRecord) -> bool {
         || m.pointer("/created_at").and_then(Value::as_u64) != Some(c.manifest.created_at)
         || m.pointer("/expires_at").and_then(Value::as_u64) != Some(c.manifest.expires_at)
     {
+        return false;
+    }
+    if !checked_within(
+        c.manifest.created_at,
+        c.manifest.expires_at,
+        a.checked_at_ms,
+    ) {
         return false;
     }
     let Some(receipt) = signed_receipt(&a.receipt, &ed25519) else {
@@ -216,4 +244,32 @@ pub(super) fn from_filed(
     probe.reading_aid = None;
     probe.carried = Some(carried.clone());
     valid_carried(&probe).then_some(carried)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_check_is_dated_within_the_deliverys_own_life_and_a_day_after() {
+        let (created, expires) = (1_000_000, 1_000_000 + 3_600);
+        let ms = |s: u64| s * 1000;
+        assert!(checked_within(created, expires, ms(created)));
+        assert!(checked_within(created, expires, ms(created + 10)));
+        assert!(checked_within(created, expires, ms(expires)));
+        assert!(checked_within(
+            created,
+            expires,
+            ms(expires) + CHECK_GRACE_MS
+        ));
+        // Before the clinic made it, long after it expired, or a date no calendar can show.
+        assert!(!checked_within(created, expires, ms(created) - 1));
+        assert!(!checked_within(
+            created,
+            expires,
+            ms(expires) + CHECK_GRACE_MS + 1
+        ));
+        assert!(!checked_within(created, expires, 8_640_000_000_000_001));
+        assert!(!checked_within(created, expires, u64::MAX));
+    }
 }

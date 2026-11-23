@@ -5466,7 +5466,9 @@ mod approval_recovery_tests {
                 opened,
                 &link,
                 &checked,
-                crate::now_ms(),
+                // The fixture's own clock: a carried check must be dated within the delivery's
+                // life (`checked_within`).
+                now * 1000,
                 store.portal_link_ticket(),
             )
             .unwrap();
@@ -6898,7 +6900,7 @@ mod approval_recovery_tests {
                 opened,
                 other,
                 &checked,
-                crate::now_ms(),
+                now * 1000,
                 store.portal_link_ticket(),
             )
             .unwrap();

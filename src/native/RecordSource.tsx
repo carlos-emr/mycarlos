@@ -29,7 +29,9 @@ export function RecordSource({
   // What a handover file says of its own evidence (#360): plain words, no check mark and no
   // "Verified", since anyone who holds the file's key can write it.
   const claim =
-    !record.verifiedClinicName && record.fileSaysCheckedAtMs !== undefined
+    !record.verifiedClinicName &&
+    record.fileSaysCheckedAtMs !== undefined &&
+    Number.isFinite(new Date(record.fileSaysCheckedAtMs).getTime())
       ? t("library.fileSaysChecked", {
           date: new Date(record.fileSaysCheckedAtMs).toLocaleDateString(
             locale,

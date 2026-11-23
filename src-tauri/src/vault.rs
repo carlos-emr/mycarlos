@@ -2274,7 +2274,9 @@ impl VaultStore {
                             .carried
                             .as_ref()
                             .filter(|_| verified.is_none())
-                            .map(|carried| carried.delivery.checked_at_ms),
+                            .map(|carried| carried.delivery.checked_at_ms)
+                            // Never a date later than now: the time is the file's to claim.
+                            .filter(|at| *at <= crate::now_ms()),
                         verified_clinic_name: verified,
                         // A carried aid and service date are shown only once a link of this vault
                         // to the same clinic holds the signing key (design section 7, level 2):

@@ -9,6 +9,7 @@
   --ink: #12211f;
   --ink-soft: #4a5f5c;
   --ink-faint: #596d6a;
+  --muted: var(--ink-soft);
   --teal: #0f6b62;
   --teal-dark: #0a4f48;
   --teal-soft: #e4f2f0;
@@ -1547,7 +1548,7 @@ p {
 .record-file-claim {
   flex-basis: 100%;
   min-width: 0;
-  color: var(--muted, var(--ink));
+  color: var(--muted);
   font-style: italic;
   overflow-wrap: anywhere;
 }
