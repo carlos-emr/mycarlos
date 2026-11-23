@@ -1406,13 +1406,13 @@ unlock-title = Odblokuj sejf
 
 unlock-waiting =
     { $count ->
-    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
-    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
-    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu trafią do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+    [few] { $count } udostępnione pliki czekają. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    [many] { $count } udostępnionych plików czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
+    *[other] { $count } udostępnionego pliku czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda je do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, pliki nie zostaną zachowane: proszę udostępnić je ponownie.
     }
 
-unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu trafi do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
+unlock-waiting-one = Jeden udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.
 
 language-error-formatting = myCarlos nie może poprawnie wyświetlić tego komunikatu. Proszę wybrać inny język lub uruchomić aplikację ponownie, a przed kolejną próbą sprawdzić swoje dokumenty.
 
@@ -2483,6 +2483,20 @@ noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings 
 noticesStep-done = Gotowe
 noticesStep-notNow = Nie teraz
 
+background-title = Praca w tle
+background-keepRunning = Utrzymuj myCarlos w tle po zamknięciu jego okna
+background-keepRunningHelp = Po zamknięciu okna myCarlos może pozostać w tle z ikoną w obszarze powiadomień (na komputerze Mac — na pasku menu). Sejf blokuje się wraz z zamknięciem okna i pozostaje zablokowany, dopóki nie otworzysz myCarlos i go nie odblokujesz. Wybierz z ikony polecenie Zakończ, aby całkowicie zamknąć myCarlos.
+background-startAtLogin = Uruchamiaj myCarlos po zalogowaniu się na tym komputerze
+background-startAtLoginHelp = myCarlos uruchamia się po zalogowaniu się na tym komputerze. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem. Gdy jest wyłączony, otwiera się jego okno.
+background-paused = Gdy sejf jest zablokowany, myCarlos nie może sprawdzać nowych dokumentów z przychodni. Odblokuj go, aby sprawdzić.
+background-unavailable = Ikona w tle nie jest dostępna na tym komputerze. myCarlos zamyka się całkowicie po zamknięciu jego okna.
+background-error = Nie udało się zmienić tego ustawienia. Pozostaje bez zmian.
+native-tray-open = Otwórz myCarlos
+native-tray-quit = Zakończ myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Czeka nowy dokument. Odblokuj myCarlos, aby go zobaczyć.
+
 ai-summary-again = Podsumuj ponownie
 
 ai-keepFailed = Nie udało się zachować tej odpowiedzi razem z dokumentem. Nadal jest tu wyświetlana.
@@ -2532,6 +2546,35 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+interface-received-confirmTitleOne = Zaimportować { $name } do Udostępnione mi?
+
+interface-received-confirmTitleMany = Zaimportować dokumenty ({ $count }) do Udostępnione mi?
+
+interface-received-confirmBody = Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Anulowanie nie zostawia niczego.
+
+interface-received-import = Importuj
+
+reader-android-opening = Otwieranie dokumentu…
+
+reader-android-failed = myCarlos nie mógł wyświetlić tego dokumentu. Zapisz kopię, aby przeczytać ją w innej aplikacji.
+
+reader-android-tooLarge = Ten plik PDF ma ponad 20 MB. Zapisz kopię, aby przeczytać ją w innej aplikacji.
+
+reader-android-unavailable = To urządzenie nie pozwala myCarlos otwierać tu dokumentów. Zapisz kopię, aby przeczytać ją w innej aplikacji.
+
+reader-android-page = Strona { $page } z { $total }, obraz listu
+
+reader-android-pageStatus = Strona { $page } z { $total }
+reader-android-pageFailed = Nie można wyświetlić strony { $page } z { $total }.
+
+reader-android-previous = Poprzednia strona
+
+reader-android-next = Następna strona
+
+reader-android-zoomIn = Powiększ
+
+reader-android-zoomOut = Pomniejsz
 
 interface-video-name = Film, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Nagraj film

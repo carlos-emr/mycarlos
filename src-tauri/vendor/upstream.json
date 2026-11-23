@@ -8,6 +8,16 @@
     "excludedFiles": []
   },
   {
+    "name": "tauri-plugin-single-instance",
+    "version": "2.4.0",
+    "archiveSha256": "dc61e4822b8f74d68278e09161d3e3fdd1b14b9eb781e24edccaabf10c420e8c",
+    "archiveUrl": "https://static.crates.io/crates/tauri-plugin-single-instance/tauri-plugin-single-instance-2.4.0.crate",
+    "upstreamRevision": "05045f9a7218fa023bf7260e497c1548682e5c96",
+    "excludedFiles": [
+      "Cargo.lock"
+    ]
+  },
+  {
     "name": "wry",
     "version": "0.55.1",
     "archiveSha256": "186f9871daa55fd9c016578b810d149de58367113db7fb72b462d2323ce19514",

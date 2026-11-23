@@ -9,7 +9,12 @@ import { PortalDocuments } from "./PortalDocuments";
 // The notices step after the first clinic link (#235): the existing Notices
 // setting in a dialog, offered once. FAKE data only.
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: native.invoke,
+  Channel: class {
+    onmessage: (value: unknown) => void = () => undefined;
+  },
+}));
 
 type Status = {
   supported: boolean;
