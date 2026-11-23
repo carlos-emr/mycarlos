@@ -3904,6 +3904,11 @@ async fn vault_profile_export_prepare(
         include_history: request.include_history,
         secret,
     };
+    // A lock during the checks (a passphrase derivation takes seconds) ended the session: the
+    // key is not kept for one that is gone.
+    if picks.session() != session {
+        return Err(VaultError::Locked.into());
+    }
     Ok(ProfileExportPrepared {
         export_id: picks.profile_exports.store(session, pending),
         generated_key,
@@ -3944,13 +3949,25 @@ async fn vault_profile_export_pick(
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
-    Ok(destination.map(|destination| {
-        // The preparation is spent: a second destination needs a new key.
-        picks.profile_exports.take(request.export_id, session);
+    let Some(destination) = destination else {
+        return Ok(None);
+    };
+    // The preparation is spent by the pick that takes it: two picks of one preparation do not
+    // make two destinations under one key. And a lock while the dialog was open ended the
+    // session: nothing is stored for one that is gone.
+    if picks.session() != session
+        || picks
+            .profile_exports
+            .take_within(request.export_id, session, TEXT_TICKET_TTL)
+            .is_none()
+    {
+        return Err(VaultError::NotFound.into());
+    }
+    Ok(Some(
         picks
             .profile_export_picks
-            .store(session, (pending, destination))
-    }))
+            .store(session, (pending, destination)),
+    ))
 }
 
 /// Writes the prepared export to the place chosen: read back with its key and checked before
@@ -3994,6 +4011,8 @@ async fn vault_profile_export_picked(
     // nothing is renamed over it, so nothing earlier survives there.)
     let place = destination.to_string();
     run_blocking(store.inner(), move |store| {
+        // Every refusal first: opening the document empties it.
+        store.check_export(pending.profile_id, pending.secret.as_secret())?;
         let mut options_open = OpenOptions::new();
         options_open
             .read(true)

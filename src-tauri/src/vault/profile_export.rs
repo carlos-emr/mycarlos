@@ -176,9 +176,35 @@ impl VaultStore {
         place: &str,
         now_ms: u64,
     ) -> Result<ExportReport, VaultError> {
-        let report = self.write_and_verify(profile_id, options, secret, file, now_ms)?;
-        self.record_profile_exported(profile_id, place);
-        Ok(report)
+        match self.write_and_verify(profile_id, options, secret, file, now_ms) {
+            Ok(report) => {
+                self.record_profile_exported(profile_id, place);
+                Ok(report)
+            }
+            Err(error) => {
+                // There is no rename to withhold: a partial package is emptied rather than left
+                // as a file that looks like one.
+                let _ = file.set_len(0);
+                Err(error)
+            }
+        }
+    }
+
+    /// Every refusal an export can make before it writes anything, for a caller that must
+    /// not open (and so empty) a destination first: the person, the mode, and a typed
+    /// passphrase (its rules, and that it is not one of the vault's).
+    pub(crate) fn check_export(
+        &self,
+        profile_id: Uuid,
+        secret: PackageSecret<'_>,
+    ) -> Result<(), VaultError> {
+        if let PackageSecret::Passphrase(passphrase) = secret {
+            self.check_package_passphrase(profile_id, passphrase)
+        } else {
+            let guard = self.session();
+            let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+            Self::exportable_profile(unlocked, profile_id).map(|_| ())
+        }
     }
 
     /// The person to export: here, and a person (Shared with me is not one).
@@ -295,19 +321,36 @@ impl VaultStore {
         let still_open = || !self.cancel_io.load(Ordering::Acquire);
         verify_written(BufReader::new(&mut *file), secret, &digests, &still_open)?;
         fail_at_test_boundary("export.before-rename")?;
+        // A vault locked while the file was read back must not leave a file renamed into place
+        // that the history will not note: the rename is refused. (A lock after this check can
+        // still come first; the file is then complete and verified, and only its history
+        // entry is skipped, as for a backup.)
+        if self.cancel_io.load(Ordering::Acquire) || self.session().is_none() {
+            return Err(VaultError::Cancelled);
+        }
         Ok(report)
     }
 
-    /// Whether `candidate` is the passphrase of this vault: the vault's own derivation applied
-    /// to it, tried on the master key's wrapping. Only asked of a typed package passphrase.
+    /// Whether `candidate` is a secret of this vault, which a package must never be opened with:
+    /// its passphrase (the vault's own derivation applied to it and tried on the master key's
+    /// wrapping), or **its recovery key, or anything shaped like one**: a recovery key opens the
+    /// whole vault from any copy of it, and a person's file must not hand that over. A string
+    /// that reads as a recovery key (28 characters of the key alphabet with their check
+    /// characters, whatever the punctuation) is refused whether or not it is this vault's:
+    /// nobody types one by accident as a passphrase. Only asked of a typed package passphrase.
     fn is_vault_passphrase(
         &self,
         unlocked: &UnlockedVault,
         candidate: &str,
     ) -> Result<bool, VaultError> {
+        if decode_recovery_key(candidate).is_ok() {
+            return Ok(true);
+        }
         if candidate.len() > MAX_PASSPHRASE_BYTES {
             return Ok(false);
         }
+        // One derivation at a time, as the vault's own unlock is: a second asks to wait.
+        let _work = self.start_kdf_work()?;
         let header = current_header(&self.root, unlocked.manifest.vault_id, &unlocked.master_key)?;
         let key = derive_passphrase_key(candidate, &header.kdf)?;
         Ok(unwrap_secret(
@@ -1266,6 +1309,76 @@ mod tests {
             )
             .unwrap();
         assert_ne!(fs::read(&destination).unwrap(), b"EARLIER FILE");
+    }
+
+    #[test]
+    fn a_recovery_key_is_never_a_package_passphrase() {
+        let v = vault();
+        // The pending key of this vault, a fresh random one, and the same with other
+        // punctuation and case: all read as recovery keys and all are refused.
+        let own = v.store.begin_recovery_key(PASSWORD).unwrap().to_string();
+        let mut random = [0_u8; 16];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut random);
+        let other = encode_recovery_key(&random).to_string();
+        for text in [
+            own.clone(),
+            own.to_lowercase().replace('-', " "),
+            other.clone(),
+            other.replace('-', ""),
+        ] {
+            assert!(
+                matches!(
+                    v.store.check_package_passphrase(v.child, &text),
+                    Err(VaultError::WeakPassphrase)
+                ),
+                "{text}"
+            );
+            assert!(matches!(
+                v.store.export_profile(
+                    v.child,
+                    WITH_HISTORY,
+                    PackageSecret::Passphrase(&text),
+                    Vec::new(),
+                    1
+                ),
+                Err(VaultError::WeakPassphrase)
+            ));
+        }
+        // An ordinary passphrase still passes the same check.
+        assert!(v
+            .store
+            .check_package_passphrase(v.child, "tiger-lamp-orbit-quartz-mellow-7391")
+            .is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_into_the_vault_home_is_no_way_round_the_destination_rule() {
+        let v = vault();
+        let out = tempfile::tempdir().unwrap();
+        let home = vault_home(&v.store.root).unwrap();
+        let link = out.path().join("looks-outside");
+        std::os::unix::fs::symlink(home, &link).unwrap();
+        let (key, _) = generate_package_key();
+        let result = v.store.export_profile_atomic(
+            v.child,
+            WITH_HISTORY,
+            PackageSecret::Key(&key),
+            &link.join("handover.mycarlosprofile"),
+            1,
+        );
+        assert!(matches!(result, Err(VaultError::Invalid)));
+        assert!(!home.join("handover.mycarlosprofile").exists());
+    }
+
+    #[test]
+    fn a_passphrase_check_asks_to_wait_while_another_derivation_runs() {
+        let v = vault();
+        let _other = v.store.start_kdf_work().unwrap();
+        let result = v
+            .store
+            .check_package_passphrase(v.child, "tiger-lamp-orbit-quartz-mellow-7391");
+        assert!(matches!(result, Err(VaultError::Busy)));
     }
 
     #[test]
