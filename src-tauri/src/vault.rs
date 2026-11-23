@@ -4744,7 +4744,11 @@ impl VaultStore {
         if self.session().is_none() {
             return Err(VaultError::Locked);
         }
-        let today = day_of_date_text(today).ok_or(VaultError::Invalid)?;
+        self.snooze_backup_reminder_on(reminder_day(day_of_date_text(today), crate::now_ms()))
+    }
+
+    /// The snooze from a day number already checked by [`reminder_day`].
+    fn snooze_backup_reminder_on(&self, today: u32) -> Result<(), VaultError> {
         let mut state = self.backup_reminder_state();
         state.snoozed_until_day = Some(today.saturating_add(BACKUP_SNOOZE_DAYS));
         if !self.put_backup_reminder(state) {
@@ -4777,7 +4781,7 @@ impl VaultStore {
     /// means the reminder may show again.
     fn note_backup_made(&self, leave_videos_out: bool, local_day: Option<u32>) {
         let mut state = self.backup_reminder_state();
-        let today = local_day.unwrap_or_else(|| day_of(crate::now_ms()));
+        let today = reminder_day(local_day, crate::now_ms());
         if leave_videos_out {
             state.partial_day = Some(today);
         } else {
@@ -7718,6 +7722,18 @@ pub struct BackupReminderState {
     /// The reminder stays away until this day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until_day: Option<u32>,
+}
+
+/// The day the reminder keeps: the patient's own calendar day when the renderer sent one, but only
+/// when it is within one day of the UTC day (time zones run from UTC-12 to UTC+14, so a real local
+/// day is never further). Anything else, a garbled or missing value, is the UTC day, so a bad value
+/// cannot push the reminder or the snooze far into the future.
+fn reminder_day(local: Option<u32>, now_ms: u64) -> u32 {
+    let utc = day_of(now_ms);
+    match local {
+        Some(day) if day.abs_diff(utc) <= 1 => day,
+        _ => utc,
+    }
 }
 
 fn day_of(now_ms: u64) -> u32 {
@@ -17114,11 +17130,11 @@ mod tests {
             store.snapshot().unwrap().backup_reminder,
             BackupReminderState::default()
         );
-        // 8 pm on 4 October 2024 in Toronto is already 5 October in UTC: the patient's own day is
-        // the one that is kept.
-        let local = day_of_date_text("2024-10-04").unwrap();
-        assert_eq!(local, 20_000);
-        let late_evening_utc = (u64::from(local) + 1) * 86_400_000 + 3_600_000;
+        // Late evening in Toronto is already the next day in UTC: the patient's own day (the one
+        // before the UTC day) is the one that is kept.
+        let utc = day_of(crate::now_ms());
+        let local = utc - 1;
+        let late_evening_utc = crate::now_ms();
         // A backup that leaves the videos out is not a backup of everything.
         store
             .backup_atomic_with(
@@ -17131,21 +17147,16 @@ mod tests {
         let state = store.snapshot().unwrap().backup_reminder;
         assert_eq!((state.saved_day, state.partial_day), (None, Some(local)));
         // "Not now": 14 days from the day it was said, and a whole backup ends it.
-        store.snooze_backup_reminder("2024-10-04").unwrap();
+        store.snooze_backup_reminder_on(local).unwrap();
         assert_eq!(
             store.snapshot().unwrap().backup_reminder.snoozed_until_day,
             Some(local + 14)
         );
         store
-            .backup_atomic_with(
-                &out.join("whole.mcbak"),
-                late_evening_utc,
-                false,
-                Some(local + 1),
-            )
+            .backup_atomic_with(&out.join("whole.mcbak"), late_evening_utc, false, Some(utc))
             .unwrap();
         let state = store.snapshot().unwrap().backup_reminder;
-        assert_eq!(state.saved_day, Some(local + 1));
+        assert_eq!(state.saved_day, Some(utc));
         assert_eq!((state.partial_day, state.snoozed_until_day), (None, None));
         // Nothing but days is kept: no time, name, place or count.
         let file = fs::read_to_string(root.join(BACKUP_REMINDER_FILE)).unwrap();
@@ -17154,7 +17165,7 @@ mod tests {
         fs::write(root.join(BACKUP_REMINDER_FILE), "{\"savedDay\": 5}").unwrap();
         assert_eq!(
             store.snapshot().unwrap().backup_reminder.saved_day,
-            Some(local + 1)
+            Some(utc)
         );
         store.lock();
         store.unlock(PASSWORD).unwrap();
@@ -17175,11 +17186,23 @@ mod tests {
                 BackupReminderState::default()
             );
         }
-        // Locked: no snooze. A date that is not a date: refused.
-        assert!(matches!(
-            store.snooze_backup_reminder("not-a-date"),
-            Err(VaultError::Invalid)
-        ));
+        // A garbled or far-off date is the UTC day, so nothing can push the reminder far ahead.
+        store.snooze_backup_reminder("not-a-date").unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().backup_reminder.snoozed_until_day,
+            Some(utc + 14)
+        );
+        store.snooze_backup_reminder("2099-01-01").unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().backup_reminder.snoozed_until_day,
+            Some(utc + 14)
+        );
+        store.record_backup_saved("somewhere", false, Some(utc + 400));
+        assert_eq!(
+            store.snapshot().unwrap().backup_reminder.saved_day,
+            Some(utc)
+        );
+        // Locked: no snooze.
         store.lock();
         assert!(matches!(
             store.snooze_backup_reminder("2024-10-04"),
@@ -17197,11 +17220,11 @@ mod tests {
         // A directory in the file's place makes every write fail.
         fs::create_dir(root.join(BACKUP_REMINDER_FILE)).unwrap();
         assert!(matches!(
-            store.snooze_backup_reminder("2024-10-04"),
+            store.snooze_backup_reminder_on(day_of(crate::now_ms())),
             Err(VaultError::Storage)
         ));
         // A backup's note is best effort: it neither fails nor panics.
-        store.record_backup_saved("somewhere", false, Some(20_000));
+        store.record_backup_saved("somewhere", false, None);
     }
 
     /// The provider path (a document picker's file, `record_backup_saved`) records the reminder too,
@@ -17215,10 +17238,14 @@ mod tests {
         let (second, _, _) = vault_with_records(&second_root, &["b.pdf"]);
         first.unlock(PASSWORD).unwrap();
         second.unlock(PASSWORD).unwrap();
-        first.record_backup_saved("content://provider/file", false, Some(20_010));
+        first.record_backup_saved(
+            "content://provider/file",
+            false,
+            Some(day_of(crate::now_ms())),
+        );
         assert_eq!(
             first.snapshot().unwrap().backup_reminder.saved_day,
-            Some(20_010)
+            Some(day_of(crate::now_ms()))
         );
         assert_eq!(
             second.snapshot().unwrap().backup_reminder,
@@ -17267,7 +17294,9 @@ mod tests {
         store.unlock(PASSWORD).unwrap();
         let backup = out.join("kept.mcbak");
         store.backup_atomic(&backup, 3).unwrap();
-        store.snooze_backup_reminder("2024-10-04").unwrap();
+        store
+            .snooze_backup_reminder_on(day_of(crate::now_ms()))
+            .unwrap();
         store.lock();
         let restored = VaultStore::new(temp.path().join("restored-home").join("vault"));
         restored
@@ -21266,3 +21295,22 @@ mod tests {
 
 #[cfg(test)]
 mod automatic_collection_tests;
+
+#[cfg(test)]
+mod reminder_day_tests {
+    use super::*;
+
+    #[test]
+    fn the_reminder_keeps_a_local_day_only_within_one_day_of_the_utc_day() {
+        let now = 20_000 * 86_400_000 + 5_000;
+        assert_eq!(reminder_day(Some(20_000), now), 20_000);
+        assert_eq!(reminder_day(Some(19_999), now), 19_999);
+        assert_eq!(reminder_day(Some(20_001), now), 20_001);
+        // Anything further, or nothing, is the UTC day.
+        assert_eq!(reminder_day(Some(20_002), now), 20_000);
+        assert_eq!(reminder_day(Some(19_998), now), 20_000);
+        assert_eq!(reminder_day(Some(u32::MAX), now), 20_000);
+        assert_eq!(reminder_day(Some(0), now), 20_000);
+        assert_eq!(reminder_day(None, now), 20_000);
+    }
+}
