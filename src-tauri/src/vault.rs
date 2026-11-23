@@ -20656,7 +20656,12 @@ mod tests {
         assert_eq!(entry.profile_id, Some(id));
         assert_eq!(entry.name, None);
         assert_eq!(entry.old_name, None);
-        let json = serde_json::to_string(&entry).unwrap();
+        // The entry's own fields, not its chain link: `prev` is the 64 hex characters of the previous
+        // entry's hash, which can hold any four digits, so a substring check over it failed about once
+        // in a few hundred runs.
+        let mut readable = entry.clone();
+        readable.prev.clear();
+        let json = serde_json::to_string(&readable).unwrap();
         assert!(!json.contains("Mary") && !json.contains("1958"));
         let count = history_events(&store).len();
         store
