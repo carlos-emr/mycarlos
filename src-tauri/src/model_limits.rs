@@ -79,7 +79,6 @@ pub(crate) enum CardRejected {
     Parameters,
     Layers,
     Vocabulary,
-    Memory,
 }
 
 /// Keeps the characters an architecture name may have, at most [`MAX_ARCHITECTURE_CHARS`].
@@ -118,10 +117,11 @@ impl ModelCard {
         if !VOCABULARY.contains(&self.vocabulary) {
             return Err(CardRejected::Vocabulary);
         }
-        if !WEIGHTS_BYTES.contains(&self.weights_bytes) {
-            return Err(CardRejected::Memory);
-        }
-        // A cache above the most believed is kept at it: the model is heavy, not unknown.
+        // Neither number drops the card: the weights are kept at the most believed (the file's
+        // own size is what the formula uses when it is more), and a cache above the most believed
+        // is kept at it (the model is heavy, not unknown, and asks for more memory than any
+        // computer here has free: a refusal for memory, with its numbers).
+        self.weights_bytes = self.weights_bytes.min(*WEIGHTS_BYTES.end());
         self.kv_bytes_per_token = self.kv_bytes_per_token.min(MAX_KV_BYTES_PER_TOKEN);
         Ok(self)
     }
@@ -444,9 +444,10 @@ mod tests {
             with(|c| c.kv_bytes_per_token = u32::MAX).map(|c| c.kv_bytes_per_token),
             Ok(MAX_KV_BYTES_PER_TOKEN)
         );
+        // Weights above the most believed are kept at it, not a reason to drop the card.
         assert_eq!(
-            with(|c| c.weights_bytes = (64 << 30) + 1),
-            Err(CardRejected::Memory)
+            with(|c| c.weights_bytes = u64::MAX).map(|c| c.weights_bytes),
+            Ok(64 << 30)
         );
     }
 

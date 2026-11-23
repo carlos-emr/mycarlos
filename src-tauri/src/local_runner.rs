@@ -811,7 +811,7 @@ impl Runner {
     /// The checked card of the model with this SHA-256, when the helper has run it in this
     /// session (model limits). Readers go to the models store (`Store::stored_card`), which this
     /// feeds; kept for the runner's own tests.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn card_for(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
         let cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
         cards
