@@ -2520,6 +2520,7 @@ export interface MessageArgsByKey {
   "comfort.continue": undefined;
   "comfort.intro": undefined;
   "comfort.later": {
+    appearance: FluentArgument;
     autoLock: FluentArgument;
     preferences: FluentArgument;
     security: FluentArgument;
