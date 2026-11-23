@@ -8009,6 +8009,7 @@ mod approval_recovery_tests {
             .iter()
             .all(|l| !l.incomplete));
         assert_eq!(store.remove_incomplete_portal_links(session).unwrap(), 0);
+    }
     /// #160 review: a link with a push destination enrolled (or a revocation queued) is not
     /// removed: the portal still holds a subscription for the device. Already gone is not a write.
     #[test]
