@@ -549,6 +549,18 @@ test("A failed save, or a picker that fails after the preparation was spent, sta
   await expect(dialog.getByRole("alert")).toHaveText(
     en("handover.export.error.weak"),
   );
+  // After five tries in one unlocked session the native side stops checking typed ones, and
+  // the refusal says to lock and unlock again or let myCarlos make the key.
+  await scriptFake(page, "vault_profile_export_prepare", {
+    reject: {
+      code: "package_passphrase_tries_used",
+      messageKey: "native.error.49",
+    },
+  });
+  await dialog
+    .getByRole("button", { name: en("handover.export.continue") })
+    .click();
+  await expect(dialog.getByRole("alert")).toHaveText(en("native.error.49"));
 });
 
 test("Add a person from a file: a passphrase file asks for a passphrase, a duplicate asks first, and each kind of refusal is said", async ({
