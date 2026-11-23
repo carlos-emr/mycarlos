@@ -3110,7 +3110,7 @@ async fn background_status(
 #[tauri::command]
 async fn background_set_keep_running(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<desktop_background::Status> {
     #[cfg(desktop)]
@@ -3123,7 +3123,7 @@ async fn background_set_keep_running(
                 .map_err(|_| PublicError::from(VaultError::Storage))?;
         // Tray notices need this switch (#230): the notice keys follow it.
         tray_notices::set_keep_running(status.keep_running);
-        sync_notice_keys_soon(store.inner());
+        sync_notice_keys_soon(store.pin().arc());
         Ok(status)
     }
     #[cfg(not(desktop))]
@@ -6468,10 +6468,10 @@ pub fn run() {
                 tray_notices::set_keep_running(background.status().keep_running);
                 // The check that runs while locked in the tray: it waits until the tray, a locked
                 // vault and a notice key are all there.
-                let poll_store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+                let poll_vaults = app.state::<StoreHandle>().inner().clone();
                 tray_poller::driver::start(
                     app.handle().clone(),
-                    Arc::new(move || poll_store.open_vault_id().is_none()),
+                    Arc::new(move || poll_vaults.arc().open_vault_id().is_none()),
                     Arc::clone(&background),
                 );
             }
