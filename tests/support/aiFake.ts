@@ -40,12 +40,16 @@ export const AI_COMMANDS = {
   addCancel: "ai_model_add_cancel",
   // The copy running now, for a row that opens again while it runs (#275).
   addActive: "ai_model_add_active",
+  // The speed check on this computer (#305): nothing measured until it is run.
+  speed: "ai_model_speed",
+  speedCheck: "ai_speed_check",
   remove: "ai_model_remove",
   documentText: "vault_document_text",
   cancelText: "vault_document_text_cancel",
   knownDetails: "vault_record_known_details",
   exportPick: "vault_export_text_pick",
   exportPicked: "vault_export_text_picked",
+  exportCopy: "vault_export_text_copy",
   // The answers kept with a document, in the vault (#212).
   keptList: "vault_ai_results",
   keptSave: "vault_ai_result_save",
@@ -466,6 +470,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             return null;
           case c.addActive:
             return structuredClone(activeCopy);
+          case c.speed:
+            return null;
+          case c.speedCheck:
+            return null;
           case c.remove: {
             const index = Number(
               request.index ?? modelRows.find((row) => row.inUse)?.index ?? 0,
@@ -498,6 +506,12 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             return setup.pickId;
           case c.exportPicked:
             return { saved: true, hits: [] };
+          // The same file a save writes: the first line, a blank line, the text, a newline.
+          case c.exportCopy:
+            return {
+              approved: `FAKE export header\n\n${String(request.text)}\n`,
+              hits: [],
+            };
           // Kept in memory, as the vault keeps them per document: one shown
           // per question (tool, language, term), the newest; the older ones
           // hidden, never deleted (D3).

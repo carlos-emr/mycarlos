@@ -233,6 +233,10 @@ pub struct LinkSummary {
     pub id: Uuid,
     pub portal_base: String,
     pub device_name: String,
+    /// When this link was started (the vault's own clock, milliseconds), so that two cards for
+    /// the same address can be told apart by the day they were made (#160). Already stored with
+    /// the link; only now shown.
+    pub linked_at_ms: u64,
     pub profile_id: Option<Uuid>,
     pub clinic_name: Option<String>,
     pub fingerprints: Vec<String>,
@@ -328,6 +332,7 @@ impl StoredLink {
             id: self.id,
             portal_base: self.portal_base.clone(),
             device_name: self.device_name.clone(),
+            linked_at_ms: self.created_at_ms,
             profile_id: self.profile_id,
             clinic_name: self.clinic.as_ref().map(|c| c.clinic_name.clone()),
             fingerprints: self

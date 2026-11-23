@@ -347,12 +347,12 @@ describe("a rendered screen in each language", () => {
   it("keeps the English of the shared-file messages (#61)", () => {
     const folder = "Shared with me";
     expect(visibleText(translate("en", "unlock.waiting.one", { folder }))).toBe(
-      "One shared file is waiting. Unlock and it goes into Shared with me. If myCarlos closes first, it is not kept: share it again.",
+      "One shared file is waiting. Unlock and myCarlos asks first before adding it to Shared with me. If myCarlos closes first, it is not kept: share it again.",
     );
     expect(
       visibleText(translate("en", "unlock.waiting", { count: 2, folder })),
     ).toBe(
-      "2 shared files are waiting. Unlock and they go into Shared with me. If myCarlos closes first, they are not kept: share them again.",
+      "2 shared files are waiting. Unlock and myCarlos asks first before adding them to Shared with me. If myCarlos closes first, they are not kept: share them again.",
     );
     expect(
       visibleText(translate("en", "create.profile.sharedTaken", { folder })),

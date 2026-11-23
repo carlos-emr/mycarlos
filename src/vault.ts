@@ -1,6 +1,6 @@
 import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
@@ -15,6 +15,64 @@ import type {
 } from "./documentText";
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
+
+/** What the vault reports after a piece of a recording (#359). */
+export interface RecordingProgress {
+  storedBytes: number;
+  fragments: number;
+  hasVideo: boolean | null;
+  hasAudio: boolean | null;
+  /** The sequence number the next piece must carry. */
+  nextSequence: number;
+  /** How much room there was when last looked at (about every 8 MiB). */
+  space: SpaceLevel;
+  freeBytes: number | null;
+}
+
+/** Plenty, low (under 512 MiB: warn), stop (under 256 MiB: end and save), or
+ * unknown (the volume could not be asked: nothing is refused on a guess). */
+export type SpaceLevel = "ok" | "low" | "stop" | "unknown";
+
+export interface RecordingSpace {
+  freeBytes: number | null;
+  level: SpaceLevel;
+  /** At least 1 GiB, or not known. */
+  canRecord: boolean;
+}
+
+/** One recording a crash or a lock left unfinished. */
+export interface PendingRecording {
+  id: string;
+  displayName: string;
+  startedAtMs: number;
+  /** It was paused when it ended. */
+  paused: boolean;
+  /** A lock parked it (not a crash). */
+  parked: boolean;
+  /** The patient ended it and it could not be finished for want of room: it is
+   * finished when there is room again. */
+  stopped: boolean;
+}
+
+export interface PendingRecordings {
+  recordings: PendingRecording[];
+  unreadable: number;
+}
+
+/** How a recording ended: the new record, or null when nothing complete had
+ * been recorded. */
+export interface VideoSaved {
+  recordId: string | null;
+}
+
+/** A video open for playback. */
+export interface VideoPlayback {
+  /** Ends this playback. */
+  token: string;
+  /** The address for a `<video>`. */
+  url: string;
+  totalBytes: number;
+}
 
 export interface PatientProfile {
   id: string;
@@ -120,6 +178,9 @@ export interface PortalLinkSummary {
   id: string;
   portalBase: string;
   deviceName: string;
+  /** When the link was started, in milliseconds: the card shows the day, so that two cards for
+   * the same address differ (#160). Always sent by the app; optional only for older fixtures. */
+  linkedAtMs?: number;
   profileId: string | null;
   clinicName: string | null;
   fingerprints: string[];
@@ -236,6 +297,22 @@ export interface RestorePreview {
   differsFromThisDevice: boolean;
   /** How many documents the backup holds. */
   documentCount: number;
+  /** How many records the backup leaves out: it was made without videos
+   * (#359), and restoring it brings back everything else but not those. Zero
+   * for an ordinary backup. */
+  leftOut: number;
+}
+
+/** How big a backup would be, before it is saved. */
+export interface BackupSize {
+  /** The file, about, with its videos. */
+  totalBytes: number;
+  /** The file, about, with the videos left out: both are given at once, so
+   * ticking the box needs no second question. */
+  withoutVideosBytes: number;
+  /** How much of what the vault holds is video that can be left out. */
+  videoBytes: number;
+  videoCount: number;
 }
 
 /** What opens a backup: the passphrase it was made with, or its recovery key. */
@@ -285,6 +362,9 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
+  /** Named by a program started with its path (Open with, a second launch): the patient is asked
+   * before it is added. A file shared from another app is added as it arrives. */
+  needsConfirm?: boolean;
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -405,6 +485,21 @@ export interface PassphraseRules {
   hardToGuess: boolean;
 }
 
+/** Genuine input in the separate native reader; no document data is carried. */
+export const NATIVE_READER_ACTIVITY_EVENT = "mycarlos-native-reader-activity";
+
+/** The words the Android native reader shows and speaks (#358). */
+export interface AndroidReaderLabels {
+  close: string;
+  previous: string;
+  next: string;
+  zoomIn: string;
+  zoomOut: string;
+  page: string;
+  pageStatus: string;
+  pageFailed: string;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
@@ -483,7 +578,14 @@ export interface VaultBridge {
    * name suggested. */
   pickBackupDestination(localDate?: string): Promise<string | null>;
   /** Saves the backup, and says what was written. */
-  saveBackupToPicked(pickId: string): Promise<SavedBackup>;
+  saveBackupToPicked(
+    pickId: string,
+    leaveVideosOut?: boolean,
+  ): Promise<SavedBackup>;
+  /** How big a backup would be, with or without the videos (#359). */
+  backupSize(): Promise<BackupSize>;
+  /** The records a backup was made without the file of (ids). */
+  leftOutRecords(): Promise<string[]>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -542,6 +644,39 @@ export interface VaultBridge {
     name: string,
     jpeg: Uint8Array,
   ): Promise<ImportOutcome>;
+  /** Starts a video recording for a person (#359). Nothing is added to the
+   * library until `videoStop`. */
+  videoStart(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+  ): Promise<{ recordingId: string }>;
+  /** Adds one piece of the recording (about a second of video). Each carries
+   * the sequence number the last answer asked for: a repeat of the last piece
+   * is answered, not added twice; any other number is refused. */
+  videoAppend(
+    recordingId: string,
+    sequence: number,
+    piece: Uint8Array,
+  ): Promise<RecordingProgress>;
+  videoPause(recordingId: string): Promise<void>;
+  videoResume(recordingId: string): Promise<void>;
+  /** Ends the recording: the video is added to the library, or nothing is when
+   * nothing complete was recorded (`recordId` is null). */
+  videoStop(recordingId: string): Promise<VideoSaved>;
+  /** How much room there is to record. Asked before the camera and microphone
+   * are turned on, and again on every resume. */
+  videoSpace(): Promise<RecordingSpace>;
+  /** The recordings a crash or a lock left unfinished. */
+  videoPending(): Promise<PendingRecordings>;
+  /** Keeps (`true`) or deletes (`false`) one of them. */
+  videoRecover(recordingId: string, keep: boolean): Promise<VideoSaved>;
+  /** Whether a document's file starts as an MP4 does. */
+  isVideo(recordId: string): Promise<boolean>;
+  /** Opens a video for playback: the address for a `<video>`, good until it is
+   * closed or the vault locks. */
+  videoOpen(recordId: string): Promise<VideoPlayback>;
+  videoClose(token: string): Promise<void>;
   /** Whether a document's file starts as a JPEG does. Only its first bytes
    * are read; the photo itself stays native. */
   isPhoto(recordId: string): Promise<boolean>;
@@ -570,7 +705,11 @@ export interface VaultBridge {
   listReceived(): Promise<ReceivedState>;
   /** Adds every waiting file to Shared with me; a file that is not a PDF is
    * forgotten and named. If anything else fails, they all keep waiting. */
-  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Adds the waiting files to Shared with me: exactly `ids` (the files the patient confirmed)
+   * when given, otherwise every waiting file. */
+  acceptReceived(ids?: string[]): Promise<ReceivedAcceptOutcome>;
+  /** Forgets the waiting files the patient cancelled; nothing was stored. */
+  discardReceived(ids: string[]): Promise<number>;
   /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
@@ -588,6 +727,11 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Android only (#358): the document is shown by the native PdfRenderer reader, from a sealed
+   * in-memory file, with no document bytes in this bridge. `labels` are the words it shows and
+   * speaks; "{page}" and "{total}" in `page` and `pageStatus` are filled in natively. Resolves
+   * when the native reader is dismissed; cancelView also stops it. */
+  readAndroidPdf?(recordId: string, labels: AndroidReaderLabels): Promise<void>;
   /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
    * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
    * nothing: `rects` is empty, with the reason, when the helper cannot tie
@@ -625,12 +769,28 @@ export interface VaultBridge {
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** What the speed check measured for the model in use on this computer (#305), or null. */
+  aiModelSpeed?(): Promise<unknown>;
   /** Calls `handler` with an answer's own time limit, in milliseconds, as
    * the model is asked it: the automatic lock waits that long at most for
    * it (D19). Returns the way to stop listening. */
   onAiAnswerStarted?(
     handler: (answer: { answerId: string; limitMs: number }) => void,
   ): () => void;
+  /** Calls `handler` when the vault locked natively without the screen
+   * asking: the window was closed to the tray or Quit was chosen
+   * (`"closed"`), or the native idle lock fell due (`"idle"`). The vault is
+   * already locked; the screen lets go of everything it shows at once, as
+   * its own lock does (#206). Computers only. Returns the way to stop
+   * listening. */
+  onVaultLocked?(
+    handler: (locked: { by: "closed" | "idle" }) => void,
+  ): () => void;
+  /** Whether the tray check found a document waiting while the vault was locked (#230): the
+   * unlock screen shows one fixed sentence when it did. Computers only. */
+  trayWaiting?(): Promise<boolean>;
+  /** The same, as it changes. Returns the way to stop listening. */
+  onTrayWaiting?(handler: (waiting: boolean) => void): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -663,7 +823,17 @@ export interface VaultBridge {
     recordId: string,
     ticket: string,
     text: string,
+    kept?: TextRange[],
   ): Promise<TextSaveOutcome>;
+  /** The text a copy may put on the clipboard: the same native re-check as
+   * a save, on the same text, and the file a save would write. Refused with
+   * the same ranges a save gives; a copy never uses up the ticket. */
+  copyTextExport(
+    recordId: string,
+    ticket: string,
+    text: string,
+    kept?: TextRange[],
+  ): Promise<TextCopyOutcome>;
   /** Keeps an AI answer with its document, encrypted. A new answer to the
    * same question (tool, language, term) is the one shown; the old one stays
    * in the vault, hidden, never deleted (D3). */
@@ -699,6 +869,20 @@ export interface TextSaveOutcome {
   hits: { start: number; end: number }[];
 }
 
+/** A range of the text, in UTF-16 units: a medical term the patient kept (#366). A claim the
+ * native re-check checks against its own list, never a fact. */
+export interface TextRange {
+  start: number;
+  end: number;
+}
+
+/** How a copy ended: the approved file text, to put on the clipboard as it
+ * is, or a refusal with a save's ranges. */
+export interface TextCopyOutcome {
+  approved: string | null;
+  hits: { start: number; end: number }[];
+}
+
 export interface PublicError {
   code?: string;
   message?: string;
@@ -712,6 +896,9 @@ export interface PublicError {
   /** How long to wait before the next try: after several wrong ones, or
    * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
+  /** For an AI refusal for lack of memory (`aiMemory`, #305): what a start needs and what is
+   * free now, in bytes (no `availableBytes` when this computer could not say). */
+  memory?: { neededBytes: number; availableBytes?: number };
 }
 
 /** A box the patient typed in, named in the language in use ("the folder
@@ -1020,8 +1207,12 @@ export function createVaultBridge(): VaultBridge {
       }),
     pickBackupDestination: (localDate) =>
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
-    saveBackupToPicked: (pickId) =>
-      invoke<SavedBackup>("vault_backup_picked", { request: { pickId } }),
+    saveBackupToPicked: (pickId, leaveVideosOut = false) =>
+      invoke<SavedBackup>("vault_backup_picked", {
+        request: { pickId, leaveVideosOut },
+      }),
+    backupSize: () => invoke<BackupSize>("vault_backup_size"),
+    leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>
@@ -1093,6 +1284,47 @@ export function createVaultBridge(): VaultBridge {
         request.fill(0),
       );
     },
+    videoStart: (profileId, folderIds, name) =>
+      invoke<{ recordingId: string }>("vault_video_start", {
+        request: { profileId, folderIds, name },
+      }),
+    videoAppend: (recordingId, sequence, piece) =>
+      // As base64 text in the ordinary arguments: a byte body arrives on
+      // Android as a JSON array of numbers several times its size.
+      invoke<RecordingProgress>("vault_video_append", {
+        request: { recordingId, sequence, data: bytesToBase64(piece) },
+      }),
+    videoPause: (recordingId) =>
+      invoke<void>("vault_video_pause", { request: { recordingId } }),
+    videoResume: (recordingId) =>
+      invoke<void>("vault_video_resume", { request: { recordingId } }),
+    videoStop: (recordingId) =>
+      invoke<VideoSaved>("vault_video_stop", { request: { recordingId } }),
+    videoSpace: () => invoke<RecordingSpace>("vault_video_space"),
+    videoPending: () => invoke<PendingRecordings>("vault_video_pending"),
+    videoRecover: (recordingId, keep) =>
+      invoke<VideoSaved>("vault_video_recover", {
+        request: { recordingId, keep },
+      }),
+    isVideo: (recordId) =>
+      invoke<boolean>("vault_is_video", { request: { recordId } }),
+    videoOpen: async (recordId) => {
+      const opened = await invoke<{ token: string; totalBytes: number }>(
+        "vault_video_open",
+        { request: { recordId } },
+      );
+      // The address the webview shows for the scheme on this platform. Loaded
+      // here, when a video is opened, so that nothing else needs it: tests that
+      // stand in for the core module with `invoke` alone still load this file.
+      const { convertFileSrc } = await import("@tauri-apps/api/core");
+      return {
+        token: opened.token,
+        totalBytes: opened.totalBytes,
+        url: convertFileSrc(opened.token, "mycarlos-video"),
+      };
+    },
+    videoClose: (token) =>
+      invoke<void>("vault_video_close", { request: { token } }),
     isPhoto: (recordId) =>
       invoke<boolean>("vault_is_photo", { request: { recordId } }),
     viewPhoto: (recordId) =>
@@ -1104,7 +1336,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, password },
       }),
     listReceived: () => invoke<ReceivedState>("received_list"),
-    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    acceptReceived: (ids) =>
+      ids
+        ? invoke<ReceivedAcceptOutcome>("received_accept", {
+            request: { ids },
+          })
+        : invoke<ReceivedAcceptOutcome>("received_accept"),
+    discardReceived: (ids) =>
+      invoke<number>("received_discard", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
@@ -1125,6 +1364,22 @@ export function createVaultBridge(): VaultBridge {
       invoke<PageBoxes>("vault_page_boxes", {
         request: { recordId, page, ...span, password: password ?? null },
       }),
+    readAndroidPdf: async (recordId, labels) => {
+      const generation = viewGeneration;
+      if (pendingViewCancellation) {
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_android_pdf", {
+        request: { recordId, labels },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation
@@ -1192,10 +1447,24 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    aiModelSpeed: () => invoke<unknown>("ai_model_speed"),
     onAiAnswerStarted: (handler) => {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",
         (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    onVaultLocked: (handler) => {
+      const stop = listen<{ by: "closed" | "idle" }>("vault-locked", (event) =>
+        handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    trayWaiting: () => invoke<boolean>("tray_waiting_status"),
+    onTrayWaiting: (handler) => {
+      const stop = listen<boolean>("tray-waiting", (event) =>
+        handler(event.payload === true),
       );
       return () => void stop.then((unlisten) => unlisten());
     },
@@ -1214,9 +1483,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, ticket },
         locale: getLocale(),
       }),
-    exportTextToPicked: (pickId, recordId, ticket, text) =>
+    exportTextToPicked: (pickId, recordId, ticket, text, kept) =>
       invoke<TextSaveOutcome>("vault_export_text_picked", {
-        request: { pickId, recordId, ticket, text },
+        request: { pickId, recordId, ticket, text, kept: kept ?? [] },
+        locale: getLocale(),
+      }),
+    copyTextExport: (recordId, ticket, text, kept) =>
+      invoke<TextCopyOutcome>("vault_export_text_copy", {
+        request: { recordId, ticket, text, kept: kept ?? [] },
         locale: getLocale(),
       }),
     saveAiResult: (recordId, keptId, sources) =>
@@ -1251,3 +1525,13 @@ export function createVaultBridge(): VaultBridge {
 export const MAX_PASSPHRASE_BYTES = 1024;
 const encoder = new TextEncoder();
 export const utf8Length = (value: string) => encoder.encode(value).length;
+
+/** Base64 of a piece of video, built in slices so that no spread of a large
+ * array is needed. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let text = "";
+  const slice = 0x8000;
+  for (let at = 0; at < bytes.length; at += slice)
+    text += String.fromCharCode(...bytes.subarray(at, at + slice));
+  return btoa(text);
+}
