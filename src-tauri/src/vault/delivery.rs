@@ -8044,7 +8044,12 @@ mod approval_recovery_tests {
             store.remove_portal_link(link.id, session),
             Err(VaultError::Invalid)
         ));
-        assert!(store.linked_ids().contains(&link.id));
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .any(|l| l.id == link.id));
         // A link that is not there is not a write: no commit and no history entry.
         let history = crate::vault::history_events_for_test(&store).len();
         store.remove_portal_link(Uuid::new_v4(), session).unwrap();
