@@ -1340,7 +1340,8 @@ impl TextTicket {
 /// what a sentence given to `ai_explain` for a document is checked against. Whitespace is
 /// collapsed on both sides, since the page's line breaks and spacing are not the reader's.
 /// A page shown again replaces its earlier entry; the oldest go past the caps below, and every
-/// entry is bound to the session it was shown in.
+/// entry is bound to the session it was shown in. The texts are the document's (PHI): held
+/// zeroizing, so they are overwritten when an entry goes.
 #[derive(Default)]
 struct ShownPages(Mutex<Vec<ShownPage>>);
 
@@ -1349,17 +1350,17 @@ struct ShownPage {
     record_id: Uuid,
     page: u32,
     /// The page's text and its readable text, each with whitespace collapsed.
-    texts: [String; 2],
+    texts: [zeroize::Zeroizing<String>; 2],
 }
 
-/// Pages kept at most, and characters across them: well above the six pages the reader itself
+/// Pages kept at most, and bytes of text across them: well above the six pages the reader itself
 /// keeps drawn, so a page it shows again from its own cache is still known here.
 const MAX_SHOWN_PAGES: usize = 32;
-const MAX_SHOWN_CHARS: usize = 8 * 1024 * 1024;
+const MAX_SHOWN_BYTES: usize = 8 * 1024 * 1024;
 
 /// `text` with every run of whitespace as one space and none at either end.
-fn collapse_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+fn collapse_whitespace(text: &str) -> zeroize::Zeroizing<String> {
+    zeroize::Zeroizing::new(text.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
 impl ShownPages {
@@ -1369,12 +1370,26 @@ impl ShownPages {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn note(&self, session: u64, record_id: Uuid, page: u32, text: &str, readable_text: &str) {
+    /// Notes a page shown in `session`, unless `current()` says that session is over: the check
+    /// is made under the same lock as the insert, and a lock's `clear` takes that lock after it
+    /// has ended the session, so a page shown during a lock is never remembered after it.
+    fn note(
+        &self,
+        current: &dyn Fn() -> u64,
+        session: u64,
+        record_id: Uuid,
+        page: u32,
+        text: &str,
+        readable_text: &str,
+    ) {
         let texts = [
             collapse_whitespace(text),
             collapse_whitespace(readable_text),
         ];
         let mut list = self.list();
+        if current() != session {
+            return;
+        }
         // Nothing from an earlier session stays, and a page shown again replaces itself.
         list.retain(|held| {
             held.session == session && !(held.record_id == record_id && held.page == page)
@@ -1387,22 +1402,39 @@ impl ShownPages {
         });
         let size = |held: &ShownPage| held.texts[0].len() + held.texts[1].len();
         while list.len() > MAX_SHOWN_PAGES
-            || (list.len() > 1 && list.iter().map(size).sum::<usize>() > MAX_SHOWN_CHARS)
+            || (list.len() > 1 && list.iter().map(size).sum::<usize>() > MAX_SHOWN_BYTES)
         {
             list.remove(0);
         }
     }
 
-    /// Whether `context` (whitespace aside) is inside a page shown for `record_id` in `session`.
-    /// An empty context says nothing about the document, so it passes.
-    fn shows(&self, session: u64, record_id: Uuid, context: &str) -> bool {
+    /// The sentence to keep an explanation of `term` with, or `None` when it must be refused:
+    /// `context` with whitespace collapsed (so what is filed is exactly the document's own text),
+    /// if it is inside a page shown for `record_id` in `session` and, not being empty, holds the
+    /// term (case aside). An empty context says nothing about the document, so it passes.
+    fn accept(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
         let wanted = collapse_whitespace(context);
-        wanted.is_empty()
-            || self.list().iter().any(|held| {
+        if wanted.is_empty() {
+            return Some(wanted);
+        }
+        let term = collapse_whitespace(term);
+        if !term.is_empty() && !wanted.to_lowercase().contains(&*term.to_lowercase()) {
+            return None;
+        }
+        self.list()
+            .iter()
+            .any(|held| {
                 held.session == session
                     && held.record_id == record_id
-                    && held.texts.iter().any(|text| text.contains(&wanted))
+                    && held.texts.iter().any(|text| text.contains(wanted.as_str()))
             })
+            .then_some(wanted)
     }
 
     fn forget_record(&self, record_id: Uuid) {
@@ -1627,15 +1659,29 @@ impl PendingPicks {
         self.ai_answers.forget(kept_id);
     }
 
-    /// The reader was shown this page of `record_id` in `session` (#240).
+    /// The reader was shown this page of `record_id` in `session` (#240): not remembered if the
+    /// vault has locked since.
     fn note_shown_page(&self, session: u64, record_id: Uuid, page: u32, shown: &ViewedPage) {
-        self.shown_pages
-            .note(session, record_id, page, &shown.text, &shown.readable_text);
+        self.shown_pages.note(
+            &|| self.session(),
+            session,
+            record_id,
+            page,
+            &shown.text,
+            &shown.readable_text,
+        );
     }
 
-    /// Whether `context` is from pages shown for `record_id` in `session` (#240).
-    fn context_was_shown(&self, session: u64, record_id: Uuid, context: &str) -> bool {
-        self.shown_pages.shows(session, record_id, context)
+    /// The sentence an explanation of `term` for `record_id` is kept with (collapsed), if it is
+    /// from pages shown for that document in `session` (#240).
+    fn explain_context(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        self.shown_pages.accept(session, record_id, term, context)
     }
 
     /// The document was hidden: its tickets end, and its kept answers.
@@ -2385,7 +2431,7 @@ async fn ai_explain(
     app: tauri::AppHandle,
     store: State<'_, Arc<VaultStore>>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::ExplainRequest,
+    mut request: model_runtime::ExplainRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
     // Capture the actual unlocked session before validation can yield.
@@ -2397,10 +2443,13 @@ async fn ai_explain(
     if let Some(record_id) = kept_for {
         // The sentence an explanation is kept with must be from this document's own pages, as
         // native showed them to the reader (#240): the model's words are never filed on a
-        // document under a sentence it does not contain.
-        if !picks.context_was_shown(session, record_id, &request.context) {
-            return Err(VaultError::Invalid.into());
-        }
+        // document under a sentence it does not contain. What is asked and filed is that
+        // sentence with its whitespace collapsed, exactly the document's own words; a sentence
+        // that has anything must hold the term.
+        let mut sentence = picks
+            .explain_context(session, record_id, request.term.trim(), &request.context)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        request.context = std::mem::take(&mut *sentence);
         // Validation may outlive its originating session. It must not count
         // as unowned activity in whichever session is open when it returns.
         let store = Arc::clone(store.inner());
@@ -5193,16 +5242,28 @@ async fn vault_export_picked(
 #[tauri::command]
 async fn vault_hide_unavailable_records(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), move |store| {
+    // As when one document is hidden: its tickets, kept answers and shown pages end, and a page
+    // being drawn for it stops.
+    for record_id in &request.confirmed {
+        picks.forget_texts_for(*record_id);
+    }
+    pdf_view::cancel_views();
+    let hidden = run_blocking(store.inner(), move |store| {
         store.hide_unavailable_records(&request.confirmed, now_ms())
     })
     .await
     .map_err(|error| match error.code {
         "recovery_mode" => PublicError::removal_not_possible(),
         _ => error,
-    })
+    })?;
+    // Pages drawn while it ran were of documents that are hidden now.
+    for record_id in &hidden {
+        picks.forget_texts_for(*record_id);
+    }
+    Ok(hidden)
 }
 
 /// Saves a photo taken with the camera dialog. The request's body is its
@@ -5290,12 +5351,18 @@ async fn vault_hide_record(
     picks: State<'_, Arc<PendingPicks>>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
-    // A hidden document's text can no longer be saved (#72, AI-02).
+    // A hidden document's text can no longer be saved (#72, AI-02), and a page being drawn for
+    // it stops.
     picks.forget_texts_for(request.record_id);
-    run_blocking(store.inner(), move |store| {
+    pdf_view::cancel_views();
+    let record_id = request.record_id;
+    let hidden = run_blocking(store.inner(), move |store| {
         store.hide_record(request.record_id, now_ms())
     })
-    .await
+    .await;
+    // A page drawn while it ran was of a document that is hidden now.
+    picks.forget_texts_for(record_id);
+    hidden
 }
 
 /// Keeps the AI helper's answer with its document, encrypted (#72 part D).
@@ -8627,52 +8694,138 @@ mod photo_command_tests {
     fn an_explained_sentence_must_be_from_pages_shown_for_that_document() {
         let shown = ShownPages::default();
         let (here, other, session) = (Uuid::from_u128(1), Uuid::from_u128(2), 7);
+        let accepts = |session: u64, record: Uuid, term: &str, context: &str| {
+            shown
+                .accept(session, record, term, context)
+                .map(|sentence| sentence.to_string())
+        };
         shown.note(
+            &|| session,
             session,
             here,
             0,
             "FAKE Patient\n  has a   fake\tcondition. Next sentence.",
             "FAKE Patient has a fake condition. Next sentence.",
         );
-        // As the reader cuts it from the page, with the page's own line breaks and spacing.
-        assert!(shown.shows(session, here, "has a fake condition."));
-        assert!(shown.shows(session, here, "FAKE Patient\nhas a   fake condition."));
-        assert!(shown.shows(session, here, "  Next sentence.  "));
-        // Nothing to mislead with: an empty sentence.
-        assert!(shown.shows(session, here, ""));
-        assert!(shown.shows(session, here, " \n "));
-        // Words the pages never held, a sentence that only looks like theirs, another
-        // document's pages, and another session's.
-        assert!(!shown.shows(session, here, "has a different condition."));
-        assert!(!shown.shows(session, here, "fake condition. Another sentence."));
-        assert!(!shown.shows(
+        // As the reader cuts it from the page, with the page's own line breaks and spacing: what
+        // comes back is the sentence collapsed, which is what is asked and filed.
+        assert_eq!(
+            accepts(session, here, "fake", "has a fake condition.").as_deref(),
+            Some("has a fake condition.")
+        );
+        assert_eq!(
+            accepts(
+                session,
+                here,
+                "FAKE condition",
+                "FAKE Patient\nhas a   fake condition."
+            )
+            .as_deref(),
+            Some("FAKE Patient has a fake condition.")
+        );
+        assert_eq!(
+            accepts(session, here, "next", "  Next sentence.  ").as_deref(),
+            Some("Next sentence.")
+        );
+        // The term may be typed in another case, or across the page's line break.
+        assert!(accepts(session, here, "HAS A FAKE", "has a fake condition.").is_some());
+        assert!(accepts(session, here, "fake\n condition", "has a fake condition.").is_some());
+        // Nothing to mislead with: an empty sentence, whatever the term.
+        assert_eq!(accepts(session, here, "anything", "").as_deref(), Some(""));
+        assert_eq!(
+            accepts(session, here, "anything", " \n ").as_deref(),
+            Some("")
+        );
+        // A sentence that does not hold the term is refused, though it is the page's own.
+        assert!(accepts(session, here, "pneumonia", "has a fake condition.").is_none());
+        // Words the pages never held, a sentence stitched from two, another document's pages, and
+        // another session's.
+        assert!(accepts(session, here, "fake", "has a different fake condition.").is_none());
+        assert!(accepts(session, here, "fake", "fake condition. Another sentence.").is_none());
+        assert!(accepts(
             session,
             here,
+            "fake",
             "has a fake condition. Next sentence. And more."
-        ));
-        assert!(!shown.shows(session, other, "has a fake condition."));
-        assert!(!shown.shows(session + 1, here, "has a fake condition."));
-        // The text is checked as it is: case matters, and so does a word's spelling.
-        assert!(!shown.shows(session, here, "HAS A FAKE CONDITION."));
+        )
+        .is_none());
+        assert!(accepts(session, other, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session + 1, here, "fake", "has a fake condition.").is_none());
+        // The page's text is checked as it is: case matters in the sentence.
+        assert!(accepts(session, here, "fake", "HAS A FAKE CONDITION.").is_none());
         // A page shown again replaces itself; another session's pages go on a new note.
-        shown.note(session, here, 0, "FAKE changed page.", "FAKE changed page.");
-        assert!(!shown.shows(session, here, "has a fake condition."));
-        assert!(shown.shows(session, here, "FAKE changed page."));
         shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE changed page.",
+            "FAKE changed page.",
+        );
+        assert!(accepts(session, here, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_some());
+        shown.note(
+            &|| session + 1,
             session + 1,
             here,
             1,
             "FAKE next session.",
             "FAKE next session.",
         );
-        assert!(!shown.shows(session, here, "FAKE changed page."));
-        assert!(shown.shows(session + 1, here, "FAKE next session."));
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_none());
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_some());
         // A document hidden, and a lock, forget what was shown.
         shown.forget_record(here);
-        assert!(!shown.shows(session + 1, here, "FAKE next session."));
-        shown.note(session + 1, here, 1, "FAKE again.", "FAKE again.");
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_none());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE again.",
+            "FAKE again.",
+        );
         shown.clear();
-        assert!(!shown.shows(session + 1, here, "FAKE again."));
+        assert!(accepts(session + 1, here, "again", "FAKE again.").is_none());
+    }
+
+    #[test]
+    fn a_page_shown_after_a_lock_has_ended_its_session_is_not_remembered() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(4);
+        // The page was drawn in session 5; by the time it is noted the vault is in session 6.
+        shown.note(&|| 6, 5, record, 0, "FAKE late page.", "FAKE late page.");
+        assert!(shown.list().is_empty());
+        assert!(shown.accept(5, record, "late", "FAKE late page.").is_none());
+        assert!(shown.accept(6, record, "late", "FAKE late page.").is_none());
+        // Through the real path: a clear ends the session first, so a note after it is dropped.
+        let picks = PendingPicks::default();
+        let before = picks.session();
+        picks.clear();
+        let page = ViewedPage {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            image: String::new(),
+            text: "FAKE page text".into(),
+            readable_text: "FAKE page text".into(),
+        };
+        picks.note_shown_page(before, record, 0, &page);
+        assert!(picks
+            .explain_context(before, record, "page", "FAKE page text")
+            .is_none());
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+        picks.note_shown_page(picks.session(), record, 0, &page);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_some());
+        // Hiding the document forgets its pages.
+        picks.forget_texts_for(record);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
     }
 
     #[test]
@@ -8681,16 +8834,20 @@ mod photo_command_tests {
         let record = Uuid::from_u128(3);
         for page in 0..(MAX_SHOWN_PAGES as u32 + 5) {
             let text = format!("FAKE page number {page}.");
-            shown.note(1, record, page, &text, &text);
+            shown.note(&|| 1, 1, record, page, &text, &text);
         }
         assert_eq!(shown.list().len(), MAX_SHOWN_PAGES);
-        assert!(!shown.shows(1, record, "FAKE page number 0."));
-        assert!(shown.shows(1, record, "FAKE page number 36."));
-        // Size is bounded too, and the page just shown always stays.
-        let big = "x".repeat(MAX_SHOWN_CHARS);
-        shown.note(1, record, 99, &big, "");
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 0.")
+            .is_none());
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 36.")
+            .is_some());
+        // Size is bounded too (in bytes), and the page just shown always stays.
+        let big = "x".repeat(MAX_SHOWN_BYTES);
+        shown.note(&|| 1, 1, record, 99, &big, "");
         assert_eq!(shown.list().len(), 1);
-        assert!(shown.shows(1, record, "xxxx"));
+        assert!(shown.accept(1, record, "xx", "xxxx").is_some());
     }
 
     #[test]
@@ -8700,15 +8857,25 @@ mod photo_command_tests {
             let body = source.split(command).nth(1).unwrap();
             body[..body.find("\n}\n").unwrap()].to_owned()
         };
-        // Before the model is asked anything, and before anything is kept.
+        // Before the model is asked anything, and before anything is kept, and what is asked
+        // is the collapsed sentence.
         let explain = body("async fn ai_explain(");
-        let checked = explain.find("context_was_shown(").unwrap();
+        let checked = explain.find("explain_context(").unwrap();
         assert!(checked < explain.find("run_ai(").unwrap());
-        assert!(explain.contains("&request.context"));
+        assert!(explain.contains("request.context = std::mem::take(&mut *sentence)"));
         // What the reader is shown is noted only from a page native really drew.
         let view = body("async fn vault_view_page(");
         assert!(view.contains("note_shown_page("));
         assert!(view.find("note_shown_page(").unwrap() > view.find("ticket.is_current()").unwrap());
+        // Hiding a document, one or several, forgets its pages and stops a page being drawn.
+        for command in [
+            "async fn vault_hide_record(",
+            "async fn vault_hide_unavailable_records(",
+        ] {
+            let hide = body(command);
+            assert!(hide.contains("forget_texts_for("), "{command}");
+            assert!(hide.contains("pdf_view::cancel_views()"), "{command}");
+        }
     }
 
     #[test]
