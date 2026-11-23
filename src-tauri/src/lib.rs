@@ -4293,16 +4293,21 @@ enum ReceivedOpen {
     Unreadable,
 }
 
-/// Sorts the opening of one received file: a file that is not a PDF, or that is gone or not a
-/// regular file, is a problem with that file alone (it is named and forgotten); anything else
-/// (the vault, the storage) fails the batch and every file keeps waiting.
+/// Sorts the opening of one received file. Opening and reading the start of the file is all
+/// that has happened to it, so a file that is not a PDF, that is gone or not a regular file, or
+/// that cannot be read (a permission refused or an I/O error: on Android 11 and older a
+/// `content://` grant ends with the activity that received it, while the process lives on) is a
+/// problem with that file alone: it is named and forgotten, and never holds back the others.
+/// Anything else (the vault) fails the batch and every file keeps waiting.
 fn sort_received_open(
     opened: Result<ImportSource, VaultError>,
 ) -> Result<ReceivedOpen, VaultError> {
     match opened {
         Ok(source) => Ok(ReceivedOpen::Source(source)),
         Err(VaultError::NotPdf) => Ok(ReceivedOpen::NotPdf),
-        Err(VaultError::NotFound | VaultError::Invalid) => Ok(ReceivedOpen::Unreadable),
+        Err(VaultError::NotFound | VaultError::Invalid | VaultError::Storage) => {
+            Ok(ReceivedOpen::Unreadable)
+        }
         Err(error) => Err(error),
     }
 }
@@ -8557,16 +8562,21 @@ mod photo_command_tests {
             sort_received_open(Err(VaultError::NotPdf)),
             Ok(ReceivedOpen::NotPdf)
         ));
-        // Moved or deleted while the vault was locked, or no longer a regular file.
-        for gone in [VaultError::NotFound, VaultError::Invalid] {
+        // Moved or deleted while the vault was locked, no longer a regular file, or unreadable
+        // (a dead `content://` grant, a refused permission, an I/O error): that file only.
+        for gone in [
+            VaultError::NotFound,
+            VaultError::Invalid,
+            VaultError::Storage,
+        ] {
             assert!(matches!(
                 sort_received_open(Err(gone)),
                 Ok(ReceivedOpen::Unreadable)
             ));
         }
-        // The vault or the storage failing is not the file's fault: the batch fails and every
-        // file keeps waiting.
-        for failure in [VaultError::Storage, VaultError::Locked] {
+        // The vault failing is not the file's fault: the batch fails and every file keeps
+        // waiting.
+        for failure in [VaultError::Locked, VaultError::RecoveryMode] {
             assert!(sort_received_open(Err(failure)).is_err());
         }
     }
