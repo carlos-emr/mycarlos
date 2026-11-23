@@ -2410,7 +2410,7 @@ handover-export-keyGroup = Grupa { $number }: { $characters }
 
 handover-export-copy = Kopiuj klucz
 
-handover-export-copied = Klucz skopiowany. Wyczyść schowek po jego użyciu.
+handover-export-copied = Klucz skopiowany. Jeśli w międzyczasie nic innego nie zostanie skopiowane, zostanie usunięty ze schowka po minucie.
 
 handover-export-copyFailed = Nie udało się skopiować klucza. Zapisz go zamiast tego.
 
@@ -2432,13 +2432,28 @@ handover-export-noLocation = Nie wybrano miejsca. Nic nie zapisano.
 
 handover-export-doneTitle = Plik zapisany
 
-handover-export-done = Zapisano dokumenty osoby { $name }: { $documents }. Plik został odczytany ponownie w celu sprawdzenia.
+handover-export-done =
+    { $count ->
+        [one] Zapisano jeden dokument osoby { $name }. Plik został odczytany ponownie w celu sprawdzenia.
+        [few] Zapisano { $count } dokumenty osoby { $name }. Plik został odczytany ponownie w celu sprawdzenia.
+       *[other] Zapisano dokumenty osoby { $name }: { $count }. Plik został odczytany ponownie w celu sprawdzenia.
+    }
 
 handover-export-doneApart = Przechowuj plik i klucz oddzielnie. Ten plik nie zmienia Twojego sejfu.
 
-handover-export-leftOut = Pominięte dokumenty, których pliku nie można odczytać: { $count }
+handover-export-leftOut =
+    { $count ->
+        [one] Pominięto jeden dokument, bo jego pliku nie można odczytać.
+        [few] Pominięto { $count } dokumenty, bo ich plików nie można odczytać.
+       *[other] Pominięto dokumentów: { $count }, bo ich plików nie można odczytać.
+    }
 
-handover-export-evidenceLeftOut = Dokumenty, których podpisu kliniki nie dało się dołączyć (sam dokument jest w pliku): { $count }
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] Nie udało się dołączyć podpisu kliniki dla jednego dokumentu (sam dokument jest w pliku).
+        [few] Nie udało się dołączyć podpisu kliniki dla { $count } dokumentów (same dokumenty są w pliku).
+       *[other] Nie udało się dołączyć podpisu kliniki dla dokumentów: { $count } (same dokumenty są w pliku).
+    }
 
 handover-count-documents = Dokumenty: { $count }
 
@@ -2496,9 +2511,14 @@ handover-import-evidenceNote = Niektóre dokumenty mają podpisane przekazanie p
 
 handover-import-duplicate-legend = Być może masz już tę osobę
 
-handover-import-duplicate-package = Plik nie wnosi nic nowego: ten sam plik został już tu dodany.
+handover-import-duplicate-package = Ten plik został już tu dodany.
 
-handover-import-duplicate-content = Plik podaje, że zawiera dokumenty takie jak { $count }, które masz już przy innej osobie tutaj.
+handover-import-duplicate-content =
+    { $count ->
+        [one] Jeden z dokumentów w tym pliku ma dokładnie taką samą zawartość jak dokument, który masz już przy innej osobie tutaj.
+        [few] { $count } dokumenty w tym pliku mają dokładnie taką samą zawartość jak dokumenty, które masz już przy innej osobie tutaj.
+       *[other] { $count } dokumentów w tym pliku ma dokładnie taką samą zawartość jak dokumenty, które masz już przy innej osobie tutaj.
+    }
 
 handover-import-duplicate-anyway = Dodaj mimo to jako kolejną osobę
 
@@ -2510,18 +2530,46 @@ handover-import-adding = Dodawanie i sprawdzanie dokumentów…
 
 handover-import-doneTitle = Gotowe
 
-handover-import-done = Dodano dokumenty osoby { $name }: { $documents }.
+handover-import-done =
+    { $count ->
+        [one] Dodano jeden dokument osoby { $name }.
+        [few] Dodano { $count } dokumenty osoby { $name }.
+       *[other] Dodano dokumenty osoby { $name }: { $count }.
+    }
 
-handover-import-doneAnswers = Odpowiedzi asystenta AI, które przyszły z nimi, oznaczone jako z zaimportowanego pliku: { $count }
+handover-import-doneAnswers =
+    { $count ->
+        [one] Razem z nimi przyszła jedna odpowiedź asystenta AI, oznaczona jako z zaimportowanego pliku.
+        [few] Razem z nimi przyszły { $count } odpowiedzi asystenta AI, oznaczone jako z zaimportowanego pliku.
+       *[other] Razem z nimi przyszło odpowiedzi asystenta AI: { $count }, oznaczonych jako z zaimportowanego pliku.
+    }
 
 handover-import-doneEvidence = Dokumenty kliniki pokazują tylko to, co dało się tu sprawdzić. Aby sprawdzić je kluczem kliniki na tym urządzeniu, połącz to urządzenie z kliniką.
 
-handover-import-doneDropped = Elementy pliku pominięte, bo nie spełniały zasad tego sejfu: { $count }
+handover-import-doneDropped =
+    { $count ->
+        [one] Jeden element pliku pominięto, bo nie spełniał zasad tego sejfu.
+        [few] Pominięto { $count } elementy pliku, bo nie spełniały zasad tego sejfu.
+       *[other] Pominięto elementy pliku: { $count }, bo nie spełniały zasad tego sejfu.
+    }
 
 handover-import-receipt = Kod potwierdzenia:
 
-handover-import-receiptNote = Możesz podać ten kod osobie, która utworzyła plik. Pokazuje on, że ktoś mający plik i jego klucz dodał go tutaj. Nie dowodzi, że Twoja kopia jest nadal bezpieczna.
+handover-import-receiptNote = Możesz podać ten kod osobie, która utworzyła plik. Pokazuje on, że ktoś, kto miał plik i jego klucz, otworzył cały plik i przeczytał go do końca. Nie dowodzi, że dokumenty zostały gdziekolwiek dodane, ani że Twoja kopia jest nadal bezpieczna.
 
 handover-import-nothingNew = Nic nie dodano: ten sejf ma już tę osobę.
 
 handover-importedAnswer = Z zaimportowanego pliku
+
+handover-export-leavingWarning = Pozostań w myCarlos, dopóki widoczny jest ten klucz. Przełączenie na inną aplikację blokuje Twój sejf, a ten klucz przestaje działać: musiałbyś(-abyś) zacząć od nowa i dostać nowy.
+
+handover-export-leave-title = Wyjść bez zapisywania pliku?
+
+handover-export-leave-body = Nie zapisano żadnego pliku. Klucz na tym ekranie przestanie działać, więc nikomu go nie przekazuj. Aby przekazać dokumenty, zacznij od nowa, a dostaniesz nowy klucz.
+
+handover-export-leave-confirm = Wyjdź
+
+
+handover-export-error-weak = Tego hasła nie można użyć. Może być zbyt łatwe do odgadnięcia, zawierać imię osoby albo zbyt przypominać hasło Twojego sejfu lub klucz odzyskiwania. Wybierz inne.
+
+handover-unfinished = Przekazanie nie zostało zakończone. Żaden skopiowany ani zapisany klucz niczego nie otwiera. Aby przekazać dokumenty, zacznij od nowa i uzyskaj nowy klucz.

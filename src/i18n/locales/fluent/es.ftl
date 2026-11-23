@@ -2364,7 +2364,7 @@ handover-export-keyGroup = Grupo { $number }: { $characters }
 
 handover-export-copy = Copiar la clave
 
-handover-export-copied = Clave copiada. Borre el portapapeles cuando la haya usado.
+handover-export-copied = Clave copiada. Si no se copia nada más mientras tanto, se borra del portapapeles en un minuto.
 
 handover-export-copyFailed = No se pudo copiar la clave. Anótela en su lugar.
 
@@ -2386,13 +2386,25 @@ handover-export-noLocation = No se eligió ningún lugar. No se guardó nada.
 
 handover-export-doneTitle = Archivo guardado
 
-handover-export-done = Se guardaron { $documents } documentos de { $name } y se releyó el archivo para comprobarlo.
+handover-export-done =
+    { $count ->
+        [one] Se guardó un documento de { $name } y se releyó el archivo para comprobarlo.
+       *[other] Se guardaron { $count } documentos de { $name } y se releyó el archivo para comprobarlo.
+    }
 
 handover-export-doneApart = Guarde el archivo y la clave por separado. Este archivo no cambia su bóveda.
 
-handover-export-leftOut = Documentos excluidos porque su archivo no se puede leer: { $count }
+handover-export-leftOut =
+    { $count ->
+        [one] Un documento excluido porque su archivo no se puede leer.
+       *[other] { $count } documentos excluidos porque sus archivos no se pueden leer.
+    }
 
-handover-export-evidenceLeftOut = Documentos cuya firma de la clínica no se pudo incluir (el documento sí está en el archivo): { $count }
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] No se pudo incluir la firma de la clínica de un documento (el documento sí está en el archivo).
+       *[other] No se pudo incluir la firma de la clínica de { $count } documentos (los documentos sí están en el archivo).
+    }
 
 handover-count-documents = Documentos: { $count }
 
@@ -2450,9 +2462,13 @@ handover-import-evidenceNote = Algunos documentos llevan la entrega firmada de u
 
 handover-import-duplicate-legend = Puede que ya tenga a esta persona
 
-handover-import-duplicate-package = El archivo no dice nada nuevo: este mismo archivo ya se añadió aquí.
+handover-import-duplicate-package = Ya añadió este archivo aquí.
 
-handover-import-duplicate-content = El archivo dice que contiene documentos como { $count } que usted ya tiene en otra persona de aquí.
+handover-import-duplicate-content =
+    { $count ->
+        [one] Uno de los documentos de este archivo tiene exactamente el mismo contenido que un documento que ya tiene en otra persona de aquí.
+       *[other] { $count } de los documentos de este archivo tienen exactamente el mismo contenido que documentos que ya tiene en otra persona de aquí.
+    }
 
 handover-import-duplicate-anyway = Añadirla como otra persona de todos modos
 
@@ -2464,18 +2480,43 @@ handover-import-adding = Añadiendo y comprobando los registros…
 
 handover-import-doneTitle = Listo
 
-handover-import-done = Se añadieron { $documents } documentos de { $name }.
+handover-import-done =
+    { $count ->
+        [one] Se añadió un documento de { $name }.
+       *[other] Se añadieron { $count } documentos de { $name }.
+    }
 
-handover-import-doneAnswers = Respuestas del asistente de IA que llegaron con ellos, marcadas como de un archivo importado: { $count }
+handover-import-doneAnswers =
+    { $count ->
+        [one] Una respuesta del asistente de IA llegó con ellos, marcada como de un archivo importado.
+       *[other] { $count } respuestas del asistente de IA llegaron con ellos, marcadas como de un archivo importado.
+    }
 
 handover-import-doneEvidence = Los documentos de la clínica muestran solo lo que se pudo comprobar aquí. Para comprobarlos con la clave de la clínica en este dispositivo, vincule este dispositivo con la clínica.
 
-handover-import-doneDropped = Elementos del archivo excluidos por no cumplir las reglas de esta bóveda: { $count }
+handover-import-doneDropped =
+    { $count ->
+        [one] Un elemento del archivo se excluyó por no cumplir las reglas de esta bóveda.
+       *[other] { $count } elementos del archivo se excluyeron por no cumplir las reglas de esta bóveda.
+    }
 
 handover-import-receipt = Código de recibo:
 
-handover-import-receiptNote = Puede dar este código a quien creó el archivo. Muestra que alguien con el archivo y su clave lo añadió aquí. No demuestra que su copia siga a salvo.
+handover-import-receiptNote = Puede dar este código a quien creó el archivo. Muestra que alguien que tenía el archivo y su clave abrió el archivo completo y lo leyó entero. No demuestra que los registros se añadieron en algún lugar, ni que su copia siga a salvo.
 
 handover-import-nothingNew = No se añadió nada: esta bóveda ya tiene a esta persona.
 
 handover-importedAnswer = De un archivo importado
+
+handover-export-leavingWarning = Permanezca en myCarlos mientras se muestra esta clave. Cambiar a otra aplicación bloquea su bóveda y esta clave deja de funcionar: tendría que empezar de nuevo y obtener una nueva.
+
+handover-export-leave-title = ¿Salir sin guardar un archivo?
+
+handover-export-leave-body = No se ha guardado ningún archivo. La clave de esta pantalla dejará de funcionar, así que no se la dé a nadie. Para entregar los registros, empiece de nuevo y recibirá una clave nueva.
+
+handover-export-leave-confirm = Salir
+
+
+handover-export-error-weak = Esa frase de contraseña no se puede usar. Puede ser demasiado fácil de adivinar, contener el nombre de la persona o parecerse demasiado a la frase de contraseña de su bóveda o a su clave de recuperación. Elija otra.
+
+handover-unfinished = Una entrega no se terminó. Cualquier clave que haya copiado o anotado no abre nada. Para entregar los registros, empiece de nuevo para obtener una clave nueva.

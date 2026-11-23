@@ -1133,5 +1133,11 @@
   "handover.import.receipt",
   "handover.import.receiptNote",
   "handover.import.nothingNew",
-  "handover.importedAnswer"
+  "handover.importedAnswer",
+  "handover.export.leavingWarning",
+  "handover.export.leave.title",
+  "handover.export.leave.body",
+  "handover.export.leave.confirm",
+  "handover.export.error.weak",
+  "handover.unfinished"
 ]

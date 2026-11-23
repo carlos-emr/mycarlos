@@ -2364,7 +2364,7 @@ handover-export-keyGroup = Groupe { $number } : { $characters }
 
 handover-export-copy = Copier la clé
 
-handover-export-copied = Clé copiée. Videz le presse-papiers une fois la clé utilisée.
+handover-export-copied = Clé copiée. Si rien d'autre n'est copié entre-temps, elle est effacée du presse-papiers dans une minute.
 
 handover-export-copyFailed = La clé n'a pas pu être copiée. Notez-la plutôt.
 
@@ -2386,13 +2386,25 @@ handover-export-noLocation = Aucun emplacement n'a été choisi. Rien n'a été 
 
 handover-export-doneTitle = Fichier enregistré
 
-handover-export-done = { $documents } documents de { $name } ont été enregistrés, et le fichier a été relu pour le vérifier.
+handover-export-done =
+    { $count ->
+        [one] Un document de { $name } a été enregistré, et le fichier a été relu pour le vérifier.
+       *[other] { $count } documents de { $name } ont été enregistrés, et le fichier a été relu pour le vérifier.
+    }
 
 handover-export-doneApart = Conservez le fichier et la clé séparément. Ce fichier ne modifie pas votre coffre.
 
-handover-export-leftOut = Documents exclus car leur fichier est illisible : { $count }
+handover-export-leftOut =
+    { $count ->
+        [one] Un document exclu, car son fichier est illisible.
+       *[other] { $count } documents exclus, car leurs fichiers sont illisibles.
+    }
 
-handover-export-evidenceLeftOut = Documents dont la signature de la clinique n'a pas pu être incluse (le document est bien dans le fichier) : { $count }
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] La signature de la clinique n'a pas pu être incluse pour un document (le document est bien dans le fichier).
+       *[other] La signature de la clinique n'a pas pu être incluse pour { $count } documents (les documents sont bien dans le fichier).
+    }
 
 handover-count-documents = Documents : { $count }
 
@@ -2450,9 +2462,13 @@ handover-import-evidenceNote = Certains documents portent la remise signée d'un
 
 handover-import-duplicate-legend = Vous avez peut-être déjà cette personne
 
-handover-import-duplicate-package = Le fichier n'apporte rien de nouveau : ce même fichier a déjà été ajouté ici.
+handover-import-duplicate-package = Vous avez déjà ajouté ce fichier ici.
 
-handover-import-duplicate-content = Le fichier indique qu'il contient des documents comme { $count } que vous avez déjà pour une autre personne ici.
+handover-import-duplicate-content =
+    { $count ->
+        [one] Un des documents de ce fichier a exactement le même contenu qu'un document que vous avez déjà pour une autre personne ici.
+       *[other] { $count } des documents de ce fichier ont exactement le même contenu que des documents que vous avez déjà pour une autre personne ici.
+    }
 
 handover-import-duplicate-anyway = L'ajouter quand même comme autre personne
 
@@ -2464,18 +2480,43 @@ handover-import-adding = Ajout et vérification des dossiers…
 
 handover-import-doneTitle = Terminé
 
-handover-import-done = { $documents } documents ont été ajoutés pour { $name }.
+handover-import-done =
+    { $count ->
+        [one] Un document a été ajouté pour { $name }.
+       *[other] { $count } documents ont été ajoutés pour { $name }.
+    }
 
-handover-import-doneAnswers = Réponses de l'assistant IA arrivées avec eux, marquées comme provenant d'un fichier importé : { $count }
+handover-import-doneAnswers =
+    { $count ->
+        [one] Une réponse de l'assistant IA est arrivée avec eux, marquée comme provenant d'un fichier importé.
+       *[other] { $count } réponses de l'assistant IA sont arrivées avec eux, marquées comme provenant d'un fichier importé.
+    }
 
 handover-import-doneEvidence = Les documents de la clinique n'indiquent que ce qui a pu être vérifié ici. Pour les faire vérifier avec la clé de la clinique sur cet appareil, liez cet appareil à la clinique.
 
-handover-import-doneDropped = Éléments du fichier exclus car ils ne respectaient pas les règles de ce coffre : { $count }
+handover-import-doneDropped =
+    { $count ->
+        [one] Un élément du fichier a été exclu, car il ne respectait pas les règles de ce coffre.
+       *[other] { $count } éléments du fichier ont été exclus, car ils ne respectaient pas les règles de ce coffre.
+    }
 
 handover-import-receipt = Code de réception :
 
-handover-import-receiptNote = Vous pouvez donner ce code à la personne qui a créé le fichier. Il montre que quelqu'un qui avait le fichier et sa clé l'a ajouté ici. Il ne prouve pas que votre copie est toujours en sécurité.
+handover-import-receiptNote = Vous pouvez donner ce code à la personne qui a créé le fichier. Il montre que quelqu'un qui avait le fichier et sa clé a ouvert tout le fichier et l'a lu en entier. Il ne prouve pas que les dossiers ont été ajoutés quelque part, ni que votre copie est toujours en sécurité.
 
 handover-import-nothingNew = Rien n'a été ajouté : ce coffre a déjà cette personne.
 
 handover-importedAnswer = D'un fichier importé
+
+handover-export-leavingWarning = Restez dans myCarlos tant que cette clé est affichée. Passer à une autre application verrouille votre coffre et cette clé cesse de fonctionner : vous recommenceriez et obtiendriez une nouvelle clé.
+
+handover-export-leave-title = Quitter sans enregistrer de fichier ?
+
+handover-export-leave-body = Aucun fichier n'a été enregistré. La clé affichée cessera de fonctionner : ne la remettez à personne. Pour transmettre les dossiers, recommencez et vous obtiendrez une nouvelle clé.
+
+handover-export-leave-confirm = Quitter
+
+
+handover-export-error-weak = Cette phrase secrète ne peut pas être utilisée. Elle est peut-être trop facile à deviner, contient le nom de la personne ou ressemble trop à la phrase secrète de votre coffre ou à votre clé de récupération. Choisissez-en une autre.
+
+handover-unfinished = Une transmission n'a pas été terminée. Toute clé que vous avez copiée ou notée n'ouvre rien. Pour transmettre les dossiers, recommencez pour obtenir une nouvelle clé.

@@ -2162,7 +2162,7 @@ handover-export-keyGroup = 第 { $number } 组：{ $characters }
 
 handover-export-copy = 复制密钥
 
-handover-export-copied = 密钥已复制。用完后请清空剪贴板。
+handover-export-copied = 密钥已复制。如果期间没有复制其他内容，一分钟后会从剪贴板中清除。
 
 handover-export-copyFailed = 无法复制密钥，请改为手写记下。
 
@@ -2184,7 +2184,7 @@ handover-export-noLocation = 未选择位置，没有保存任何内容。
 
 handover-export-doneTitle = 文件已保存
 
-handover-export-done = 已为 { $name } 保存 { $documents } 份文档，并重新读取文件进行了检查。
+handover-export-done = 已为 { $name } 保存 { $count } 份文档，并重新读取文件进行了检查。
 
 handover-export-doneApart = 请把文件和密钥分开保管。此文件不会改变您的保险库。
 
@@ -2248,9 +2248,9 @@ handover-import-evidenceNote = 部分文档附有诊所的签名送达记录。�
 
 handover-import-duplicate-legend = 您可能已经有这个人
 
-handover-import-duplicate-package = 此文件没有新内容：同一个文件已经添加过了。
+handover-import-duplicate-package = 您已经在这里添加过这个文件了。
 
-handover-import-duplicate-content = 文件声称包含与您在此处另一个人下已有的 { $count } 份文档相同的文档。
+handover-import-duplicate-content = 此文件中有 { $count } 份文档与您在此处另一个人下已有的文档内容完全相同。
 
 handover-import-duplicate-anyway = 仍然添加为另一个人
 
@@ -2262,7 +2262,7 @@ handover-import-adding = 正在添加并检查记录…
 
 handover-import-doneTitle = 完成
 
-handover-import-done = 已为 { $name } 添加 { $documents } 份文档。
+handover-import-done = 已为 { $name } 添加 { $count } 份文档。
 
 handover-import-doneAnswers = 随文档一起到来的 AI 助手回答，已标记为来自导入的文件：{ $count }
 
@@ -2272,8 +2272,21 @@ handover-import-doneDropped = 因不符合此保险库的规则而未包含的�
 
 handover-import-receipt = 回执码：
 
-handover-import-receiptNote = 您可以把这个代码告诉制作文件的人。它说明有人拿着文件和密钥把它添加到了这里，但并不说明您的副本仍然安全。
+handover-import-receiptNote = 您可以把这个代码告诉制作文件的人。它说明有人拿着文件和密钥打开了整个文件并从头读完，但并不说明这些记录已被添加到某处，也不说明您的副本仍然安全。
 
 handover-import-nothingNew = 没有添加任何内容：此保险库已经有这个人。
 
 handover-importedAnswer = 来自导入的文件
+
+handover-export-leavingWarning = 显示此密钥时请留在 myCarlos 中。切换到其他应用会锁定您的保险库，此密钥也会失效：您需要重新开始并获得新的密钥。
+
+handover-export-leave-title = 不保存文件就离开吗？
+
+handover-export-leave-body = 尚未保存任何文件。此屏幕上的密钥将失效，请不要把它交给任何人。若要移交记录，请重新开始，您会得到新的密钥。
+
+handover-export-leave-confirm = 离开
+
+
+handover-export-error-weak = 无法使用该口令。它可能太容易被猜到、包含此人的姓名，或与您保险库的口令或恢复密钥太相似。请换一个。
+
+handover-unfinished = 有一次移交没有完成。您复制或记下的任何密钥都无法打开任何内容。若要移交记录，请重新开始以获得新的密钥。

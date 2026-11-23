@@ -1135,6 +1135,12 @@ export const MESSAGE_KEYS = [
   "handover.import.receiptNote",
   "handover.import.nothingNew",
   "handover.importedAnswer",
+  "handover.export.leavingWarning",
+  "handover.export.leave.title",
+  "handover.export.leave.body",
+  "handover.export.leave.confirm",
+  "handover.export.error.weak",
+  "handover.unfinished",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2473,6 +2479,12 @@ const FLUENT_IDS_BY_KEY = {
   "handover.import.receiptNote": "handover-import-receiptNote",
   "handover.import.nothingNew": "handover-import-nothingNew",
   "handover.importedAnswer": "handover-importedAnswer",
+  "handover.export.leavingWarning": "handover-export-leavingWarning",
+  "handover.export.leave.title": "handover-export-leave-title",
+  "handover.export.leave.body": "handover-export-leave-body",
+  "handover.export.leave.confirm": "handover-export-leave-confirm",
+  "handover.export.error.weak": "handover-export-error-weak",
+  "handover.unfinished": "handover-unfinished",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3682,7 +3694,7 @@ export interface MessageArgsByKey {
   "handover.export.saving": undefined;
   "handover.export.noLocation": undefined;
   "handover.export.doneTitle": undefined;
-  "handover.export.done": { documents: FluentArgument; name: FluentArgument };
+  "handover.export.done": { count: FluentArgument; name: FluentArgument };
   "handover.export.doneApart": undefined;
   "handover.export.leftOut": { count: FluentArgument };
   "handover.export.evidenceLeftOut": { count: FluentArgument };
@@ -3721,7 +3733,7 @@ export interface MessageArgsByKey {
   "handover.import.add": undefined;
   "handover.import.adding": undefined;
   "handover.import.doneTitle": undefined;
-  "handover.import.done": { documents: FluentArgument; name: FluentArgument };
+  "handover.import.done": { count: FluentArgument; name: FluentArgument };
   "handover.import.doneAnswers": { count: FluentArgument };
   "handover.import.doneEvidence": undefined;
   "handover.import.doneDropped": { count: FluentArgument };
@@ -3729,6 +3741,12 @@ export interface MessageArgsByKey {
   "handover.import.receiptNote": undefined;
   "handover.import.nothingNew": undefined;
   "handover.importedAnswer": undefined;
+  "handover.export.leavingWarning": undefined;
+  "handover.export.leave.title": undefined;
+  "handover.export.leave.body": undefined;
+  "handover.export.leave.confirm": undefined;
+  "handover.export.error.weak": undefined;
+  "handover.unfinished": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

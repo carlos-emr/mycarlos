@@ -2329,7 +2329,7 @@ handover-export-keyGroup = Group { $number }: { $characters }
 
 handover-export-copy = Copy the key
 
-handover-export-copied = Key copied. Clear your clipboard once you have used it.
+handover-export-copied = Key copied. If nothing else is copied meanwhile, it is cleared from the clipboard in a minute.
 
 handover-export-copyFailed = The key could not be copied. Write it down instead.
 
@@ -2351,13 +2351,25 @@ handover-export-noLocation = No place was chosen. Nothing was saved.
 
 handover-export-doneTitle = File saved
 
-handover-export-done = Saved { $documents } documents for { $name }, and read the file back to check it.
+handover-export-done =
+    { $count ->
+        [one] Saved one document for { $name }, and read the file back to check it.
+       *[other] Saved { $count } documents for { $name }, and read the file back to check it.
+    }
 
 handover-export-doneApart = Keep the file and the key apart. This file does not change your vault.
 
-handover-export-leftOut = Documents left out because their file cannot be read: { $count }
+handover-export-leftOut =
+    { $count ->
+        [one] One document left out because its file cannot be read.
+       *[other] { $count } documents left out because their files cannot be read.
+    }
 
-handover-export-evidenceLeftOut = Documents whose clinic signature could not be included (the document itself is in the file): { $count }
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] The clinic's signature could not be included for one document (the document itself is in the file).
+       *[other] The clinic's signature could not be included for { $count } documents (the documents themselves are in the file).
+    }
 
 handover-count-documents = Documents: { $count }
 
@@ -2415,9 +2427,13 @@ handover-import-evidenceNote = Some documents carry a clinic's signed delivery. 
 
 handover-import-duplicate-legend = You may already have this person
 
-handover-import-duplicate-package = The file says nothing new: this same file was already added here.
+handover-import-duplicate-package = You have already added this file here.
 
-handover-import-duplicate-content = The file says it holds documents like { $count } you already have under another person here.
+handover-import-duplicate-content =
+    { $count ->
+        [one] One of the documents in this file has exactly the same contents as a document you already have under another person here.
+       *[other] { $count } of the documents in this file have exactly the same contents as documents you already have under another person here.
+    }
 
 handover-import-duplicate-anyway = Add it as another person anyway
 
@@ -2429,18 +2445,43 @@ handover-import-adding = Adding and checking the records…
 
 handover-import-doneTitle = Done
 
-handover-import-done = Added { $documents } documents for { $name }.
+handover-import-done =
+    { $count ->
+        [one] Added one document for { $name }.
+       *[other] Added { $count } documents for { $name }.
+    }
 
-handover-import-doneAnswers = AI helper answers that came with them, marked as from an imported file: { $count }
+handover-import-doneAnswers =
+    { $count ->
+        [one] One AI helper answer came with them, marked as from an imported file.
+       *[other] { $count } AI helper answers came with them, marked as from an imported file.
+    }
 
 handover-import-doneEvidence = Clinic documents show only what could be checked here. To have them checked with the clinic's key on this device, link this device to the clinic.
 
-handover-import-doneDropped = Items in the file left out because they did not meet this vault's rules: { $count }
+handover-import-doneDropped =
+    { $count ->
+        [one] One item in the file was left out because it did not meet this vault's rules.
+       *[other] { $count } items in the file were left out because they did not meet this vault's rules.
+    }
 
 handover-import-receipt = Receipt code:
 
-handover-import-receiptNote = You can give this code to whoever made the file. It shows that someone with the file and its key added it here. It does not show that your copy is still safe.
+handover-import-receiptNote = You can give this code to whoever made the file. It shows that someone who had the file and its key opened the whole file and read it through. It does not show that the records were added anywhere, or that your copy is still safe.
 
 handover-import-nothingNew = Nothing was added: this vault already has this person.
 
 handover-importedAnswer = From an imported file
+
+handover-export-leavingWarning = Stay in myCarlos while this key is shown. Switching to another app locks your vault, and this key stops working: you would start again and get a new one.
+
+handover-export-leave-title = Leave without saving a file?
+
+handover-export-leave-body = No file has been saved. The key on this screen will stop working, so do not hand it to anyone. To hand the records over, start again and you will get a new key.
+
+handover-export-leave-confirm = Leave
+
+
+handover-export-error-weak = That passphrase cannot be used. It may be too easy to guess, contain the person's name, or be too much like your vault's passphrase or recovery key. Choose another.
+
+handover-unfinished = A handover was not finished. Any key you copied or wrote down opens nothing. To hand the records over, start again to get a new key.

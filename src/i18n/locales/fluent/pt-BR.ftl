@@ -2364,7 +2364,7 @@ handover-export-keyGroup = Grupo { $number }: { $characters }
 
 handover-export-copy = Copiar a chave
 
-handover-export-copied = Chave copiada. Limpe a área de transferência depois de usá-la.
+handover-export-copied = Chave copiada. Se nada mais for copiado nesse meio tempo, ela é apagada da área de transferência em um minuto.
 
 handover-export-copyFailed = Não foi possível copiar a chave. Anote-a em vez disso.
 
@@ -2386,13 +2386,25 @@ handover-export-noLocation = Nenhum local foi escolhido. Nada foi salvo.
 
 handover-export-doneTitle = Arquivo salvo
 
-handover-export-done = Foram salvos { $documents } documentos de { $name } e o arquivo foi relido para conferência.
+handover-export-done =
+    { $count ->
+        [one] Foi salvo um documento de { $name } e o arquivo foi relido para conferência.
+       *[other] Foram salvos { $count } documentos de { $name } e o arquivo foi relido para conferência.
+    }
 
 handover-export-doneApart = Guarde o arquivo e a chave separadamente. Este arquivo não altera o seu cofre.
 
-handover-export-leftOut = Documentos deixados de fora porque o arquivo não pode ser lido: { $count }
+handover-export-leftOut =
+    { $count ->
+        [one] Um documento deixado de fora porque o arquivo não pode ser lido.
+       *[other] { $count } documentos deixados de fora porque os arquivos não podem ser lidos.
+    }
 
-handover-export-evidenceLeftOut = Documentos cuja assinatura da clínica não pôde ser incluída (o próprio documento está no arquivo): { $count }
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] A assinatura da clínica não pôde ser incluída para um documento (o próprio documento está no arquivo).
+       *[other] A assinatura da clínica não pôde ser incluída para { $count } documentos (os próprios documentos estão no arquivo).
+    }
 
 handover-count-documents = Documentos: { $count }
 
@@ -2450,9 +2462,13 @@ handover-import-evidenceNote = Alguns documentos trazem a entrega assinada de um
 
 handover-import-duplicate-legend = Você já pode ter esta pessoa
 
-handover-import-duplicate-package = O arquivo não diz nada de novo: este mesmo arquivo já foi adicionado aqui.
+handover-import-duplicate-package = Você já adicionou este arquivo aqui.
 
-handover-import-duplicate-content = O arquivo diz que contém documentos como { $count } que você já tem em outra pessoa aqui.
+handover-import-duplicate-content =
+    { $count ->
+        [one] Um dos documentos deste arquivo tem exatamente o mesmo conteúdo de um documento que você já tem em outra pessoa aqui.
+       *[other] { $count } dos documentos deste arquivo têm exatamente o mesmo conteúdo de documentos que você já tem em outra pessoa aqui.
+    }
 
 handover-import-duplicate-anyway = Adicionar mesmo assim como outra pessoa
 
@@ -2464,18 +2480,43 @@ handover-import-adding = Adicionando e conferindo os registros…
 
 handover-import-doneTitle = Concluído
 
-handover-import-done = Foram adicionados { $documents } documentos de { $name }.
+handover-import-done =
+    { $count ->
+        [one] Foi adicionado um documento de { $name }.
+       *[other] Foram adicionados { $count } documentos de { $name }.
+    }
 
-handover-import-doneAnswers = Respostas do assistente de IA que vieram com eles, marcadas como de um arquivo importado: { $count }
+handover-import-doneAnswers =
+    { $count ->
+        [one] Uma resposta do assistente de IA veio com eles, marcada como de um arquivo importado.
+       *[other] { $count } respostas do assistente de IA vieram com eles, marcadas como de um arquivo importado.
+    }
 
 handover-import-doneEvidence = Os documentos da clínica mostram apenas o que pôde ser conferido aqui. Para que sejam conferidos com a chave da clínica neste dispositivo, vincule este dispositivo à clínica.
 
-handover-import-doneDropped = Itens do arquivo deixados de fora por não cumprirem as regras deste cofre: { $count }
+handover-import-doneDropped =
+    { $count ->
+        [one] Um item do arquivo foi deixado de fora por não cumprir as regras deste cofre.
+       *[other] { $count } itens do arquivo foram deixados de fora por não cumprirem as regras deste cofre.
+    }
 
 handover-import-receipt = Código de recibo:
 
-handover-import-receiptNote = Você pode dar este código a quem criou o arquivo. Ele mostra que alguém com o arquivo e a chave o adicionou aqui. Não mostra que a sua cópia ainda está segura.
+handover-import-receiptNote = Você pode dar este código a quem criou o arquivo. Ele mostra que alguém que tinha o arquivo e a chave abriu o arquivo inteiro e o leu até o fim. Não mostra que os registros foram adicionados em algum lugar, nem que a sua cópia ainda está segura.
 
 handover-import-nothingNew = Nada foi adicionado: este cofre já tem esta pessoa.
 
 handover-importedAnswer = De um arquivo importado
+
+handover-export-leavingWarning = Fique no myCarlos enquanto esta chave estiver na tela. Trocar para outro aplicativo bloqueia o seu cofre e esta chave deixa de funcionar: você precisaria recomeçar e receber uma nova.
+
+handover-export-leave-title = Sair sem salvar um arquivo?
+
+handover-export-leave-body = Nenhum arquivo foi salvo. A chave desta tela deixará de funcionar, então não a entregue a ninguém. Para entregar os registros, recomece e você receberá uma nova chave.
+
+handover-export-leave-confirm = Sair
+
+
+handover-export-error-weak = Essa frase secreta não pode ser usada. Pode ser fácil demais de adivinhar, conter o nome da pessoa ou ser parecida demais com a frase secreta do seu cofre ou com a sua chave de recuperação. Escolha outra.
+
+handover-unfinished = Uma entrega não foi concluída. Qualquer chave que você copiou ou anotou não abre nada. Para entregar os registros, recomece para obter uma nova chave.

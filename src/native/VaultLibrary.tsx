@@ -144,6 +144,7 @@ export function VaultLibrary({
   onOpeningRecoverySetupShown,
   onOfferClosed,
   onUnfinishedRecoveryKey,
+  onUnfinishedHandover,
   canPrint = false,
   keyboardHints = true,
   computer = true,
@@ -189,6 +190,8 @@ export function VaultLibrary({
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
+  /** A handover's key is shown and unused (true), or the handover ended (false). */
+  onUnfinishedHandover?: (unfinished: boolean) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
   /** Whether to show keyboard-only instructions (Tab, Escape): false on
@@ -2694,6 +2697,10 @@ export function VaultLibrary({
               bridge={bridge}
               people={people}
               sizesIn1024s={sizesIn1024s}
+              // On a phone, leaving myCarlos to paste the key elsewhere locks the
+              // vault and ends the key: no Copy there.
+              canCopy={keyboardHints}
+              onUnfinished={onUnfinishedHandover}
               onClose={() => setHandover(null)}
               onLocked={() => {
                 setHandover(null);

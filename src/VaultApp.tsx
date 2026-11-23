@@ -69,6 +69,10 @@ import {
 } from "./native/unfinishedRecoveryKey";
 import { rememberOldBackupsGuide } from "./native/oldBackups";
 import {
+  rememberUnfinishedHandover,
+  takeUnfinishedHandover,
+} from "./native/unfinishedHandover";
+import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
   persistAutoLockMinutes,
@@ -395,6 +399,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     pendingOutcomeRef.current = null;
     rememberUnfinishedRecoveryKey(null);
     rememberOldBackupsGuide(null);
+    rememberUnfinishedHandover(false);
   };
 
   // Taken as a vault opens: what happened while it was locked, and how a
@@ -435,6 +440,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           )
         : null;
     pendingOutcomeRef.current = null;
+    // A handover whose key was shown when the lock fell: the key opens nothing now.
+    if (takeUnfinishedHandover())
+      return joinText(
+        outcome,
+        deferredText(() => t("handover.unfinished")),
+      );
     return outcome || null;
   };
 
@@ -1838,6 +1849,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
         onOfferClosed={offerClosed}
         onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
+        onUnfinishedHandover={rememberUnfinishedHandover}
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         computer={DESKTOP_PLATFORMS.has(platform)}

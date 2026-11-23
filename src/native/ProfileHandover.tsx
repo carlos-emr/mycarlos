@@ -7,6 +7,7 @@ import {
 } from "react";
 import { useI18n } from "../i18n";
 import { SecretInput } from "./SecretInput";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { useModalFocus } from "../useModalFocus";
 import { formatFileSize } from "./recordPresentation";
 import {
@@ -34,11 +35,17 @@ function HandoverDialog({
   title,
   stepKey,
   locked,
+  describedBy,
+  onEscape,
   onClose,
   children,
 }: {
   titleId: string;
   title: string;
+  /** What describes the dialog to a screen reader, when it does more than its heading. */
+  describedBy?: string;
+  /** What Escape does while it is `locked` (the key step asks whether to leave). */
+  onEscape?: () => void;
   /** Changes with the step: the heading takes focus again. */
   stepKey: string;
   /** A key is shown, or work is under way: outside clicks and Escape do not close. */
@@ -48,7 +55,11 @@ function HandoverDialog({
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
-  useModalFocus(true, dialogRef, locked ? () => undefined : onClose);
+  useModalFocus(
+    true,
+    dialogRef,
+    locked ? (onEscape ?? (() => undefined)) : onClose,
+  );
   useEffect(() => {
     headingRef.current?.focus();
   }, [stepKey]);
@@ -64,6 +75,7 @@ function HandoverDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={describedBy}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog-head">
@@ -94,18 +106,28 @@ export function ProfileExportDialog({
   bridge,
   people,
   sizesIn1024s,
+  canCopy = true,
   onClose,
   onLocked,
+  onUnfinished,
 }: {
   bridge: ExportBridge;
   /** The people that can be handed over: not Shared with me. */
   people: PatientProfile[];
   sizesIn1024s?: boolean;
+  /** Whether the key can be copied: not on a phone, where leaving myCarlos to paste it
+   * elsewhere locks the vault and ends the key. */
+  canCopy?: boolean;
   onClose: () => void;
   /** The vault turned out to be locked. */
   onLocked: () => void;
+  /** A key is shown and not yet used (true), or the handover ended by the patient's own
+   * choice or by saving the file (false). A lock leaves it true, so the next unlock says
+   * that the key opens nothing. */
+  onUnfinished?: (unfinished: boolean) => void;
 }) {
   const { t } = useI18n();
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [step, setStep] = useState<"choose" | "key" | "save" | "done">(
     "choose",
   );
@@ -124,8 +146,35 @@ export function ProfileExportDialog({
 
   const fail = (failure: unknown) => {
     if (isLockedError(failure)) onLocked();
+    else if (hasVaultErrorCode(failure, "weak_passphrase"))
+      setError(t("handover.export.error.weak"));
     else setError(vaultErrorMessage(failure));
   };
+
+  // The patient's own end of the handover: nothing is left unfinished.
+  const finish = () => {
+    onUnfinished?.(false);
+    onClose();
+  };
+
+  // The key copied is taken off the clipboard again after a minute, if nothing
+  // else has been copied since (it is not read otherwise), and when the dialog
+  // ends. Where the clipboard cannot be read, it is left alone.
+  const clipboardKey = useRef<string | null>(null);
+  const clipboardTimer = useRef(0);
+  const clearClipboard = () => {
+    window.clearTimeout(clipboardTimer.current);
+    const key = clipboardKey.current;
+    clipboardKey.current = null;
+    if (!key) return;
+    void navigator.clipboard
+      .readText()
+      .then((now) =>
+        now === key ? navigator.clipboard.writeText("") : undefined,
+      )
+      .catch(() => undefined);
+  };
+  useEffect(() => clearClipboard, []);
 
   const prepare = async (event: FormEvent) => {
     event.preventDefault();
@@ -142,6 +191,8 @@ export function ProfileExportDialog({
       setPrepared(result);
       setAcknowledged(false);
       setCopied("");
+      // A key on screen is unfinished until a file is saved or the patient leaves.
+      if (result.generatedKey) onUnfinished?.(true);
       setStep(result.generatedKey ? "key" : "save");
     } catch (failure) {
       fail(failure);
@@ -154,6 +205,9 @@ export function ProfileExportDialog({
     if (!prepared?.generatedKey) return;
     try {
       await navigator.clipboard.writeText(prepared.generatedKey);
+      clipboardKey.current = prepared.generatedKey;
+      window.clearTimeout(clipboardTimer.current);
+      clipboardTimer.current = window.setTimeout(clearClipboard, 60_000);
       setCopied("yes");
     } catch {
       setCopied("no");
@@ -171,6 +225,13 @@ export function ProfileExportDialog({
         localDateText(new Date()),
       );
     } catch (failure) {
+      // The preparation is gone (it expired, or the picker failed after it was
+      // spent): back to the start, for a new key, never a dead end.
+      if (!isLockedError(failure)) {
+        clearClipboard();
+        setPrepared(null);
+        setStep("choose");
+      }
       fail(failure);
       return;
     }
@@ -183,10 +244,13 @@ export function ProfileExportDialog({
       setSaved(await bridge.saveProfileExportToPicked(pickId));
       // The key is not kept on screen once the file is written.
       setPrepared(null);
+      clearClipboard();
+      onUnfinished?.(false);
       setStep("done");
     } catch (failure) {
       // A destination spends the preparation: a new try makes a new key.
       setPrepared(null);
+      clearClipboard();
       setStep("choose");
       fail(failure);
     } finally {
@@ -210,8 +274,26 @@ export function ProfileExportDialog({
       title={title}
       stepKey={step}
       locked={step === "key" || busy !== ""}
-      onClose={onClose}
+      describedBy={step === "key" ? "handover-key-about" : undefined}
+      onEscape={
+        step === "key" && busy === "" ? () => setConfirmLeave(true) : undefined
+      }
+      onClose={finish}
     >
+      {confirmLeave && (
+        <ConfirmDialog
+          title={t("handover.export.leave.title")}
+          confirmLabel={t("handover.export.leave.confirm")}
+          danger
+          onConfirm={() => {
+            setConfirmLeave(false);
+            finish();
+          }}
+          onCancel={() => setConfirmLeave(false)}
+        >
+          {t("handover.export.leave.body")}
+        </ConfirmDialog>
+      )}
       {step === "choose" && (
         <form onSubmit={(event) => void prepare(event)}>
           <p>{t("handover.export.about")}</p>
@@ -278,7 +360,7 @@ export function ProfileExportDialog({
           )}
           {error && <p role="alert">{error}</p>}
           <footer className="dialog-actions">
-            <button className="button" type="button" onClick={onClose}>
+            <button className="button" type="button" onClick={finish}>
               {t("common.cancel")}
             </button>
             <button
@@ -318,19 +400,27 @@ export function ProfileExportDialog({
               </li>
             ))}
           </ol>
-          <p>
-            <button
-              className="button"
-              type="button"
-              onClick={() => void copy()}
-            >
-              {t("handover.export.copy")}
-            </button>
-          </p>
-          <p role="status">
-            {copied === "yes" && t("handover.export.copied")}
-            {copied === "no" && t("handover.export.copyFailed")}
-          </p>
+          {canCopy ? (
+            <>
+              <p>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => void copy()}
+                >
+                  {t("handover.export.copy")}
+                </button>
+              </p>
+              <p role="status">
+                {copied === "yes" && t("handover.export.copied")}
+                {copied === "no" && t("handover.export.copyFailed")}
+              </p>
+            </>
+          ) : (
+            // On a phone, leaving myCarlos to paste the key elsewhere locks the
+            // vault and ends the key: no Copy, and the patient is told why.
+            <p>{t("handover.export.leavingWarning")}</p>
+          )}
           <label className="restore-choice">
             <input
               type="checkbox"
@@ -340,6 +430,13 @@ export function ProfileExportDialog({
             {t("handover.export.keySaved")}
           </label>
           <footer className="dialog-actions">
+            <button
+              className="button"
+              type="button"
+              onClick={() => setConfirmLeave(true)}
+            >
+              {t("common.cancel")}
+            </button>
             <button
               className="button primary"
               type="button"
@@ -369,7 +466,7 @@ export function ProfileExportDialog({
               className="button"
               type="button"
               disabled={busy !== ""}
-              onClick={onClose}
+              onClick={finish}
             >
               {t("common.cancel")}
             </button>
@@ -391,7 +488,7 @@ export function ProfileExportDialog({
         <>
           <p role="status">
             {t("handover.export.done", {
-              documents: summary?.documents ?? 0,
+              count: summary?.documents ?? 0,
               name: person?.displayName ?? "",
             })}
           </p>
@@ -409,7 +506,7 @@ export function ProfileExportDialog({
           )}
           <p>{t("handover.export.doneApart")}</p>
           <footer className="dialog-actions">
-            <button className="button primary" type="button" onClick={onClose}>
+            <button className="button primary" type="button" onClick={finish}>
               {t("handover.close")}
             </button>
           </footer>
@@ -771,7 +868,7 @@ export function ProfileImportDialog({
             <>
               <p role="status">
                 {t("handover.import.done", {
-                  documents: outcome.documents,
+                  count: outcome.documents,
                   name: name.trim() || preview?.displayName || "",
                 })}
               </p>

@@ -2162,7 +2162,7 @@ handover-export-keyGroup = 第 { $number } 組：{ $characters }
 
 handover-export-copy = 複製金鑰
 
-handover-export-copied = 金鑰已複製。用完後請清空剪貼簿。
+handover-export-copied = 金鑰已複製。如果期間沒有複製其他內容，一分鐘後會從剪貼簿中清除。
 
 handover-export-copyFailed = 無法複製金鑰，請改為手寫記下。
 
@@ -2184,7 +2184,7 @@ handover-export-noLocation = 未選擇位置，沒有儲存任何內容。
 
 handover-export-doneTitle = 檔案已儲存
 
-handover-export-done = 已為 { $name } 儲存 { $documents } 份文件，並重新讀取檔案進行了檢查。
+handover-export-done = 已為 { $name } 儲存 { $count } 份文件，並重新讀取檔案進行了檢查。
 
 handover-export-doneApart = 請把檔案和金鑰分開保管。此檔案不會改變您的保險庫。
 
@@ -2248,9 +2248,9 @@ handover-import-evidenceNote = 部分文件附有診所的簽章送達記錄。�
 
 handover-import-duplicate-legend = 您可能已經有這個人
 
-handover-import-duplicate-package = 此檔案沒有新內容：同一個檔案已經新增過了。
+handover-import-duplicate-package = 您已經在這裡新增過這個檔案了。
 
-handover-import-duplicate-content = 檔案聲稱包含與您在此處另一個人下已有的 { $count } 份文件相同的文件。
+handover-import-duplicate-content = 此檔案中有 { $count } 份文件與您在此處另一個人下已有的文件內容完全相同。
 
 handover-import-duplicate-anyway = 仍然新增為另一個人
 
@@ -2262,7 +2262,7 @@ handover-import-adding = 正在新增並檢查記錄…
 
 handover-import-doneTitle = 完成
 
-handover-import-done = 已為 { $name } 新增 { $documents } 份文件。
+handover-import-done = 已為 { $name } 新增 { $count } 份文件。
 
 handover-import-doneAnswers = 隨文件一起到來的 AI 助手回答，已標記為來自匯入的檔案：{ $count }
 
@@ -2272,8 +2272,21 @@ handover-import-doneDropped = 因不符合此保險庫的規則而未包含的�
 
 handover-import-receipt = 回執碼：
 
-handover-import-receiptNote = 您可以把這個代碼告訴製作檔案的人。它說明有人拿著檔案和金鑰把它新增到了這裡，但並不說明您的副本仍然安全。
+handover-import-receiptNote = 您可以把這個代碼告訴製作檔案的人。它說明有人拿著檔案和金鑰開啟了整個檔案並從頭讀完，但並不說明這些記錄已被新增到某處，也不說明您的副本仍然安全。
 
 handover-import-nothingNew = 沒有新增任何內容：此保險庫已經有這個人。
 
 handover-importedAnswer = 來自匯入的檔案
+
+handover-export-leavingWarning = 顯示此金鑰時請留在 myCarlos 中。切換到其他應用程式會鎖定您的保險庫，此金鑰也會失效：您需要重新開始並取得新的金鑰。
+
+handover-export-leave-title = 不儲存檔案就離開嗎？
+
+handover-export-leave-body = 尚未儲存任何檔案。此畫面上的金鑰將失效，請不要把它交給任何人。若要移交記錄，請重新開始，您會得到新的金鑰。
+
+handover-export-leave-confirm = 離開
+
+
+handover-export-error-weak = 無法使用該口令。它可能太容易被猜到、包含此人的姓名，或與您保險庫的口令或復原金鑰太相似。請換一個。
+
+handover-unfinished = 有一次移交沒有完成。您複製或記下的任何金鑰都無法開啟任何內容。若要移交記錄，請重新開始以取得新的金鑰。
