@@ -5,6 +5,8 @@ pub const FORMATTING_FAILURE_EN: &str =
 pub enum MessageId {
     AiErrorBusy,
     AiErrorMemory,
+    AiErrorMemoryNumbers,
+    AiErrorMemoryUnknown,
     AiErrorStorage,
     AiExplainBox,
     AiExplainHint,
@@ -75,6 +77,17 @@ pub enum MessageId {
     AiPreferencesTitle,
     AiResultMeta,
     AiSettingsSubtitle,
+    AiSpeedButton,
+    AiSpeedCancel,
+    AiSpeedCancelled,
+    AiSpeedEstimate,
+    AiSpeedEstimateLong,
+    AiSpeedFailed,
+    AiSpeedNone,
+    AiSpeedNote,
+    AiSpeedResult,
+    AiSpeedTitle,
+    AiSpeedWorking,
     AiSummaryAgain,
     AiSummaryButton,
     AiSummaryEnglishOnly,
@@ -208,6 +221,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewMovedDate,
     InterfaceAnonymizePreviewNoteAgeOver90,
     InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewNoteOtherForm,
     InterfaceAnonymizePreviewPasteAllMatched,
     InterfaceAnonymizePreviewPasteButton,
     InterfaceAnonymizePreviewPasteFlagged,
@@ -307,6 +321,54 @@ pub enum MessageId {
     InterfaceRecordDetailsThisDocumentIsUnavailable,
     InterfaceRecordDetailsUnlock,
     InterfaceRecordDetailsViewPhoto,
+    InterfaceRecordDialogAboutHighPerHour,
+    InterfaceRecordDialogAboutStandardPerHour,
+    InterfaceRecordDialogHigh,
+    InterfaceRecordDialogKeepRecording,
+    InterfaceRecordDialogNothingWasRecorded,
+    InterfaceRecordDialogPauseRecording,
+    InterfaceRecordDialogPaused,
+    InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
+    InterfaceRecordDialogPictureQuality,
+    InterfaceRecordDialogRecordAVideo,
+    InterfaceRecordDialogRecorded,
+    InterfaceRecordDialogRecording,
+    InterfaceRecordDialogRecordingAt,
+    InterfaceRecordDialogRecordingPaused,
+    InterfaceRecordDialogRecordingResumed,
+    InterfaceRecordDialogResumeRecording,
+    InterfaceRecordDialogSavingTheVideo,
+    InterfaceRecordDialogStandard,
+    InterfaceRecordDialogStartRecording,
+    InterfaceRecordDialogStartingTheCameraAndMicrophone,
+    InterfaceRecordDialogStopAndSave,
+    InterfaceRecordDialogStopAndSaveTheVideo,
+    InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
+    InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
+    InterfaceRecordDialogTheVideoIsRecordedWithSound,
+    InterfaceRecordDialogThisDeviceCannotRecordMp4,
+    InterfaceRecordDialogUnavailable,
+    InterfaceRecordDialogUseTheCameraAndMicrophone,
+    InterfaceRecordDialogVideoNeedsBoth,
+    InterfaceRecordDialogVideoSaved,
+    InterfaceRecordDialogVideoSavedFailed,
+    InterfaceRecordDialogVideoSavedHidden,
+    InterfaceRecordDialogVideoSavedSlow,
+    InterfaceRecordDialogVideoSavedStopped,
+    InterfaceRecordDialogWhy,
+    InterfaceRecordDialogYourPhoneAsksOnce,
+    InterfaceRecordingRecoveryAskLater,
+    InterfaceRecordingRecoveryClosed,
+    InterfaceRecordingRecoveryClosedPaused,
+    InterfaceRecordingRecoveryDelete,
+    InterfaceRecordingRecoveryDeleteSure,
+    InterfaceRecordingRecoveryDeleted,
+    InterfaceRecordingRecoveryKeep,
+    InterfaceRecordingRecoveryKept,
+    InterfaceRecordingRecoveryName,
+    InterfaceRecordingRecoveryNothingToKeep,
+    InterfaceRecordingRecoverySavedLocked,
+    InterfaceRecordingRecoverySavedLockedPaused,
     InterfaceSecuritySettingsEvaluationBuild,
     InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
     InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -387,6 +449,15 @@ pub enum MessageId {
     InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
     InterfaceVaultLibraryTopLevel,
     InterfaceVaultLibraryWorking,
+    InterfaceVideoHelpEngine,
+    InterfaceVideoHelpRestWorks,
+    InterfaceVideoHelpSystems,
+    InterfaceVideoHelpTitle,
+    InterfaceVideoViewerKeys,
+    InterfaceVideoViewerPlayVideo,
+    InterfaceVideoViewerPlayer,
+    InterfaceVideoViewerThisVideoCouldNotBePlayed,
+    InterfaceVideoViewerVideo,
     InterfaceCameraDenied,
     InterfaceCountDocuments,
     InterfaceCountFolders,
@@ -552,6 +623,7 @@ pub enum MessageId {
     InterfaceTabWithNew,
     InterfaceUnfinishedRecoveryKeyRecoveryKeySetupEndedWhenTheVault,
     InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup,
+    InterfaceVideoName,
     KitKeep,
     KitLabelNote,
     KitLabelPrinted,
@@ -1059,6 +1131,8 @@ impl MessageId {
     pub const ALL: &'static [Self] = &[
         Self::AiErrorBusy,
         Self::AiErrorMemory,
+        Self::AiErrorMemoryNumbers,
+        Self::AiErrorMemoryUnknown,
         Self::AiErrorStorage,
         Self::AiExplainBox,
         Self::AiExplainHint,
@@ -1129,6 +1203,17 @@ impl MessageId {
         Self::AiPreferencesTitle,
         Self::AiResultMeta,
         Self::AiSettingsSubtitle,
+        Self::AiSpeedButton,
+        Self::AiSpeedCancel,
+        Self::AiSpeedCancelled,
+        Self::AiSpeedEstimate,
+        Self::AiSpeedEstimateLong,
+        Self::AiSpeedFailed,
+        Self::AiSpeedNone,
+        Self::AiSpeedNote,
+        Self::AiSpeedResult,
+        Self::AiSpeedTitle,
+        Self::AiSpeedWorking,
         Self::AiSummaryAgain,
         Self::AiSummaryButton,
         Self::AiSummaryEnglishOnly,
@@ -1262,6 +1347,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewMovedDate,
         Self::InterfaceAnonymizePreviewNoteAgeOver90,
         Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewNoteOtherForm,
         Self::InterfaceAnonymizePreviewPasteAllMatched,
         Self::InterfaceAnonymizePreviewPasteButton,
         Self::InterfaceAnonymizePreviewPasteFlagged,
@@ -1361,6 +1447,54 @@ impl MessageId {
         Self::InterfaceRecordDetailsThisDocumentIsUnavailable,
         Self::InterfaceRecordDetailsUnlock,
         Self::InterfaceRecordDetailsViewPhoto,
+        Self::InterfaceRecordDialogAboutHighPerHour,
+        Self::InterfaceRecordDialogAboutStandardPerHour,
+        Self::InterfaceRecordDialogHigh,
+        Self::InterfaceRecordDialogKeepRecording,
+        Self::InterfaceRecordDialogNothingWasRecorded,
+        Self::InterfaceRecordDialogPauseRecording,
+        Self::InterfaceRecordDialogPaused,
+        Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn,
+        Self::InterfaceRecordDialogPictureQuality,
+        Self::InterfaceRecordDialogRecordAVideo,
+        Self::InterfaceRecordDialogRecorded,
+        Self::InterfaceRecordDialogRecording,
+        Self::InterfaceRecordDialogRecordingAt,
+        Self::InterfaceRecordDialogRecordingPaused,
+        Self::InterfaceRecordDialogRecordingResumed,
+        Self::InterfaceRecordDialogResumeRecording,
+        Self::InterfaceRecordDialogSavingTheVideo,
+        Self::InterfaceRecordDialogStandard,
+        Self::InterfaceRecordDialogStartRecording,
+        Self::InterfaceRecordDialogStartingTheCameraAndMicrophone,
+        Self::InterfaceRecordDialogStopAndSave,
+        Self::InterfaceRecordDialogStopAndSaveTheVideo,
+        Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
+        Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
+        Self::InterfaceRecordDialogTheVideoIsRecordedWithSound,
+        Self::InterfaceRecordDialogThisDeviceCannotRecordMp4,
+        Self::InterfaceRecordDialogUnavailable,
+        Self::InterfaceRecordDialogUseTheCameraAndMicrophone,
+        Self::InterfaceRecordDialogVideoNeedsBoth,
+        Self::InterfaceRecordDialogVideoSaved,
+        Self::InterfaceRecordDialogVideoSavedFailed,
+        Self::InterfaceRecordDialogVideoSavedHidden,
+        Self::InterfaceRecordDialogVideoSavedSlow,
+        Self::InterfaceRecordDialogVideoSavedStopped,
+        Self::InterfaceRecordDialogWhy,
+        Self::InterfaceRecordDialogYourPhoneAsksOnce,
+        Self::InterfaceRecordingRecoveryAskLater,
+        Self::InterfaceRecordingRecoveryClosed,
+        Self::InterfaceRecordingRecoveryClosedPaused,
+        Self::InterfaceRecordingRecoveryDelete,
+        Self::InterfaceRecordingRecoveryDeleteSure,
+        Self::InterfaceRecordingRecoveryDeleted,
+        Self::InterfaceRecordingRecoveryKeep,
+        Self::InterfaceRecordingRecoveryKept,
+        Self::InterfaceRecordingRecoveryName,
+        Self::InterfaceRecordingRecoveryNothingToKeep,
+        Self::InterfaceRecordingRecoverySavedLocked,
+        Self::InterfaceRecordingRecoverySavedLockedPaused,
         Self::InterfaceSecuritySettingsEvaluationBuild,
         Self::InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
         Self::InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -1441,6 +1575,15 @@ impl MessageId {
         Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
         Self::InterfaceVaultLibraryTopLevel,
         Self::InterfaceVaultLibraryWorking,
+        Self::InterfaceVideoHelpEngine,
+        Self::InterfaceVideoHelpRestWorks,
+        Self::InterfaceVideoHelpSystems,
+        Self::InterfaceVideoHelpTitle,
+        Self::InterfaceVideoViewerKeys,
+        Self::InterfaceVideoViewerPlayVideo,
+        Self::InterfaceVideoViewerPlayer,
+        Self::InterfaceVideoViewerThisVideoCouldNotBePlayed,
+        Self::InterfaceVideoViewerVideo,
         Self::InterfaceCameraDenied,
         Self::InterfaceCountDocuments,
         Self::InterfaceCountFolders,
@@ -1606,6 +1749,7 @@ impl MessageId {
         Self::InterfaceTabWithNew,
         Self::InterfaceUnfinishedRecoveryKeyRecoveryKeySetupEndedWhenTheVault,
         Self::InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup,
+        Self::InterfaceVideoName,
         Self::KitKeep,
         Self::KitLabelNote,
         Self::KitLabelPrinted,
@@ -2113,6 +2257,8 @@ impl MessageId {
         match self {
             Self::AiErrorBusy => "ai-error-busy",
             Self::AiErrorMemory => "ai-error-memory",
+            Self::AiErrorMemoryNumbers => "ai-error-memoryNumbers",
+            Self::AiErrorMemoryUnknown => "ai-error-memoryUnknown",
             Self::AiErrorStorage => "ai-error-storage",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
@@ -2183,6 +2329,17 @@ impl MessageId {
             Self::AiPreferencesTitle => "ai-preferences-title",
             Self::AiResultMeta => "ai-result-meta",
             Self::AiSettingsSubtitle => "ai-settings-subtitle",
+            Self::AiSpeedButton => "ai-speed-button",
+            Self::AiSpeedCancel => "ai-speed-cancel",
+            Self::AiSpeedCancelled => "ai-speed-cancelled",
+            Self::AiSpeedEstimate => "ai-speed-estimate",
+            Self::AiSpeedEstimateLong => "ai-speed-estimateLong",
+            Self::AiSpeedFailed => "ai-speed-failed",
+            Self::AiSpeedNone => "ai-speed-none",
+            Self::AiSpeedNote => "ai-speed-note",
+            Self::AiSpeedResult => "ai-speed-result",
+            Self::AiSpeedTitle => "ai-speed-title",
+            Self::AiSpeedWorking => "ai-speed-working",
             Self::AiSummaryAgain => "ai-summary-again",
             Self::AiSummaryButton => "ai-summary-button",
             Self::AiSummaryEnglishOnly => "ai-summary-englishOnly",
@@ -2331,6 +2488,9 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewNoteDaysAfter => {
                 "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewNoteOtherForm => {
+                "interface-AnonymizePreview-note-otherForm"
             }
             Self::InterfaceAnonymizePreviewPasteAllMatched => {
                 "interface-AnonymizePreview-pasteAllMatched"
@@ -2529,6 +2689,94 @@ impl MessageId {
             }
             Self::InterfaceRecordDetailsUnlock => "interface-RecordDetails-unlock",
             Self::InterfaceRecordDetailsViewPhoto => "interface-RecordDetails-viewPhoto",
+            Self::InterfaceRecordDialogAboutHighPerHour => {
+                "interface-RecordDialog-aboutHighPerHour"
+            }
+            Self::InterfaceRecordDialogAboutStandardPerHour => {
+                "interface-RecordDialog-aboutStandardPerHour"
+            }
+            Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
+            Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
+            Self::InterfaceRecordDialogNothingWasRecorded => {
+                "interface-RecordDialog-nothingWasRecorded"
+            }
+            Self::InterfaceRecordDialogPauseRecording => "interface-RecordDialog-pauseRecording",
+            Self::InterfaceRecordDialogPaused => "interface-RecordDialog-paused",
+            Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn => {
+                "interface-RecordDialog-pausedCameraAndMicrophoneStillOn"
+            }
+            Self::InterfaceRecordDialogPictureQuality => "interface-RecordDialog-pictureQuality",
+            Self::InterfaceRecordDialogRecordAVideo => "interface-RecordDialog-recordAVideo",
+            Self::InterfaceRecordDialogRecorded => "interface-RecordDialog-recorded",
+            Self::InterfaceRecordDialogRecording => "interface-RecordDialog-recording",
+            Self::InterfaceRecordDialogRecordingAt => "interface-RecordDialog-recordingAt",
+            Self::InterfaceRecordDialogRecordingPaused => "interface-RecordDialog-recordingPaused",
+            Self::InterfaceRecordDialogRecordingResumed => {
+                "interface-RecordDialog-recordingResumed"
+            }
+            Self::InterfaceRecordDialogResumeRecording => "interface-RecordDialog-resumeRecording",
+            Self::InterfaceRecordDialogSavingTheVideo => "interface-RecordDialog-savingTheVideo",
+            Self::InterfaceRecordDialogStandard => "interface-RecordDialog-standard",
+            Self::InterfaceRecordDialogStartRecording => "interface-RecordDialog-startRecording",
+            Self::InterfaceRecordDialogStartingTheCameraAndMicrophone => {
+                "interface-RecordDialog-startingTheCameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogStopAndSave => "interface-RecordDialog-stopAndSave",
+            Self::InterfaceRecordDialogStopAndSaveTheVideo => {
+                "interface-RecordDialog-stopAndSaveTheVideo"
+            }
+            Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn => {
+                "interface-RecordDialog-theCameraAndMicrophoneAreOn"
+            }
+            Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow => {
+                "interface-RecordDialog-theCameraAndMicrophoneAreOnNow"
+            }
+            Self::InterfaceRecordDialogTheVideoIsRecordedWithSound => {
+                "interface-RecordDialog-theVideoIsRecordedWithSound"
+            }
+            Self::InterfaceRecordDialogThisDeviceCannotRecordMp4 => {
+                "interface-RecordDialog-thisDeviceCannotRecordMp4"
+            }
+            Self::InterfaceRecordDialogUnavailable => "interface-RecordDialog-unavailable",
+            Self::InterfaceRecordDialogUseTheCameraAndMicrophone => {
+                "interface-RecordDialog-useTheCameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogVideoNeedsBoth => "interface-RecordDialog-videoNeedsBoth",
+            Self::InterfaceRecordDialogVideoSaved => "interface-RecordDialog-videoSaved",
+            Self::InterfaceRecordDialogVideoSavedFailed => {
+                "interface-RecordDialog-videoSavedFailed"
+            }
+            Self::InterfaceRecordDialogVideoSavedHidden => {
+                "interface-RecordDialog-videoSavedHidden"
+            }
+            Self::InterfaceRecordDialogVideoSavedSlow => "interface-RecordDialog-videoSavedSlow",
+            Self::InterfaceRecordDialogVideoSavedStopped => {
+                "interface-RecordDialog-videoSavedStopped"
+            }
+            Self::InterfaceRecordDialogWhy => "interface-RecordDialog-why",
+            Self::InterfaceRecordDialogYourPhoneAsksOnce => {
+                "interface-RecordDialog-yourPhoneAsksOnce"
+            }
+            Self::InterfaceRecordingRecoveryAskLater => "interface-RecordingRecovery-askLater",
+            Self::InterfaceRecordingRecoveryClosed => "interface-RecordingRecovery-closed",
+            Self::InterfaceRecordingRecoveryClosedPaused => {
+                "interface-RecordingRecovery-closedPaused"
+            }
+            Self::InterfaceRecordingRecoveryDelete => "interface-RecordingRecovery-delete",
+            Self::InterfaceRecordingRecoveryDeleteSure => "interface-RecordingRecovery-deleteSure",
+            Self::InterfaceRecordingRecoveryDeleted => "interface-RecordingRecovery-deleted",
+            Self::InterfaceRecordingRecoveryKeep => "interface-RecordingRecovery-keep",
+            Self::InterfaceRecordingRecoveryKept => "interface-RecordingRecovery-kept",
+            Self::InterfaceRecordingRecoveryName => "interface-RecordingRecovery-name",
+            Self::InterfaceRecordingRecoveryNothingToKeep => {
+                "interface-RecordingRecovery-nothingToKeep"
+            }
+            Self::InterfaceRecordingRecoverySavedLocked => {
+                "interface-RecordingRecovery-savedLocked"
+            }
+            Self::InterfaceRecordingRecoverySavedLockedPaused => {
+                "interface-RecordingRecovery-savedLockedPaused"
+            }
             Self::InterfaceSecuritySettingsEvaluationBuild => {
                 "interface-SecuritySettings-evaluationBuild"
             }
@@ -2711,6 +2959,17 @@ impl MessageId {
             }
             Self::InterfaceVaultLibraryTopLevel => "interface-VaultLibrary-topLevel",
             Self::InterfaceVaultLibraryWorking => "interface-VaultLibrary-working",
+            Self::InterfaceVideoHelpEngine => "interface-VideoHelp-engine",
+            Self::InterfaceVideoHelpRestWorks => "interface-VideoHelp-restWorks",
+            Self::InterfaceVideoHelpSystems => "interface-VideoHelp-systems",
+            Self::InterfaceVideoHelpTitle => "interface-VideoHelp-title",
+            Self::InterfaceVideoViewerKeys => "interface-VideoViewer-keys",
+            Self::InterfaceVideoViewerPlayVideo => "interface-VideoViewer-playVideo",
+            Self::InterfaceVideoViewerPlayer => "interface-VideoViewer-player",
+            Self::InterfaceVideoViewerThisVideoCouldNotBePlayed => {
+                "interface-VideoViewer-thisVideoCouldNotBePlayed"
+            }
+            Self::InterfaceVideoViewerVideo => "interface-VideoViewer-video",
             Self::InterfaceCameraDenied => "interface-camera-denied",
             Self::InterfaceCountDocuments => "interface-count-documents",
             Self::InterfaceCountFolders => "interface-count-folders",
@@ -2938,6 +3197,7 @@ impl MessageId {
             Self::InterfaceUnfinishedRecoveryKeyYourRecoveryKeyWasNotReplacedSetup => {
                 "interface-unfinishedRecoveryKey-yourRecoveryKeyWasNotReplacedSetup"
             }
+            Self::InterfaceVideoName => "interface-video-name",
             Self::KitKeep => "kit-keep",
             Self::KitLabelNote => "kit-labelNote",
             Self::KitLabelPrinted => "kit-labelPrinted",
@@ -4566,6 +4826,19 @@ impl MessageId {
             "ai.explain.ready" => Some(Self::AiExplainReady),
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
+            "ai.speed.title" => Some(Self::AiSpeedTitle),
+            "ai.speed.note" => Some(Self::AiSpeedNote),
+            "ai.speed.button" => Some(Self::AiSpeedButton),
+            "ai.speed.working" => Some(Self::AiSpeedWorking),
+            "ai.speed.cancel" => Some(Self::AiSpeedCancel),
+            "ai.speed.result" => Some(Self::AiSpeedResult),
+            "ai.speed.cancelled" => Some(Self::AiSpeedCancelled),
+            "ai.speed.none" => Some(Self::AiSpeedNone),
+            "ai.speed.failed" => Some(Self::AiSpeedFailed),
+            "ai.speed.estimate" => Some(Self::AiSpeedEstimate),
+            "ai.speed.estimateLong" => Some(Self::AiSpeedEstimateLong),
+            "ai.error.memoryNumbers" => Some(Self::AiErrorMemoryNumbers),
+            "ai.error.memoryUnknown" => Some(Self::AiErrorMemoryUnknown),
             "ai.error.busy" => Some(Self::AiErrorBusy),
             "ai.error.storage" => Some(Self::AiErrorStorage),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
@@ -4754,6 +5027,9 @@ impl MessageId {
             "interface.AnonymizePreview.note.ageOver90" => {
                 Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
             }
+            "interface.AnonymizePreview.note.otherForm" => {
+                Some(Self::InterfaceAnonymizePreviewNoteOtherForm)
+            }
             "interface.AnonymizePreview.pasteTitle" => {
                 Some(Self::InterfaceAnonymizePreviewPasteTitle)
             }
@@ -4872,6 +5148,128 @@ impl MessageId {
             "personDetails.previousRemove" => Some(Self::PersonDetailsPreviousRemove),
             "personDetails.previousAdd" => Some(Self::PersonDetailsPreviousAdd),
             "personDetails.previousInvalid" => Some(Self::PersonDetailsPreviousInvalid),
+            "interface.video.name" => Some(Self::InterfaceVideoName),
+            "interface.RecordDialog.recordAVideo" => Some(Self::InterfaceRecordDialogRecordAVideo),
+            "interface.RecordDialog.unavailable" => Some(Self::InterfaceRecordDialogUnavailable),
+            "interface.RecordDialog.why" => Some(Self::InterfaceRecordDialogWhy),
+            "interface.RecordDialog.startingTheCameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogStartingTheCameraAndMicrophone)
+            }
+            "interface.RecordDialog.theVideoIsRecordedWithSound" => {
+                Some(Self::InterfaceRecordDialogTheVideoIsRecordedWithSound)
+            }
+            "interface.RecordDialog.yourPhoneAsksOnce" => {
+                Some(Self::InterfaceRecordDialogYourPhoneAsksOnce)
+            }
+            "interface.RecordDialog.theCameraAndMicrophoneAreOn" => {
+                Some(Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn)
+            }
+            "interface.RecordDialog.theCameraAndMicrophoneAreOnNow" => {
+                Some(Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow)
+            }
+            "interface.RecordDialog.pictureQuality" => {
+                Some(Self::InterfaceRecordDialogPictureQuality)
+            }
+            "interface.RecordDialog.standard" => Some(Self::InterfaceRecordDialogStandard),
+            "interface.RecordDialog.high" => Some(Self::InterfaceRecordDialogHigh),
+            "interface.RecordDialog.aboutStandardPerHour" => {
+                Some(Self::InterfaceRecordDialogAboutStandardPerHour)
+            }
+            "interface.RecordDialog.aboutHighPerHour" => {
+                Some(Self::InterfaceRecordDialogAboutHighPerHour)
+            }
+            "interface.RecordDialog.useTheCameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogUseTheCameraAndMicrophone)
+            }
+            "interface.RecordDialog.startRecording" => {
+                Some(Self::InterfaceRecordDialogStartRecording)
+            }
+            "interface.RecordDialog.recording" => Some(Self::InterfaceRecordDialogRecording),
+            "interface.RecordDialog.paused" => Some(Self::InterfaceRecordDialogPaused),
+            "interface.RecordDialog.pausedCameraAndMicrophoneStillOn" => {
+                Some(Self::InterfaceRecordDialogPausedCameraAndMicrophoneStillOn)
+            }
+            "interface.RecordDialog.recorded" => Some(Self::InterfaceRecordDialogRecorded),
+            "interface.RecordDialog.recordingAt" => Some(Self::InterfaceRecordDialogRecordingAt),
+            "interface.RecordDialog.pauseRecording" => {
+                Some(Self::InterfaceRecordDialogPauseRecording)
+            }
+            "interface.RecordDialog.resumeRecording" => {
+                Some(Self::InterfaceRecordDialogResumeRecording)
+            }
+            "interface.RecordDialog.stopAndSave" => Some(Self::InterfaceRecordDialogStopAndSave),
+            "interface.RecordDialog.stopAndSaveTheVideo" => {
+                Some(Self::InterfaceRecordDialogStopAndSaveTheVideo)
+            }
+            "interface.RecordDialog.keepRecording" => {
+                Some(Self::InterfaceRecordDialogKeepRecording)
+            }
+            "interface.RecordDialog.savingTheVideo" => {
+                Some(Self::InterfaceRecordDialogSavingTheVideo)
+            }
+            "interface.RecordDialog.recordingPaused" => {
+                Some(Self::InterfaceRecordDialogRecordingPaused)
+            }
+            "interface.RecordDialog.recordingResumed" => {
+                Some(Self::InterfaceRecordDialogRecordingResumed)
+            }
+            "interface.RecordDialog.thisDeviceCannotRecordMp4" => {
+                Some(Self::InterfaceRecordDialogThisDeviceCannotRecordMp4)
+            }
+            "interface.RecordDialog.videoNeedsBoth" => {
+                Some(Self::InterfaceRecordDialogVideoNeedsBoth)
+            }
+            "interface.RecordDialog.nothingWasRecorded" => {
+                Some(Self::InterfaceRecordDialogNothingWasRecorded)
+            }
+            "interface.RecordDialog.videoSaved" => Some(Self::InterfaceRecordDialogVideoSaved),
+            "interface.RecordDialog.videoSavedStopped" => {
+                Some(Self::InterfaceRecordDialogVideoSavedStopped)
+            }
+            "interface.RecordDialog.videoSavedHidden" => {
+                Some(Self::InterfaceRecordDialogVideoSavedHidden)
+            }
+            "interface.RecordDialog.videoSavedSlow" => {
+                Some(Self::InterfaceRecordDialogVideoSavedSlow)
+            }
+            "interface.VideoViewer.video" => Some(Self::InterfaceVideoViewerVideo),
+            "interface.VideoViewer.player" => Some(Self::InterfaceVideoViewerPlayer),
+            "interface.VideoViewer.thisVideoCouldNotBePlayed" => {
+                Some(Self::InterfaceVideoViewerThisVideoCouldNotBePlayed)
+            }
+            "interface.VideoViewer.keys" => Some(Self::InterfaceVideoViewerKeys),
+            "interface.VideoViewer.playVideo" => Some(Self::InterfaceVideoViewerPlayVideo),
+            "interface.VideoHelp.title" => Some(Self::InterfaceVideoHelpTitle),
+            "interface.VideoHelp.engine" => Some(Self::InterfaceVideoHelpEngine),
+            "interface.VideoHelp.systems" => Some(Self::InterfaceVideoHelpSystems),
+            "interface.VideoHelp.restWorks" => Some(Self::InterfaceVideoHelpRestWorks),
+            "interface.RecordingRecovery.closed" => Some(Self::InterfaceRecordingRecoveryClosed),
+            "interface.RecordingRecovery.closedPaused" => {
+                Some(Self::InterfaceRecordingRecoveryClosedPaused)
+            }
+            "interface.RecordingRecovery.name" => Some(Self::InterfaceRecordingRecoveryName),
+            "interface.RecordingRecovery.askLater" => {
+                Some(Self::InterfaceRecordingRecoveryAskLater)
+            }
+            "interface.RecordingRecovery.delete" => Some(Self::InterfaceRecordingRecoveryDelete),
+            "interface.RecordingRecovery.keep" => Some(Self::InterfaceRecordingRecoveryKeep),
+            "interface.RecordingRecovery.kept" => Some(Self::InterfaceRecordingRecoveryKept),
+            "interface.RecordingRecovery.nothingToKeep" => {
+                Some(Self::InterfaceRecordingRecoveryNothingToKeep)
+            }
+            "interface.RecordingRecovery.deleted" => Some(Self::InterfaceRecordingRecoveryDeleted),
+            "interface.RecordingRecovery.deleteSure" => {
+                Some(Self::InterfaceRecordingRecoveryDeleteSure)
+            }
+            "interface.RecordingRecovery.savedLocked" => {
+                Some(Self::InterfaceRecordingRecoverySavedLocked)
+            }
+            "interface.RecordingRecovery.savedLockedPaused" => {
+                Some(Self::InterfaceRecordingRecoverySavedLockedPaused)
+            }
+            "interface.RecordDialog.videoSavedFailed" => {
+                Some(Self::InterfaceRecordDialogVideoSavedFailed)
+            }
             _ => None,
         }
     }

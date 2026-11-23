@@ -56,7 +56,7 @@ comfort-continue = Continuar
 
 comfort-intro = Escolha o que for melhor para você antes de configurar. Cada escolha vale na hora.
 
-comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } em { $preferences } e { $autoLock } em { $security }.
+comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } e { $appearance } em { $preferences }, e { $autoLock } em { $security }.
 
 comfort-sample = É assim que o texto aparece no myCarlos. Pressione − ou + até ficar fácil de ler.
 
@@ -2023,6 +2023,19 @@ ai-explain-ready = A explicação está pronta.
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 
 ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
+ai-error-memoryNumbers = Não há memória livre suficiente para o assistente de IA agora. Ele precisa de cerca de { $needed } GB de memória livre; agora há { $free } GB. Feche outros programas e tente de novo.
+ai-error-memoryUnknown = Não há memória livre suficiente para o assistente de IA agora. Ele precisa de cerca de { $needed } GB de memória livre, e este computador não soube dizer quanta há livre. Feche outros programas e tente de novo.
+ai-speed-title = Velocidade neste computador
+ai-speed-note = Isto executa o assistente de IA uma vez sobre um texto inventado e curto, e exige bastante do processador por um ou dois minutos. Não envia nada a lugar nenhum nem usa nada seu. Você pode interromper a qualquer momento.
+ai-speed-button = Verificar a velocidade deste computador
+ai-speed-working = Verificando a velocidade…
+ai-speed-cancel = Interromper a verificação
+ai-speed-result = Medido neste computador: o assistente de IA lê cerca de { $read } palavras por segundo e escreve cerca de { $write }.
+ai-speed-cancelled = A verificação foi interrompida. Nada foi guardado.
+ai-speed-none = Ainda não verificada.
+ai-speed-failed = Não foi possível medir a velocidade. Tente de novo.
+ai-speed-estimate = Neste computador, isto pode levar até cerca de { $minutes } min.
+ai-speed-estimateLong = Neste computador, um documento tão longo pode não terminar no tempo dado ao assistente de IA.
 
 ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
 
@@ -2188,6 +2201,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = outra forma { $n }
 
 interface-AnonymizePreview-pasteTitle = Recolocar os dados
 
@@ -2309,3 +2323,62 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+interface-video-name = Vídeo, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Gravar um vídeo
+interface-RecordDialog-unavailable = A gravação de vídeo não está disponível neste dispositivo.
+interface-RecordDialog-why = Por quê?
+interface-RecordDialog-startingTheCameraAndMicrophone = Iniciando a câmera e o microfone…
+interface-RecordDialog-theVideoIsRecordedWithSound = O vídeo é gravado com som. Pessoas por perto podem ser ouvidas. Só você pode abri-lo.
+interface-RecordDialog-yourPhoneAsksOnce = Seu celular pergunta uma vez se o myCarlos pode usar a câmera e o microfone. Eles ficam ligados só enquanto você grava. Desligam quando você para, fecha esta janela ou o myCarlos bloqueia.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = A câmera e o microfone ficam ligados só enquanto você grava. Desligam quando você para, fecha esta janela ou o myCarlos bloqueia.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = A câmera e o microfone estão ligados, mas nada é gravado até você escolher Iniciar gravação.
+interface-RecordDialog-pictureQuality = Qualidade da imagem
+interface-RecordDialog-standard = Padrão (720p)
+interface-RecordDialog-high = Alta (1080p)
+interface-RecordDialog-aboutStandardPerHour = Cerca de 1,1 GB por hora
+interface-RecordDialog-aboutHighPerHour = Cerca de 2,5 a 4 GB por hora
+interface-RecordDialog-useTheCameraAndMicrophone = Usar a câmera e o microfone
+interface-RecordDialog-startRecording = Iniciar gravação
+interface-RecordDialog-recording = Gravando
+interface-RecordDialog-paused = Em pausa
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = Em pausa. A câmera e o microfone continuam ligados.
+interface-RecordDialog-recorded = Gravado: { $time }
+interface-RecordDialog-recordingAt = Gravando em { $height }p
+interface-RecordDialog-pauseRecording = Pausar gravação
+interface-RecordDialog-resumeRecording = Retomar gravação
+interface-RecordDialog-stopAndSave = Parar e salvar
+interface-RecordDialog-stopAndSaveTheVideo = Parar e salvar o vídeo?
+interface-RecordDialog-keepRecording = Continuar gravando
+interface-RecordDialog-savingTheVideo = Salvando o vídeo…
+interface-RecordDialog-recordingPaused = Gravação em pausa.
+interface-RecordDialog-recordingResumed = Gravação retomada.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = Este dispositivo não consegue gravar vídeo em um formato que o myCarlos possa salvar.
+interface-RecordDialog-videoNeedsBoth = Um vídeo precisa da câmera e do microfone.
+interface-RecordDialog-nothingWasRecorded = Nada foi gravado, então nenhum vídeo foi salvo.
+interface-RecordDialog-videoSaved = Vídeo salvo: { $name }
+interface-RecordDialog-videoSavedStopped = A gravação parou porque o dispositivo informou um problema. O que foi gravado foi salvo: { $name }
+interface-RecordDialog-videoSavedHidden = A gravação parou porque o myCarlos foi ocultado. O que foi gravado foi salvo: { $name }
+interface-RecordDialog-videoSavedSlow = A gravação parou porque o vídeo não pôde ser salvo com rapidez suficiente. O que foi gravado foi salvo: { $name }
+interface-VideoViewer-video = Vídeo
+interface-VideoViewer-player = Player de vídeo: { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = Não foi possível reproduzir este vídeo.
+interface-VideoViewer-keys = A barra de espaço reproduz ou pausa. As setas para a esquerda e para a direita avançam ou voltam { $seconds } segundos. As setas para cima e para baixo mudam o volume. M silencia.
+interface-VideoViewer-playVideo = Reproduzir vídeo
+interface-VideoHelp-title = Por que não consigo gravar vídeo aqui?
+interface-VideoHelp-engine = Gravar vídeo exige que o mecanismo web integrado deste dispositivo grave vídeo MP4 com som. O mecanismo deste dispositivo não oferece isso.
+interface-VideoHelp-systems = No Windows, as edições N e KN deixam de fora os recursos de mídia até você adicionar o Media Feature Pack da Microsoft. No Linux, o myCarlos precisa dos plug-ins do GStreamer dos pacotes gstreamer1.0-plugins-bad e gstreamer1.0-plugins-ugly. Celulares com Android 7 ou anterior e iPhones com iOS anterior ao 14.5 não conseguem gravar vídeo MP4 no app.
+interface-VideoHelp-restWorks = Fotos e documentos funcionam como sempre. Uma atualização mais nova do sistema pode incluir a gravação de vídeo.
+interface-RecordingRecovery-closed = O myCarlos fechou enquanto você gravava. Manter o vídeo que foi salvo?
+interface-RecordingRecovery-closedPaused = O myCarlos fechou enquanto uma gravação estava em pausa. Manter o vídeo que foi salvo?
+interface-RecordingRecovery-name = Gravação: { $name }
+interface-RecordingRecovery-askLater = Perguntar depois
+interface-RecordingRecovery-delete = Excluir
+interface-RecordingRecovery-keep = Manter o vídeo
+interface-RecordingRecovery-kept = Vídeo mantido: { $name }
+interface-RecordingRecovery-nothingToKeep = Nada completo havia sido salvo, então não havia vídeo para manter.
+interface-RecordingRecovery-deleted = A gravação inacabada foi excluída.
+interface-RecordingRecovery-deleteSure = Excluir esta gravação? Isso não pode ser desfeito.
+interface-RecordingRecovery-savedLocked = O myCarlos bloqueou enquanto você gravava. O vídeo foi salvo: { $name }
+interface-RecordingRecovery-savedLockedPaused = O myCarlos bloqueou enquanto uma gravação estava em pausa. O vídeo foi salvo: { $name }
+interface-RecordDialog-videoSavedFailed = A gravação parou porque uma parte não pôde ser salva. O que foi salvo antes disso foi mantido: { $name }

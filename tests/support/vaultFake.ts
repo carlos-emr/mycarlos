@@ -1026,6 +1026,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // No add or download running when the row opens (#275).
           case "ai_model_add_active":
             return null;
+          // Nothing measured yet (the speed check, #305).
+          case "ai_model_speed":
+            return null;
           case "vault_status":
             return state.status;
           case "vault_notification_status":
@@ -1392,6 +1395,17 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             const record = recordById(request.recordId);
             return Boolean(state.photoUrls[record.id]);
           }
+          // Video (#359). The e2e fake holds no recordings and no video
+          // files: nothing is waiting to be finished, and no document starts
+          // as an MP4 does. Answering these keeps the photo flow, which asks
+          // both, from being reported as an unfaked bridge command.
+          case "vault_video_pending":
+            refuseLocked();
+            return { recordings: [], unreadable: 0 };
+          case "vault_is_video":
+            refuseLocked();
+            recordById(request.recordId);
+            return false;
           case "vault_view_photo": {
             refuseLocked();
             const record = recordById(request.recordId);

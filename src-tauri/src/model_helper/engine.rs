@@ -152,7 +152,43 @@ impl Engine {
             vocabulary: u32::try_from(self.model.n_vocab()).unwrap_or(0),
             recurrent: self.model.is_recurrent(),
             hybrid: self.model.is_hybrid(),
+            kv_bytes_per_token: self.kv_bytes_per_token(&architecture),
+            weights_bytes: self.model.size(),
         }
+    }
+
+    /// What the attention cache takes per token of context, as llama.cpp's own numbers say:
+    /// layers x key/value heads x (key size + value size) x 2 bytes (the f16 cache the helper
+    /// makes). 0 when it cannot say: a recurrent or hybrid model has layers with no cache and
+    /// llama.cpp gives no per-layer count, and a file without the head sizes has none to use. The
+    /// parent reads 0 as "unknown" and asks today's rule, never less.
+    fn kv_bytes_per_token(&self, architecture: &str) -> u32 {
+        if self.model.is_recurrent() || self.model.is_hybrid() {
+            return 0;
+        }
+        let number = |key: &str| {
+            self.model
+                .meta_val_str(&format!("{architecture}.{key}"))
+                .ok()
+                .and_then(|text| text.trim().parse::<u64>().ok())
+                .filter(|value| *value > 0)
+        };
+        let heads = u64::from(self.model.n_head());
+        let kv_heads = u64::from(self.model.n_head_kv());
+        let embd = u64::try_from(self.model.n_embd()).unwrap_or(0);
+        if heads == 0 || kv_heads == 0 {
+            return 0;
+        }
+        // The head sizes the file names, else the usual embedding / heads.
+        let key = number("attention.key_length").unwrap_or(embd / heads);
+        let value = number("attention.value_length").unwrap_or(key);
+        let bytes = u64::from(self.model.n_layer())
+            .saturating_mul(kv_heads)
+            .saturating_mul(key.saturating_add(value))
+            .saturating_mul(2);
+        // Too large to fit is kept at the most a card may say (the parent clamps it again): a
+        // heavy model, not an unknown one.
+        u32::try_from(bytes).unwrap_or(u32::MAX)
     }
 
     /// The context the model was trained for, or 0 when the file's number does not fit an

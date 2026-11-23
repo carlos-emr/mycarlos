@@ -280,6 +280,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // through `run` has finished if one of them ran a transfer, so the transfer
   // has reported its outcome first.
   const [transferHold] = useState(() => new TransferHold());
+  // Video being recorded or played holds the automatic lock for as long as it
+  // runs (#359): how many holds are taken now. A lock ends them all.
+  const mediaHoldsRef = useRef(new Set<symbol>());
+  const holdMedia = useCallback(() => {
+    // Each hold is its own id, so letting go twice, or after a lock ended them
+    // all, cannot take away another's.
+    const hold = Symbol("media hold");
+    mediaHoldsRef.current.add(hold);
+    return () => {
+      mediaHoldsRef.current.delete(hold);
+    };
+  }, []);
   // What was last reported since the latest transfer began: its result, or a
   // partial readable copy to delete. Used only when a lock ends that transfer.
   const transferOutcomeRef = useRef<UiText | null>(null);
@@ -472,6 +484,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setConcealed(false);
       setLockFailed(false);
       holdLock(false);
+      mediaHoldsRef.current.clear();
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
@@ -748,6 +761,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // A failed send is retried on every check: until one is accepted, the
     // native deadline keeps its previous delay (the longest, before any).
     let delaySent = false;
+    let mediaTouchedAt = -Infinity;
     const sendDelay = () => {
       bridge.setAutoLock(autoLockMinutes).then(
         () => {
@@ -774,6 +788,15 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       // Nor is the time an AI answer takes to write, up to its limit (D19).
       if ((pickersOpenRef.current > 0 && inPickerGrace()) || inAnswerHold())
         deadline = Date.now() + delayMs;
+      // Video that is recording or playing is not idle time: the deadline stays
+      // a full delay away, and the native one is told, as for user input.
+      if (mediaHoldsRef.current.size > 0) {
+        deadline = Date.now() + delayMs;
+        if (Date.now() - mediaTouchedAt >= TOUCH_THROTTLE_MS) {
+          mediaTouchedAt = Date.now();
+          bridge.touch().catch(() => undefined);
+        }
+      }
       const remaining = deadline - Date.now();
       // Hide content at once: an unattended screen must not stay readable while
       // the lock is pending, or if it fails and has to be retried.
@@ -1836,6 +1859,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         sizesIn1024s={platform === "windows"}
         cameraPlatform={CAMERA_PLATFORMS.has(platform) ? platform : null}
         cameraAsking={isPhone(platform) ? track : undefined}
+        holdMedia={holdMedia}
         covered={lockWarning !== null}
         sharedNew={sharedNew}
         onSharedSeen={clearSharedNew}
