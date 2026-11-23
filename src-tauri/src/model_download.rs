@@ -24,9 +24,10 @@ const REDIRECT_HOST_SUFFIXES: &[&str] = &[".cdn.hf.co"];
 const REDIRECT_HOSTS: &[&str] = &["cdn-lfs.huggingface.co", "cdn-lfs.hf.co"];
 const MAX_REDIRECTS: usize = 3;
 
-/// Whether a redirect from the pinned address may go to `target`: parsed by
-/// the same URL parser the HTTP client uses, then HTTPS on the default port,
-/// no credentials, and the pinned host or its CDN.
+/// Whether a redirect, from the pinned address or from the CDN it led to, may go to `target`
+/// (an absolute address; `next_redirect` joins a relative one first): parsed by the same URL
+/// parser the HTTP client uses, then HTTPS on the default port, no credentials, and the pinned
+/// host or its CDN.
 #[cfg_attr(target_os = "android", allow(dead_code))]
 pub(crate) fn redirect_allowed(pinned: &str, target: &str) -> bool {
     // A real CDN address never has a backslash; the URL standard reads one as
@@ -61,6 +62,9 @@ pub(crate) fn redirect_allowed(pinned: &str, target: &str) -> bool {
 #[cfg_attr(target_os = "android", allow(dead_code))]
 pub(crate) fn next_redirect(pinned: &str, current: &str, location: &str) -> Option<String> {
     // The same refusal as `redirect_allowed`, before the join reads a backslash as a separator.
+    // Only the raw backslash is load-bearing here (the parser turns it into a `/`, which could
+    // hide what follows); a percent-encoded one is never decoded into a separator, so refusing
+    // `%5c` is belt and braces.
     if location.is_empty()
         || location.contains('\\')
         || location.to_ascii_lowercase().contains("%5c")
@@ -399,6 +403,33 @@ mod tests {
         for (current, location) in refused {
             assert_eq!(next_redirect(PINNED, current, location), None, "{location}");
         }
+        // Odd forms of the same refusals (a reviewer's list). Some stay on the pinned host by the
+        // URL standard (`https:/x` against an https base is a path), so they are pinned by what
+        // matters: never another host.
+        let refused_forms = [
+            "//huggingface.co@evil.example/",
+            "//[::1]/x",
+            "//huggingface.co./x",
+        ];
+        for location in refused_forms {
+            assert_eq!(next_redirect(PINNED, PINNED, location), None, "{location}");
+        }
+        for location in [
+            "https:/evil.example/x",
+            "https:evil",
+            "https:///evil.example/x",
+        ] {
+            if let Some(next) = next_redirect(PINNED, PINNED, location) {
+                let parsed = reqwest::Url::parse(&next).unwrap();
+                assert_eq!(parsed.scheme(), "https", "{location}");
+                assert_eq!(parsed.host_str(), Some("huggingface.co"), "{location}");
+            }
+        }
+        // A fragment alone points back at the same address: followed, and ended by the cap.
+        assert_eq!(
+            next_redirect(PINNED, PINNED, "#frag").as_deref(),
+            Some("https://huggingface.co/org/repo/resolve/0123abcd/file.gguf#frag")
+        );
         // A current address that is not itself valid joins nothing.
         assert_eq!(next_redirect(PINNED, "not a url", "/x"), None);
         // A pinned address that is not HTTPS follows nothing.
