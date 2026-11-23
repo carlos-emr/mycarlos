@@ -869,6 +869,7 @@ export const MESSAGE_KEYS = [
   "ai.speed.none",
   "ai.speed.failed",
   "ai.speed.estimate",
+  "ai.speed.estimateLong",
   "ai.error.memoryNumbers",
   "ai.error.memoryUnknown",
   "ai.error.busy",
@@ -2072,6 +2073,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.speed.none": "ai-speed-none",
   "ai.speed.failed": "ai-speed-failed",
   "ai.speed.estimate": "ai-speed-estimate",
+  "ai.speed.estimateLong": "ai-speed-estimateLong",
   "ai.error.memoryNumbers": "ai-error-memoryNumbers",
   "ai.error.memoryUnknown": "ai-error-memoryUnknown",
   "ai.error.busy": "ai-error-busy",
@@ -3296,6 +3298,7 @@ export interface MessageArgsByKey {
   "ai.speed.none": undefined;
   "ai.speed.failed": undefined;
   "ai.speed.estimate": { minutes: FluentArgument };
+  "ai.speed.estimateLong": undefined;
   "ai.error.memoryNumbers": { free: FluentArgument; needed: FluentArgument };
   "ai.error.memoryUnknown": { needed: FluentArgument };
   "ai.error.busy": undefined;

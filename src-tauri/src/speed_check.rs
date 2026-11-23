@@ -49,7 +49,13 @@ impl Speed {
 /// prompt under [`MIN_PROMPT_TOKENS`] or an answer under [`MIN_ANSWER_TOKENS`], a time of zero, or
 /// a rate out of range): the check then says it could not measure, and keeps nothing.
 pub(crate) fn measure(stats: &Stats) -> Option<Speed> {
-    if stats.prompt_tokens < MIN_PROMPT_TOKENS
+    // A prefix put back from the helper's cache (a second check, or one after an explanation) is
+    // counted in `prompt_tokens` but was not read in `prompt_ms`: only what was read counts.
+    let read =
+        stats
+            .prompt_tokens
+            .saturating_sub(if stats.cache_hit { stats.prefix_len } else { 0 });
+    if read < MIN_PROMPT_TOKENS
         || stats.answer_tokens < MIN_ANSWER_TOKENS
         || stats.prompt_ms == 0
         || stats.answer_ms == 0
@@ -60,7 +66,7 @@ pub(crate) fn measure(stats: &Stats) -> Option<Speed> {
         u32::try_from(u64::from(tokens).saturating_mul(1_000_000) / ms).unwrap_or(u32::MAX)
     };
     let speed = Speed {
-        prompt_milli_tps: milli(stats.prompt_tokens, stats.prompt_ms),
+        prompt_milli_tps: milli(read, stats.prompt_ms),
         answer_milli_tps: milli(stats.answer_tokens, stats.answer_ms),
     };
     speed.in_range().then_some(speed)
@@ -216,6 +222,30 @@ mod tests {
         ] {
             assert_eq!(measure(&bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_prefix_put_back_from_the_cache_is_not_counted_as_read() {
+        // 300 tokens in all, 200 of them the cached prefix: only 100 were read in 20 s (5 a second),
+        // not 15 a second.
+        let hit = Stats {
+            cache_hit: true,
+            prefix_len: 200,
+            ..stats(300, 20_000, 60, 24_000)
+        };
+        assert_eq!(measure(&hit).map(|s| s.prompt_milli_tps), Some(5_000));
+        // The same counts without a hit are all read.
+        assert_eq!(
+            measure(&stats(300, 20_000, 60, 24_000)).map(|s| s.prompt_milli_tps),
+            Some(15_000)
+        );
+        // A hit that leaves under 50 tokens read is no measurement.
+        let mostly_cached = Stats {
+            cache_hit: true,
+            prefix_len: 260,
+            ..stats(300, 2_000, 60, 24_000)
+        };
+        assert_eq!(measure(&mostly_cached), None);
     }
 
     #[test]

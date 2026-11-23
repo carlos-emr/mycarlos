@@ -17,10 +17,15 @@ export function AiSpeedCheck({ status }: { status: ModelStatus }) {
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useTextState();
   const live = useRef(true);
+  // Whether a check is running, for the cleanup below (state would be stale there).
+  const running = useRef(false);
   useEffect(() => {
     live.current = true;
     return () => {
       live.current = false;
+      // Leaving Settings mid-check stops it: no processor time is spent for a screen that is gone.
+      if (running.current)
+        void invoke<void>("ai_cancel").catch(() => undefined);
     };
   }, []);
   // What was measured before, if anything; asked again when the model changes.
@@ -36,6 +41,7 @@ export function AiSpeedCheck({ status }: { status: ModelStatus }) {
   }, [model]);
   if (!installed) return null;
   const start = async () => {
+    running.current = true;
     setWorking(true);
     setNotice("");
     try {
@@ -55,6 +61,7 @@ export function AiSpeedCheck({ status }: { status: ModelStatus }) {
           : vaultErrorMessage(failure),
       );
     } finally {
+      running.current = false;
       if (live.current) setWorking(false);
     }
   };

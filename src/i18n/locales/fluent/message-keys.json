@@ -868,6 +868,7 @@
   "ai.speed.none",
   "ai.speed.failed",
   "ai.speed.estimate",
+  "ai.speed.estimateLong",
   "ai.error.memoryNumbers",
   "ai.error.memoryUnknown",
   "ai.error.busy",

@@ -1999,6 +1999,7 @@ ai-speed-cancelled = The check was stopped. Nothing was kept.
 ai-speed-none = Not checked yet.
 ai-speed-failed = The speed could not be measured. Try again.
 ai-speed-estimate = On this computer, this may take up to about { $minutes } min.
+ai-speed-estimateLong = On this computer, a document this long may not finish in the time the AI helper is given.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 

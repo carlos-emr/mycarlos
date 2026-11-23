@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANSWER_CEILING_MINUTES,
   SHOW_FROM_MINUTES,
   summaryMinutes,
   tokensRead,
@@ -16,6 +17,14 @@ describe("the time a summary may take (#305)", () => {
     // Nothing to read still costs the instructions and the answer: 315 s, 6 minutes.
     expect(summaryMinutes(0, speed)).toBe(6);
     expect(summaryMinutes(0, speed)).toBeGreaterThanOrEqual(SHOW_FROM_MINUTES);
+  });
+
+  it("names the longest one answer may take, for the reader to say it may not finish", () => {
+    expect(ANSWER_CEILING_MINUTES).toBe(20);
+    // 6,000 tokens at 2 a second to read is far past it.
+    expect(
+      summaryMinutes(6_000, { promptMilliTps: 2_000, answerMilliTps: 1_000 }),
+    ).toBeGreaterThan(ANSWER_CEILING_MINUTES);
   });
 
   it("is longer on a slower computer, never shorter", () => {

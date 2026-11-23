@@ -2331,18 +2331,41 @@ async fn ai_speed_check(
             memory: None,
         });
     };
-    let threads = stats.threads.max(1);
-    if !models.save_speed(sha256, threads, speed, now_ms()) {
+    if !keep_speed(&models, sha256, speed, now_ms()) {
         return Err(ai_error(model_runtime::AiError::Storage));
     }
     Ok(speed)
+}
+
+/// The thread count a speed is kept and found under: the app's own (`model_runtime::threads`),
+/// never what one answer happened to use (the helper may use fewer on a short prompt). One key for
+/// the check that saves it and the question that reads it.
+fn speed_threads() -> u32 {
+    model_runtime::threads()
+}
+
+fn keep_speed(
+    models: &local_model::Store,
+    sha256: &str,
+    speed: speed_check::Speed,
+    at_ms: u64,
+) -> bool {
+    models.save_speed(sha256, speed_threads(), speed, at_ms)
+}
+
+fn recorded_speed(models: &local_model::Store) -> Option<speed_check::Speed> {
+    recorded_speed_for(models, models.in_use_sha256()?)
+}
+
+fn recorded_speed_for(models: &local_model::Store, sha256: &str) -> Option<speed_check::Speed> {
+    models.speed_for(sha256, speed_threads())
 }
 
 /// What was measured for the model in use on this computer, for the reader's "about N minutes"
 /// and the settings: nothing until the patient has run the check.
 #[tauri::command]
 fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_check::Speed> {
-    models.speed_for(models.in_use_sha256()?, model_runtime::threads())
+    recorded_speed(&models)
 }
 
 /// What a term means in its sentence, from the model on this computer (#72). With the
@@ -7650,6 +7673,27 @@ mod tests {
             );
             assert!(build_script.contains(&format!("\"{command}\"")));
         }
+    }
+
+    /// The speed check saves under the key the reader's question looks it up by (a mismatch once
+    /// made a result that was never found again on a computer with five or more cores).
+    #[test]
+    fn a_measured_speed_is_found_again_by_the_question_that_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = local_model::Store::new(temp.path().join("models"), local_model::CATALOG);
+        let sha = local_model::CATALOG[0].sha256;
+        assert_eq!(recorded_speed_for(&store, sha), None);
+        let speed = speed_check::Speed {
+            prompt_milli_tps: 9_000,
+            answer_milli_tps: 2_500,
+        };
+        // `ai_speed_check` saves through `keep_speed`; `ai_model_speed` reads through
+        // `recorded_speed_for`: the same key, whatever the cores.
+        assert!(keep_speed(&store, sha, speed, 1));
+        assert_eq!(recorded_speed_for(&store, sha), Some(speed));
+        assert_eq!(speed_threads(), model_runtime::threads());
+        // Another model's speed is not this one's.
+        assert_eq!(recorded_speed_for(&store, &"cd".repeat(32)), None);
     }
 
     #[test]

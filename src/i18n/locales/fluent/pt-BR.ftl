@@ -2037,6 +2037,7 @@ ai-speed-cancelled = A verificação foi interrompida. Nada foi guardado.
 ai-speed-none = Ainda não verificada.
 ai-speed-failed = Não foi possível medir a velocidade. Tente de novo.
 ai-speed-estimate = Neste computador, isto pode levar até cerca de { $minutes } min.
+ai-speed-estimateLong = Neste computador, um documento tão longo pode não terminar no tempo dado ao assistente de IA.
 
 ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
 

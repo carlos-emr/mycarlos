@@ -90,6 +90,31 @@ describe("the speed check in the AI helper settings (#305)", () => {
     );
   });
 
+  it("stops a running check when Settings is left", async () => {
+    answers({
+      ai_model_speed: async () => null,
+      ai_speed_check: () => new Promise(() => undefined),
+    });
+    const user = userEvent.setup();
+    const { unmount } = render(<AiSpeedCheck status={installed} />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Check this computer's speed",
+      }),
+    );
+    expect(native.invoke).not.toHaveBeenCalledWith("ai_cancel");
+    unmount();
+    expect(native.invoke).toHaveBeenCalledWith("ai_cancel");
+  });
+
+  it("does not cancel anything when nothing is running as Settings is left", async () => {
+    answers({ ai_model_speed: async () => null });
+    const { unmount } = render(<AiSpeedCheck status={installed} />);
+    await screen.findByText("Not checked yet.");
+    unmount();
+    expect(native.invoke).not.toHaveBeenCalledWith("ai_cancel");
+  });
+
   it("says a stopped check kept nothing, and a failed one could not measure", async () => {
     const user = userEvent.setup();
     answers({

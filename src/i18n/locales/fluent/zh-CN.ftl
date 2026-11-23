@@ -1839,6 +1839,7 @@ ai-speed-cancelled = 检查已停止，未保存任何内容。
 ai-speed-none = 尚未检查。
 ai-speed-failed = 无法测出速度。请重试。
 ai-speed-estimate = 在此电脑上，这最多可能需要约 { $minutes } 分钟。
+ai-speed-estimateLong = 在此电脑上，这么长的文档可能无法在 AI 助手获得的时间内完成。
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
 

@@ -1246,6 +1246,63 @@ describe("the reader's AI helper", () => {
     },
   );
 
+  // The speed is asked before the model is: a panel closed meanwhile starts nothing (#305).
+  it("starts no summary when the panel is closed while the speed is being asked", async () => {
+    let release: (value: unknown) => void = () => {};
+    const aiSummarize = vi.fn(() => new Promise<never>(() => undefined));
+    const { unmount } = renderReader(
+      nativeLocalModel({
+        aiModelStatus: async () => ({
+          state: "installed",
+          model: FAKE_MODEL,
+          capacity: { contextTokens: 8192, documentTokens: 6510 },
+        }),
+        aiSummarize,
+        aiExplain: () => new Promise(() => undefined),
+        aiCancel: async () => undefined,
+        aiModelSpeed: () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByRole("progressbar");
+    unmount();
+    release({ promptMilliTps: 10_000, answerMilliTps: 2_500 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(aiSummarize).not.toHaveBeenCalled();
+  });
+
+  it("says a document this long may not finish when the estimate is past the answer limit", async () => {
+    renderReader(
+      nativeLocalModel({
+        aiModelStatus: async () => ({
+          state: "installed",
+          model: FAKE_MODEL,
+          capacity: { contextTokens: 8192, documentTokens: 6510 },
+        }),
+        aiSummarize: () => new Promise(() => undefined),
+        aiExplain: () => new Promise(() => undefined),
+        aiCancel: async () => undefined,
+        aiModelSpeed: async () => ({
+          promptMilliTps: 500,
+          answerMilliTps: 200,
+        }),
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(/a document this long may not finish/),
+    ).toBeVisible();
+  });
+
   // The refusal for memory says how much is needed and how much is free (#305): the need rounded
   // up and the free amount rounded down, so it never claims to be closer to enough than it is.
   it("says how much memory is needed and how much is free", async () => {

@@ -20,6 +20,7 @@ import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
 import { estimateFit, type FitEstimate } from "../ai/capacity";
 import {
+  ANSWER_CEILING_MINUTES,
   SHOW_FROM_MINUTES,
   summaryMinutes,
   tokensRead,
@@ -347,9 +348,11 @@ export function ReaderAiPanel({
         {
           const measured: Speed | null =
             (await aiRef.current.model.speed?.().catch(() => null)) ?? null;
+          // Closed, or a newer request started, while the speed was asked: nothing more is done.
+          if (!live.current || run.current !== mine) return;
           const known = statusRef.current;
           const room = known?.state === "installed" ? known.capacity : null;
-          if (live.current && measured && room) {
+          if (measured && room) {
             const minutes = summaryMinutes(
               tokensRead(document, room),
               measured,
@@ -638,7 +641,9 @@ export function ReaderAiPanel({
             )}
             {timeNote !== null && (
               <p className="native-reader-ai-wait">
-                {t("ai.speed.estimate", { minutes: timeNote })}
+                {timeNote > ANSWER_CEILING_MINUTES
+                  ? t("ai.speed.estimateLong")
+                  : t("ai.speed.estimate", { minutes: timeNote })}
               </p>
             )}
             <progress

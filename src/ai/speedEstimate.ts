@@ -16,6 +16,9 @@ export interface Speed {
 const INSTRUCTION_TOKENS = 750;
 /** The most a summary writes (the answer limit's own figure, `ANSWER_LIMIT`). */
 const SUMMARY_ANSWER_TOKENS = 600;
+/** The longest one answer may take (`ANSWER_LIMIT.ceiling`): above this the app stops the run, so
+ * the reader says a summary this long may not finish rather than naming a time it would not get. */
+export const ANSWER_CEILING_MINUTES = 20;
 /** A shorter wait is not worth a line. */
 export const SHOW_FROM_MINUTES = 2;
 /** About how many words a token is (English; the tokens estimate is English-centred too). */
