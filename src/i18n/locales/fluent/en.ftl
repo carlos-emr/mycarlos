@@ -1987,6 +1987,8 @@ ai-explain-ready = The explanation is ready.
 ai-failed = The AI helper could not finish. Try again.
 
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
+ai-error-memoryNumbers = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free and { $free } GB is free. Close some other programs, then try again.
+ai-error-memoryUnknown = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free, and this computer could not say how much is free. Close some other programs, then try again.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 

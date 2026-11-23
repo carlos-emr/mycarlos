@@ -858,6 +858,8 @@
   "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
+  "ai.error.memoryNumbers",
+  "ai.error.memoryUnknown",
   "ai.error.busy",
   "ai.error.storage",
   "ai.summary.pagesMissing",
