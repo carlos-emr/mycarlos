@@ -2197,9 +2197,24 @@ impl VaultStore {
         session: u64,
     ) -> Result<delivery::ApprovalCheck, VaultError> {
         use portal_link::LinkError;
-        // A device already found gone is not asked about again.
+        // A device already found gone is not asked about again, nor one the patient stopped
+        // checking (#160): both are read from the vault, so a restart does not forget them.
         if self.link_gone(link_id) {
             return Err(VaultError::Portal(LinkError::DeviceRemoved));
+        }
+        if let Some(link) = self.session().as_ref().and_then(|open| {
+            open.manifest
+                .portal_links
+                .iter()
+                .find(|l| l.id == link_id)
+                .cloned()
+        }) {
+            if link.clinic_removed_at_ms.is_some() {
+                return Err(VaultError::Portal(LinkError::DeviceRemoved));
+            }
+            if link.stopped_at_ms.is_some() {
+                return Err(VaultError::Invalid);
+            }
         }
         let result = self.poll_staff_approval(link_id, session);
         let removed =

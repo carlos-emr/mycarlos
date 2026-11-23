@@ -414,7 +414,7 @@ impl VaultStore {
             .manifest
             .portal_links
             .iter()
-            .filter(|l| l.clinic.is_some() && !l.checks_stopped())
+            .filter(|l| l.clinic.is_some())
             .cloned()
             .collect())
     }

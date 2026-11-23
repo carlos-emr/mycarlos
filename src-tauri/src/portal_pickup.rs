@@ -310,7 +310,12 @@ where
         // A device this run of the app already found gone from its portal is
         // not asked again (in memory only): said as removed, with no request,
         // and its receipts, which that portal can never take, are not counted.
-        if store.link_gone(original.id) {
+        // A clinic the patient stopped checking (#160) is not asked, and not mentioned.
+        if original.stopped_at_ms.is_some() {
+            continue;
+        }
+        // The same, saved: a real 403 `portal_device_removed` found it gone in an earlier run.
+        if store.link_gone(original.id) || original.clinic_removed_at_ms.is_some() {
             add_issue(
                 &mut result,
                 &original,
