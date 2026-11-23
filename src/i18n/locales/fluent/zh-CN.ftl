@@ -56,7 +56,7 @@ comfort-continue = 继续
 
 comfort-intro = 请在设置前选择适合您的项目。每项设置会立即生效。
 
-comfort-later = 您随时可以在 { $settings } 中变更这些设置：在 { $preferences } 中调整 { $textSize }，并在 { $security } 中调整 { $autoLock }。
+comfort-later = 您随时可以在 { $settings } 中变更这些设置：在 { $preferences } 中调整 { $textSize } 和 { $appearance }，并在 { $security } 中调整 { $autoLock }。
 
 comfort-sample = 这是 myCarlos 中的文本外观。请按 − 或 +，调整到容易阅读的大小。
 

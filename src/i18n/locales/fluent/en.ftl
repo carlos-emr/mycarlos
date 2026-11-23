@@ -56,7 +56,7 @@ comfort-continue = Continue
 
 comfort-intro = Choose what suits you before you set up. Each choice works at once.
 
-comfort-later = You can change these any time in { $settings }: { $textSize } under { $preferences }, and { $autoLock } under { $security }.
+comfort-later = You can change these any time in { $settings }: { $textSize } and { $appearance } under { $preferences }, and { $autoLock } under { $security }.
 
 comfort-sample = This is how text looks in myCarlos. Press − or + until it is easy to read.
 
