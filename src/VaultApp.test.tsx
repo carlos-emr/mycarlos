@@ -10274,9 +10274,10 @@ describe("durable vault UI", () => {
       within(review).getByRole("button", { name: humanText("Hide") }),
     );
     await waitFor(() =>
-      expect(bridge.hideUnavailableRecords).toHaveBeenCalledExactlyOnceWith([
-        "patient-hidden",
-      ]),
+      expect(bridge.hideUnavailableRecords).toHaveBeenCalledExactlyOnceWith(
+        ["patient-hidden"],
+        0,
+      ),
     );
     await screen.findByText(
       humanText(
@@ -10402,7 +10403,7 @@ describe("durable vault UI", () => {
     await user.click(remove);
     await waitFor(() => expect(hideUnavailableRecords).toHaveBeenCalledOnce());
     // It names the documents that were shown as damaged.
-    expect(hideUnavailableRecords).toHaveBeenCalledWith(["record-lost"]);
+    expect(hideUnavailableRecords).toHaveBeenCalledWith(["record-lost"], 0);
     expect(
       await screen.findByText(
         humanText(
@@ -10625,7 +10626,7 @@ describe("durable vault UI", () => {
     ).toBeVisible();
     // The refusal itself made the screen ask the vault again.
     expect(vi.mocked(bridge.snapshot).mock.calls.length).toBeGreaterThan(asked);
-    expect(bridge.hideUnavailableRecords).toHaveBeenCalledWith(["a"]);
+    expect(bridge.hideUnavailableRecords).toHaveBeenCalledWith(["a"], 0);
     // The next confirmation counts what is damaged now.
     await user.click(
       screen.getByRole("button", { name: humanText("Hide damaged documents") }),
