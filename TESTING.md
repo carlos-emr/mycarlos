@@ -314,9 +314,12 @@ On every platform:
    nothing changes.
 8. Press **Lock now** at the top, quit the app, reopen it, and unlock: everything should still be
    there.
-9. In **Security**, under **Speed test, for testers**, choose **Run speed test** three times, a
-   minute apart, staying on that screen while it runs. Send the three lines it gives with the
-   device's make and model and its system's version. `ARGON2_BENCHMARK.md` says how to record them.
+9. The Evaluation downloads do not show the speed test: **Speed test, for testers** is in
+   development builds only (owner decision, 20 Nov 2026). Device benchmarks are collected by a
+   developer from a development build (`npm run tauri dev`, `npm run tauri android dev` or
+   `npm run tauri ios dev`) or from a build made with `VITE_SHOW_SPEED_TEST=1`;
+   `ARGON2_BENCHMARK.md` says how to run it and record the lines. Check that **Security** in the
+   Evaluation download has no **Speed test, for testers** section.
 10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm

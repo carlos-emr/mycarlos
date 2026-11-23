@@ -97,7 +97,10 @@ async function openAiSettings(page: Page) {
     page.getByRole("heading", { name: en("ai.preferences.title"), level: 1 }),
   ).toBeVisible();
   return page.locator("section.setting-row").filter({
-    has: page.getByRole("heading", { name: en("ai.preferences.title") }),
+    // Starts with: the settings also have an "About the AI helper" row.
+    has: page.getByRole("heading", {
+      name: new RegExp(`^${en("ai.preferences.title")}`),
+    }),
   });
 }
 

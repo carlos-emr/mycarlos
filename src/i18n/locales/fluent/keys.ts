@@ -526,7 +526,6 @@ export const MESSAGE_KEYS = [
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -1758,7 +1757,6 @@ const FLUENT_IDS_BY_KEY = {
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
-  "security.copies.title": "security-copies-title",
   "security.devBuild.body": "security-devBuild-body",
   "security.devBuild.title": "security-devBuild-title",
   "security.encryption.body": "security-encryption-body",
@@ -3076,7 +3074,6 @@ export interface MessageArgsByKey {
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
-  "security.copies.title": undefined;
   "security.devBuild.body": undefined;
   "security.devBuild.title": undefined;
   "security.encryption.body": undefined;
