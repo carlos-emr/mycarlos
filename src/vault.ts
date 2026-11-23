@@ -16,6 +16,47 @@ import type {
 
 export type VaultStatus = "absent" | "locked" | "unlocked";
 
+/** What the vault reports after a piece of a recording (#359). */
+export interface RecordingProgress {
+  storedBytes: number;
+  fragments: number;
+  hasVideo: boolean | null;
+  hasAudio: boolean | null;
+  /** The sequence number the next piece must carry. */
+  nextSequence: number;
+}
+
+/** One recording a crash or a lock left unfinished. */
+export interface PendingRecording {
+  id: string;
+  displayName: string;
+  startedAtMs: number;
+  /** It was paused when it ended. */
+  paused: boolean;
+  /** A lock parked it (not a crash). */
+  parked: boolean;
+}
+
+export interface PendingRecordings {
+  recordings: PendingRecording[];
+  unreadable: number;
+}
+
+/** How a recording ended: the new record, or null when nothing complete had
+ * been recorded. */
+export interface VideoSaved {
+  recordId: string | null;
+}
+
+/** A video open for playback. */
+export interface VideoPlayback {
+  /** Ends this playback. */
+  token: string;
+  /** The address for a `<video>`. */
+  url: string;
+  totalBytes: number;
+}
+
 export interface PatientProfile {
   id: string;
   displayName: string;
@@ -549,6 +590,36 @@ export interface VaultBridge {
     name: string,
     jpeg: Uint8Array,
   ): Promise<ImportOutcome>;
+  /** Starts a video recording for a person (#359). Nothing is added to the
+   * library until `videoStop`. */
+  videoStart(
+    profileId: string,
+    folderIds: string[],
+    name: string,
+  ): Promise<{ recordingId: string }>;
+  /** Adds one piece of the recording (about a second of video). Each carries
+   * the sequence number the last answer asked for: a repeat of the last piece
+   * is answered, not added twice; any other number is refused. */
+  videoAppend(
+    recordingId: string,
+    sequence: number,
+    piece: Uint8Array,
+  ): Promise<RecordingProgress>;
+  videoPause(recordingId: string): Promise<void>;
+  videoResume(recordingId: string): Promise<void>;
+  /** Ends the recording: the video is added to the library, or nothing is when
+   * nothing complete was recorded (`recordId` is null). */
+  videoStop(recordingId: string): Promise<VideoSaved>;
+  /** The recordings a crash or a lock left unfinished. */
+  videoPending(): Promise<PendingRecordings>;
+  /** Keeps (`true`) or deletes (`false`) one of them. */
+  videoRecover(recordingId: string, keep: boolean): Promise<VideoSaved>;
+  /** Whether a document's file starts as an MP4 does. */
+  isVideo(recordId: string): Promise<boolean>;
+  /** Opens a video for playback: the address for a `<video>`, good until it is
+   * closed or the vault locks. */
+  videoOpen(recordId: string): Promise<VideoPlayback>;
+  videoClose(token: string): Promise<void>;
   /** Whether a document's file starts as a JPEG does. Only its first bytes
    * are read; the photo itself stays native. */
   isPhoto(recordId: string): Promise<boolean>;
@@ -637,6 +708,8 @@ export interface VaultBridge {
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** What the speed check measured for the model in use on this computer (#305), or null. */
+  aiModelSpeed?(): Promise<unknown>;
   /** Calls `handler` with an answer's own time limit, in milliseconds, as
    * the model is asked it: the automatic lock waits that long at most for
    * it (D19). Returns the way to stop listening. */
@@ -724,6 +797,9 @@ export interface PublicError {
   /** How long to wait before the next try: after several wrong ones, or
    * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
+  /** For an AI refusal for lack of memory (`aiMemory`, #305): what a start needs and what is
+   * free now, in bytes (no `availableBytes` when this computer could not say). */
+  memory?: { neededBytes: number; availableBytes?: number };
 }
 
 /** A box the patient typed in, named in the language in use ("the folder
@@ -1103,6 +1179,46 @@ export function createVaultBridge(): VaultBridge {
         request.fill(0),
       );
     },
+    videoStart: (profileId, folderIds, name) =>
+      invoke<{ recordingId: string }>("vault_video_start", {
+        request: { profileId, folderIds, name },
+      }),
+    videoAppend: (recordingId, sequence, piece) =>
+      // As base64 text in the ordinary arguments: a byte body arrives on
+      // Android as a JSON array of numbers several times its size.
+      invoke<RecordingProgress>("vault_video_append", {
+        request: { recordingId, sequence, data: bytesToBase64(piece) },
+      }),
+    videoPause: (recordingId) =>
+      invoke<void>("vault_video_pause", { request: { recordingId } }),
+    videoResume: (recordingId) =>
+      invoke<void>("vault_video_resume", { request: { recordingId } }),
+    videoStop: (recordingId) =>
+      invoke<VideoSaved>("vault_video_stop", { request: { recordingId } }),
+    videoPending: () => invoke<PendingRecordings>("vault_video_pending"),
+    videoRecover: (recordingId, keep) =>
+      invoke<VideoSaved>("vault_video_recover", {
+        request: { recordingId, keep },
+      }),
+    isVideo: (recordId) =>
+      invoke<boolean>("vault_is_video", { request: { recordId } }),
+    videoOpen: async (recordId) => {
+      const opened = await invoke<{ token: string; totalBytes: number }>(
+        "vault_video_open",
+        { request: { recordId } },
+      );
+      // The address the webview shows for the scheme on this platform. Loaded
+      // here, when a video is opened, so that nothing else needs it: tests that
+      // stand in for the core module with `invoke` alone still load this file.
+      const { convertFileSrc } = await import("@tauri-apps/api/core");
+      return {
+        token: opened.token,
+        totalBytes: opened.totalBytes,
+        url: convertFileSrc(opened.token, "mycarlos-video"),
+      };
+    },
+    videoClose: (token) =>
+      invoke<void>("vault_video_close", { request: { token } }),
     isPhoto: (recordId) =>
       invoke<boolean>("vault_is_photo", { request: { recordId } }),
     viewPhoto: (recordId) =>
@@ -1218,6 +1334,7 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    aiModelSpeed: () => invoke<unknown>("ai_model_speed"),
     onAiAnswerStarted: (handler) => {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",
@@ -1277,3 +1394,13 @@ export function createVaultBridge(): VaultBridge {
 export const MAX_PASSPHRASE_BYTES = 1024;
 const encoder = new TextEncoder();
 export const utf8Length = (value: string) => encoder.encode(value).length;
+
+/** Base64 of a piece of video, built in slices so that no spread of a large
+ * array is needed. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let text = "";
+  const slice = 0x8000;
+  for (let at = 0; at < bytes.length; at += slice)
+    text += String.fromCharCode(...bytes.subarray(at, at + slice));
+  return btoa(text);
+}

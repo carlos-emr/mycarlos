@@ -1,6 +1,7 @@
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
+import { AiSpeedCheck } from "./AiSpeedCheck";
 
 /** Settings > AI helper (#72): the model on this computer. Later AI settings
  * (such as the answers kept with documents) belong here too. Shown only on a
@@ -43,6 +44,7 @@ export function AiSettings({
             )}
           </div>
         </section>
+        {aiStatus && <AiSpeedCheck status={aiStatus} />}
       </div>
     </main>
   );

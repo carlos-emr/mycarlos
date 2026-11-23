@@ -327,6 +327,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "ai_model_check") return "skipped";
         // No add or download running when the row opens (#275).
         if (command === "ai_model_add_active") return null;
+        if (command === "ai_model_speed") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };
@@ -334,6 +335,11 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
           return snapshot.recoveryKeyLabel;
         if (command === "vault_touch" || command === "vault_set_auto_lock")
           return;
+        // Video (#359): nothing waiting to be finished, and no document
+        // starts as an MP4 does.
+        if (command === "vault_video_pending")
+          return { recordings: [], unreadable: 0 };
+        if (command === "vault_is_video") return false;
         // A PDF's details ask whether it is locked with a password (#54).
         if (command === "vault_is_locked_pdf") return false;
         // These FAKE PDFs carry no patient identity hint.

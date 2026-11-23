@@ -41,9 +41,22 @@ mod delivery;
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
 pub(crate) use delivery::AidFiling;
+#[allow(unused_imports)]
+pub use playback::PlaybackOpened;
+#[cfg(test)]
+pub(crate) use playback::MAX_RANGE_RESPONSE;
+pub(crate) use playback::{looks_like_token, PlaybackRefusal};
+pub(crate) use recording::{PendingRecordings, RecordingProgress, MAX_RECORDING_PIECE};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+// Playback of a stored video (#359 PR 2): the scheme handler calls it; the command
+// that opens a video and the screen come next.
+#[allow(dead_code)]
+mod playback;
+// The recording core (#359 PR 1): the commands and screen that call it come next.
+#[allow(dead_code)]
+mod recording;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
@@ -1032,6 +1045,12 @@ pub struct VaultStore {
     /// The folder this run of the app last set a vault aside in, for the
     /// next vault created (#71's third part). In memory only.
     last_set_aside: Mutex<Option<String>>,
+    /// Recordings in progress (#359), by record id. In memory only; each has a journal
+    /// in `recordings/`. A lock parks them.
+    recordings: Mutex<HashMap<Uuid, recording::ActiveRecording>>,
+    /// Videos open for playback (#359), by token. In memory only; every one is
+    /// ended by a lock, a reset or a dropped session.
+    playback: Mutex<HashMap<String, playback::PlaybackSession>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1057,6 +1076,8 @@ impl VaultStore {
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+            recordings: Mutex::new(HashMap::new()),
+            playback: Mutex::new(HashMap::new()),
             push_inbox: Mutex::new(Default::default()),
         }
     }
@@ -1072,6 +1093,42 @@ impl VaultStore {
         {
             self.collection.permit_after(0);
         }
+    }
+
+    /// Puts an (empty) resume cache in this vault, as a paused document check leaves one.
+    #[cfg(test)]
+    pub(crate) fn test_hold_resume_cache(&self) {
+        *self.collection_resume.lock().unwrap() =
+            Some(crate::document_collection_pickup::ResumeCache::default());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_has_resume_cache(&self) -> bool {
+        self.collection_resume.lock().unwrap().is_some()
+    }
+
+    /// Poisons the session mutex, as a panic in a holder would, for the switch tests.
+    #[cfg(test)]
+    pub(crate) fn test_poison_session(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = self.unlocked.lock().unwrap();
+            panic!("poisoned on purpose (test)");
+        }));
+    }
+
+    /// Runs `inside` while a key derivation is counted as running, for the switch test.
+    #[cfg(test)]
+    pub(crate) fn test_hold_kdf(&self, inside: impl FnOnce()) {
+        let _work = self.start_kdf_work().unwrap();
+        inside();
+    }
+
+    /// Where this vault's notification ledger is, for the tests that check each slot has its own.
+    #[cfg(test)]
+    pub(crate) fn notifications_ledger_path(&self) -> Option<PathBuf> {
+        self.notifications
+            .get()
+            .map(|runtime| runtime.ledger_path().to_path_buf())
     }
 
     fn drop_idle_collection_cache(&self) {
@@ -1171,24 +1228,35 @@ impl VaultStore {
         self.drop_idle_collection_cache();
     }
 
-    /// Started at launch on Windows; it checks only while the patient has automatic
-    /// checks turned on. One weak app-owned worker; no strong vault reference while sleeping.
-    #[cfg(windows)]
-    pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
-        let weak = Arc::downgrade(self);
-        std::thread::Builder::new()
-            .name("document-checks".into())
-            .spawn(move || loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let Some(store) = weak.upgrade() else {
-                    break;
-                };
-                if store.collection.is_shutdown() {
-                    break;
-                }
-                store.automatic_document_tick();
-            })
-            .map(|_| ())
+    /// One tick of the automatic document check, run once a second by the app's single worker
+    /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
+    /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
+    /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
+    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
+    /// there is nothing to run).
+    pub(crate) fn document_tick(&self) -> bool {
+        if self.collection.is_shutdown() {
+            return false;
+        }
+        #[cfg(windows)]
+        self.automatic_document_tick();
+        true
+    }
+
+    /// Whether nothing is open or running in this vault: no session, no unlock or benchmark deriving
+    /// a key, no import or export holding the session lock. Never waits: a vault that is busy says
+    /// so. A switch to another vault (#357) is refused unless this holds for both.
+    pub(crate) fn is_at_rest(&self) -> bool {
+        if self.kdf_running.load(Ordering::Acquire) {
+            return false;
+        }
+        match self.unlocked.try_lock() {
+            Ok(guard) => guard.is_none(),
+            // A holder panicked: the session in it is still what it was, so read it as `session()`
+            // would, rather than saying "busy" for ever.
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner().is_none(),
+            Err(std::sync::TryLockError::WouldBlock) => false,
+        }
     }
 
     #[cfg(windows)]
@@ -1347,6 +1415,10 @@ impl VaultStore {
             let mut guard = poisoned.into_inner();
             self.invalidate_collection_cache();
             self.portal_session.fetch_add(1, Ordering::AcqRel);
+            // A recording keeps its own copy of the keys: park it (and so drop
+            // them) with the session, not after it.
+            self.park_recordings();
+            self.end_playback();
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
@@ -1748,6 +1820,10 @@ impl VaultStore {
             // the two and be left unlocked with no deadline.
             let due = due();
             if due {
+                // A recording in progress is parked first: its last frame is sealed
+                // and its journal says so, so that the next unlock can finish it.
+                self.park_recordings();
+                self.end_playback();
                 self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
@@ -3286,7 +3362,10 @@ impl VaultStore {
                 at_ms: now_ms,
                 reason: HiddenReason::Patient,
             }),
-        )
+        )?;
+        // A video playing from it stops being served.
+        self.end_playback_for(record_id);
+        Ok(())
     }
 
     /// Puts a hidden document back where it was. One hidden as damaged comes
@@ -3918,6 +3997,11 @@ impl VaultStore {
                 .with_place(&set_aside_name(&target));
             record_in_session(&self.root, unlocked, vec![entry]);
         }
+        // A recording in progress is parked in the vault being set aside, and its
+        // keys dropped, before the session goes: it must not write into a vault
+        // that is no longer where it was.
+        self.park_recordings();
+        self.end_playback();
         *guard = None;
         self.idle.disarm();
         // How that vault's last session ended is nothing to the next one's.
@@ -7890,6 +7974,10 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
+    /// An unfinished recording's tail, journal or superseded object, or a
+    /// recording's object that recovery found nothing complete in (#359).
+    #[allow(dead_code)] // constructed by the recording core, which has no caller yet
+    Recording,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.

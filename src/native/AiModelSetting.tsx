@@ -829,8 +829,9 @@ export function AiModelSetting({
                   reading && (
                     <p id={`${prefix}-reads`}>
                       {t("ai.model.reads", capacityInPages(reading.capacity))}
-                      {/* Until the model has started in this session, the
-                          catalogue's figure: said to be an estimate (model
+                      {/* Until the helper has run the model (in this session or
+                          an earlier one of this version, whose card is saved),
+                          the catalogue's figure: said to be an estimate (model
                           limits). */}
                       {!reading.confirmed && (
                         <>
