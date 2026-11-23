@@ -14,6 +14,7 @@ import type { BackupSize, PendingRecording, PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
+import { sharedAddedText } from "./receivedNotice";
 import {
   useCallback,
   useEffect,
@@ -1134,11 +1135,7 @@ export function VaultLibrary({
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
     if (added > 0)
-      setSharedAnnouncement(
-        deferredText(() =>
-          translateNow("interface.notice.sharedAdded", { count: added }),
-        ),
-      );
+      setSharedAnnouncement(deferredText(() => sharedAddedText(added)));
     sharedSeen.current = sharedNew;
   }, [sharedNew]);
   // Seen as soon as Shared with me is open.
@@ -3199,13 +3196,17 @@ export function VaultLibrary({
               pickDestination={(ticket) =>
                 bridge.pickTextExportDestination(anonymizeRecord.id, ticket)
               }
-              saveText={(pickId, ticket, text) =>
+              saveText={(pickId, ticket, text, kept) =>
                 bridge.exportTextToPicked(
                   pickId,
                   anonymizeRecord.id,
                   ticket,
                   text,
+                  kept,
                 )
+              }
+              copyText={(ticket, text, kept) =>
+                bridge.copyTextExport(anonymizeRecord.id, ticket, text, kept)
               }
               exportHeader={translateNow("aiHelper.exportHeader")}
               onClose={() => setAnonymizeRecordId(null)}

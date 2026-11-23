@@ -953,6 +953,37 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.placeholder.manual",
   "interface.AnonymizePreview.possibleNames",
   "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.eponymTitle",
+  "interface.AnonymizePreview.eponymOne",
+  "interface.AnonymizePreview.eponymKeep",
+  "interface.AnonymizePreview.eponymKeepAll",
+  "interface.AnonymizePreview.removedSummary",
+  "interface.AnonymizePreview.removedCount.name",
+  "interface.AnonymizePreview.removedCount.doctor",
+  "interface.AnonymizePreview.removedCount.clinic",
+  "interface.AnonymizePreview.removedCount.healthCard",
+  "interface.AnonymizePreview.removedCount.recordNumber",
+  "interface.AnonymizePreview.removedCount.sin",
+  "interface.AnonymizePreview.removedCount.dateOfBirth",
+  "interface.AnonymizePreview.removedCount.age",
+  "interface.AnonymizePreview.removedCount.address",
+  "interface.AnonymizePreview.removedCount.postalCode",
+  "interface.AnonymizePreview.removedCount.phone",
+  "interface.AnonymizePreview.removedCount.email",
+  "interface.AnonymizePreview.removedCount.web",
+  "interface.AnonymizePreview.removedCount.unclearDate",
+  "interface.AnonymizePreview.removedCount.manual",
+  "interface.AnonymizePreview.removedCount.date",
+  "interface.AnonymizePreview.removedSummaryNone",
+  "interface.AnonymizePreview.toCheck",
+  "interface.AnonymizePreview.toCheckHelp",
+  "interface.AnonymizePreview.checkPicked",
+  "interface.AnonymizePreview.savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote",
+  "interface.AnonymizePreview.copy",
+  "interface.AnonymizePreview.copied",
+  "interface.AnonymizePreview.copyFailed",
+  "interface.AnonymizePreview.copyWarning",
   "interface.AnonymizePreview.removeSelected",
   "interface.AnonymizePreview.selectFirst",
   "interface.AnonymizePreview.phrase",
@@ -1066,6 +1097,18 @@ export const MESSAGE_KEYS = [
   "personDetails.notNow",
   "personDetails.notSaved",
   "ai.summaryTooLarge",
+  "background.title",
+  "background.keepRunning",
+  "background.keepRunningHelp",
+  "background.startAtLogin",
+  "background.startAtLoginHelp",
+  "background.paused",
+  "background.unavailable",
+  "background.error",
+  "native.tray.open",
+  "native.tray.quit",
+  "native.tray.tooltip",
+  "native.tray.waiting",
   "personDetails.previousTitle",
   "personDetails.previousHelp",
   "personDetails.previousEntry",
@@ -1158,6 +1201,10 @@ export const MESSAGE_KEYS = [
   "interface.hidden.videoLeftOut",
   "portal.deviceLine",
   "portal.deviceLineLinked",
+  "interface.received.confirmTitleOne",
+  "interface.received.confirmTitleMany",
+  "interface.received.confirmBody",
+  "interface.received.import",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2290,6 +2337,65 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-possibleNames",
   "interface.AnonymizePreview.removeWord":
     "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.eponymTitle":
+    "interface-AnonymizePreview-eponymTitle",
+  "interface.AnonymizePreview.eponymOne":
+    "interface-AnonymizePreview-eponymOne",
+  "interface.AnonymizePreview.eponymKeep":
+    "interface-AnonymizePreview-eponymKeep",
+  "interface.AnonymizePreview.eponymKeepAll":
+    "interface-AnonymizePreview-eponymKeepAll",
+  "interface.AnonymizePreview.removedSummary":
+    "interface-AnonymizePreview-removedSummary",
+  "interface.AnonymizePreview.removedCount.name":
+    "interface-AnonymizePreview-removedCount-name",
+  "interface.AnonymizePreview.removedCount.doctor":
+    "interface-AnonymizePreview-removedCount-doctor",
+  "interface.AnonymizePreview.removedCount.clinic":
+    "interface-AnonymizePreview-removedCount-clinic",
+  "interface.AnonymizePreview.removedCount.healthCard":
+    "interface-AnonymizePreview-removedCount-healthCard",
+  "interface.AnonymizePreview.removedCount.recordNumber":
+    "interface-AnonymizePreview-removedCount-recordNumber",
+  "interface.AnonymizePreview.removedCount.sin":
+    "interface-AnonymizePreview-removedCount-sin",
+  "interface.AnonymizePreview.removedCount.dateOfBirth":
+    "interface-AnonymizePreview-removedCount-dateOfBirth",
+  "interface.AnonymizePreview.removedCount.age":
+    "interface-AnonymizePreview-removedCount-age",
+  "interface.AnonymizePreview.removedCount.address":
+    "interface-AnonymizePreview-removedCount-address",
+  "interface.AnonymizePreview.removedCount.postalCode":
+    "interface-AnonymizePreview-removedCount-postalCode",
+  "interface.AnonymizePreview.removedCount.phone":
+    "interface-AnonymizePreview-removedCount-phone",
+  "interface.AnonymizePreview.removedCount.email":
+    "interface-AnonymizePreview-removedCount-email",
+  "interface.AnonymizePreview.removedCount.web":
+    "interface-AnonymizePreview-removedCount-web",
+  "interface.AnonymizePreview.removedCount.unclearDate":
+    "interface-AnonymizePreview-removedCount-unclearDate",
+  "interface.AnonymizePreview.removedCount.manual":
+    "interface-AnonymizePreview-removedCount-manual",
+  "interface.AnonymizePreview.removedCount.date":
+    "interface-AnonymizePreview-removedCount-date",
+  "interface.AnonymizePreview.removedSummaryNone":
+    "interface-AnonymizePreview-removedSummaryNone",
+  "interface.AnonymizePreview.toCheck": "interface-AnonymizePreview-toCheck",
+  "interface.AnonymizePreview.toCheckHelp":
+    "interface-AnonymizePreview-toCheckHelp",
+  "interface.AnonymizePreview.checkPicked":
+    "interface-AnonymizePreview-checkPicked",
+  "interface.AnonymizePreview.savedFileNote":
+    "interface-AnonymizePreview-savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote":
+    "interface-AnonymizePreview-pasteWhereNote",
+  "interface.AnonymizePreview.copy": "interface-AnonymizePreview-copy",
+  "interface.AnonymizePreview.copied": "interface-AnonymizePreview-copied",
+  "interface.AnonymizePreview.copyFailed":
+    "interface-AnonymizePreview-copyFailed",
+  "interface.AnonymizePreview.copyWarning":
+    "interface-AnonymizePreview-copyWarning",
   "interface.AnonymizePreview.removeSelected":
     "interface-AnonymizePreview-removeSelected",
   "interface.AnonymizePreview.selectFirst":
@@ -2424,6 +2530,18 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.notNow": "personDetails-notNow",
   "personDetails.notSaved": "personDetails-notSaved",
   "ai.summaryTooLarge": "ai-summaryTooLarge",
+  "background.title": "background-title",
+  "background.keepRunning": "background-keepRunning",
+  "background.keepRunningHelp": "background-keepRunningHelp",
+  "background.startAtLogin": "background-startAtLogin",
+  "background.startAtLoginHelp": "background-startAtLoginHelp",
+  "background.paused": "background-paused",
+  "background.unavailable": "background-unavailable",
+  "background.error": "background-error",
+  "native.tray.open": "native-tray-open",
+  "native.tray.quit": "native-tray-quit",
+  "native.tray.tooltip": "native-tray-tooltip",
+  "native.tray.waiting": "native-tray-waiting",
   "personDetails.previousTitle": "personDetails-previousTitle",
   "personDetails.previousHelp": "personDetails-previousHelp",
   "personDetails.previousEntry": "personDetails-previousEntry",
@@ -2554,6 +2672,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
   "portal.deviceLine": "portal-deviceLine",
   "portal.deviceLineLinked": "portal-deviceLineLinked",
+  "interface.received.confirmTitleOne": "interface-received-confirmTitleOne",
+  "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
+  "interface.received.confirmBody": "interface-received-confirmBody",
+  "interface.received.import": "interface-received-import",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3610,6 +3732,47 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.placeholder.manual": undefined;
   "interface.AnonymizePreview.possibleNames": undefined;
   "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.eponymTitle": undefined;
+  "interface.AnonymizePreview.eponymOne": { phrase: FluentArgument };
+  "interface.AnonymizePreview.eponymKeep": undefined;
+  "interface.AnonymizePreview.eponymKeepAll": { phrase: FluentArgument };
+  "interface.AnonymizePreview.removedSummary": { list: FluentArgument };
+  "interface.AnonymizePreview.removedCount.name": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.doctor": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.clinic": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.healthCard": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.recordNumber": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.sin": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.dateOfBirth": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.age": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.address": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.postalCode": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.phone": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.email": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.web": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.unclearDate": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.manual": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.date": { count: FluentArgument };
+  "interface.AnonymizePreview.removedSummaryNone": undefined;
+  "interface.AnonymizePreview.toCheck": { count: FluentArgument };
+  "interface.AnonymizePreview.toCheckHelp": undefined;
+  "interface.AnonymizePreview.checkPicked": { word: FluentArgument };
+  "interface.AnonymizePreview.savedFileNote": undefined;
+  "interface.AnonymizePreview.pasteWhereNote": undefined;
+  "interface.AnonymizePreview.copy": undefined;
+  "interface.AnonymizePreview.copied": undefined;
+  "interface.AnonymizePreview.copyFailed": undefined;
+  "interface.AnonymizePreview.copyWarning": undefined;
   "interface.AnonymizePreview.removeSelected": undefined;
   "interface.AnonymizePreview.selectFirst": undefined;
   "interface.AnonymizePreview.phrase": undefined;
@@ -3739,6 +3902,18 @@ export interface MessageArgsByKey {
   "personDetails.notNow": undefined;
   "personDetails.notSaved": undefined;
   "ai.summaryTooLarge": undefined;
+  "background.title": undefined;
+  "background.keepRunning": undefined;
+  "background.keepRunningHelp": undefined;
+  "background.startAtLogin": undefined;
+  "background.startAtLoginHelp": undefined;
+  "background.paused": undefined;
+  "background.unavailable": undefined;
+  "background.error": undefined;
+  "native.tray.open": undefined;
+  "native.tray.quit": undefined;
+  "native.tray.tooltip": undefined;
+  "native.tray.waiting": undefined;
   "personDetails.previousTitle": undefined;
   "personDetails.previousHelp": undefined;
   "personDetails.previousEntry": { number: FluentArgument };
@@ -3834,6 +4009,10 @@ export interface MessageArgsByKey {
   "interface.hidden.videoLeftOut": undefined;
   "portal.deviceLine": { device: FluentArgument };
   "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
+  "interface.received.confirmTitleOne": { name: FluentArgument };
+  "interface.received.confirmTitleMany": { count: FluentArgument };
+  "interface.received.confirmBody": undefined;
+  "interface.received.import": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

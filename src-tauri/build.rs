@@ -97,6 +97,11 @@ fn main() {
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "background_status",
+            "background_set_keep_running",
+            "background_set_start_at_login",
+            "background_report_locale",
+            "tray_waiting_status",
             "ai_model_catalog",
             "ai_model_status",
             "ai_models",
@@ -161,6 +166,7 @@ fn main() {
             "vault_import_picked",
             "received_list",
             "received_accept",
+            "received_discard",
             "vault_move_to_person",
             "vault_is_locked_pdf",
             "vault_unlock_pdf",
@@ -173,6 +179,7 @@ fn main() {
             "vault_record_known_details",
             "vault_export_text_pick",
             "vault_export_text_picked",
+            "vault_export_text_copy",
             "vault_export_pick",
             "vault_export_picked",
             "vault_save_photo",

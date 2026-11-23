@@ -1344,11 +1344,11 @@ unlock-title = Unlock your vault
 
 unlock-waiting =
     { $count ->
-    [one] { $count } shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
-    *[other] { $count } shared files are waiting. Unlock and they go into { $folder }. If myCarlos closes first, they are not kept: share them again.
+    [one] { $count } shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.
+    *[other] { $count } shared files are waiting. Unlock and myCarlos asks first before adding them to { $folder }. If myCarlos closes first, they are not kept: share them again.
     }
 
-unlock-waiting-one = One shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
+unlock-waiting-one = One shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.
 
 language-error-formatting = myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.
 
@@ -1861,7 +1861,7 @@ ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answ
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Show in document
+ai-summary-showInDocument = Show me in the document
 
 ai-summary-folded = The summary is folded so the page has room.
 
@@ -2207,6 +2207,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (check against the original)
 interface-AnonymizePreview-possibleNames = Words that may be names
 
 interface-AnonymizePreview-removeWord = Remove “{ $word }”
+interface-AnonymizePreview-eponymTitle = These may be medical terms
+interface-AnonymizePreview-eponymOne = This may be a medical term: { $phrase }
+interface-AnonymizePreview-eponymKeep = Keep
+interface-AnonymizePreview-eponymKeepAll = Keep all “{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = Removed: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } name
+   *[other] { $count } names
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } doctor
+   *[other] { $count } doctors
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinic
+   *[other] { $count } clinics
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } health card number
+   *[other] { $count } health card numbers
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } record number
+   *[other] { $count } record numbers
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } social insurance number
+   *[other] { $count } social insurance numbers
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date of birth
+   *[other] { $count } dates of birth
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } age
+   *[other] { $count } ages
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } address
+   *[other] { $count } addresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } postal code
+   *[other] { $count } postal codes
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } phone number
+   *[other] { $count } phone numbers
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } email address
+   *[other] { $count } email addresses
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } web address
+   *[other] { $count } web addresses
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } unclear date
+   *[other] { $count } unclear dates
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removed by you
+   *[other] { $count } removed by you
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date replaced
+   *[other] { $count } dates replaced
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } word to check
+   *[other] { $count } words to check
+}
+
+interface-AnonymizePreview-toCheckHelp = Highlighted: words that start with a capital letter inside a sentence, and numbers with three or more digits. They may identify someone. This does not find everything. It misses names written in capitals, names at the start of a line, names in scripts without capital letters (such as Chinese, Korean or Arabic), and names that are also months, drugs or medical terms (such as “June” or “Bell”). Select a highlighted word, then choose Remove, and read all of the text yourself.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” may identify someone.
+
+interface-AnonymizePreview-savedFileNote = The saved file is not protected by myCarlos. It has no names, but it holds the medical details. Delete it when you are done.
+
+interface-AnonymizePreview-pasteWhereNote = Where you paste this decides what is kept: a chat service may keep it or learn from it, depending on your account settings.
+
+interface-AnonymizePreview-copy = Copy text
+
+interface-AnonymizePreview-copied = The text was copied.
+
+interface-AnonymizePreview-copyFailed = The text could not be copied.
+
+interface-AnonymizePreview-copyWarning = Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.
 
 interface-AnonymizePreview-removeSelected = Remove the selected text
 
@@ -2259,6 +2368,20 @@ noticesStep-later = You can change these any time in { $settings }, under { $pre
 noticesStep-done = Done
 noticesStep-notNow = Not now
 
+background-title = Running in the background
+background-keepRunning = Keep myCarlos running in the background after I close its window
+background-keepRunningHelp = When you close the window, myCarlos can stay in the background with an icon in the notification area (the menu bar on a Mac). Your vault locks as the window closes and stays locked until you open myCarlos and unlock it. Choose Quit from the icon to close myCarlos completely.
+background-startAtLogin = Start myCarlos when I sign in to this computer
+background-startAtLoginHelp = myCarlos starts when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked. With it off, its window opens.
+background-paused = While your vault is locked, myCarlos cannot check for new clinic documents. Unlock it to check.
+background-unavailable = A background icon is not available on this computer. myCarlos closes completely when you close its window.
+background-error = This setting could not be changed. It stays as it was.
+native-tray-open = Open myCarlos
+native-tray-quit = Quit myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = A new document is waiting. Unlock myCarlos to see it.
+
 ai-summary-again = Summarize again
 
 ai-keepFailed = myCarlos could not keep this answer with the document. It is still shown here.
@@ -2308,6 +2431,14 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+interface-received-confirmTitleOne = Import { $name } into Shared with me?
+
+interface-received-confirmTitleMany = Import { $count } documents into Shared with me?
+
+interface-received-confirmBody = Nothing is added until you choose Import. Cancel leaves nothing behind.
+
+interface-received-import = Import
 
 reader-android-opening = Opening document…
 

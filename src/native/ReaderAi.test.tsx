@@ -229,7 +229,7 @@ describe("the reader's AI helper", () => {
     ).toBeVisible();
     expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
     const links = within(panel).getAllByRole("button", {
-      name: "Show in document",
+      name: "Show me in the document",
     });
     expect(links).toHaveLength(2);
     expect(links[1]).toHaveAccessibleDescription(
@@ -362,7 +362,7 @@ describe("the reader's AI helper", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     const mark = await waitFor(() => {
@@ -409,10 +409,10 @@ describe("the reader's AI helper", () => {
     await user.click(screen.getByRole("button", { name: "Previous page" }));
     await firstPage();
     await waitFor(() => expect(pageText().open).toBe(false));
-    // "Show in document" turns to the sentence's page with the text open.
+    // "Show me in the document" turns to the sentence's page with the text open.
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     await waitFor(() => expect(pageText().open).toBe(true));
@@ -1985,7 +1985,7 @@ describe("the AI helper beside a clinic reading aid", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     await waitFor(() =>
@@ -2023,7 +2023,7 @@ describe("the AI helper beside a clinic reading aid", () => {
   );
 });
 
-describe("Show in document also marks the page picture (#292)", () => {
+describe("Show me in the document also marks the page picture (#292)", () => {
   const repeat = () =>
     fakeLocalModel({
       sentences: () => [
@@ -2039,7 +2039,7 @@ describe("Show in document also marks the page picture (#292)", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     return { user, unmount };
@@ -2169,7 +2169,9 @@ describe("Show in document also marks the page picture (#292)", () => {
     }));
     const { user } = await show({ pageBoxes });
     await waitFor(() => expect(overlay()).not.toBeNull());
-    await user.click(screen.getByRole("button", { name: "Show in document" }));
+    await user.click(
+      screen.getByRole("button", { name: "Show me in the document" }),
+    );
     await waitFor(() => expect(overlay()).not.toBeNull());
     expect(pageBoxes).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("button", { name: "Previous page" }));
@@ -2238,7 +2240,7 @@ describe("Show in document also marks the page picture (#292)", () => {
           screen.getByRole("region", { name: "Summary in plain words" }),
         ).toContainElement(unfold);
         expect(
-          screen.queryByRole("button", { name: "Show in document" }),
+          screen.queryByRole("button", { name: "Show me in the document" }),
         ).toBeNull();
         expect(document.getElementById("reader-ai-whole")).not.toBeVisible();
         // The marked words keep the focus, as on a large window.
@@ -2250,7 +2252,9 @@ describe("Show in document also marks the page picture (#292)", () => {
         // Unfolded: the whole summary, with its label, and the focus back on
         // the sentence whose words are shown.
         await user.click(unfold);
-        const shown = screen.getByRole("button", { name: "Show in document" });
+        const shown = screen.getByRole("button", {
+          name: "Show me in the document",
+        });
         await waitFor(() => expect(shown).toHaveFocus());
         expect(unfoldButton()).toBeNull();
         expect(
@@ -2279,7 +2283,7 @@ describe("Show in document also marks the page picture (#292)", () => {
     await waitFor(() => expect(overlay()).not.toBeNull());
     expect(unfoldButton()).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Show in document" }),
+      screen.getByRole("button", { name: "Show me in the document" }),
     ).toBeVisible();
   });
 
@@ -2287,7 +2291,9 @@ describe("Show in document also marks the page picture (#292)", () => {
     try {
       await show({ pageBoxes: oneBox() });
       await waitFor(() => expect(overlay()).not.toBeNull());
-      const shown = screen.getByRole("button", { name: "Show in document" });
+      const shown = screen.getByRole("button", {
+        name: "Show me in the document",
+      });
       act(() => shown.focus());
       await browser.viewport(1100, 400);
       const unfold = await screen.findByRole("button", {
@@ -2308,7 +2314,7 @@ describe("Show in document also marks the page picture (#292)", () => {
       await firstPage();
       expect(unfoldButton()).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Show in document" }),
+        screen.getByRole("button", { name: "Show me in the document" }),
       ).toBeVisible();
     } finally {
       await browser.viewport(1100, 760);
@@ -2364,7 +2370,7 @@ describe("Show in document also marks the page picture (#292)", () => {
       // While it works, the old sentence's words can still be shown, but
       // the panel stays whole: the working line and the status stay heard.
       await user.click(
-        screen.getByRole("button", { name: "Show in document" }),
+        screen.getByRole("button", { name: "Show me in the document" }),
       );
       await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
       expect(unfoldButton()).toBeNull();
@@ -2391,7 +2397,7 @@ describe("Show in document also marks the page picture (#292)", () => {
       await browser.viewport(1100, 760);
       await waitFor(() =>
         expect(
-          screen.getByRole("button", { name: "Show in document" }),
+          screen.getByRole("button", { name: "Show me in the document" }),
         ).toHaveFocus(),
       );
     } finally {
