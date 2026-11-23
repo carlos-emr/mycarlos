@@ -56,6 +56,8 @@ async function fakeNative(page: Page, locale: string, linked = true) {
           command === "plugin:window|set_theme"
         )
           return;
+        // The tray's waiting sentence is asked for at unlock (#230): none here.
+        if (command === "tray_waiting_status") return false;
         // Files shared to myCarlos are looked for on focus (#49): none.
         if (command === "received_list")
           return { files: [], notice: { dropped: 0, refusedShares: 0 } };
