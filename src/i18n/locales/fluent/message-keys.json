@@ -1203,5 +1203,10 @@
   "interface.received.confirmTitleOne",
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
-  "interface.received.import"
+  "interface.received.import",
+  "preferences.more",
+  "preferences.less",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary"
 ]

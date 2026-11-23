@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import { MoreAbout } from "./MoreAbout";
 
 type BackgroundStatus = {
   supported: boolean;
@@ -79,15 +80,21 @@ export function BackgroundSetting() {
     <section className="setting-row">
       <div>
         <h2>{t("background.title")}</h2>
+        {/* What matters is said in view (the vault locks as the window closes); the rest folds away. */}
+        <p id={`${id}-keep-summary`}>{t("background.keepRunningSummary")}</p>
+        <p id={`${id}-login-summary`}>{t("background.startAtLoginSummary")}</p>
+        <MoreAbout>
+          <p id={`${id}-keep-help`}>{t("background.keepRunningHelp")}</p>
+          <p id={`${id}-login-help`}>{t("background.startAtLoginHelp")}</p>
+        </MoreAbout>
       </div>
-      <div className="appearance-choice">
-        <p id={`${id}-keep-help`}>{t("background.keepRunningHelp")}</p>
+      <div className="appearance-choice preferences-checks">
         <label className="appearance-option">
           <input
             type="checkbox"
             checked={status.keepRunning}
             disabled={saving}
-            aria-describedby={`${id}-keep-help`}
+            aria-describedby={`${id}-keep-summary ${id}-keep-help`}
             onChange={(event) =>
               save("background_set_keep_running", event.currentTarget.checked)
             }
@@ -95,13 +102,12 @@ export function BackgroundSetting() {
           <span>{t("background.keepRunning")}</span>
         </label>
         {status.keepRunning && <p role="status">{t("background.paused")}</p>}
-        <p id={`${id}-login-help`}>{t("background.startAtLoginHelp")}</p>
         <label className="appearance-option">
           <input
             type="checkbox"
             checked={status.startAtLogin}
             disabled={saving}
-            aria-describedby={`${id}-login-help`}
+            aria-describedby={`${id}-login-summary ${id}-login-help`}
             onChange={(event) =>
               save("background_set_start_at_login", event.currentTarget.checked)
             }

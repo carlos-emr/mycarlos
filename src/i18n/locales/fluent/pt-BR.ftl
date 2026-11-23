@@ -2569,3 +2569,13 @@ security-backup-leaveVideosOutHelp = O backup não conterá seus vídeos. Se voc
 restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta todo o resto, e seus vídeos não estarão lá. Eles aparecem entre os documentos ocultos, como arquivos ausentes.
 security-backup-sizeCalculating = Calculando o tamanho do backup…
 interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
+
+preferences-more = Saiba mais
+
+preferences-less = Menos
+
+notifications-autoSummary = As verificações automáticas só acontecem enquanto o myCarlos está aberto e desbloqueado.
+
+background-keepRunningSummary = O myCarlos pode continuar em segundo plano depois que você fecha a janela. Seu cofre é bloqueado quando a janela fecha.
+
+background-startAtLoginSummary = O myCarlos pode iniciar quando você entra neste computador.

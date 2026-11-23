@@ -54,12 +54,54 @@ describe("Running in the background", () => {
     expect(await keep()).not.toBeChecked();
     expect(await login()).not.toBeChecked();
     expect(screen.queryByRole("status")).toBeNull();
+    // The key fact is in view, in a sentence of its own.
     expect(
-      screen.getByText(humanText(/Your vault locks as the window closes/)),
+      screen.getByText(
+        humanText(
+          "myCarlos can stay in the background after you close its window. Your vault locks as the window closes.",
+        ),
+      ),
     ).toBeVisible();
     expect(native.invoke).toHaveBeenCalledWith("background_status", {
       locale: "en",
     });
+  });
+
+  it("folds the long explanation under More about this: closed at first, opened, closed again", async () => {
+    native.invoke.mockResolvedValue({ ...off });
+    const user = userEvent.setup();
+    render(<BackgroundSetting />);
+    await keep();
+    const long = screen.getByText(humanText(/Choose Quit from the icon/));
+    const more = screen.getByText(humanText("More about this"));
+    const details = more.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(long).not.toBeVisible();
+    // The same, for a screen reader: the disclosure is a summary that says it is collapsed.
+    expect(more.tagName).toBe("SUMMARY");
+    // The keys themselves are the browser's own and are driven in tests/preferences-text.spec.ts.
+    await user.click(more);
+    expect(details.open).toBe(true);
+    expect(long).toBeVisible();
+    expect(screen.getByText(humanText("Less"))).toBeVisible();
+    await user.click(screen.getByText(humanText("Less")));
+    expect(details.open).toBe(false);
+    expect(long).not.toBeVisible();
+    expect(screen.getByText(humanText("More about this"))).toBeVisible();
+  });
+
+  it("describes each box by its summary and its long explanation, so a screen reader has both", async () => {
+    native.invoke.mockResolvedValue({ ...off });
+    render(<BackgroundSetting />);
+    const box = await keep();
+    const description = (box.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(
+      humanText(/Your vault locks as the window closes\./)(description),
+    ).toBe(true);
+    expect(humanText(/Choose Quit from the icon/)(description)).toBe(true);
   });
 
   it("turns each choice on on its own and shows that checks wait while locked", async () => {

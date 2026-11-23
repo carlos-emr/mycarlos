@@ -25,6 +25,66 @@ afterEach(() => {
 });
 
 describe("Document notice preference", () => {
+  it("keeps the key fact in view and folds the long explanation under More about this", async () => {
+    native.invoke.mockResolvedValue({
+      ...allowed,
+      automaticChecksSupported: true,
+      automaticChecksEnabled: false,
+      automaticChecksPaused: false,
+    });
+    const user = userEvent.setup();
+    render(<NotificationSetting />);
+    await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    // In view: the notice is generic, and automatic checks happen only while open and unlocked.
+    expect(
+      screen.getByText(
+        humanText(/Windows can show a generic notice after a clinic document/),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        humanText(
+          "Automatic checks run only while myCarlos is open and unlocked.",
+        ),
+      ),
+    ).toBeVisible();
+    const long = screen.getByText(
+      humanText(/with at least two minutes between attempts/),
+    );
+    const more = screen.getByText(humanText("More about this"));
+    const details = more.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(long).not.toBeVisible();
+    // The keys themselves are the browser's own and are driven in tests/preferences-text.spec.ts.
+    await user.click(more);
+    expect(details.open).toBe(true);
+    expect(long).toBeVisible();
+    expect(screen.getByText(humanText("Less"))).toBeVisible();
+    // The box is described by the summary and the long text, folded or not.
+    const box = screen.getByRole("checkbox", {
+      name: humanText(
+        "Check for clinic documents automatically while unlocked",
+      ),
+    });
+    const description = (box.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(humanText(/open and unlocked/)(description)).toBe(true);
+    expect(humanText(/at least two minutes/)(description)).toBe(true);
+  });
+
+  it("has no More about this where the automatic checks are not offered", async () => {
+    native.invoke.mockResolvedValue({ ...allowed });
+    render(<NotificationSetting />);
+    await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    expect(screen.queryByText(humanText("More about this"))).toBeNull();
+  });
+
   it("hides unsupported native capability without opting in or sending a notice", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,
