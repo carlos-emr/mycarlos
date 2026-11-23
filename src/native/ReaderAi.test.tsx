@@ -2087,7 +2087,19 @@ describe("Show me in the document also marks the page picture (#292)", () => {
     expect(look.pointerEvents).toBe("none");
     const mark = document.querySelector(".native-reader-text mark");
     await waitFor(() => expect(mark).toHaveFocus());
-    expect(getComputedStyle(mark!).outlineStyle).toBe("solid");
+    // The picture shows the quote, so the text's mark is not drawn a second time (no fill, no
+    // outline) but stays in the reading order, focused and not hidden from assistive technology.
+    const quiet = getComputedStyle(mark!);
+    expect(quiet.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    // Only a keyboard user's focus ring may show (`:focus-visible`), never the highlight outline.
+    if (!mark!.matches(":focus-visible"))
+      expect(quiet.outlineStyle).toBe("none");
+    expect(quiet.visibility).toBe("visible");
+    expect(quiet.display).not.toBe("none");
+    expect(mark!.closest("[aria-hidden='true'], [hidden], [inert]")).toBeNull();
+    expect(document.querySelector(".native-reader-text")).toHaveClass(
+      "native-reader-text-mark-quiet",
+    );
     await waitFor(() =>
       expect(status()).toContain(
         "Page 2: the quoted words are marked on the page picture and in Text on this page.",
@@ -2138,6 +2150,13 @@ describe("Show me in the document also marks the page picture (#292)", () => {
     const mark = document.querySelector(".native-reader-text mark");
     expect(mark).toHaveTextContent(/^Repeat in 2 weeks$/);
     await waitFor(() => expect(mark).toHaveFocus());
+    // Nothing is drawn on the picture, so the text's mark is the highlight and is drawn.
+    const drawn = getComputedStyle(mark!);
+    expect(drawn.outlineStyle).toBe("solid");
+    expect(drawn.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(document.querySelector(".native-reader-text")).not.toHaveClass(
+      "native-reader-text-mark-quiet",
+    );
   });
 
   it("draws nothing when an answer is not a box on the picture, or the request fails", async () => {

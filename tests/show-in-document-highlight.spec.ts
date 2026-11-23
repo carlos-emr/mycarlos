@@ -109,6 +109,22 @@ const picture = (reader: Locator, number: number) =>
 const boxes = (reader: Locator) =>
   reader.locator(".native-reader-boxes > span");
 const mark = (reader: Locator) => reader.locator(".native-reader-text mark");
+/** How the marked words look and whether assistive technology still has them. */
+const markLook = (reader: Locator) =>
+  mark(reader).evaluate((element) => {
+    const style = getComputedStyle(element);
+    const hidden = element.closest("[aria-hidden='true'], [hidden], [inert]");
+    return {
+      background: style.backgroundColor,
+      outline: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      visibility: style.visibility,
+      display: style.display,
+      focusVisible: element.matches(":focus-visible"),
+      hiddenFromAssistiveTechnology: hidden !== null,
+    };
+  });
+const TRANSPARENT = "rgba(0, 0, 0, 0)";
 const unfold = (reader: Locator) =>
   reader.getByRole("button", {
     name: en("ai.summary.showWhole"),
@@ -241,6 +257,16 @@ test("marks the quote on the page picture and in the text, and keeps the helper'
   // The marked words keep the focus, and both are in view.
   await expect(mark(reader)).toBeFocused();
   await expect(mark(reader)).toHaveText(QUOTE);
+  // The picture shows the quote, so the text's mark is not drawn a second time: no fill and no
+  // outline (unless a keyboard user needs to see the focus), yet it is still there for assistive
+  // technology: not hidden, not removed, not moved out of the reading order.
+  const quiet = await markLook(reader);
+  expect(quiet.background).toBe(TRANSPARENT);
+  if (!quiet.focusVisible) expect(quiet.outline).toBe("none");
+  expect(quiet.visibility).toBe("visible");
+  expect(quiet.display).not.toBe("none");
+  expect(quiet.hiddenFromAssistiveTechnology).toBe(false);
+  await expect(mark(reader)).toBeVisible();
   await expect(reader.locator("#reader-marked")).toHaveText(
     en("interface.reader.markedOnPage", { page: 2 }),
   );
@@ -461,6 +487,12 @@ test("draws no box where the helper cannot place every word, and says the words 
   await expect(boxes(reader)).toHaveCount(0);
   await expect(mark(reader)).toHaveText(QUOTE);
   await expect(mark(reader)).toBeFocused();
+  // Nothing is drawn on the picture, so the text's mark IS the highlight and is drawn as before.
+  const drawn = await markLook(reader);
+  expect(drawn.background).not.toBe(TRANSPARENT);
+  expect(drawn.outline).toBe("solid");
+  expect(drawn.outlineWidth).toBe("2px");
+  expect(drawn.hiddenFromAssistiveTechnology).toBe(false);
   await expectOnlyFakedCommands(page);
 });
 
@@ -484,6 +516,12 @@ test("outlines the boxes in the system's highlight colour with forced colours", 
       return [`${style.outlineStyle} ${style.outlineColor}`, `solid ${colour}`];
     });
   expect(outline).toBe(highlight);
+  // Forced colours do not paint the quiet text mark in Highlight either: the picture is the only
+  // highlight, and the mark is still there for assistive technology.
+  const forced = await markLook(reader);
+  expect(forced.background).toBe(TRANSPARENT);
+  expect(forced.hiddenFromAssistiveTechnology).toBe(false);
+  await expect(mark(reader)).toBeFocused();
   await shot(page, "show-in-document-forced-colours");
 });
 

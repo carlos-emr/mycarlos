@@ -577,6 +577,11 @@ function ReadingDocument({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placeKey, quoted, password]);
   const boxes = placed && placed.key === placeKey ? placed.boxes : null;
+  // While the picture shows the quote (its boxes are drawn), the marked words in the text stay for
+  // assistive technology and the keys (the focus, the reading, Tab) but are not drawn a second
+  // time: a sighted reader sees the picture's highlight only. Where the words could not be placed
+  // on the picture, the text mark is the highlight and is drawn.
+  const markQuiet = Boolean(marked && boxes && boxes.length > 0);
   // The picture scrolls itself to the first box, on each press as well.
   useEffect(() => {
     const area = pageRef.current;
@@ -847,7 +852,9 @@ function ReadingDocument({
                 there, and the box stays open for the next page. */}
             {shown && !asking && !error && (
               <details
-                className="native-reader-text"
+                className={`native-reader-text${
+                  markQuiet ? " native-reader-text-mark-quiet" : ""
+                }`}
                 open={textOpen}
                 onToggle={(event) => setTextOpen(event.currentTarget.open)}
               >
