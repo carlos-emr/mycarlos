@@ -178,10 +178,11 @@ function protoNode([name, attrs, children = []]) {
   return field(1, element);
 }
 
-const elf = (...extra) =>
+/** ELF magic and a header with no section table (an ELF the gate cannot read). */
+const rawElf = (...extra) =>
   Buffer.concat([
-    Buffer.from([0x7f, 0x45, 0x4c, 0x46]),
-    Buffer.alloc(60),
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]),
+    Buffer.alloc(57),
     ...extra.map((e) => Buffer.from(e)),
   ]);
 
@@ -206,6 +207,13 @@ function elfWithSections(sections) {
   });
   return Buffer.concat([header, names, table]);
 }
+
+/** A readable, stripped little-endian ELF64 library, with any extra text after it. */
+const elf = (...extra) =>
+  Buffer.concat([
+    elfWithSections([".text", ".dynsym"]),
+    ...extra.map((e) => Buffer.from(e)),
+  ]);
 
 const GOOD_MANIFEST = [
   ["manifest", { package: EXPECTED_APP_ID }],
@@ -434,11 +442,9 @@ test("the stub, the cloud AI send, dev addresses and unstripped libraries are fo
     checkBinary(elfWithSections([".text", ".dynsym"]), "lib.so"),
     [],
   );
+  // A string constant that says ".symtab" in a stripped library with section headers is fine.
   assert.deepEqual(
-    checkBinary(
-      elf(".symtab and .debug_info as plain text, no sections"),
-      "lib.so",
-    ),
+    checkBinary(elf(".symtab and .debug_info as plain text"), "lib.so"),
     [],
   );
   assert.deepEqual(
@@ -1200,4 +1206,69 @@ test("hostile or damaged input is bounded: no hang, no unbounded inflate, no sil
       ),
     /too long/,
   );
+});
+
+test("an ELF whose section table cannot be read, and a native library that is not an ELF, are refused (not passed)", () => {
+  const refused = (bytes, options) =>
+    checkBinary(bytes, "lib.so", options).join("|");
+  assert.match(
+    refused(rawElf()),
+    /section headers cannot be read \(there is no section table\)/,
+  );
+  assert.match(
+    refused(Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1])),
+    /header is cut short/,
+  );
+  const bigEndian = Buffer.from(rawElf());
+  bigEndian[5] = 2;
+  assert.match(refused(bigEndian), /not a little-endian ELF/);
+  const hugeOffset = Buffer.from(elf());
+  hugeOffset.writeBigUInt64LE(0xffffffffffn, 40);
+  assert.match(refused(hugeOffset), /past the end of the file/);
+  const hugeCount = Buffer.from(elf());
+  hugeCount.writeUInt16LE(0xffff, 60);
+  assert.match(refused(hugeCount), /cannot be read/);
+  const noNames = Buffer.from(elf());
+  noNames.writeUInt16LE(0xfff0, 62);
+  assert.match(refused(noNames), /name table is missing/);
+  // ELF32 (armv7, i686) is read too.
+  const elf32 = Buffer.alloc(52 + 40 * 2 + 16);
+  elf32.set([0x7f, 0x45, 0x4c, 0x46, 1, 1, 1]);
+  elf32.writeUInt32LE(52 + 16, 32);
+  elf32.writeUInt16LE(40, 46);
+  elf32.writeUInt16LE(2, 48);
+  elf32.writeUInt16LE(1, 50);
+  elf32.write("\0.symtab\0", 52);
+  elf32.writeUInt32LE(52, 52 + 16 + 40 + 16);
+  assert.doesNotMatch(
+    refused(elf32),
+    /ELF section headers cannot be read \(the header/,
+  );
+  // A library file in an APK that is not an ELF at all is a finding; another kind of file is not asked to be one.
+  assert.match(
+    refused(Buffer.from("not an elf"), { expectElf: true }),
+    /not an ELF file/,
+  );
+  assert.deepEqual(checkBinary(Buffer.from("plain notes"), "notes.txt"), []);
+  const notElfLibrary = zip([
+    ["AndroidManifest.xml", axml(GOOD_MANIFEST)],
+    ["lib/arm64-v8a/libfake.so", Buffer.from("this is not an elf")],
+  ]);
+  assert.match(
+    checkAndroidArchive(notElfLibrary, "n.apk", EXPECTED_APP_ID).join(),
+    /not an ELF file/,
+  );
+});
+
+test("features given through the shell cannot be checked and are refused", () => {
+  const found = (text) => checkBuildCommands(text, "c").join("|");
+  assert.match(found("tauri build --features $FEATURES"), /through the shell/);
+  assert.match(
+    found('cargo build --features "$(cat features.txt)"'),
+    /through the shell/,
+  );
+  assert.match(found("cargo build -F `cat f`"), /through the shell/);
+  assert.match(found("cargo build --features=${EXTRA}"), /through the shell/);
+  assert.deepEqual(found("cargo test --features $FEATURES"), "");
+  assert.deepEqual(found("cargo build --features serde"), "");
 });

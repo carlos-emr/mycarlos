@@ -105,7 +105,7 @@ export function checkAndroidXmlResources(resources) {
  * build on the real CI APK holds exactly `http://localhost:1420`); any OTHER dev address, such as a
  * LAN or emulator one from `tauri android dev`, is a finding.
  */
-export function checkBinary(bytes, label, { allowedUrls = [] } = {}) {
+export function checkBinary(bytes, label, { allowedUrls = [], expectElf = false } = {}) {
   const problems = [];
   for (const marker of BINARY_MARKERS) {
     if (bytes.includes(marker.bytes))
@@ -119,10 +119,13 @@ export function checkBinary(bytes, label, { allowedUrls = [] } = {}) {
     seen.add(found[0]);
     problems.push(`${label} contains a dev server address (${found[0]})`);
   }
-  for (const section of elfDebugSections(bytes)) {
-    problems.push(
-      `${label} is not stripped (${section} is present: a debug build)`,
-    );
+  const elf = inspectElf(bytes);
+  if (elf.problem) problems.push(`${label}: ${elf.problem}`);
+  for (const section of elf.sections) {
+    problems.push(`${label} is not stripped (${section} is present: a debug build)`);
+  }
+  if (expectElf && (bytes.length < 4 || bytes.readUInt32BE(0) !== 0x7f454c46)) {
+    problems.push(`${label} is not an ELF file, so it cannot be checked for symbols`);
   }
   return problems;
 }
@@ -141,40 +144,45 @@ const originOf = (url) => {
  * or one with no section table (a stripped one often has none worth reading).
  */
 export function elfDebugSections(bytes) {
-  if (
-    bytes.length < 64 ||
-    bytes.readUInt32BE(0) !== 0x7f454c46 ||
-    bytes[5] !== 1
-  )
-    return [];
+  return inspectElf(bytes).sections;
+}
+
+/**
+ * What the section headers of an ELF file say: `{ sections, problem }`. `problem` is set when the file
+ * is an ELF the gate cannot read (big-endian, a header-only file, a section table past the end, a
+ * missing name table): a real stripped library always keeps its section headers, so unreadable is
+ * refused, never passed. `problem` is null and `sections` empty for a file that is not an ELF at all.
+ */
+export function inspectElf(bytes) {
+  const none = { sections: [], problem: null };
+  if (bytes.length < 4 || bytes.readUInt32BE(0) !== 0x7f454c46) return none;
+  const unreadable = (why) => ({ sections: [], problem: `its ELF section headers cannot be read (${why})` });
+  if (bytes.length < 64) return unreadable("the header is cut short");
+  if (bytes[5] !== 1) return unreadable("not a little-endian ELF");
   const is64 = bytes[4] === 2;
-  const shoff = is64
-    ? Number(bytes.readBigUInt64LE(40))
-    : bytes.readUInt32LE(32);
+  const shoff = is64 ? Number(bytes.readBigUInt64LE(40)) : bytes.readUInt32LE(32);
   const entry = is64 ? bytes.readUInt16LE(58) : bytes.readUInt16LE(46);
   const count = is64 ? bytes.readUInt16LE(60) : bytes.readUInt16LE(48);
   const names = is64 ? bytes.readUInt16LE(62) : bytes.readUInt16LE(50);
-  if (
-    !shoff ||
-    !count ||
-    names >= count ||
-    shoff + count * entry > bytes.length
-  )
-    return [];
+  if (!shoff || !count) return unreadable("there is no section table");
+  if (names >= count) return unreadable("the section name table is missing");
+  if (entry < (is64 ? 64 : 40) || shoff + count * entry > bytes.length) {
+    return unreadable("the section table runs past the end of the file");
+  }
   const header = (index) => shoff + index * entry;
   const strOffset = is64
     ? Number(bytes.readBigUInt64LE(header(names) + 24))
     : bytes.readUInt32LE(header(names) + 16);
+  if (strOffset >= bytes.length) return unreadable("the section name table is past the end of the file");
   const found = new Set();
   for (let i = 0; i < count; i++) {
     const at = strOffset + bytes.readUInt32LE(header(i));
-    if (at >= bytes.length) continue;
+    if (at >= bytes.length) return unreadable("a section name is past the end of the file");
     const end = bytes.indexOf(0, at);
     const name = bytes.toString("latin1", at, end < 0 ? bytes.length : end);
-    if (name === ".symtab" || name.startsWith(".debug_"))
-      found.add(name === ".symtab" ? ".symtab" : ".debug_info");
+    if (name === ".symtab" || name.startsWith(".debug_")) found.add(name === ".symtab" ? ".symtab" : ".debug_info");
   }
-  return [...found];
+  return { sections: [...found], problem: null };
 }
 
 /** Problems in a whole APK or AAB. */
@@ -222,7 +230,7 @@ export function checkAndroidArchive(
     if (/(?:^|\/)lib\/[^/]+\/[^/]+\.so$/.test(name)) {
       libraries++;
       problems.push(
-        ...checkBinary(zip.read(name), `${label}!${name}`, options),
+        ...checkBinary(zip.read(name), `${label}!${name}`, { ...options, expectElf: true }),
       );
     }
   }

@@ -351,6 +351,12 @@ export function checkCommandText(text, label) {
       else if (/^-F.+/.test(token) && !token.startsWith("--"))
         list = token.slice(2);
       if (list !== null) {
+        if (/[$`]/.test(list)) {
+          problems.push(
+            `${label} gives its features through the shell (${list}), which cannot be checked`,
+          );
+          continue;
+        }
         for (const feature of list.split(/[\s,]+/).filter(Boolean)) {
           const bad = forbiddenPart(feature);
           if (bad) problems.push(`${label} builds with the ${bad} feature`);
