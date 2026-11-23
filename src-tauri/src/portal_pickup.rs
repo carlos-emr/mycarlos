@@ -571,7 +571,7 @@ where
                     return Err(error);
                 }
                 if matches!(error, VaultError::Portal(LinkError::DeviceRemoved)) {
-                    store.mark_link_gone(original.id);
+                    store.mark_clinic_removed(original.id);
                 } else if not_found.get() {
                     unknown.push(original.clone());
                 }

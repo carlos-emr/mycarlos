@@ -2098,7 +2098,7 @@ impl VaultStore {
             Ok(check) => check.issue.as_ref().is_some_and(removed),
             Err(error) => removed(error),
         } {
-            self.mark_link_gone(link_id);
+            self.mark_clinic_removed(link_id);
         }
         result
     }
@@ -2166,6 +2166,124 @@ impl VaultStore {
             self.forget_link_state(link_id);
         }
         Ok(())
+    }
+
+    /// The patient stops checking a clinic (#160): the link stays, with its keys and the custody
+    /// proof of its saved documents, but no check, notice or poll asks the portal about it again.
+    /// Its remote notices are dropped. One commit with one history entry. Idempotent, and the
+    /// same refusals as `remove_portal_link`. Only a finished link can be stopped: an incomplete
+    /// attempt is removed instead.
+    pub fn stop_checking_portal_link(&self, link_id: Uuid, session: u64) -> Result<(), VaultError> {
+        use portal_link::LinkError;
+        let _work = self.start_portal_work()?;
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let changed = self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            let Some(link) = manifest.portal_links.iter_mut().find(|l| l.id == link_id) else {
+                return Ok(false);
+            };
+            if link.clinic.is_none() {
+                return Err(VaultError::Invalid);
+            }
+            if link.stopped_at_ms.is_some() {
+                return Ok(false);
+            }
+            link.stopped_at_ms = Some(crate::now_ms());
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkStopped, crate::now_ms());
+            entry.portal_link_id = Some(link_id);
+            entry.profile_id = link.profile_id;
+            entry.name = link
+                .clinic
+                .as_ref()
+                .map(|clinic| clinic.clinic_name.clone());
+            manifest.remote_notices.drop_link(link_id);
+            entries.push(entry);
+            Ok(true)
+        })?;
+        if changed {
+            self.forget_link_state(link_id);
+        }
+        Ok(())
+    }
+
+    /// Removes every incomplete attempt (a link that never finished linking, so holds no
+    /// document) in one commit, with one history entry each, and returns how many (#160). Never
+    /// touches a finished link. Same guards as `remove_portal_link`.
+    pub fn remove_incomplete_portal_links(&self, session: u64) -> Result<usize, VaultError> {
+        use portal_link::LinkError;
+        let _work = self.start_portal_work()?;
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let mut removed_ids = Vec::new();
+        self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            removed_ids.clear();
+            let ids: Vec<Uuid> = manifest
+                .portal_links
+                .iter()
+                .filter(|l| l.clinic.is_none())
+                .map(|l| l.id)
+                .collect();
+            for id in ids {
+                let Some(index) = manifest.portal_links.iter().position(|l| l.id == id) else {
+                    continue;
+                };
+                let link = manifest.portal_links.remove(index);
+                manifest.refused_deliveries.retain(|r| r.link_id != id);
+                manifest.waiting_aids.retain(|a| a.link_id != id);
+                manifest.remote_notices.drop_link(id);
+                let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkRemoved, crate::now_ms());
+                entry.portal_link_id = Some(id);
+                entry.profile_id = link.profile_id;
+                entries.push(entry);
+                removed_ids.push(id);
+            }
+            Ok(!removed_ids.is_empty())
+        })?;
+        for id in &removed_ids {
+            self.forget_link_state(*id);
+        }
+        Ok(removed_ids.len())
+    }
+
+    /// A check got a real 403 `portal_device_removed` for this device: remember it for the run
+    /// and save it, once, so a restart does not show the clinic as approved (#160). Saving is
+    /// best effort (a locked or recovering vault keeps only the memory); it never fails a check.
+    pub(crate) fn mark_clinic_removed(&self, link_id: Uuid) {
+        self.mark_link_gone(link_id);
+        let _ = self.mutate_recorded(|manifest, entries| {
+            let Some(link) = manifest
+                .portal_links
+                .iter_mut()
+                .find(|l| l.id == link_id && l.clinic.is_some())
+            else {
+                return Ok(false);
+            };
+            if link.clinic_removed_at_ms.is_some() {
+                return Ok(false);
+            }
+            link.clinic_removed_at_ms = Some(crate::now_ms());
+            let mut entry =
+                HistoryEntry::new(HistoryEvent::PortalLinkClinicRemoved, crate::now_ms());
+            entry.portal_link_id = Some(link_id);
+            entry.profile_id = link.profile_id;
+            entry.name = link
+                .clinic
+                .as_ref()
+                .map(|clinic| clinic.clinic_name.clone());
+            manifest.remote_notices.drop_link(link_id);
+            entries.push(entry);
+            Ok(true)
+        });
     }
 
     /// Drops what this run remembers about a link that is no longer in the vault.
@@ -5037,6 +5155,9 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                         .approval
                         .as_ref()
                         .is_some_and(|a| a.status.is_some() || a.reason.is_some())))
+            || ((link.stopped_at_ms.is_some() || link.clinic_removed_at_ms.is_some())
+                && (manifest.format_version < MANIFEST_FORMAT_LINK_REMOVAL
+                    || link.clinic.is_none()))
             || !link_ids.insert(link.id)
             || !device_ids.insert(link.keys.device_key_id())
             || link.validate().is_err()

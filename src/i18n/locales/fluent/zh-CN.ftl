@@ -1539,6 +1539,10 @@ interface-history-event-portalLinked = 已关联诊所
 
 interface-history-event-portalLinkRemoved = 已移除诊所关联
 
+interface-history-event-portalLinkStopped = 已停止检查一家诊所
+
+interface-history-event-portalLinkClinicRemoved = 诊所已移除此设备
+
 interface-history-event-profileCreated = 患者档案已添加
 
 interface-history-event-profileDetailsChanged = 个人资料已更改
@@ -1688,6 +1692,28 @@ portal-removeConfirm = 移除关联
 portal-removeKept = 此诊所的文档已保存在您的保管库中，因此保留此关联。
 
 portal-removed = 关联已移除。
+
+portal-stopLink = 不再检查这家诊所
+
+portal-stopTitle = 不再检查这家诊所？
+
+portal-stopBody = { $clinic }。myCarlos 将不再向这家诊所查找新文件，也不再向它请求通知。已保存的文件仍留在您的保险库中，其证明仍可校验。诊所可能仍会列出此设备。
+
+portal-stopConfirm = 不再检查
+
+portal-stopped = 已于 { $date } 停止。
+
+portal-stoppedDone = 不再检查这家诊所。
+
+portal-removeAll = 移除所有未完成的尝试（{ $count }）
+
+portal-removeAllTitle = 移除所有未完成的尝试？
+
+portal-removeAllBody = { $count } 次从未完成的关联尝试将从这台电脑上移除，其已保存的设备密钥也会一并清除。已关联的诊所和已保存的文件不受影响。
+
+portal-removeAllConfirm = 移除尝试
+
+portal-removedAll = 未完成的尝试已移除。
 
 
 ai-summary-button = 摘要

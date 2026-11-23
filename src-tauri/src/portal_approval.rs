@@ -1285,6 +1285,8 @@ pub(crate) fn first_fixture() -> (serde_json::Value, crate::portal_link::StoredL
         }),
         approval: None,
         approval_history: Vec::new(),
+        stopped_at_ms: None,
+        clinic_removed_at_ms: None,
     };
     let attempt = Attempt {
         request_id: Uuid::parse_str(first["intent"]["claims"]["request_id"].as_str().unwrap())

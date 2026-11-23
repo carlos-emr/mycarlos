@@ -225,6 +225,14 @@ pub struct StoredLink {
     pub approval: Option<crate::portal_approval::Attempt>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub approval_history: Vec<crate::portal_approval::Attempt>,
+    /// When the patient stopped checking this clinic (#160, format 14). The link and its keys
+    /// stay for the custody of saved documents; nothing is asked of the portal for it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_at_ms: Option<u64>,
+    /// When a check first got a real 403 `portal_device_removed` for this device (#160,
+    /// format 14). A 404 never sets it: that stays in memory for the run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clinic_removed_at_ms: Option<u64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -260,6 +268,10 @@ pub struct LinkSummary {
     /// A document or reading aid from this clinic is filed in the vault. Its custody proof needs
     /// this link's private keys, so such a link cannot be removed (#160). The snapshot adds it.
     pub has_documents: bool,
+    /// When the patient stopped checking this clinic (#160).
+    pub stopped_at_ms: Option<u64>,
+    /// A check found this device removed by its clinic, and saved it (#160).
+    pub clinic_removed: bool,
 }
 
 impl StoredLink {
@@ -283,7 +295,14 @@ impl StoredLink {
             clinic: None,
             approval: None,
             approval_history: Vec::new(),
+            stopped_at_ms: None,
+            clinic_removed_at_ms: None,
         })
+    }
+
+    /// Whether no check, notice or poll may ask a portal about this link any more.
+    pub fn checks_stopped(&self) -> bool {
+        self.stopped_at_ms.is_some() || self.clinic_removed_at_ms.is_some()
     }
 
     pub fn validate(&self) -> Result<(), LinkError> {
@@ -357,6 +376,8 @@ impl StoredLink {
             approval_code_locked: false,
             refused_deliveries: 0,
             has_documents: false,
+            stopped_at_ms: self.stopped_at_ms,
+            clinic_removed: self.clinic_removed_at_ms.is_some(),
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

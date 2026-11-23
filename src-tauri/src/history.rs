@@ -79,6 +79,12 @@ pub enum HistoryEvent {
     /// keys, remembered refusals, waiting reading aids and push registration went with it. No
     /// clinic is told: the clinic may still list the device.
     PortalLinkRemoved,
+    /// The patient stopped checking a clinic that holds saved documents (#160): no more checks,
+    /// notices or polling for it. The link, its keys and the documents' custody proof stay.
+    PortalLinkStopped,
+    /// A check found this device removed by its clinic (a 403 `portal_device_removed`), saved so
+    /// a restart does not show the clinic as approved again (#160).
+    PortalLinkClinicRemoved,
     DeviceApprovalRequested,
     DeviceApprovalVerified,
     DeviceApprovalStatusChanged,

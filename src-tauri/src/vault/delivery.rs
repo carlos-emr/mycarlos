@@ -403,7 +403,7 @@ impl VaultStore {
             .manifest
             .portal_links
             .iter()
-            .filter(|l| l.clinic.is_some())
+            .filter(|l| l.clinic.is_some() && !l.checks_stopped())
             .cloned()
             .collect())
     }
@@ -7833,6 +7833,136 @@ mod approval_recovery_tests {
         assert!(snapshot_link(&store, link.id).is_none());
         assert!(snapshot_link(&store, other.id).is_some());
         assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 1);
+    }
+    /// #160 stage 3: stopping a clinic that holds documents keeps its link and custody, asks the
+    /// portal nothing more, is idempotent, refuses an incomplete attempt, and survives a restart.
+    #[test]
+    fn should_stop_checking_a_clinic_and_keep_its_documents() {
+        let (_temp, store, other, _) = setup(false);
+        let (link, _, _) = add_signed_pending_delivery(&store);
+        let session = store.portal_link_ticket();
+        assert!(store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == link.id));
+        store.stop_checking_portal_link(link.id, session).unwrap();
+        assert!(!store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == link.id));
+        assert!(store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == other.id));
+        assert_eq!(history_count(&store, HistoryEvent::PortalLinkStopped), 1);
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.stop_checking_portal_link(link.id, session).unwrap();
+        store
+            .stop_checking_portal_link(Uuid::new_v4(), session)
+            .unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+        let store = restart(store);
+        let shown = store.snapshot().unwrap();
+        let summary = shown.portal_links.iter().find(|l| l.id == link.id).unwrap();
+        assert!(summary.stopped_at_ms.is_some() && summary.has_documents);
+        assert_eq!(shown.records.len(), 1);
+        // Still not asked, and its documents' custody still verifies at unlock.
+        let session = store.portal_link_ticket();
+        assert!(!store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == link.id));
+        // An incomplete attempt cannot be stopped: it is removed instead.
+        let pending = crate::portal_link::StoredLink::pending(
+            "https://portal.example.test",
+            "myCarlos on Windows",
+            None,
+            1,
+        )
+        .unwrap();
+        add_link(&store, &pending);
+        assert!(matches!(
+            store.stop_checking_portal_link(pending.id, session),
+            Err(VaultError::Invalid)
+        ));
+    }
+    /// #160 stage 3: a real 403 is saved once and survives a restart; the session-only memory
+    /// (a 404 that a portal does not know the device) saves nothing.
+    #[test]
+    fn should_save_a_clinic_removal_only_from_a_real_403() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let flag = |store: &VaultStore| {
+            store
+                .snapshot()
+                .unwrap()
+                .portal_links
+                .into_iter()
+                .find(|l| l.id == link.id)
+                .unwrap()
+                .clinic_removed
+        };
+        store.mark_link_gone(link.id);
+        assert!(!flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            0
+        );
+        store.mark_clinic_removed(link.id);
+        store.mark_clinic_removed(link.id);
+        assert!(flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            1
+        );
+        let store = restart(store);
+        assert!(flag(&store));
+        let session = store.portal_link_ticket();
+        assert!(!store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == link.id));
+    }
+    /// #160 stage 3: the bulk button removes every incomplete attempt and nothing else.
+    #[test]
+    fn should_remove_all_incomplete_attempts_and_only_those() {
+        let (_temp, store, other, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        for _ in 0..2 {
+            let pending = crate::portal_link::StoredLink::pending(
+                "https://portal.example.test",
+                "myCarlos on Windows",
+                None,
+                1,
+            )
+            .unwrap();
+            add_link(&store, &pending);
+        }
+        let session = store.portal_link_ticket();
+        assert_eq!(store.remove_incomplete_portal_links(session).unwrap(), 2);
+        assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 2);
+        let ids: Vec<_> = store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .map(|l| l.id)
+            .collect();
+        assert!(ids.contains(&link.id) && ids.contains(&other.id));
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .all(|l| !l.incomplete));
+        assert_eq!(store.remove_incomplete_portal_links(session).unwrap(), 0);
     }
     /// #160: a link with a filed document keeps its keys (its custody proof is checked with them at
     /// every unlock), so removing it is refused and nothing changes.

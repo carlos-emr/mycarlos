@@ -594,6 +594,8 @@ pub(crate) mod tests {
             clinic: Some(clinic),
             approval: None,
             approval_history: Vec::new(),
+            stopped_at_ms: None,
+            clinic_removed_at_ms: None,
         }
     }
     #[test]

@@ -1708,6 +1708,10 @@ interface-history-event-portalLinked = Clínica vinculada
 
 interface-history-event-portalLinkRemoved = Vínculo con la clínica quitado
 
+interface-history-event-portalLinkStopped = Se dejó de comprobar una clínica
+
+interface-history-event-portalLinkClinicRemoved = La clínica quitó este dispositivo
+
 interface-history-event-profileCreated = Perfil de paciente añadido
 
 interface-history-event-profileDetailsChanged = Datos personales cambiados
@@ -1876,6 +1880,28 @@ portal-removeConfirm = Quitar vínculo
 portal-removeKept = Los documentos de esta clínica están guardados en su caja fuerte, así que este vínculo se mantiene.
 
 portal-removed = Vínculo quitado.
+
+portal-stopLink = Dejar de comprobar esta clínica
+
+portal-stopTitle = ¿Dejar de comprobar esta clínica?
+
+portal-stopBody = { $clinic }. myCarlos dejará de buscar documentos nuevos en esta clínica y de pedirle avisos. Los documentos ya guardados siguen en su bóveda y su comprobación sigue siendo posible. Es posible que la clínica siga mostrando este dispositivo.
+
+portal-stopConfirm = Dejar de comprobar
+
+portal-stopped = Detenida el { $date }.
+
+portal-stoppedDone = Ya no se comprueba esta clínica.
+
+portal-removeAll = Quitar todos los intentos incompletos ({ $count })
+
+portal-removeAllTitle = ¿Quitar todos los intentos incompletos?
+
+portal-removeAllBody = Se quitarán de este ordenador { $count } intentos de vinculación que nunca terminaron, junto con sus claves de dispositivo guardadas. Las clínicas vinculadas y los documentos guardados no se tocan.
+
+portal-removeAllConfirm = Quitar intentos
+
+portal-removedAll = Intentos incompletos quitados.
 
 
 ai-summary-button = Resumen

@@ -735,6 +735,8 @@ export const MESSAGE_KEYS = [
   "interface.history.event.portalLinkStarted",
   "interface.history.event.portalLinked",
   "interface.history.event.portalLinkRemoved",
+  "interface.history.event.portalLinkStopped",
+  "interface.history.event.portalLinkClinicRemoved",
   "interface.history.event.profileCreated",
   "interface.history.event.profileDetailsChanged",
   "interface.history.event.readingAidFiled",
@@ -832,6 +834,17 @@ export const MESSAGE_KEYS = [
   "portal.removeConfirm",
   "portal.removeKept",
   "portal.removed",
+  "portal.stopLink",
+  "portal.stopTitle",
+  "portal.stopBody",
+  "portal.stopConfirm",
+  "portal.stopped",
+  "portal.stoppedDone",
+  "portal.removeAll",
+  "portal.removeAllTitle",
+  "portal.removeAllBody",
+  "portal.removeAllConfirm",
+  "portal.removedAll",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
@@ -1922,6 +1935,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-portalLinked",
   "interface.history.event.portalLinkRemoved":
     "interface-history-event-portalLinkRemoved",
+  "interface.history.event.portalLinkStopped":
+    "interface-history-event-portalLinkStopped",
+  "interface.history.event.portalLinkClinicRemoved":
+    "interface-history-event-portalLinkClinicRemoved",
   "interface.history.event.profileCreated":
     "interface-history-event-profileCreated",
   "interface.history.event.profileDetailsChanged":
@@ -2030,6 +2047,17 @@ const FLUENT_IDS_BY_KEY = {
   "portal.removeConfirm": "portal-removeConfirm",
   "portal.removeKept": "portal-removeKept",
   "portal.removed": "portal-removed",
+  "portal.stopLink": "portal-stopLink",
+  "portal.stopTitle": "portal-stopTitle",
+  "portal.stopBody": "portal-stopBody",
+  "portal.stopConfirm": "portal-stopConfirm",
+  "portal.stopped": "portal-stopped",
+  "portal.stoppedDone": "portal-stoppedDone",
+  "portal.removeAll": "portal-removeAll",
+  "portal.removeAllTitle": "portal-removeAllTitle",
+  "portal.removeAllBody": "portal-removeAllBody",
+  "portal.removeAllConfirm": "portal-removeAllConfirm",
+  "portal.removedAll": "portal-removedAll",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
@@ -3145,6 +3173,8 @@ export interface MessageArgsByKey {
   "interface.history.event.portalLinkStarted": undefined;
   "interface.history.event.portalLinked": undefined;
   "interface.history.event.portalLinkRemoved": undefined;
+  "interface.history.event.portalLinkStopped": undefined;
+  "interface.history.event.portalLinkClinicRemoved": undefined;
   "interface.history.event.profileCreated": undefined;
   "interface.history.event.profileDetailsChanged": undefined;
   "interface.history.event.readingAidFiled": undefined;
@@ -3242,6 +3272,17 @@ export interface MessageArgsByKey {
   "portal.removeConfirm": undefined;
   "portal.removeKept": undefined;
   "portal.removed": undefined;
+  "portal.stopLink": undefined;
+  "portal.stopTitle": undefined;
+  "portal.stopBody": { clinic: FluentArgument };
+  "portal.stopConfirm": undefined;
+  "portal.stopped": { date: FluentArgument };
+  "portal.stoppedDone": undefined;
+  "portal.removeAll": { count: FluentArgument };
+  "portal.removeAllTitle": undefined;
+  "portal.removeAllBody": { count: FluentArgument };
+  "portal.removeAllConfirm": undefined;
+  "portal.removedAll": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;

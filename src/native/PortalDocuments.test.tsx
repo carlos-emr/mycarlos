@@ -69,6 +69,8 @@ function fixture(
     restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
     submitApprovalCode: vi.fn().mockResolvedValue(undefined),
     removePortalLink: vi.fn().mockResolvedValue(undefined),
+    stopCheckingPortalLink: vi.fn().mockResolvedValue(undefined),
+    removeIncompletePortalLinks: vi.fn().mockResolvedValue(2),
   } as unknown as VaultBridge;
   const refresh = vi.fn().mockResolvedValue(snapshot);
   const failures: unknown[] = [];
@@ -2863,5 +2865,100 @@ describe("Remove this link (#160)", () => {
     await waitFor(() =>
       expect(document.activeElement?.id).toBe("portal-link-title-second-link"),
     );
+  });
+});
+
+describe("Stop checking and remove all attempts (#160)", () => {
+  const kept = { ...link, hasDocuments: true, clinicApproved: true };
+  const withLinks = (...links: PortalLinkSummary[]): VaultSnapshot => ({
+    ...snapshot,
+    portalLinks: links,
+  });
+
+  it("offers Stop checking, not Remove, for a clinic with saved documents, and asks first", async () => {
+    const user = userEvent.setup();
+    const { bridge, props } = fixture({ snapshot: withLinks(kept) });
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Stop checking this clinic" }),
+    );
+    const dialog = screen.getByRole("alertdialog");
+    expect(visibleText(dialog.textContent ?? "")).toContain("FAKE Clinic");
+    expect(bridge.stopCheckingPortalLink).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Stop checking" }),
+    );
+    await waitFor(() =>
+      expect(bridge.stopCheckingPortalLink).toHaveBeenCalledWith("fake-link"),
+    );
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain(
+        "No longer checking this clinic.",
+      ),
+    );
+  });
+
+  it("lists a stopped clinic with the earlier attempts, with its date and no check buttons", async () => {
+    const user = userEvent.setup();
+    fixture({
+      snapshot: withLinks({ ...kept, stoppedAtMs: 1_700_000_000_000 }),
+    });
+    await user.click(
+      await screen.findByRole("button", { name: /earlier attempt/ }),
+    );
+    expect(screen.getByText(/^Stopped on /)).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Stop checking this clinic" }),
+    ).toBeNull();
+  });
+
+  it("lists a clinic that removed this device, from what was saved, with the earlier attempts", async () => {
+    const user = userEvent.setup();
+    fixture({ snapshot: withLinks({ ...kept, clinicRemoved: true }) });
+    await user.click(
+      await screen.findByRole("button", { name: /earlier attempt/ }),
+    );
+    expect(
+      screen.getByText(/was removed from your clinic portal account/),
+    ).toBeVisible();
+  });
+
+  it("removes all incomplete attempts after asking, with the count in the button", async () => {
+    const user = userEvent.setup();
+    const attempt = (id: string): PortalLinkSummary => ({
+      ...link,
+      id,
+      incomplete: true,
+    });
+    const { bridge, props } = fixture({
+      snapshot: withLinks(kept, attempt("a1"), attempt("a2")),
+    });
+    await user.click(
+      await screen.findByRole("button", { name: /earlier attempts/ }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Remove all incomplete attempts (2)",
+      }),
+    );
+    const dialog = screen.getByRole("alertdialog");
+    expect(bridge.removeIncompletePortalLinks).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove attempts" }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeIncompletePortalLinks).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+  });
+
+  it("offers neither in a read-only vault", async () => {
+    fixture({ readOnly: true, snapshot: withLinks(kept) });
+    expect(
+      screen.queryByRole("button", { name: "Stop checking this clinic" }),
+    ).toBeNull();
   });
 });

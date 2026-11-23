@@ -607,7 +607,7 @@ where
                 error,
                 VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved)
             ) {
-                store.mark_link_gone(original.id);
+                store.mark_clinic_removed(original.id);
             }
         }
     }

@@ -273,6 +273,9 @@ export function PortalDocuments({
   // "Remove this link" (#160): the link being confirmed, and the heading to
   // focus once it is gone (the card that was there is not).
   const [removing, setRemoving] = useState<PortalLinkSummary | null>(null);
+  // "Stop checking this clinic" and "Remove all incomplete attempts" (#160).
+  const [stopping, setStopping] = useState<PortalLinkSummary | null>(null);
+  const [removingAll, setRemovingAll] = useState(false);
   const [focusAfterRemove, setFocusAfterRemove] = useState<string | null>(null);
   useEffect(() => {
     if (!focusAfterRetry || busy || working) return;
@@ -600,6 +603,27 @@ export function PortalDocuments({
       setStatusLine({ text: message("portal.removed") });
     });
   };
+  /** Stops asking a clinic that holds saved documents; the card then sits with the earlier attempts. */
+  const stopChecking = (link: PortalLinkSummary) => {
+    setStopping(null);
+    const ids = [...workingLinks, ...earlierLinks].map((l) => l.id);
+    const at = ids.indexOf(link.id);
+    setFocusAfterRemove(ids[at + 1] ?? ids[at - 1] ?? "");
+    void run(async () => {
+      await bridge.stopCheckingPortalLink!(link.id);
+      await refresh();
+      setStatusLine({ text: message("portal.stoppedDone") });
+    });
+  };
+  const removeAll = () => {
+    setRemovingAll(false);
+    setFocusAfterRemove("");
+    void run(async () => {
+      await bridge.removeIncompletePortalLinks!();
+      await refresh();
+      setStatusLine({ text: message("portal.removedAll") });
+    });
+  };
   const checkButton = (
     <button
       className="button"
@@ -865,9 +889,12 @@ export function PortalDocuments({
     const left = isAwaitingApproval(link) ? timeLeft(live, polling.now) : null;
     // The latest check says the portal removed this device: neither a
     // retry nor a new request can work until it is connected again.
+    const stopped = link.stoppedAtMs !== undefined;
     const removed =
-      live?.kind === "failed" &&
-      hasVaultErrorCode(live.error, "portal_device_removed");
+      link.clinicRemoved === true ||
+      stopped ||
+      (live?.kind === "failed" &&
+        hasVaultErrorCode(live.error, "portal_device_removed"));
     // Each card has the same buttons and fields: each says whose clinic
     // it is for, by the card's heading, as its description.
     const whose = `portal-link-title-${link.id}`;
@@ -1040,6 +1067,29 @@ export function PortalDocuments({
             />
           </label>
         </details>
+        {stopped && (
+          <p>
+            {t("portal.stopped", {
+              date: new Date(link.stoppedAtMs!).toLocaleDateString(),
+            })}
+          </p>
+        )}
+        {link.clinicRemoved && !stopped && <p>{t("portal.deviceRemoved")}</p>}
+        {!readOnly &&
+          bridge.stopCheckingPortalLink &&
+          link.hasDocuments &&
+          !link.incomplete &&
+          !removed && (
+            <button
+              className="button"
+              type="button"
+              aria-describedby={whose}
+              disabled={disabled}
+              onClick={() => setStopping(link)}
+            >
+              {t("portal.stopLink")}
+            </button>
+          )}
         {!readOnly &&
           bridge.removePortalLink &&
           (link.hasDocuments ? (
@@ -1101,6 +1151,8 @@ export function PortalDocuments({
   const removedNow = (link: PortalLinkSummary) => {
     const live = polling.live[link.id];
     return (
+      link.clinicRemoved === true ||
+      link.stoppedAtMs !== undefined ||
       waits?.isRemoved(link.id) === true ||
       (live?.kind === "failed" &&
         hasVaultErrorCode(live.error, "portal_device_removed"))
@@ -1112,6 +1164,7 @@ export function PortalDocuments({
   const earlierLinks = links.filter(
     (link) => link.incomplete || removedNow(link),
   );
+  const incompleteCount = links.filter((link) => link.incomplete).length;
   return (
     <section
       className="portal-documents"
@@ -1168,6 +1221,19 @@ export function PortalDocuments({
           </button>
           <div id="portal-earlier" hidden={!showEarlier}>
             {showEarlier && earlierLinks.map(card)}
+            {showEarlier &&
+              !readOnly &&
+              bridge.removeIncompletePortalLinks &&
+              incompleteCount > 0 && (
+                <button
+                  className="button"
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setRemovingAll(true)}
+                >
+                  {t("portal.removeAll", { count: incompleteCount })}
+                </button>
+              )}
           </div>
         </>
       )}
@@ -1183,6 +1249,40 @@ export function PortalDocuments({
         )}
       </p>
       {showCheck && checkButton}
+      {stopping && (
+        <ConfirmDialog
+          title={t("portal.stopTitle")}
+          confirmLabel={t("portal.stopConfirm")}
+          onCancel={() => {
+            const id = stopping.id;
+            setStopping(null);
+            requestAnimationFrame(() =>
+              document.getElementById(`portal-link-title-${id}`)?.focus(),
+            );
+          }}
+          onConfirm={() => stopChecking(stopping)}
+        >
+          {t("portal.stopBody", {
+            clinic: stopping.clinicName ?? stopping.portalBase,
+          })}
+        </ConfirmDialog>
+      )}
+      {removingAll && (
+        <ConfirmDialog
+          title={t("portal.removeAllTitle")}
+          confirmLabel={t("portal.removeAllConfirm")}
+          danger
+          onCancel={() => {
+            setRemovingAll(false);
+            requestAnimationFrame(() =>
+              document.getElementById("portal-earlier-toggle")?.focus(),
+            );
+          }}
+          onConfirm={removeAll}
+        >
+          {t("portal.removeAllBody", { count: incompleteCount })}
+        </ConfirmDialog>
+      )}
       {removing && (
         <ConfirmDialog
           title={t("portal.removeTitle")}

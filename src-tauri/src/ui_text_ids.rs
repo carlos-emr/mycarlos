@@ -437,8 +437,10 @@ pub enum MessageId {
     InterfaceHistoryEventMoved,
     InterfaceHistoryEventOther,
     InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventPortalLinkClinicRemoved,
     InterfaceHistoryEventPortalLinkRemoved,
     InterfaceHistoryEventPortalLinkStarted,
+    InterfaceHistoryEventPortalLinkStopped,
     InterfaceHistoryEventPortalLinked,
     InterfaceHistoryEventProfileCreated,
     InterfaceHistoryEventProfileDetailsChanged,
@@ -843,12 +845,17 @@ pub enum MessageId {
     PortalPartialResult,
     PortalPerson,
     PortalRefusedDocuments,
+    PortalRemoveAll,
+    PortalRemoveAllBody,
+    PortalRemoveAllConfirm,
+    PortalRemoveAllTitle,
     PortalRemoveBody,
     PortalRemoveConfirm,
     PortalRemoveKept,
     PortalRemoveLink,
     PortalRemoveTitle,
     PortalRemoved,
+    PortalRemovedAll,
     PortalRequestApproval,
     PortalRestartApproval,
     PortalResult,
@@ -856,6 +863,12 @@ pub enum MessageId {
     PortalRouting,
     PortalServiceDate,
     PortalServiceDateLabel,
+    PortalStopBody,
+    PortalStopConfirm,
+    PortalStopLink,
+    PortalStopTitle,
+    PortalStopped,
+    PortalStoppedDone,
     PortalTitle,
     PortalTryAgain,
     PortalTryAgainFor,
@@ -1499,8 +1512,10 @@ impl MessageId {
         Self::InterfaceHistoryEventMoved,
         Self::InterfaceHistoryEventOther,
         Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventPortalLinkClinicRemoved,
         Self::InterfaceHistoryEventPortalLinkRemoved,
         Self::InterfaceHistoryEventPortalLinkStarted,
+        Self::InterfaceHistoryEventPortalLinkStopped,
         Self::InterfaceHistoryEventPortalLinked,
         Self::InterfaceHistoryEventProfileCreated,
         Self::InterfaceHistoryEventProfileDetailsChanged,
@@ -1905,12 +1920,17 @@ impl MessageId {
         Self::PortalPartialResult,
         Self::PortalPerson,
         Self::PortalRefusedDocuments,
+        Self::PortalRemoveAll,
+        Self::PortalRemoveAllBody,
+        Self::PortalRemoveAllConfirm,
+        Self::PortalRemoveAllTitle,
         Self::PortalRemoveBody,
         Self::PortalRemoveConfirm,
         Self::PortalRemoveKept,
         Self::PortalRemoveLink,
         Self::PortalRemoveTitle,
         Self::PortalRemoved,
+        Self::PortalRemovedAll,
         Self::PortalRequestApproval,
         Self::PortalRestartApproval,
         Self::PortalResult,
@@ -1918,6 +1938,12 @@ impl MessageId {
         Self::PortalRouting,
         Self::PortalServiceDate,
         Self::PortalServiceDateLabel,
+        Self::PortalStopBody,
+        Self::PortalStopConfirm,
+        Self::PortalStopLink,
+        Self::PortalStopTitle,
+        Self::PortalStopped,
+        Self::PortalStoppedDone,
         Self::PortalTitle,
         Self::PortalTryAgain,
         Self::PortalTryAgainFor,
@@ -2793,11 +2819,17 @@ impl MessageId {
             Self::InterfaceHistoryEventPassphraseChanged => {
                 "interface-history-event-passphraseChanged"
             }
+            Self::InterfaceHistoryEventPortalLinkClinicRemoved => {
+                "interface-history-event-portalLinkClinicRemoved"
+            }
             Self::InterfaceHistoryEventPortalLinkRemoved => {
                 "interface-history-event-portalLinkRemoved"
             }
             Self::InterfaceHistoryEventPortalLinkStarted => {
                 "interface-history-event-portalLinkStarted"
+            }
+            Self::InterfaceHistoryEventPortalLinkStopped => {
+                "interface-history-event-portalLinkStopped"
             }
             Self::InterfaceHistoryEventPortalLinked => "interface-history-event-portalLinked",
             Self::InterfaceHistoryEventProfileCreated => "interface-history-event-profileCreated",
@@ -3247,12 +3279,17 @@ impl MessageId {
             Self::PortalPartialResult => "portal-partialResult",
             Self::PortalPerson => "portal-person",
             Self::PortalRefusedDocuments => "portal-refusedDocuments",
+            Self::PortalRemoveAll => "portal-removeAll",
+            Self::PortalRemoveAllBody => "portal-removeAllBody",
+            Self::PortalRemoveAllConfirm => "portal-removeAllConfirm",
+            Self::PortalRemoveAllTitle => "portal-removeAllTitle",
             Self::PortalRemoveBody => "portal-removeBody",
             Self::PortalRemoveConfirm => "portal-removeConfirm",
             Self::PortalRemoveKept => "portal-removeKept",
             Self::PortalRemoveLink => "portal-removeLink",
             Self::PortalRemoveTitle => "portal-removeTitle",
             Self::PortalRemoved => "portal-removed",
+            Self::PortalRemovedAll => "portal-removedAll",
             Self::PortalRequestApproval => "portal-requestApproval",
             Self::PortalRestartApproval => "portal-restartApproval",
             Self::PortalResult => "portal-result",
@@ -3260,6 +3297,12 @@ impl MessageId {
             Self::PortalRouting => "portal-routing",
             Self::PortalServiceDate => "portal-serviceDate",
             Self::PortalServiceDateLabel => "portal-serviceDateLabel",
+            Self::PortalStopBody => "portal-stopBody",
+            Self::PortalStopConfirm => "portal-stopConfirm",
+            Self::PortalStopLink => "portal-stopLink",
+            Self::PortalStopTitle => "portal-stopTitle",
+            Self::PortalStopped => "portal-stopped",
+            Self::PortalStoppedDone => "portal-stoppedDone",
             Self::PortalTitle => "portal-title",
             Self::PortalTryAgain => "portal-tryAgain",
             Self::PortalTryAgainFor => "portal-tryAgainFor",
@@ -4449,6 +4492,12 @@ impl MessageId {
             "interface.history.event.portalLinkRemoved" => {
                 Some(Self::InterfaceHistoryEventPortalLinkRemoved)
             }
+            "interface.history.event.portalLinkStopped" => {
+                Some(Self::InterfaceHistoryEventPortalLinkStopped)
+            }
+            "interface.history.event.portalLinkClinicRemoved" => {
+                Some(Self::InterfaceHistoryEventPortalLinkClinicRemoved)
+            }
             "interface.history.event.profileCreated" => {
                 Some(Self::InterfaceHistoryEventProfileCreated)
             }
@@ -4566,6 +4615,17 @@ impl MessageId {
             "portal.removeConfirm" => Some(Self::PortalRemoveConfirm),
             "portal.removeKept" => Some(Self::PortalRemoveKept),
             "portal.removed" => Some(Self::PortalRemoved),
+            "portal.stopLink" => Some(Self::PortalStopLink),
+            "portal.stopTitle" => Some(Self::PortalStopTitle),
+            "portal.stopBody" => Some(Self::PortalStopBody),
+            "portal.stopConfirm" => Some(Self::PortalStopConfirm),
+            "portal.stopped" => Some(Self::PortalStopped),
+            "portal.stoppedDone" => Some(Self::PortalStoppedDone),
+            "portal.removeAll" => Some(Self::PortalRemoveAll),
+            "portal.removeAllTitle" => Some(Self::PortalRemoveAllTitle),
+            "portal.removeAllBody" => Some(Self::PortalRemoveAllBody),
+            "portal.removeAllConfirm" => Some(Self::PortalRemoveAllConfirm),
+            "portal.removedAll" => Some(Self::PortalRemovedAll),
             "interface.history.damagedStorageOnly" => {
                 Some(Self::InterfaceHistoryDamagedStorageOnly)
             }
