@@ -110,7 +110,7 @@ interface LargeText {
 }
 
 /**
- * The app's Text size (Settings > Preferences) zooms the whole webview, which a browser shows as page
+ * The app's App zoom (Settings > Preferences) zooms the whole webview, which a browser shows as page
  * zoom: at 200% the page lays out in half the CSS width and height, drawn with twice the pixels. Only
  * desktops have it: a phone scales text by its own settings (nativeZoom.ts), which the reader's default
  * text tests cover.
@@ -382,7 +382,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
             notPdf: [],
           };
         }
-        // The Text size setting asks the webview to zoom; the page zoom here stands in for it.
+        // The App zoom setting asks the webview to zoom; the page zoom here stands in for it.
         if (command.startsWith("plugin:webview|")) return;
         // Kept as well as thrown: a screen showing an error notice could still pass axe.
         (Reflect.get(window, "__unexpectedIpc") as string[]).push(command);
@@ -490,7 +490,7 @@ async function walkTheVault(large: LargeText) {
   await expectOnlyMockedCommands(page);
 }
 
-test("has no automatically detectable WCAG violations with the app's text size at 200%", async ({
+test("has no automatically detectable WCAG violations with the app's zoom at 200%", async ({
   browser,
 }, testInfo) => {
   await withAppTextSize200(browser, testInfo, walkThePreview);
@@ -502,7 +502,7 @@ test("has no automatically detectable WCAG violations with the reader's default 
   await withReaderText200(page, walkThePreview);
 });
 
-test("has no automatically detectable WCAG violations on the vault screens with the app's text size at 200%", async ({
+test("has no automatically detectable WCAG violations on the vault screens with the app's zoom at 200%", async ({
   browser,
 }, testInfo) => {
   await withAppTextSize200(browser, testInfo, walkTheVault);

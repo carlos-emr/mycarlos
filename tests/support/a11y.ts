@@ -24,7 +24,7 @@ export type FakePortal = "off" | "none" | "awaiting" | "approved";
 export interface FakeVaultOptions {
   /** The vault has a recovery key; without one, unlocking may offer one. */
   recoveryKey?: boolean;
-  /** Clinic documents in Security; "off" by default, as on a build without it. */
+  /** Connected clinics in Security; "off" by default, as on a build without it. */
   portal?: FakePortal;
   /** A third document, hidden by the patient, so Hidden has something to list. */
   hiddenDocument?: boolean;

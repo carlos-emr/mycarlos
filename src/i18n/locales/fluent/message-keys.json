@@ -525,7 +525,6 @@
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -1136,5 +1135,7 @@
   "security.backup.leaveVideosOutHelp",
   "restore.leftOut",
   "security.backup.sizeCalculating",
-  "interface.hidden.videoLeftOut"
+  "interface.hidden.videoLeftOut",
+  "portal.deviceLine",
+  "portal.deviceLineLinked"
 ]

@@ -3,7 +3,7 @@ import { useI18n } from "../i18n";
 import { AUTO_LOCK_MAX, AUTO_LOCK_MIN } from "./autoLock";
 
 /**
- * The automatic lock delay as minus and plus, like Text size, instead of a
+ * The automatic lock delay as minus and plus, like App zoom, instead of a
  * list of 15 (#67), for Security and for first setup (#69). The ends are not
  * disabled, which would drop the focus on them; the value is read out when
  * it changes, and describes each button, so it is also said on focus.
