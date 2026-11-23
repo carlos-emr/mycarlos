@@ -2319,3 +2319,5 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+native-error-49 = Esta sessão desbloqueada já tentou o máximo de frases secretas para um arquivo. Bloqueie o myCarlos e desbloqueie-o de novo para continuar tentando, ou deixe o myCarlos criar uma chave para o arquivo.
