@@ -118,6 +118,9 @@ export interface OnDevice {
   source: string;
   /** What the cleaning changed, for the preview's warning. */
   cleaning: { replacedRuns: number; droppedCodePoints: number };
+  /** The medical-term phrases the patient chose to keep ("Graves' disease"), as the document
+   * wrote them: for `keptEponymRanges`, which the native re-check reads (#366). */
+  keptEponyms?: string[];
 }
 
 export interface Deidentified {
@@ -4402,7 +4405,7 @@ function readsAsDrug(
 // A title right before a word: "Dr. Holter" is a person even though "Holter" alone is on
 // the allow-list (#228 review).
 const TITLE_RIGHT_BEFORE =
-  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)[ \t]+$/u;
+  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)(?:[ \t]+|[ \t]*\r?\n[ \t]*)$/u;
 /** `afterPerson`: a name rule found the word right after a role, a relation or a title. */
 function isMedicalTerm(
   text: string,
@@ -4486,7 +4489,13 @@ function eponymPhraseAt(
           best = { at, length: form.length };
     }
   }
-  if (best) return text.slice(from + best.at, from + best.at + best.length);
+  if (best) {
+    const phrase = text.slice(from + best.at, from + best.at + best.length);
+    // Only a word with a possessive ("Graves' son", "Bell's wife") is a person's relation, not a
+    // term: it is offered only inside a phrase that names the condition ("Graves' disease").
+    if (/^[\p{L}\p{M}-]+(?:['’‘`´]s?)?$/u.test(phrase)) return null;
+    return phrase;
+  }
   return null;
 }
 
@@ -5024,11 +5033,45 @@ export function keepAllAsMedicalTerm(
   );
 }
 
+/**
+ * Where the patient's kept medical terms stand in the text to send, in UTF-16 units: every
+ * occurrence of each kept phrase, whichever its case. These go with a save or a copy as a CLAIM:
+ * the native re-check spares a standing surname only inside a range that is, in its own copy of
+ * the allow-list, a medical phrase, and only that phrase's name word (#366).
+ */
+export function keptEponymRanges(
+  deidentified: Deidentified,
+): { start: number; end: number }[] {
+  const phrases = deidentified.onDevice.keptEponyms ?? [];
+  if (phrases.length === 0) return [];
+  // The guard folds letters one for one, so positions line up (see eponymPhraseAt).
+  const text = guardKey(deidentified.toSend);
+  const ranges: { start: number; end: number }[] = [];
+  for (const phrase of new Set(phrases.map(guardKey))) {
+    if (!phrase) continue;
+    for (
+      let at = text.indexOf(phrase);
+      at >= 0;
+      at = text.indexOf(phrase, at + 1)
+    )
+      ranges.push({ start: at, end: at + phrase.length });
+  }
+  return ranges.sort((a, b) => a.start - b.start).slice(0, 200);
+}
+
 function keepEponyms(
   deidentified: Deidentified,
   keep: (part: Removed) => boolean,
 ): Deidentified {
-  const { removed, possibleNames, source, ...settings } = deidentified.onDevice;
+  const { removed, possibleNames, source, ...onDeviceSettings } =
+    deidentified.onDevice;
+  const kept = removed
+    .filter((part) => keep(part) && part.eponym)
+    .map((part) => part.eponym as string);
+  const settings = {
+    ...onDeviceSettings,
+    keptEponyms: [...(onDeviceSettings.keptEponyms ?? []), ...kept],
+  };
   const findings: Finding[] = [
     ...removed
       .filter((part) => !keep(part))

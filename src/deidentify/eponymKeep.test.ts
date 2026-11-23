@@ -3,6 +3,8 @@ import {
   deidentify,
   keepAllAsMedicalTerm,
   keepAsMedicalTerm,
+  keptEponymRanges,
+  removeMore,
   restoreChecked,
 } from "./deidentify";
 
@@ -63,5 +65,58 @@ describe("keeping a candidate", () => {
     expect(() => keepAsMedicalTerm(r, name.sentStart, name.sentEnd)).toThrow(
       RangeError,
     );
+  });
+});
+
+describe("a possessive of the patient's surname is a person, not a term (#366)", () => {
+  it.each([
+    ["Graves' son drove her.", "Marion Graves"],
+    ["Bell's wife called.", "Peter Bell"],
+    ["Bell’s wife called.", "Peter Bell"],
+  ])("does not offer %j", (text, name) => {
+    const r = run(`${name}. ${text}`, [name]);
+    expect(r.onDevice.removed.some((p) => p.eponym)).toBe(false);
+  });
+
+  it("still offers a possessive inside a phrase that names the condition", () => {
+    const r = run("Peter Bell: Bell's palsy.", ["Peter Bell"]);
+    expect(
+      r.onDevice.removed.filter((p) => p.eponym).map((p) => p.eponym),
+    ).toEqual(["Bell's palsy"]);
+  });
+
+  it("reads a title at the end of the previous line as a title", () => {
+    const r = run("Seen by Mrs.\nGraves for Graves disease.", [
+      "Marion Graves",
+    ]);
+    // "Mrs." ends the line: the "Graves" after it is a person, the one in the phrase is offered.
+    expect(
+      r.onDevice.removed.filter((p) => p.eponym).map((p) => p.eponym),
+    ).toEqual(["Graves disease"]);
+  });
+});
+
+describe("the kept terms are named to the native re-check (#366)", () => {
+  it("gives the range of each kept phrase in the text to send, and none before a keep", () => {
+    const r = run("Peter Bell: Bell's palsy.", ["Peter Bell"]);
+    expect(keptEponymRanges(r)).toEqual([]);
+    const part = r.onDevice.removed.filter((p) => p.eponym)[0];
+    const kept = keepAsMedicalTerm(r, part.sentStart, part.sentEnd);
+    expect(kept.toSend).toBe("[NAME 1]: Bell's palsy.");
+    const [range] = keptEponymRanges(kept);
+    expect(kept.toSend.slice(range.start, range.end)).toBe("Bell's palsy");
+    expect(keptEponymRanges(kept)).toHaveLength(1);
+  });
+
+  it("keeps naming a kept phrase after more is removed", () => {
+    const r = run("Peter Bell: Bell's palsy. Call Dana Reed.", ["Peter Bell"]);
+    const part = r.onDevice.removed.filter((p) => p.eponym)[0];
+    const kept = keepAsMedicalTerm(r, part.sentStart, part.sentEnd);
+    const at = kept.toSend.indexOf("Dana Reed");
+    const more = removeMore(kept, at, at + "Dana Reed".length);
+    expect(more.toSend).toContain("Bell's palsy");
+    expect(more.toSend).not.toContain("Dana Reed");
+    const [range] = keptEponymRanges(more);
+    expect(more.toSend.slice(range.start, range.end)).toBe("Bell's palsy");
   });
 });

@@ -2842,16 +2842,17 @@ export function VaultLibrary({
               pickDestination={(ticket) =>
                 bridge.pickTextExportDestination(anonymizeRecord.id, ticket)
               }
-              saveText={(pickId, ticket, text) =>
+              saveText={(pickId, ticket, text, kept) =>
                 bridge.exportTextToPicked(
                   pickId,
                   anonymizeRecord.id,
                   ticket,
                   text,
+                  kept,
                 )
               }
-              copyText={(ticket, text) =>
-                bridge.copyTextExport(anonymizeRecord.id, ticket, text)
+              copyText={(ticket, text, kept) =>
+                bridge.copyTextExport(anonymizeRecord.id, ticket, text, kept)
               }
               exportHeader={translateNow("aiHelper.exportHeader")}
               onClose={() => setAnonymizeRecordId(null)}

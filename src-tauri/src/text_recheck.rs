@@ -15,7 +15,8 @@ use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
 /// A range of the text, in UTF-16 units.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Hit {
     pub(crate) start: u32,
     pub(crate) end: u32,
@@ -1022,6 +1023,125 @@ pub(crate) fn identifier_hits(text: &str, names: &[String], birth_dates: &[Strin
     merged
 }
 
+// ---------------------------------------------------------------------------------------------
+// Medical terms the patient chose to keep (#366). The page names the ranges of the text it kept
+// ("Graves' disease"); the native side believes a range only when its own folded text is one of
+// the allow-list's phrases (its own compiled copy of `src/deidentify/eponymAllowList.json`), and
+// then spares only a hit that is exactly one of that phrase's name words. Never a free claim.
+// ---------------------------------------------------------------------------------------------
+
+/// The most kept ranges a save or copy may name, and the longest one in UTF-16 units.
+pub(crate) const MAX_KEPT_RANGES: usize = 200;
+const MAX_KEPT_UNITS: u32 = 120;
+
+struct EponymEntry {
+    tokens: Vec<String>,
+    forms: Vec<String>,
+}
+
+fn guard_key(value: &str) -> String {
+    fold_to_string(value)
+        .chars()
+        .map(|c| {
+            if matches!(c, '’' | '‘' | '`' | '´') {
+                '\''
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn eponym_entries() -> &'static [EponymEntry] {
+    static ENTRIES: std::sync::OnceLock<Vec<EponymEntry>> = std::sync::OnceLock::new();
+    ENTRIES.get_or_init(|| {
+        let list: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/deidentify/eponymAllowList.json"))
+                .unwrap_or_default();
+        let keys = |value: &serde_json::Value| -> Vec<String> {
+            value
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(guard_key))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        list["eponyms"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| EponymEntry {
+                        tokens: keys(&entry["tokens"]),
+                        forms: keys(&entry["forms"]),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// The name words a phrase of the allow-list stands for: each token whole and each of its words,
+/// as the page's guard reads them. Empty when the phrase is not on the list.
+fn name_words_of(phrase: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    for entry in eponym_entries() {
+        if !entry.forms.iter().any(|form| form == phrase) {
+            continue;
+        }
+        for token in &entry.tokens {
+            words.push(token.clone());
+            words.extend(
+                token
+                    .split(|c: char| c.is_whitespace() || c == '-')
+                    .filter(|word| word.chars().count() >= 3)
+                    .map(str::to_owned),
+            );
+        }
+    }
+    words
+}
+
+fn utf16_slice(units: &[u16], start: u32, end: u32) -> Option<String> {
+    let (start, end) = (start as usize, end as usize);
+    if start >= end || end > units.len() {
+        return None;
+    }
+    String::from_utf16(&units[start..end]).ok()
+}
+
+/// `hits` without those the patient kept as a medical term: a hit is dropped only when it lies
+/// inside a `kept` range whose text is, as the native allow-list folds it, a phrase on the list,
+/// and the hit's own text is one of that phrase's name words. Everything else stays a hit.
+pub(crate) fn without_kept_terms(text: &str, hits: Vec<Hit>, kept: &[Hit]) -> Vec<Hit> {
+    if kept.is_empty() || kept.len() > MAX_KEPT_RANGES || hits.is_empty() {
+        return hits;
+    }
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let accepted: Vec<(Hit, Vec<String>)> = kept
+        .iter()
+        .filter(|range| range.end > range.start && range.end - range.start <= MAX_KEPT_UNITS)
+        .filter_map(|range| {
+            let words = name_words_of(&guard_key(&utf16_slice(&units, range.start, range.end)?));
+            (!words.is_empty()).then_some((*range, words))
+        })
+        .collect();
+    hits.into_iter()
+        .filter(|hit| {
+            let spared = accepted.iter().any(|(range, words)| {
+                hit.start >= range.start
+                    && hit.end <= range.end
+                    && utf16_slice(&units, hit.start, hit.end)
+                        .is_some_and(|word| words.contains(&guard_key(&word)))
+            });
+            !spared
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1123,5 +1243,45 @@ mod tests {
         let hits = date_hits("😀 Seen 8 October 2026 at 07:40.");
         assert_eq!(ranges(&hits), vec![(8, 22)]);
         assert!(date_hits("[DATE 2, 14 days after DATE 1]").is_empty());
+    }
+
+    #[test]
+    fn a_kept_medical_term_is_spared_only_as_an_allow_listed_phrase_and_its_name_word() {
+        let names = vec!["FAKE Pat Graves".to_owned()];
+        let text = "History of Graves' disease. Graves' son drove.";
+        let hits = identifier_hits(text, &names, &[]);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        // The phrase "Graves' disease" at 11..26 is kept: its hit goes, the other stays.
+        let kept = [Hit { start: 11, end: 26 }];
+        let left = without_kept_terms(text, hits.clone(), &kept);
+        assert_eq!(ranges(&left), [(28, 34)]);
+        // A free claim over the other place ("Graves' son") is no phrase of the list: refused.
+        let free = [Hit { start: 28, end: 39 }];
+        assert_eq!(without_kept_terms(text, hits.clone(), &free), hits);
+        // A range that is the right phrase elsewhere does not spare a hit outside it.
+        let wrong = [Hit { start: 0, end: 10 }];
+        assert_eq!(without_kept_terms(text, hits.clone(), &wrong), hits);
+        // The apostrophe may be curly, the case any; the phrase is still found.
+        let curly = "History of GRAVES’ disease.";
+        let curly_hits = identifier_hits(curly, &names, &[]);
+        assert!(without_kept_terms(curly, curly_hits, &[Hit { start: 11, end: 26 }]).is_empty());
+    }
+
+    #[test]
+    fn a_kept_range_cannot_hide_a_first_name_or_a_whole_name_or_oversized_claims() {
+        let names = vec!["FAKE Pat Graves".to_owned()];
+        let text = "Pat Graves' disease";
+        let hits = identifier_hits(text, &names, &[]);
+        // The phrase range covers the first name too, but only the name word is spared.
+        let left = without_kept_terms(text, hits.clone(), &[Hit { start: 0, end: 19 }]);
+        assert_eq!(ranges(&left), ranges(&hits));
+        // Too many claims, or one beyond the length limit, spare nothing.
+        let many = vec![Hit { start: 4, end: 19 }; MAX_KEPT_RANGES + 1];
+        assert_eq!(without_kept_terms(text, hits.clone(), &many), hits);
+        let long = [Hit {
+            start: 0,
+            end: 4_000,
+        }];
+        assert_eq!(without_kept_terms(text, hits.clone(), &long), hits);
     }
 }

@@ -4895,6 +4895,10 @@ struct TextExportPickedRequest {
     record_id: Uuid,
     ticket: Uuid,
     text: String,
+    /// Ranges (UTF-16) of medical terms the patient kept (#366). A claim, not a fact: the native
+    /// re-check spares a hit only inside a range that is an allow-listed phrase in its own list.
+    #[serde(default)]
+    kept: Vec<text_recheck::Hit>,
 }
 
 /// How a text save ended: written, or refused with the ranges that still
@@ -4915,6 +4919,7 @@ async fn recheck_export_text(
     store: &Arc<VaultStore>,
     record_id: Uuid,
     text: &str,
+    kept: &[text_recheck::Hit],
 ) -> CommandResult<Vec<text_recheck::Hit>> {
     // Refused before anything else looks at the text.
     if text.len() > MAX_EXPORT_TEXT_BYTES {
@@ -4925,7 +4930,13 @@ async fn recheck_export_text(
         return Ok(hits);
     }
     let known = run_blocking(store, move |store| store.known_identifiers(record_id)).await?;
-    let hits = text_recheck::identifier_hits(text, &known.names, &known.birth_dates);
+    // A medical term the patient kept ("Graves' disease") is not an identifier, but only as the
+    // native allow-list reads it (#366): never on the page's word.
+    let hits = text_recheck::without_kept_terms(
+        text,
+        text_recheck::identifier_hits(text, &known.names, &known.birth_dates),
+        kept,
+    );
     if !hits.is_empty() {
         return Ok(hits);
     }
@@ -4971,7 +4982,7 @@ async fn vault_export_text_picked(
         return Err(VaultError::Invalid.into());
     }
     let ticket = picks.peek_text(request.ticket, record_id)?;
-    let hits = recheck_export_text(store.inner(), record_id, &request.text).await?;
+    let hits = recheck_export_text(store.inner(), record_id, &request.text, &request.kept).await?;
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
@@ -5004,6 +5015,9 @@ struct TextExportCopyRequest {
     record_id: Uuid,
     ticket: Uuid,
     text: String,
+    /// See `TextExportPickedRequest::kept`.
+    #[serde(default)]
+    kept: Vec<text_recheck::Hit>,
 }
 
 /// How a copy ended: the approved file text, to be put on the clipboard as it is, or a refusal
@@ -5031,7 +5045,7 @@ async fn vault_export_text_copy(
     }
     let record_id = request.record_id;
     let ticket = picks.peek_text(request.ticket, record_id)?;
-    let hits = recheck_export_text(store.inner(), record_id, &request.text).await?;
+    let hits = recheck_export_text(store.inner(), record_id, &request.text, &request.kept).await?;
     if !hits.is_empty() {
         return Ok(TextCopyOutcome {
             approved: None,
@@ -7879,6 +7893,7 @@ mod historical_identifier_export_tests {
             ticket,
             pick_id,
             text: "Zorvana".to_owned(),
+            kept: vec![],
         };
         // The current label alone must not reject the unique former token.
         let current_only = vec!["FAKE Neralis".to_owned()];
@@ -7909,6 +7924,120 @@ mod historical_identifier_export_tests {
         ))
         .is_err());
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn a_kept_medical_term_passes_copy_and_save_only_as_the_native_allow_list_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        // A save may not write inside the vault's own folder, so the file goes to another one.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let destination = elsewhere.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(temp.path().join("FAKE-vault")));
+        // The profile's own surname is also the eponym's name word.
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Graves", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "FAKE a")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let text = "History of Graves' disease. Graves' son drove.";
+        let copy = |kept: Vec<text_recheck::Hit>| {
+            tauri::async_runtime::block_on(vault_export_text_copy(
+                app.state(),
+                app.state(),
+                TextExportCopyRequest {
+                    record_id: record,
+                    ticket,
+                    text: text.to_owned(),
+                    kept,
+                },
+                None,
+            ))
+            .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"))
+        };
+        let range = |start, end| text_recheck::Hit { start, end };
+        // Nothing kept: both standing surnames are refused, as before.
+        assert_eq!(copy(vec![]).hits.len(), 2);
+        // The patient kept "Graves' disease" (11..26): that one passes, "Graves' son" does not.
+        let partly = copy(vec![range(11, 26)]);
+        assert!(partly.approved.is_none());
+        assert_eq!(
+            partly
+                .hits
+                .iter()
+                .map(|h| (h.start, h.end))
+                .collect::<Vec<_>>(),
+            [(28, 34)]
+        );
+        // A page's claim over a place that is no phrase of the native list spares nothing.
+        assert_eq!(copy(vec![range(28, 39)]).hits.len(), 2);
+        // Both kept as phrases of the list: only a text whose every hit is such a phrase passes.
+        let only_term = "History of Graves' disease.";
+        let approved = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            TextExportCopyRequest {
+                record_id: record,
+                ticket,
+                text: only_term.to_owned(),
+                kept: vec![range(11, 26)],
+            },
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("copy"));
+        assert!(approved.hits.is_empty());
+        assert!(approved.approved.unwrap().contains("Graves' disease"));
+        // Save takes the same decision and writes the file.
+        let saved = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            TextExportPickedRequest {
+                record_id: record,
+                ticket,
+                pick_id,
+                text: only_term.to_owned(),
+                kept: vec![range(11, 26)],
+            },
+            None,
+        ))
+        .unwrap_or_else(|error| panic!("save: {}", error.code));
+        assert!(saved.saved && saved.hits.is_empty());
+        assert!(std::fs::read_to_string(&destination)
+            .unwrap()
+            .contains("Graves' disease"));
     }
 
     #[test]
@@ -7961,6 +8090,7 @@ mod historical_identifier_export_tests {
             record_id: record,
             ticket,
             text: text.to_owned(),
+            kept: vec![],
         };
 
         // A vault identifier still standing: refused with the ranges Save gives, nothing approved.
@@ -7983,6 +8113,7 @@ mod historical_identifier_export_tests {
                 ticket,
                 pick_id,
                 text: "Zorvana".to_owned(),
+                kept: vec![],
             },
             None,
         ))
@@ -8058,6 +8189,7 @@ mod historical_identifier_export_tests {
                 record_id: record,
                 ticket: Uuid::new_v4(),
                 text: clean.to_owned(),
+                kept: vec![],
             },
             None,
         ))
@@ -8154,6 +8286,7 @@ mod historical_identifier_export_tests {
             ticket,
             pick_id,
             text: "Velorina".to_owned(),
+            kept: vec![],
         };
         let with_previous = store.known_identifiers(record).unwrap();
         let hits = text_recheck::identifier_hits(

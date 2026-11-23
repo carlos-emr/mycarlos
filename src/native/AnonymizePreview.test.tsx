@@ -200,7 +200,7 @@ describe("the anonymize preview (#72 part B)", () => {
         text: "Patient: Peter Bell\nHas Bell's palsy. Follow up Bell's palsy in May.",
       },
     ];
-    renderPreview({
+    const { copyText } = renderPreview({
       text: documentText({
         pages: eponymPages,
         ...joinPages(eponymPages),
@@ -215,7 +215,12 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(
       screen.getAllByText(/This may be a medical term:.*Bell's palsy/),
     ).toHaveLength(2);
-    await user.click(screen.getAllByRole("button", { name: "Keep" })[0]);
+    // Each Keep has a name of its own: the words around the term tell the two apart.
+    const keeps = screen.getAllByRole("button", { name: /^Keep “/ });
+    expect(
+      new Set(keeps.map((keep) => keep.getAttribute("aria-label"))).size,
+    ).toBe(keeps.length);
+    await user.click(keeps[0]);
     expect(shownString()).toContain("Has Bell's palsy.");
     expect(shownString()).toContain("Follow up [NAME 1]'s palsy");
     await user.click(
@@ -225,6 +230,17 @@ describe("the anonymize preview (#72 part B)", () => {
     await user.click(screen.getAllByRole("button", { name: /Keep all/ })[0]);
     expect(shownString()).toContain("Has Bell's palsy.");
     expect(shownString()).toContain("Follow up Bell's palsy");
+    // A copy names the kept phrases' places to the native check, which reads them against its
+    // own list (#366): a claim, never a fact.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    const [, copied, kept] = copyText.mock.calls[0];
+    expect(kept).toHaveLength(2);
+    for (const range of kept as { start: number; end: number }[])
+      expect((copied as string).slice(range.start, range.end)).toBe(
+        "Bell's palsy",
+      );
     // The full name is never offered and stays removed.
     expect(shownString()).not.toContain("Peter");
   });
@@ -580,7 +596,7 @@ describe("the anonymize preview (#72 part B)", () => {
       await screen.findByText(humanText("The text was copied.")),
     ).toBeInTheDocument();
     // The check ran on the shown text with the ticket, and the clipboard got what it returned.
-    expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString());
+    expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString(), []);
     expect(writeText).toHaveBeenCalledTimes(1);
     const copied = writeText.mock.calls[0][0];
     // A clipboard that refuses says so (a copy does not use up the ticket).

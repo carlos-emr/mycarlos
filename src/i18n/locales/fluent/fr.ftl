@@ -2210,7 +2210,7 @@ interface-AnonymizePreview-pasteFlaggedSr = (à vérifier avec l’original)
 interface-AnonymizePreview-possibleNames = Mots qui pourraient être des noms
 
 interface-AnonymizePreview-removeWord = Retirer « { $word } »
-interface-AnonymizePreview-eponymTitle = Ceci pourrait être un terme médical
+interface-AnonymizePreview-eponymTitle = Ces mots pourraient être des termes médicaux
 interface-AnonymizePreview-eponymOne = Ceci pourrait être un terme médical : { $phrase }
 interface-AnonymizePreview-eponymKeep = Garder
 interface-AnonymizePreview-eponymKeepAll = Tout garder « { $phrase } »

@@ -26,6 +26,7 @@ import {
   type KnownIdentifiers,
   type PatientProfile,
   type TextCopyOutcome,
+  type TextRange,
   type TextSaveOutcome,
   type VaultRecord,
 } from "../vault";
@@ -34,6 +35,7 @@ import {
   deidentify,
   keepAllAsMedicalTerm,
   keepAsMedicalTerm,
+  keptEponymRanges,
   removeMore,
   restoreChecked,
   type Deidentified,
@@ -129,6 +131,19 @@ const pageList = (pages: number[]) =>
  * the vault's own identifiers and writes the fixed first line (AI-02).
  * Nothing is saved without this preview and its confirmation. Computers
  * only, as the reader is. */
+/** The words around a removed word in the document, on one line, for the "Keep" rows. */
+function eponymContext(
+  source: string,
+  part: { start: number; end: number },
+): string {
+  const from = Math.max(0, part.start - 24);
+  const text = source
+    .slice(from, part.end + 24)
+    .replace(/\s+/gu, " ")
+    .trim();
+  return `${from > 0 ? "…" : ""}${text}${part.end + 24 < source.length ? "…" : ""}`;
+}
+
 export function AnonymizePreview({
   record,
   people,
@@ -156,10 +171,15 @@ export function AnonymizePreview({
     pickId: string,
     ticket: string,
     text: string,
+    kept?: TextRange[],
   ) => Promise<TextSaveOutcome>;
   /** The native re-check a save runs, for a copy: the file text approved to put on the
    * clipboard, or a refusal with the ranges still holding a detail. */
-  copyText: (ticket: string, text: string) => Promise<TextCopyOutcome>;
+  copyText: (
+    ticket: string,
+    text: string,
+    kept?: TextRange[],
+  ) => Promise<TextCopyOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   onClose: () => void;
@@ -410,7 +430,11 @@ export function AnonymizePreview({
     setSaving(true);
     setError("");
     try {
-      const outcome = await copyText(ticket, current.toSend);
+      const outcome = await copyText(
+        ticket,
+        current.toSend,
+        keptEponymRanges(current),
+      );
       if (outcome.approved === null) {
         refuse(outcome.hits);
         return;
@@ -477,7 +501,12 @@ export function AnonymizePreview({
         );
         return;
       }
-      const outcome = await saveText(pickId, ticket, current.toSend);
+      const outcome = await saveText(
+        pickId,
+        ticket,
+        current.toSend,
+        keptEponymRanges(current),
+      );
       if (outcome.saved) {
         setTicket(null);
         setSaved(true);
@@ -857,10 +886,16 @@ export function AnonymizePreview({
                           phrase: part.eponym ?? "",
                         })}
                       </span>{" "}
+                      {/* The words around it, so that "Graves' son" is told from "Graves'
+                          disease" before one is kept; each Keep has a name of its own. */}
+                      <q className="native-anonymize-context">
+                        {eponymContext(current?.onDevice.source ?? "", part)}
+                      </q>{" "}
                       <button
                         className="button"
                         type="button"
                         disabled={busy}
+                        aria-label={`${translateNow("interface.AnonymizePreview.eponymKeep")} “${eponymContext(current?.onDevice.source ?? "", part)}”`}
                         onClick={() => keepOne(part.sentStart, part.sentEnd)}
                       >
                         {translateNow("interface.AnonymizePreview.eponymKeep")}
