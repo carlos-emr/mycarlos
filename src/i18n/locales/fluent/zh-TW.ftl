@@ -56,7 +56,7 @@ comfort-continue = 繼續
 
 comfort-intro = 請在設定前選擇適合您的項目。每項設定會立即生效。
 
-comfort-later = 您隨時可以在 { $settings } 中變更這些設定：在 { $preferences } 中調整 { $textSize }，並在 { $security } 中調整 { $autoLock }。
+comfort-later = 您隨時可以在 { $settings } 中變更這些設定：在 { $preferences } 中調整 { $textSize } 和 { $appearance }，並在 { $security } 中調整 { $autoLock }。
 
 comfort-sample = 這是 myCarlos 中的文字外觀。請按 − 或 +，調整到容易閱讀的大小。
 
@@ -1831,6 +1831,19 @@ ai-explain-ready = 解釋已產生。
 ai-failed = AI 助理未能完成。請重試。
 
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
+ai-error-memoryNumbers = 目前可用記憶體不足，AI 助理無法執行。它需要約 { $needed } GB 可用記憶體，而現在只有 { $free } GB 可用。請關閉其他程式後重試。
+ai-error-memoryUnknown = 目前可用記憶體不足，AI 助理無法執行。它需要約 { $needed } GB 可用記憶體，而此電腦無法告知目前有多少可用記憶體。請關閉其他程式後重試。
+ai-speed-title = 此電腦上的速度
+ai-speed-note = 這會在一小段虛構的文字上執行一次 AI 助理，並在一兩分鐘內較多占用處理器。不會向任何地方傳送任何內容，也不會用到您的任何資料。您可以隨時停止。
+ai-speed-button = 檢查此電腦的速度
+ai-speed-working = 正在檢查速度…
+ai-speed-cancel = 停止檢查
+ai-speed-result = 在此電腦上測得：AI 助理每秒約讀取 { $read } 個詞，約寫出 { $write } 個。
+ai-speed-cancelled = 檢查已停止，未保存任何內容。
+ai-speed-none = 尚未檢查。
+ai-speed-failed = 無法測出速度。請重試。
+ai-speed-estimate = 在此電腦上，這最多可能需要約 { $minutes } 分鐘。
+ai-speed-estimateLong = 在此電腦上，這麼長的文件可能無法在 AI 助理獲得的時間內完成。
 
 ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
 
@@ -1992,6 +2005,7 @@ interface-AnonymizePreview-placeholder-manual = 已移除
 interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之後 { $days } 天
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = 其他寫法 { $n }
 
 interface-AnonymizePreview-pasteTitle = 放回資訊
 
@@ -2113,3 +2127,62 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+
+interface-video-name = 影片，{ $date }，{ $time }.mp4
+interface-RecordDialog-recordAVideo = 錄製影片
+interface-RecordDialog-unavailable = 此裝置無法錄製影片。
+interface-RecordDialog-why = 為什麼？
+interface-RecordDialog-startingTheCameraAndMicrophone = 正在啟動相機和麥克風…
+interface-RecordDialog-theVideoIsRecordedWithSound = 影片會連同聲音一起錄製，附近的人聲也可能被錄入。只有您可以開啟它。
+interface-RecordDialog-yourPhoneAsksOnce = 手機會詢問一次 myCarlos 是否可以使用相機和麥克風。它們只在錄製時開啟，停止錄製、關閉此視窗或 myCarlos 鎖定時會關閉。
+interface-RecordDialog-theCameraAndMicrophoneAreOn = 相機和麥克風只在錄製時開啟，停止錄製、關閉此視窗或 myCarlos 鎖定時會關閉。
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = 相機和麥克風已開啟，但在您選擇「開始錄製」之前不會錄製任何內容。
+interface-RecordDialog-pictureQuality = 畫質
+interface-RecordDialog-standard = 標準（720p）
+interface-RecordDialog-high = 高（1080p）
+interface-RecordDialog-aboutStandardPerHour = 每小時約 1.1 GB
+interface-RecordDialog-aboutHighPerHour = 每小時約 2.5 至 4 GB
+interface-RecordDialog-useTheCameraAndMicrophone = 使用相機和麥克風
+interface-RecordDialog-startRecording = 開始錄製
+interface-RecordDialog-recording = 正在錄製
+interface-RecordDialog-paused = 已暫停
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = 已暫停。相機和麥克風仍處於開啟狀態。
+interface-RecordDialog-recorded = 已錄製 { $time }
+interface-RecordDialog-recordingAt = 正在以 { $height }p 錄製
+interface-RecordDialog-pauseRecording = 暫停錄製
+interface-RecordDialog-resumeRecording = 繼續錄製
+interface-RecordDialog-stopAndSave = 停止並儲存
+interface-RecordDialog-stopAndSaveTheVideo = 停止並儲存影片？
+interface-RecordDialog-keepRecording = 繼續錄製
+interface-RecordDialog-savingTheVideo = 正在儲存影片…
+interface-RecordDialog-recordingPaused = 錄製已暫停。
+interface-RecordDialog-recordingResumed = 錄製已繼續。
+interface-RecordDialog-thisDeviceCannotRecordMp4 = 此裝置無法以 myCarlos 能儲存的格式錄製影片。
+interface-RecordDialog-videoNeedsBoth = 影片需要同時使用相機和麥克風。
+interface-RecordDialog-nothingWasRecorded = 沒有錄到任何內容，因此未儲存影片。
+interface-RecordDialog-videoSaved = 影片已儲存：{ $name }
+interface-RecordDialog-videoSavedStopped = 錄製已停止，因為裝置回報了問題。已錄製的內容已儲存：{ $name }
+interface-RecordDialog-videoSavedHidden = 錄製已停止，因為 myCarlos 被隱藏。已錄製的內容已儲存：{ $name }
+interface-RecordDialog-videoSavedSlow = 錄製已停止，因為影片無法足夠快地儲存。已錄製的內容已儲存：{ $name }
+interface-VideoViewer-video = 影片
+interface-VideoViewer-player = 影片播放器：{ $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = 無法播放此影片。
+interface-VideoViewer-keys = 空白鍵播放或暫停。左右方向鍵快退或快進 { $seconds } 秒。上下方向鍵調整音量。M 鍵靜音。
+interface-VideoViewer-playVideo = 播放影片
+interface-VideoHelp-title = 為什麼我無法在此錄製影片？
+interface-VideoHelp-engine = 錄製影片需要此裝置內建的網頁引擎能夠錄製含聲音的 MP4 影片，而此裝置的引擎不支援。
+interface-VideoHelp-systems = 在 Windows 上，N 和 KN 版本在加入 Microsoft 媒體功能套件之前不含媒體功能。在 Linux 上，myCarlos 需要套件 gstreamer1.0-plugins-bad 和 gstreamer1.0-plugins-ugly 中的 GStreamer 外掛程式。Android 7 或更早版本的手機，以及 iOS 14.5 之前的 iPhone，無法在應用程式中錄製 MP4 影片。
+interface-VideoHelp-restWorks = 相片和文件照常使用。較新的系統更新可能會加入影片錄製功能。
+interface-RecordingRecovery-closed = myCarlos 在您錄製時關閉了。要保留已儲存的影片嗎？
+interface-RecordingRecovery-closedPaused = myCarlos 在錄製暫停時關閉了。要保留已儲存的影片嗎？
+interface-RecordingRecovery-name = 錄製：{ $name }
+interface-RecordingRecovery-askLater = 稍後再問
+interface-RecordingRecovery-delete = 刪除
+interface-RecordingRecovery-keep = 保留影片
+interface-RecordingRecovery-kept = 已保留影片：{ $name }
+interface-RecordingRecovery-nothingToKeep = 沒有儲存任何完整的內容，因此沒有可保留的影片。
+interface-RecordingRecovery-deleted = 未完成的錄製已刪除。
+interface-RecordingRecovery-deleteSure = 要刪除此錄製嗎？此操作無法復原。
+interface-RecordingRecovery-savedLocked = myCarlos 在您錄製時鎖定了。影片已儲存：{ $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos 在錄製暫停時鎖定了。影片已儲存：{ $name }
+interface-RecordDialog-videoSavedFailed = 錄製已停止，因為其中一部分無法儲存。先前已儲存的內容已保留：{ $name }

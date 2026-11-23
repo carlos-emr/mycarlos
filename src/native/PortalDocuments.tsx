@@ -285,8 +285,14 @@ export function PortalDocuments({
   // link sent from it is over: the clinic's heading, or else back to the
   // button that opened it.
   const [linkDialog, setLinkDialog] = useState(false);
+  // The last working link turned removed while the dialog was open (#293): the form moves to the
+  // panel, and the focus goes to its first field once the dialog has gone.
+  const [formToFocus, setFormToFocus] = useState(false);
   const linkAnotherRef = useRef<HTMLButtonElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
+  // The panel's own form, for the focus after a dialog is dropped: `addressRef` is shared with the
+  // dialog's field and goes null when that field unmounts.
+  const panelFormRef = useRef<HTMLFormElement | null>(null);
   const returnToLinkAnother = useRef(false);
   // From the moment a link is sent until the work ends, its form (or the
   // dialog's opener) is disabled. Focus that was there waits on the panel's
@@ -373,10 +379,6 @@ export function PortalDocuments({
       bridge.checkDocuments,
   );
   const links = snapshot.portalLinks ?? [];
-  // The link form is on the panel until a clinic is linked (an attempt left
-  // incomplete is not one). After that, the clinics come first and the form
-  // opens from "Link another clinic" (#145).
-  const linked = links.some((link) => !link.incomplete);
   // The library makes the page inert while the dialog is open. It is told in
   // the same event that opens or closes the dialog, so that the page is no
   // longer inert when the dialog hands focus back to its button.
@@ -387,7 +389,19 @@ export function PortalDocuments({
     dialogChange.current?.(open);
   };
   useEffect(() => {
-    if (!linked && linkDialog) showLinkDialog(false);
+    if (!linked && linkDialog) {
+      // The "Link another clinic" button is gone and the same fields now stand on the panel (what
+      // was typed is kept: the fields are one set of state). Do not leave the patient in a dialog
+      // that has no button to come back to, and do not drop the focus on the page body.
+      setFormToFocus(true);
+      showLinkDialog(false);
+    }
+  });
+  useEffect(() => {
+    if (!formToFocus || linkDialog) return;
+    // The dialog's own cleanup has already tried to return the focus to a button that is gone.
+    panelFormRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    setFormToFocus(false);
   });
   useEffect(() => () => dialogChange.current?.(false), []);
   useEffect(() => {
@@ -533,6 +547,28 @@ export function PortalDocuments({
     busy: busy || connecting || working,
     onChange: said,
   });
+  // Only working links are listed: an attempt that never finished, or a
+  // device a check found removed from its portal account, is kept in the
+  // vault (#130) and listed only when the patient asks for earlier attempts.
+  const removedNow = (link: PortalLinkSummary) => {
+    const live = polling.live[link.id];
+    return (
+      waits?.isRemoved(link.id) === true ||
+      (live?.kind === "failed" &&
+        hasVaultErrorCode(live.error, "portal_device_removed"))
+    );
+  };
+  const workingLinks = links.filter(
+    (link) => !link.incomplete && !removedNow(link),
+  );
+  const earlierLinks = links.filter(
+    (link) => link.incomplete || removedNow(link),
+  );
+  // The link form is on the panel until a clinic is linked: an attempt left incomplete is not
+  // one, and neither is a device a check found removed from its portal (#293), which cannot
+  // work until it is connected again. After a working link, the clinics come first and the form
+  // opens from "Link another clinic" (#145).
+  const linked = workingLinks.length > 0;
   if (!available) return null;
   const terminal = (link: PortalLinkSummary) =>
     ["refused", "expired", "cancelled", "accepted"].includes(
@@ -1066,23 +1102,6 @@ export function PortalDocuments({
       </div>
     );
   };
-  // Only working links are listed: an attempt that never finished, or a
-  // device a check found removed from its portal account, is kept in the
-  // vault (#130) and listed only when the patient asks for earlier attempts.
-  const removedNow = (link: PortalLinkSummary) => {
-    const live = polling.live[link.id];
-    return (
-      waits?.isRemoved(link.id) === true ||
-      (live?.kind === "failed" &&
-        hasVaultErrorCode(live.error, "portal_device_removed"))
-    );
-  };
-  const workingLinks = links.filter(
-    (link) => !link.incomplete && !removedNow(link),
-  );
-  const earlierLinks = links.filter(
-    (link) => link.incomplete || removedNow(link),
-  );
   return (
     <section
       className="portal-documents"
@@ -1103,7 +1122,11 @@ export function PortalDocuments({
       {!linked && <p>{t("portal.connectConsent")}</p>}
       <p>{t("portal.unlockCheckConsent")}</p>
       {!linked && (
-        <form className="native-inline-form" onSubmit={submit}>
+        <form
+          ref={panelFormRef}
+          className="native-inline-form"
+          onSubmit={submit}
+        >
           {linkFields}
           <button className="button" type="submit" disabled={disabled}>
             {t("portal.link")}
