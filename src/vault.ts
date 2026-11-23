@@ -1207,10 +1207,19 @@ export function createVaultBridge(): VaultBridge {
       invoke<string | null>("vault_backup_pick", { request: { localDate } }),
     saveBackupToPicked: (pickId, leaveVideosOut = false) =>
       invoke<SavedBackup>("vault_backup_picked", {
-        request: { pickId, leaveVideosOut },
+        // The patient's own calendar day, for the backup reminder (a UTC day
+        // would call an 8 pm backup tomorrow's).
+        request: {
+          pickId,
+          leaveVideosOut,
+          localDate: localDateText(new Date()),
+        },
       }),
     backupSize: () => invoke<BackupSize>("vault_backup_size"),
-    snoozeBackupReminder: () => invoke<void>("vault_backup_reminder_snooze"),
+    snoozeBackupReminder: () =>
+      invoke<void>("vault_backup_reminder_snooze", {
+        localDate: localDateText(new Date()),
+      }),
     leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),

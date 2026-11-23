@@ -712,6 +712,9 @@ struct BackupWriteRequest {
     pick_id: Uuid,
     #[serde(default)]
     leave_videos_out: bool,
+    /// The patient's own calendar day, `YYYY-MM-DD`, for the backup reminder.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
@@ -4150,18 +4153,22 @@ async fn vault_backup_pick(
     Ok(destination.map(|destination| picks.backups.store(session, destination)))
 }
 
-/// How big a backup would be, and how much of it is video, asked before the
-/// patient chooses where to save it.
-/// "Not now" on the backup reminder: it stays away for 14 days.
+/// "Not now" on the backup reminder: it stays away for 14 days from the patient's own `localDate`
+/// (`YYYY-MM-DD`), or fails, so the page does not promise a pause that was not kept.
 #[tauri::command]
-async fn vault_backup_reminder_snooze(store: State<'_, StoreHandle>) -> CommandResult<()> {
+async fn vault_backup_reminder_snooze(
+    store: State<'_, StoreHandle>,
+    local_date: String,
+) -> CommandResult<()> {
     let store = store.pin();
-    run_blocking(store.arc(), |store| {
-        store.snooze_backup_reminder(crate::now_ms())
+    run_blocking(store.arc(), move |store| {
+        store.snooze_backup_reminder(&local_date)
     })
     .await
 }
 
+/// How big a backup would be, and how much of it is video, asked before the
+/// patient chooses where to save it.
 #[tauri::command]
 async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
     let store = store.pin();
@@ -4186,6 +4193,10 @@ async fn vault_backup_picked(
 ) -> CommandResult<SavedBackup> {
     let store = store.pin();
     let leave_videos_out = request.leave_videos_out;
+    let local_day = request
+        .local_date
+        .as_deref()
+        .and_then(vault::day_of_date_text);
     let store = store.pin();
     let destination = picks
         .backups
@@ -4200,7 +4211,7 @@ async fn vault_backup_picked(
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.arc(), move |store| {
-            store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
+            store.backup_atomic_with(&path, now_ms(), leave_videos_out, local_day)?;
             Ok(SavedBackup {
                 name,
                 bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
@@ -4241,7 +4252,7 @@ async fn vault_backup_picked(
             now_ms(),
             &plan,
         )?;
-        store.record_backup_saved(&place, leave_videos_out);
+        store.record_backup_saved(&place, leave_videos_out, local_day);
         Ok(())
     })
     .await

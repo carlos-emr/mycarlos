@@ -106,7 +106,13 @@ test("Save a backup saves where the patient chose and says so, and a cancelled p
     ),
   ).toBeVisible();
   expect(await fakeCalls(page, "vault_backup_picked")).toEqual([
-    { request: { pickId: FAKE_IDS.backupPick, leaveVideosOut: false } },
+    {
+      request: {
+        pickId: FAKE_IDS.backupPick,
+        leaveVideosOut: false,
+        localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      },
+    },
   ]);
   // The vault itself is untouched by a backup.
   await expect(save).toBeEnabled();

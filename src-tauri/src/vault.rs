@@ -1024,6 +1024,9 @@ type FreeSpaceProbe = Box<dyn Fn(&Path) -> Option<u64> + Send + Sync>;
 
 pub struct VaultStore {
     root: PathBuf,
+    // The backup reminder's file, read once per session (cleared at each unlock) and kept
+    // current by the writes, so a snapshot does not read the disk.
+    backup_reminder: Mutex<Option<BackupReminderState>>,
     collection: crate::document_collection::Controller,
     collection_resume: Mutex<Option<crate::document_collection_pickup::ResumeCache>>,
     approval_poll_progress: Mutex<HashMap<Uuid, delivery::ApprovalPollProgress>>,
@@ -1077,6 +1080,7 @@ impl VaultStore {
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
+            backup_reminder: Mutex::new(None),
             collection: crate::document_collection::Controller::new(Instant::now()),
             collection_resume: Mutex::new(None),
             approval_poll_progress: Mutex::new(HashMap::new()),
@@ -1818,6 +1822,11 @@ impl VaultStore {
     fn open_session(&self, guard: &mut Option<UnlockedVault>, vault: UnlockedVault) {
         self.invalidate_collection_cache();
         self.portal_session.fetch_add(1, Ordering::AcqRel);
+        // The reminder's file is read again for this session.
+        *self
+            .backup_reminder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         *guard = Some(vault);
         self.idle.arm(Instant::now());
     }
@@ -2105,7 +2114,7 @@ impl VaultStore {
             recovery: unlocked.recovery,
             recovery_key_set_at_ms: unlocked.recovery_key_set_at_ms,
             recovery_key_label: unlocked.recovery_key_id.map(recovery_key_label),
-            backup_reminder: read_backup_reminder(&self.root),
+            backup_reminder: self.backup_reminder_state(),
             shared_profile_id: shared_profile_id(unlocked.manifest.vault_id),
         }
     }
@@ -3378,9 +3387,10 @@ impl VaultStore {
 
     /// Records a backup saved, and where (#71). For a backup saved through a
     /// document provider, which `backup_atomic` does not see.
-    pub fn record_backup_saved(&self, place: &str, leave_videos_out: bool) {
-        // The reminder remembers a day, and whether the backup was whole.
-        note_backup_made(&self.root, leave_videos_out, crate::now_ms());
+    pub fn record_backup_saved(&self, place: &str, leave_videos_out: bool, local_day: Option<u32>) {
+        // The reminder remembers a day (the patient's own calendar day when the renderer sent
+        // it, else UTC), and whether the backup was whole.
+        self.note_backup_made(leave_videos_out, local_day);
         let mut guard = self.session();
         if let Some(unlocked) = guard.as_mut() {
             let entry =
@@ -4286,7 +4296,7 @@ impl VaultStore {
     /// the whole backup is written.
     #[cfg(test)]
     pub fn backup_atomic(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
-        self.backup_atomic_with(destination, now_ms, false)
+        self.backup_atomic_with(destination, now_ms, false, None)
     }
 
     /// `backup_atomic`, optionally leaving the videos out (#359). The room at the
@@ -4298,6 +4308,7 @@ impl VaultStore {
         destination: &Path,
         now_ms: u64,
         leave_videos_out: bool,
+        local_day: Option<u32>,
     ) -> Result<(), VaultError> {
         let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
@@ -4332,7 +4343,7 @@ impl VaultStore {
         );
         outcome?;
         written.map_err(io::Error::from)?;
-        self.record_backup_saved(&destination.to_string_lossy(), leave_videos_out);
+        self.record_backup_saved(&destination.to_string_lossy(), leave_videos_out, local_day);
         Ok(())
     }
 
@@ -4718,21 +4729,63 @@ impl VaultStore {
         // that vault's last session ended is nothing to the restored one.
         self.forget_last_session();
         // A restored vault is, by definition, one that was backed up: the reminder starts from
-        // today and any snooze of the vault it replaced is gone with that vault.
-        note_backup_made(&self.root, false, crate::now_ms());
+        // today and any snooze of the vault it replaced is gone with that vault. This is true even
+        // when the backup it came from left the videos out: the patient just chose to restore
+        // that backup, so it counts as a whole one on purpose (the videos were left out by choice).
+        self.note_backup_made(false, None);
         drop(session);
         Ok(())
     }
 
-    /// "Not now" on the backup reminder: it stays away for [`BACKUP_SNOOZE_DAYS`] days.
-    pub fn snooze_backup_reminder(&self, now_ms: u64) -> Result<(), VaultError> {
+    /// "Not now" on the backup reminder: it stays away for [`BACKUP_SNOOZE_DAYS`] days from
+    /// `today` (the patient's calendar day, `YYYY-MM-DD`). An error when the pause could not be
+    /// kept, so the page does not promise it.
+    pub fn snooze_backup_reminder(&self, today: &str) -> Result<(), VaultError> {
         if self.session().is_none() {
             return Err(VaultError::Locked);
         }
-        let mut state = read_backup_reminder(&self.root);
-        state.snoozed_until_day = Some(day_of(now_ms).saturating_add(BACKUP_SNOOZE_DAYS));
-        write_backup_reminder(&self.root, &state);
+        let today = day_of_date_text(today).ok_or(VaultError::Invalid)?;
+        let mut state = self.backup_reminder_state();
+        state.snoozed_until_day = Some(today.saturating_add(BACKUP_SNOOZE_DAYS));
+        if !self.put_backup_reminder(state) {
+            return Err(VaultError::Storage);
+        }
         Ok(())
+    }
+
+    /// The reminder's state: read once per session, then kept current by every write.
+    fn backup_reminder_state(&self) -> BackupReminderState {
+        let mut cache = self
+            .backup_reminder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *cache.get_or_insert_with(|| read_backup_reminder(&self.root))
+    }
+
+    /// Writes the state and keeps it as the session's; whether the write succeeded.
+    fn put_backup_reminder(&self, state: BackupReminderState) -> bool {
+        let written = write_backup_reminder(&self.root, &state);
+        *self
+            .backup_reminder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(state);
+        written
+    }
+
+    /// A backup was saved: a whole one satisfies the reminder and ends a snooze; one that left the
+    /// videos out is remembered apart and satisfies nothing. Best effort: a failure to write only
+    /// means the reminder may show again.
+    fn note_backup_made(&self, leave_videos_out: bool, local_day: Option<u32>) {
+        let mut state = self.backup_reminder_state();
+        let today = local_day.unwrap_or_else(|| day_of(crate::now_ms()));
+        if leave_videos_out {
+            state.partial_day = Some(today);
+        } else {
+            state.saved_day = Some(today);
+            state.partial_day = None;
+            state.snoozed_until_day = None;
+        }
+        self.put_backup_reminder(state);
     }
 
     #[cfg(test)]
@@ -7644,10 +7697,6 @@ fn read_chunk(reader: &mut dyn Read, buffer: &mut [u8]) -> Result<usize, VaultEr
     Ok(used)
 }
 
-/// The directory that holds the vault and everything the vault manages beside
-/// it: its lock file, a pending reset, a create stage, the export journal.
-/// Nothing else is ever written there, which is what lets an export refuse the
-/// whole directory.
 /// The backup reminder asks again after this many days (the "Not now" snooze).
 const BACKUP_SNOOZE_DAYS: u32 = 14;
 const BACKUP_REMINDER_FILE: &str = "backup-reminder.json";
@@ -7695,39 +7744,68 @@ fn read_backup_reminder(root: &Path) -> BackupReminderState {
     }
 }
 
-/// Best effort, like the reminder itself: a failure to write only means it may show again.
-fn write_backup_reminder(root: &Path, state: &BackupReminderState) {
+/// Whether the state was written. A backup's note is best effort (a failure only means the reminder
+/// may show again); "Not now" reports a failure so it does not promise a pause that was not kept.
+fn write_backup_reminder(root: &Path, state: &BackupReminderState) -> bool {
     let Ok(bytes) = serde_json::to_vec(state) else {
-        return;
+        return false;
     };
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
     options.mode(0o600);
-    let _ = AtomicFile::new(root.join(BACKUP_REMINDER_FILE), AllowOverwrite).write_with_options(
-        |file| {
-            file.write_all(&bytes)?;
-            file.sync_all()
-        },
-        options,
-    );
+    AtomicFile::new(root.join(BACKUP_REMINDER_FILE), AllowOverwrite)
+        .write_with_options(
+            |file| {
+                file.write_all(&bytes)?;
+                file.sync_all()
+            },
+            options,
+        )
+        .is_ok()
 }
 
-/// A backup was saved: a whole one satisfies the reminder and ends a snooze; one that left the
-/// videos out is remembered apart and satisfies nothing.
-fn note_backup_made(root: &Path, leave_videos_out: bool, now_ms: u64) {
-    let mut state = read_backup_reminder(root);
-    let today = day_of(now_ms);
-    if leave_videos_out {
-        state.partial_day = Some(today);
-    } else {
-        state.saved_day = Some(today);
-        state.partial_day = None;
-        state.snoozed_until_day = None;
+/// The day number (days since 1970-01-01) of a `YYYY-MM-DD` text: the patient's own calendar day, as
+/// the renderer sends it (like the birth-date checks' `today`). None for anything else.
+pub(crate) fn day_of_date_text(text: &str) -> Option<u32> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
     }
-    write_backup_reminder(root, &state);
+    let number = |range: std::ops::Range<usize>| -> Option<i64> {
+        let part = text.get(range)?;
+        part.bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| part.parse().ok())
+            .flatten()
+    };
+    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
+    if !(1970..=2200).contains(&year) || !(1..=12).contains(&month) || day < 1 {
+        return None;
+    }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let longest = match month {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if day > longest {
+        return None;
+    }
+    // Days from civil (Howard Hinnant).
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if month > 2 { month - 3 } else { month + 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    u32::try_from(era * 146_097 + doe - 719_468).ok()
 }
 
+/// The directory that holds the vault and everything the vault manages beside
+/// it: its lock file, a pending reset, a create stage, the export journal.
+/// Nothing else is ever written there, which is what lets an export refuse the
+/// whole directory.
 fn vault_home(root: &Path) -> Result<&Path, VaultError> {
     root.parent().ok_or(VaultError::Storage)
 }
@@ -17022,7 +17100,8 @@ mod tests {
 
     /// The backup reminder's state (days only, beside the vault): a whole backup satisfies it and
     /// ends a snooze; one that left the videos out is remembered apart and satisfies nothing; the
-    /// snooze lasts 14 days; a damaged or foreign file reads as nothing; the snapshot carries it.
+    /// snooze lasts 14 days from the patient's own calendar day; a damaged or foreign file reads as
+    /// nothing; the snapshot carries it and is not re-read from disk within a session.
     #[test]
     fn the_backup_reminder_remembers_days_and_only_a_whole_backup_satisfies_it() {
         let temp = tempfile::tempdir().unwrap();
@@ -17035,33 +17114,51 @@ mod tests {
             store.snapshot().unwrap().backup_reminder,
             BackupReminderState::default()
         );
-        let day = 20_000u32;
-        let at = |days: u32| u64::from(days) * 86_400_000 + 3_600_000;
+        // 8 pm on 4 October 2024 in Toronto is already 5 October in UTC: the patient's own day is
+        // the one that is kept.
+        let local = day_of_date_text("2024-10-04").unwrap();
+        assert_eq!(local, 20_000);
+        let late_evening_utc = (u64::from(local) + 1) * 86_400_000 + 3_600_000;
         // A backup that leaves the videos out is not a backup of everything.
         store
-            .backup_atomic_with(&out.join("partial.mcbak"), at(day), true)
+            .backup_atomic_with(
+                &out.join("partial.mcbak"),
+                late_evening_utc,
+                true,
+                Some(local),
+            )
             .unwrap();
         let state = store.snapshot().unwrap().backup_reminder;
-        assert_eq!(state.saved_day, None);
-        assert_eq!(
-            state.partial_day,
-            Some(u32::try_from(crate::now_ms() / 86_400_000).unwrap())
-        );
+        assert_eq!((state.saved_day, state.partial_day), (None, Some(local)));
         // "Not now": 14 days from the day it was said, and a whole backup ends it.
-        store.snooze_backup_reminder(at(day)).unwrap();
+        store.snooze_backup_reminder("2024-10-04").unwrap();
         assert_eq!(
             store.snapshot().unwrap().backup_reminder.snoozed_until_day,
-            Some(day + 14)
+            Some(local + 14)
         );
         store
-            .backup_atomic(&out.join("whole.mcbak"), at(day + 1))
+            .backup_atomic_with(
+                &out.join("whole.mcbak"),
+                late_evening_utc,
+                false,
+                Some(local + 1),
+            )
             .unwrap();
         let state = store.snapshot().unwrap().backup_reminder;
-        assert!(state.saved_day.is_some());
+        assert_eq!(state.saved_day, Some(local + 1));
         assert_eq!((state.partial_day, state.snoozed_until_day), (None, None));
         // Nothing but days is kept: no time, name, place or count.
         let file = fs::read_to_string(root.join(BACKUP_REMINDER_FILE)).unwrap();
         assert!(!file.contains("mcbak") && !file.contains("whole"), "{file}");
+        // Read once per session: a change on disk shows at the next unlock, not in a snapshot.
+        fs::write(root.join(BACKUP_REMINDER_FILE), "{\"savedDay\": 5}").unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().backup_reminder.saved_day,
+            Some(local + 1)
+        );
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(store.snapshot().unwrap().backup_reminder.saved_day, Some(5));
         // A damaged, oversized or foreign file reads as nothing.
         for damaged in [
             "not json".to_owned(),
@@ -17071,17 +17168,92 @@ mod tests {
             " ".repeat(600),
         ] {
             fs::write(root.join(BACKUP_REMINDER_FILE), damaged).unwrap();
+            store.lock();
+            store.unlock(PASSWORD).unwrap();
             assert_eq!(
                 store.snapshot().unwrap().backup_reminder,
                 BackupReminderState::default()
             );
         }
-        // Locked: no snooze.
+        // Locked: no snooze. A date that is not a date: refused.
+        assert!(matches!(
+            store.snooze_backup_reminder("not-a-date"),
+            Err(VaultError::Invalid)
+        ));
         store.lock();
         assert!(matches!(
-            store.snooze_backup_reminder(at(day)),
+            store.snooze_backup_reminder("2024-10-04"),
             Err(VaultError::Locked)
         ));
+    }
+
+    /// A pause that could not be written is an error, so "Not now" does not promise 14 days.
+    #[test]
+    fn a_snooze_that_cannot_be_written_is_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("home").join("vault");
+        let (store, _, _) = vault_with_records(&root, &["first.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        // A directory in the file's place makes every write fail.
+        fs::create_dir(root.join(BACKUP_REMINDER_FILE)).unwrap();
+        assert!(matches!(
+            store.snooze_backup_reminder("2024-10-04"),
+            Err(VaultError::Storage)
+        ));
+        // A backup's note is best effort: it neither fails nor panics.
+        store.record_backup_saved("somewhere", false, Some(20_000));
+    }
+
+    /// The provider path (a document picker's file, `record_backup_saved`) records the reminder too,
+    /// and two vaults on one device keep separate files.
+    #[test]
+    fn every_backup_path_records_the_reminder_and_two_vaults_keep_their_own() {
+        let temp = tempfile::tempdir().unwrap();
+        let first_root = temp.path().join("one").join("vault");
+        let second_root = temp.path().join("two").join("vault");
+        let (first, _, _) = vault_with_records(&first_root, &["a.pdf"]);
+        let (second, _, _) = vault_with_records(&second_root, &["b.pdf"]);
+        first.unlock(PASSWORD).unwrap();
+        second.unlock(PASSWORD).unwrap();
+        first.record_backup_saved("content://provider/file", false, Some(20_010));
+        assert_eq!(
+            first.snapshot().unwrap().backup_reminder.saved_day,
+            Some(20_010)
+        );
+        assert_eq!(
+            second.snapshot().unwrap().backup_reminder,
+            BackupReminderState::default()
+        );
+        assert!(first_root.join(BACKUP_REMINDER_FILE).exists());
+        assert!(!second_root.join(BACKUP_REMINDER_FILE).exists());
+        // Without the renderer's day, the UTC day is kept.
+        second.record_backup_saved("content://provider/other", true, None);
+        let utc = u32::try_from(crate::now_ms() / 86_400_000).unwrap();
+        assert_eq!(
+            second.snapshot().unwrap().backup_reminder.partial_day,
+            Some(utc)
+        );
+    }
+
+    #[test]
+    fn a_calendar_day_text_becomes_the_day_number_and_nothing_else_does() {
+        assert_eq!(day_of_date_text("1970-01-01"), Some(0));
+        assert_eq!(day_of_date_text("2024-02-29"), Some(19_782));
+        assert_eq!(day_of_date_text("2024-10-04"), Some(20_000));
+        for bad in [
+            "",
+            "2024-2-29",
+            "2023-02-29",
+            "2024-13-01",
+            "2024-00-10",
+            "1969-12-31",
+            "2024/10/04",
+            "2024-10-04 ",
+            "20xx-10-04",
+            "2024-10-32",
+        ] {
+            assert_eq!(day_of_date_text(bad), None, "{bad}");
+        }
     }
 
     /// A restored vault starts the reminder from today, and the snooze of the vault it replaced is gone.
@@ -17095,7 +17267,7 @@ mod tests {
         store.unlock(PASSWORD).unwrap();
         let backup = out.join("kept.mcbak");
         store.backup_atomic(&backup, 3).unwrap();
-        store.snooze_backup_reminder(crate::now_ms()).unwrap();
+        store.snooze_backup_reminder("2024-10-04").unwrap();
         store.lock();
         let restored = VaultStore::new(temp.path().join("restored-home").join("vault"));
         restored
