@@ -73,6 +73,12 @@ const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 /// AI key draft (#389) also holds 14 provisionally, so whichever merges second renumbers. A
 /// renumber changes this line, the section in VAULT_FORMAT.md and the gates that name it.
 const MANIFEST_FORMAT_PROFILE_HANDOVER: u32 = 14;
+/// The first format that can hold a hidden profile; none does yet: nothing in the
+/// library, the lists, search, the AI helper or the notices honours `hidden` on a profile
+/// until the hide and restore pull request (#360 PR 7), which sets this to its own new format
+/// number. Until then a manifest with a hidden profile is refused at every format, so that no
+/// build ever reads one and lists that person.
+const HIDDEN_PROFILES_FORMAT: Option<u32> = None;
 const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PROFILE_HANDOVER;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
@@ -5008,13 +5014,26 @@ fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
 /// The profile fields format 14 adds (#360): each forbidden below it, so that an older build
 /// that accepted a newer number could never drop one it does not know.
 fn valid_handover_fields(profile: &PatientProfile, format_version: u32, vault_id: Uuid) -> bool {
+    valid_handover_fields_from(profile, format_version, vault_id, HIDDEN_PROFILES_FORMAT)
+}
+
+/// `valid_handover_fields` for a given first format of hidden profiles, so that the rule is
+/// tested for the format that will hold it.
+fn valid_handover_fields_from(
+    profile: &PatientProfile,
+    format_version: u32,
+    vault_id: Uuid,
+    hidden_from: Option<u32>,
+) -> bool {
     if profile.hidden.is_none()
         && profile.imported_from.is_none()
         && profile.imported_history.is_none()
     {
         return true;
     }
-    format_version >= MANIFEST_FORMAT_PROFILE_HANDOVER
+    // A hidden person has a format of its own (`HIDDEN_PROFILES_FORMAT`), later than this one's.
+    (profile.hidden.is_none() || hidden_from.is_some_and(|first| format_version >= first))
+        && format_version >= MANIFEST_FORMAT_PROFILE_HANDOVER
         // A person is hidden by the patient, never as a damaged file; Shared with me is where
         // a hidden person's new documents go and is never hidden itself, nor a handover.
         && profile.hidden.is_none_or(|hidden| hidden.reason == HiddenReason::Patient)
@@ -5070,7 +5089,7 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
     }
     // Someone has to stay visible: the last profile of a vault is never hidden, and Shared
     // with me never is (#360, section 8.5).
-    if manifest.format_version >= MANIFEST_FORMAT_PROFILE_HANDOVER
+    if HIDDEN_PROFILES_FORMAT.is_some_and(|first| manifest.format_version >= first)
         && manifest
             .profiles
             .iter()

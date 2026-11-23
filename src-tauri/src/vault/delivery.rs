@@ -8370,7 +8370,8 @@ mod approval_recovery_tests {
     }
 
     #[test]
-    fn a_key_revoked_since_still_vouches_for_what_it_signed_before_but_is_not_trust() {
+    fn a_carried_record_whose_snapshot_keys_are_all_revoked_stays_valid_and_gains_trust_only_from_an_active_linked_key(
+    ) {
         let (_temp, store, link, record_id) = vault_with_pair_original();
         let mut manifest = carried_manifest(&store, &link, record_id);
         {
@@ -8552,8 +8553,48 @@ mod approval_recovery_tests {
             change(&mut changed);
             structure_ok(&changed)
         };
-        // Each field, in the new format, on an ordinary profile.
-        assert!(ok(&|m| m.profiles[last].hidden = Some(hidden)));
+        // `hidden` has no format yet (PR 7 gives it one): refused at every format, this one
+        // included, so no build reads a hidden person it would then list.
+        for format in [MANIFEST_FORMAT_PROFILE_HANDOVER - 1, VAULT_FORMAT] {
+            assert!(!ok(&|m| {
+                m.format_version = format;
+                m.profiles[last].hidden = Some(hidden);
+            }));
+        }
+        // The rule itself is in place for the format that will hold it: a person hidden by the
+        // patient, on an ordinary profile, is fine there; never as damaged, never Shared.
+        let ordinary = |hidden: Option<Hidden>| {
+            let mut profile = two.profiles[last].clone();
+            profile.hidden = hidden;
+            profile
+        };
+        assert!(valid_handover_fields_from(
+            &ordinary(Some(hidden)),
+            20,
+            id,
+            Some(20)
+        ));
+        assert!(!valid_handover_fields_from(
+            &ordinary(Some(hidden)),
+            19,
+            id,
+            Some(20)
+        ));
+        assert!(!valid_handover_fields(
+            &ordinary(Some(hidden)),
+            VAULT_FORMAT,
+            id
+        ));
+        assert!(!valid_handover_fields_from(
+            &ordinary(Some(Hidden {
+                at_ms: 5,
+                reason: HiddenReason::Damaged
+            })),
+            20,
+            id,
+            Some(20)
+        ));
+        // Each other field, in the new format, on an ordinary profile.
         assert!(ok(&|m| m.profiles[last].imported_from = Some(from.clone())));
         assert!(ok(&|m| {
             m.profiles[last].imported_from = Some(from.clone());
