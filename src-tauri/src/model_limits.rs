@@ -222,8 +222,8 @@ pub(crate) struct ModelLimits {
     pub(crate) index: usize,
     /// How much of a document it reads at a time: the context, and the room for the document.
     pub(crate) capacity: Capacity,
-    /// Whether that context is the one the helper made for this model in this session; until
-    /// then it is the catalogue's.
+    /// Whether that context is the one the helper made for this model, in this session or in an
+    /// earlier one of this build (the saved card); until then it is the catalogue's.
     pub(crate) confirmed: bool,
     /// What the file says it was trained for, once the helper has read it. A claim, never a
     /// promise: the helper reads at most `capacity.context_tokens`.

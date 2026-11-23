@@ -5552,9 +5552,16 @@ pub fn run() {
             // settings know a model's confirmed context after a restart.
             {
                 let saver = Arc::clone(&models);
+                // Written on a thread of its own: a start does not wait for the disk.
                 model_runtime::app()
                     .runner()
-                    .set_card_saver(Box::new(move |sha256, card| saver.save_card(sha256, card)));
+                    .set_card_saver(Box::new(move |sha256, card| {
+                        let (saver, sha256, card) =
+                            (Arc::clone(&saver), sha256.to_owned(), card.clone());
+                        let _ = std::thread::Builder::new()
+                            .name("model-card-save".into())
+                            .spawn(move || saver.save_card(&sha256, &card));
+                    }));
             }
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
