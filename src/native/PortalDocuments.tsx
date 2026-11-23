@@ -637,9 +637,9 @@ export function PortalDocuments({
         await bridge.removePortalLink!(link.id);
       } catch (error) {
         // The vault refused: documents from this clinic are saved, or notices are on. Nothing
-        // changed, so focus stays where it is, and the card says why.
+        // changed, so focus stays where it is, and the card (read again, so a notices switch
+        // that just came on shows) says which reason applies.
         if (hasVaultErrorCode(error, "invalid")) {
-          setStatusLine({ text: message("portal.removeKept") });
           await refresh();
           return;
         }

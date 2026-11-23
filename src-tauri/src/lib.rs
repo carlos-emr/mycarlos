@@ -3186,8 +3186,12 @@ fn after_open(store: &Arc<VaultStore>) {
     tauri::async_runtime::spawn_blocking(move || {
         // Notice keys of any other vault go (#230).
         if let Some(vault_id) = store.open_vault_id() {
-            notice_key::after_open(vault_id, &store.linked_ids());
+            notice_key::after_open(vault_id);
         }
+        // Keys whose link was removed before their wipe finished (#160). One read of the vault id
+        // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
+        // an empty link set.
+        store.sweep_notice_keys();
         store.after_open();
         // The notices switch is kept in the vault: read it now it is open, then bring the notice
         // keys in line with the two switches (#230).

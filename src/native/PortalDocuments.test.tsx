@@ -2942,19 +2942,16 @@ describe("Remove this link (#160)", () => {
     );
   });
 
-  it("says why when the vault refuses, and does not move focus", async () => {
+  it("reads the card again when the vault refuses, and does not move focus", async () => {
     const user = userEvent.setup();
-    const { bridge } = fixture();
+    const { bridge, props } = fixture();
     (bridge.removePortalLink as ReturnType<typeof vi.fn>).mockRejectedValue({
       code: "invalid",
     });
     await user.click(screen.getByRole("button", { name: "Remove this link" }));
     await user.click(screen.getByRole("button", { name: "Remove link" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toContain(
-        "Documents from this clinic are saved in your vault",
-      ),
-    );
+    // The card is read again to say why; nothing else moves.
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
     expect(document.activeElement?.id).not.toBe("portal-link-title-fake-link");
   });
 
