@@ -2389,7 +2389,7 @@ describe("VaultLibrary folder tools that are not a drag", () => {
   });
 
   it("moves a folder to the top of the person's records when no destination is chosen", async () => {
-    const { bridge } = renderLibrary();
+    const { bridge, setNotice } = renderLibrary();
     const { folder, move } = keyboardMove();
     fireEvent.change(folder, { target: { value: "letters-2025" } });
     fireEvent.click(move);
@@ -2399,6 +2399,11 @@ describe("VaultLibrary folder tools that are not a drag", () => {
         null,
         "FAKE 2025 Letters",
       ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContain("FAKE 2025 Letters moved."),
     );
   });
 
@@ -2417,15 +2422,17 @@ describe("VaultLibrary folder tools that are not a drag", () => {
     expect(destination.value).toBe("");
   });
 
-  it("moves a folder to the top of the records by dropping it on the person's name above the list", async () => {
-    const { bridge } = renderLibrary();
+  it("moves a folder to the top of the records by dropping it on the top of the records above the list", async () => {
+    const { bridge, setNotice } = renderLibrary();
     const sidebar = screen.getByRole("navigation", {
       name: humanText("Record library"),
     });
-    const root = document.querySelector(
-      "button.native-breadcrumb",
-    ) as HTMLButtonElement;
-    expect(root).not.toBeNull();
+    // The top of the records above the list (the person's own name when there is more than one
+    // person), found as the patient finds it: a button by its name, outside the sidebar.
+    const root = screen
+      .getAllByRole("button", { name: "My records" })
+      .find((button) => !sidebar.contains(button)) as HTMLElement;
+    expect(root).toBeDefined();
     dragFolder(
       within(sidebar).getByRole("button", {
         name: humanText(/^FAKE June Letters/),
@@ -2437,6 +2444,13 @@ describe("VaultLibrary folder tools that are not a drag", () => {
         "letters-2025-june",
         null,
         "FAKE June Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContainEqual(
+        expect.stringMatching(/^FAKE June Letters moved( to .+)?\.$/),
       ),
     );
   });
