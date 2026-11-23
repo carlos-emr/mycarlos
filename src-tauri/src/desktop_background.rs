@@ -125,7 +125,7 @@ pub(crate) fn linux_tray_has_host(name_has_owner: &dyn Fn(&str) -> bool) -> bool
 /// Whether the session bus has an owner for `name` (Linux). Any failure is "no".
 #[cfg(target_os = "linux")]
 fn session_name_has_owner(name: &str) -> bool {
-    use webkit2gtk::gio::{self, prelude::*};
+    use webkit2gtk::gio;
     use webkit2gtk::glib::ToVariant;
     let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else {
         return false;
