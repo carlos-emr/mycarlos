@@ -20,7 +20,7 @@ const manifest = (
     </activity>
     <activity android:name=".Other"><intent-filter>
       <action android:name="android.intent.action.VIEW" />
-      <data android:mimeType="application/pdf" />
+      <data android:mimeType="image/png" />
     </intent-filter></activity>
   </application>
 </manifest>`;
@@ -80,7 +80,7 @@ test("the source file asks for SEND and SEND_MULTIPLE for PDFs and no VIEW", () 
 
 test("a generated manifest is accepted only with the two PDF share filters and no VIEW", () => {
   assert.deepEqual(manifestProblems(right), []);
-  // Only MainActivity's filters count: another activity's VIEW filter is not ours.
+  // Only MainActivity's filters count for the SEND filters.
   assert.equal(mainActivityFilters(right).length, 3);
   assert.match(manifestProblems(manifest(send("SEND")))[0], /SEND_MULTIPLE/);
   assert.match(manifestProblems(manifest(""))[0], /SEND filter/);
@@ -181,14 +181,69 @@ test("VIEW filters for any type that could take a PDF are refused, on the activi
     )}</activity-alias></application>`,
   );
   assert.match(manifestProblems(aliased)[0], /VIEW/);
-  // An alias of another activity is not.
-  assert.deepEqual(
+  // An alias of another activity is as bad: the file-association filters go into every activity.
+  assert.match(
     manifestProblems(
       aliased.replace(
         'targetActivity=".MainActivity"',
         'targetActivity=".Other"',
       ),
-    ),
-    [],
+    )[0],
+    /VIEW/,
   );
+});
+
+// The real template: the opening tag is followed by a newline and one attribute per line, and
+// tauri-utils writes the filters before EVERY `</activity>`.
+const template = (filters) => `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="myCarlos">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:label="@string/main_activity_title"
+            android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- AUTO-GENERATED. DO NOT REMOVE. -->
+            ${filters}
+            <!-- AUTO-GENERATED. DO NOT REMOVE. -->
+        </activity>
+        <activity
+            android:name=".Second"
+            android:exported="false">
+            ${filters}
+        </activity>
+    </application>
+</manifest>`;
+
+test("the real template's layout, with the filters in every activity, is read", () => {
+  assert.deepEqual(manifestProblems(template(generated)), []);
+  assert.equal(mainActivityFilters(template(generated)).length, 2);
+  // A VIEW filter on the second activity is as bad as on MainActivity.
+  const view = `<intent-filter><action android:name="android.intent.action.VIEW" />
+    <data android:mimeType="application/pdf" /></intent-filter>`;
+  assert.match(manifestProblems(template(generated + view))[0], /VIEW/);
+  // `<activity-alias` is not an `<activity`, however the tag is laid out.
+  assert.deepEqual(manifestProblems(template("")).length, 2);
+});
+
+test("VIEW filters by octet-stream or a .pdf path are refused", () => {
+  const view = (data) =>
+    `<intent-filter><action android:name="android.intent.action.VIEW" />${data}</intent-filter>`;
+  for (const data of [
+    '<data android:mimeType="application/octet-stream" />',
+    '<data android:pathPattern=".*\\\\.pdf" />',
+    '<data android:pathPattern=".*\\\\.PDF" />',
+  ]) {
+    assert.match(
+      manifestProblems(template(generated + view(data)))[0],
+      /VIEW/,
+      data,
+    );
+  }
 });

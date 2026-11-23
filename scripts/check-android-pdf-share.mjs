@@ -46,44 +46,62 @@ export function configProblems(config) {
 const attribute = (tag, name) =>
   new RegExp(`android:${name}\\s*=\\s*"([^"]*)"`).exec(tag)?.[1];
 
-/** The intent filters of MainActivity and of any activity-alias that targets it, as
- * {actions, categories, data}, or null when there is no MainActivity. */
-export function mainActivityFilters(manifest) {
-  const blocks = [
-    ...[...manifest.matchAll(/<activity\b[^>]*>[\s\S]*?<\/activity>/g)].map(
-      (m) => ({
-        block: m[0],
-        name: attribute(m[0].split(">")[0], "name"),
-      }),
-    ),
-    ...[
-      ...manifest.matchAll(
-        /<activity-alias\b[^>]*>[\s\S]*?<\/activity-alias>/g,
-      ),
-    ].map((m) => ({
-      block: m[0],
-      name: attribute(m[0].split(">")[0], "targetActivity"),
-    })),
-  ].filter(({ name }) => /(^|\.)MainActivity$/.test(name ?? ""));
-  if (!blocks.some(({ block }) => block.startsWith("<activity "))) return null;
-  return blocks.flatMap(({ block }) =>
+/** The filters inside one `<intent-filter>` list of a block of manifest text. */
+function filtersIn(block) {
+  return [
+    ...block.matchAll(/<intent-filter\b[^>]*>([\s\S]*?)<\/intent-filter>/g),
+  ].map((filter) => {
+    const tags = (name) =>
+      [...filter[1].matchAll(new RegExp(`<${name}\\b[^>]*>`, "g"))].map(
+        (t) => t[0],
+      );
+    return {
+      actions: tags("action").map((t) => attribute(t, "name")),
+      categories: tags("category").map((t) => attribute(t, "name")),
+      data: tags("data").map((t) => ({
+        mimeType: attribute(t, "mimeType"),
+        scheme: attribute(t, "scheme"),
+        pathPattern: attribute(t, "pathPattern"),
+      })),
+    };
+  });
+}
+
+/** Every activity and activity-alias of the manifest, with the filters it holds and whether it
+ * is MainActivity (or an alias that targets it). tauri-utils writes the file-association
+ * filters before EVERY `</activity>`, not only MainActivity's, so all of them are read. The
+ * opening tag is told from `<activity-alias` by what follows the name, and may spread its
+ * attributes over lines, as the real template does. */
+export function activities(manifest) {
+  const open = (tag) =>
     [
-      ...block.matchAll(/<intent-filter\b[^>]*>([\s\S]*?)<\/intent-filter>/g),
-    ].map((filter) => {
-      const tags = (name) =>
-        [...filter[1].matchAll(new RegExp(`<${name}\\b[^>]*>`, "g"))].map(
-          (t) => t[0],
-        );
-      return {
-        actions: tags("action").map((t) => attribute(t, "name")),
-        categories: tags("category").map((t) => attribute(t, "name")),
-        data: tags("data").map((t) => ({
-          mimeType: attribute(t, "mimeType"),
-          scheme: attribute(t, "scheme"),
-        })),
-      };
-    }),
-  );
+      ...manifest.matchAll(
+        new RegExp(`<${tag}\\s[^>]*>[\\s\\S]*?<\\/${tag}>`, "g"),
+      ),
+    ].map((m) => m[0]);
+  const named = (block, attributeName) =>
+    attribute(block.slice(0, block.indexOf(">") + 1), attributeName);
+  const isMain = (name) => /(^|\.)MainActivity$/.test(name ?? "");
+  return [
+    ...open("activity").map((block) => ({
+      alias: false,
+      main: isMain(named(block, "name")),
+      filters: filtersIn(block),
+    })),
+    ...open("activity-alias").map((block) => ({
+      alias: true,
+      main: isMain(named(block, "targetActivity")),
+      filters: filtersIn(block),
+    })),
+  ];
+}
+
+/** The intent filters of MainActivity and of any activity-alias that targets it, or null when
+ * there is no MainActivity. */
+export function mainActivityFilters(manifest) {
+  const found = activities(manifest);
+  if (!found.some((one) => one.main && !one.alias)) return null;
+  return found.filter((one) => one.main).flatMap((one) => one.filters);
 }
 
 /** The problems with a generated manifest; empty when it is right. */
@@ -110,23 +128,30 @@ export function manifestProblems(manifest) {
       problems.push(`the ${action} filter lacks the DEFAULT category`);
     }
   }
-  for (const filter of filters) {
-    if (filter.actions.includes("android.intent.action.VIEW")) {
-      // Only the app's own deep-link style filters could be here; a PDF or a file/content
-      // address would make myCarlos a PDF viewer.
-      if (
-        filter.data.some(
-          (d) =>
-            ["application/pdf", "application/*", "*/*"].includes(d.mimeType) ||
-            d.scheme === "file" ||
-            d.scheme === "content",
-        )
-      ) {
-        problems.push(
-          "a VIEW filter takes PDFs, application/* or */*, files or content addresses",
-        );
-      }
+  // A VIEW filter that could take a PDF would make myCarlos a PDF viewer: on ANY activity, since
+  // the file-association filters are written into all of them.
+  for (const filter of activities(manifest).flatMap((one) => one.filters)) {
+    if (
+      filter.actions.includes("android.intent.action.VIEW") &&
+      filter.data.some(
+        (d) =>
+          [
+            "application/pdf",
+            "application/*",
+            "application/octet-stream",
+            "*/*",
+          ].includes(d.mimeType) ||
+          d.scheme === "file" ||
+          d.scheme === "content" ||
+          /pdf/i.test(d.pathPattern ?? ""),
+      )
+    ) {
+      problems.push(
+        "a VIEW filter takes PDFs, application/*, */*, octet-stream, a .pdf path, files or content addresses",
+      );
     }
+  }
+  for (const filter of filters) {
     for (const data of filter.data) {
       if (
         data.mimeType &&
