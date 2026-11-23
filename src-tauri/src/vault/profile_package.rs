@@ -90,7 +90,7 @@ const MAX_ENTRY_NAME_BYTES: usize = 64;
 const MAX_MANIFEST_CLASS: usize = 16 * 1024 * 1024;
 const MIN_MANIFEST_CLASS: usize = 16 * 1024;
 /// Documents, original PDFs and AI answers together.
-pub(crate) const MAX_PACKAGE_OBJECTS: usize = 200_000;
+pub(crate) const MAX_PACKAGE_OBJECTS: usize = 100_000;
 pub(crate) const MAX_PACKAGE_RECORDS: usize = 100_000;
 pub(crate) const MAX_PACKAGE_FOLDERS: usize = 10_000;
 pub(crate) const MAX_FOLDER_DEPTH: usize = 64;
@@ -177,7 +177,7 @@ impl From<VaultError> for PackageError {
 
 /// The encrypted description of what is in a package. It names no object by
 /// file name, key or vault: only by an id made for this package.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageManifest {
     pub format: u32,
@@ -192,7 +192,7 @@ pub(crate) struct PackageManifest {
     pub history: Option<Vec<serde_json::Value>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageProfile {
     pub display_name: String,
@@ -205,7 +205,7 @@ pub(crate) struct PackageProfile {
     pub created_at_ms: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageFolder {
     pub id: Uuid,
@@ -223,7 +223,7 @@ pub(crate) struct PackageObject {
     pub size: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageRecord {
     pub id: Uuid,
@@ -263,6 +263,36 @@ pub(crate) struct PackageAiAnswer {
     pub superseded: bool,
 }
 
+// A manifest holds names, birth dates and clinic evidence. A `{:?}` of one (an
+// `unwrap` message, a log line, a failed assertion) must never print them, so its
+// Debug says only what it holds, and counts.
+impl std::fmt::Debug for PackageManifest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PackageManifest")
+            .field("folders", &self.folders.len())
+            .field("records", &self.records.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for PackageProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PackageProfile { .. }")
+    }
+}
+
+impl std::fmt::Debug for PackageFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PackageFolder { .. }")
+    }
+}
+
+impl std::fmt::Debug for PackageRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PackageRecord { .. }")
+    }
+}
+
 impl PackageManifest {
     /// Every object, in the order the package stores them: for each record its
     /// file, its original, then its AI answers.
@@ -295,12 +325,15 @@ impl PackageManifest {
             .map(|folder| (folder.id, Uuid::new_v4()))
             .collect();
         let mut fresh = self.clone();
+        let mut records: HashMap<String, Uuid> = HashMap::new();
         for folder in &mut fresh.folders {
             folder.id = folders[&folder.id];
             folder.parent_id = folder.parent_id.map(|parent| folders[&parent]);
         }
         for record in &mut fresh.records {
-            record.id = Uuid::new_v4();
+            let new_id = Uuid::new_v4();
+            records.insert(record.id.to_string(), new_id);
+            record.id = new_id;
             record.display.id = Uuid::new_v4();
             if let Some(original) = &mut record.original_pdf {
                 original.id = Uuid::new_v4();
@@ -312,7 +345,40 @@ impl PackageManifest {
                 *folder_id = folders[folder_id];
             }
         }
+        // The history excerpt names the documents it is about: those ids are the new
+        // ones. The ids of the profile, of a folder and of a clinic link are the source
+        // vault's own and about nothing in the package, so they are not kept.
+        if let Some(history) = &mut fresh.history {
+            for entry in history.iter_mut().filter_map(|e| e.as_object_mut()) {
+                for key in ["profileId", "folderId", "portalLinkId"] {
+                    entry.remove(key);
+                }
+                if let Some(value) = entry.get_mut("recordId") {
+                    match value.as_str().and_then(|old| records.get(old)) {
+                        Some(new_id) => *value = serde_json::Value::String(new_id.to_string()),
+                        None => {
+                            entry.remove("recordId");
+                        }
+                    }
+                }
+            }
+        }
         fresh
+    }
+
+    /// Every id of the vault's own that the manifest was given, as text.
+    fn caller_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.folders.iter().map(|f| f.id.to_string()).collect();
+        for record in &self.records {
+            ids.push(record.id.to_string());
+            ids.extend(
+                std::iter::once(&record.display)
+                    .chain(&record.original_pdf)
+                    .chain(record.ai_answers.iter().map(|a| &a.object))
+                    .map(|o| o.id.to_string()),
+            );
+        }
+        ids
     }
 
     /// The rules every package manifest must meet, on writing and on reading:
@@ -654,6 +720,12 @@ fn manifest_class(json_len: usize) -> Option<usize> {
     (class <= MAX_MANIFEST_CLASS).then_some(class)
 }
 
+/// The most bytes the digests entry's JSON can take for `objects` objects: each is
+/// `{"id":"<36>","size":<up to 13 digits>,"sha256":"<44>"},` (123 bytes at most).
+fn digests_upper_bound(objects: usize) -> usize {
+    objects.saturating_mul(123).saturating_add(14)
+}
+
 fn sealed_len(class: usize) -> u64 {
     // nonce (24) + ciphertext (class) + tag (16)
     (class + 24 + 16) as u64
@@ -949,8 +1021,18 @@ impl<W: Write> PackageWriter<W> {
 
     fn write_manifest_inner(&mut self, manifest: &PackageManifest) -> Result<(), PackageError> {
         manifest.validate()?;
+        // The digests are written after every object has been streamed: they must be
+        // known to fit their size class now, so that `finish` cannot fail at the end.
+        manifest_class(digests_upper_bound(manifest.objects().len()))
+            .ok_or(PackageError::TooLarge)?;
         let written = manifest.with_fresh_ids();
         written.validate()?;
+        // Whatever the history or the clinic evidence still says, none of the vault's
+        // own ids is in what is written: a stray one is refused, never kept.
+        let text = serde_json::to_string(&written).map_err(|_| PackageError::Invalid)?;
+        if manifest.caller_ids().iter().any(|id| text.contains(id)) {
+            return Err(PackageError::Invalid);
+        }
         let json = Zeroizing::new(serde_json::to_vec(&written).map_err(|_| PackageError::Invalid)?);
         let class = manifest_class(json.len()).ok_or(PackageError::TooLarge)?;
         let sealed = seal_padded(
@@ -1148,11 +1230,18 @@ pub(crate) struct PackageReader<R: Read> {
 /// What a package has been checked to be, once its whole has been: the only value
 /// that [`PackageReader::finish`] makes, and the one a commit of what was read from
 /// the package must be given, so that nothing unchecked can be kept by mistake.
-#[derive(Debug)]
 pub(crate) struct Verified {
     package_id: Uuid,
     manifest: PackageManifest,
     objects: Vec<ObjectRead>,
+}
+
+impl std::fmt::Debug for Verified {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Verified")
+            .field("objects", &self.objects.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Verified {
@@ -1201,8 +1290,7 @@ fn read_tail(
     if length > MAX_TRAILER_BYTES {
         return Err(PackageError::Unreadable);
     }
-    let mut trailer_bytes = vec![0_u8; length];
-    read_exact_or_unreadable(inner, &mut trailer_bytes)?;
+    let trailer_bytes = read_bounded(inner, length as u64)?;
     let mut tag = [0_u8; 32];
     read_exact_or_unreadable(inner, &mut tag)?;
     tag_mac(&keys.tag, header, &trailer_bytes)?
@@ -1227,6 +1315,20 @@ fn read_tail(
 
 fn read_exact_or_unreadable(inner: &mut impl Read, buffer: &mut [u8]) -> Result<(), PackageError> {
     inner.read_exact(buffer).map_err(PackageError::from)
+}
+
+/// `length` bytes, which must all be there. The buffer grows with what is actually
+/// read, never to a length the file merely claims: a trailer's length is not
+/// authenticated until its tag has been checked, and a cut file claims far more than
+/// it holds.
+fn read_bounded(inner: &mut impl Read, length: u64) -> Result<Vec<u8>, PackageError> {
+    let mut data = Vec::new();
+    inner.take(length).read_to_end(&mut data)?;
+    if data.len() as u64 == length {
+        Ok(data)
+    } else {
+        Err(PackageError::Unreadable)
+    }
 }
 
 /// The bytes an entry takes: its kind, name length, name and length, then its data.
@@ -1267,8 +1369,7 @@ fn read_small_entry(
     if found != kind || found_name != name || length > sealed_len(MAX_MANIFEST_CLASS) {
         return Err(PackageError::Unreadable);
     }
-    let mut data = vec![0_u8; usize::try_from(length).map_err(|_| PackageError::Unreadable)?];
-    read_exact_or_unreadable(inner, &mut data)?;
+    let data = read_bounded(inner, length)?;
     entries.push(TrailerEntry {
         kind,
         name: name.to_owned(),
@@ -1528,6 +1629,12 @@ impl<R: Read + Seek> PackageReader<R> {
             offset = offset
                 .checked_add(entry_frame_len(&object_name(object.id), stored))
                 .ok_or(PackageError::TooLarge)?;
+        }
+        // A tail that starts past the end of the file is a file that was cut short; say so
+        // without asking the source to seek past its end (some providers refuse).
+        let end = self.inner.seek(SeekFrom::End(0))?;
+        if offset >= end {
+            return Err(PackageError::Unreadable);
         }
         self.inner.seek(SeekFrom::Start(offset))?;
         let tail = read_tail(&mut self.inner, &self.keys, &self.header, self.package_id)?;

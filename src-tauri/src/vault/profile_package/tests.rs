@@ -1338,3 +1338,116 @@ fn a_package_key_and_a_recovery_key_are_told_apart() {
     typo.replace_range(0..1, if typo.starts_with('A') { "B" } else { "A" });
     assert_eq!(parse_package_key(&typo).err(), Some(PackageError::KeyTypo));
 }
+
+#[test]
+fn the_digests_bound_holds_and_a_manifest_of_names_never_prints() {
+    let widest = DigestEntry {
+        id: Uuid::new_v4(),
+        size: MAX_OBJECT_BYTES,
+        sha256: BASE64.encode([255_u8; 32]),
+    };
+    for count in [0, 1, 1_000] {
+        let json = serde_json::to_vec(&Digests {
+            objects: (0..count)
+                .map(|_| DigestEntry {
+                    id: widest.id,
+                    size: widest.size,
+                    sha256: widest.sha256.clone(),
+                })
+                .collect(),
+        })
+        .unwrap();
+        assert!(json.len() <= digests_upper_bound(count), "{count}");
+    }
+    // The most objects a package may hold leave room for their digests and trailer.
+    assert!(manifest_class(digests_upper_bound(MAX_PACKAGE_OBJECTS)).is_some());
+    const { assert!(MAX_PACKAGE_OBJECTS * 140 + 200 <= MAX_TRAILER_BYTES) };
+    // Debug prints counts, never a name or a date.
+    let fixture = fixture(&[1, 2]);
+    let shown = format!("{:?}", fixture.manifest);
+    for word in ["FAKE", "2015", "Letter"] {
+        assert!(!shown.contains(word), "{word}");
+    }
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    while reader.next_object().is_some() {
+        reader.read_object(&mut io::sink(), &open).unwrap();
+    }
+    let verified = reader.finish().unwrap();
+    assert!(!format!("{verified:?}").contains("FAKE"));
+}
+
+#[test]
+fn a_trailer_length_that_claims_more_than_the_file_holds_allocates_nothing_of_the_sort() {
+    let fixture = fixture(&[1]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let digests = spans(&bytes)
+        .into_iter()
+        .find(|entry| entry.0 == KIND_DIGESTS)
+        .unwrap();
+    // The trailer marker, then a length of nearly the maximum, then nothing.
+    let mut forged = bytes[..digests.3].to_vec();
+    forged.push(KIND_TRAILER);
+    forged.extend((MAX_TRAILER_BYTES as u32).to_be_bytes());
+    forged.extend([0_u8; 10]);
+    let mut reader = PackageReader::open(Cursor::new(&forged), PackageSecret::Key(&key)).unwrap();
+    assert_eq!(reader.verify_tail(), Err(PackageError::Unreadable));
+    // A file cut so that the tail would start past its end.
+    let manifest_end = spans(&bytes)
+        .into_iter()
+        .find(|entry| entry.0 == KIND_MANIFEST)
+        .unwrap()
+        .3;
+    let mut reader = PackageReader::open(
+        Cursor::new(&bytes[..manifest_end]),
+        PackageSecret::Key(&key),
+    )
+    .unwrap();
+    assert_eq!(reader.verify_tail(), Err(PackageError::Unreadable));
+}
+
+#[test]
+fn the_history_and_the_evidence_carry_none_of_the_vaults_ids() {
+    let mut fixture = fixture(&[10, 20]);
+    let make = |sizes: &[usize]| self::fixture(sizes);
+    let first = fixture.manifest.records[0].id;
+    let second = fixture.manifest.records[1].id;
+    let folder = fixture.manifest.folders[0].id;
+    fixture.manifest.history = Some(vec![
+        serde_json::json!({"event": "imported", "recordId": first, "profileId": Uuid::new_v4(), "folderId": folder}),
+        serde_json::json!({"event": "renamed", "recordId": second}),
+        // A record that is not in the package: its id is dropped, not left pointing at nothing.
+        serde_json::json!({"event": "hidden", "recordId": Uuid::new_v4()}),
+        serde_json::json!({"event": "imported", "portalLinkId": Uuid::new_v4()}),
+    ]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let read = read_all(&bytes, PackageSecret::Key(&key)).unwrap();
+    let history = read.manifest.history.as_ref().unwrap();
+    assert_eq!(history.len(), 4);
+    // The two entries about documents in the package follow those documents' new ids.
+    assert_eq!(
+        history[0]["recordId"],
+        serde_json::json!(read.manifest.records[0].id)
+    );
+    assert_eq!(
+        history[1]["recordId"],
+        serde_json::json!(read.manifest.records[1].id)
+    );
+    for entry in history {
+        for key in ["profileId", "folderId", "portalLinkId"] {
+            assert!(entry.get(key).is_none(), "{key}");
+        }
+    }
+    assert!(history[2].get("recordId").is_none());
+    // A vault id left in clinic evidence is refused rather than written.
+    let mut stray = make(&[10]);
+    let record = stray.manifest.records[0].id;
+    stray.manifest.records[0].carried = Some(serde_json::json!({"source": record}));
+    assert!(matches!(
+        write_with(&stray, PackageSecret::Key(&key)),
+        Err(PackageError::Invalid)
+    ));
+}
