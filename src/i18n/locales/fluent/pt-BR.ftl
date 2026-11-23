@@ -1883,7 +1883,7 @@ aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médi
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Ver no documento
+ai-summary-showInDocument = Mostrar-me no documento
 
 ai-summary-folded = O resumo está recolhido para dar espaço à página.
 
@@ -2215,6 +2215,111 @@ interface-AnonymizePreview-possibleNames = Palavras que podem ser nomes
 
 interface-AnonymizePreview-removeWord = Remover “{ $word }”
 
+interface-AnonymizePreview-removedSummary = Removido: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nada foi removido ainda.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nome
+   *[other] { $count } nomes
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médico
+   *[other] { $count } médicos
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clínica
+   *[other] { $count } clínicas
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } número do cartão de saúde
+   *[other] { $count } números do cartão de saúde
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } número do prontuário
+   *[other] { $count } números do prontuário
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } número de seguro social
+   *[other] { $count } números de seguro social
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } data de nascimento
+   *[other] { $count } datas de nascimento
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } idade
+   *[other] { $count } idades
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } endereço
+   *[other] { $count } endereços
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } código postal
+   *[other] { $count } códigos postais
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } número de telefone
+   *[other] { $count } números de telefone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } endereço de e-mail
+   *[other] { $count } endereços de e-mail
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } endereço da web
+   *[other] { $count } endereços da web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } data ambígua
+   *[other] { $count } datas ambíguas
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removido por você
+   *[other] { $count } removidos por você
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } data substituída
+   *[other] { $count } datas substituídas
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } palavra para verificar
+   *[other] { $count } palavras para verificar
+}
+
+interface-AnonymizePreview-toCheckHelp = Palavras que começam com letra maiúscula no meio de uma frase e números com três ou mais dígitos ficam destacados: podem identificar alguém. Selecione um e escolha Remover.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” pode identificar alguém.
+
+interface-AnonymizePreview-savedFileNote = O arquivo salvo não é protegido pelo myCarlos. Ele não tem nomes, mas contém os detalhes médicos. Exclua-o quando terminar.
+
+interface-AnonymizePreview-pasteWhereNote = O lugar onde você colar isto decide o que será guardado: um serviço de chat pode guardar ou aprender com o texto, dependendo das configurações da sua conta.
+
+interface-AnonymizePreview-copy = Copiar o texto
+
+interface-AnonymizePreview-copied = O texto foi copiado.
+
+interface-AnonymizePreview-copyFailed = Não foi possível copiar o texto.
+
+interface-AnonymizePreview-copyWarning = O texto copiado pode ficar neste dispositivo: o histórico da área de transferência do Windows e a sincronização da área de transferência entre dispositivos podem guardar uma cópia.
+
 interface-AnonymizePreview-removeSelected = Remover o texto selecionado
 
 interface-AnonymizePreview-selectFirst = Primeiro selecione uma parte do texto.
@@ -2315,3 +2420,43 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+cloudAi-title = IA na nuvem (opcional)
+cloudAi-syntheticOnly = Somente dados sintéticos por enquanto: não use informações reais de pacientes.
+cloudAi-notice = Ao tocar em Enviar em um documento, o myCarlos envia o texto dele, com nomes e outros detalhes substituídos, aos servidores da Anthropic usando a sua própria chave. Nada é enviado até você tocar em Enviar. Sua chave liga a solicitação à sua conta na Anthropic, então a Anthropic sabe de quem é a conta, mesmo que algo tenha sido removido. As regras da sua conta na Anthropic decidem por quanto tempo o texto é guardado e se ele é usado para melhorar os modelos; o myCarlos não pode ver nem mudar isso. Crie uma chave nova só para o myCarlos e defina um limite de gastos nela. Cada resumo custa alguns centavos ou menos, cobrados de você pela Anthropic.
+cloudAi-understand = Eu entendo
+cloudAi-enable = Ativar a IA na nuvem neste computador
+cloudAi-disable = Desativar a IA na nuvem
+cloudAi-enabledState = A IA na nuvem está ativada.
+cloudAi-disabledState = A IA na nuvem está desativada.
+cloudAi-noKey = Nenhuma chave salva.
+cloudAi-keyItem = “{ $label }”: a chave termina em { $last4 }, adicionada em { $date }
+cloudAi-addKey = Adicionar chave
+cloudAi-addTitle = Adicionar sua chave da Anthropic
+cloudAi-labelField = Nome desta chave
+cloudAi-keyField = Chave de API da Anthropic
+cloudAi-keyHelp = Começa com sk-ant-. Ela é salva criptografada no seu cofre e nunca mais é exibida. Quem puder ver o que você digita ou cola poderá copiá-la: use uma chave criada para o myCarlos, com limite de gastos.
+cloudAi-add = Adicionar chave
+cloudAi-cancel = Cancelar
+cloudAi-remove = Remover chave
+cloudAi-removeTitle = Remover esta chave?
+cloudAi-removeBody = Isso remove a chave do myCarlos. Não a cancela na Anthropic: se mais alguém pôde vê-la, exclua-a também na sua conta da Anthropic. Backups mais antigos deste cofre ainda a contêm.
+cloudAi-removeConfirm = Remover chave
+cloudAi-err-badShape = Isso não parece uma chave de API da Anthropic.
+cloudAi-err-adminKey = É uma chave de administração, que pode gerenciar uma conta inteira. Crie uma chave de API comum.
+cloudAi-err-duplicate = Esta chave já está salva.
+cloudAi-err-tooMany = Já há quatro chaves salvas. Remova uma primeiro.
+cloudAi-err-badLabel = Dê à chave um nome curto (até 60 caracteres).
+cloudAi-err-generic = Não foi possível salvar a chave.
+cloudAi-send = Enviar ao meu provedor de IA…
+cloudAi-previewNote = Enviar mostra este texto à Anthropic. Confira primeiro as partes removidas.
+cloudAi-sendTitle = Enviar à Anthropic?
+cloudAi-sendBody = O texto deste documento, com nomes e outros detalhes substituídos, será enviado à Anthropic com a sua chave “{ $label }”, usando { $model }. Cerca de { $characters } caracteres, { $cost }. As regras da sua conta na Anthropic decidem o que acontece depois.
+cloudAi-costEstimate = um custo estimado de { $amount }
+cloudAi-costUnknown = sem estimativa de custo
+cloudAi-sendConfirm = Enviar
+cloudAi-working = Aguardando a Anthropic…
+cloudAi-cancelSend = Cancelar
+cloudAi-cancelled = Cancelado. A Anthropic pode já ter recebido o texto e pode cobrar por ele.
+cloudAi-answerTitle = Resposta
+cloudAi-answerLabel = Escrito por uma IA e pode conter erros. Confirme com seu médico.
+cloudAi-sendFailed = Não foi possível enviar o texto, ou a resposta não pôde ser usada. Nada foi guardado.

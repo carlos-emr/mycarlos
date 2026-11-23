@@ -1883,7 +1883,7 @@ aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Voir dans le document
+ai-summary-showInDocument = Me montrer dans le document
 
 ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
 
@@ -2215,6 +2215,111 @@ interface-AnonymizePreview-possibleNames = Mots qui pourraient être des noms
 
 interface-AnonymizePreview-removeWord = Retirer « { $word } »
 
+interface-AnonymizePreview-removedSummary = Retiré : { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Rien n’a encore été retiré.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nom
+   *[other] { $count } noms
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médecin
+   *[other] { $count } médecins
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinique
+   *[other] { $count } cliniques
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numéro de carte santé
+   *[other] { $count } numéros de carte santé
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numéro de dossier
+   *[other] { $count } numéros de dossier
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numéro d'assurance sociale
+   *[other] { $count } numéros d'assurance sociale
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date de naissance
+   *[other] { $count } dates de naissance
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } âge
+   *[other] { $count } âges
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adresse
+   *[other] { $count } adresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } code postal
+   *[other] { $count } codes postaux
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numéro de téléphone
+   *[other] { $count } numéros de téléphone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adresse courriel
+   *[other] { $count } adresses courriel
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adresse web
+   *[other] { $count } adresses web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } date ambiguë
+   *[other] { $count } dates ambiguës
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } retiré par vous
+   *[other] { $count } retirés par vous
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date remplacée
+   *[other] { $count } dates remplacées
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } mot à vérifier
+   *[other] { $count } mots à vérifier
+}
+
+interface-AnonymizePreview-toCheckHelp = Les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus sont surlignés : ils peuvent identifier quelqu’un. Sélectionnez-en un, puis choisissez Retirer.
+
+interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
+
+interface-AnonymizePreview-savedFileNote = Le fichier enregistré n’est pas protégé par myCarlos. Il ne contient aucun nom, mais il contient les détails médicaux. Supprimez-le lorsque vous avez terminé.
+
+interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez décide de ce qui est conservé : un service de clavardage peut le garder ou s’en servir pour apprendre, selon les paramètres de votre compte.
+
+interface-AnonymizePreview-copy = Copier le texte
+
+interface-AnonymizePreview-copied = Le texte a été copié.
+
+interface-AnonymizePreview-copyFailed = Le texte n’a pas pu être copié.
+
+interface-AnonymizePreview-copyWarning = Le texte copié peut rester sur cet appareil : l’historique du presse-papiers de Windows et la synchronisation du presse-papiers entre appareils peuvent en garder une copie.
+
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 
 interface-AnonymizePreview-selectFirst = Sélectionnez d'abord une partie du texte.
@@ -2315,3 +2420,43 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+cloudAi-title = IA infonuagique (facultatif)
+cloudAi-syntheticOnly = Données synthétiques seulement pour l'instant : n'utilisez pas de renseignements réels sur des patients.
+cloudAi-notice = Quand vous appuyez sur Envoyer pour un document, myCarlos envoie son texte, dont les noms et autres détails ont été remplacés, aux serveurs d'Anthropic avec votre propre clé. Rien n'est envoyé avant que vous appuyiez sur Envoyer. Votre clé relie la demande à votre compte Anthropic : Anthropic sait donc à qui appartient le compte, quoi qu'on ait retiré. Les règles de votre compte Anthropic décident de la durée de conservation du texte et de son utilisation pour améliorer ses modèles; myCarlos ne peut ni les voir ni les changer. Créez une nouvelle clé réservée à myCarlos et fixez-lui une limite de dépenses. Chaque résumé coûte quelques cents ou moins, facturés par Anthropic.
+cloudAi-understand = Je comprends
+cloudAi-enable = Activer l'IA infonuagique sur cet ordinateur
+cloudAi-disable = Désactiver l'IA infonuagique
+cloudAi-enabledState = L'IA infonuagique est activée.
+cloudAi-disabledState = L'IA infonuagique est désactivée.
+cloudAi-noKey = Aucune clé enregistrée.
+cloudAi-keyItem = « { $label } » : la clé se termine par { $last4 }, ajoutée le { $date }
+cloudAi-addKey = Ajouter une clé
+cloudAi-addTitle = Ajouter votre clé Anthropic
+cloudAi-labelField = Nom de cette clé
+cloudAi-keyField = Clé API Anthropic
+cloudAi-keyHelp = Elle commence par sk-ant-. Elle est enregistrée chiffrée dans votre coffre et n'est plus jamais affichée. Quiconque voit ce que vous saisissez ou collez pourrait la copier : utilisez une clé créée pour myCarlos, avec une limite de dépenses.
+cloudAi-add = Ajouter la clé
+cloudAi-cancel = Annuler
+cloudAi-remove = Retirer la clé
+cloudAi-removeTitle = Retirer cette clé?
+cloudAi-removeBody = Cela retire la clé de myCarlos. Cela n'annule pas la clé chez Anthropic : si quelqu'un d'autre a pu la voir, supprimez-la aussi dans votre compte Anthropic. Les anciennes sauvegardes de ce coffre la contiennent encore.
+cloudAi-removeConfirm = Retirer la clé
+cloudAi-err-badShape = Cela ne ressemble pas à une clé API Anthropic.
+cloudAi-err-adminKey = C'est une clé d'administration, qui peut gérer tout un compte. Créez plutôt une clé API ordinaire.
+cloudAi-err-duplicate = Cette clé est déjà enregistrée.
+cloudAi-err-tooMany = Quatre clés sont déjà enregistrées. Retirez-en une d'abord.
+cloudAi-err-badLabel = Donnez à la clé un nom court (60 caractères au plus).
+cloudAi-err-generic = La clé n'a pas pu être enregistrée.
+cloudAi-send = Envoyer à mon fournisseur d'IA…
+cloudAi-previewNote = L'envoi montre ce texte à Anthropic. Vérifiez d'abord les parties retirées.
+cloudAi-sendTitle = Envoyer à Anthropic?
+cloudAi-sendBody = Le texte de ce document, dont les noms et autres détails ont été remplacés, sera envoyé à Anthropic avec votre clé « { $label } », avec { $model }. Environ { $characters } caractères, { $cost }. Les règles de votre compte Anthropic décident de la suite.
+cloudAi-costEstimate = un coût estimé de { $amount }
+cloudAi-costUnknown = aucune estimation du coût
+cloudAi-sendConfirm = Envoyer
+cloudAi-working = En attente d'Anthropic…
+cloudAi-cancelSend = Annuler
+cloudAi-cancelled = Annulé. Anthropic a peut-être déjà reçu le texte et peut le facturer.
+cloudAi-answerTitle = Réponse
+cloudAi-answerLabel = Écrit par une IA, peut contenir des erreurs. Vérifiez auprès de votre médecin.
+cloudAi-sendFailed = Le texte n'a pas pu être envoyé, ou la réponse n'a pas pu être utilisée. Rien n'a été conservé.

@@ -1,6 +1,8 @@
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
+import { CloudAiSetting } from "./CloudAiSetting";
+import type { CloudAiBridge } from "../cloudAi";
 
 /** Settings > AI helper (#72): the model on this computer. Later AI settings
  * (such as the answers kept with documents) belong here too. Shown only on a
@@ -9,10 +11,13 @@ import { AiModelSetting } from "./AiModelSetting";
 export function AiSettings({
   aiStatus,
   onAiStatus,
+  cloudAi = null,
 }: {
   aiStatus: ModelStatus | null;
   /** The status after the model was added or removed here. */
   onAiStatus: (status: ModelStatus) => void;
+  /** The cloud AI bridge (#72), given only in a build with the cloud AI flag. */
+  cloudAi?: CloudAiBridge | null;
 }) {
   const { t } = useI18n();
   return (
@@ -43,6 +48,7 @@ export function AiSettings({
             )}
           </div>
         </section>
+        <CloudAiSetting bridge={cloudAi} />
       </div>
     </main>
   );

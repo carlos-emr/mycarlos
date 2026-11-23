@@ -1847,7 +1847,7 @@ aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Show in document
+ai-summary-showInDocument = Show me in the document
 
 ai-summary-folded = The summary is folded so the page has room.
 
@@ -2180,6 +2180,111 @@ interface-AnonymizePreview-possibleNames = Words that may be names
 
 interface-AnonymizePreview-removeWord = Remove “{ $word }”
 
+interface-AnonymizePreview-removedSummary = Removed: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } name
+   *[other] { $count } names
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } doctor
+   *[other] { $count } doctors
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinic
+   *[other] { $count } clinics
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } health card number
+   *[other] { $count } health card numbers
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } record number
+   *[other] { $count } record numbers
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } social insurance number
+   *[other] { $count } social insurance numbers
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date of birth
+   *[other] { $count } dates of birth
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } age
+   *[other] { $count } ages
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } address
+   *[other] { $count } addresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } postal code
+   *[other] { $count } postal codes
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } phone number
+   *[other] { $count } phone numbers
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } email address
+   *[other] { $count } email addresses
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } web address
+   *[other] { $count } web addresses
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } unclear date
+   *[other] { $count } unclear dates
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removed by you
+   *[other] { $count } removed by you
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date replaced
+   *[other] { $count } dates replaced
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } word to check
+   *[other] { $count } words to check
+}
+
+interface-AnonymizePreview-toCheckHelp = Words that start with a capital letter inside a sentence, and numbers with three or more digits, are highlighted: they may identify someone. Select one, then choose Remove.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” may identify someone.
+
+interface-AnonymizePreview-savedFileNote = The saved file is not protected by myCarlos. It has no names, but it holds the medical details. Delete it when you are done.
+
+interface-AnonymizePreview-pasteWhereNote = Where you paste this decides what is kept: a chat service may keep it or learn from it, depending on your account settings.
+
+interface-AnonymizePreview-copy = Copy text
+
+interface-AnonymizePreview-copied = The text was copied.
+
+interface-AnonymizePreview-copyFailed = The text could not be copied.
+
+interface-AnonymizePreview-copyWarning = Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.
+
 interface-AnonymizePreview-removeSelected = Remove the selected text
 
 interface-AnonymizePreview-selectFirst = Select some of the text first.
@@ -2280,3 +2385,43 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+cloudAi-title = Cloud AI (optional)
+cloudAi-syntheticOnly = Synthetic data only for now: do not use real patient information.
+cloudAi-notice = When you press Send on one document, myCarlos sends its text, with names and other details replaced, to Anthropic's servers using your own key. Nothing is sent until you press Send. Your key ties the request to your Anthropic account, so Anthropic knows whose account it is whatever was removed. Anthropic's rules for your account decide how long it keeps the text and whether it is used to improve its models; myCarlos cannot see or change that. Make a new key just for myCarlos and set a spending limit on it. Each summary costs a few cents or less, billed to you by Anthropic.
+cloudAi-understand = I understand this
+cloudAi-enable = Turn on cloud AI on this computer
+cloudAi-disable = Turn off cloud AI
+cloudAi-enabledState = Cloud AI is on.
+cloudAi-disabledState = Cloud AI is off.
+cloudAi-noKey = No key saved.
+cloudAi-keyItem = "{ $label }": key ends in { $last4 }, added { $date }
+cloudAi-addKey = Add key
+cloudAi-addTitle = Add your Anthropic key
+cloudAi-labelField = Name for this key
+cloudAi-keyField = Anthropic API key
+cloudAi-keyHelp = It starts with sk-ant-. It is saved encrypted in your vault and never shown again. Anyone who can see what you type or paste could copy it, so use a key made for myCarlos with a spending limit.
+cloudAi-add = Add key
+cloudAi-cancel = Cancel
+cloudAi-remove = Remove key
+cloudAi-removeTitle = Remove this key?
+cloudAi-removeBody = This removes the key from myCarlos. It does not cancel the key at Anthropic: if anyone else could have seen it, delete it in your Anthropic account too. Older backups of this vault still hold it.
+cloudAi-removeConfirm = Remove key
+cloudAi-err-badShape = That does not look like an Anthropic API key.
+cloudAi-err-adminKey = That is an administration key, which can manage a whole account. Make an ordinary API key instead.
+cloudAi-err-duplicate = This key is already saved.
+cloudAi-err-tooMany = Four keys are saved already. Remove one first.
+cloudAi-err-badLabel = Give the key a short name (up to 60 characters).
+cloudAi-err-generic = The key could not be saved.
+cloudAi-send = Send to my AI provider…
+cloudAi-previewNote = Sending shows this text to Anthropic. Check the removed parts first.
+cloudAi-sendTitle = Send to Anthropic?
+cloudAi-sendBody = The text of this document, with names and other details replaced, will be sent to Anthropic with your key "{ $label }", using { $model }. About { $characters } characters, { $cost }. Anthropic's rules for your account decide what happens to it next.
+cloudAi-costEstimate = an estimated { $amount }
+cloudAi-costUnknown = no cost estimate available
+cloudAi-sendConfirm = Send
+cloudAi-working = Waiting for Anthropic…
+cloudAi-cancelSend = Cancel
+cloudAi-cancelled = Cancelled. Anthropic may already have received the text, and may charge for it.
+cloudAi-answerTitle = Answer
+cloudAi-answerLabel = Written by AI and may be wrong. Check with your doctor.
+cloudAi-sendFailed = The text could not be sent, or the answer could not be used. Nothing was kept.

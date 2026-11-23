@@ -1695,7 +1695,7 @@ aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認�
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = 在文件中顯示
+ai-summary-showInDocument = 在文件中指給我看
 
 ai-summary-folded = 摘要已收合，以便為頁面留出空間。
 
@@ -2013,6 +2013,60 @@ interface-AnonymizePreview-possibleNames = 可能是姓名的詞
 
 interface-AnonymizePreview-removeWord = 移除「{ $word }」
 
+interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
+
+interface-AnonymizePreview-removedSummaryNone = 尚未移除任何內容。
+
+interface-AnonymizePreview-removedCount-name = { $count } 個姓名
+
+interface-AnonymizePreview-removedCount-doctor = { $count } 位醫生
+
+interface-AnonymizePreview-removedCount-clinic = { $count } 家診所
+
+interface-AnonymizePreview-removedCount-healthCard = { $count } 個健保卡號
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count } 個病歷號
+
+interface-AnonymizePreview-removedCount-sin = { $count } 個社會保險號
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count } 個出生日期
+
+interface-AnonymizePreview-removedCount-age = { $count } 個年齡
+
+interface-AnonymizePreview-removedCount-address = { $count } 個地址
+
+interface-AnonymizePreview-removedCount-postalCode = { $count } 個郵遞區號
+
+interface-AnonymizePreview-removedCount-phone = { $count } 個電話號碼
+
+interface-AnonymizePreview-removedCount-email = { $count } 個電子郵件地址
+
+interface-AnonymizePreview-removedCount-web = { $count } 個網址
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count } 個不明確的日期
+
+interface-AnonymizePreview-removedCount-manual = { $count } 項由您移除的內容
+
+interface-AnonymizePreview-removedCount-date = { $count } 個已替換的日期
+
+interface-AnonymizePreview-toCheck = { $count } 個詞需要檢查
+
+interface-AnonymizePreview-toCheckHelp = 句子中間以大寫字母開頭的詞，以及三位或更多位的數字會被醒目標示：它們可能識別出某個人。請選擇其一，然後選擇「移除」。
+
+interface-AnonymizePreview-checkPicked = 「{ $word }」可能識別出某個人。
+
+interface-AnonymizePreview-savedFileNote = 儲存的檔案不受 myCarlos 保護。其中沒有姓名，但包含醫療詳情。用完後請將其刪除。
+
+interface-AnonymizePreview-pasteWhereNote = 您把它貼到哪裡，決定了什麼會被保留：聊天服務可能會保存它，或依您的帳戶設定從中學習。
+
+interface-AnonymizePreview-copy = 複製文字
+
+interface-AnonymizePreview-copied = 文字已複製。
+
+interface-AnonymizePreview-copyFailed = 無法複製文字。
+
+interface-AnonymizePreview-copyWarning = 複製的文字可能會留在此裝置上：Windows 剪貼簿歷程記錄和裝置之間的剪貼簿同步可能會保留一份複本。
+
 interface-AnonymizePreview-removeSelected = 移除選取的文字
 
 interface-AnonymizePreview-selectFirst = 請先選取一部分文字。
@@ -2113,3 +2167,43 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+cloudAi-title = 雲端 AI（選用）
+cloudAi-syntheticOnly = 目前僅限合成資料：請勿使用真實的病患資訊。
+cloudAi-notice = 當您對某份文件按下「傳送」時，myCarlos 會使用您自己的金鑰，把該文件已取代姓名及其他細節的文字傳送到 Anthropic 的伺服器。在您按下「傳送」之前不會傳送任何內容。您的金鑰會把請求與您的 Anthropic 帳戶連結，所以無論移除了什麼，Anthropic 都知道這是誰的帳戶。您的 Anthropic 帳戶規則決定文字保存多久，以及是否用於改進其模型；myCarlos 無法查看或變更。請專門為 myCarlos 建立新的金鑰並為它設定支出上限。每份摘要的費用為幾美分或更少，由 Anthropic 向您收費。
+cloudAi-understand = 我了解
+cloudAi-enable = 在這台電腦上開啟雲端 AI
+cloudAi-disable = 關閉雲端 AI
+cloudAi-enabledState = 雲端 AI 已開啟。
+cloudAi-disabledState = 雲端 AI 已關閉。
+cloudAi-noKey = 尚未儲存金鑰。
+cloudAi-keyItem = 「{ $label }」：金鑰以 { $last4 } 結尾，新增於 { $date }
+cloudAi-addKey = 新增金鑰
+cloudAi-addTitle = 新增您的 Anthropic 金鑰
+cloudAi-labelField = 此金鑰的名稱
+cloudAi-keyField = Anthropic API 金鑰
+cloudAi-keyHelp = 它以 sk-ant- 開頭。它會加密儲存在您的保險庫中，且不會再次顯示。任何能看到您輸入或貼上內容的人都可能複製它，因此請使用專為 myCarlos 建立且設有支出上限的金鑰。
+cloudAi-add = 新增金鑰
+cloudAi-cancel = 取消
+cloudAi-remove = 移除金鑰
+cloudAi-removeTitle = 移除此金鑰？
+cloudAi-removeBody = 這會從 myCarlos 移除該金鑰，但不會在 Anthropic 取消它：如果別人可能看過它，請同時在您的 Anthropic 帳戶中刪除。此保險庫的舊備份仍保留著它。
+cloudAi-removeConfirm = 移除金鑰
+cloudAi-err-badShape = 這看起來不像 Anthropic API 金鑰。
+cloudAi-err-adminKey = 這是管理金鑰，可以管理整個帳戶。請改用一般的 API 金鑰。
+cloudAi-err-duplicate = 此金鑰已儲存。
+cloudAi-err-tooMany = 已儲存四個金鑰。請先移除一個。
+cloudAi-err-badLabel = 請為金鑰取一個簡短的名稱（最多 60 個字元）。
+cloudAi-err-generic = 無法儲存金鑰。
+cloudAi-send = 傳送給我的 AI 供應商…
+cloudAi-previewNote = 傳送會讓 Anthropic 看到此文字。請先檢查已移除的部分。
+cloudAi-sendTitle = 傳送給 Anthropic？
+cloudAi-sendBody = 此文件已取代姓名及其他細節的文字，將使用您的金鑰「{ $label }」、透過 { $model } 傳送給 Anthropic。約 { $characters } 個字元，{ $cost }。之後如何處理由您的 Anthropic 帳戶規則決定。
+cloudAi-costEstimate = 預估費用 { $amount }
+cloudAi-costUnknown = 無費用估算
+cloudAi-sendConfirm = 傳送
+cloudAi-working = 正在等待 Anthropic…
+cloudAi-cancelSend = 取消
+cloudAi-cancelled = 已取消。Anthropic 可能已經收到文字，並可能收費。
+cloudAi-answerTitle = 回答
+cloudAi-answerLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
+cloudAi-sendFailed = 無法傳送文字，或無法使用該回答。未保留任何內容。
