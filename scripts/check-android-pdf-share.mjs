@@ -5,14 +5,15 @@
 //   node scripts/check-android-pdf-share.mjs <AndroidManifest.xml>
 //       the manifest of the Android project (src-tauri/gen/android/app/src/main/AndroidManifest.xml)
 //       AFTER the Android build: `tauri android init` does not write the file-association
-//       filters; tauri-build's build script does, during the cargo build, between the
-//       `tauri-file-associations` markers inside MainActivity.
+//       filters; tauri-build's build script does, during the cargo build, into the
+//       `tauri-file-associations` block before EVERY `</activity>`, not only MainActivity's.
 //
 // The manifest must have, on MainActivity (or an activity-alias that targets it), a filter for
 // SEND and one for SEND_MULTIPLE (tauri-build writes them as ONE filter), with the DEFAULT
-// category and the data type application/pdf, and no VIEW filter that takes a PDF, any
-// application/* or */* type, or any file or content address, so myCarlos is never offered as
-// the app that opens a PDF. The BROWSABLE category tauri-build also writes is allowed on
+// category and the data type application/pdf. On EVERY activity and alias, no SEND or
+// SEND_MULTIPLE filter may take another type, and no VIEW filter may take a PDF, application/*,
+// */*, octet-stream, a .pdf path pattern, or any file or content address, so myCarlos is never
+// offered as the app that opens a PDF. The BROWSABLE category tauri-build also writes is allowed on
 // purpose: a SEND filter with it only lets a web page's share intent reach the same
 // received-files path, which accepts only content: addresses and checks the %PDF header.
 import { readFileSync } from "node:fs";
@@ -151,7 +152,7 @@ export function manifestProblems(manifest) {
       );
     }
   }
-  for (const filter of filters) {
+  for (const filter of activities(manifest).flatMap((one) => one.filters)) {
     for (const data of filter.data) {
       if (
         data.mimeType &&

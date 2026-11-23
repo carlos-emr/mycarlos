@@ -247,3 +247,17 @@ test("VIEW filters by octet-stream or a .pdf path are refused", () => {
     );
   }
 });
+
+test("a SEND filter for another type is refused on any activity, not only MainActivity", () => {
+  const text = generated.replace("application/pdf", "text/plain");
+  // On the second activity of the real template's layout only.
+  const second = template(generated).replace(
+    /(android:name="\.Second"[\s\S]*?)<intent-filter>[\s\S]*?<\/intent-filter>/,
+    `$1${text}`,
+  );
+  assert.match(
+    manifestProblems(second).join(" "),
+    /a SEND filter takes text\/plain/,
+  );
+  assert.deepEqual(manifestProblems(template(generated)), []);
+});
