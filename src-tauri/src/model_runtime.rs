@@ -2113,6 +2113,9 @@ pub mod engine_testing {
         /// K20: the safety checks' name, and every fallback (before: none when a quote was added).
         pub safety: &'static str,
         pub fallbacks: Vec<MeasuredFallback>,
+        /// The unsourced absence-shaped sentences dropped before the post-steps (before: the
+        /// words; index: where the model wrote it).
+        pub dropped: Vec<MeasuredFallback>,
     }
 
     /// K20: one fallback of the safety checks (`safety`).
@@ -2277,6 +2280,16 @@ pub mod engine_testing {
                     after: f.after,
                 })
                 .collect();
+            let dropped = summary
+                .dropped
+                .into_iter()
+                .map(|f| MeasuredFallback {
+                    check: f.check,
+                    index: f.index,
+                    before: f.before,
+                    after: f.after,
+                })
+                .collect();
             let explained = summary
                 .explained
                 .into_iter()
@@ -2329,6 +2342,7 @@ pub mod engine_testing {
                 explained,
                 safety: crate::safety::NAME,
                 fallbacks,
+                dropped,
             })
         }
 
