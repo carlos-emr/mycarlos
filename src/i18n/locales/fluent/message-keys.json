@@ -1121,6 +1121,13 @@
   "interface.RecordingRecovery.savedLocked",
   "interface.RecordingRecovery.savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
   "portal.deviceLine",
   "portal.deviceLineLinked"
 ]

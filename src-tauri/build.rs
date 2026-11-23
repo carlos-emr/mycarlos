@@ -180,6 +180,7 @@ fn main() {
             "vault_video_pause",
             "vault_video_resume",
             "vault_video_stop",
+            "vault_video_space",
             "vault_video_pending",
             "vault_video_recover",
             "vault_is_video",

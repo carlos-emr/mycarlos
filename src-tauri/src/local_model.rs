@@ -337,7 +337,7 @@ impl Hardware for Here {
     }
 
     fn free_disk_bytes(&self, dir: &Path) -> Option<u64> {
-        free_disk(dir)
+        crate::disk_space::free_bytes(dir)
     }
 }
 
@@ -355,44 +355,6 @@ fn has_avx2() -> bool {
     {
         cfg!(target_arch = "aarch64")
     }
-}
-
-#[cfg(unix)]
-fn free_disk(dir: &Path) -> Option<u64> {
-    use std::os::unix::ffi::OsStrExt;
-    // The folder may not exist yet: ask about the nearest one that does.
-    let mut probe = dir;
-    while !probe.exists() {
-        probe = probe.parent()?;
-    }
-    let path = std::ffi::CString::new(probe.as_os_str().as_bytes()).ok()?;
-    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-    // SAFETY: `path` is NUL-terminated and `stat` is a valid out-pointer.
-    if unsafe { libc::statvfs(path.as_ptr(), &mut stat) } != 0 {
-        return None;
-    }
-    (stat.f_bavail as u64).checked_mul(stat.f_frsize as u64)
-}
-
-#[cfg(windows)]
-fn free_disk(dir: &Path) -> Option<u64> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::core::PCWSTR;
-    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let mut probe = dir;
-    while !probe.exists() {
-        probe = probe.parent()?;
-    }
-    let wide: Vec<u16> = probe.as_os_str().encode_wide().chain([0]).collect();
-    let mut free = 0u64;
-    // SAFETY: `wide` is NUL-terminated and `free` is a valid out-pointer.
-    unsafe { GetDiskFreeSpaceExW(PCWSTR(wide.as_ptr()), Some(&mut free), None, None) }.ok()?;
-    Some(free)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn free_disk(_dir: &Path) -> Option<u64> {
-    None
 }
 
 /// Whether this computer can run the helper at all (not whether disk is

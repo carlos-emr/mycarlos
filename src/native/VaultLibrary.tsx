@@ -64,7 +64,7 @@ import { RecordDialog, type RecordEnd } from "./RecordDialog";
 import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
-import { videoRecordingAvailable } from "./video";
+import { isNoSpace, videoRecordingAvailable } from "./video";
 import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
@@ -1216,6 +1216,11 @@ export function VaultLibrary({
     run(async () => {
       setRecordOpen(false);
       const next = await refresh();
+      if (endedBy === "unfinished") {
+        // Kept, not lost: it is finished at the next unlock, when there is room.
+        setNotice(message("interface.RecordDialog.videoKeptUnfinished"));
+        return;
+      }
       const saved = recordId
         ? next.records.find((record) => record.id === recordId)
         : undefined;
@@ -1233,9 +1238,11 @@ export function VaultLibrary({
               ? "interface.RecordDialog.videoSavedHidden"
               : endedBy === "slow"
                 ? "interface.RecordDialog.videoSavedSlow"
-                : endedBy === "failed"
-                  ? "interface.RecordDialog.videoSavedFailed"
-                  : "interface.RecordDialog.videoSavedStopped",
+                : endedBy === "space"
+                  ? "interface.RecordDialog.videoSavedNoRoom"
+                  : endedBy === "failed"
+                    ? "interface.RecordDialog.videoSavedFailed"
+                    : "interface.RecordDialog.videoSavedStopped",
           { name: saved.displayName },
         ),
         recordId: saved.id,
@@ -1244,24 +1251,40 @@ export function VaultLibrary({
   const keepParked = (parked: PendingRecording[]) =>
     run(async () => {
       const kept: PendingRecording[] = [];
+      const waiting: PendingRecording[] = [];
       for (const recording of parked) {
-        const saved = await bridge.videoRecover(recording.id, true);
-        if (saved.recordId) kept.push(recording);
+        try {
+          const saved = await bridge.videoRecover(recording.id, true);
+          if (saved.recordId) kept.push(recording);
+        } catch (error) {
+          // Not enough room to finish it yet: it stays as it is, the others
+          // are still tried, and the notice says so (not a generic failure).
+          if (!isNoSpace(error)) throw error;
+          waiting.push(recording);
+        }
       }
       await refresh();
+      const told = [
+        ...kept.map((recording) =>
+          message(
+            recording.stopped
+              ? "interface.RecordingRecovery.finishedWithRoom"
+              : recording.paused
+                ? "interface.RecordingRecovery.savedLockedPaused"
+                : "interface.RecordingRecovery.savedLocked",
+            { name: recording.displayName },
+          ),
+        ),
+        ...waiting.map((recording) =>
+          message("interface.RecordingRecovery.stillNoRoom", {
+            name: recording.displayName,
+          }),
+        ),
+      ];
       setNotice(
-        kept.length === 0
+        told.length === 0
           ? message("interface.RecordingRecovery.nothingToKeep")
-          : joinText(
-              ...kept.map((recording) =>
-                message(
-                  recording.paused
-                    ? "interface.RecordingRecovery.savedLockedPaused"
-                    : "interface.RecordingRecovery.savedLocked",
-                  { name: recording.displayName },
-                ),
-              ),
-            ),
+          : joinText(...told),
       );
     });
   keepParkedRef.current = keepParked;
