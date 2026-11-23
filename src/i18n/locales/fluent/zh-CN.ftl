@@ -2316,3 +2316,21 @@ security-backup-leaveVideosOutHelp = 备份将不包含您的视频。如果您�
 restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它会带回其他所有内容，但您的视频不会在其中。它们会作为缺失的文件列在隐藏文档中。
 security-backup-sizeCalculating = 正在计算备份大小…
 interface-hidden-videoLeftOut = 备份中未包含的视频
+
+backupReminder-label = 备份提醒
+
+backupReminder-never = 您还没有为这个保险库做过 myCarlos 备份。
+
+backupReminder-old = 您上一次 myCarlos 备份是在 { $date }。
+
+backupReminder-many = 自上次 myCarlos 备份以来，已添加 { $count } 份文件。
+
+backupReminder-phone = 在手机上，您的保险库不属于 iCloud 或手机自身的备份。如果丢失或更换这部手机而没有 myCarlos 备份，您将失去保险库。
+
+backupReminder-computer = 您的保险库只保存在这台电脑上，不在电脑自身的备份中。如果这台电脑丢失或被更换而没有 myCarlos 备份，您将失去保险库。
+
+backupReminder-make = 制作加密备份
+
+backupReminder-notNow = 暂不
+
+backupReminder-postponed = 我们将在 { $days } 天后再次提醒您。

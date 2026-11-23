@@ -2649,3 +2649,25 @@ security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich
 restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
+
+backupReminder-label = Przypomnienie o kopii zapasowej
+
+backupReminder-never = Nie zrobiono jeszcze kopii zapasowej myCarlos tego sejfu.
+
+backupReminder-old = Ostatnia kopia zapasowa myCarlos pochodzi z dnia { $date }.
+
+backupReminder-many = { $count ->
+        [one] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokument.
+        [few] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokumenty.
+       *[other] Od ostatniej kopii zapasowej myCarlos dodano { $count } dokumentów.
+    }
+
+backupReminder-phone = Na telefonie Twój sejf nie jest częścią iCloud ani kopii zapasowych samego telefonu. Jeśli zgubisz lub wymienisz ten telefon bez kopii zapasowej myCarlos, stracisz sejf.
+
+backupReminder-computer = Twój sejf jest przechowywany tylko na tym komputerze, a nie w kopiach zapasowych samego komputera. Jeśli ten komputer zostanie zgubiony lub wymieniony bez kopii zapasowej myCarlos, stracisz sejf.
+
+backupReminder-make = Zrób zaszyfrowaną kopię zapasową
+
+backupReminder-notNow = Nie teraz
+
+backupReminder-postponed = Przypomnimy o tym za { $days } dni.

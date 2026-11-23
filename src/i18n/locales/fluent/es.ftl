@@ -2569,3 +2569,24 @@ security-backup-leaveVideosOutHelp = La copia de seguridad no contendrá tus vid
 restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se recupera todo lo demás, y tus videos no estarán. Aparecen entre los documentos ocultos, como archivos que faltan.
 security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
 interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad
+
+backupReminder-label = Recordatorio de copia de seguridad
+
+backupReminder-never = Todavía no ha hecho una copia de seguridad de myCarlos de esta bóveda.
+
+backupReminder-old = Su última copia de seguridad de myCarlos fue el { $date }.
+
+backupReminder-many = { $count ->
+        [one] Se ha añadido { $count } documento desde su última copia de seguridad de myCarlos.
+       *[other] Se han añadido { $count } documentos desde su última copia de seguridad de myCarlos.
+    }
+
+backupReminder-phone = En un teléfono, su bóveda no forma parte de iCloud ni de las copias de seguridad del propio teléfono. Si pierde o cambia este teléfono sin una copia de seguridad de myCarlos, pierde su bóveda.
+
+backupReminder-computer = Su bóveda se guarda solo en este ordenador, no en las copias de seguridad del propio ordenador. Si este ordenador se pierde o se cambia sin una copia de seguridad de myCarlos, pierde su bóveda.
+
+backupReminder-make = Hacer una copia de seguridad cifrada
+
+backupReminder-notNow = Ahora no
+
+backupReminder-postponed = Se lo recordaremos de nuevo dentro de { $days } días.

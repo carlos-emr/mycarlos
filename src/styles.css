@@ -4797,6 +4797,22 @@ button:disabled,
   flex: 1 1 16rem;
   margin: 0;
 }
+/* The library's reminder to make a myCarlos encrypted backup. Same quiet note. */
+.native-backup-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-block: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.native-backup-reminder p {
+  flex: 1 1 16rem;
+  margin: 0;
+}
 /* A birth date as year, month and day: the year first, typed, and the month
    from a list, in one row that wraps on a narrow screen (a phone's calendar
    makes a date decades back slow to reach). */

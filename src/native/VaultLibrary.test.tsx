@@ -2346,3 +2346,72 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     expect(native.aiSummarize).not.toHaveBeenCalled();
   });
 });
+
+describe("backup reminder", () => {
+  const withDocuments = (count = 1): VaultSnapshot => ({
+    ...snapshot,
+    sharedProfileId: "FAKE-shared-for-backup-reminder",
+    records: Array.from({ length: count }, (_, index) =>
+      record(`FAKE-doc-${index}`, `FAKE Letter ${index}`, []),
+    ),
+  });
+  const note = () =>
+    screen.queryByRole("note", { name: humanText("Backup reminder") });
+  const reset = () => {
+    try {
+      window.localStorage.removeItem("mycarlos.backupReminder.v1");
+    } catch {
+      // Storage unavailable: nothing to clear.
+    }
+  };
+  afterEach(reset);
+
+  it("shows for a vault with documents and no backup, says plainly what a lost computer means, and offers the backup", () => {
+    reset();
+    renderLibrary(withDocuments());
+    expect(note()).toHaveHumanTextContent(
+      "You have not made a myCarlos backup of this vault yet.",
+    );
+    expect(note()).toHaveHumanTextContent("you lose your vault");
+    expect(
+      within(note()!).getByRole("button", {
+        name: humanText("Make an encrypted backup"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("is not shown for an empty vault", () => {
+    reset();
+    renderLibrary(snapshot);
+    expect(note()).toBeNull();
+  });
+
+  it("Not now puts it away, keeps focus on the page heading, and it stays away after the library opens again", async () => {
+    reset();
+    const { setNotice } = renderLibrary(withDocuments());
+    fireEvent.click(
+      within(note()!).getByRole("button", { name: humanText("Not now") }),
+    );
+    expect(note()).toBeNull();
+    expect(document.activeElement?.tagName).toBe("H1");
+    expect(setNotice).toHaveBeenCalled();
+    cleanup();
+    renderLibrary(withDocuments());
+    expect(note()).toBeNull();
+  });
+
+  it("comes back when the last backup is old", () => {
+    reset();
+    window.localStorage.setItem(
+      "mycarlos.backupReminder.v1",
+      JSON.stringify({
+        "FAKE-shared-for-backup-reminder": {
+          savedAtMs: Date.now() - 31 * 24 * 60 * 60 * 1000,
+          documentsThen: 1,
+        },
+      }),
+    );
+    renderLibrary(withDocuments());
+    expect(note()).toHaveHumanTextContent("Your last myCarlos backup was on");
+  });
+});

@@ -2569,3 +2569,24 @@ security-backup-leaveVideosOutHelp = O backup não conterá seus vídeos. Se voc
 restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta todo o resto, e seus vídeos não estarão lá. Eles aparecem entre os documentos ocultos, como arquivos ausentes.
 security-backup-sizeCalculating = Calculando o tamanho do backup…
 interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
+
+backupReminder-label = Lembrete de backup
+
+backupReminder-never = Você ainda não fez um backup do myCarlos deste cofre.
+
+backupReminder-old = Seu último backup do myCarlos foi em { $date }.
+
+backupReminder-many = { $count ->
+        [one] { $count } documento foi adicionado desde o seu último backup do myCarlos.
+       *[other] { $count } documentos foram adicionados desde o seu último backup do myCarlos.
+    }
+
+backupReminder-phone = Em um celular, seu cofre não faz parte do iCloud nem dos backups do próprio celular. Se você perder ou trocar este celular sem um backup do myCarlos, perde o seu cofre.
+
+backupReminder-computer = Seu cofre é guardado somente neste computador, e não nos backups do próprio computador. Se este computador for perdido ou trocado sem um backup do myCarlos, você perde o seu cofre.
+
+backupReminder-make = Fazer um backup criptografado
+
+backupReminder-notNow = Agora não
+
+backupReminder-postponed = Vamos lembrar você de novo em { $days } dias.

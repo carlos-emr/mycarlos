@@ -1203,5 +1203,14 @@
   "interface.received.confirmTitleOne",
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
-  "interface.received.import"
+  "interface.received.import",
+  "backupReminder.label",
+  "backupReminder.never",
+  "backupReminder.old",
+  "backupReminder.many",
+  "backupReminder.phone",
+  "backupReminder.computer",
+  "backupReminder.make",
+  "backupReminder.notNow",
+  "backupReminder.postponed"
 ]

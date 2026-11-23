@@ -1205,6 +1205,15 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "backupReminder.label",
+  "backupReminder.never",
+  "backupReminder.old",
+  "backupReminder.many",
+  "backupReminder.phone",
+  "backupReminder.computer",
+  "backupReminder.make",
+  "backupReminder.notNow",
+  "backupReminder.postponed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2676,6 +2685,15 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "backupReminder.label": "backupReminder-label",
+  "backupReminder.never": "backupReminder-never",
+  "backupReminder.old": "backupReminder-old",
+  "backupReminder.many": "backupReminder-many",
+  "backupReminder.phone": "backupReminder-phone",
+  "backupReminder.computer": "backupReminder-computer",
+  "backupReminder.make": "backupReminder-make",
+  "backupReminder.notNow": "backupReminder-notNow",
+  "backupReminder.postponed": "backupReminder-postponed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4013,6 +4031,15 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "backupReminder.label": undefined;
+  "backupReminder.never": undefined;
+  "backupReminder.old": { date: FluentArgument };
+  "backupReminder.many": { count: FluentArgument };
+  "backupReminder.phone": undefined;
+  "backupReminder.computer": undefined;
+  "backupReminder.make": undefined;
+  "backupReminder.notNow": undefined;
+  "backupReminder.postponed": { days: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -2534,3 +2534,24 @@ security-backup-leaveVideosOutHelp = The backup will not contain your videos. If
 restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
+
+backupReminder-label = Backup reminder
+
+backupReminder-never = You have not made a myCarlos backup of this vault yet.
+
+backupReminder-old = Your last myCarlos backup was on { $date }.
+
+backupReminder-many = { $count ->
+        [one] { $count } document has been added since your last myCarlos backup.
+       *[other] { $count } documents have been added since your last myCarlos backup.
+    }
+
+backupReminder-phone = On a phone, your vault is not part of iCloud or the phone’s own backups. If you lose or replace this phone without a myCarlos backup, you lose your vault.
+
+backupReminder-computer = Your vault is kept only on this computer, not in the computer’s own backups. If this computer is lost or replaced without a myCarlos backup, you lose your vault.
+
+backupReminder-make = Make an encrypted backup
+
+backupReminder-notNow = Not now
+
+backupReminder-postponed = We will remind you again in { $days } days.

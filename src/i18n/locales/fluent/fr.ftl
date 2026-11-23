@@ -2569,3 +2569,24 @@ security-backup-leaveVideosOutHelp = La sauvegarde ne contiendra pas vos vidéos
 restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer ramène tout le reste, et vos vidéos n’y seront pas. Elles figurent parmi les documents masqués, comme des fichiers manquants.
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
+
+backupReminder-label = Rappel de sauvegarde
+
+backupReminder-never = Vous n’avez pas encore fait de sauvegarde myCarlos de ce coffre.
+
+backupReminder-old = Votre dernière sauvegarde myCarlos date du { $date }.
+
+backupReminder-many = { $count ->
+        [one] { $count } document a été ajouté depuis votre dernière sauvegarde myCarlos.
+       *[other] { $count } documents ont été ajoutés depuis votre dernière sauvegarde myCarlos.
+    }
+
+backupReminder-phone = Sur un téléphone, votre coffre ne fait partie ni d’iCloud ni des sauvegardes du téléphone lui-même. Si vous perdez ou remplacez ce téléphone sans sauvegarde myCarlos, vous perdez votre coffre.
+
+backupReminder-computer = Votre coffre n’est conservé que sur cet ordinateur, et non dans les sauvegardes de l’ordinateur lui-même. Si cet ordinateur est perdu ou remplacé sans sauvegarde myCarlos, vous perdez votre coffre.
+
+backupReminder-make = Faire une sauvegarde chiffrée
+
+backupReminder-notNow = Pas maintenant
+
+backupReminder-postponed = Nous vous le rappellerons dans { $days } jours.
