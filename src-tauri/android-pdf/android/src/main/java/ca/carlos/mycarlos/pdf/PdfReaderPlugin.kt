@@ -21,6 +21,7 @@ class LabelArgs {
     var zoomOut: String = ""
     var page: String = ""
     var pageStatus: String = ""
+    var pageFailed: String = ""
 }
 
 @InvokeArg

@@ -411,6 +411,7 @@ export interface AndroidReaderLabels {
   zoomOut: string;
   page: string;
   pageStatus: string;
+  pageFailed: string;
 }
 
 export interface VaultBridge {

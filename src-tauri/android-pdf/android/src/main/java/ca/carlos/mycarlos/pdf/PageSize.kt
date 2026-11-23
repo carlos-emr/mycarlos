@@ -12,6 +12,10 @@ object PageSize {
     /** The most a page may be taller than wide, or wider than tall. */
     const val MAX_ASPECT = 64.0
 
+    /** The longest side of a bitmap: many phones' GPU texture limit is 8192, and a taller bitmap
+     * is drawn blank. */
+    const val MAX_SIDE = 8192
+
     /** Width and height in pixels for a page of `pageWidth` by `pageHeight` points, `viewWidth *
      * zoom` wide at most, or null when the page's shape is not one to draw. */
     fun of(viewWidth: Int, zoom: Float, pageWidth: Int, pageHeight: Int, maxPixels: Long): Pair<Int, Int>? {
@@ -25,11 +29,19 @@ object PageSize {
             width = (width * scale).toInt().coerceAtLeast(1)
             height = (width * aspect).toInt().coerceAtLeast(1)
         }
-        // Rounding never leaves it over the cap.
-        while (width.toLong() * height > maxPixels && width > 1) {
+        if (height > MAX_SIDE) {
+            height = MAX_SIDE
+            width = (height / aspect).toInt().coerceAtLeast(1)
+        }
+        if (width > MAX_SIDE) {
+            width = MAX_SIDE
+            height = (width * aspect).toInt().coerceAtLeast(1)
+        }
+        // Rounding never leaves it over the cap or a side beyond MAX_SIDE.
+        while ((width.toLong() * height > maxPixels || height > MAX_SIDE || width > MAX_SIDE) && width > 1) {
             width -= 1
             height = (width * aspect).toInt().coerceAtLeast(1)
         }
-        return if (width.toLong() * height > maxPixels) null else Pair(width, height)
+        return if (width.toLong() * height > maxPixels || width > MAX_SIDE || height > MAX_SIDE) null else Pair(width, height)
     }
 }

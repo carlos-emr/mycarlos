@@ -2316,6 +2316,7 @@ reader-android-unavailable = Este dispositivo no permite que myCarlos abra docum
 reader-android-page = Página { $page } de { $total }, imagen de la carta
 
 reader-android-pageStatus = Página { $page } de { $total }
+reader-android-pageFailed = No se puede mostrar la página { $page } de { $total }.
 
 reader-android-previous = Página anterior
 

@@ -1065,6 +1065,7 @@ describe("the Android native PDF reader bridge (#358)", () => {
     zoomOut: "Zoom out",
     page: "Page {page} of {total}, picture of the letter",
     pageStatus: "Page {page} of {total}",
+    pageFailed: "Page {page} of {total} cannot be shown.",
   };
 
   beforeEach(() => {

@@ -1050,6 +1050,7 @@ export const MESSAGE_KEYS = [
   "reader.android.opening",
   "reader.android.page",
   "reader.android.pageStatus",
+  "reader.android.pageFailed",
   "reader.android.previous",
   "reader.android.tooLarge",
   "reader.android.unavailable",
@@ -2304,6 +2305,7 @@ const FLUENT_IDS_BY_KEY = {
   "reader.android.opening": "reader-android-opening",
   "reader.android.page": "reader-android-page",
   "reader.android.pageStatus": "reader-android-pageStatus",
+  "reader.android.pageFailed": "reader-android-pageFailed",
   "reader.android.previous": "reader-android-previous",
   "reader.android.tooLarge": "reader-android-tooLarge",
   "reader.android.unavailable": "reader-android-unavailable",
@@ -3477,6 +3479,7 @@ export interface MessageArgsByKey {
   "reader.android.opening": undefined;
   "reader.android.page": { page: FluentArgument; total: FluentArgument };
   "reader.android.pageStatus": { page: FluentArgument; total: FluentArgument };
+  "reader.android.pageFailed": { page: FluentArgument; total: FluentArgument };
   "reader.android.previous": undefined;
   "reader.android.tooLarge": undefined;
   "reader.android.unavailable": undefined;

@@ -1049,6 +1049,7 @@
   "reader.android.opening",
   "reader.android.page",
   "reader.android.pageStatus",
+  "reader.android.pageFailed",
   "reader.android.previous",
   "reader.android.tooLarge",
   "reader.android.unavailable",

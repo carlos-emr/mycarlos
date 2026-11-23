@@ -2281,6 +2281,7 @@ reader-android-unavailable = This device does not let myCarlos open documents he
 reader-android-page = Page { $page } of { $total }, picture of the letter
 
 reader-android-pageStatus = Page { $page } of { $total }
+reader-android-pageFailed = Page { $page } of { $total } cannot be shown.
 
 reader-android-previous = Previous page
 

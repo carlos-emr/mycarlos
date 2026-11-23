@@ -63,6 +63,9 @@ describe("Android document reading", () => {
     expect(labels.pageStatus.replace(/[⁨⁩]/g, "")).toBe(
       "Page {page} of {total}",
     );
+    expect(labels.pageFailed.replace(/[⁨⁩]/g, "")).toBe(
+      "Page {page} of {total} cannot be shown.",
+    );
     // No document bytes and no picture in this component.
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("Opening document…");

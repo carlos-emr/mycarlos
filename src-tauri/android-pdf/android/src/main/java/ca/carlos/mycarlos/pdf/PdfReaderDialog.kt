@@ -246,6 +246,14 @@ class PdfReaderDialog(
             // an older phone even an ordinary tall page can be one. It is the recoverable error.
             val bitmap = try {
                 render(index, viewWidth, zoom)
+            } catch (error: OutOfMemoryError) {
+                // Free the neighbours kept for speed (not the one on screen) and try once more.
+                freeNeighbours()
+                try {
+                    render(index, viewWidth, zoom)
+                } catch (again: Throwable) {
+                    null
+                }
             } catch (error: Throwable) {
                 null
             }
@@ -255,7 +263,16 @@ class PdfReaderDialog(
                     return@post
                 }
                 if (bitmap == null) {
-                    if (!firstShown) dismissFor("failed")
+                    if (!firstShown) {
+                        dismissFor("failed")
+                    } else {
+                        // This page cannot be drawn: never leave the previous page on screen under
+                        // this page's number. The picture goes and the status and TalkBack say so.
+                        imageView.clear()
+                        val failed = labels.pageFailed.fill(index + 1, pageCount)
+                        status.text = failed
+                        imageView.contentDescription = failed
+                    }
                     return@post
                 }
                 firstShown = true
@@ -264,6 +281,20 @@ class PdfReaderDialog(
             }
             if (zoom == 1f) prefetch(id, index - 1, viewWidth)
             if (zoom == 1f) prefetch(id, index + 1, viewWidth)
+        }
+    }
+
+    /** Recycles every kept page that is not the one on screen. */
+    private fun freeNeighbours() {
+        synchronized(kept) {
+            val iterator = kept.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next()
+                if (!isShown(entry.value)) {
+                    entry.value.recycle()
+                    iterator.remove()
+                }
+            }
         }
     }
 
@@ -375,6 +406,12 @@ class PdfReaderDialog(
         }
 
         fun shows(bitmap: Bitmap) = shown === bitmap
+
+        /** Shows nothing: the page being asked for could not be drawn. */
+        fun clear() {
+            shown = null
+            setImageDrawable(null)
+        }
 
         /** Shows `bitmap`: a base-scale page is fitted to the width, a zoomed one is shown as drawn. */
         fun show(bitmap: Bitmap, zoomed: Boolean) {

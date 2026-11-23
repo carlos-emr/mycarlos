@@ -42,6 +42,10 @@ export function AndroidDocumentReader({
         page: "{page}",
         total: "{total}",
       }),
+      pageFailed: t("reader.android.pageFailed", {
+        page: "{page}",
+        total: "{total}",
+      }),
     }),
     [closeLabel, t],
   );

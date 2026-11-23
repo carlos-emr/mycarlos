@@ -51,4 +51,19 @@ class PageSizeTest {
             }
         }
     }
+
+    @Test
+    fun noSideIsLongerThanTheTextureLimit() {
+        for (pageWidth in listOf(1, 10, 612, 5000)) {
+            for (pageHeight in listOf(10, 792, 5000, 100_000)) {
+                for (zoom in listOf(1f, 2f, 4f)) {
+                    val size = PageSize.of(1440, zoom, pageWidth, pageHeight, cap) ?: continue
+                    assertTrue("$pageWidth x $pageHeight at $zoom", size.first <= PageSize.MAX_SIDE && size.second <= PageSize.MAX_SIDE)
+                }
+            }
+        }
+        val (w, h) = PageSize.of(1080, 4f, 10, 600, cap)!!
+        assertEquals(PageSize.MAX_SIDE, h)
+        assertTrue(w >= 1)
+    }
 }

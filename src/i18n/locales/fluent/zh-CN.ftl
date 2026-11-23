@@ -2114,6 +2114,7 @@ reader-android-unavailable = 此设备不允许 myCarlos 在这里打开文档�
 reader-android-page = 第 { $page } 页，共 { $total } 页，信件的图片
 
 reader-android-pageStatus = 第 { $page } 页，共 { $total } 页
+reader-android-pageFailed = 无法显示第 { $page } 页，共 { $total } 页。
 
 reader-android-previous = 上一页
 
