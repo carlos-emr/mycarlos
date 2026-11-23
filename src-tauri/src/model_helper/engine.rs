@@ -186,7 +186,9 @@ impl Engine {
             .saturating_mul(kv_heads)
             .saturating_mul(key.saturating_add(value))
             .saturating_mul(2);
-        u32::try_from(bytes).unwrap_or(0)
+        // Too large to fit is kept at the most a card may say (the parent clamps it again): a
+        // heavy model, not an unknown one.
+        u32::try_from(bytes).unwrap_or(u32::MAX)
     }
 
     /// The context the model was trained for, or 0 when the file's number does not fit an

@@ -469,11 +469,32 @@ impl Store {
     /// The card the helper made for the model with this SHA-256, saved by this build of the
     /// helper in an earlier session.
     pub(crate) fn stored_card(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
+        // This run's card first (written to disk a moment later), else the saved one.
+        if let Some(card) = self
+            .session_cards
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .find(|(hash, _)| hash == sha256)
+            .map(|(_, card)| card.clone())
+        {
+            return Some(card);
+        }
         let build = crate::model_limits::helper_build();
         self.saved_cards()
             .into_iter()
             .find(|entry| entry.sha256 == sha256 && entry.helper_build == build)
             .map(|entry| entry.card)
+    }
+
+    /// Keeps a checked card where every reader sees it at once; the disk copy is `save_card`'s.
+    pub(crate) fn remember_card(&self, sha256: &str, card: &crate::model_limits::ModelCard) {
+        let mut cards = self.session_cards.lock().unwrap_or_else(|e| e.into_inner());
+        cards.retain(|(hash, _)| hash != sha256);
+        if cards.len() >= crate::model_limits::MAX_STORED_CARDS {
+            cards.remove(0);
+        }
+        cards.push((sha256.to_owned(), card.clone()));
     }
 
     /// Saves a checked card for a model, in place of an older one for the same file and build.
@@ -493,6 +514,10 @@ impl Store {
 
     /// Forgets every saved card of a model whose file is removed.
     fn forget_cards(&self, sha256: &str) {
+        self.session_cards
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(hash, _)| hash != sha256);
         let _one_writer = self.cards_lock.lock().unwrap_or_else(|e| e.into_inner());
         let before = self.saved_cards();
         let kept: Vec<_> = before
@@ -663,12 +688,14 @@ impl crate::model_runtime::ModelSource for RuntimeSource {
             ModelError::Unsupported(_) => Unavailable::Unsupported,
             _ => Unavailable::Storage,
         })?;
+        let sha256 = model.info.sha256.clone();
         Ok(crate::model_runtime::Verified {
             file: model.file,
             path: model.path,
             info: model.info,
             size_bytes: model.size_bytes,
             chat_format: model.chat_format,
+            card: self.0.stored_card(&sha256),
         })
     }
 }
@@ -715,6 +742,10 @@ pub(crate) struct Store {
     /// One writer of the cards file at a time: a read-modify-write of the same file and its
     /// `.part` from two threads would lose cards (#305).
     cards_lock: Mutex<()>,
+    /// The cards the helper made in this run of the app, by SHA-256, readable at once (the disk
+    /// copy is written on a thread of its own): the one place a start, the settings and the
+    /// reader's question all read a card from, so they never disagree.
+    session_cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
 }
 
 /// The one place a file is removed here. The models folder holds a public
@@ -743,6 +774,7 @@ impl Store {
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
             cards_lock: Mutex::new(()),
+            session_cards: Mutex::new(Vec::new()),
         }
     }
 
@@ -1128,9 +1160,9 @@ impl Store {
 
     /// As [`Self::verified_model`], reading free memory from `probe`. On
     /// Linux the sealed copy lives in memory beside the loaded weights, so
-    /// what a start needs (`model_runtime::needed_bytes`: twice the size
-    /// plus the working memory) must be free before it is made; unknown
-    /// refuses.
+    /// what a start needs (`model_runtime::needed_for`: twice the size plus
+    /// the working memory, or more when the model's saved card says its
+    /// cache is heavy) must be free before it is made; unknown refuses.
     pub(crate) fn verified_model_with(
         &self,
         probe: &dyn MemoryProbe,
@@ -2410,6 +2442,32 @@ mod tests {
         fn available_bytes(&self) -> Option<u64> {
             self.0
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_heavy_cache_in_the_models_card_raises_the_memory_the_pre_copy_check_asks_for() {
+        let (temp, bytes, store) = setup(1 << 20);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        let sha = store.catalog()[0].sha256;
+        // Free memory that today's rule is content with (twice the file and a GiB).
+        let today = crate::model_runtime::needed_bytes(1 << 20);
+        store.verified_model_with(&Free(Some(today))).unwrap();
+        // The card says a token of context takes 384 KiB (3 GiB at the full context): more is
+        // needed, so the same free memory now refuses, before the copy is made.
+        let mut heavy = a_card(8_192);
+        heavy.kv_bytes_per_token = 384 * 1024;
+        heavy.hybrid = false;
+        store.remember_card(sha, &heavy);
+        assert_eq!(
+            store.verified_model_with(&Free(Some(today))).err(),
+            Some(ModelError::Memory)
+        );
+        let asked = crate::model_runtime::needed_for(1 << 20, Some(&heavy));
+        assert!(asked > today + (2 << 30));
+        store.verified_model_with(&Free(Some(asked))).unwrap();
     }
 
     #[cfg(target_os = "linux")]

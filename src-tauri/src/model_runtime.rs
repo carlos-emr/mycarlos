@@ -60,6 +60,9 @@ pub(crate) struct Verified {
     pub(crate) size_bytes: u64,
     /// How the helper puts the conversation to this model (from the model's list entry).
     pub(crate) chat_format: model_helper::ChatFormat,
+    /// The card the helper made for this model in an earlier session, when there is one: only
+    /// ever raises what a start asks for and the helper's memory limit.
+    pub(crate) card: Option<crate::model_limits::ModelCard>,
 }
 
 /// Why no model can be had now.
@@ -438,6 +441,26 @@ pub(crate) fn needed_for(size: u64, card: Option<&crate::model_limits::ModelCard
 /// loaded weights and the working memory are left to find.
 pub(crate) fn needed_after_verifying(size: u64) -> u64 {
     size.saturating_add(WORKING_BYTES)
+}
+
+/// As [`needed_after_verifying`], with the card's formula when that asks for more (one copy of
+/// the weights is left to find once the sealed copy exists): never less.
+pub(crate) fn needed_after_verifying_for(
+    size: u64,
+    card: Option<&crate::model_limits::ModelCard>,
+) -> u64 {
+    crate::model_limits::needed_with_card(needed_after_verifying(size), size, 1, card)
+}
+
+/// The helper's own memory limit on Linux (its data size), above the weights: [`LIMIT_BYTES`], or
+/// the card's cache and runtime plus the same headroom over the working memory when that is more.
+/// A model whose cache is over 1.5 GiB would otherwise pass the budget and then fail to allocate.
+pub(crate) fn limit_for(size: u64, card: Option<&crate::model_limits::ModelCard>) -> u64 {
+    let flat = size.saturating_add(LIMIT_BYTES);
+    card.and_then(|card| crate::model_limits::formula_bytes(size, 1, card))
+        .map_or(flat, |formula| {
+            flat.max(formula.saturating_add(LIMIT_BYTES - WORKING_BYTES))
+        })
 }
 
 /// Checks a summary request: 1 to [`MAX_PAGES`] pages, indexes strictly increasing and below
@@ -863,10 +886,10 @@ fn launch_at(executable: PathBuf, verified: &Verified) -> Result<RunnerConfig, A
     Ok(RunnerConfig {
         command: executable,
         args,
-        needed_bytes: needed_after_verifying(verified.size_bytes),
+        needed_bytes: needed_after_verifying_for(verified.size_bytes, verified.card.as_ref()),
         start_timeout: START_TIMEOUT,
         answer_limit: ANSWER_LIMIT,
-        memory_limit_bytes: Some(verified.size_bytes.saturating_add(LIMIT_BYTES)),
+        memory_limit_bytes: Some(limit_for(verified.size_bytes, verified.card.as_ref())),
         expected_model: Some(verified.info.clone()),
         model_file: Some(Arc::new(file)),
         sandboxed: true,
@@ -1412,6 +1435,7 @@ mod tests {
                 },
                 size_bytes: 1024,
                 chat_format: model_helper::ChatFormat::Builtin,
+                card: None,
             })
         }
     }
@@ -1444,6 +1468,34 @@ mod tests {
             kv_bytes_per_token,
             weights_bytes: 3_013_000_000,
         }
+    }
+
+    #[test]
+    fn the_helpers_limit_and_the_check_after_verifying_follow_a_heavy_card_and_never_fall_below_the_flat_rule(
+    ) {
+        let size = 3 * GIB;
+        let flat_limit = size + LIMIT_BYTES;
+        // No card, an unknown cache, a small cache: the flat rules.
+        for card in [None, Some(a_card(0)), Some(a_card(32 * 1024))] {
+            assert_eq!(limit_for(size, card.as_ref()), flat_limit);
+            assert_eq!(
+                needed_after_verifying_for(size, card.as_ref()),
+                needed_after_verifying(size)
+            );
+        }
+        // A heavy cache (3 GiB at the full context): the helper may use it, and the check after
+        // verifying asks for it (one copy of the weights, the cache, the runtime).
+        let heavy = a_card(384 * 1024);
+        let formula = crate::model_limits::formula_bytes(size, 1, &heavy).unwrap();
+        assert!(formula > needed_after_verifying(size));
+        assert_eq!(needed_after_verifying_for(size, Some(&heavy)), formula);
+        assert!(limit_for(size, Some(&heavy)) >= formula + (LIMIT_BYTES - WORKING_BYTES));
+        assert!(limit_for(size, Some(&heavy)) > flat_limit);
+        // The limit leaves the same headroom over the need that the flat rule does.
+        assert_eq!(
+            limit_for(size, Some(&heavy)) - formula,
+            LIMIT_BYTES - WORKING_BYTES
+        );
     }
 
     #[test]
@@ -1854,6 +1906,7 @@ mod tests {
             },
             size_bytes: 1024,
             chat_format: model_helper::ChatFormat::Builtin,
+            card: None,
         };
         assert_eq!(helper_launch(&verified).err(), Some(AiError::Damaged));
     }
@@ -2143,6 +2196,7 @@ pub mod engine_testing {
                 },
                 size_bytes,
                 chat_format,
+                card: None,
             };
             let config = launch_at(executable.to_owned(), &verified)
                 .map_err(|error| format!("{error:?}"))?;

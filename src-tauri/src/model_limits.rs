@@ -31,9 +31,10 @@ pub(crate) const PARAMETERS: std::ops::RangeInclusive<u64> = 100_000_000..=40_00
 pub(crate) const LAYERS: std::ops::RangeInclusive<u32> = 1..=1_024;
 /// Vocabulary size: the logits buffer grows with it.
 pub(crate) const VOCABULARY: std::ops::RangeInclusive<u32> = 1..=524_288;
-/// The cache a token of context may take (the candidates run 6 to 384 KiB): above this the card
-/// is not believed.
-pub(crate) const KV_BYTES_PER_TOKEN: std::ops::RangeInclusive<u32> = 0..=1_048_576;
+/// The most a token of context may be said to take (the candidates run 6 to 384 KiB; a model
+/// without grouped-query attention takes about 1.25 MiB): a larger number is kept at this, so the
+/// card still counts and the requirement stays high, never dropped back to today's rule.
+pub(crate) const MAX_KV_BYTES_PER_TOKEN: u32 = 4 * 1024 * 1024;
 /// The model's tensors: 0 (unknown) to 64 GiB.
 pub(crate) const WEIGHTS_BYTES: std::ops::RangeInclusive<u64> = 0..=(64 << 30);
 
@@ -93,7 +94,7 @@ pub(crate) fn clean_architecture(name: &str) -> String {
 impl ModelCard {
     /// The card, when every field is in range and the helper made at most the context it was
     /// asked for (`requested`), and no more than the model's own.
-    pub(crate) fn checked(self, requested: u32) -> Result<Self, CardRejected> {
+    pub(crate) fn checked(mut self, requested: u32) -> Result<Self, CardRejected> {
         if self.architecture.is_empty()
             || clean_architecture(&self.architecture) != self.architecture
         {
@@ -117,11 +118,11 @@ impl ModelCard {
         if !VOCABULARY.contains(&self.vocabulary) {
             return Err(CardRejected::Vocabulary);
         }
-        if !KV_BYTES_PER_TOKEN.contains(&self.kv_bytes_per_token)
-            || !WEIGHTS_BYTES.contains(&self.weights_bytes)
-        {
+        if !WEIGHTS_BYTES.contains(&self.weights_bytes) {
             return Err(CardRejected::Memory);
         }
+        // A cache above the most believed is kept at it: the model is heavy, not unknown.
+        self.kv_bytes_per_token = self.kv_bytes_per_token.min(MAX_KV_BYTES_PER_TOKEN);
         Ok(self)
     }
 }
@@ -254,8 +255,10 @@ pub(crate) fn formula_bytes(size_bytes: u64, copies: u64, card: &ModelCard) -> O
         return None;
     }
     let cache = u64::from(card.kv_bytes_per_token).saturating_mul(u64::from(card.context_made));
+    // The tensors the helper counted, or the file's size, whichever is more.
+    let weights = size_bytes.max(card.weights_bytes);
     Some(
-        size_bytes
+        weights
             .saturating_mul(copies)
             .saturating_add(cache)
             .saturating_add(COMPUTE_BASE_BYTES),
@@ -353,8 +356,9 @@ mod tests {
             parameters: 4_330_000_000,
             layers: 32,
             vocabulary: 248_320,
+            // A model with a plain attention cache (a hybrid or recurrent one says 0: unknown).
             recurrent: false,
-            hybrid: true,
+            hybrid: false,
             kv_bytes_per_token: 32 * 1024,
             weights_bytes: 3_013_000_000,
         }
@@ -435,9 +439,10 @@ mod tests {
             with(|c| c.vocabulary = 524_289),
             Err(CardRejected::Vocabulary)
         );
+        // A cache above the most believed is kept at it, not dropped.
         assert_eq!(
-            with(|c| c.kv_bytes_per_token = 1_048_577),
-            Err(CardRejected::Memory)
+            with(|c| c.kv_bytes_per_token = u32::MAX).map(|c| c.kv_bytes_per_token),
+            Ok(MAX_KV_BYTES_PER_TOKEN)
         );
         assert_eq!(
             with(|c| c.weights_bytes = (64 << 30) + 1),
@@ -466,7 +471,7 @@ mod tests {
             "layers": 32,
             "vocabulary": 248_320,
             "recurrent": false,
-            "hybrid": true,
+            "hybrid": false,
             "kvBytesPerToken": 32_768,
             "weightsBytes": 3_013_000_000u64
         });

@@ -1780,11 +1780,9 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
             model,
             capacity: Some(capacity),
         } => {
-            // This session's card, else the one saved by an earlier session of this build.
-            let card = model_runtime::app()
-                .runner()
-                .card_for(&model.sha256)
-                .or_else(|| models.stored_card(&model.sha256));
+            // The one place cards are read from (this run's, else the saved one), as the start
+            // and the settings read them.
+            let card = models.stored_card(&model.sha256);
             local_model::ModelStatus::Installed {
                 capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
                 model,
@@ -1802,20 +1800,18 @@ fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::Mod
 }
 
 /// Each model's limits, for the AI helper settings (model limits): how much of a document it
-/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
-/// helper has run a model in this session, its room follows the context the helper made, and
-/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// reads at a time, the file's size, and the free memory a start needs (today's rule, or the card's
+/// formula when that is more). Once the helper has run a model (in this run of the app or an
+/// earlier one of this build, whose card is saved), its room follows the context the helper made,
+/// and the file's own claims (trained context, parameters) are given as such. Nothing here reads
 /// the model file: the helper's checked card does (`model_limits`).
 #[tauri::command]
 fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
-    let runner = model_runtime::app().runner();
     models
         .models()
         .into_iter()
         .map(|row| {
-            let card = runner
-                .card_for(row.model.sha256)
-                .or_else(|| models.stored_card(row.model.sha256));
+            let card = models.stored_card(row.model.sha256);
             model_limits::limits(
                 row.index,
                 &row.model,
@@ -5572,10 +5568,12 @@ pub fn run() {
             // settings know a model's confirmed context after a restart.
             {
                 let saver = Arc::clone(&models);
-                // Written on a thread of its own: a start does not wait for the disk.
+                // Readable at once; written on a thread of its own, so a start does not wait for
+                // the disk.
                 model_runtime::app()
                     .runner()
                     .set_card_saver(Box::new(move |sha256, card| {
+                        saver.remember_card(sha256, card);
                         let (saver, sha256, card) =
                             (Arc::clone(&saver), sha256.to_owned(), card.clone());
                         let _ = std::thread::Builder::new()
