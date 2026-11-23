@@ -2150,6 +2150,27 @@ interface-received-confirmBody = 在您選擇「匯入」之前不會新增任�
 
 interface-received-import = 匯入
 
+reader-android-opening = 正在開啟文件…
+
+reader-android-failed = myCarlos 無法顯示此文件。請儲存一份副本，用其他應用程式閱讀。
+
+reader-android-tooLarge = 此 PDF 超過 20 MB。請儲存一份副本，用其他應用程式閱讀。
+
+reader-android-unavailable = 此裝置不允許 myCarlos 在這裡開啟文件。請儲存一份副本，用其他應用程式閱讀。
+
+reader-android-page = 第 { $page } 頁，共 { $total } 頁，信件的圖片
+
+reader-android-pageStatus = 第 { $page } 頁，共 { $total } 頁
+reader-android-pageFailed = 無法顯示第 { $page } 頁，共 { $total } 頁。
+
+reader-android-previous = 上一頁
+
+reader-android-next = 下一頁
+
+reader-android-zoomIn = 放大
+
+reader-android-zoomOut = 縮小
+
 interface-video-name = 影片，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 錄製影片
 interface-RecordDialog-unavailable = 此裝置無法錄製影片。

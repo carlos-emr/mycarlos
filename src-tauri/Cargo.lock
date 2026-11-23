@@ -3211,6 +3211,7 @@ dependencies = [
  "subtle",
  "tauri",
  "tauri-build",
+ "tauri-plugin-android-pdf",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-single-instance",
@@ -5279,6 +5280,15 @@ dependencies = [
  "serde_json",
  "tauri-utils",
  "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-android-pdf"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

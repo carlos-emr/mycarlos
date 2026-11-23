@@ -166,6 +166,8 @@ type DocumentReaderProps = {
   /** Opens on the clinic's reading aid, under its notice, when the record has one. The original is
    * always one tap away, and the notice comes first every time the aid is shown. */
   startWithAid?: boolean;
+  /** A platform-native original reader, when the reading aid remains in the app. */
+  onOpenOriginal?: () => void;
 };
 
 /** Reads a stored document inside myCarlos, one page at a time. Each page is
@@ -186,6 +188,7 @@ function ReadingDocument({
   onClose,
   ai,
   startWithAid = false,
+  onOpenOriginal,
 }: DocumentReaderProps) {
   useI18n();
   const aid = record.readingAid;
@@ -654,6 +657,10 @@ function ReadingDocument({
             aid={aid}
             reviewedAtMs={aid.reviewedAtMs}
             onOpenOriginal={() => {
+              if (onOpenOriginal) {
+                onOpenOriginal();
+                return;
+              }
               initialAid.current = false;
               setView("original");
             }}

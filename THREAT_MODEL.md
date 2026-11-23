@@ -319,6 +319,32 @@ Member presence is still mandatory, and relaxing descriptive metadata does not r
 signer, exact digest, clinic or recipient binding. A signed PDF with no clinic/recipient
 claim remains unbound under an explicit test pin and unverified without authenticated pins.
 
+### Android PDF reader boundary (#358)
+
+On Android, **Read** shows the document in a separate native window drawn with the platform's
+`PdfRenderer`; it is not the desktop PDF helper and does not have its process isolation or
+sandbox (IMP-02, D-04). The window has no Tauri bridge, no JavaScript and no network, and it
+deliberately does **not** set `FLAG_SECURE`: screenshots and the recent-apps picture are allowed, as
+they are for the rest of the app. This is the patient's choice, by owner decision on 20 November 2026
+("that's their fault"); a screenshot of a letter leaves vault protection like any other copy the
+patient makes (UI-02, the "Readable copies and screenshots" notice in Security).
+
+The document is decrypted by Rust into a bounded buffer (at most 20 MiB, wiped after use), written
+into a sealed anonymous in-memory file (a `memfd`, made with the raw system call because bionic
+exposes the function only from API 30), and the plugin is given only that descriptor's number: the
+bytes are not in a message, and no path, cache file or temporary file is made. If the system
+refuses the `memfd` (an old kernel or a vendor SELinux policy) the reader refuses with a
+recoverable message; it never falls back to a file. `PdfRenderer` and the bitmaps it draws hold
+further plaintext copies in the app's memory that the app cannot wipe; at most the current page and
+its two neighbours are kept as bitmaps, within a pixel cap, and recycled when the reader closes.
+
+Backgrounding the app, closing, locking, idle lock and replacing the document close the reader and
+invalidate any open still waiting (a generation shared with Rust, and a lifecycle epoch in the
+plugin). Genuine touches in the reader update the inactivity clocks only before the lock is owed.
+Pages are pictures: TalkBack cannot read their text (a known accessibility gap, TESTING.md); the AI
+helper and "Show in document" are not available on Android. Real-device validation of drawing,
+gestures, TalkBack and memory remains required.
+
 ## Authenticated portal link implementation (#55)
 
 Every build includes the linking code; until 4 November 2026 it was selected by a
