@@ -1915,7 +1915,7 @@ describe("automatic approval status checks (#131)", () => {
     // About 23.5 hours left: said in hours, rounded up, with where the answer is looked for.
     expect(
       screen.getByText(
-        "This request stays open for about 24 more hours. Clinic staff can approve this device until then, and myCarlos checks again each time you unlock.",
+        translate("en", "portal.approvalStaffOpen", { count: 24 }),
       ),
     ).toBeVisible();
     expect(screen.queryByText(/Time left for this request/)).toBeNull();
