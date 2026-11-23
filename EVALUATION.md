@@ -71,6 +71,13 @@ In a native build, additionally:
 8. On Android, use a test document provider that fails after accepting some bytes. Confirm the app
    says the destination may contain a partial readable copy, then inspect and delete that
    destination before retrying. A provider-backed destination is not an atomic export.
+10. On Android (#50, the Share menu): from Gmail, Outlook, Samsung Email and Files, share a PDF
+   and confirm myCarlos is listed and the file arrives in the list of received files; share two
+   PDFs at once; share one while the vault is locked, then kill the app and unlock it, and confirm
+   the file is still there. Open a PDF from the same apps and confirm myCarlos is **not** offered
+   to open it. Share a PDF the sender labels `application/octet-stream` and note whether myCarlos
+   is listed (it is not expected to be). Record the phone's model and Android version.
+   `node scripts/check-android-pdf-share.mjs <AndroidManifest.xml>` checks the generated manifest.
 
 The Rust suite automates abrupt process termination after an encrypted chunk write, completed
 staging, object rename, each redundant manifest write, and each deletion boundary. It also covers

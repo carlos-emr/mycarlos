@@ -19,6 +19,7 @@
     "test:coverage:frontend": "vitest run --config vitest.coverage.config.ts",
     "test:dev-data": "node --test scripts/generate-fake-dev-data.test.mjs",
     "test:android-security": "node --test scripts/configure-android-security.test.mjs",
+    "test:android-share": "node --test scripts/check-android-pdf-share.test.mjs && node scripts/check-android-pdf-share.mjs --config",
     "test:dev-hmr": "node scripts/test-dev-hmr.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
