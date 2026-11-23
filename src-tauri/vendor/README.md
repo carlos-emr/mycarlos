@@ -1,8 +1,9 @@
 # Reviewed native dependency patches
 
-This directory contains the complete, pinned glib crates.io source snapshot. Its
-license and source revision record are preserved. `upstream.json` records the
-original archive checksum; `glib.patch` contains the complete local change.
+This directory contains complete, pinned crates.io source snapshots for glib, the Windows
+single-instance plugin and wry. Their licenses and source revisions are preserved.
+`upstream.json` records each original archive checksum; each named `.patch` (`glib.patch`,
+`wry.patch`, and the single-instance plugin's) contains the complete local change.
 
 Run `python3 scripts/verify-native-vendor.py` from the repository root. It downloads
 the checksum-pinned archive, applies the patch, and compares every file against
@@ -26,6 +27,40 @@ The existing GTK/Tauri API and encrypted vault format are unchanged. In the loca
 control run, this same optimized suite against the unpatched 0.18.5 release
 terminated with SIGSEGV; all five tests pass with the backport.
 
+## wry 0.55.1
+
+`wry.patch` changes how Wry's macOS and iOS webview answers a page's camera and
+microphone question (#359 PR 7). Upstream's `WKUIDelegate` method
+`webView:requestMediaCapturePermissionForOrigin:...` grants every request. The
+patch makes it ask one plain function, `media_capture_allowed`, which grants only
+video alone or video with sound, from the main frame of `tauri://localhost` (the
+app's own bundled page, default port); everything else is `WKPermissionDecision::Deny`,
+without a prompt. Linux and Windows already decide this in `src/camera_permission.rs`,
+and Android's is its manifest and Wry's Kotlin handler.
+
+The change is three files, all under `src/wkwebview/class/`:
+
+- `media_capture_policy.rs` (new): the decision, in plain Rust, using nothing from
+  Wry or Cocoa, so that the app's tests compile and run it on any host
+  (`camera_permission.rs` includes the file).
+- `mod.rs`: one line registering it.
+- `wry_web_view_ui_delegate.rs`: the method above asks it, after
+  a compile-time check that its numbers for the capture types are the ones
+  objc2-web-kit names (a mismatch stops the build).
+
+Where it applies: WebKit calls this delegate method only on macOS 12 and later and iOS 15 and
+later. On macOS 10.13 to 11 and on iOS 14.5 to 14.8 (the app's iOS minimum is 14.5) it is never called,
+so WebKit's own default answers and the patch's decision is not applied there. That is the
+same as before the patch. The fix for it is to raise those minimums, which is a product decision.
+
+Carrying it to a new Wry: take the new release, apply `wry.patch` (the delegate method is
+the only place that can conflict), update `upstream.json` (`version`,
+`archiveSha256`, `upstreamRevision`, `archiveUrl`; `[patch.crates-io]` names only the path, so it has no version to change),
+run `python3 scripts/verify-native-vendor.py`, and run the camera tests. If the new Wry
+has a hook for this decision, drop the patch. Cargo.lock's wry entry has no source or
+checksum while it is patched; `audit-native-dependencies.py` restores them for the
+advisory audit, so Wry's advisories stay visible.
+
 ## Tauri uses the upstream release
 
 The previous Tauri patch and source snapshot have been removed to restore mobile
@@ -34,17 +69,91 @@ proxy uses reqwest/hyper/hyper-util again. This is an intentional development
 tradeoff, not a false-positive classification of Socket's package warning.
 See [the dependency review](../../../DEPENDENCY_REVIEW.md).
 
+## tauri-plugin-single-instance 2.4.0 (Windows only)
+
+The exact compatible upstream release is pinned; Tauri remains upstream 2.11.5.
+The local patch changes Windows transport, adds pure framing/lifecycle modules,
+and documents the Windows teardown contract on the public function.
+Linux and macOS plugin sources are retained unmodified and the application only
+depends on this crate on Windows. `tauri-plugin-single-instance.patch` is the
+complete delta from the checksum-pinned archive, including the codec tests.
+The unused upstream development `Cargo.lock` is explicitly excluded in the
+provenance record, as allowed by the verifier; the application lock is authoritative.
+
+The upstream Windows receiver used an unbounded C-string read and pipe-separated
+arguments. This patch reads only the checked `WM_COPYDATA.cbData` allocation,
+requires strict UTF-8 and a new NUL-separated protocol, caps it at 256 KiB, and
+rejects legacy frames. Supported arguments retain spaces, Unicode and literal
+pipes without splitting. Non-Unicode OS arguments or working directories are
+refused before sending; replacement characters are never substituted.
+
+A second launch hands its arguments only to a window owned by this user's own
+copy of the same executable: the owning process must report the same full image
+path as this launch, the same user SID, and an integrity level no lower than this
+launch's. Windows with the right class and title but another owner are skipped,
+and the owning process is checked again just before sending. Paths are compared
+ignoring the case of ASCII letters only; any other difference counts as another
+executable, so the handoff fails closed and the message box is shown.
+No working directory is sent; the receiving app does not use it. When the handoff
+cannot complete, the app's fixed-text message box (no paths or file names) says
+so before the second launch exits.
+
+A second launch waits up to ten seconds total for the first IPC window and its
+distinct acknowledgement. Reservation/creation/transport failures fail closed;
+an existing mutex never falls through to another GUI setup, nor does timeout
+count as success. A timeout can still mean the callback ran but its acknowledgement
+was lost; the sender does not retry automatically. Older receivers returning `1`
+for an unknown protocol cannot falsely acknowledge this handoff. The callback
+must only enqueue work, without file/provider I/O or a synchronous UI wait.
+
+Window userdata stays in a Rust-owned `Box` throughout creation and is moved into
+managed state on success. `WM_CREATE` clears/checks LastError around the ambiguous
+userdata write and rejects creation on failure. Native window callbacks only
+borrow the allocation; the Box drops after confirmed `DestroyWindow` success.
+Callbacks hold their own app/callback references, and nested callbacks are refused
+rather than aliasing an active `FnMut`. Windows public teardown rejects other
+threads, retains the HWND/userdata/reservation after failed destruction, and
+allows an owner-thread retry. No state lock crosses native destruction callbacks;
+nested/repeated teardown cannot close resources twice. Owned mutex handles close
+on setup errors and after successful IPC window destruction. These changes require independent native-source review
+and real Windows lifecycle tests; pure host tests do not establish OS delivery.
+
+Run the actual codec's host tests with:
+
+```sh
+rustc --edition=2021 --test security-tests/windows53-wire.rs -o /tmp/mycarlos-windows53-wire
+/tmp/mycarlos-windows53-wire
+rustc --edition=2021 --test security-tests/windows53-lifecycle.rs -o /tmp/mycarlos-windows53-lifecycle
+/tmp/mycarlos-windows53-lifecycle
+rustc --edition=2021 --test security-tests/windows53-owner.rs -o /tmp/mycarlos-windows53-owner
+/tmp/mycarlos-windows53-owner
+```
+
+The Windows application registers the plugin first and keeps one pre-created
+receive queue for startup and forwarded arguments. The executable's PDF helper
+dispatch precedes Unicode GUI-argument preflight and single-instance setup.
+The callback queues work before its acknowledgement and schedules a fixed,
+payload-free DOM notification from outside the window procedure. The UI serializes
+and coalesces refreshes, including arrivals during an import; failure does not
+start an autonomous retry. Locked screens still show only a count. No renderer
+permission or CSP change accompanies the notification.
+
+This does not implement installer registrations, Windows 11 Share identity or
+mobile sharing. Synthetic browser and host tests are not evidence of Windows OS
+delivery or completion of all of #53; actual Windows lifecycle checks remain due.
+
 ## Audit and retirement
 
-`check-native-dependency-graph.py` ensures Cargo selects the glib backport
-and upstream Tauri. `audit-native-dependencies.py` audits a temporary lockfile that
-restores glib's original registry identity, so future upstream advisories remain
+`check-native-dependency-graph.py` ensures Cargo selects the glib backport, the patched wry, the
+reviewed single-instance plugin and upstream Tauri. `audit-native-dependencies.py` audits a
+temporary lockfile that restores each patched crate's original registry identity, so future
+upstream advisories remain
 visible. The original glib warning
 is still reported; source verification and optimized tests establish this specific
 backport. No advisory is ignored and the real lockfile is not rewritten by audit.
 
-The glib source patch adds maintenance work. Prefer a compatible stable upstream
-release incorporating the fix, then remove the patch and rerun all platform builds
+These source patches add maintenance work. Prefer compatible stable upstream
+releases incorporating the fixes, then remove the patches and rerun platform builds
 and tests. Tauri 3 alpha was considered but is not adopted as a production-safety shortcut.
 
 This backport addresses the identified glib defect. It does not approve

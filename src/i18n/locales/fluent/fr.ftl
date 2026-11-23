@@ -56,7 +56,7 @@ comfort-continue = Continuer
 
 comfort-intro = Choisissez ce qui vous convient avant la configuration. Chaque choix s’applique tout de suite.
 
-comfort-later = Vous pouvez les modifier à tout moment dans { $settings } : { $textSize } sous { $preferences }, et { $autoLock } sous { $security }.
+comfort-later = Vous pouvez les modifier à tout moment dans { $settings } : { $textSize } et { $appearance } sous { $preferences }, et { $autoLock } sous { $security }.
 
 comfort-sample = Voici à quoi ressemble le texte dans myCarlos. Appuyez sur − ou + jusqu’à ce qu’il soit facile à lire.
 
@@ -1204,8 +1204,6 @@ security-backup-title = Sauvegarde chiffrée
 
 security-copies-body = Les exportations et les captures d’écran ne sont plus protégées par le coffre-fort. Masquer un document dans myCarlos n’efface ni ces copies ni le dossier médical d’origine de la clinique.
 
-security-copies-title = Copies lisibles et captures d’écran
-
 security-devBuild-body = Utilisez uniquement des fichiers fictifs.
 
 security-devBuild-title = Version de développement.
@@ -1332,31 +1330,31 @@ sidebar-settings = Paramètres
 
 sidebar-storage = Coffre-fort local chiffré
 
-textSize-announce = Taille du texte { $percent }
+textSize-announce = Zoom de l'application { $percent }
 
-textSize-between = { $typed } % se situe entre deux tailles; la taille choisie est donc { $size }.
+textSize-between = { $typed } % se situe entre deux niveaux de zoom; le zoom choisi est donc { $size }.
 
-textSize-box = Taille du texte en pourcentage
+textSize-box = Zoom de l'application en pourcentage
 
 textSize-followsDevice = Ici, la taille du texte suit votre appareil : son propre réglage de taille du texte, ou le zoom du navigateur.
 
-textSize-help = Agrandit ou réduit tout le contenu de myCarlos, de { $min } % à { $max } %. myCarlos retient la taille sur cet appareil. Vous pouvez aussi maintenir la touche { $modifier } enfoncée et appuyer sur plus, moins ou 0.
+textSize-help = Agrandit ou réduit le texte, les boutons et les autres éléments de myCarlos, de { $min } % à { $max } %. myCarlos retient votre réglage sur cet appareil. Utilisez { $modifier } avec + ou − pour zoomer, ou { $modifier } avec 0 pour revenir à 100 %.
 
 textSize-key-command = Commande
 
-textSize-larger = Texte plus grand
+textSize-larger = Zoom avant
 
-textSize-largest = La plus grande taille est de { $max } %.
+textSize-largest = Le zoom maximal est de { $max } %.
 
 textSize-notNumber = Saisissez un nombre de { $min } à { $max }.
 
-textSize-reset = Revenir à la taille normale
+textSize-reset = Revenir à 100 %
 
-textSize-smaller = Texte plus petit
+textSize-smaller = Zoom arrière
 
-textSize-smallest = La plus petite taille est de { $min } %.
+textSize-smallest = Le zoom minimal est de { $min } %.
 
-textSize-title = Taille du texte
+textSize-title = Zoom de l'application
 
 unlock-autoLock =
     { $count ->
@@ -1377,12 +1375,12 @@ unlock-title = Déverrouiller votre coffre-fort
 
 unlock-waiting =
     { $count ->
-    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
-    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
-    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
     }
 
-unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
 
 language-error-formatting = myCarlos n’a pas pu afficher ce message correctement. Choisissez une autre langue ou redémarrez l’application, puis vérifiez vos dossiers avant de réessayer.
 
@@ -1468,7 +1466,7 @@ portal-approvalCancelled = Cette demande d’approbation a été annulée. Véri
 
 portal-approvalContact = L’approbation de la clinique doit être vérifiée. Contactez votre clinique pour connaître les prochaines étapes.
 
-portal-approvalExpired = Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Documents de la clinique.
+portal-approvalExpired = Cette demande d’approbation a expiré. Pour en faire une autre pour cet appareil, allez sur la page Sécurité, section Cliniques connectées.
 
 portal-approvalMissing = Votre demande d’approbation enregistrée est introuvable sur le portail. Renvoyez la demande enregistrée.
 
@@ -1501,6 +1499,10 @@ portal-defaultDeviceName = myCarlos sur { $platform }
 portal-deviceCode = Code de l’appareil
 
 portal-deviceName = Nom de cet appareil
+
+portal-deviceLine = Appareil : { $device }
+
+portal-deviceLineLinked = Appareil : { $device }, associé le { $date }
 
 portal-deviceDetailsShow = Afficher les détails de l’appareil
 
@@ -1564,7 +1566,7 @@ portal-serviceDate = Date du service : { $date }
 
 portal-serviceDateLabel = Date du service
 
-portal-title = Documents de la clinique
+portal-title = Cliniques connectées
 
 rename-help-profile = Cela change uniquement le nom affiché du dossier. Les dossiers et les documents de la personne restent à leur place.
 
@@ -1580,13 +1582,13 @@ rename-title-profile = Renommer le dossier de la personne
 
 portal-connectConsent = Cette action associe cet appareil à votre clinique et envoie une demande d’approbation. Votre clinique doit approuver l’appareil avant qu’il puisse recevoir des documents.
 
-portal-connected = Appareil associé. Son état d’approbation est indiqué sur la page Sécurité, section Documents de la clinique.
+portal-connected = Appareil associé. Son état d’approbation est indiqué sur la page Sécurité, section Cliniques connectées.
 
 portal-connecting = Connexion et demande d’approbation à la clinique en cours…
 
 portal-errorBusy = Une autre opération avec la clinique est en cours. Attendez qu’elle se termine, puis réessayez.
 
-portal-linkedApprovalIssue = Appareil associé. L’état de son approbation, sur la page Sécurité, section Documents de la clinique, indique la marche à suivre.
+portal-linkedApprovalIssue = Appareil associé. L’état de son approbation, sur la page Sécurité, section Cliniques connectées, indique la marche à suivre.
 
 portal-retryApproval = Réessayer la demande d’approbation enregistrée
 
@@ -1877,9 +1879,25 @@ ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
+aiHelper-resultLabelShort = Brouillon IA
+
+aiHelper-resultLabelHide = Ne plus afficher
+
+aiHelper-resultLabelInfo = Ce que signifie « Brouillon IA »
+
+ai-label-settingsTitle = Avertissement sur les réponses de l’IA
+
+ai-label-settingsBody = Chaque réponse de l’IA indique qu’elle a été écrite par une IA et peut contenir des erreurs. Après « Ne plus afficher », une courte étiquette « Brouillon IA » remplace la phrase complète. L’étiquette n’est jamais retirée. Le choix est gardé sur cet appareil et recommence si le modèle ou l’outil change.
+
+ai-label-settingsShowFull = Afficher de nouveau l’avertissement complet
+
+ai-label-settingsFullShown = L’avertissement complet est affiché sur chaque réponse de l’IA.
+
+ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affichée sur les réponses de l’IA pour lesquelles vous l’avez choisie.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Voir dans le document
+ai-summary-showInDocument = Me montrer dans le document
 
 ai-summary-folded = Le résumé est replié pour laisser de la place à la page.
 
@@ -2025,6 +2043,19 @@ ai-explain-ready = L’explication est prête.
 ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
+ai-error-memoryNumbers = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } Go de mémoire libre; il en reste { $free } Go. Fermez d’autres programmes, puis réessayez.
+ai-error-memoryUnknown = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } Go de mémoire libre, et cet ordinateur n’a pas pu dire combien il en reste. Fermez d’autres programmes, puis réessayez.
+ai-speed-title = Vitesse sur cet ordinateur
+ai-speed-note = Ceci exécute l’assistant IA une fois sur un court texte inventé et sollicite beaucoup le processeur pendant une minute ou deux. Rien n’est envoyé nulle part et rien de vos données n’est utilisé. Vous pouvez l’arrêter à tout moment.
+ai-speed-button = Vérifier la vitesse de cet ordinateur
+ai-speed-working = Vérification de la vitesse…
+ai-speed-cancel = Arrêter la vérification
+ai-speed-result = Mesuré sur cet ordinateur : l’assistant IA lit environ { $read } mots par seconde et en écrit environ { $write }.
+ai-speed-cancelled = La vérification a été arrêtée. Rien n’a été conservé.
+ai-speed-none = Pas encore vérifiée.
+ai-speed-failed = La vitesse n’a pas pu être mesurée. Réessayez.
+ai-speed-estimate = Sur cet ordinateur, cela peut prendre jusqu’à environ { $minutes } min.
+ai-speed-estimateLong = Sur cet ordinateur, un document aussi long peut ne pas être terminé dans le temps accordé à l’assistant IA.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
 
@@ -2190,6 +2221,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = autre forme { $n }
 
 interface-AnonymizePreview-pasteTitle = Remettre les renseignements
 
@@ -2210,6 +2242,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (à vérifier avec l’original)
 interface-AnonymizePreview-possibleNames = Mots qui pourraient être des noms
 
 interface-AnonymizePreview-removeWord = Retirer « { $word } »
+interface-AnonymizePreview-eponymTitle = Ces mots pourraient être des termes médicaux
+interface-AnonymizePreview-eponymOne = Ceci pourrait être un terme médical : { $phrase }
+interface-AnonymizePreview-eponymKeep = Garder
+interface-AnonymizePreview-eponymKeepAll = Tout garder « { $phrase } »
+
+interface-AnonymizePreview-removedSummary = Retiré : { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Rien n’a encore été retiré.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nom
+   *[other] { $count } noms
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médecin
+   *[other] { $count } médecins
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinique
+   *[other] { $count } cliniques
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } numéro de carte santé
+   *[other] { $count } numéros de carte santé
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } numéro de dossier
+   *[other] { $count } numéros de dossier
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } numéro d'assurance sociale
+   *[other] { $count } numéros d'assurance sociale
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date de naissance
+   *[other] { $count } dates de naissance
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } âge
+   *[other] { $count } âges
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } adresse
+   *[other] { $count } adresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } code postal
+   *[other] { $count } codes postaux
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } numéro de téléphone
+   *[other] { $count } numéros de téléphone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } adresse courriel
+   *[other] { $count } adresses courriel
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } adresse web
+   *[other] { $count } adresses web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } date ambiguë
+   *[other] { $count } dates ambiguës
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } retiré par vous
+   *[other] { $count } retirés par vous
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date remplacée
+   *[other] { $count } dates remplacées
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } mot à vérifier
+   *[other] { $count } mots à vérifier
+}
+
+interface-AnonymizePreview-toCheckHelp = Surlignés : les mots qui commencent par une majuscule au milieu d’une phrase et les nombres de trois chiffres ou plus. Ils peuvent identifier quelqu’un. Cette aide ne trouve pas tout. Elle manque les noms écrits en majuscules, les noms au début d’une ligne, les noms écrits dans une écriture sans majuscules (chinois, coréen ou arabe, par exemple) et les noms qui sont aussi des mois, des médicaments ou des termes médicaux (comme « Juin » ou « Bell »). Sélectionnez un mot surligné, puis choisissez Retirer, et lisez vous-même tout le texte.
+
+interface-AnonymizePreview-checkPicked = « { $word } » peut identifier quelqu’un.
+
+interface-AnonymizePreview-savedFileNote = Le fichier enregistré n’est pas protégé par myCarlos. Il ne contient aucun nom, mais il contient les détails médicaux. Supprimez-le lorsque vous avez terminé.
+
+interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez décide de ce qui est conservé : un service de clavardage peut le garder ou s’en servir pour apprendre, selon les paramètres de votre compte.
+
+interface-AnonymizePreview-copy = Copier le texte
+
+interface-AnonymizePreview-copied = Le texte a été copié.
+
+interface-AnonymizePreview-copyFailed = Le texte n’a pas pu être copié.
+
+interface-AnonymizePreview-copyWarning = Le texte copié peut rester sur cet appareil : l’historique du presse-papiers de Windows et la synchronisation du presse-papiers entre appareils peuvent en garder une copie.
 
 interface-AnonymizePreview-removeSelected = Retirer le texte sélectionné
 
@@ -2254,13 +2395,27 @@ notifications-helpAutomatic = Windows peut afficher un avis générique après l
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
 notifications-autoNeedsNotices = Autorisez d’abord les avis d’arrivée de documents pour activer cette option.
 notifications-autoHelp = Avec votre accord, myCarlos vérifie les liens enregistrés et approuvés des cliniques lorsque cette application est ouverte et le coffre déverrouillé, avec au moins deux minutes entre les tentatives. Les vérifications peuvent continuer si Windows bloque les avis. Verrouiller le coffre ou fermer l’application arrête les vérifications suivantes.
-notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Documents de la clinique et choisissez Rechercher de nouveaux documents.
+notifications-autoPaused = Une vérification manuelle est nécessaire pour poursuivre les vérifications automatiques. Ouvrez Cliniques connectées et choisissez Rechercher de nouveaux documents.
 notifications-checkBusy = Une vérification de documents est en cours d’arrêt. Choisissez à nouveau Rechercher de nouveaux documents dans un instant.
 noticesStep-title = Avis de votre clinique
 noticesStep-intro = Votre clinique est associée. myCarlos peut vous avertir quand un nouveau document arrive. Rien n’est activé à moins que vous ne le cochiez.
 noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, sous { $preferences } : { $notices }.
 noticesStep-done = Terminé
 noticesStep-notNow = Pas maintenant
+
+background-title = Exécution en arrière-plan
+background-keepRunning = Laisser myCarlos s’exécuter en arrière-plan après la fermeture de sa fenêtre
+background-keepRunningHelp = Lorsque vous fermez la fenêtre, myCarlos peut rester en arrière-plan avec une icône dans la zone de notification (la barre des menus sur un Mac). Votre coffre se verrouille à la fermeture de la fenêtre et reste verrouillé jusqu’à ce que vous ouvriez myCarlos et le déverrouilliez. Choisissez Quitter dans l’icône pour fermer complètement myCarlos.
+background-startAtLogin = Démarrer myCarlos à l’ouverture de ma session sur cet ordinateur
+background-startAtLoginHelp = myCarlos démarre lorsque vous ouvrez votre session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan, coffre verrouillé. S’il est désactivé, sa fenêtre s’ouvre.
+background-paused = Tant que votre coffre est verrouillé, myCarlos ne peut pas vérifier les nouveaux documents de la clinique. Déverrouillez-le pour vérifier.
+background-unavailable = Une icône d’arrière-plan n’est pas disponible sur cet ordinateur. myCarlos se ferme complètement lorsque vous fermez sa fenêtre.
+background-error = Ce réglage n’a pas pu être modifié. Il reste tel qu’il était.
+native-tray-open = Ouvrir myCarlos
+native-tray-quit = Quitter myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Un nouveau document est en attente. Déverrouillez myCarlos pour le voir.
 
 ai-summary-again = Résumer à nouveau
 
@@ -2311,3 +2466,106 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+interface-received-confirmTitleOne = Importer { $name } dans Partagés avec moi ?
+
+interface-received-confirmTitleMany = Importer { $count } documents dans Partagés avec moi ?
+
+interface-received-confirmBody = Rien n’est ajouté tant que vous n’avez pas choisi Importer. Annuler ne laisse rien.
+
+interface-received-import = Importer
+
+reader-android-opening = Ouverture du document…
+
+reader-android-failed = myCarlos n’a pas pu afficher ce document. Enregistrez une copie pour la lire dans une autre application.
+
+reader-android-tooLarge = Ce PDF dépasse 20 Mo. Enregistrez une copie pour la lire dans une autre application.
+
+reader-android-unavailable = Cet appareil ne permet pas à myCarlos d’ouvrir des documents ici. Enregistrez une copie pour la lire dans une autre application.
+
+reader-android-page = Page { $page } sur { $total }, image de la lettre
+
+reader-android-pageStatus = Page { $page } sur { $total }
+reader-android-pageFailed = La page { $page } sur { $total } ne peut pas être affichée.
+
+reader-android-previous = Page précédente
+
+reader-android-next = Page suivante
+
+reader-android-zoomIn = Agrandir
+
+reader-android-zoomOut = Réduire
+
+interface-video-name = Vidéo, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Enregistrer une vidéo
+interface-RecordDialog-unavailable = L’enregistrement vidéo n’est pas disponible sur cet appareil.
+interface-RecordDialog-why = Pourquoi ?
+interface-RecordDialog-startingTheCameraAndMicrophone = Démarrage de l’appareil photo et du microphone…
+interface-RecordDialog-theVideoIsRecordedWithSound = La vidéo est enregistrée avec le son. Les personnes proches de vous peuvent être entendues. Vous seul pouvez l’ouvrir.
+interface-RecordDialog-yourPhoneAsksOnce = Votre téléphone demande une seule fois si myCarlos peut utiliser l’appareil photo et le microphone. Ils ne sont actifs que pendant l’enregistrement. Ils s’éteignent quand vous arrêtez, fermez cette fenêtre ou que myCarlos se verrouille.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = L’appareil photo et le microphone ne sont actifs que pendant l’enregistrement. Ils s’éteignent quand vous arrêtez, fermez cette fenêtre ou que myCarlos se verrouille.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = L’appareil photo et le microphone sont actifs, mais rien n’est enregistré tant que vous ne choisissez pas Démarrer l’enregistrement.
+interface-RecordDialog-pictureQuality = Qualité de l’image
+interface-RecordDialog-standard = Standard (720p)
+interface-RecordDialog-high = Élevée (1080p)
+interface-RecordDialog-aboutStandardPerHour = Environ 1,1 Go par heure
+interface-RecordDialog-aboutHighPerHour = Environ 2,5 à 4 Go par heure
+interface-RecordDialog-useTheCameraAndMicrophone = Utiliser l’appareil photo et le microphone
+interface-RecordDialog-startRecording = Démarrer l’enregistrement
+interface-RecordDialog-recording = Enregistrement
+interface-RecordDialog-paused = En pause
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = En pause. L’appareil photo et le microphone sont toujours actifs.
+interface-RecordDialog-recorded = Enregistré : { $time }
+interface-RecordDialog-recordingAt = Enregistrement en { $height }p
+interface-RecordDialog-pauseRecording = Mettre l’enregistrement en pause
+interface-RecordDialog-resumeRecording = Reprendre l’enregistrement
+interface-RecordDialog-stopAndSave = Arrêter et enregistrer
+interface-RecordDialog-stopAndSaveTheVideo = Arrêter et enregistrer la vidéo ?
+interface-RecordDialog-keepRecording = Continuer l’enregistrement
+interface-RecordDialog-savingTheVideo = Enregistrement de la vidéo…
+interface-RecordDialog-recordingPaused = Enregistrement en pause.
+interface-RecordDialog-recordingResumed = Enregistrement repris.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = Cet appareil ne peut pas enregistrer de vidéo dans un format que myCarlos peut conserver.
+interface-RecordDialog-videoNeedsBoth = Une vidéo a besoin de l’appareil photo et du microphone.
+interface-RecordDialog-nothingWasRecorded = Rien n’a été enregistré, donc aucune vidéo n’a été conservée.
+interface-RecordDialog-videoSaved = Vidéo enregistrée : { $name }
+interface-RecordDialog-videoSavedStopped = L’enregistrement s’est arrêté car l’appareil a signalé un problème. Ce qui a été enregistré a été conservé : { $name }
+interface-RecordDialog-videoSavedHidden = L’enregistrement s’est arrêté car myCarlos a été masqué. Ce qui a été enregistré a été conservé : { $name }
+interface-RecordDialog-videoSavedSlow = L’enregistrement s’est arrêté car la vidéo n’a pas pu être sauvegardée assez vite. Ce qui a été enregistré a été conservé : { $name }
+interface-VideoViewer-video = Vidéo
+interface-VideoViewer-player = Lecteur vidéo : { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = Cette vidéo n’a pas pu être lue.
+interface-VideoViewer-keys = La barre d’espace lance ou met en pause. Les flèches gauche et droite avancent ou reculent de { $seconds } secondes. Haut et bas changent le volume. M coupe le son.
+interface-VideoViewer-playVideo = Lire la vidéo
+interface-VideoHelp-title = Pourquoi ne puis-je pas enregistrer de vidéo ici ?
+interface-VideoHelp-engine = Pour enregistrer une vidéo, le moteur web intégré à cet appareil doit pouvoir enregistrer de la vidéo MP4 avec le son. Le moteur de cet appareil ne le permet pas.
+interface-VideoHelp-systems = Sous Windows, les éditions N et KN n’incluent pas les fonctions multimédias tant que vous n’ajoutez pas le Media Feature Pack de Microsoft. Sous Linux, myCarlos a besoin des modules GStreamer des paquets gstreamer1.0-plugins-bad et gstreamer1.0-plugins-ugly. Les téléphones sous Android 7 ou plus ancien et les iPhone sous iOS antérieur à 14.5 ne peuvent pas enregistrer de vidéo MP4 dans l’application.
+interface-VideoHelp-restWorks = Les photos et les documents fonctionnent comme d’habitude. Une mise à jour plus récente du système peut ajouter l’enregistrement vidéo.
+interface-RecordingRecovery-closed = myCarlos s’est fermé pendant que vous enregistriez. Conserver la vidéo qui a été sauvegardée ?
+interface-RecordingRecovery-closedPaused = myCarlos s’est fermé pendant qu’un enregistrement était en pause. Conserver la vidéo qui a été sauvegardée ?
+interface-RecordingRecovery-name = Enregistrement : { $name }
+interface-RecordingRecovery-askLater = Me le demander plus tard
+interface-RecordingRecovery-delete = La supprimer
+interface-RecordingRecovery-keep = Conserver la vidéo
+interface-RecordingRecovery-kept = Vidéo conservée : { $name }
+interface-RecordingRecovery-nothingToKeep = Rien de complet n’avait été sauvegardé, donc il n’y avait pas de vidéo à conserver.
+interface-RecordingRecovery-deleted = L’enregistrement inachevé a été supprimé.
+interface-RecordingRecovery-deleteSure = Supprimer cet enregistrement ? Cette action est irréversible.
+interface-RecordingRecovery-savedLocked = myCarlos s’est verrouillé pendant que vous enregistriez. La vidéo a été sauvegardée : { $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos s’est verrouillé pendant qu’un enregistrement était en pause. La vidéo a été sauvegardée : { $name }
+interface-RecordDialog-videoSavedFailed = L’enregistrement s’est arrêté car une partie n’a pas pu être sauvegardée. Ce qui l’avait été auparavant est conservé : { $name }
+interface-RecordDialog-notEnoughRoom = Il n’y a pas assez de place pour enregistrer une vidéo. Environ 1 Go doit être libre. Libérez de l’espace sur cet appareil, puis choisissez Réessayer.
+interface-RecordDialog-lowOnRoom = Il reste peu de place. L’enregistrement est sauvegardé quand il n’y a plus de place.
+interface-RecordDialog-lowOnRoomMinutes = Il reste peu de place : environ { $minutes } minutes d’enregistrement. L’enregistrement est sauvegardé quand il n’y a plus de place.
+interface-RecordDialog-videoSavedNoRoom = Sauvegardé. Il n’y avait plus de place : { $name }
+interface-RecordDialog-videoKeptUnfinished = Il n’y avait plus de place, donc la vidéo n’a pas pu être terminée. Elle est conservée comme enregistrement inachevé : libérez de l’espace, et myCarlos la terminera au prochain déverrouillage.
+interface-RecordingRecovery-finishedWithRoom = Il y a de nouveau de la place, votre vidéo inachevée a donc été terminée : { $name }
+interface-RecordingRecovery-stillNoRoom = Il n’y a toujours pas assez de place pour terminer votre vidéo inachevée : { $name }. Libérez de l’espace ; elle est conservée.
+security-backup-size = Environ { $size }.
+security-backup-sizeWithVideos = Environ { $size }, dont { $videos } de vidéos.
+security-backup-sizeNoVideos = Environ { $size }, sans les vidéos.
+security-backup-leaveVideosOut = Laisser de côté les vidéos
+security-backup-leaveVideosOutHelp = La sauvegarde ne contiendra pas vos vidéos. Si vous la restaurez, les vidéos ne reviennent pas.
+restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer ramène tout le reste, et vos vidéos n’y seront pas. Elles figurent parmi les documents masqués, comme des fichiers manquants.
+security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
+interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde

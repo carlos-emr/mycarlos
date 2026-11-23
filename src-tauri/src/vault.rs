@@ -37,13 +37,31 @@ use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
 mod delivery;
+// Notice keys (#230): enrolled and wiped by the commands and the tray (tray_notices.rs).
+mod notice_keys;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
+pub use backup_video::{BackupPlan, BackupSize};
 pub(crate) use delivery::AidFiling;
+#[allow(unused_imports)]
+pub use playback::PlaybackOpened;
+#[cfg(test)]
+pub(crate) use playback::MAX_RANGE_RESPONSE;
+pub(crate) use playback::{looks_like_token, PlaybackRefusal};
+pub(crate) use recording::{
+    PendingRecordings, RecordingProgress, RecordingSpace, MAX_RECORDING_PIECE,
+};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+// Backups that carry the videos or leave them out (#359 PR 6).
+mod backup_video;
+// Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
+// open and close commands call it.
+mod playback;
+// Recording into the vault (#359): the video commands call it.
+mod recording;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
@@ -348,6 +366,9 @@ pub enum VaultError {
     PdfUnlockNoSandbox,
     #[error("the locked document is too large to open")]
     PdfTooLarge,
+    #[error("the document is too large for the phone reader")]
+    #[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+    PdfMobileTooLarge,
     #[error("the document could not be shown")]
     PdfViewFailed,
     #[error("documents cannot be shown on this device yet")]
@@ -995,6 +1016,10 @@ impl Drop for KdfWork<'_> {
     }
 }
 
+/// How the vault asks how much room its volume has: the disk's, unless a test
+/// stands in for it.
+type FreeSpaceProbe = Box<dyn Fn(&Path) -> Option<u64> + Send + Sync>;
+
 pub struct VaultStore {
     root: PathBuf,
     collection: crate::document_collection::Controller,
@@ -1029,6 +1054,18 @@ pub struct VaultStore {
     /// The folder this run of the app last set a vault aside in, for the
     /// next vault created (#71's third part). In memory only.
     last_set_aside: Mutex<Option<String>>,
+    /// Recordings in progress (#359), by record id. In memory only; each has a journal
+    /// in `recordings/`. A lock parks them.
+    recordings: Mutex<HashMap<Uuid, recording::ActiveRecording>>,
+    /// Videos open for playback (#359), by token. In memory only; every one is
+    /// ended by a lock, a reset or a dropped session.
+    playback: Mutex<HashMap<String, playback::PlaybackSession>>,
+    /// How much room the volume holding the vault has (#359): the disk's, unless
+    /// a test stands in for it.
+    free_space: Mutex<FreeSpaceProbe>,
+    // The records the history says were added with the camera, for the history it
+    // was read from (recording.rs `camera_made_records`).
+    camera_made: Mutex<Option<recording::CameraMade>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1054,6 +1091,10 @@ impl VaultStore {
             idle: Arc::new(IdleDeadline::new(Instant::now())),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
+            recordings: Mutex::new(HashMap::new()),
+            playback: Mutex::new(HashMap::new()),
+            free_space: Mutex::new(Box::new(crate::disk_space::free_bytes)),
+            camera_made: Mutex::new(None),
             push_inbox: Mutex::new(Default::default()),
         }
     }
@@ -1069,6 +1110,42 @@ impl VaultStore {
         {
             self.collection.permit_after(0);
         }
+    }
+
+    /// Puts an (empty) resume cache in this vault, as a paused document check leaves one.
+    #[cfg(test)]
+    pub(crate) fn test_hold_resume_cache(&self) {
+        *self.collection_resume.lock().unwrap() =
+            Some(crate::document_collection_pickup::ResumeCache::default());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_has_resume_cache(&self) -> bool {
+        self.collection_resume.lock().unwrap().is_some()
+    }
+
+    /// Poisons the session mutex, as a panic in a holder would, for the switch tests.
+    #[cfg(test)]
+    pub(crate) fn test_poison_session(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = self.unlocked.lock().unwrap();
+            panic!("poisoned on purpose (test)");
+        }));
+    }
+
+    /// Runs `inside` while a key derivation is counted as running, for the switch test.
+    #[cfg(test)]
+    pub(crate) fn test_hold_kdf(&self, inside: impl FnOnce()) {
+        let _work = self.start_kdf_work().unwrap();
+        inside();
+    }
+
+    /// Where this vault's notification ledger is, for the tests that check each slot has its own.
+    #[cfg(test)]
+    pub(crate) fn notifications_ledger_path(&self) -> Option<PathBuf> {
+        self.notifications
+            .get()
+            .map(|runtime| runtime.ledger_path().to_path_buf())
     }
 
     fn drop_idle_collection_cache(&self) {
@@ -1168,24 +1245,35 @@ impl VaultStore {
         self.drop_idle_collection_cache();
     }
 
-    /// Started at launch on Windows; it checks only while the patient has automatic
-    /// checks turned on. One weak app-owned worker; no strong vault reference while sleeping.
-    #[cfg(windows)]
-    pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
-        let weak = Arc::downgrade(self);
-        std::thread::Builder::new()
-            .name("document-checks".into())
-            .spawn(move || loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let Some(store) = weak.upgrade() else {
-                    break;
-                };
-                if store.collection.is_shutdown() {
-                    break;
-                }
-                store.automatic_document_tick();
-            })
-            .map(|_| ())
+    /// One tick of the automatic document check, run once a second by the app's single worker
+    /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
+    /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
+    /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
+    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
+    /// there is nothing to run).
+    pub(crate) fn document_tick(&self) -> bool {
+        if self.collection.is_shutdown() {
+            return false;
+        }
+        #[cfg(windows)]
+        self.automatic_document_tick();
+        true
+    }
+
+    /// Whether nothing is open or running in this vault: no session, no unlock or benchmark deriving
+    /// a key, no import or export holding the session lock. Never waits: a vault that is busy says
+    /// so. A switch to another vault (#357) is refused unless this holds for both.
+    pub(crate) fn is_at_rest(&self) -> bool {
+        if self.kdf_running.load(Ordering::Acquire) {
+            return false;
+        }
+        match self.unlocked.try_lock() {
+            Ok(guard) => guard.is_none(),
+            // A holder panicked: the session in it is still what it was, so read it as `session()`
+            // would, rather than saying "busy" for ever.
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner().is_none(),
+            Err(std::sync::TryLockError::WouldBlock) => false,
+        }
     }
 
     #[cfg(windows)]
@@ -1344,11 +1432,25 @@ impl VaultStore {
             let mut guard = poisoned.into_inner();
             self.invalidate_collection_cache();
             self.portal_session.fetch_add(1, Ordering::AcqRel);
+            // A recording keeps its own copy of the keys: park it (and so drop
+            // them) with the session, not after it.
+            self.park_recordings();
+            self.end_playback();
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
             guard
         })
+    }
+
+    /// Whether the vault is unlocked, without waiting: `None` while another call holds the
+    /// session (an unlock or a transfer), or when it is poisoned (the next `session()` locks it).
+    /// For the window's main thread, which must never wait on the vault (#206).
+    pub(crate) fn is_unlocked_now(&self) -> Option<bool> {
+        match self.unlocked.try_lock() {
+            Ok(guard) => Some(guard.is_some()),
+            Err(_) => None,
+        }
     }
 
     // Reserve before taking the session lock. Never queue an unlock behind a
@@ -1745,6 +1847,10 @@ impl VaultStore {
             // the two and be left unlocked with no deadline.
             let due = due();
             if due {
+                // A recording in progress is parked first: its last frame is sealed
+                // and its journal says so, so that the next unlock can finish it.
+                self.park_recordings();
+                self.end_playback();
                 self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
@@ -2103,6 +2209,11 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(link_id);
+        // The Portal removed this device: its notice key (#230) is finished with it, and no
+        // request is needed to say so.
+        if let Some(keys) = crate::notice_key::kept() {
+            let _ = keys.wipe_link(link_id);
+        }
     }
 
     fn link_portal_using(
@@ -3283,7 +3394,10 @@ impl VaultStore {
                 at_ms: now_ms,
                 reason: HiddenReason::Patient,
             }),
-        )
+        )?;
+        // A video playing from it stops being served.
+        self.end_playback_for(record_id);
+        Ok(())
     }
 
     /// Puts a hidden document back where it was. One hidden as damaged comes
@@ -3915,6 +4029,11 @@ impl VaultStore {
                 .with_place(&set_aside_name(&target));
             record_in_session(&self.root, unlocked, vec![entry]);
         }
+        // A recording in progress is parked in the vault being set aside, and its
+        // keys dropped, before the session goes: it must not write into a vault
+        // that is no longer where it was.
+        self.park_recordings();
+        self.end_playback();
         *guard = None;
         self.idle.disarm();
         // How that vault's last session ended is nothing to the next one's.
@@ -3941,11 +4060,28 @@ impl VaultStore {
     /// writing one: for a destination that cannot be written beside and
     /// renamed over, such as a document provider's, so that an earlier backup
     /// there is not overwritten by one that is then refused.
+    #[cfg(test)]
     pub fn verify_for_backup(&self) -> Result<(), VaultError> {
+        self.verify_for_backup_with(false)
+    }
+
+    /// `verify_for_backup` for a backup that may leave the videos out: those
+    /// are not read, as the backup will not hold them.
+    #[cfg(test)]
+    pub fn verify_for_backup_with(&self, leave_videos_out: bool) -> Result<(), VaultError> {
+        self.verify_for_backup_planned(&self.plan_backup(leave_videos_out)?)
+    }
+
+    /// `verify_for_backup_with` for the videos already found for this save.
+    pub fn verify_for_backup_planned(&self, plan: &BackupPlan) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
         let parts = self.backup_parts(unlocked)?;
+        let omitted = plan.omitted_in(&unlocked.manifest);
         for record in &unlocked.manifest.records {
+            if omitted.contains(&record.id) {
+                continue;
+            }
             self.verify_for_backup_object(unlocked, &parts.keys, record)?;
         }
         Ok(())
@@ -3954,14 +4090,52 @@ impl VaultStore {
     /// Writes a portable backup of the vault: its ciphertext only, as the
     /// patient sees it now. A read-only vault is not backed up, since what
     /// it shows may not be what it holds.
+    #[cfg(test)]
     pub fn backup<W: Write>(&self, writer: W, now_ms: u64) -> Result<(), VaultError> {
+        self.backup_with(writer, now_ms, false)
+    }
+
+    /// `backup`, optionally leaving the videos out (#359): the backup then holds
+    /// no video's file, says so in a note after its manifest and in its trailer
+    /// (format 2), and its manifest marks those records as lacking their file,
+    /// as a document whose file went missing is marked. The vault itself is not
+    /// changed.
+    #[cfg(test)]
+    pub fn backup_with<W: Write>(
+        &self,
+        writer: W,
+        now_ms: u64,
+        leave_videos_out: bool,
+    ) -> Result<(), VaultError> {
+        self.backup_planned(writer, now_ms, &self.plan_backup(leave_videos_out)?)
+    }
+
+    /// `backup_with` for the videos already found for this save (`BackupPlan`),
+    /// the same ones the size and the check used.
+    pub fn backup_planned<W: Write>(
+        &self,
+        writer: W,
+        now_ms: u64,
+        plan: &BackupPlan,
+    ) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        let parts = self.backup_parts(unlocked)?;
+        let mut parts = self.backup_parts(unlocked)?;
         let manifest = &unlocked.manifest;
+        // Only records this vault still has, and has not had hidden since.
+        let omitted = plan.omitted_in(manifest);
+        if !omitted.is_empty() {
+            parts.manifest_data = backup_video::manifest_without_videos(
+                &unlocked.master_key,
+                manifest,
+                &omitted,
+                now_ms,
+            )?;
+        }
+        let left_out = !omitted.is_empty();
         let writer =
             CancellableWriter::new(writer, Arc::clone(&self.cancel_io)).with_progress(&self.idle);
-        let mut backup = BackupWriter::new(writer)?;
+        let mut backup = BackupWriter::with_format(writer, left_out)?;
         backup.entry(
             BACKUP_KIND_HEADER,
             "header.json",
@@ -3974,7 +4148,22 @@ impl VaultStore {
             parts.manifest_data.len() as u64,
             &mut parts.manifest_data.as_slice(),
         )?;
+        if left_out {
+            let note = serde_json::to_vec(&LeftOutNote {
+                omitted: omitted.clone(),
+            })
+            .map_err(|_| VaultError::Storage)?;
+            backup.entry(
+                BACKUP_KIND_LEFT_OUT,
+                "left-out.json",
+                note.len() as u64,
+                &mut note.as_slice(),
+            )?;
+        }
         for record in &manifest.records {
+            if omitted.contains(&record.id) {
+                continue;
+            }
             // A restore refuses the whole backup over one object that does not
             // authenticate, so a damaged one is found now, while the vault
             // and its other documents are still here, not when it is needed.
@@ -4018,6 +4207,7 @@ impl VaultStore {
             manifest.vault_id,
             manifest.generation,
             now_ms,
+            omitted,
         )
     }
 
@@ -4089,11 +4279,36 @@ impl VaultStore {
     /// Saves a backup to a file the patient chose, as an export is saved:
     /// never inside the vault home, and replacing the destination only once
     /// the whole backup is written.
+    #[cfg(test)]
     pub fn backup_atomic(&self, destination: &Path, now_ms: u64) -> Result<(), VaultError> {
+        self.backup_atomic_with(destination, now_ms, false)
+    }
+
+    /// `backup_atomic`, optionally leaving the videos out (#359). The room at the
+    /// destination is checked against the backup's size before any byte is
+    /// written: a backup with hours of video is very large, and a file left
+    /// half written by a full disk helps no one.
+    pub fn backup_atomic_with(
+        &self,
+        destination: &Path,
+        now_ms: u64,
+        leave_videos_out: bool,
+    ) -> Result<(), VaultError> {
         let home = fs::canonicalize(vault_home(&self.root)?)?;
         let destination_parent = destination.parent().ok_or(VaultError::Invalid)?;
         if fs::canonicalize(destination_parent)?.starts_with(&home) {
             return Err(VaultError::Invalid);
+        }
+        // The videos are found once: the size, the check and the write all use them.
+        let plan = self.plan_backup(leave_videos_out)?;
+        let size = self.backup_size_planned(&plan)?;
+        let needed = if leave_videos_out {
+            size.without_videos_bytes
+        } else {
+            size.total_bytes
+        };
+        if crate::disk_space::free_bytes(destination_parent).is_some_and(|free| free < needed) {
+            return Err(VaultError::NoSpace);
         }
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -4102,7 +4317,7 @@ impl VaultStore {
         let mut outcome = Ok(());
         let written = AtomicFile::new(destination, AllowOverwrite).write_with_options(
             |file| {
-                outcome = self.backup(BufWriter::new(&mut *file), now_ms);
+                outcome = self.backup_planned(BufWriter::new(&mut *file), now_ms, &plan);
                 match &outcome {
                     Ok(()) => file.sync_all(),
                     Err(_) => Err(io::Error::other("backup failed")),
@@ -4220,6 +4435,7 @@ impl VaultStore {
             replaces,
             differs_from_this_device,
             document_count: manifest.records.len(),
+            left_out: opened.omitted.len(),
             fingerprint: {
                 let mut hash = <Sha256 as sha2::Digest>::new();
                 sha2::Digest::update(
@@ -4300,6 +4516,7 @@ impl VaultStore {
             master_key,
             manifest,
             manifest_data,
+            omitted,
         } = opened;
         let home = vault_home(&self.root)?;
         let stage = home.join(format!("{RESTORE_STAGE_PREFIX}{}", Uuid::new_v4()));
@@ -4411,7 +4628,14 @@ impl VaultStore {
             if self.root.exists() {
                 entry.how = Some("replaced".to_owned());
             }
-            let prepared = prepare_history(&stage, &master_key, &restored, vec![entry])?;
+            let mut entries = vec![entry];
+            // Each record the backup left out is said to be hidden, and why.
+            entries.extend(backup_video::left_out_entries(
+                &restored,
+                &omitted,
+                crate::now_ms(),
+            ));
+            let prepared = prepare_history(&stage, &master_key, &restored, entries)?;
             restored.history = prepared.state;
             for _ in 0..2 {
                 restored.generation = restored
@@ -6175,6 +6399,14 @@ fn write_manifest_at(
     master_key: &[u8; 32],
     manifest: &Manifest,
 ) -> Result<(), VaultError> {
+    let output = manifest_file_bytes(master_key, manifest)?;
+    atomic_bytes(&manifest_path(root, manifest.generation), &output)
+}
+
+/// A manifest as it is stored: padded to a size class, encrypted, with its nonce
+/// in front. What a backup of a vault with videos left out holds is the
+/// manifest as this makes it, with those records marked.
+fn manifest_file_bytes(master_key: &[u8; 32], manifest: &Manifest) -> Result<Vec<u8>, VaultError> {
     let keys = derive_keys(manifest.vault_id, master_key)?;
     let mut plaintext =
         Zeroizing::new(serde_json::to_vec(manifest).map_err(|_| VaultError::Storage)?);
@@ -6208,7 +6440,7 @@ fn write_manifest_at(
     let mut output = Vec::with_capacity(24 + ciphertext.len());
     output.extend_from_slice(&nonce);
     output.extend_from_slice(&ciphertext);
-    atomic_bytes(&manifest_path(root, manifest.generation), &output)
+    Ok(output)
 }
 
 /// Commits `next` as two consecutive generations, one per slot.
@@ -7887,6 +8119,10 @@ enum Removable {
     RestoreStage,
     /// What the atomic replacement primitive left behind.
     AtomicWriteLeftover,
+    /// An unfinished recording's tail, journal or superseded object, or a
+    /// recording's object that recovery found nothing complete in (#359).
+    #[allow(dead_code)] // constructed by the recording core, which has no caller yet
+    Recording,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.
@@ -8351,7 +8587,18 @@ fn subtree_depth(manifest: &Manifest, root: Uuid) -> Result<usize, VaultError> {
 /// No document, name or detail in it is readable without the passphrase or
 /// the recovery key. What is in clear is listed in VAULT_FORMAT.md.
 const BACKUP_MAGIC: &[u8; 16] = b"MYCARLOS-BACKUP\n";
+/// A backup made with videos left out (#359) starts with this instead, then `\n`:
+/// 17 bytes, so that a build that reads only the first kind refuses it as not a
+/// backup, which is the safe outcome (the manifest it holds names objects the
+/// file lacks).
+const BACKUP_MAGIC_LEFT_OUT: &[u8; 16] = b"MYCARLOS-BACKUP2";
 const BACKUP_FORMAT: u32 = 1;
+/// The format of a backup with videos left out.
+const BACKUP_FORMAT_LEFT_OUT: u32 = 2;
+/// A note, right after the manifest of a format-2 backup, listing the records
+/// whose objects were left out.
+const BACKUP_KIND_LEFT_OUT: u8 = 4;
+const MAX_LEFT_OUT_NOTE_BYTES: usize = 4 * 1024 * 1024;
 const BACKUP_KIND_HEADER: u8 = 1;
 const BACKUP_KIND_MANIFEST: u8 = 2;
 const BACKUP_KIND_OBJECT: u8 = 3;
@@ -8378,6 +8625,16 @@ struct BackupTrailer {
     manifest_generation: u64,
     created_at_ms: u64,
     entries: Vec<BackupEntry>,
+    /// The records whose objects the backup leaves out (format 2): ids, never names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    omitted: Vec<Uuid>,
+}
+
+/// What a format-2 backup's note says.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LeftOutNote {
+    omitted: Vec<Uuid>,
 }
 
 /// What opens a backup: the passphrase it was made with, or the recovery key.
@@ -8411,6 +8668,10 @@ pub struct RestorePreview {
     /// or it could not be read to tell. Restoring loses those changes.
     pub differs_from_this_device: bool,
     pub document_count: usize,
+    /// How many records the backup leaves out (format 2: made without videos);
+    /// zero for an ordinary backup. Restoring brings the rest back, and each of
+    /// these comes back as a record with no file.
+    pub left_out: usize,
     /// Which backup this describes: a hash of its header and manifest.
     #[serde(skip)]
     pub(crate) fingerprint: [u8; 32],
@@ -8424,10 +8685,10 @@ fn backup_key(vault_id: Uuid, master_key: &[u8; 32]) -> Result<SecretKey, VaultE
     Ok(key)
 }
 
-fn backup_tag(key: &[u8; 32], trailer: &[u8]) -> Result<HmacSha256, VaultError> {
+fn backup_tag(key: &[u8; 32], magic: &[u8], trailer: &[u8]) -> Result<HmacSha256, VaultError> {
     let mut mac =
         <HmacSha256 as Mac>::new_from_slice(key.as_ref()).map_err(|_| VaultError::Storage)?;
-    mac.update(BACKUP_MAGIC);
+    mac.update(magic);
     mac.update(trailer);
     Ok(mac)
 }
@@ -8460,14 +8721,27 @@ fn copy_hashed(
 struct BackupWriter<W: Write> {
     inner: W,
     entries: Vec<BackupEntry>,
+    /// Format 2: videos left out.
+    left_out: bool,
 }
 
 impl<W: Write> BackupWriter<W> {
-    fn new(mut inner: W) -> Result<Self, VaultError> {
-        inner.write_all(BACKUP_MAGIC)?;
+    #[cfg(test)]
+    fn new(inner: W) -> Result<Self, VaultError> {
+        Self::with_format(inner, false)
+    }
+
+    fn with_format(mut inner: W, left_out: bool) -> Result<Self, VaultError> {
+        if left_out {
+            inner.write_all(BACKUP_MAGIC_LEFT_OUT)?;
+            inner.write_all(b"\n")?;
+        } else {
+            inner.write_all(BACKUP_MAGIC)?;
+        }
         Ok(Self {
             inner,
             entries: Vec::new(),
+            left_out,
         })
     }
 
@@ -8501,16 +8775,23 @@ impl<W: Write> BackupWriter<W> {
         vault_id: Uuid,
         manifest_generation: u64,
         now_ms: u64,
+        omitted: Vec<Uuid>,
     ) -> Result<(), VaultError> {
+        let (magic, format): (&[u8], u32) = if self.left_out {
+            (b"MYCARLOS-BACKUP2\n", BACKUP_FORMAT_LEFT_OUT)
+        } else {
+            (BACKUP_MAGIC, BACKUP_FORMAT)
+        };
         let trailer = serde_json::to_vec(&BackupTrailer {
-            format: BACKUP_FORMAT,
+            format,
             vault_id,
             manifest_generation,
             created_at_ms: now_ms,
             entries: self.entries,
+            omitted,
         })
         .map_err(|_| VaultError::Storage)?;
-        let tag = backup_tag(&*backup_key(vault_id, master_key)?, &trailer)?
+        let tag = backup_tag(&*backup_key(vault_id, master_key)?, magic, &trailer)?
             .finalize()
             .into_bytes();
         let length = u32::try_from(trailer.len()).map_err(|_| VaultError::Storage)?;
@@ -8528,6 +8809,9 @@ impl<W: Write> BackupWriter<W> {
 struct BackupReader<R: Read> {
     inner: R,
     entries: Vec<BackupEntry>,
+    /// Format 2: videos left out, and which records (from the note).
+    left_out: bool,
+    omitted: Vec<Uuid>,
 }
 
 impl<R: Read> BackupReader<R> {
@@ -8536,12 +8820,25 @@ impl<R: Read> BackupReader<R> {
         inner
             .read_exact(&mut magic)
             .map_err(|_| VaultError::BackupUnreadable)?;
-        if &magic != BACKUP_MAGIC {
+        let left_out = if &magic == BACKUP_MAGIC {
+            false
+        } else if &magic == BACKUP_MAGIC_LEFT_OUT {
+            let mut newline = [0_u8; 1];
+            inner
+                .read_exact(&mut newline)
+                .map_err(|_| VaultError::BackupUnreadable)?;
+            if newline != *b"\n" {
+                return Err(VaultError::BackupUnreadable);
+            }
+            true
+        } else {
             return Err(VaultError::BackupUnreadable);
-        }
+        };
         Ok(Self {
             inner,
             entries: Vec::new(),
+            left_out,
+            omitted: Vec::new(),
         })
     }
 
@@ -8628,12 +8925,18 @@ impl<R: Read> BackupReader<R> {
         self.read_exact_or_unreadable(&mut trailer)?;
         let mut tag = [0_u8; 32];
         self.read_exact_or_unreadable(&mut tag)?;
-        backup_tag(&*backup_key(vault_id, master_key)?, &trailer)?
+        let (magic, format): (&[u8], u32) = if self.left_out {
+            (b"MYCARLOS-BACKUP2\n", BACKUP_FORMAT_LEFT_OUT)
+        } else {
+            (BACKUP_MAGIC, BACKUP_FORMAT)
+        };
+        backup_tag(&*backup_key(vault_id, master_key)?, magic, &trailer)?
             .verify_slice(&tag)
             .map_err(|_| VaultError::BackupUnreadable)?;
         let trailer: BackupTrailer =
             serde_json::from_slice(&trailer).map_err(|_| VaultError::BackupUnreadable)?;
-        if trailer.format != BACKUP_FORMAT
+        if trailer.format != format
+            || trailer.omitted != self.omitted
             || trailer.vault_id != vault_id
             || trailer.manifest_generation != manifest_generation
             || trailer.entries != self.entries
@@ -8696,6 +8999,9 @@ struct OpenedBackup<R: Read> {
     master_key: SecretKey,
     manifest: Manifest,
     manifest_data: Vec<u8>,
+    /// The records whose objects the backup leaves out (format 2), each marked
+    /// hidden-as-damaged in its manifest.
+    omitted: Vec<Uuid>,
 }
 
 /// Reads a backup's header and manifest: what inspecting it needs, and the
@@ -8716,12 +9022,36 @@ fn open_backup<R: Read>(
                 ManifestRefusal::Damaged => VaultError::BackupUnreadable,
             }
         })?;
+    // A format-2 backup says which records it leaves out, right after the
+    // manifest, so that this can be told before the rest is read. Each must be a
+    // record of the manifest that the manifest already marks as lacking its
+    // file, or the note is not believed.
+    let mut omitted = Vec::new();
+    if reader.left_out {
+        let note = reader.small_entry(BACKUP_KIND_LEFT_OUT, MAX_LEFT_OUT_NOTE_BYTES)?;
+        let note: LeftOutNote =
+            serde_json::from_slice(&note).map_err(|_| VaultError::BackupUnreadable)?;
+        let mut seen = HashSet::new();
+        for id in &note.omitted {
+            let record = manifest
+                .records
+                .iter()
+                .find(|record| record.id == *id)
+                .ok_or(VaultError::BackupUnreadable)?;
+            if object_required(record) || !seen.insert(*id) {
+                return Err(VaultError::BackupUnreadable);
+            }
+        }
+        omitted = note.omitted;
+        reader.omitted.clone_from(&omitted);
+    }
     Ok(OpenedBackup {
         reader,
         header,
         master_key,
         manifest,
         manifest_data,
+        omitted,
     })
 }
 
@@ -8883,6 +9213,22 @@ mod tests {
         let next_runtime = restarted.snapshot().unwrap();
         assert_ne!(next_runtime.capture.epoch, first.capture.epoch);
         assert_eq!(next_runtime.capture.sequence, 1);
+    }
+
+    #[test]
+    fn is_unlocked_now_never_waits_for_the_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert_eq!(store.is_unlocked_now(), Some(false));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        assert_eq!(store.is_unlocked_now(), Some(true));
+        {
+            // Another call (an unlock, a transfer) holds the session: no answer, and no wait.
+            let _held = store.session();
+            assert_eq!(store.is_unlocked_now(), None);
+        }
+        store.lock();
+        assert_eq!(store.is_unlocked_now(), Some(false));
     }
 
     #[test]
@@ -14418,7 +14764,13 @@ mod tests {
                 .unwrap();
         }
         backup
-            .finish(&master_key, header.vault_id, manifest.generation, 4)
+            .finish(
+                &master_key,
+                header.vault_id,
+                manifest.generation,
+                4,
+                Vec::new(),
+            )
             .unwrap();
         out
     }
@@ -17875,7 +18227,13 @@ mod tests {
                     .unwrap();
             }
             writer
-                .finish(&master_key, manifest.vault_id, manifest.generation, 5)
+                .finish(
+                    &master_key,
+                    manifest.vault_id,
+                    manifest.generation,
+                    5,
+                    Vec::new(),
+                )
                 .unwrap();
 
             let before = sorted_files(&root);
