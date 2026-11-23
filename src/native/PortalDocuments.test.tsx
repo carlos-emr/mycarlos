@@ -3106,7 +3106,9 @@ describe("Stop checking and remove all attempts (#160)", () => {
     );
     await user.click(
       screen.getByRole("button", {
-        name: "Remove all incomplete attempts (2)",
+        // The count is isolated for right-to-left text, so match the words and the count apart.
+        name: (name) =>
+          visibleText(name) === "Remove all incomplete attempts (2)",
       }),
     );
     const dialog = screen.getByRole("alertdialog");
