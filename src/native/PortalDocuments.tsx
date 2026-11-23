@@ -371,10 +371,6 @@ export function PortalDocuments({
       bridge.checkDocuments,
   );
   const links = snapshot.portalLinks ?? [];
-  // The link form is on the panel until a clinic is linked (an attempt left
-  // incomplete is not one). After that, the clinics come first and the form
-  // opens from "Link another clinic" (#145).
-  const linked = links.some((link) => !link.incomplete);
   // The library makes the page inert while the dialog is open. It is told in
   // the same event that opens or closes the dialog, so that the page is no
   // longer inert when the dialog hands focus back to its button.
@@ -531,6 +527,28 @@ export function PortalDocuments({
     busy: busy || connecting || working,
     onChange: said,
   });
+  // Only working links are listed: an attempt that never finished, or a
+  // device a check found removed from its portal account, is kept in the
+  // vault (#130) and listed only when the patient asks for earlier attempts.
+  const removedNow = (link: PortalLinkSummary) => {
+    const live = polling.live[link.id];
+    return (
+      waits?.isRemoved(link.id) === true ||
+      (live?.kind === "failed" &&
+        hasVaultErrorCode(live.error, "portal_device_removed"))
+    );
+  };
+  const workingLinks = links.filter(
+    (link) => !link.incomplete && !removedNow(link),
+  );
+  const earlierLinks = links.filter(
+    (link) => link.incomplete || removedNow(link),
+  );
+  // The link form is on the panel until a clinic is linked: an attempt left incomplete is not
+  // one, and neither is a device a check found removed from its portal (#293), which cannot
+  // work until it is connected again. After a working link, the clinics come first and the form
+  // opens from "Link another clinic" (#145).
+  const linked = workingLinks.length > 0;
   if (!available) return null;
   const terminal = (link: PortalLinkSummary) =>
     ["refused", "expired", "cancelled", "accepted"].includes(
@@ -1050,23 +1068,6 @@ export function PortalDocuments({
       </div>
     );
   };
-  // Only working links are listed: an attempt that never finished, or a
-  // device a check found removed from its portal account, is kept in the
-  // vault (#130) and listed only when the patient asks for earlier attempts.
-  const removedNow = (link: PortalLinkSummary) => {
-    const live = polling.live[link.id];
-    return (
-      waits?.isRemoved(link.id) === true ||
-      (live?.kind === "failed" &&
-        hasVaultErrorCode(live.error, "portal_device_removed"))
-    );
-  };
-  const workingLinks = links.filter(
-    (link) => !link.incomplete && !removedNow(link),
-  );
-  const earlierLinks = links.filter(
-    (link) => link.incomplete || removedNow(link),
-  );
   return (
     <section
       className="portal-documents"
