@@ -587,7 +587,7 @@ function ReadingDocument({
   // quote unmarked everywhere. While a new quote's boxes are on their way the previous quiet state
   // is kept (no flash of the text highlight beside the picture); if nothing could be placed the
   // text mark is drawn.
-  const pictureLoaded = current && loadedImage === shown.image;
+  const pictureLoaded = Boolean(current && loadedImage === shown.image);
   const wasQuiet = useRef(false);
   const boxesPending = Boolean(
     marked && placeKey && pageBoxes && boxes === null,
