@@ -12,9 +12,18 @@
 
 ## Privacy manifest (draft for Ben)
 
-`NSPrivacyTracking` false, no tracking domains, **no collected data types** (the app sends nothing off the phone
-today; this must change together with the Data safety answers if the portal, a push provider or cloud AI is
-switched on). Four required-reason API categories are declared, because the Rust standard library, the
+`NSPrivacyTracking` false, no tracking domains, and **one collected data type, declared**: Ben decided the
+clinic portal stays on iPhone, so the manifest says a **device identifier** (the device-made key id the
+clinic's portal keeps for the linked device) is collected, **linked to the user, not used for tracking**, for
+the purpose **App Functionality**. `scripts/check-ios-privacy.mjs` pins exactly that (`COLLECTED_DATA`): a
+second type, another purpose, a changed linked or tracking flag, or dropping it is refused until the script,
+this file and the store answers (`mycarlos-store-forms-draft-20261124.md`) are changed together. The App
+Privacy label is therefore **no longer "Data Not Collected"**. Other things the portal sees (connection times,
+the internet address, delivery receipts, and the encrypted documents the clinic itself sends) are not
+declared separately here; whether they need entries (for example "Other User Content" or "Diagnostics")
+is a question for Ben and counsel, and the pinned list is where it would be added.
+
+Four required-reason API categories are declared, because the Rust standard library, the
 webview and the app's own disk-space check can reach them:
 
 | Category         | Reason                                    | Why                                                                     |
@@ -79,10 +88,9 @@ and say what it holds.)
 
 ## Decisions for Ben (not changed here)
 
-1. **Portal on iOS versus "Data Not Collected".** The privacy manifest and the store answers say nothing is
-   collected because the portal client is off on Android and the iOS state is to be confirmed. If the portal is
-   switched on for iOS, the clinic receives device identifiers and delivery metadata, and the answers in
-   `mycarlos-store-forms-draft-20261124.md` change together with `NSPrivacyCollectedDataTypes`.
+1. **Portal on iOS: decided, declared.** Ben decided to keep the clinic portal on iPhone and declare it (see the
+   privacy manifest above). Still to confirm with counsel: whether the other things the portal sees need
+   entries.
 2. **If the backup flag cannot be set, should the vault still be created?** Today a failure is not fatal (the
    vault is ciphertext either way) and the app goes on. Refusing to create a vault when the flag fails would
    keep health data from ever reaching iCloud, at the price of an app that cannot start on a device where the

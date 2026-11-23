@@ -44,12 +44,85 @@ export const REQUIRED_APIS = {
 
 const stripComments = (text) => text.replace(/<!--[\s\S]*?-->/g, "");
 
-/** The value following `<key>name</key>` as a raw XML fragment, or null. */
+/** The value following `<key>name</key>` as a raw XML fragment (arrays kept whole, nesting counted), or null. */
 function valueOf(text, name) {
-  const found = new RegExp(
-    `<key>${name}</key>\\s*(<true/>|<false/>|<array/>|<array>[\\s\\S]*?</array>|<string>[^<]*</string>)`,
-  ).exec(text);
-  return found ? found[1] : null;
+  const key = new RegExp(`<key>${name}</key>\\s*`).exec(text);
+  if (!key) return null;
+  const rest = text.slice(key.index + key[0].length);
+  const simple = /^(<true\/>|<false\/>|<array\/>|<string>[^<]*<\/string>)/.exec(
+    rest,
+  );
+  if (simple) return simple[1];
+  if (!rest.startsWith("<array>")) return null;
+  let depth = 0;
+  for (const tag of rest.matchAll(/<array>|<\/array>|<array\/>/g)) {
+    if (tag[0] === "<array>") depth++;
+    else if (tag[0] === "</array>" && --depth === 0) {
+      return rest.slice(0, tag.index + tag[0].length);
+    }
+  }
+  return null;
+}
+
+/**
+ * What the app collects, as declared: ONE type, a device identifier the clinic portal keeps,
+ * linked to the user, not used for tracking, for App Functionality (Ben's decision: the portal
+ * stays on iPhone and is declared). Anything else added or dropped must change this together
+ * with the store answers (mycarlos-store-forms-draft) and IOS_RELEASE.md.
+ */
+export const COLLECTED_DATA = {
+  type: "NSPrivacyCollectedDataTypeDeviceID",
+  linked: "<true/>",
+  tracking: "<false/>",
+  purposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
+};
+
+function checkCollectedData(text) {
+  const block = valueOf(text, "NSPrivacyCollectedDataTypes");
+  if (block === null || block === "<array/>") {
+    return [
+      "NSPrivacyCollectedDataTypes must declare the device identifier the clinic portal keeps",
+    ];
+  }
+  const entries = [...block.matchAll(/<dict>([\s\S]*?)<\/dict>/g)].map(
+    (entry) => entry[1],
+  );
+  if (entries.length !== 1) {
+    return [
+      `NSPrivacyCollectedDataTypes must hold exactly one type (${COLLECTED_DATA.type}), found ${entries.length}`,
+    ];
+  }
+  const [entry] = entries;
+  const problems = [];
+  if (
+    valueOf(entry, "NSPrivacyCollectedDataType") !==
+    `<string>${COLLECTED_DATA.type}</string>`
+  ) {
+    problems.push(`the collected data type must be ${COLLECTED_DATA.type}`);
+  }
+  if (
+    valueOf(entry, "NSPrivacyCollectedDataTypeLinked") !== COLLECTED_DATA.linked
+  ) {
+    problems.push(
+      "the collected device identifier is linked to the user: NSPrivacyCollectedDataTypeLinked must be true",
+    );
+  }
+  if (
+    valueOf(entry, "NSPrivacyCollectedDataTypeTracking") !==
+    COLLECTED_DATA.tracking
+  ) {
+    problems.push("NSPrivacyCollectedDataTypeTracking must be false");
+  }
+  const purposes = valueOf(entry, "NSPrivacyCollectedDataTypePurposes") ?? "";
+  const listed = [...purposes.matchAll(/<string>([^<]*)<\/string>/g)].map(
+    (m) => m[1],
+  );
+  if (JSON.stringify(listed) !== JSON.stringify(COLLECTED_DATA.purposes)) {
+    problems.push(
+      `the purposes must be exactly ${COLLECTED_DATA.purposes.join(", ")}`,
+    );
+  }
+  return problems;
 }
 
 /** Problems with a PrivacyInfo.xcprivacy text (empty when it is as pinned). */
@@ -65,11 +138,7 @@ export function checkManifest(source) {
   if (valueOf(text, "NSPrivacyTrackingDomains") !== "<array/>") {
     problems.push("NSPrivacyTrackingDomains must be empty");
   }
-  if (valueOf(text, "NSPrivacyCollectedDataTypes") !== "<array/>") {
-    problems.push(
-      "NSPrivacyCollectedDataTypes must be empty while no data leaves the phone (change it with the Data safety answers)",
-    );
-  }
+  problems.push(...checkCollectedData(text));
   const declared = new Map();
   for (const entry of text.matchAll(
     /<key>NSPrivacyAccessedAPIType<\/key>\s*<string>([^<]*)<\/string>\s*<key>NSPrivacyAccessedAPITypeReasons<\/key>\s*<array>([\s\S]*?)<\/array>/g,

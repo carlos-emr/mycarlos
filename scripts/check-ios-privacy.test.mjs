@@ -18,7 +18,7 @@ test("the repository's manifest and Info.ios.plist are as pinned", async () => {
   assert.deepEqual(await run([]), []);
 });
 
-test("the manifest declares no tracking and no collected data", async () => {
+test("the manifest declares no tracking and only the device identifier the portal keeps", async () => {
   const text = await manifest();
   assert.deepEqual(checkManifest(text), []);
   assert.match(
@@ -39,15 +39,59 @@ test("the manifest declares no tracking and no collected data", async () => {
     ).join(),
     /TrackingDomains must be empty/,
   );
+  // Dropping, adding or changing the collected type is refused until the pinned answer is changed too.
+  const collected =
+    /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array>[\s\S]*?<\/array>\s*(?=<key>NSPrivacyAccessedAPITypes)/;
   assert.match(
     checkManifest(
       text.replace(
-        "<key>NSPrivacyCollectedDataTypes</key>\n\t<array/>",
-        "<key>NSPrivacyCollectedDataTypes</key>\n\t<array><dict/></array>",
+        collected,
+        "<key>NSPrivacyCollectedDataTypes</key>\n\t<array/>\n\t",
       ),
     ).join(),
-    /CollectedDataTypes must be empty/,
+    /must declare the device identifier/,
   );
+  assert.match(
+    checkManifest(
+      text.replace(
+        "NSPrivacyCollectedDataTypeDeviceID",
+        "NSPrivacyCollectedDataTypeHealth",
+      ),
+    ).join(),
+    /must be NSPrivacyCollectedDataTypeDeviceID/,
+  );
+  assert.match(
+    checkManifest(
+      text.replace(
+        "<key>NSPrivacyCollectedDataTypeLinked</key>\n\t\t\t<true/>",
+        "<key>NSPrivacyCollectedDataTypeLinked</key>\n\t\t\t<false/>",
+      ),
+    ).join(),
+    /Linked must be true/,
+  );
+  assert.match(
+    checkManifest(
+      text.replace(
+        "<key>NSPrivacyCollectedDataTypeTracking</key>\n\t\t\t<false/>",
+        "<key>NSPrivacyCollectedDataTypeTracking</key>\n\t\t\t<true/>",
+      ),
+    ).join(),
+    /DataTypeTracking must be false/,
+  );
+  assert.match(
+    checkManifest(
+      text.replace(
+        "NSPrivacyCollectedDataTypePurposeAppFunctionality",
+        "NSPrivacyCollectedDataTypePurposeAnalytics",
+      ),
+    ).join(),
+    /purposes must be exactly/,
+  );
+  const second = text.replace(
+    "</array>\n\t<key>NSPrivacyAccessedAPITypes</key>",
+    "<dict><key>NSPrivacyCollectedDataType</key><string>NSPrivacyCollectedDataTypeEmailAddress</string></dict></array>\n\t<key>NSPrivacyAccessedAPITypes</key>",
+  );
+  assert.match(checkManifest(second).join(), /exactly one type/);
 });
 
 test("every required-reason category needs a reason Apple lists for it", async () => {

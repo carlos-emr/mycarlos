@@ -2,8 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   myCarlos privacy manifest (#422). DRAFT FOR BEN: every entry is explained in IOS_RELEASE.md.
-  The app has no tracking and collects nothing that leaves the phone today, so the tracking
-  and collected-data lists are empty. The four categories below are the "required reason"
+  The app has no tracking. Ben decided the clinic portal stays on iPhone and is declared: the
+  one collected type is a device identifier (the device-made key id the clinic's portal keeps),
+  linked to the user, not used for tracking, for App Functionality. The four categories below are the "required reason"
   APIs the Rust standard library, the webview and the app's own disk-space check can reach;
   Xcode's Privacy Report on the first archive is the authority and may add or drop entries.
 -->
@@ -14,7 +15,20 @@
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeDeviceID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>
