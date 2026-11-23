@@ -2365,3 +2365,5 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+native-error-49 = W tej odblokowanej sesji wypróbowano już maksymalną liczbę haseł dla pliku. Zablokuj myCarlos i odblokuj go ponownie, aby próbować dalej, albo pozwól, by myCarlos utworzył klucz dla pliku.

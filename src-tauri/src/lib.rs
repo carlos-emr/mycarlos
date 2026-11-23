@@ -479,6 +479,12 @@ impl From<VaultError> for PublicText {
                 code: "weak_passphrase",
                 message_key: "native.error.20",
             },
+            // The handover dialog says it on this code: lock and unlock to keep trying, or use
+            // the generated key (#360).
+            VaultError::PackagePassphraseTriesUsed => Self {
+                code: "package_passphrase_tries_used",
+                message_key: "native.error.49",
+            },
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
                 message_key: "native.error.21",
@@ -9222,6 +9228,7 @@ mod native_localization_tests {
             VaultError::AiResultsFull,
             VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
+            VaultError::PackagePassphraseTriesUsed,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
             VaultError::PdfLocked,

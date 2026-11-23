@@ -24,7 +24,7 @@ use std::{
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc, Mutex, MutexGuard, PoisonError,
     },
     time::{Duration, Instant},
@@ -355,6 +355,12 @@ pub enum VaultError {
     AiSummaryTooLarge,
     #[error("the passphrase is too easy to guess")]
     WeakPassphrase,
+    /// Typed package passphrases are checked against the vault's own (so a file never opens
+    /// with the key to all the records), which makes the check a way to test guesses of the
+    /// vault's passphrase without the unlock screen's throttle. Only
+    /// `PACKAGE_PASSPHRASE_TRIES` are checked in one unlocked session (#360).
+    #[error("too many package passphrases were tried in this unlocked session")]
+    PackagePassphraseTriesUsed,
     #[error("too many files were selected for one import")]
     ImportBatchLimit,
     #[error("a file to import is not a PDF")]
@@ -1131,6 +1137,9 @@ pub struct VaultStore {
     gone_links: Mutex<std::collections::HashSet<Uuid>>,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
+    /// Typed package passphrases checked in this unlocked session (#360): in memory, back to
+    /// nothing at every unlock and lock. See `profile_export::PACKAGE_PASSPHRASE_TRIES`.
+    package_passphrase_tries: AtomicU32,
     /// How the last session of this run of the app ended, for the next
     /// unlock's history entry (#71). Kept in memory only: nothing is written
     /// when the vault locks, so a lock never waits on, or fails over, a write.
@@ -1162,6 +1171,7 @@ impl VaultStore {
             gone_links: Mutex::new(std::collections::HashSet::new()),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
+            package_passphrase_tries: AtomicU32::new(0),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
             push_inbox: Mutex::new(Default::default()),
@@ -1827,6 +1837,8 @@ impl VaultStore {
     fn open_session(&self, guard: &mut Option<UnlockedVault>, vault: UnlockedVault) {
         self.invalidate_collection_cache();
         self.portal_session.fetch_add(1, Ordering::AcqRel);
+        // A new session starts with its tries unspent.
+        self.package_passphrase_tries.store(0, Ordering::Release);
         *guard = Some(vault);
         self.idle.arm(Instant::now());
     }
@@ -1860,6 +1872,7 @@ impl VaultStore {
             if due {
                 self.note_session_end(&guard, by);
                 *guard = None;
+                self.package_passphrase_tries.store(0, Ordering::Release);
                 self.idle.disarm();
             }
             due

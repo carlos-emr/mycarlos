@@ -2284,3 +2284,5 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+native-error-49 = This unlocked session has already tried the most passphrases it can for a file. Lock myCarlos and unlock it again to keep trying, or let myCarlos make a key for the file instead.

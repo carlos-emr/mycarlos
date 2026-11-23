@@ -2117,3 +2117,5 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+
+native-error-49 = 此次解鎖期間已嘗試了檔案口令的最多次數。請鎖定 myCarlos 後重新解鎖以繼續嘗試，或改由 myCarlos 為檔案產生金鑰。
