@@ -49,8 +49,13 @@ export const CHECK_DELAYS_MS = [10_000, 20_000, 40_000, 60_000] as const;
 /** A portal that asked to wait without saying how long is left this long. */
 export const DEFAULT_WAIT_MS = 60_000;
 /** Automatic checks stop this long after they began (the view opened, or the
- * patient last acted): a request lasts about 10 minutes. */
+ * patient last acted), unless the portal says the request is still open past
+ * it: a v1 request lasts about 10 minutes, a v2 staff request up to a day. */
 export const CHECK_WINDOW_MS = 15 * 60_000;
+/** Past that window, a request the portal still says is open is checked this
+ * seldom (not at the 60 s ceiling: it may stay open for hours), for as long
+ * as it has time left by the portal's clock and the page is on screen. */
+export const OPEN_REQUEST_DELAY_MS = 5 * 60_000;
 /** After the request's time runs out by the portal's clock, the portal is
  * asked again this soon, for its own word on it. */
 export const AFTER_EXPIRY_MS = 2_000;
@@ -339,14 +344,35 @@ export function useApprovalPolling({
     let timer: number | undefined;
     // No timer runs past the end of this run of checks: when the next check
     // would come after it (the portal asked for a long wait), checks stop.
+    // The longest time any request still has by the portal's clock (0 when
+    // none says: the plain window applies to it).
+    const openLeft = () =>
+      Math.max(
+        0,
+        ...linksRef.current
+          .filter((link) => checked(link, liveRef.current[link.id]))
+          .map((link) => timeLeft(liveRef.current[link.id], steadyNow()) ?? 0),
+      );
     const later = (delay: number) => {
       // Not before the soonest portal that has not asked to wait longer.
       const due = linksRef.current
         .filter((link) => checked(link, liveRef.current[link.id]))
         .map((link) => waitsRef.current.notBefore(link.portalBase));
       const soonest = due.length ? Math.min(...due) : 0;
-      const wait = Math.max(delay, soonest - steadyNow());
-      if (steadyNow() + wait - windowStartRef.current >= CHECK_WINDOW_MS) {
+      // Past the window, a request still open is checked slowly.
+      const open = openLeft();
+      const pastWindow =
+        steadyNow() - windowStartRef.current >= CHECK_WINDOW_MS;
+      const wait = Math.max(
+        pastWindow && open > 0 ? Math.max(delay, OPEN_REQUEST_DELAY_MS) : delay,
+        soonest - steadyNow(),
+      );
+      // Checks end with the window, unless the next one still falls before
+      // the request's own end (the first check after it is `AFTER_EXPIRY_MS`).
+      if (
+        steadyNow() + wait - windowStartRef.current >= CHECK_WINDOW_MS &&
+        !(open > 0 && wait <= open + AFTER_EXPIRY_MS)
+      ) {
         setStopped(true);
         return;
       }
@@ -357,7 +383,10 @@ export function useApprovalPolling({
     };
     const tick = async () => {
       if (cancelled) return;
-      if (steadyNow() - windowStartRef.current >= CHECK_WINDOW_MS) {
+      if (
+        steadyNow() - windowStartRef.current >= CHECK_WINDOW_MS &&
+        openLeft() <= 0
+      ) {
         setStopped(true);
         return;
       }
