@@ -2340,3 +2340,11 @@ hiddenPeople-arrived-leave = 留在“与我分享”
 hiddenPeople-arrived-list = 送达的文档
 
 portal-arrivedForHidden = 来自 { $clinic } 的 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。
+
+hiddenPeople-damagedToo = 这还会隐藏已隐藏的人的 { $count } 份受损文档。为了不显示谁被隐藏，这里不列出它们。
+
+interface-history-aboutHiddenPeople = 有 { $count } 条与已隐藏的人有关的记录未显示。它们已保留，恢复这些人后会再次显示。
+
+interface-history-how-personHidden = 该人被隐藏期间归档到“与我分享”
+
+portal-arrivedForHiddenNoClinic = 有 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。

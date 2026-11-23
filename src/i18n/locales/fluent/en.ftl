@@ -2547,3 +2547,23 @@ portal-arrivedForHidden =
         [one] A document arrived from { $clinic } and is in Shared with me. The person it is for is hidden.
        *[other] { $count } documents arrived from { $clinic } and are in Shared with me. The people they are for are hidden.
     }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] This also hides { $count } damaged document of a hidden person. It is not listed here, so that who is hidden is not shown.
+       *[other] This also hides { $count } damaged documents of hidden people. They are not listed here, so that who is hidden is not shown.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } entry about a hidden person is not shown. It is kept, and shown again when the person is restored.
+       *[other] { $count } entries about hidden people are not shown. They are kept, and shown again when the people are restored.
+    }
+
+interface-history-how-personHidden = Filed in Shared with me while the person was hidden
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] A document arrived and is in Shared with me. The person it is for is hidden.
+       *[other] { $count } documents arrived and are in Shared with me. The people they are for are hidden.
+    }

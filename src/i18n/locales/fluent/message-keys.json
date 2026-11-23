@@ -1164,5 +1164,9 @@
   "hiddenPeople.arrived.move",
   "hiddenPeople.arrived.leave",
   "hiddenPeople.arrived.list",
-  "portal.arrivedForHidden"
+  "portal.arrivedForHidden",
+  "hiddenPeople.damagedToo",
+  "interface.history.aboutHiddenPeople",
+  "interface.history.how.personHidden",
+  "portal.arrivedForHiddenNoClinic"
 ]

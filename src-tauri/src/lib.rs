@@ -670,6 +670,9 @@ impl Drop for CreateVaultRequest {
 #[derive(Deserialize)]
 struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
+    /// How many damaged documents of hidden people the patient was told of (#360).
+    #[serde(default)]
+    hidden_people_documents: usize,
 }
 
 #[derive(Deserialize)]
@@ -2640,6 +2643,9 @@ struct AuditHistory {
     checked_from_ms: Option<u64>,
     /// Every event the manifest pins is shown, even when part of the storage is damaged.
     every_event_shown: bool,
+    /// How many entries were left out for being about a hidden person (#360): counted, never
+    /// named, and shown again once the person is restored.
+    about_hidden_people: usize,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2658,6 +2664,7 @@ impl From<vault::HistoryView> for AuditHistory {
             checked_until_ms,
             checked_from_ms,
             every_event_shown: view.every_event_shown,
+            about_hidden_people: view.about_hidden_people,
         }
     }
 }
@@ -2962,7 +2969,7 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
 async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
-    audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
+    audit_history_result(run_blocking(store.inner(), VaultStore::history_view_for_display).await)
 }
 
 /// What Security receives for a history read: the view, or `history_unverified` when the read
@@ -5685,7 +5692,11 @@ async fn vault_hide_unavailable_records(
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     run_blocking(store.inner(), move |store| {
-        store.hide_unavailable_records(&request.confirmed, now_ms())
+        store.hide_unavailable_records_covering(
+            &request.confirmed,
+            request.hidden_people_documents,
+            now_ms(),
+        )
     })
     .await
     .map_err(|error| match error.code {
@@ -5867,11 +5878,15 @@ async fn vault_hide_profile(
     picks: State<'_, Arc<PendingPicks>>,
     request: ProfileIdRequest,
 ) -> CommandResult<()> {
-    for record_id in store.profile_record_ids(request.profile_id) {
-        picks.forget_texts_for(record_id);
-    }
+    let picks = Arc::clone(picks.inner());
     run_blocking(store.inner(), move |store| {
-        store.hide_profile(request.profile_id, now_ms())
+        // Forgotten only once the person is hidden: a refused hide changes nothing.
+        let ids = store.profile_record_ids(request.profile_id);
+        store.hide_profile(request.profile_id, now_ms())?;
+        for record_id in ids {
+            picks.forget_texts_for(record_id);
+        }
+        Ok(())
     })
     .await
 }
@@ -9833,6 +9848,7 @@ mod audit_history_ipc_tests {
                 later,
                 complete,
                 every_event_shown: complete,
+                about_hidden_people: 0,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -9908,6 +9924,7 @@ mod audit_history_ipc_tests {
         assert_eq!(
             top,
             [
+                "aboutHiddenPeople",
                 "checkedFromMs",
                 "checkedUntilMs",
                 "complete",
@@ -9968,7 +9985,8 @@ mod audit_history_ipc_tests {
                 "complete": false,
                 "checkedUntilMs": null,
                 "checkedFromMs": null,
-                "everyEventShown": false
+                "everyEventShown": false,
+                "aboutHiddenPeople": 0
             })
         );
         store.lock();

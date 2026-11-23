@@ -1366,7 +1366,9 @@ export function VaultLibrary({
     (record) => !record.available && record.hidden?.reason !== "damaged",
   );
   const damagedIds = damaged.map((record) => record.id);
-  const damagedCount = damagedIds.length;
+  // Damaged documents of hidden people are in no list: counted, never named (#360).
+  const hiddenPeopleDamaged = snapshot.hiddenPeopleDamaged ?? 0;
+  const damagedCount = damagedIds.length + hiddenPeopleDamaged;
   const profileName = (id: string) =>
     id === sharedProfileId
       ? translateNow("interface.LibrarySidebar.sharedWithMe")
@@ -1378,7 +1380,10 @@ export function VaultLibrary({
       let removed: string[];
       try {
         // The vault removes only what this screen showed as damaged.
-        removed = await bridge.hideUnavailableRecords(damagedIds);
+        removed = await bridge.hideUnavailableRecords(
+          damagedIds,
+          hiddenPeopleDamaged,
+        );
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -3066,6 +3071,13 @@ export function VaultLibrary({
                 </ul>
               }
             >
+              {hiddenPeopleDamaged > 0 && (
+                <p>
+                  {translateNow("hiddenPeople.damagedToo", {
+                    count: hiddenPeopleDamaged,
+                  })}
+                </p>
+              )}
               <p>
                 {translateNow(
                   "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis",

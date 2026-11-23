@@ -332,3 +332,82 @@ test("A check that finds documents for a hidden person says they are in Shared w
     en("portal.arrivedForHidden", { clinic: "FAKE Other Clinic", count: 1 }),
   );
 });
+
+test("A hidden person's lost file is counted in the confirmation to hide damaged documents, and not named", async ({
+  page,
+}) => {
+  // The vault's own person is hidden, and one of their files is missing: the vault is
+  // read-only and the document is in no list.
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    missingFiles: ["FAKE Letter.pdf"],
+    hiddenPeople: ["FAKE Patient"],
+    people: [{ displayName: CHILD }],
+  });
+  await page.goto("/");
+  await expect(sidebar(page)).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: en("interface.VaultLibrary.hideDamagedDocuments"),
+      exact: true,
+    })
+    .click();
+  const confirm = page.getByRole("alertdialog", {
+    name: en("interface.hideDamaged.title", { count: 1 }),
+    exact: true,
+  });
+  await expect(confirm).toContainText(
+    en("hiddenPeople.damagedToo", { count: 1 }),
+  );
+  // The document is not named.
+  await expect(confirm).not.toContainText("FAKE Letter.pdf");
+  await confirm
+    .getByRole("button", {
+      name: en("interface.RecordDetails.hide"),
+      exact: true,
+    })
+    .click();
+  expect(await fakeCalls(page, "vault_hide_unavailable_records")).toEqual([
+    { request: { confirmed: [], hiddenPeopleDocuments: 1 } },
+  ]);
+  await expect(
+    page.getByRole("button", {
+      name: en("interface.VaultLibrary.hideDamagedDocuments"),
+      exact: true,
+    }),
+  ).toHaveCount(0);
+});
+
+test("Security's history counts the entries about a hidden person and names no one", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    people: [{ displayName: CHILD }],
+  });
+  await page.goto("/");
+  await expect(sidebar(page)).toBeVisible();
+  await openSecurity(page);
+  await line(page, CHILD)
+    .getByRole("button", {
+      name: en("hiddenPeople.hideFor", { name: CHILD }),
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", {
+      name: en("hiddenPeople.confirm.hide", { name: CHILD }),
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("button", { name: en("interface.history.title"), exact: true })
+    .click();
+  await expect(
+    page.getByText(en("interface.history.aboutHiddenPeople", { count: 1 }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator("ol.audit-history-list")).not.toContainText(CHILD);
+});

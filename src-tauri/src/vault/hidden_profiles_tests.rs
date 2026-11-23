@@ -562,3 +562,98 @@ fn a_process_killed_while_hiding_or_restoring_leaves_the_person_fully_visible_or
         assert!(v.store.verify_for_backup().is_ok(), "{boundary}");
     }
 }
+
+// --- A hidden person's lost file, the history, and the notice (#411 review) ----------------
+
+#[allow(clippy::disallowed_methods)] // A simulated lost file, in a test vault.
+/// Loses the file of one of `person`'s documents and reopens the vault: it opens read-only,
+/// with that document unavailable.
+fn lose_a_file_of(v: &Vault, person: Uuid) -> (VaultStore, Uuid) {
+    let (root, record_id, object_name) = {
+        let guard = v.store.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        let record = manifest
+            .records
+            .iter()
+            .find(|r| r.profile_id == person && r.hidden.is_none())
+            .unwrap();
+        (v.store.root.clone(), record.id, record.object_name.clone())
+    };
+    v.store.lock();
+    std::fs::remove_file(root.join("objects").join(object_name)).unwrap();
+    let reopened = VaultStore::new(root);
+    reopened.unlock(PASSWORD).unwrap();
+    (reopened, record_id)
+}
+
+#[test]
+fn a_hidden_persons_lost_file_does_not_trap_the_vault_read_only() {
+    let v = vault();
+    v.store.hide_profile(v.child, 100).unwrap();
+    let (store, lost) = lose_a_file_of(&v, v.child);
+    let snapshot = store.snapshot().unwrap();
+    assert_eq!(snapshot.recovery, Some(RecoveryReason::LostObjects));
+    // The person is in no list, so their damaged document is counted, never named.
+    assert_eq!(snapshot.hidden_people_damaged, 1);
+    assert!(snapshot.records.iter().all(|r| r.profile_id != v.child));
+    // A confirmation that does not cover the hidden person's document changes nothing, however
+    // many times it is repeated (it used to fail for ever).
+    for _ in 0..2 {
+        assert!(matches!(
+            store.hide_unavailable_records(&[], 1),
+            Err(VaultError::RemovalChanged)
+        ));
+    }
+    // Restoring is refused too while the vault is read-only: a commit needs every file the
+    // manifest names, so the way out is the confirmation below.
+    assert!(matches!(
+        store.restore_profile(v.child),
+        Err(VaultError::RecoveryMode)
+    ));
+    // One that does is the way out: the document is hidden as damaged, the vault is writable.
+    let removed = store.hide_unavailable_records_covering(&[], 1, 2).unwrap();
+    assert_eq!(removed, vec![lost]);
+    let after = store.snapshot().unwrap();
+    assert_eq!(after.recovery, None);
+    assert_eq!(after.hidden_people_damaged, 0);
+    // The person is still hidden, and can be restored in the ordinary way.
+    assert_eq!(after.hidden_profiles.len(), 1);
+    store.restore_profile(v.child).unwrap();
+    assert!(!store
+        .snapshot()
+        .unwrap()
+        .records
+        .iter()
+        .find(|r| r.id == lost)
+        .unwrap()
+        .hidden
+        .is_none());
+}
+
+#[test]
+fn security_history_counts_entries_about_a_hidden_person_and_shows_them_again_on_restore() {
+    let v = vault();
+    let all = v.store.history_view().unwrap().entries.len();
+    v.store.hide_profile(v.child, 100).unwrap();
+    // The vault keeps everything (the hide entry included); the screen's view leaves out what
+    // is about the child: their profile, folder and documents' entries, and the hide itself.
+    let kept = v.store.history_view().unwrap();
+    assert_eq!(kept.entries.len(), all + 1);
+    assert_eq!(kept.about_hidden_people, 0);
+    let shown = v.store.history_view_for_display().unwrap();
+    assert!(shown.about_hidden_people > 0);
+    assert_eq!(
+        shown.entries.len() + shown.about_hidden_people,
+        kept.entries.len()
+    );
+    assert!(shown.entries.iter().all(|e| e.profile_id != Some(v.child)));
+    assert!(shown
+        .entries
+        .iter()
+        .all(|e| e.name.as_deref() != Some("FAKE Child")
+            && e.name.as_deref() != Some("FAKE Child A.pdf")));
+    v.store.restore_profile(v.child).unwrap();
+    let again = v.store.history_view_for_display().unwrap();
+    assert_eq!(again.about_hidden_people, 0);
+    assert_eq!(again.entries.len(), all + 2);
+}

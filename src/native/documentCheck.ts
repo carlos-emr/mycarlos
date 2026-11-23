@@ -73,7 +73,10 @@ const hiddenArrivalLines = ({ forHidden }: DocumentCheck) => {
   for (const clinic of forHidden ?? [])
     perClinic.set(clinic, (perClinic.get(clinic) ?? 0) + 1);
   return [...perClinic].map(([clinic, count]) =>
-    t("portal.arrivedForHidden", { clinic, count }),
+    // A link with no clinic name yet is said without one, never as an empty name.
+    clinic
+      ? t("portal.arrivedForHidden", { clinic, count })
+      : t("portal.arrivedForHiddenNoClinic", { count }),
   );
 };
 

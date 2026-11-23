@@ -1166,6 +1166,10 @@ export const MESSAGE_KEYS = [
   "hiddenPeople.arrived.leave",
   "hiddenPeople.arrived.list",
   "portal.arrivedForHidden",
+  "hiddenPeople.damagedToo",
+  "interface.history.aboutHiddenPeople",
+  "interface.history.how.personHidden",
+  "portal.arrivedForHiddenNoClinic",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2535,6 +2539,10 @@ const FLUENT_IDS_BY_KEY = {
   "hiddenPeople.arrived.leave": "hiddenPeople-arrived-leave",
   "hiddenPeople.arrived.list": "hiddenPeople-arrived-list",
   "portal.arrivedForHidden": "portal-arrivedForHidden",
+  "hiddenPeople.damagedToo": "hiddenPeople-damagedToo",
+  "interface.history.aboutHiddenPeople": "interface-history-aboutHiddenPeople",
+  "interface.history.how.personHidden": "interface-history-how-personHidden",
+  "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3822,6 +3830,10 @@ export interface MessageArgsByKey {
   "hiddenPeople.arrived.leave": undefined;
   "hiddenPeople.arrived.list": undefined;
   "portal.arrivedForHidden": { clinic: FluentArgument; count: FluentArgument };
+  "hiddenPeople.damagedToo": { count: FluentArgument };
+  "interface.history.aboutHiddenPeople": { count: FluentArgument };
+  "interface.history.how.personHidden": undefined;
+  "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

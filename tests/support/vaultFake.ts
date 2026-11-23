@@ -239,6 +239,8 @@ export interface FakeVaultSetup {
   drawnPages?: { top: number; lines: string[] }[];
   /** vault_page_boxes answers no box, for this reason (#292). */
   boxesAbsent?: string;
+  /** People (by display name) who are hidden when the vault opens (#360). */
+  hiddenPeople?: string[];
 }
 
 /** The id of the n-th extra person (`people` in the setup), counting from 1. */
@@ -630,6 +632,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               : {}),
           });
         }
+        for (const profile of snapshot.profiles)
+          if ((setup.hiddenPeople ?? []).includes(profile.displayName))
+            profile.hidden = { atMs: Date.UTC(2026, 9, 2, 12) };
         const history: HistoryEntry[] = [
           {
             seq: 1,
@@ -711,6 +716,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           profiles: whole.profiles
             .filter((p) => !p.hidden)
             .map(({ hidden: _hidden, ...rest }) => rest),
+          hiddenPeopleDamaged: whole.records.filter(
+            (r) =>
+              hiddenIds.has(r.profileId) &&
+              !r.available &&
+              r.hidden?.reason !== "damaged",
+          ).length,
           hiddenProfiles: whole.profiles
             .filter((p) => p.hidden)
             .map((p) => ({
@@ -1130,7 +1141,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           }
           case "vault_history": {
             refuseLocked();
-            const entries = copy(state.history);
+            const hiddenNames = new Set(
+              state.snapshot.profiles
+                .filter((p) => p.hidden)
+                .map((p) => p.displayName),
+            );
+            // Entries about a hidden person are counted, not shown (#360).
+            const all = copy(state.history);
+            const entries = all.filter(
+              (e) =>
+                !(
+                  (e.event === "profileHidden" ||
+                    e.event === "profileRestored") &&
+                  hiddenNames.has(e.name ?? "")
+                ),
+            );
             if (!setup.damagedHistory)
               return {
                 entries,
@@ -1138,6 +1163,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                 complete: true,
                 checkedUntilMs: null,
                 checkedFromMs: null,
+                aboutHiddenPeople: all.length - entries.length,
               };
             // The start is damaged: only what the pinned end proves shows.
             const later = entries.slice(1);
@@ -1834,18 +1860,27 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // --- Recovery mode: hide the documents whose files are missing ---
           case "vault_hide_unavailable_records": {
             refuseLocked();
-            const missing = snapshot.records
-              .filter((r) => !r.available && r.hidden?.reason !== "damaged")
+            const hiddenIds = new Set(
+              snapshot.profiles.filter((p) => p.hidden).map((p) => p.id),
+            );
+            const lost = snapshot.records.filter(
+              (r) => !r.available && r.hidden?.reason !== "damaged",
+            );
+            // What the patient was shown is the people who are shown; the damaged
+            // documents of hidden people are counted, not listed (#360).
+            const missing = lost
+              .filter((r) => !hiddenIds.has(r.profileId))
               .map((r) => r.id);
+            const lostOfHidden = lost.filter((r) => hiddenIds.has(r.profileId));
             const confirmed = [...(request.confirmed ?? [])].sort();
             if (
-              JSON.stringify(confirmed) !== JSON.stringify([...missing].sort())
+              JSON.stringify(confirmed) !==
+                JSON.stringify([...missing].sort()) ||
+              (request.hiddenPeopleDocuments ?? 0) !== lostOfHidden.length
             )
               throw refuse("list_changed", "native.error.38");
-            for (const record of snapshot.records) {
-              if (missing.includes(record.id))
-                record.hidden = { atMs: Date.now(), reason: "damaged" };
-            }
+            for (const record of lost)
+              record.hidden = { atMs: Date.now(), reason: "damaged" };
             snapshot.recovery = null;
             return missing;
           }
@@ -2009,6 +2044,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       backup: setup.backup ?? null,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
+      hiddenPeople: setup.hiddenPeople ?? [],
       received: setup.received ?? [],
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,

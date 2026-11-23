@@ -106,6 +106,7 @@ export const howLabels: Record<string, MessageKey> = {
   replaced: "interface.history.how.replaced",
   anonymizedText: "interface.history.how.anonymizedText",
   personFolder: "interface.history.how.personFolder",
+  personHidden: "interface.history.how.personHidden",
 };
 
 /** Dates keep the computer's own format, whatever language myCarlos uses (D130), as
@@ -319,6 +320,13 @@ export function AuditHistory({
               ? translateNow("interface.history.empty")
               : ""}
       </p>
+      {!error && view !== null && (view.aboutHiddenPeople ?? 0) > 0 && (
+        <p className="status-line">
+          {translateNow("interface.history.aboutHiddenPeople", {
+            count: view.aboutHiddenPeople ?? 0,
+          })}
+        </p>
+      )}
       {!error && view !== null && total > 0 && (
         <HistoryList
           entries={view.entries}
