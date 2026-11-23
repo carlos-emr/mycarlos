@@ -326,8 +326,16 @@ mod tests {
     fn another_vaults_key_is_not_this_syncs_to_judge_whether_wanted_or_not() {
         let (_temp, keys) = keys();
         keys.make_for(uuid(99), uuid(50), ORIGIN).unwrap();
+        let other_key = keys
+            .entries()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.vault_id == uuid(99))
+            .unwrap()
+            .key_id;
         // This vault has a link of its own; the other vault's key (for a link this vault does not
-        // have) is left alone, wanted or not.
+        // have) is left alone, wanted or not. Not wanted, this vault's own key for its link is
+        // given up (made when it was wanted), so only the other vault's key is checked.
         for wanted in [true, false] {
             let done = run(
                 &keys,
@@ -338,8 +346,8 @@ mod tests {
             );
             done.sync.unwrap();
             assert!(
-                done.given_up.is_empty(),
-                "no key of another vault is given up"
+                !done.given_up.contains(&other_key),
+                "no key of another vault is given up (wanted: {wanted})"
             );
             assert!(
                 keys.entries()
