@@ -56,7 +56,7 @@ comfort-continue = Continuer
 
 comfort-intro = Choisissez ce qui vous convient avant la configuration. Chaque choix s’applique tout de suite.
 
-comfort-later = Vous pouvez les modifier à tout moment dans { $settings } : { $textSize } sous { $preferences }, et { $autoLock } sous { $security }.
+comfort-later = Vous pouvez les modifier à tout moment dans { $settings } : { $textSize } et { $appearance } sous { $preferences }, et { $autoLock } sous { $security }.
 
 comfort-sample = Voici à quoi ressemble le texte dans myCarlos. Appuyez sur − ou + jusqu’à ce qu’il soit facile à lire.
 
@@ -2041,6 +2041,19 @@ ai-explain-ready = L’explication est prête.
 ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
+ai-error-memoryNumbers = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } Go de mémoire libre; il en reste { $free } Go. Fermez d’autres programmes, puis réessayez.
+ai-error-memoryUnknown = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } Go de mémoire libre, et cet ordinateur n’a pas pu dire combien il en reste. Fermez d’autres programmes, puis réessayez.
+ai-speed-title = Vitesse sur cet ordinateur
+ai-speed-note = Ceci exécute l’assistant IA une fois sur un court texte inventé et sollicite beaucoup le processeur pendant une minute ou deux. Rien n’est envoyé nulle part et rien de vos données n’est utilisé. Vous pouvez l’arrêter à tout moment.
+ai-speed-button = Vérifier la vitesse de cet ordinateur
+ai-speed-working = Vérification de la vitesse…
+ai-speed-cancel = Arrêter la vérification
+ai-speed-result = Mesuré sur cet ordinateur : l’assistant IA lit environ { $read } mots par seconde et en écrit environ { $write }.
+ai-speed-cancelled = La vérification a été arrêtée. Rien n’a été conservé.
+ai-speed-none = Pas encore vérifiée.
+ai-speed-failed = La vitesse n’a pas pu être mesurée. Réessayez.
+ai-speed-estimate = Sur cet ordinateur, cela peut prendre jusqu’à environ { $minutes } min.
+ai-speed-estimateLong = Sur cet ordinateur, un document aussi long peut ne pas être terminé dans le temps accordé à l’assistant IA.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
 
@@ -2206,6 +2219,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = autre forme { $n }
 
 interface-AnonymizePreview-pasteTitle = Remettre les renseignements
 
@@ -2327,3 +2341,62 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+interface-video-name = Vidéo, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Enregistrer une vidéo
+interface-RecordDialog-unavailable = L’enregistrement vidéo n’est pas disponible sur cet appareil.
+interface-RecordDialog-why = Pourquoi ?
+interface-RecordDialog-startingTheCameraAndMicrophone = Démarrage de l’appareil photo et du microphone…
+interface-RecordDialog-theVideoIsRecordedWithSound = La vidéo est enregistrée avec le son. Les personnes proches de vous peuvent être entendues. Vous seul pouvez l’ouvrir.
+interface-RecordDialog-yourPhoneAsksOnce = Votre téléphone demande une seule fois si myCarlos peut utiliser l’appareil photo et le microphone. Ils ne sont actifs que pendant l’enregistrement. Ils s’éteignent quand vous arrêtez, fermez cette fenêtre ou que myCarlos se verrouille.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = L’appareil photo et le microphone ne sont actifs que pendant l’enregistrement. Ils s’éteignent quand vous arrêtez, fermez cette fenêtre ou que myCarlos se verrouille.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = L’appareil photo et le microphone sont actifs, mais rien n’est enregistré tant que vous ne choisissez pas Démarrer l’enregistrement.
+interface-RecordDialog-pictureQuality = Qualité de l’image
+interface-RecordDialog-standard = Standard (720p)
+interface-RecordDialog-high = Élevée (1080p)
+interface-RecordDialog-aboutStandardPerHour = Environ 1,1 Go par heure
+interface-RecordDialog-aboutHighPerHour = Environ 2,5 à 4 Go par heure
+interface-RecordDialog-useTheCameraAndMicrophone = Utiliser l’appareil photo et le microphone
+interface-RecordDialog-startRecording = Démarrer l’enregistrement
+interface-RecordDialog-recording = Enregistrement
+interface-RecordDialog-paused = En pause
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = En pause. L’appareil photo et le microphone sont toujours actifs.
+interface-RecordDialog-recorded = Enregistré : { $time }
+interface-RecordDialog-recordingAt = Enregistrement en { $height }p
+interface-RecordDialog-pauseRecording = Mettre l’enregistrement en pause
+interface-RecordDialog-resumeRecording = Reprendre l’enregistrement
+interface-RecordDialog-stopAndSave = Arrêter et enregistrer
+interface-RecordDialog-stopAndSaveTheVideo = Arrêter et enregistrer la vidéo ?
+interface-RecordDialog-keepRecording = Continuer l’enregistrement
+interface-RecordDialog-savingTheVideo = Enregistrement de la vidéo…
+interface-RecordDialog-recordingPaused = Enregistrement en pause.
+interface-RecordDialog-recordingResumed = Enregistrement repris.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = Cet appareil ne peut pas enregistrer de vidéo dans un format que myCarlos peut conserver.
+interface-RecordDialog-videoNeedsBoth = Une vidéo a besoin de l’appareil photo et du microphone.
+interface-RecordDialog-nothingWasRecorded = Rien n’a été enregistré, donc aucune vidéo n’a été conservée.
+interface-RecordDialog-videoSaved = Vidéo enregistrée : { $name }
+interface-RecordDialog-videoSavedStopped = L’enregistrement s’est arrêté car l’appareil a signalé un problème. Ce qui a été enregistré a été conservé : { $name }
+interface-RecordDialog-videoSavedHidden = L’enregistrement s’est arrêté car myCarlos a été masqué. Ce qui a été enregistré a été conservé : { $name }
+interface-RecordDialog-videoSavedSlow = L’enregistrement s’est arrêté car la vidéo n’a pas pu être sauvegardée assez vite. Ce qui a été enregistré a été conservé : { $name }
+interface-VideoViewer-video = Vidéo
+interface-VideoViewer-player = Lecteur vidéo : { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = Cette vidéo n’a pas pu être lue.
+interface-VideoViewer-keys = La barre d’espace lance ou met en pause. Les flèches gauche et droite avancent ou reculent de { $seconds } secondes. Haut et bas changent le volume. M coupe le son.
+interface-VideoViewer-playVideo = Lire la vidéo
+interface-VideoHelp-title = Pourquoi ne puis-je pas enregistrer de vidéo ici ?
+interface-VideoHelp-engine = Pour enregistrer une vidéo, le moteur web intégré à cet appareil doit pouvoir enregistrer de la vidéo MP4 avec le son. Le moteur de cet appareil ne le permet pas.
+interface-VideoHelp-systems = Sous Windows, les éditions N et KN n’incluent pas les fonctions multimédias tant que vous n’ajoutez pas le Media Feature Pack de Microsoft. Sous Linux, myCarlos a besoin des modules GStreamer des paquets gstreamer1.0-plugins-bad et gstreamer1.0-plugins-ugly. Les téléphones sous Android 7 ou plus ancien et les iPhone sous iOS antérieur à 14.5 ne peuvent pas enregistrer de vidéo MP4 dans l’application.
+interface-VideoHelp-restWorks = Les photos et les documents fonctionnent comme d’habitude. Une mise à jour plus récente du système peut ajouter l’enregistrement vidéo.
+interface-RecordingRecovery-closed = myCarlos s’est fermé pendant que vous enregistriez. Conserver la vidéo qui a été sauvegardée ?
+interface-RecordingRecovery-closedPaused = myCarlos s’est fermé pendant qu’un enregistrement était en pause. Conserver la vidéo qui a été sauvegardée ?
+interface-RecordingRecovery-name = Enregistrement : { $name }
+interface-RecordingRecovery-askLater = Me le demander plus tard
+interface-RecordingRecovery-delete = La supprimer
+interface-RecordingRecovery-keep = Conserver la vidéo
+interface-RecordingRecovery-kept = Vidéo conservée : { $name }
+interface-RecordingRecovery-nothingToKeep = Rien de complet n’avait été sauvegardé, donc il n’y avait pas de vidéo à conserver.
+interface-RecordingRecovery-deleted = L’enregistrement inachevé a été supprimé.
+interface-RecordingRecovery-deleteSure = Supprimer cet enregistrement ? Cette action est irréversible.
+interface-RecordingRecovery-savedLocked = myCarlos s’est verrouillé pendant que vous enregistriez. La vidéo a été sauvegardée : { $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos s’est verrouillé pendant qu’un enregistrement était en pause. La vidéo a été sauvegardée : { $name }
+interface-RecordDialog-videoSavedFailed = L’enregistrement s’est arrêté car une partie n’a pas pu être sauvegardée. Ce qui l’avait été auparavant est conservé : { $name }

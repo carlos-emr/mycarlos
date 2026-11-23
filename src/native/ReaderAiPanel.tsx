@@ -22,10 +22,18 @@ import {
 } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
+import { gigabytes, memoryShortfall } from "../ai/memoryWords";
 import { useSummaryProgress } from "./useSummaryProgress";
 import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
 import { estimateFit, type FitEstimate } from "../ai/capacity";
+import {
+  ANSWER_CEILING_MINUTES,
+  SHOW_FROM_MINUTES,
+  summaryMinutes,
+  tokensRead,
+  type Speed,
+} from "../ai/speedEstimate";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -109,11 +117,29 @@ export function ReaderAiPanel({
   onReturnFocus: () => void;
 }) {
   const { t } = useI18n();
+  /** The refusal for memory with its numbers (#305): what a start needs and what is free. */
+  const memoryText = (
+    shortfall: ReturnType<typeof memoryShortfall>,
+  ): string => {
+    if (!shortfall) return t("ai.error.memory");
+    const needed = gigabytes(shortfall.needed, "up");
+    return shortfall.available === null
+      ? t("ai.error.memoryUnknown", { needed })
+      : t("ai.error.memoryNumbers", {
+          needed,
+          free: gigabytes(shortfall.available, "down"),
+        });
+  };
   const lang = getLocale();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [working, setWorking] = useState(false);
   // The last run's failure, said in the panel's alert; null when none.
   const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
+  // Only a refusal for memory carries numbers that matter; read once per render.
+  const failedMemory =
+    failed && hasVaultErrorCode(failed.failure, "aiMemory")
+      ? memoryShortfall(failed.failure)
+      : null;
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   // A document longer than the model reads at a time, waiting for the
@@ -156,6 +182,9 @@ export function ReaderAiPanel({
   // Whole minutes the answer has been working for, shown from the first
   // (#72: a long document's summary may take up to 20 minutes).
   const [workingMinutes, setWorkingMinutes] = useState(0);
+  // How long a summary may take on this computer, once the patient has run the speed check and
+  // the document is long enough for it to matter (#305). Null says nothing.
+  const [timeNote, setTimeNote] = useState<number | null>(null);
   useEffect(() => {
     if (!working) return;
     const started = Date.now();
@@ -290,6 +319,7 @@ export function ReaderAiPanel({
     const mine = ++run.current;
     progress.reset();
     setTooLong(null);
+    setTimeNote(null);
     setWorking(true);
     setFailed(null);
     setKeepFailed(null);
@@ -321,6 +351,22 @@ export function ReaderAiPanel({
         if (document.pages.every((page) => !page.text.trim())) {
           setNoText(true);
           return;
+        }
+        // The time it may take, from the speed this computer measured (if it was).
+        {
+          const measured: Speed | null =
+            (await aiRef.current.model.speed?.().catch(() => null)) ?? null;
+          // Closed, or a newer request started, while the speed was asked: nothing more is done.
+          if (!live.current || run.current !== mine) return;
+          const known = statusRef.current;
+          const room = known?.state === "installed" ? known.capacity : null;
+          if (measured && room) {
+            const minutes = summaryMinutes(
+              tokensRead(document, room),
+              measured,
+            );
+            setTimeNote(minutes >= SHOW_FROM_MINUTES ? minutes : null);
+          }
         }
         // A document longer than the model reads at a time waits for the
         // patient's choice (#301): an estimate from its length, so only a
@@ -601,6 +647,13 @@ export function ReaderAiPanel({
                 {stageWords}
               </p>
             )}
+            {timeNote !== null && (
+              <p className="native-reader-ai-wait">
+                {timeNote > ANSWER_CEILING_MINUTES
+                  ? t("ai.speed.estimateLong")
+                  : t("ai.speed.estimate", { minutes: timeNote })}
+              </p>
+            )}
             <progress
               {...(progress.view.stage === "before"
                 ? { "aria-labelledby": "reader-ai-stage" }
@@ -638,11 +691,13 @@ export function ReaderAiPanel({
         )}
         {failed && (
           <p role="alert">
-            {t(
-              Object.entries(OWN_WORDS).find(([code]) =>
-                hasVaultErrorCode(failed.failure, code),
-              )?.[1] ?? "ai.failed",
-            )}
+            {failedMemory
+              ? memoryText(failedMemory)
+              : t(
+                  Object.entries(OWN_WORDS).find(([code]) =>
+                    hasVaultErrorCode(failed.failure, code),
+                  )?.[1] ?? "ai.failed",
+                )}
           </p>
         )}
         {noText && <p>{t("ai.summary.noText")}</p>}
