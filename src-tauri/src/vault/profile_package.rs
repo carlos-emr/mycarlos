@@ -45,7 +45,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -63,10 +63,10 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::{
-    decode_recovery_key, derive_passphrase_key, encode_recovery_key, kdf_config_with_salt,
-    object_aad, unwrap_secret, valid_birth_date, valid_kdf_config, valid_record_name,
-    validate_new_passphrase, wrap_secret, HmacSha256, KdfConfig, SecretKey, VaultError,
-    WrappedSecret, CHUNK_SIZE, MAX_PASSPHRASE_BYTES, OBJECT_MAGIC, RECOVERY_KEY_BYTES,
+    decode_key_text, derive_passphrase_key, encode_key_text, kdf_config_with_salt, object_aad,
+    unwrap_secret, valid_birth_date, valid_kdf_config, valid_record_name, validate_new_passphrase,
+    wrap_secret, HmacSha256, KdfConfig, SecretKey, VaultError, WrappedSecret, CHUNK_SIZE,
+    MAX_PASSPHRASE_BYTES, OBJECT_MAGIC, RECOVERY_KEY_BYTES, RECOVERY_KEY_CHECK_LABEL,
 };
 
 /// 16 bytes, like the backup's.
@@ -84,8 +84,10 @@ const NAME_DIGESTS: &str = "digests";
 
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_ENTRY_NAME_BYTES: usize = 64;
-/// The padded manifest's largest size class.
-const MAX_MANIFEST_CLASS: usize = 64 * 1024 * 1024;
+/// The padded manifest's largest size class: the largest manifest a vault can hold
+/// (`MAX_MANIFEST_BYTES`), so a package that fits is one a vault can take, and the
+/// bytes read and parsed for it are bounded by that, not by a count.
+const MAX_MANIFEST_CLASS: usize = 16 * 1024 * 1024;
 const MIN_MANIFEST_CLASS: usize = 16 * 1024;
 /// Documents, original PDFs and AI answers together.
 pub(crate) const MAX_PACKAGE_OBJECTS: usize = 200_000;
@@ -95,7 +97,8 @@ pub(crate) const MAX_FOLDER_DEPTH: usize = 64;
 pub(crate) const MAX_AI_ANSWERS_PER_RECORD: usize = 256;
 pub(crate) const MAX_FOLDERS_PER_RECORD: usize = 1_000;
 pub(crate) const MAX_PREVIOUS_NAMES: usize = 64;
-pub(crate) const MAX_HISTORY_ENTRIES: usize = 200_000;
+/// The excerpt of a person's history: the latest entries when there are more.
+pub(crate) const MAX_HISTORY_ENTRIES: usize = 2_000;
 /// One document. A terabyte is far beyond what a patient has; the limit keeps
 /// a forged size from overflowing arithmetic.
 pub(crate) const MAX_OBJECT_BYTES: u64 = 1 << 40;
@@ -122,6 +125,9 @@ pub(crate) enum PackageError {
     /// A typed key that is not a well-formed key, caught before any unwrapping.
     #[error("the key was mistyped")]
     KeyTypo,
+    /// A typed key that is a well-formed *recovery* key: not a package key.
+    #[error("that is a recovery key, not a package key")]
+    RecoveryKeyEntered,
     /// Made by a newer myCarlos than this one.
     #[error("the package is from a newer myCarlos")]
     NewerFormat,
@@ -270,6 +276,45 @@ impl PackageManifest {
         objects
     }
 
+    /// How many plaintext bytes the objects hold in all, for the space a staged import
+    /// needs (each is at most `MAX_OBJECT_BYTES`, so this cannot overflow).
+    pub(crate) fn total_plaintext_bytes(&self) -> u64 {
+        self.objects()
+            .iter()
+            .fold(0_u64, |total, object| total.saturating_add(object.size))
+    }
+
+    /// This manifest with every id made new: the folders', the records' and the objects'.
+    /// A package never carries an id the source vault uses, so two exports of one
+    /// person, and an export and the vault, cannot be matched by them. The writer does
+    /// this; a caller builds the manifest with its own ids and cannot forget.
+    fn with_fresh_ids(&self) -> PackageManifest {
+        let folders: HashMap<Uuid, Uuid> = self
+            .folders
+            .iter()
+            .map(|folder| (folder.id, Uuid::new_v4()))
+            .collect();
+        let mut fresh = self.clone();
+        for folder in &mut fresh.folders {
+            folder.id = folders[&folder.id];
+            folder.parent_id = folder.parent_id.map(|parent| folders[&parent]);
+        }
+        for record in &mut fresh.records {
+            record.id = Uuid::new_v4();
+            record.display.id = Uuid::new_v4();
+            if let Some(original) = &mut record.original_pdf {
+                original.id = Uuid::new_v4();
+            }
+            for answer in &mut record.ai_answers {
+                answer.object.id = Uuid::new_v4();
+            }
+            for folder_id in &mut record.folder_ids {
+                *folder_id = folders[folder_id];
+            }
+        }
+        fresh
+    }
+
     /// The rules every package manifest must meet, on writing and on reading:
     /// the counts and sizes are bounded, the names are names, ids are unique,
     /// every folder has a parent that exists and the tree has no cycle and is
@@ -411,22 +456,53 @@ enum KeyKind {
     Passphrase,
 }
 
-/// A new random key for a package, and the text to show for it. The text is
-/// the recovery key's: 26 characters and 2 check characters in 7 groups of 4.
+/// A new random key for a package, and the text to show for it: 26 characters and 2
+/// check characters in 7 groups of 4, the way a recovery key is shown, with other
+/// check characters.
 /// Never stored in the vault: if it is lost, the person exports again.
 pub(crate) fn generate_package_key() -> (Zeroizing<[u8; RECOVERY_KEY_BYTES]>, Zeroizing<String>) {
     let mut key = Zeroizing::new([0_u8; RECOVERY_KEY_BYTES]);
     OsRng.fill_bytes(key.as_mut());
-    let text = encode_recovery_key(&key);
+    let text = encode_key_text(&key, PACKAGE_KEY_CHECK_LABEL);
     (key, text)
 }
+
+/// A package key's check characters are computed with a label of their own, so a
+/// recovery key typed here is recognised as one (and the person told so) instead of
+/// being tried as a key that then simply does not open the file.
+const PACKAGE_KEY_CHECK_LABEL: &[u8] = b"mycarlos-profile-package-key-check-v1:";
 
 /// Reads a key as typed: case, spaces and dashes do not matter, and the check
 /// characters catch a typo before anything is tried.
 pub(crate) fn parse_package_key(
     text: &str,
 ) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, PackageError> {
-    decode_recovery_key(text).map_err(|_| PackageError::KeyTypo)
+    match decode_key_text(text, PACKAGE_KEY_CHECK_LABEL) {
+        Ok(key) => Ok(key),
+        Err(_) if decode_key_text(text, RECOVERY_KEY_CHECK_LABEL).is_ok() => {
+            Err(PackageError::RecoveryKeyEntered)
+        }
+        Err(_) => Err(PackageError::KeyTypo),
+    }
+}
+
+/// Just the format of a header or a manifest, read before anything else is: a newer
+/// myCarlos may add fields and key kinds this one does not know, and must be told
+/// "made by a newer myCarlos", not "unreadable". Only once the format is this
+/// build's is the whole read strictly.
+#[derive(Deserialize)]
+struct FormatOnly {
+    format: u32,
+}
+
+fn check_format(bytes: &[u8]) -> Result<(), PackageError> {
+    let FormatOnly { format } =
+        serde_json::from_slice(bytes).map_err(|_| PackageError::Unreadable)?;
+    match format.cmp(&PACKAGE_FORMAT) {
+        std::cmp::Ordering::Equal => Ok(()),
+        std::cmp::Ordering::Greater => Err(PackageError::NewerFormat),
+        std::cmp::Ordering::Less => Err(PackageError::Unreadable),
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -756,6 +832,12 @@ pub(crate) struct PackageWriter<W: Write> {
     next: usize,
     digests: Vec<DigestEntry>,
     manifest_written: bool,
+    /// The ids the package gives the objects, in the manifest's order: the caller's own
+    /// ids never reach the file.
+    minted: Vec<Uuid>,
+    /// Set by the first error: part of an entry may be in the sink, so nothing more is
+    /// written, and `finish` is refused.
+    poisoned: bool,
 }
 
 impl<W: Write> PackageWriter<W> {
@@ -809,7 +891,17 @@ impl<W: Write> PackageWriter<W> {
             next: 0,
             digests: Vec::new(),
             manifest_written: false,
+            minted: Vec::new(),
+            poisoned: false,
         })
+    }
+
+    /// Once anything has failed the sink may hold half an entry: refuse everything after.
+    fn guard<T>(&mut self, result: Result<T, PackageError>) -> Result<T, PackageError> {
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
     }
 
     pub(crate) fn package_id(&self) -> Uuid {
@@ -840,15 +932,26 @@ impl<W: Write> PackageWriter<W> {
     /// Writes the manifest, after checking it. It must come first and once;
     /// the objects it lists are then written, in its order, with
     /// [`Self::write_object`].
+    ///
+    /// The ids in `manifest` are the caller's, used to say which source goes with which
+    /// object; the package gets new ones (`with_fresh_ids`), so none of them is in the
+    /// file. [`Self::next_object`] and [`Self::write_object`] speak in the caller's.
     pub(crate) fn write_manifest(
         &mut self,
         manifest: &PackageManifest,
     ) -> Result<(), PackageError> {
-        if self.manifest_written || manifest.format != PACKAGE_FORMAT {
+        if self.poisoned || self.manifest_written || manifest.format != PACKAGE_FORMAT {
             return Err(PackageError::Invalid);
         }
+        let result = self.write_manifest_inner(manifest);
+        self.guard(result)
+    }
+
+    fn write_manifest_inner(&mut self, manifest: &PackageManifest) -> Result<(), PackageError> {
         manifest.validate()?;
-        let json = Zeroizing::new(serde_json::to_vec(manifest).map_err(|_| PackageError::Invalid)?);
+        let written = manifest.with_fresh_ids();
+        written.validate()?;
+        let json = Zeroizing::new(serde_json::to_vec(&written).map_err(|_| PackageError::Invalid)?);
         let class = manifest_class(json.len()).ok_or(PackageError::TooLarge)?;
         let sealed = seal_padded(
             &self.keys.manifest,
@@ -858,6 +961,7 @@ impl<W: Write> PackageWriter<W> {
         )?;
         self.small_entry(KIND_MANIFEST, NAME_MANIFEST, &sealed)?;
         self.pending = manifest.objects();
+        self.minted = written.objects().iter().map(|object| object.id).collect();
         self.manifest_written = true;
         Ok(())
     }
@@ -878,10 +982,24 @@ impl<W: Write> PackageWriter<W> {
         source: &mut dyn Read,
         still_open: &dyn Fn() -> bool,
     ) -> Result<(), PackageError> {
-        let object = self.next_object().ok_or(PackageError::Invalid)?;
-        if object.id != id {
+        if self.poisoned {
             return Err(PackageError::Invalid);
         }
+        let result = self.write_object_inner(id, source, still_open);
+        self.guard(result)
+    }
+
+    fn write_object_inner(
+        &mut self,
+        caller_id: Uuid,
+        source: &mut dyn Read,
+        still_open: &dyn Fn() -> bool,
+    ) -> Result<(), PackageError> {
+        let object = self.next_object().ok_or(PackageError::Invalid)?;
+        if object.id != caller_id {
+            return Err(PackageError::Invalid);
+        }
+        let id = self.minted[self.next];
         let length = encrypted_object_len(object.size).ok_or(PackageError::TooLarge)?;
         let name = object_name(id);
         self.frame(KIND_OBJECT, &name, length)?;
@@ -945,7 +1063,7 @@ impl<W: Write> PackageWriter<W> {
     /// Writes the digests and the trailer with its tag, and returns the sink.
     /// Refused unless every object the manifest lists was written.
     pub(crate) fn finish(mut self) -> Result<W, PackageError> {
-        if !self.manifest_written || self.next != self.pending.len() {
+        if self.poisoned || !self.manifest_written || self.next != self.pending.len() {
             return Err(PackageError::Invalid);
         }
         let digests = serde_json::to_vec(&Digests {
@@ -1022,10 +1140,98 @@ pub(crate) struct PackageReader<R: Read> {
     next: usize,
     entries: Vec<TrailerEntry>,
     read: Vec<ObjectRead>,
+    /// Where the first object's entry starts: the manifest's authenticated size gives
+    /// every later offset, so the end of the file can be found without reading objects.
+    objects_start: u64,
+}
+
+/// What a package has been checked to be, once its whole has been: the only value
+/// that [`PackageReader::finish`] makes, and the one a commit of what was read from
+/// the package must be given, so that nothing unchecked can be kept by mistake.
+#[derive(Debug)]
+pub(crate) struct Verified {
+    package_id: Uuid,
+    manifest: PackageManifest,
+    objects: Vec<ObjectRead>,
+}
+
+impl Verified {
+    pub(crate) fn package_id(&self) -> Uuid {
+        self.package_id
+    }
+
+    pub(crate) fn manifest(&self) -> &PackageManifest {
+        &self.manifest
+    }
+
+    /// Each object's plaintext size and SHA-256, in the manifest's order, for the
+    /// caller to compare with what it stored.
+    pub(crate) fn objects(&self) -> &[ObjectRead] {
+        &self.objects
+    }
+}
+
+/// The last part of a package, read and checked on its own: the digests entry, the
+/// trailer and its tag, and that nothing follows.
+struct Tail {
+    digests: Digests,
+    digests_entry: TrailerEntry,
+    trailer: Trailer,
+}
+
+fn read_tail(
+    inner: &mut impl Read,
+    keys: &PackageKeys,
+    header: &[u8],
+    package_id: Uuid,
+) -> Result<Tail, PackageError> {
+    let mut entries = Vec::new();
+    let sealed = read_small_entry(inner, &mut entries, KIND_DIGESTS, NAME_DIGESTS)?;
+    let digests = open_padded(&keys.manifest, &entry_aad(DIGESTS_AAD, package_id), &sealed)?;
+    let digests: Digests =
+        serde_json::from_slice(&digests).map_err(|_| PackageError::Unreadable)?;
+    let mut marker = [0_u8; 1];
+    read_exact_or_unreadable(inner, &mut marker)?;
+    if marker[0] != KIND_TRAILER {
+        return Err(PackageError::Unreadable);
+    }
+    let mut length = [0_u8; 4];
+    read_exact_or_unreadable(inner, &mut length)?;
+    let length = u32::from_be_bytes(length) as usize;
+    if length > MAX_TRAILER_BYTES {
+        return Err(PackageError::Unreadable);
+    }
+    let mut trailer_bytes = vec![0_u8; length];
+    read_exact_or_unreadable(inner, &mut trailer_bytes)?;
+    let mut tag = [0_u8; 32];
+    read_exact_or_unreadable(inner, &mut tag)?;
+    tag_mac(&keys.tag, header, &trailer_bytes)?
+        .verify_slice(&tag)
+        .map_err(|_| PackageError::Unreadable)?;
+    let trailer: Trailer =
+        serde_json::from_slice(&trailer_bytes).map_err(|_| PackageError::Unreadable)?;
+    if trailer.format != PACKAGE_FORMAT || trailer.package_id != package_id {
+        return Err(PackageError::Unreadable);
+    }
+    let mut extra = [0_u8; 1];
+    if inner.read(&mut extra)? != 0 {
+        return Err(PackageError::Unreadable);
+    }
+    let digests_entry = entries.pop().ok_or(PackageError::Unreadable)?;
+    Ok(Tail {
+        digests,
+        digests_entry,
+        trailer,
+    })
 }
 
 fn read_exact_or_unreadable(inner: &mut impl Read, buffer: &mut [u8]) -> Result<(), PackageError> {
     inner.read_exact(buffer).map_err(PackageError::from)
+}
+
+/// The bytes an entry takes: its kind, name length, name and length, then its data.
+fn entry_frame_len(name: &str, data_length: u64) -> u64 {
+    (1 + 2 + name.len() + 8) as u64 + data_length
 }
 
 /// An entry header: its kind, name and length, or None at the trailer marker.
@@ -1090,14 +1296,9 @@ impl<R: Read> PackageReader<R> {
         }
         let mut header_bytes = vec![0_u8; length];
         read_exact_or_unreadable(&mut inner, &mut header_bytes)?;
+        check_format(&header_bytes)?;
         let header: PackageHeader =
             serde_json::from_slice(&header_bytes).map_err(|_| PackageError::Unreadable)?;
-        if header.format > PACKAGE_FORMAT {
-            return Err(PackageError::NewerFormat);
-        }
-        if header.format != PACKAGE_FORMAT {
-            return Err(PackageError::Unreadable);
-        }
         match (&header.key_kind, &header.kdf) {
             (KeyKind::Key, None) => {}
             (KeyKind::Passphrase, Some(config)) if valid_kdf_config(config) => {}
@@ -1122,11 +1323,14 @@ impl<R: Read> PackageReader<R> {
         let keys = derive_package_keys(&package_key, header.package_id)?;
         let mut entries = Vec::new();
         let sealed = read_small_entry(&mut inner, &mut entries, KIND_MANIFEST, NAME_MANIFEST)?;
+        let objects_start = (PACKAGE_MAGIC.len() + 4 + header_bytes.len()) as u64
+            + entry_frame_len(NAME_MANIFEST, sealed.len() as u64);
         let json = open_padded(
             &keys.manifest,
             &entry_aad(MANIFEST_AAD, header.package_id),
             &sealed,
         )?;
+        check_format(&json)?;
         let manifest: PackageManifest =
             serde_json::from_slice(&json).map_err(|_| PackageError::Unreadable)?;
         manifest.validate()?;
@@ -1140,6 +1344,7 @@ impl<R: Read> PackageReader<R> {
             next: 0,
             entries,
             read: Vec::new(),
+            objects_start,
         })
     }
 
@@ -1270,23 +1475,11 @@ impl<R: Read> PackageReader<R> {
     ///
     /// Returns each object's plaintext SHA-256, so that the caller can compare
     /// what it stored.
-    pub(crate) fn finish(mut self) -> Result<Vec<ObjectRead>, PackageError> {
+    pub(crate) fn finish(mut self) -> Result<Verified, PackageError> {
         if self.next != self.pending.len() {
             return Err(PackageError::Invalid);
         }
-        let sealed = read_small_entry(
-            &mut self.inner,
-            &mut self.entries,
-            KIND_DIGESTS,
-            NAME_DIGESTS,
-        )?;
-        let digests = open_padded(
-            &self.keys.manifest,
-            &entry_aad(DIGESTS_AAD, self.package_id),
-            &sealed,
-        )?;
-        let digests: Digests =
-            serde_json::from_slice(&digests).map_err(|_| PackageError::Unreadable)?;
+        let tail = read_tail(&mut self.inner, &self.keys, &self.header, self.package_id)?;
         let expected: Vec<DigestEntry> = self
             .read
             .iter()
@@ -1296,41 +1489,72 @@ impl<R: Read> PackageReader<R> {
                 sha256: BASE64.encode(read.sha256),
             })
             .collect();
-        if digests.objects != expected {
+        self.entries.push(tail.digests_entry);
+        if tail.digests.objects != expected || tail.trailer.entries != self.entries {
             return Err(PackageError::Unreadable);
         }
-        let mut marker = [0_u8; 1];
-        // The trailer marker was not consumed by the digests entry.
-        read_exact_or_unreadable(&mut self.inner, &mut marker)?;
-        if marker[0] != KIND_TRAILER {
-            return Err(PackageError::Unreadable);
+        Ok(Verified {
+            package_id: self.package_id,
+            manifest: self.manifest,
+            objects: self.read,
+        })
+    }
+}
+
+impl<R: Read + Seek> PackageReader<R> {
+    /// Checks the end of the package without reading any object: the manifest says how
+    /// many bytes each object takes, so this jumps to the digests entry and the
+    /// trailer, checks the trailer's tag (which covers the header and every entry's
+    /// hash), that it lists exactly the entries the manifest implies, that the digests
+    /// agree with the manifest, and that nothing follows. A package that was cut short,
+    /// has a bad tag or has bytes added is refused here, at inspect time, not only
+    /// after every object has been read.
+    ///
+    /// It does not check any object's own bytes or hash (that is what reading them and
+    /// [`Self::finish`] do), so it is no replacement for `finish`. The reader's place
+    /// is put back, so objects can be read after it.
+    pub(crate) fn verify_tail(&mut self) -> Result<(), PackageError> {
+        let here = self.inner.stream_position()?;
+        let result = self.verify_tail_at();
+        self.inner.seek(SeekFrom::Start(here))?;
+        result
+    }
+
+    fn verify_tail_at(&mut self) -> Result<(), PackageError> {
+        let objects = self.manifest.objects();
+        let mut offset = self.objects_start;
+        for object in &objects {
+            let stored = encrypted_object_len(object.size).ok_or(PackageError::TooLarge)?;
+            offset = offset
+                .checked_add(entry_frame_len(&object_name(object.id), stored))
+                .ok_or(PackageError::TooLarge)?;
         }
-        let mut length = [0_u8; 4];
-        read_exact_or_unreadable(&mut self.inner, &mut length)?;
-        let length = u32::from_be_bytes(length) as usize;
-        if length > MAX_TRAILER_BYTES {
-            return Err(PackageError::Unreadable);
+        self.inner.seek(SeekFrom::Start(offset))?;
+        let tail = read_tail(&mut self.inner, &self.keys, &self.header, self.package_id)?;
+        let digests_match = tail.digests.objects.len() == objects.len()
+            && tail
+                .digests
+                .objects
+                .iter()
+                .zip(&objects)
+                .all(|(digest, object)| digest.id == object.id && digest.size == object.size);
+        let entries = &tail.trailer.entries;
+        let listed = entries.len() == objects.len() + 2
+            && entries.first() == self.entries.first()
+            && entries.last() == Some(&tail.digests_entry)
+            && entries[1..entries.len() - 1]
+                .iter()
+                .zip(&objects)
+                .all(|(entry, object)| {
+                    entry.kind == KIND_OBJECT
+                        && entry.name == object_name(object.id)
+                        && Some(entry.length) == encrypted_object_len(object.size)
+                });
+        if digests_match && listed {
+            Ok(())
+        } else {
+            Err(PackageError::Unreadable)
         }
-        let mut trailer_bytes = vec![0_u8; length];
-        read_exact_or_unreadable(&mut self.inner, &mut trailer_bytes)?;
-        let mut tag = [0_u8; 32];
-        read_exact_or_unreadable(&mut self.inner, &mut tag)?;
-        tag_mac(&self.keys.tag, &self.header, &trailer_bytes)?
-            .verify_slice(&tag)
-            .map_err(|_| PackageError::Unreadable)?;
-        let trailer: Trailer =
-            serde_json::from_slice(&trailer_bytes).map_err(|_| PackageError::Unreadable)?;
-        if trailer.format != PACKAGE_FORMAT
-            || trailer.package_id != self.package_id
-            || trailer.entries != self.entries
-        {
-            return Err(PackageError::Unreadable);
-        }
-        let mut extra = [0_u8; 1];
-        if self.inner.read(&mut extra)? != 0 {
-            return Err(PackageError::Unreadable);
-        }
-        Ok(self.read)
     }
 }
 

@@ -5468,6 +5468,17 @@ fn unwrap_secret(
 
 /// The recovery key as the patient sees it: 7 groups of 4 characters.
 fn encode_recovery_key(key: &[u8; RECOVERY_KEY_BYTES]) -> Zeroizing<String> {
+    encode_key_text(key, RECOVERY_KEY_CHECK_LABEL)
+}
+
+/// The label that keeps the recovery key's check characters apart from any other
+/// key shown the same way (a profile package's key has its own), so that a key typed
+/// where the other kind belongs is caught as the wrong kind, not accepted.
+const RECOVERY_KEY_CHECK_LABEL: &[u8] = b"mycarlos-recovery-key-check-v1:";
+
+/// A 128-bit key as 7 groups of 4 characters, its last two characters a check
+/// computed with `label`.
+fn encode_key_text(key: &[u8; RECOVERY_KEY_BYTES], label: &[u8]) -> Zeroizing<String> {
     let mut symbols = Zeroizing::new(Vec::with_capacity(RECOVERY_KEY_GROUPS * 4));
     // 128 bits, then 2 zero bits, make 26 five-bit symbols.
     let mut bits: u32 = 0;
@@ -5482,7 +5493,7 @@ fn encode_recovery_key(key: &[u8; RECOVERY_KEY_BYTES]) -> Zeroizing<String> {
         bits &= (1 << count) - 1;
     }
     symbols.push(CROCKFORD_ALPHABET[((bits << (5 - count)) & 31) as usize]);
-    let check = recovery_key_check(key);
+    let check = key_check(key, label);
     symbols.push(CROCKFORD_ALPHABET[usize::from(check >> 5)]);
     symbols.push(CROCKFORD_ALPHABET[usize::from(check & 31)]);
     let mut text = Zeroizing::new(String::with_capacity(RECOVERY_KEY_GROUPS * 5));
@@ -5497,11 +5508,9 @@ fn encode_recovery_key(key: &[u8; RECOVERY_KEY_BYTES]) -> Zeroizing<String> {
 
 /// Ten check bits from a hash of the key, so a mistyped key is caught as a
 /// typo before any unwrapping is tried.
-fn recovery_key_check(key: &[u8; RECOVERY_KEY_BYTES]) -> u16 {
+fn key_check(key: &[u8; RECOVERY_KEY_BYTES], label: &[u8]) -> u16 {
     use sha2::Digest;
-    let digest = Sha256::new_with_prefix(b"mycarlos-recovery-key-check-v1:")
-        .chain_update(key)
-        .finalize();
+    let digest = Sha256::new_with_prefix(label).chain_update(key).finalize();
     (u16::from(digest[0]) << 2) | u16::from(digest[1] >> 6)
 }
 
@@ -5509,6 +5518,14 @@ fn recovery_key_check(key: &[u8; RECOVERY_KEY_BYTES]) -> u16 {
 /// (spaces, dashes, other punctuation), do not matter, and I, L and O are
 /// read as 1, 1 and 0, as Crockford base32 allows.
 fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, VaultError> {
+    decode_key_text(text, RECOVERY_KEY_CHECK_LABEL)
+}
+
+/// `decode_recovery_key` for a key whose check characters use `label`.
+fn decode_key_text(
+    text: &str,
+    label: &[u8],
+) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, VaultError> {
     if text.len() > 256 {
         return Err(VaultError::RecoveryKeyTypo);
     }
@@ -5557,7 +5574,7 @@ fn decode_recovery_key(text: &str) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>
         return Err(VaultError::RecoveryKeyTypo);
     }
     let check = ((values[26] << 5) | values[27]) as u16;
-    if check != recovery_key_check(&key) {
+    if check != key_check(&key, label) {
         return Err(VaultError::RecoveryKeyTypo);
     }
     Ok(key)

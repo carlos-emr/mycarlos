@@ -782,7 +782,8 @@ trailer  0xff | length (u32) | JSON {format, packageId, entries[]} | HMAC-SHA-25
 ```
 
 - **Keys.** A random 256-bit package key is wrapped under either a generated 128-bit key (HKDF, shown as 7
-  groups of 4 like a recovery key; never stored) or the Argon2id of a typed passphrase (the vault's own
+  groups of 4 like a recovery key, with check characters of its own so that a recovery key typed here is
+  named as one; never stored) or the Argon2id of a typed passphrase (the vault's own
   parameters, and the vault's rules for a new passphrase). The manifest key, the object key and the tag key
   come from the package key and the package id with labels of their own (`mycarlos/profile-package/v1/...`).
   An object's key comes from the object key and the object's id, so the manifest, which comes first, carries no
@@ -794,18 +795,28 @@ trailer  0xff | length (u32) | JSON {format, packageId, entries[]} | HMAC-SHA-25
   readable copy anywhere, and a source that is not the declared size is refused.
 - **The manifest** is the person's identity details, the folder tree, the records (name, source label, media
   type, dates, folders, whether hidden, their objects, AI answer details, carried clinic evidence as JSON) and
-  the history excerpt if it was kept. It is checked on writing and on reading: bounded counts, names that are
+  the history excerpt if it was kept (at most 2,000 entries, the latest). **Every folder, record and object
+  id in the file is made by the writer**: the exporter builds its manifest with the vault's own ids to say which
+  source goes with which object, and none of them reaches the file, so an export cannot be matched to the vault or
+  to another export of the same person by an id. It is checked on writing and on reading: bounded counts, names that are
   names, unique ids, every folder's parent present, no cycle, depth at most 64, every record in folders that
   exist, an object used once, sizes within a terabyte.
 - **Padding and the clear.** The manifest and the digests are padded with zeros to a size class (a power of
-  two, at least 16 KiB, at most 64 MiB), and the padding is checked. In the clear: the magic, the package id,
+  two, at least 16 KiB, at most 16 MiB: the largest manifest a vault can hold, so a package that fits can be
+  taken, and what a reader parses is bounded by that), and the padding is checked. In the clear: the magic, the package id,
   the KDF salt, the entry names (a random id each), their lengths and the SHA-256 of their ciphertext. That
   shows how many documents and how large; it shows no name, no vault id, no device, no clinic, and not the
   time of the export.
 - **Order and trust.** The plaintext hashes are written after the objects because they are known only once an
   object has been streamed; the manifest is first so that it can be inspected on its own. The tag is last and
   covers the header and every entry's hash, so **nothing read from a package is trusted until the reader's
-  `finish` has returned**. A reader stages what it reads and commits after.
+  `finish` has returned**, and `finish` returns a `Verified` value that the import's commit must be given. A
+  reader stages what it reads and commits after. Inspect can already refuse a cut, altered or extended file
+  without reading an object: the manifest gives every entry's size, so `verify_tail` jumps to the digests and
+  the trailer, checks the tag, the entry list and that nothing follows (it does not check object bytes).
+  The header and the manifest are read for their `format` first, so a newer myCarlos's file, with fields or key
+  kinds this build does not know, is "made by a newer myCarlos", not "unreadable". A writer that has failed
+  writes nothing more.
 - **Refused.** A wrong key (a damaged header looks the same), a typed key whose check characters are wrong, a
   package format newer than this build's, a file that is cut short, has a changed byte anywhere, bytes after
   the trailer, an entry swapped, repeated or missing, a trailer that lists what the file does not hold, or a

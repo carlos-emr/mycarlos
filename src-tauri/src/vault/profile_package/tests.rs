@@ -136,27 +136,71 @@ fn write_package(fixture: &Fixture, key: &[u8; RECOVERY_KEY_BYTES]) -> Vec<u8> {
     write_with(fixture, PackageSecret::Key(key)).unwrap()
 }
 
-/// Everything a reader returns.
+/// Everything a reader returns. The package carries ids of its own, so `objects` is in
+/// the manifest's order and a manifest is compared with `renumber`.
 struct ReadBack {
     manifest: PackageManifest,
-    objects: HashMap<Uuid, Vec<u8>>,
+    objects: Vec<Vec<u8>>,
     reads: Vec<ObjectRead>,
+}
+
+/// The same manifest with its ids replaced by numbers in order of appearance, so that a
+/// manifest as written and as read (which has the package's ids) compare by shape.
+fn renumber(manifest: &PackageManifest) -> PackageManifest {
+    let mut next = 0_u128;
+    let mut fresh = || {
+        next += 1;
+        Uuid::from_u128(next)
+    };
+    let folders: HashMap<Uuid, Uuid> = manifest.folders.iter().map(|f| (f.id, fresh())).collect();
+    let mut numbered = manifest.clone();
+    for folder in &mut numbered.folders {
+        folder.id = folders[&folder.id];
+        folder.parent_id = folder.parent_id.map(|parent| folders[&parent]);
+    }
+    for record in &mut numbered.records {
+        record.id = fresh();
+        record.display.id = fresh();
+        if let Some(original) = &mut record.original_pdf {
+            original.id = fresh();
+        }
+        for answer in &mut record.ai_answers {
+            answer.object.id = fresh();
+        }
+        for id in &mut record.folder_ids {
+            *id = folders[id];
+        }
+    }
+    numbered
+}
+
+/// The fixture's object contents in the manifest's order.
+fn fixture_objects(fixture: &Fixture) -> Vec<Vec<u8>> {
+    fixture
+        .manifest
+        .objects()
+        .iter()
+        .map(|object| fixture.data[&object.id].clone())
+        .collect()
 }
 
 fn read_all(bytes: &[u8], secret: PackageSecret<'_>) -> Result<ReadBack, PackageError> {
     let mut reader = PackageReader::open(Cursor::new(bytes), secret)?;
     let manifest = reader.manifest().clone();
-    let mut objects = HashMap::new();
-    while let Some(next) = reader.next_object() {
+    let mut objects = Vec::new();
+    while reader.next_object().is_some() {
         let mut sink = Vec::new();
         reader.read_object(&mut sink, &open)?;
-        objects.insert(next.id, sink);
+        objects.push(sink);
     }
-    let reads = reader.finish()?;
+    let package_id = reader.package_id();
+    let verified = reader.finish()?;
+    assert_eq!(verified.package_id(), package_id);
+    assert_eq!(verified.manifest(), &manifest);
     Ok(ReadBack {
         manifest,
         objects,
-        reads,
+        reads: verified.objects().to_vec(),
     })
 }
 
@@ -194,15 +238,12 @@ fn a_package_round_trips_with_a_generated_key() {
     let key = key();
     let bytes = write_package(&fixture, &key);
     let read = read_all(&bytes, PackageSecret::Key(&key)).unwrap();
-    assert_eq!(read.manifest, fixture.manifest);
-    assert_eq!(read.objects, fixture.data);
+    assert_eq!(renumber(&read.manifest), renumber(&fixture.manifest));
+    assert_eq!(read.objects, fixture_objects(&fixture));
     // The digests the reader hands back are each object's plaintext SHA-256.
-    for item in &read.reads {
-        assert_eq!(
-            item.sha256.as_slice(),
-            Sha256::digest(&fixture.data[&item.id]).as_slice()
-        );
-        assert_eq!(item.size, fixture.data[&item.id].len() as u64);
+    for (item, data) in read.reads.iter().zip(fixture_objects(&fixture)) {
+        assert_eq!(item.sha256.as_slice(), Sha256::digest(&data).as_slice());
+        assert_eq!(item.size, data.len() as u64);
     }
     assert_eq!(read.reads.len(), fixture.manifest.objects().len());
 }
@@ -212,8 +253,8 @@ fn a_package_round_trips_with_a_passphrase() {
     let fixture = fixture(&[0, 77, 70_000]);
     let bytes = write_with(&fixture, PackageSecret::Passphrase(PASSPHRASE)).unwrap();
     let read = read_all(&bytes, PackageSecret::Passphrase(PASSPHRASE)).unwrap();
-    assert_eq!(read.manifest, fixture.manifest);
-    assert_eq!(read.objects, fixture.data);
+    assert_eq!(renumber(&read.manifest), renumber(&fixture.manifest));
+    assert_eq!(read.objects, fixture_objects(&fixture));
     // Typed the way a keyboard may make it: the same visible text.
     assert!(read_all(
         &bytes,
@@ -298,16 +339,18 @@ fn inspecting_reads_the_header_and_the_manifest_and_nothing_else() {
         .find(|(kind, ..)| *kind == KIND_OBJECT)
         .unwrap();
     // Cut off right after the manifest: opening still works.
-    let reader = PackageReader::open(
+    let mut reader = PackageReader::open(
         Cursor::new(&bytes[..first_object.2]),
         PackageSecret::Key(&key),
     )
     .unwrap();
-    assert_eq!(reader.manifest(), &fixture.manifest);
+    assert_eq!(renumber(reader.manifest()), renumber(&fixture.manifest));
     assert_eq!(
         reader.next_object(),
-        Some(fixture.manifest.records[0].display)
+        Some(reader.manifest().records[0].display)
     );
+    // What opening alone cannot know, the tail check does: the file is cut short.
+    assert_eq!(reader.verify_tail(), Err(PackageError::Unreadable));
 }
 
 #[test]
@@ -334,6 +377,10 @@ fn two_exports_of_the_same_person_differ_everywhere() {
             bytes[span.2 + 3 + span.1.len() + 8..span.3].to_vec()
         };
         assert_ne!(data(&first, one), data(&second, two), "{}", one.1);
+        // Every object has a new name too: the ids are made by the writer.
+        if one.0 == KIND_OBJECT {
+            assert_ne!(one.1, two.1);
+        }
     }
 }
 
@@ -364,13 +411,28 @@ fn the_file_holds_no_name_no_plaintext_and_no_clinic_or_vault_word() {
             String::from_utf8_lossy(needle)
         );
     }
-    // What is in the clear is the package's own id, never a record's or a folder's.
+    // The source's own ids are in neither the file nor, decrypted, the manifest: the
+    // package has ids of its own for every folder, record and object.
+    let read = read_all(&bytes, PackageSecret::Key(&key)).unwrap();
+    let decrypted = serde_json::to_string(&read.manifest).unwrap();
+    let mut ids: Vec<Uuid> = fixture.manifest.folders.iter().map(|f| f.id).collect();
     for record in &fixture.manifest.records {
-        let id = record.id.as_bytes();
-        assert!(!bytes.windows(16).any(|window| window == id));
+        ids.push(record.id);
+        ids.extend(
+            record
+                .original_pdf
+                .iter()
+                .chain([&record.display])
+                .map(|o| o.id),
+        );
+        ids.extend(record.ai_answers.iter().map(|a| a.object.id));
+    }
+    for id in ids {
+        assert!(!bytes.windows(16).any(|window| window == id.as_bytes()));
         assert!(!bytes
             .windows(32)
-            .any(|window| window == record.id.simple().to_string().as_bytes()));
+            .any(|window| window == id.simple().to_string().as_bytes()));
+        assert!(!decrypted.contains(&id.to_string()));
     }
 }
 
@@ -382,7 +444,7 @@ fn an_object_entry_is_a_vault_object_under_the_package_id() {
     let key = key();
     let bytes = write_package(&fixture, &key);
     let reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
-    let object = fixture.manifest.records[0].display;
+    let object = reader.manifest().records[0].display;
     let span = spans(&bytes)
         .into_iter()
         .find(|(kind, name, ..)| *kind == KIND_OBJECT && *name == object_name(object.id))
@@ -402,7 +464,7 @@ fn an_object_entry_is_a_vault_object_under_the_package_id() {
         object.size,
     )
     .unwrap();
-    assert_eq!(out, fixture.data[&object.id]);
+    assert_eq!(out, fixture.data[&fixture.manifest.records[0].display.id]);
     // Under another id it does not open: the id is bound into every chunk.
     assert!(super::super::verify_object(
         &path,
@@ -428,7 +490,8 @@ fn the_stored_length_of_an_object_is_the_one_computed_from_its_size() {
     let fixture = fixture(&sizes);
     let key = key();
     let bytes = write_package(&fixture, &key);
-    for record in &fixture.manifest.records {
+    let read = read_all(&bytes, PackageSecret::Key(&key)).unwrap();
+    for record in &read.manifest.records {
         let object = record.display;
         let span = spans(&bytes)
             .into_iter()
@@ -961,11 +1024,317 @@ fn the_package_id_and_the_key_wrap_are_new_for_every_export() {
         writer.write_object(next.id, &mut source, &open).unwrap();
     }
     assert_eq!(id(&writer.finish().unwrap()), written);
-    // And the keys under it: the same object's key differs per package.
-    let keys = |bytes: &[u8]| {
+    // And the keys under it: the object ids are new each time too, so no object has the
+    // same id, or the same key, in two exports of one person.
+    let first_object = |bytes: &[u8]| {
         let reader = PackageReader::open(Cursor::new(bytes), PackageSecret::Key(&key)).unwrap();
-        let id = fixture.manifest.records[0].display.id;
-        object_key(&reader.keys, id).unwrap()
+        let id = reader.manifest().records[0].display.id;
+        (id, object_key(&reader.keys, id).unwrap())
     };
-    assert_ne!(*keys(&a), *keys(&b));
+    let (id_a, key_a) = first_object(&a);
+    let (id_b, key_b) = first_object(&b);
+    assert_ne!(id_a, id_b);
+    assert_ne!(*key_a, *key_b);
+}
+
+// ---------------------------------------------------------------------------
+// The #390 review: format first, the tail without the objects, a poisoned
+// writer, ids made by the writer, a verified token, a key of its own kind
+// ---------------------------------------------------------------------------
+
+/// A package made as a newer myCarlos might: magic, then a header that is not this
+/// format's, with a field and a key kind this build does not know.
+fn newer_header_package() -> Vec<u8> {
+    let header = serde_json::json!({
+        "format": 2,
+        "packageId": Uuid::new_v4(),
+        "keyKind": "hardware",
+        "somethingNew": {"a": 1},
+        "wrappedPackageKey": {"nonce": "x", "ciphertext": "y"}
+    });
+    let header = serde_json::to_vec(&header).unwrap();
+    let mut bytes = PACKAGE_MAGIC.to_vec();
+    bytes.extend((header.len() as u32).to_be_bytes());
+    bytes.extend(header);
+    bytes
+}
+
+#[test]
+fn a_newer_header_is_a_newer_format_not_an_unreadable_file() {
+    let bytes = newer_header_package();
+    let key = key();
+    assert!(matches!(
+        PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)),
+        Err(PackageError::NewerFormat)
+    ));
+    assert!(matches!(
+        PackageReader::open(Cursor::new(&bytes), PackageSecret::Passphrase(PASSPHRASE)),
+        Err(PackageError::NewerFormat)
+    ));
+    // A header with no format, or an older one, or not JSON, is just unreadable.
+    for header in [
+        br#"{"packageId":"x"}"#.as_slice(),
+        br#"{"format":0}"#,
+        b"not json",
+    ] {
+        let mut bytes = PACKAGE_MAGIC.to_vec();
+        bytes.extend((header.len() as u32).to_be_bytes());
+        bytes.extend(header);
+        assert!(matches!(
+            PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)),
+            Err(PackageError::Unreadable)
+        ));
+    }
+}
+
+#[test]
+fn a_newer_manifest_is_a_newer_format_even_with_fields_this_build_does_not_know() {
+    let key = key();
+    let mut writer = PackageWriter::create(Vec::new(), PackageSecret::Key(&key), &[]).unwrap();
+    let json = serde_json::to_vec(&serde_json::json!({
+        "format": 2,
+        "exportedAtMs": 1,
+        "somethingNew": [1, 2, 3],
+        "profile": {"unknownKind": true}
+    }))
+    .unwrap();
+    let sealed = seal_padded(
+        &writer.keys.manifest,
+        &entry_aad(MANIFEST_AAD, writer.package_id),
+        &json,
+        manifest_class(json.len()).unwrap(),
+    )
+    .unwrap();
+    writer
+        .small_entry(KIND_MANIFEST, NAME_MANIFEST, &sealed)
+        .unwrap();
+    let bytes = writer.inner;
+    assert!(matches!(
+        PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)),
+        Err(PackageError::NewerFormat)
+    ));
+}
+
+#[test]
+fn the_tail_is_checked_without_reading_the_objects() {
+    let fixture = fixture(&[1, CHUNK_SIZE + 3, 0, 70_000]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let mut reader = PackageReader::open(Cursor::new(&bytes), PackageSecret::Key(&key)).unwrap();
+    reader.verify_tail().unwrap();
+    // The place is put back: the objects are read, and the whole checked, after it.
+    let mut count = 0;
+    while reader.next_object().is_some() {
+        reader.read_object(&mut Vec::new(), &open).unwrap();
+        count += 1;
+        if count == 2 {
+            reader.verify_tail().unwrap();
+        }
+    }
+    reader.finish().unwrap();
+}
+
+#[test]
+fn a_package_that_is_cut_altered_or_extended_is_refused_by_the_tail_check() {
+    let fixture = fixture(&[1, 5_000, 70_000]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let entries = spans(&bytes);
+    let manifest_end = entries
+        .iter()
+        .find(|entry| entry.0 == KIND_MANIFEST)
+        .unwrap()
+        .3;
+    let digests = entries
+        .iter()
+        .find(|entry| entry.0 == KIND_DIGESTS)
+        .unwrap();
+    let trailer_at = digests.3;
+    let tail = |bytes: &[u8]| {
+        let mut reader = PackageReader::open(Cursor::new(bytes), PackageSecret::Key(&key))?;
+        reader.verify_tail()
+    };
+    assert_eq!(tail(&bytes), Ok(()));
+
+    // Cut right after the manifest: what inspecting alone would have accepted.
+    assert!(PackageReader::open(
+        Cursor::new(&bytes[..manifest_end]),
+        PackageSecret::Key(&key)
+    )
+    .is_ok());
+    assert_eq!(tail(&bytes[..manifest_end]), Err(PackageError::Unreadable));
+    // Cut between the objects and the digests, inside the digests, inside the trailer,
+    // and one byte short of the end.
+    for cut in [
+        digests.2,
+        digests.2 + 20,
+        trailer_at,
+        trailer_at + 10,
+        bytes.len() - 1,
+    ] {
+        assert_eq!(tail(&bytes[..cut]), Err(PackageError::Unreadable), "{cut}");
+    }
+    // A bit flipped in the trailer or its tag; a byte added; a whole entry's worth added.
+    for at in [trailer_at + 8, bytes.len() - 1, bytes.len() - 40] {
+        let mut flipped = bytes.clone();
+        flipped[at] ^= 1;
+        assert_eq!(tail(&flipped), Err(PackageError::Unreadable), "{at}");
+    }
+    let mut longer = bytes.clone();
+    longer.push(0);
+    assert_eq!(tail(&longer), Err(PackageError::Unreadable));
+    let mut doubled = bytes.clone();
+    doubled.extend_from_slice(&bytes[trailer_at..]);
+    assert_eq!(tail(&doubled), Err(PackageError::Unreadable));
+    // A digests entry from another package, in place of this one's.
+    let other = write_package(&fixture, &key);
+    let other_digests = spans(&other)
+        .into_iter()
+        .find(|entry| entry.0 == KIND_DIGESTS)
+        .unwrap();
+    let mut swapped = bytes[..digests.2].to_vec();
+    swapped.extend_from_slice(&other[other_digests.2..other_digests.3]);
+    swapped.extend_from_slice(&bytes[trailer_at..]);
+    assert_eq!(tail(&swapped), Err(PackageError::Unreadable));
+}
+
+#[test]
+fn the_tail_check_works_on_a_file() {
+    use std::io::BufReader;
+    let fixture = fixture(&[3 * CHUNK_SIZE + 1, 20]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("package.mcprofile");
+    std::fs::write(&path, &bytes).unwrap();
+    let file = BufReader::new(std::fs::File::open(&path).unwrap());
+    let mut reader = PackageReader::open(file, PackageSecret::Key(&key)).unwrap();
+    reader.verify_tail().unwrap();
+    while reader.next_object().is_some() {
+        reader.read_object(&mut io::sink(), &open).unwrap();
+    }
+    reader.finish().unwrap();
+}
+
+#[test]
+fn a_writer_that_has_failed_writes_nothing_more() {
+    let fixture = fixture(&[3 * CHUNK_SIZE, 10]);
+    let key = key();
+    let first = fixture.manifest.records[0].display;
+
+    // A cancelled object may have left half an entry: no other object, and no finish.
+    let mut writer = started(&fixture, &key);
+    let mut source = Cursor::new(fixture.data[&first.id].clone());
+    assert_eq!(
+        writer.write_object(first.id, &mut source, &|| false),
+        Err(PackageError::Cancelled)
+    );
+    let length = writer.inner.len();
+    let mut again = Cursor::new(fixture.data[&first.id].clone());
+    assert_eq!(
+        writer.write_object(first.id, &mut again, &open),
+        Err(PackageError::Invalid)
+    );
+    assert_eq!(writer.inner.len(), length);
+    assert!(matches!(writer.finish(), Err(PackageError::Invalid)));
+
+    // A source of the wrong size does the same.
+    let mut writer = started(&fixture, &key);
+    assert!(writer
+        .write_object(first.id, &mut Cursor::new(vec![0_u8; 5]), &open)
+        .is_err());
+    assert!(matches!(writer.finish(), Err(PackageError::Invalid)));
+
+    // And a manifest that was refused leaves the writer unusable, not waiting for another.
+    let mut bad = fixture.manifest.clone();
+    bad.profile.display_name.clear();
+    let mut writer = PackageWriter::create(Vec::new(), PackageSecret::Key(&key), &[]).unwrap();
+    assert!(writer.write_manifest(&bad).is_err());
+    assert_eq!(
+        writer.write_manifest(&fixture.manifest),
+        Err(PackageError::Invalid)
+    );
+}
+
+#[test]
+fn the_writer_makes_every_id_and_keeps_the_callers_out_of_the_file() {
+    let fixture = fixture(&[100, 200, 300]);
+    let key = key();
+    let bytes = write_package(&fixture, &key);
+    let read = read_all(&bytes, PackageSecret::Key(&key)).unwrap();
+    let mine: HashSet<Uuid> = fixture
+        .manifest
+        .folders
+        .iter()
+        .map(|folder| folder.id)
+        .chain(fixture.manifest.records.iter().map(|record| record.id))
+        .chain(fixture.manifest.objects().iter().map(|object| object.id))
+        .collect();
+    let theirs: HashSet<Uuid> = read
+        .manifest
+        .folders
+        .iter()
+        .map(|folder| folder.id)
+        .chain(read.manifest.records.iter().map(|record| record.id))
+        .chain(read.manifest.objects().iter().map(|object| object.id))
+        .collect();
+    assert_eq!(mine.len(), theirs.len());
+    assert!(mine.is_disjoint(&theirs));
+    // The folder tree and each record's folders are the same shape, on the new ids.
+    assert_eq!(renumber(&read.manifest), renumber(&fixture.manifest));
+    // Two exports of one person share no id.
+    let again = read_all(&write_package(&fixture, &key), PackageSecret::Key(&key)).unwrap();
+    let ids = |manifest: &PackageManifest| -> HashSet<Uuid> {
+        manifest
+            .folders
+            .iter()
+            .map(|folder| folder.id)
+            .chain(manifest.records.iter().map(|record| record.id))
+            .chain(manifest.objects().iter().map(|object| object.id))
+            .collect()
+    };
+    assert!(ids(&read.manifest).is_disjoint(&ids(&again.manifest)));
+}
+
+#[test]
+fn the_manifest_says_how_many_bytes_the_objects_hold() {
+    let fixture = fixture(&[0, 10, 70_000]);
+    // The sizes plus the first record's second copy (300) and answer (40).
+    assert_eq!(fixture.manifest.total_plaintext_bytes(), 70_010 + 340);
+}
+
+#[test]
+fn the_history_excerpt_is_bounded_by_what_a_phone_can_hold() {
+    assert_eq!(MAX_HISTORY_ENTRIES, 2_000);
+    assert_eq!(MAX_MANIFEST_CLASS, 16 * 1024 * 1024);
+    let mut manifest = fixture(&[1]).manifest;
+    manifest.history = Some(vec![
+        serde_json::json!({"event": "imported"});
+        MAX_HISTORY_ENTRIES
+    ]);
+    assert_eq!(manifest.validate(), Ok(()));
+}
+
+#[test]
+fn a_package_key_and_a_recovery_key_are_told_apart() {
+    let (key, text) = generate_package_key();
+    // The package's own key reads back, as it is shown and as a person types it.
+    assert_eq!(*parse_package_key(&text).unwrap(), *key);
+    assert_eq!(
+        *parse_package_key(&text.to_lowercase().replace('-', " ")).unwrap(),
+        *key
+    );
+    // The vault does not take it for a recovery key, nor a recovery key for it, and
+    // the person is told which was typed.
+    assert!(super::super::decode_recovery_key(&text).is_err());
+    let recovery = super::super::encode_recovery_key(&key);
+    assert_eq!(
+        parse_package_key(&recovery).err(),
+        Some(PackageError::RecoveryKeyEntered)
+    );
+    assert_ne!(*recovery, *text);
+    // Still a typo when it is neither.
+    let mut typo = text.to_string();
+    typo.replace_range(0..1, if typo.starts_with('A') { "B" } else { "A" });
+    assert_eq!(parse_package_key(&typo).err(), Some(PackageError::KeyTypo));
 }
