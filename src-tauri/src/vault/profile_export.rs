@@ -343,7 +343,7 @@ impl VaultStore {
         unlocked: &UnlockedVault,
         candidate: &str,
     ) -> Result<bool, VaultError> {
-        if decode_recovery_key(candidate).is_ok() {
+        if looks_like_recovery_key(candidate) {
             return Ok(true);
         }
         if candidate.len() > MAX_PASSPHRASE_BYTES {
@@ -593,6 +593,31 @@ impl Source {
             sha256: self.sha256.as_deref(),
         }
     }
+}
+
+/// Whether `text` could be a recovery key, **whatever its check characters say**: after the
+/// punctuation is dropped and I, L and O are read as the key alphabet reads them, 26 to 28
+/// symbols that are all in the alphabet. The first 26 carry the whole 128-bit key, so a key
+/// typed without its last two characters, or with one wrong anywhere, is the key or a few
+/// hundred guesses from it; none of those may be a package passphrase.
+fn looks_like_recovery_key(text: &str) -> bool {
+    if text.len() > 256 {
+        return false;
+    }
+    let symbols: Vec<u8> = text
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .map(|character| match character.to_ascii_uppercase() {
+            'I' | 'L' => '1',
+            'O' => '0',
+            other => other,
+        })
+        .filter_map(|character| u8::try_from(character).ok())
+        .collect();
+    let counted = text.chars().filter(|c| c.is_alphanumeric()).count();
+    (26..=28).contains(&counted)
+        && symbols.len() == counted
+        && symbols.iter().all(|byte| CROCKFORD_ALPHABET.contains(byte))
 }
 
 fn error_of_package(error: PackageError) -> VaultError {
@@ -1343,6 +1368,35 @@ mod tests {
                 ),
                 Err(VaultError::WeakPassphrase)
             ));
+        }
+        // The first 26 characters are the whole key: without its two check characters, with
+        // one character wrong anywhere (including in the check), with a dropped one, in any
+        // case and with any punctuation, it is still a recovery key's worth of secret.
+        let key_text = own.to_uppercase().replace('-', "");
+        for text in [
+            key_text[..26].to_owned(),
+            key_text[..27].to_owned(),
+            format!("{}-{}", &key_text[..13], &key_text[13..26]).to_lowercase(),
+            {
+                let mut typo = key_text.clone();
+                typo.replace_range(5..6, if &key_text[5..6] == "A" { "B" } else { "A" });
+                typo
+            },
+            {
+                let mut typo = key_text[..26].to_owned();
+                typo.replace_range(0..1, if &key_text[0..1] == "A" { "B" } else { "A" });
+                typo
+            },
+            // Read as the alphabet reads them: O as 0, I and L as 1.
+            key_text.replace('0', "O").replace('1', "l"),
+        ] {
+            assert!(
+                matches!(
+                    v.store.check_package_passphrase(v.child, &text),
+                    Err(VaultError::WeakPassphrase)
+                ),
+                "{text}"
+            );
         }
         // An ordinary passphrase still passes the same check.
         assert!(v
