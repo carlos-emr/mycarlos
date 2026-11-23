@@ -1,6 +1,14 @@
+import { useRef, useSyncExternalStore } from "react";
+import {
+  aiLabelSnapshot,
+  anyShortAiLabel,
+  showFullAiLabelAgain,
+  subscribeAiLabel,
+} from "../aiLabelPreference";
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
+import { AiSpeedCheck } from "./AiSpeedCheck";
 
 /** Settings > AI helper (#72): the model on this computer. Later AI settings
  * (such as the answers kept with documents) belong here too. Shown only on a
@@ -9,12 +17,20 @@ import { AiModelSetting } from "./AiModelSetting";
 export function AiSettings({
   aiStatus,
   onAiStatus,
+  onOpenAiHelperNotice,
 }: {
   aiStatus: ModelStatus | null;
   /** The status after the model was added or removed here. */
   onAiStatus: (status: ModelStatus) => void;
+  /** Opens the notice about the AI helper (#72, #355): it is here, with the
+   * helper's other settings, and no longer in Security. */
+  onOpenAiHelperNotice?: () => void;
 }) {
   const { t } = useI18n();
+  // Whether "Don't show this again" was chosen on any AI answer (#351).
+  useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
+  const shortLabel = anyShortAiLabel();
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
   return (
     <main className="library-main purpose-screen">
       <div className="main-head">
@@ -43,6 +59,53 @@ export function AiSettings({
             )}
           </div>
         </section>
+        <section className="setting-row">
+          <div>
+            <h2 ref={headingRef} tabIndex={-1}>
+              {t("ai.label.settingsTitle")}
+            </h2>
+            <p>{t("ai.label.settingsBody")}</p>
+          </div>
+          <div>
+            {/* Always on the page, so that a change of its words is read out; the button goes
+                when there is nothing to bring back, and the focus goes to the row's heading. */}
+            <p role="status">
+              {shortLabel
+                ? t("ai.label.settingsShortShown")
+                : t("ai.label.settingsFullShown")}
+            </p>
+            {shortLabel && (
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  showFullAiLabelAgain();
+                  headingRef.current?.focus();
+                }}
+              >
+                {t("ai.label.settingsShowFull")}
+              </button>
+            )}
+          </div>
+        </section>
+        {onOpenAiHelperNotice && (
+          <section className="setting-row">
+            <div>
+              <h2>{t("aiHelper.notice.title")}</h2>
+              <p>{t("aiHelper.notice.introShare")}</p>
+            </div>
+            <div>
+              <button
+                className="button"
+                type="button"
+                onClick={onOpenAiHelperNotice}
+              >
+                {t("aiHelper.notice.title")}
+              </button>
+            </div>
+          </section>
+        )}
+        {aiStatus && <AiSpeedCheck status={aiStatus} />}
       </div>
     </main>
   );

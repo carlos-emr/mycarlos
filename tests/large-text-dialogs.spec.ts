@@ -100,6 +100,21 @@ async function fakeVault(page: Page, locale: string) {
           command === "vault_recovery_key_cancel"
         )
           return;
+        // Video (#359): nothing waiting to be finished, and no document
+        // starts as an MP4 does.
+        if (command === "vault_video_pending")
+          return { recordings: [], unreadable: 0 };
+        if (command === "vault_is_video") return false;
+        // The backup's size, with and without videos (#359): no video here.
+        if (command === "vault_backup_size")
+          return {
+            totalBytes: 4096,
+            withoutVideosBytes: 4096,
+            videoBytes: 0,
+            videoCount: 0,
+          };
+        if (command === "vault_left_out_records") return [];
+
         // Files shared to myCarlos are looked for on focus (#49): none.
         if (command === "received_list")
           return { files: [], notice: { dropped: 0, refusedShares: 0 } };
@@ -194,7 +209,7 @@ const rootFont = (page: Page) =>
 // Two ways to 200% text:
 // - A phone's own text size, or the browser's default text: 32px on a phone
 //   at 320 or 360px.
-// - The app's Text size (Preferences), which zooms the whole webview: at
+// - The app's App zoom (Preferences), which zooms the whole webview: at
 //   200% a 1280x720 window lays out like 640x360, drawn with twice the
 //   pixels, with 16px text (as large-text-accessibility.spec.ts models it).
 const LARGE_TEXT = [
@@ -213,7 +228,7 @@ const LARGE_TEXT = [
     phone: true,
   },
   {
-    name: "with the app's text size at 200%",
+    name: "with the app's zoom at 200%",
     width: 640,
     height: 360,
     font: 16,

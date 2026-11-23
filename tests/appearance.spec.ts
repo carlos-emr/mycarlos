@@ -74,6 +74,9 @@ async function fakeVault(
             themes.push(args?.value);
             return;
           }
+          if (command === "vault_video_pending")
+            return { recordings: [], unreadable: 0 };
+          if (command === "vault_is_video") return false;
           if (
             [
               "vault_touch",
@@ -122,10 +125,13 @@ async function screenshot(page: Page, info: TestInfo, name: string) {
 }
 
 /**
- * WCAG 1.4.11 for the unchecked Appearance radios: the browser draws each
- * ring from color-scheme (or system colours), so there is no CSS border to
- * read. Each unchecked radio is photographed, and its pixel furthest from the
- * corner (the row behind it) must differ by at least 3:1.
+ * WCAG 1.4.11 for the unchecked Appearance radios. Each is drawn as a button
+ * whose box is the radio itself, with a 1px border in --control-line (the
+ * theme test pins that colour at 3:1 against the page; this checks what is
+ * actually drawn). Each unchecked radio is photographed, and on each of its four
+ * sides the border's pixels, read from the middle of the side where no word is,
+ * must differ from the row behind the button (the pixel in its rounded corner,
+ * outside the border) by at least 3:1. The band is 4 device pixels wide.
  */
 async function radioRingsReadable(page: Page) {
   const radios = page
@@ -158,24 +164,38 @@ async function radioRingsReadable(page: Page) {
         canvas.height = image.height;
         const context = canvas.getContext("2d")!;
         context.drawImage(image, 0, 0);
-        const pixels = context.getImageData(
+        const { data: pixels } = context.getImageData(
           0,
           0,
           image.width,
           image.height,
-        ).data;
-        const back = luminance(pixels[0], pixels[1], pixels[2]);
-        let best = 1;
-        for (let i = 0; i < pixels.length; i += 4) {
-          const value = luminance(pixels[i], pixels[i + 1], pixels[i + 2]);
-          const ratio =
-            (Math.max(value, back) + 0.05) / (Math.min(value, back) + 0.05);
-          best = Math.max(best, ratio);
-        }
-        ratios.push(best);
+        );
+        const at = (x: number, y: number) => {
+          const i = (y * image.width + x) * 4;
+          return luminance(pixels[i], pixels[i + 1], pixels[i + 2]);
+        };
+        const back = at(0, 0);
+        const ratio = (value: number) =>
+          (Math.max(value, back) + 0.05) / (Math.min(value, back) + 0.05);
+        const w = image.width;
+        const h = image.height;
+        const middleX = w >> 1;
+        const middleY = h >> 1;
+        // The best pixel in a 4px band on each side, from the side's middle: the
+        // border is 1 CSS pixel, which is 3 device pixels on a phone, and the
+        // photograph may start a fraction of a pixel outside it.
+        const band = [0, 1, 2, 3];
+        const sides = [
+          band.map((n) => at(n, middleY)),
+          band.map((n) => at(w - 1 - n, middleY)),
+          band.map((n) => at(middleX, n)),
+          band.map((n) => at(middleX, h - 1 - n)),
+        ];
+        for (const side of sides) ratios.push(Math.max(...side.map(ratio)));
       }
       return ratios;
     }, shots);
+    expect(ratios).toHaveLength(12);
     for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(3);
   } finally {
     await scratch.close();
@@ -375,6 +395,9 @@ test("remembers appearance and follows live system changes without vault mutatio
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",
+          // Reads the library makes at start (#359): they change nothing.
+          "vault_video_pending",
+          "vault_is_video",
         ].includes(command),
     ),
   ).toEqual([]);
@@ -503,13 +526,18 @@ test("manual high contrast choice wraps at 320px with enlarged text", async ({
       left: box.left,
       right: box.right,
       height: box.height,
+      // 36px for a mouse, 44px for a finger.
+      minimum: matchMedia("(pointer: fine) and (not (any-pointer: coarse))")
+        .matches
+        ? 36
+        : 44,
       width: innerWidth,
       textFits: span.scrollWidth <= span.clientWidth,
     };
   });
   expect(bounds.left).toBeGreaterThanOrEqual(0);
   expect(bounds.right).toBeLessThanOrEqual(bounds.width);
-  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(bounds.height).toBeGreaterThanOrEqual(bounds.minimum);
   expect(bounds.textFits).toBe(true);
   expect(
     await page.evaluate(
@@ -940,3 +968,53 @@ test("dark mode has no light panels on any section", async ({ page }, info) => {
   }
   expect(light).toEqual([]);
 });
+
+// The four Appearance choices are real radio buttons drawn as a row of buttons: one row of
+// four with room, two by two in a narrow space or with enlarged text.
+for (const [width, zoom, rows] of [
+  [1100, "", 1],
+  [320, "", 2],
+  [1100, "200%", 2],
+] as const) {
+  test(`Preferences draws Appearance as ${rows === 1 ? "one row" : "two rows"} at ${width}px${zoom ? " with text at " + zoom : ""}`, async ({
+    page,
+  }, info) => {
+    test.skip(
+      info.project.name === "phone" && width > 500,
+      "a wide window is measured on the desktop project",
+    );
+    await fakeVault(page, info.project.name === "phone" ? "ios" : "windows");
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+    await section(page, info, "preferences");
+    if (zoom)
+      await page.locator("html").evaluate((element, size) => {
+        element.style.fontSize = size;
+      }, zoom);
+    const { system, light, dark, highContrast } = appearanceChoices(page);
+    for (const choice of [system, light, dark, highContrast])
+      await expect(choice).toBeVisible();
+    const tops = await page
+      .getByRole("group", { name: "Appearance" })
+      .locator("label")
+      .evaluateAll((labels) =>
+        labels.map((l) => Math.round(l.getBoundingClientRect().top)),
+      );
+    expect(new Set(tops).size).toBe(rows);
+    if (rows === 2) {
+      expect(tops[0]).toBe(tops[1]);
+      expect(tops[2]).toBe(tops[3]);
+    }
+    // Choosing keeps the group's own keyboard: arrow keys move and choose, with a focus ring.
+    await system.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(light).toBeChecked();
+    await expect(light).toBeFocused();
+    await expect(light).toHaveCSS("outline-style", "solid");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}

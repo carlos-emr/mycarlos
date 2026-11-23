@@ -286,17 +286,32 @@ older glib line, while Tauri 3 is an alpha. We chose the narrow backport over
 introducing an alpha framework across every platform. Linux remains an evaluation
 pending review and device validation; fixing one defect does not approve release.
 
+### Wry patched for the Apple camera and microphone decision (#359)
+
+The pinned local wry 0.55.1 source differs from the crates.io release in three files under
+`src/wkwebview/class/`. Upstream grants every `getUserMedia` request on macOS and iOS; the patch
+grants only video, alone or with sound, from the main frame of the app's own `tauri://localhost`,
+and denies everything else without a prompt, as the Linux and Windows handlers already do. It is
+not a security fix for a published advisory; it narrows what the page the app serves may do, so a
+page that was somehow loaded cannot turn the microphone on for sound alone. The decision is
+a plain function that the app's tests run on every host. The delegate itself is Apple-only code
+and is not compiled or run on the Linux build host; it needs the macOS and iOS builds and the device
+steps in TESTING.md. WebKit calls the patched method only on macOS 12 and later and iOS 15 and
+later; on older systems (the app's iOS minimum is 14.5) WebKit's own default answers, as before the
+patch. Carrying the patch to a new Wry is described in the
+[native patch notes](src-tauri/vendor/README.md).
+
 ### Provenance, audit, and maintenance
 
 [Native patch notes](src-tauri/vendor/README.md) contain the exact deltas, pinned
 archive checksums/source revisions, development tradeoff, and retirement criteria.
-CI reconstructs the complete glib source snapshot from its checksum-verified release
-plus patch, then checks that Cargo selects the glib backport and upstream Tauri. Licenses are preserved;
+CI reconstructs the complete glib and wry source snapshots from their checksum-verified releases
+plus patches, then checks that Cargo selects the glib backport, the patched wry and upstream Tauri. Licenses are preserved;
 package versions are not changed to impersonate upstream fixed releases.
 
 Local source patches can disappear from registry-only advisory scanning. Our
-audit helper restores the glib upstream identity in a temporary audit lockfile,
-retaining the original glib warning and future advisories. It does not change the
+audit helper restores the glib and wry upstream identities in a temporary audit lockfile,
+retaining the original glib warning and future advisories for both. It does not change the
 real lockfile or ignore an advisory. The source verification and optimized tests
 are the evidence for this specific backport, independent of scanner status.
 

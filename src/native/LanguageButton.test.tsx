@@ -63,6 +63,22 @@ describe("the language button on the unlock and set-up screens", () => {
     ).toHaveFocus();
   });
 
+  it("does not repeat the dialog's title above the list, and keeps the list named", async () => {
+    const user = userEvent.setup();
+    render(<LanguageButton />);
+    await user.click(screen.getByRole("button", { name: /\(Language\)$/ }));
+    const dialog = screen.getByRole("dialog", { name: "Language" });
+    // One visible "Language": the title. The list is still a named group for a screen
+    // reader (its legend), and nothing else repeats the word as a heading.
+    expect(dialog.querySelector(".language-title")).toBeNull();
+    expect(
+      within(dialog).getAllByRole("heading", { name: "Language" }),
+    ).toHaveLength(1);
+    expect(
+      within(dialog).getByRole("group", { name: "Language" }),
+    ).toBeInTheDocument();
+  });
+
   it("closes with Escape without changing the language", async () => {
     const user = userEvent.setup();
     render(<LanguageButton />);
