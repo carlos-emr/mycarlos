@@ -10,6 +10,9 @@ vault_source.rs fails until it is):
   1. the parameter type:   State<'_, Arc<VaultStore>>   ->  State<'_, StoreHandle>
   2. the borrow of it:     store.inner()                 ->  store.arc()
      (`StoreHandle::arc` gives the same `&Arc<VaultStore>` that `State::inner` gave.)
+  3. (PR 3) the pin:        a function taking `State<'_, StoreHandle>` begins with
+     `let store = store.pin();`, so every step of it, either side of an `await`, acts on the one
+     vault that was current when it began (a switch cannot move it to another vault halfway).
 
 Only the lines of the files under `src-tauri/src/` that carry one of these are touched; it prints how many it
 changed and exits 0 when there is nothing to do, so it is safe to run twice. It does not touch the
@@ -42,6 +45,48 @@ REPORT = [
 ]
 
 
+PIN_PARAM = re.compile(r"(\w+):\s*(?:tauri::)?State<'_,\s*StoreHandle>")
+
+
+def add_pins(text):
+    """Inserts `let <p> = <p>.pin();` as the first statement of each function taking the handle."""
+    out = []
+    last = 0
+    added = 0
+    for match in re.finditer(r"\bfn\s+\w+\s*(?:<[^>]*>)?\s*\(", text):
+        open_at = match.end() - 1
+        depth = 0
+        close = None
+        for index in range(open_at, len(text)):
+            if text[index] == "(":
+                depth += 1
+            elif text[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    close = index
+                    break
+        if close is None:
+            continue
+        param = PIN_PARAM.search(text[open_at:close])
+        if not param:
+            continue
+        brace = text.find("{", close)
+        if brace < 0 or brace < last:
+            continue
+        name = param.group(1)
+        wanted = f"let {name} = {name}.pin();"
+        after = text[brace + 1 :]
+        if after.lstrip().startswith(wanted):
+            continue
+        indent = re.match(r"\n?([ \t]*)", after).group(1) or "    "
+        out.append(text[last : brace + 1])
+        out.append(f"\n{indent}{wanted}")
+        last = brace + 1
+        added += 1
+    out.append(text[last:])
+    return "".join(out), added
+
+
 def main(argv):
     check = "--check" in argv
     changed = 0
@@ -61,9 +106,10 @@ def main(argv):
                 if pattern.search(new):
                     print(f"{path.name}:{number}: wiring to do by hand: {new.strip()}")
             out.append(new)
-        changed += file_changed
-        if file_changed and not check:
-            path.write_text("\n".join(out), encoding="utf-8")
+        new_text, pins = add_pins("\n".join(out))
+        changed += file_changed + pins
+        if (file_changed or pins) and not check:
+            path.write_text(new_text, encoding="utf-8")
     print(f"{changed} line(s) {'need' if check else 'rewritten'}")
     if check:
         return 1 if changed else 0

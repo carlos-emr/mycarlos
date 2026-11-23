@@ -59,6 +59,19 @@ impl StoreHandle {
         }
     }
 
+    /// A handle over a source the caller keeps a share of (the document worker holds the same one).
+    pub(crate) fn from_source(source: Arc<dyn VaultSource>) -> Self {
+        Self { source }
+    }
+
+    /// A handle fixed to the store that is current NOW. A command takes one at its start
+    /// (`let store = store.pin();`, put there by the codemod), so every step of it, before and after
+    /// an `await`, acts on the same vault even if the screen switches meanwhile: a command that
+    /// began on vault A never finishes on vault B.
+    pub(crate) fn pin(&self) -> Self {
+        Self::single(Arc::clone(self.arc()))
+    }
+
     /// A handle for the one vault the device has.
     pub(crate) fn single(store: Arc<VaultStore>) -> Self {
         Self::new(SingleVault { store })
@@ -142,6 +155,26 @@ mod tests {
         assert_eq!(handle.all().len(), 2);
     }
 
+    #[test]
+    fn given_a_pinned_handle_when_the_source_switches_then_the_pin_keeps_its_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = Arc::new(VaultStore::new(temp.path().join("one")));
+        let second = Arc::new(VaultStore::new(temp.path().join("two")));
+        let two = Arc::new(Two {
+            stores: [Arc::clone(&first), Arc::clone(&second)],
+            current: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let handle = StoreHandle::from_source(Arc::new(SharedTwo(Arc::clone(&two))));
+        let pinned = handle.pin();
+        two.current.store(1, std::sync::atomic::Ordering::Release);
+        assert!(Arc::ptr_eq(&*handle, &second));
+        assert!(
+            Arc::ptr_eq(&*pinned, &first),
+            "a pin does not follow the switch"
+        );
+        assert!(Arc::ptr_eq(&*pinned.pin(), &first));
+    }
+
     /// Every command takes the store through the handle: a command that still takes
     /// `State<'_, Arc<VaultStore>>` (or reads it with `app.state::<Arc<VaultStore>>()`) would keep
     /// working only while the device has one vault, and an app or test that still manages the bare
@@ -175,6 +208,111 @@ mod tests {
             "run scripts/vault-store-handle-codemod.py (and wrap a managed store in \
              StoreHandle::single): {offences:#?}"
         );
+    }
+
+    /// A command that takes the handle pins it first, so an `await` in the middle of it cannot move
+    /// it to another vault. Run `scripts/vault-store-handle-codemod.py` to add the line.
+    #[test]
+    fn every_command_pins_the_store_before_anything_else() {
+        let mut offences = Vec::new();
+        let mut folders = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(folder) = folders.pop() {
+            for item in std::fs::read_dir(&folder).unwrap() {
+                let path = item.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs")
+                    && path
+                        .file_name()
+                        .is_some_and(|name| name != "vault_source.rs")
+                {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    offences.extend(
+                        unpinned_commands(&source)
+                            .into_iter()
+                            .map(|name| format!("{}: {name}", path.display())),
+                    );
+                }
+            }
+        }
+        assert!(
+            offences.is_empty(),
+            "no `let store = store.pin();` first: {offences:#?}"
+        );
+    }
+
+    #[test]
+    fn the_pin_scan_finds_a_command_without_the_pin_and_accepts_one_with_it() {
+        let pinned = "async fn a(store: State<'_, StoreHandle>) -> R {\n    let store = store.pin();\n    run(store.arc()).await\n}";
+        let bare = "async fn b(\n    store: State<'_, StoreHandle>,\n    x: u8,\n) -> R {\n    run(store.arc()).await\n}";
+        let late = "fn c(vault: State<'_, StoreHandle>) -> R {\n    let n = 1;\n    let vault = vault.pin();\n    n\n}";
+        let pathed = "async fn e(on: bool, store: tauri::State<'_, StoreHandle>) -> R {\n    let store = store.pin();\n    on\n}";
+        let pathed_bare =
+            "async fn f(on: bool, store: tauri::State<'_, StoreHandle>) -> R {\n    on\n}";
+        assert!(unpinned_commands(pathed).is_empty());
+        assert_eq!(unpinned_commands(pathed_bare), vec!["f".to_owned()]);
+        let other = "fn d(picks: State<'_, Arc<PendingPicks>>) -> R {\n    picks.clear()\n}";
+        assert!(unpinned_commands(pinned).is_empty());
+        assert_eq!(unpinned_commands(bare), vec!["b".to_owned()]);
+        assert_eq!(unpinned_commands(late), vec!["c".to_owned()]);
+        assert!(unpinned_commands(other).is_empty());
+    }
+
+    /// The functions in `source` that take `State<'_, StoreHandle>` and do not begin with
+    /// `let <name> = <name>.pin();` for that parameter.
+    fn unpinned_commands(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for (at, _) in source.match_indices("fn ") {
+            let rest = &source[at + 3..];
+            let Some(open) = rest.find('(') else { continue };
+            let name = rest[..open].trim();
+            if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                continue;
+            }
+            // The parameter list, up to its matching parenthesis.
+            let mut depth = 0usize;
+            let mut close = None;
+            for (index, c) in rest[open..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(open + index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let Some(close) = close else { continue };
+            let params: String = rest[open + 1..close].split_whitespace().collect();
+            let Some(type_at) = params.find("State<'_,StoreHandle>") else {
+                continue;
+            };
+            // The name before the colon, with an optional `tauri::` in front of the type.
+            let before = params[..type_at].trim_end_matches("tauri::");
+            let param = before
+                .trim_end_matches(':')
+                .rsplit(',')
+                .next()
+                .unwrap_or("")
+                .trim();
+            // The body starts at the first `{` after the signature.
+            let Some(brace) = rest[close..].find('{') else {
+                continue;
+            };
+            let body: String = rest[close + brace + 1..]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .take(60)
+                .collect();
+            let wanted = format!("let{param}={param}.pin();");
+            if !body.starts_with(&wanted) {
+                found.push(name.to_owned());
+            }
+        }
+        found
     }
 
     #[test]

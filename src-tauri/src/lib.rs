@@ -68,6 +68,7 @@ mod throttle;
 mod unicode_cleaning_table;
 mod vault;
 mod vault_registry;
+mod vault_slots;
 mod vault_source;
 #[cfg(windows)]
 mod windows_navigation;
@@ -1846,6 +1847,7 @@ async fn ai_model_check(
     models: State<'_, Arc<local_model::Store>>,
     request: ModelIndexRequest,
 ) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    let store = store.pin();
     use model_runtime::LoadCheck;
     if !cfg!(desktop) {
         return Ok(LoadCheck::Skipped);
@@ -2039,6 +2041,7 @@ async fn ai_model_add_picked(
     active: State<'_, Arc<ModelAddActive>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
+    let store = store.pin();
     use tauri::Emitter;
     let filter = locale
         .unwrap_or_default()
@@ -2121,6 +2124,7 @@ async fn ai_model_download(
     active: State<'_, Arc<ModelAddActive>>,
     request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let store = store.pin();
     let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
@@ -2210,6 +2214,7 @@ async fn ai_summarize(
     mut request: model_runtime::SummarizeRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    let store = store.pin();
     // Capture the actual unlocked session before validation can yield.
     let origin = store
         .answer_origin()
@@ -2295,6 +2300,7 @@ async fn ai_explain(
     request: model_runtime::ExplainRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    let store = store.pin();
     // Capture the actual unlocked session before validation can yield.
     let origin = store
         .answer_origin()
@@ -2693,6 +2699,7 @@ impl From<history::HistoryEntry> for AuditHistoryEntry {
 /// another passphrase operation. Locking remains available throughout.
 #[tauri::command]
 async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTestReport> {
+    let store = store.pin();
     let store = Arc::clone(store.arc());
     let measured = tauri::async_runtime::spawn_blocking(move || store.benchmark_kdf())
         .await
@@ -2719,6 +2726,7 @@ async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTest
 
 #[tauri::command]
 async fn vault_status(store: State<'_, StoreHandle>) -> CommandResult<VaultStatus> {
+    let store = store.pin();
     run_blocking(store.arc(), VaultStore::status).await
 }
 
@@ -2730,6 +2738,7 @@ async fn vault_passphrase_rules(
     store: State<'_, StoreHandle>,
     request: PassphraseRulesRequest,
 ) -> CommandResult<PassphraseRules> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.new_passphrase_rules(&request.passphrase, &request.initial_profile_name)
     })
@@ -2743,6 +2752,7 @@ async fn vault_create(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     let picks = Arc::clone(picks.inner());
     let created = run_blocking(store.arc(), move |store| {
         let result = store
@@ -2767,6 +2777,7 @@ async fn vault_unlock(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     let picks = Arc::clone(picks.inner());
     tried(
         throttle.inner(),
@@ -2805,6 +2816,7 @@ async fn vault_lock(
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
+    let store = store.pin();
     stop_work_for_lock(&picks);
     let picks = Arc::clone(picks.inner());
     run_blocking(store.arc(), move |store| {
@@ -2877,6 +2889,7 @@ impl Drop for ActivityHold<'_> {
 /// at most every 10 seconds.
 #[tauri::command]
 fn vault_touch(store: State<'_, StoreHandle>) {
+    let store = store.pin();
     store.idle().touch(Instant::now());
 }
 
@@ -2891,6 +2904,7 @@ struct AutoLockRequest {
 /// restarts its own deadline then, so this counts as activity too.
 #[tauri::command]
 fn vault_set_auto_lock(store: State<'_, StoreHandle>, request: AutoLockRequest) {
+    let store = store.pin();
     store
         .idle()
         .set_delay_minutes(request.minutes, Instant::now());
@@ -2927,6 +2941,7 @@ where
 
 #[tauri::command]
 async fn vault_snapshot(store: State<'_, StoreHandle>) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
@@ -2940,6 +2955,7 @@ async fn vault_snapshot(store: State<'_, StoreHandle>) -> CommandResult<VaultSna
 /// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
 async fn vault_history(store: State<'_, StoreHandle>) -> CommandResult<AuditHistory> {
+    let store = store.pin();
     audit_history_result(run_blocking(store.arc(), VaultStore::history_view).await)
 }
 
@@ -2981,6 +2997,7 @@ async fn vault_portal_link(
     store: State<'_, StoreHandle>,
     request: PortalLinkRequest,
 ) -> CommandResult<portal_link::LinkSummary> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
@@ -3010,6 +3027,7 @@ async fn vault_portal_connect(
     store: State<'_, StoreHandle>,
     request: PortalLinkRequest,
 ) -> CommandResult<PortalConnectResult> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
@@ -3098,6 +3116,7 @@ async fn vault_refresh_device_approval(
     store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<DeviceApprovalCheck> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
@@ -3149,6 +3168,7 @@ async fn vault_submit_approval_code(
     link_id: Uuid,
     mut code: String,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
@@ -3166,6 +3186,7 @@ async fn vault_request_device_approval(
     store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
@@ -3179,6 +3200,7 @@ async fn vault_restart_device_approval(
     store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
@@ -3194,6 +3216,7 @@ async fn vault_forget_refused_deliveries(
     store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
         .await
@@ -3205,6 +3228,7 @@ async fn vault_forget_refused_deliveries(
 async fn vault_check_documents(
     store: State<'_, StoreHandle>,
 ) -> CommandResult<portal_pickup::CheckResult> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
@@ -3218,6 +3242,7 @@ async fn vault_notification_status(
     store: State<'_, StoreHandle>,
     locale: Option<UiLocale>,
 ) -> CommandResult<document_notification_runtime::Status> {
+    let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
         .await
@@ -3229,6 +3254,7 @@ async fn vault_set_notifications(
     store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<document_notification_runtime::Status> {
+    let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
         .await
@@ -3241,6 +3267,7 @@ async fn vault_set_automatic_document_checks(
     enabled: bool,
     store: tauri::State<'_, StoreHandle>,
 ) -> CommandResult<document_notification_runtime::Status> {
+    let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.set_automatic_checks(enabled))
         .await
@@ -3254,6 +3281,7 @@ async fn vault_change_passphrase(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: ChangePassphraseRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The current passphrase is checked as at unlock, and counted with it:
     // a vault left open must not let the passphrase be guessed without end.
     tried(
@@ -3289,6 +3317,7 @@ async fn vault_recovery_key_begin(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<ShownRecoveryKey> {
+    let store = store.pin();
     // As for a passphrase change: the passphrase is counted with unlock's.
     tried(
         throttle.inner(),
@@ -3411,6 +3440,7 @@ async fn vault_recovery_key_confirm(
     request: ConfirmRecoveryKeyRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<VaultSnapshot>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     let title = locale.text(MessageId::NativeRecoveryTitle)?;
     let warning = locale.text(MessageId::NativeRecoveryWarning)?;
@@ -3466,6 +3496,7 @@ fn confirm_recovery_key_asking(
 /// prints. Not secret.
 #[tauri::command]
 async fn vault_recovery_key_label(store: State<'_, StoreHandle>) -> CommandResult<String> {
+    let store = store.pin();
     run_blocking(store.arc(), VaultStore::pending_recovery_key_label).await
 }
 
@@ -3477,6 +3508,7 @@ async fn vault_recovery_kit_save(
     store: State<'_, StoreHandle>,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Nothing is asked for unless a key is waiting to be confirmed.
     let name = run_blocking(store.arc(), |store| store.recovery_kit_name(now_ms())).await?;
@@ -3522,6 +3554,7 @@ async fn vault_recovery_kit_save(
 
 #[tauri::command]
 async fn vault_recovery_key_cancel(store: State<'_, StoreHandle>) -> CommandResult<()> {
+    let store = store.pin();
     run_blocking(store.arc(), |store| {
         store.cancel_recovery_key();
         Ok(())
@@ -3536,6 +3569,7 @@ async fn vault_recover(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
+    let store = store.pin();
     let picks = Arc::clone(picks.inner());
     let passphrase_replaced = tried(
         throttle.inner(),
@@ -3671,6 +3705,7 @@ async fn vault_backup_pick(
     picks: State<'_, Arc<PendingPicks>>,
     request: BackupPickRequest,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let session = picks.session();
     // Named by the patient's own date where the renderer gives one that
     // reads as a date, else by the UTC date.
@@ -3702,6 +3737,7 @@ async fn vault_backup_picked(
     picks: State<'_, Arc<PendingPicks>>,
     request: PickRequest,
 ) -> CommandResult<SavedBackup> {
+    let store = store.pin();
     let destination = picks
         .backups
         .take(request.pick_id, picks.session())
@@ -3779,6 +3815,7 @@ async fn vault_restore_pick(
     picks: State<'_, Arc<PendingPicks>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     let session = picks.session();
     run_blocking(store.arc(), |store| match store.status()? {
@@ -3832,6 +3869,7 @@ async fn vault_restore_inspect(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RestoreRequest,
 ) -> CommandResult<RestorePreview> {
+    let store = store.pin();
     let source = picks
         .restores
         .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
@@ -3892,6 +3930,7 @@ async fn vault_restore(
     request: RestoreRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
@@ -3957,6 +3996,7 @@ async fn vault_create_profile(
     store: State<'_, StoreHandle>,
     request: NameRequest,
 ) -> CommandResult<Uuid> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.create_profile_with_details(
             &request.display_name,
@@ -3976,6 +4016,7 @@ async fn vault_update_profile_details(
     picks: State<'_, Arc<PendingPicks>>,
     request: ProfileDetailsRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The AI helper's re-check reads these details: an open preview ends.
     picks.clear_texts();
     run_blocking(store.arc(), move |store| {
@@ -3995,6 +4036,7 @@ async fn vault_rename_profile(
     picks: State<'_, Arc<PendingPicks>>,
     request: RenameProfileRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     picks.clear_texts();
     run_blocking(store.arc(), move |store| {
         store.rename_profile(request.profile_id, &request.display_name, now_ms())
@@ -4009,6 +4051,7 @@ async fn vault_shared_identity(
     store: State<'_, StoreHandle>,
     record_id: Uuid,
 ) -> CommandResult<Option<document_identity::FoundIdentity>> {
+    let store = store.pin();
     // Phones cannot run this helper. Return before decrypting any document.
     if !cfg!(desktop) {
         return Ok(None);
@@ -4060,6 +4103,7 @@ async fn vault_create_folder(
     store: State<'_, StoreHandle>,
     request: FolderRequest,
 ) -> CommandResult<Uuid> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.create_folder(
             request.profile_id,
@@ -4076,6 +4120,7 @@ async fn vault_update_folder(
     store: State<'_, StoreHandle>,
     request: UpdateFolderRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.update_folder(request.folder_id, request.parent_id, &request.name)
     })
@@ -4087,6 +4132,7 @@ async fn vault_rename_record(
     store: State<'_, StoreHandle>,
     request: RenameRecordRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         rename_document(store, request.record_id, &request.name)
     })
@@ -4098,6 +4144,7 @@ async fn vault_assign_folders(
     store: State<'_, StoreHandle>,
     request: AssignFoldersRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.assign_folders(request.record_id, request.folder_ids)
     })
@@ -4109,6 +4156,7 @@ async fn vault_assign_folders_batch(
     store: State<'_, StoreHandle>,
     request: AssignFoldersBatchRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.assign_folders_batch(request.record_ids, request.folder_ids)
     })
@@ -4125,6 +4173,7 @@ async fn vault_import_pick(
     request: ImportRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let session = picks.session();
@@ -4158,6 +4207,7 @@ async fn vault_import_picked(
     picks: State<'_, Arc<PendingPicks>>,
     request: PickedImportRequest,
 ) -> CommandResult<vault::ImportOutcome> {
+    let store = store.pin();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let picked_for = ImportRequest {
         profile_id: request.profile_id,
@@ -4308,6 +4358,7 @@ async fn received_accept(
     store: State<'_, StoreHandle>,
     received: State<'_, Arc<ReceivedFiles>>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
+    let store = store.pin();
     let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
@@ -4419,6 +4470,7 @@ async fn vault_view_page(
     store: State<'_, StoreHandle>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
+    let store = store.pin();
     use pdf_unlock::Refusal;
     if request
         .password
@@ -4555,6 +4607,7 @@ async fn vault_page_boxes(
     store: State<'_, StoreHandle>,
     mut request: PageBoxesRequest,
 ) -> CommandResult<PageBoxesAnswer> {
+    let store = store.pin();
     if request
         .password
         .as_ref()
@@ -4662,6 +4715,7 @@ async fn vault_document_text(
     picks: State<'_, Arc<PendingPicks>>,
     mut request: DocumentTextRequest,
 ) -> CommandResult<DocumentText> {
+    let store = store.pin();
     use pdf_unlock::Refusal;
     if !cfg!(desktop) {
         return Err(VaultError::PdfViewUnavailable.into());
@@ -4848,6 +4902,7 @@ async fn vault_record_known_details(
     store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<vault::KnownIdentifiers> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.known_identifiers(request.record_id)
     })
@@ -4872,6 +4927,7 @@ async fn vault_export_text_pick(
     request: TextExportPickRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let record_id = request.record_id;
     picks.peek_text(request.ticket, record_id)?;
     let session = picks.session();
@@ -4923,6 +4979,7 @@ async fn vault_export_text_picked(
     request: TextExportPickedRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<TextSaveOutcome> {
+    let store = store.pin();
     // Refused before anything else looks at the text.
     if request.text.len() > MAX_EXPORT_TEXT_BYTES {
         return Err(VaultError::Invalid.into());
@@ -4980,6 +5037,7 @@ async fn vault_move_to_person(
     store: State<'_, StoreHandle>,
     request: MoveToPersonRequest,
 ) -> CommandResult<vault::MoveOutcome> {
+    let store = store.pin();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     run_blocking(store.arc(), move |store| {
         store.move_to_profile(request.record_ids, request.profile_id, request.folder_ids)
@@ -5018,6 +5076,7 @@ async fn vault_export_pick(
     picks: State<'_, Arc<PendingPicks>>,
     request: ExportRequest,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let record_id = request.record_id;
     let session = picks.session();
     let suggested_name =
@@ -5041,6 +5100,7 @@ async fn vault_export_picked(
     picks: State<'_, Arc<PendingPicks>>,
     request: PickedExportRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let record_id = request.record_id;
     let destination = picks.take_export(request.pick_id, record_id)?;
 
@@ -5088,6 +5148,7 @@ async fn vault_hide_unavailable_records(
     store: State<'_, StoreHandle>,
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.hide_unavailable_records(&request.confirmed, now_ms())
     })
@@ -5105,6 +5166,7 @@ async fn vault_save_photo(
     store: State<'_, StoreHandle>,
     request: tauri::ipc::Request<'_>,
 ) -> CommandResult<vault::ImportOutcome> {
+    let store = store.pin();
     // The IPC layer's own copy is freed when the call ends, but not
     // overwritten (THREAT_MODEL.md); these are.
     let (target, photo) = photo_request(request.body())?;
@@ -5116,6 +5178,7 @@ async fn vault_is_photo(
     store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| is_photo(store, request.record_id)).await
 }
 
@@ -5124,6 +5187,7 @@ async fn vault_view_photo(
     store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<String> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         view_photo(store, request.record_id)
     })
@@ -5135,6 +5199,7 @@ async fn vault_is_locked_pdf(
     store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         is_locked_pdf(store, request.record_id)
     })
@@ -5162,6 +5227,7 @@ async fn vault_unlock_pdf(
     store: State<'_, StoreHandle>,
     mut request: UnlockPdfRequest,
 ) -> CommandResult<UnlockedPdf> {
+    let store = store.pin();
     let record_id = request.record_id;
     let password = zeroize::Zeroizing::new(std::mem::take(&mut request.password));
     drop(request);
@@ -5180,6 +5246,7 @@ async fn vault_hide_record(
     picks: State<'_, Arc<PendingPicks>>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // A hidden document's text can no longer be saved (#72, AI-02).
     picks.forget_texts_for(request.record_id);
     run_blocking(store.arc(), move |store| {
@@ -5195,6 +5262,7 @@ async fn vault_ai_result_save(
     picks: State<'_, Arc<PendingPicks>>,
     request: SaveAiResultRequest,
 ) -> CommandResult<vault::AiResultInfo> {
+    let store = store.pin();
     // The answer is the runtime's own, kept when it was given (#212): page code
     // only names it and adds a summary's source places.
     let answer = picks
@@ -5229,6 +5297,7 @@ async fn vault_ai_results(
     store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<Vec<vault::AiResultInfo>> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.ai_results(request.record_id)
     })
@@ -5241,6 +5310,7 @@ async fn vault_ai_result_read(
     store: State<'_, StoreHandle>,
     request: AiResultRequest,
 ) -> CommandResult<String> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         let bytes = store.read_ai_result(request.record_id, request.result_id)?;
         String::from_utf8(bytes).map_err(|_| vault::VaultError::Corrupt)
@@ -5254,6 +5324,7 @@ async fn vault_unhide_record(
     store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.unhide_record(request.record_id)
     })
@@ -5304,6 +5375,7 @@ async fn vault_reset(
     request: ResetRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     if !locale.reset_phrase_matches(&request.confirmation)? {
         return Err(PublicError::from(VaultError::Invalid));
@@ -5492,23 +5564,19 @@ pub fn run() {
             // would lock its own copy of the lock file. Earlier evaluation builds
             // kept the vault at `<data>/vault-v1`; that is left untouched and
             // never read.
-            let store = Arc::new(VaultStore::new(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("vault-v1"),
-            ));
-            store.configure_notifications(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("document-notifications-v1.json"),
+            // The device's vaults (#357): Main at `vault-home/vault-v1` as it has always been, plus
+            // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
+            // nothing is written, so this is what it was. Each slot has its own notification ledger
+            // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            let slots = Arc::new(vault_slots::VaultSlots::open(
+                app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),
-            );
+            ));
+            // One worker for the app, ticking whichever vault the screen is on.
             #[cfg(windows)]
-            store.start_document_collection()?;
-            // Commands ask the handle for "the" vault (#357): with one vault it is this store, as before.
-            app.manage(StoreHandle::single(store));
+            slots.start_document_collection()?;
+            // Commands ask the handle for "the" vault.
+            app.manage(StoreHandle::from_source(slots));
             // Wrong tries at a secret, counted beside the vault in
             // `attempts.json`, and read only when needed, not here.
             app.manage(Arc::new(AttemptThrottle::new(Some(
@@ -6505,8 +6573,9 @@ mod tests {
         // platform it is the same directory.
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        // The app builds its vaults from the local data folder, handed to `VaultSlots::open`.
         let setup = startup
-            .split_once("let store = Arc::new(VaultStore::new(")
+            .split_once("vault_slots::VaultSlots::open(")
             .unwrap()
             .1;
         let root = setup.split_once("));").unwrap().0;
@@ -6515,11 +6584,16 @@ mod tests {
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
         // and on macOS and Linux local and roaming data are one directory. A
         // home of that name would hold an old vault's files loose beside the new
-        // one, where nothing cleans them up.
-        let home = root.split(".join(\"").nth(1).unwrap();
-        let home = &home[..home.find('"').unwrap()];
-        assert_ne!(home, "vault-v1");
-        assert_eq!(home, "vault-home");
+        // one, where nothing cleans them up. The Main slot is `vault-home/vault-v1`.
+        let data = std::path::Path::new("/FAKE/data");
+        assert_eq!(
+            vault_registry::slot_store_root(data, vault_registry::SlotId::Main),
+            data.join("vault-home").join("vault-v1")
+        );
+        assert_eq!(
+            vault_registry::slot_home(data, vault_registry::SlotId::Main),
+            data.join("vault-home")
+        );
     }
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
