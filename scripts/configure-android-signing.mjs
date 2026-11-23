@@ -12,8 +12,11 @@
 // generated Gradle file that gives the release build type that signing config, and refuses to run
 // if a variable is missing or the keystore file does not exist, so a release build cannot silently
 // fall back to the debug key. Run it once after `tauri android init`; it is safe to run again.
-import { access, readFile, writeFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
+import { readFile, realpath, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const REPOSITORY_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const VARIABLES = [
   "MYCARLOS_UPLOAD_KEYSTORE",
@@ -57,9 +60,16 @@ export function missingVariables(environment) {
   return VARIABLES.filter((name) => !environment[name]);
 }
 
+/** Whether `path` is inside `root` once both are resolved (symbolic links followed). */
+export function isInside(path, root) {
+  const inside = relative(root, path);
+  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
+}
+
 export async function configureAndroidSigning(
   gradlePath,
   environment = process.env,
+  repositoryRoot = REPOSITORY_ROOT,
 ) {
   const missing = missingVariables(environment);
   if (missing.length) {
@@ -67,9 +77,17 @@ export async function configureAndroidSigning(
       `set ${missing.join(", ")} (the upload key is never kept in the repository)`,
     );
   }
-  await access(environment.MYCARLOS_UPLOAD_KEYSTORE).catch(() => {
+  const keystore = await realpath(
+    resolve(environment.MYCARLOS_UPLOAD_KEYSTORE),
+  ).catch(() => {
     throw new Error("MYCARLOS_UPLOAD_KEYSTORE does not name an existing file");
   });
+  // A key inside the working tree can be committed by accident or swept into an artifact.
+  if (isInside(keystore, await realpath(repositoryRoot))) {
+    throw new Error(
+      "MYCARLOS_UPLOAD_KEYSTORE is inside the repository; keep the upload key outside it",
+    );
+  }
   const source = await readFile(gradlePath, "utf8");
   await writeFile(gradlePath, withSigning(source), "utf8");
 }

@@ -79,6 +79,18 @@ a re-upload of the same version. A pre-release suffix of the version is ignored.
 `--config` for that build only, so `tauri.conf.json` does not change. Today: version 0.1.0, build 0 gives
 `100000`. The Tauri default (`major * 1,000,000 + ...`) has no build part, which is why it is replaced.
 
+**The upload key stays out of the repository**: both the script and `configure-android-signing.mjs` resolve
+the keystore path (following links) and refuse one inside the working tree; `.gitignore` also covers `*.jks`,
+`*.keystore`, `*.p12`, `*.pfx` and `.env`. The build runs Gradle without a daemon, and stops any daemon on
+the way out, so the key variables do not stay in a running process.
+
+**Version scheme (decided): the app's version is SemVer.** `tauri.conf.json` and `package.json` say `0.1.0`,
+and Tauri needs a semver string for Android. The version code therefore assumes each part is 0 to 99 and
+**throws** on anything else. A calendar version such as `2026.11.0` is refused (major above 99) rather than
+wrapped; if myCarlos ever adopts one, change the scheme deliberately here and in
+`scripts/android-version-code.mjs` before the first upload, because a version code can never go down.
+Symbol and mapping upload (native debug symbols, R8 mapping) is for later: it needs the Play Console app.
+
 **Not done here** (Ben or later): the upload keystore itself, the Play Console app and Play App Signing
 enrolment, the product name (the app is still named "myCarlos Evaluation"), and a workflow that runs
 this script with the secrets (a `.github` change).

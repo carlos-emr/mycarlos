@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,6 +18,7 @@ import {
 import {
   BLOCK,
   configureAndroidSigning,
+  isInside,
   missingVariables,
   VARIABLES,
   withSigning,
@@ -77,6 +85,7 @@ test("signing refuses missing variables and a missing keystore file, and never w
   try {
     const gradle = join(directory, "build.gradle.kts");
     await writeFile(gradle, GRADLE);
+    await mkdir(join(directory, "repository"));
     assert.deepEqual(missingVariables({}), VARIABLES);
     await assert.rejects(
       configureAndroidSigning(gradle, {}),
@@ -97,13 +106,59 @@ test("signing refuses missing variables and a missing keystore file, and never w
       environment.MYCARLOS_UPLOAD_KEYSTORE,
       "FAKE keystore bytes",
     );
-    await configureAndroidSigning(gradle, environment);
-    await configureAndroidSigning(gradle, environment);
+    await configureAndroidSigning(
+      gradle,
+      environment,
+      join(directory, "repository"),
+    );
+    await configureAndroidSigning(
+      gradle,
+      environment,
+      join(directory, "repository"),
+    );
     const written = await readFile(gradle, "utf8");
     assert.ok(written.includes("mycarlosUpload"));
     assert.ok(!written.includes("FAKE-store-secret"));
     assert.ok(!written.includes("FAKE-key-secret"));
     assert.equal((written.match(/signingConfigs \{/g) ?? []).length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a keystore inside the repository is refused, also through a link", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-signing-root-"));
+  try {
+    const repository = join(directory, "repository");
+    await mkdir(join(repository, "secrets"), { recursive: true });
+    const gradle = join(directory, "build.gradle.kts");
+    await writeFile(gradle, GRADLE);
+    const inside = join(repository, "secrets", "upload.jks");
+    await writeFile(inside, "FAKE keystore bytes");
+    const environment = (keystore) => ({
+      MYCARLOS_UPLOAD_KEYSTORE: keystore,
+      MYCARLOS_UPLOAD_KEYSTORE_PASSWORD: "FAKE-store-secret",
+      MYCARLOS_UPLOAD_KEY_ALIAS: "upload",
+      MYCARLOS_UPLOAD_KEY_PASSWORD: "FAKE-key-secret",
+    });
+    await assert.rejects(
+      configureAndroidSigning(gradle, environment(inside), repository),
+      /inside the repository/,
+    );
+    // A link outside the repository that points inside it is the same file.
+    const link = join(directory, "link.jks");
+    await symlink(inside, link);
+    await assert.rejects(
+      configureAndroidSigning(gradle, environment(link), repository),
+      /inside the repository/,
+    );
+    assert.equal(await readFile(gradle, "utf8"), GRADLE);
+    assert.equal(isInside(join(repository, "a"), repository), true);
+    assert.equal(
+      isInside(join(directory, "repository-other", "a"), repository),
+      false,
+    );
+    assert.equal(isInside(directory, repository), false);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

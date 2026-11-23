@@ -19,6 +19,22 @@ for name in MYCARLOS_UPLOAD_KEYSTORE MYCARLOS_UPLOAD_KEYSTORE_PASSWORD MYCARLOS_
   : "${!name:?set $name (the upload key is never kept in the repository)}"
 done
 
+# The upload key must not be inside the working tree (it could be committed or swept into an artifact).
+repository="$(pwd -P)"
+keystore="$(realpath "$MYCARLOS_UPLOAD_KEYSTORE" 2>/dev/null || true)"
+[ -f "$keystore" ] || { echo "MYCARLOS_UPLOAD_KEYSTORE does not name an existing file" >&2; exit 1; }
+case "$keystore/" in
+  "$repository"/*) echo "MYCARLOS_UPLOAD_KEYSTORE is inside the repository; keep the upload key outside it" >&2; exit 1 ;;
+esac
+
+# No Gradle daemon: the key variables are in its environment, and a daemon would keep them after this
+# script ends. It is also stopped explicitly on the way out.
+export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false"
+stop_gradle() {
+  if [ -x src-tauri/gen/android/gradlew ]; then (cd src-tauri/gen/android && ./gradlew --stop >/dev/null 2>&1 || true); fi
+}
+trap stop_gradle EXIT
+
 code="$(node scripts/android-version-code.mjs)"
 version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 echo "Building myCarlos $version with versionCode $code"
