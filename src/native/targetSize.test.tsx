@@ -99,8 +99,9 @@ function visibleControls() {
 const describeControl = (control: HTMLElement) =>
   `${control.tagName.toLowerCase()} "${(control.getAttribute("aria-label") ?? control.textContent ?? "").trim()}"`;
 
-/** Visible controls smaller than 44px. A radio or tick box is pressed
- * through its label, so the label is what is measured. */
+/** Visible controls smaller than 44px (36px for a mouse's Appearance and
+ * Language choices). A radio or tick box is pressed through its label, so the
+ * label is what is measured. */
 function undersized() {
   const found: string[] = [];
   for (const control of visibleControls()) {
@@ -110,7 +111,14 @@ function undersized() {
         ? control.closest("label")!
         : control;
     const box = target.getBoundingClientRect();
-    if (box.width < 44 || box.height < 44)
+    // The Appearance and Language choices are 36px with a mouse (Ben, 20 Nov
+    // 2026) and 44px for a finger; every other target is 44px.
+    const minimum =
+      matchMedia("(pointer: fine) and (not (any-pointer: coarse))").matches &&
+      control.closest(".choice-segmented, .choice-grid")
+        ? 36
+        : 44;
+    if (box.width < minimum || box.height < minimum)
       found.push(
         `${describeControl(control)} ${Math.round(box.width)}x${Math.round(box.height)}`,
       );

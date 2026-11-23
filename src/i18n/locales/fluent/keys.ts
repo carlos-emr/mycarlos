@@ -859,6 +859,19 @@ export const MESSAGE_KEYS = [
   "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
+  "ai.speed.title",
+  "ai.speed.note",
+  "ai.speed.button",
+  "ai.speed.working",
+  "ai.speed.cancel",
+  "ai.speed.result",
+  "ai.speed.cancelled",
+  "ai.speed.none",
+  "ai.speed.failed",
+  "ai.speed.estimate",
+  "ai.speed.estimateLong",
+  "ai.error.memoryNumbers",
+  "ai.error.memoryUnknown",
   "ai.error.busy",
   "ai.error.storage",
   "ai.summary.pagesMissing",
@@ -951,6 +964,7 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.footerNote",
   "interface.AnonymizePreview.note.daysAfter",
   "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.note.otherForm",
   "interface.AnonymizePreview.pasteTitle",
   "interface.AnonymizePreview.pasteHelp",
   "interface.AnonymizePreview.pasteLabel",
@@ -2115,6 +2129,19 @@ const FLUENT_IDS_BY_KEY = {
   "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
+  "ai.speed.title": "ai-speed-title",
+  "ai.speed.note": "ai-speed-note",
+  "ai.speed.button": "ai-speed-button",
+  "ai.speed.working": "ai-speed-working",
+  "ai.speed.cancel": "ai-speed-cancel",
+  "ai.speed.result": "ai-speed-result",
+  "ai.speed.cancelled": "ai-speed-cancelled",
+  "ai.speed.none": "ai-speed-none",
+  "ai.speed.failed": "ai-speed-failed",
+  "ai.speed.estimate": "ai-speed-estimate",
+  "ai.speed.estimateLong": "ai-speed-estimateLong",
+  "ai.error.memoryNumbers": "ai-error-memoryNumbers",
+  "ai.error.memoryUnknown": "ai-error-memoryUnknown",
   "ai.error.busy": "ai-error-busy",
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
@@ -2257,6 +2284,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-note-daysAfter",
   "interface.AnonymizePreview.note.ageOver90":
     "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.note.otherForm":
+    "interface-AnonymizePreview-note-otherForm",
   "interface.AnonymizePreview.pasteTitle":
     "interface-AnonymizePreview-pasteTitle",
   "interface.AnonymizePreview.pasteHelp":
@@ -3430,6 +3459,19 @@ export interface MessageArgsByKey {
   "ai.explain.ready": undefined;
   "ai.failed": undefined;
   "ai.error.memory": undefined;
+  "ai.speed.title": undefined;
+  "ai.speed.note": undefined;
+  "ai.speed.button": undefined;
+  "ai.speed.working": undefined;
+  "ai.speed.cancel": undefined;
+  "ai.speed.result": { read: FluentArgument; write: FluentArgument };
+  "ai.speed.cancelled": undefined;
+  "ai.speed.none": undefined;
+  "ai.speed.failed": undefined;
+  "ai.speed.estimate": { minutes: FluentArgument };
+  "ai.speed.estimateLong": undefined;
+  "ai.error.memoryNumbers": { free: FluentArgument; needed: FluentArgument };
+  "ai.error.memoryUnknown": { needed: FluentArgument };
   "ai.error.busy": undefined;
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
@@ -3526,6 +3568,7 @@ export interface MessageArgsByKey {
     number: FluentArgument;
   };
   "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.note.otherForm": { n: FluentArgument };
   "interface.AnonymizePreview.pasteTitle": undefined;
   "interface.AnonymizePreview.pasteHelp": undefined;
   "interface.AnonymizePreview.pasteLabel": undefined;

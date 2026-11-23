@@ -327,6 +327,7 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
         if (command === "ai_model_check") return "skipped";
         // No add or download running when the row opens (#275).
         if (command === "ai_model_add_active") return null;
+        if (command === "ai_model_speed") return null;
         // The setup checklist asks which rules a passphrase meets (#76).
         if (command === "vault_passphrase_rules")
           return { longEnough: false, notAName: true, hardToGuess: false };
