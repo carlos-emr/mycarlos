@@ -34,7 +34,11 @@ SKIP = {"vault_source.rs"}
 
 # (pattern, replacement, what it is)
 RULES = [
-    (re.compile(r"State<'_,\s*Arc<VaultStore>>"), "State<'_, StoreHandle>", "command parameter type"),
+    (
+        re.compile(r"State<'(\w+),\s*(?:std::sync::)?Arc<(?:crate::vault::|vault::)?VaultStore>>"),
+        r"State<'\1, StoreHandle>",
+        "command parameter type",
+    ),
     (re.compile(r"\bstore\.inner\(\)"), "store.arc()", "borrow of the managed store"),
 ]
 # Not rewritten, only reported: the app's own wiring owns these.
@@ -45,7 +49,35 @@ REPORT = [
 ]
 
 
-PIN_PARAM = re.compile(r"(\w+):\s*(?:tauri::)?State<'_,\s*StoreHandle>")
+# A parameter whose type is the handle: `State<'_, StoreHandle>` (any path before `State`, any
+# lifetime name, any alias for `State`, a qualified handle type), `&StoreHandle`, `StoreHandle`.
+PIN_PARAM = re.compile(
+    r"(\w+):\s*(?:&\s*(?:'\w+\s+)?(?:mut\s+)?|(?:[\w:]+::)?\w+<\s*'\w+\s*,\s*)?(?:[\w:]+::)?StoreHandle\b"
+)
+
+
+def signature_end(text, start):
+    """The offset of the `(` of a `fn name<..>(` whose name starts at `start`, or None."""
+    i = start
+    while i < len(text) and text[i].isspace():
+        i += 1
+    if i < len(text) and text[i] == "<":
+        depth = 0
+        while i < len(text):
+            if text[i] == "-" and text[i + 1 : i + 2] == ">":
+                i += 2
+                continue
+            if text[i] == "<":
+                depth += 1
+            elif text[i] == ">":
+                depth -= 1
+                if depth == 0:
+                    i += 1
+                    break
+            i += 1
+        while i < len(text) and text[i].isspace():
+            i += 1
+    return i if i < len(text) and text[i] == "(" else None
 
 
 def add_pins(text):
@@ -53,8 +85,10 @@ def add_pins(text):
     out = []
     last = 0
     added = 0
-    for match in re.finditer(r"\bfn\s+\w+\s*(?:<[^>]*>)?\s*\(", text):
-        open_at = match.end() - 1
+    for match in re.finditer(r"\bfn\s+\w+", text):
+        open_at = signature_end(text, match.end())
+        if open_at is None:
+            continue
         depth = 0
         close = None
         for index in range(open_at, len(text)):
@@ -73,6 +107,9 @@ def add_pins(text):
         brace = text.find("{", close)
         if brace < 0 or brace < last:
             continue
+        semicolon = text.find(";", close)
+        if 0 <= semicolon < brace:
+            continue  # a declaration with no body
         name = param.group(1)
         wanted = f"let {name} = {name}.pin();"
         after = text[brace + 1 :]

@@ -117,18 +117,6 @@ impl Default for ResumeCache {
     }
 }
 impl ResumeCache {
-    /// Leaves something in the cache, and says whether anything is left, for the tests that check
-    /// a cache made for one vault is emptied when bound to another.
-    #[cfg(test)]
-    pub(crate) fn mark_for_test(&mut self) {
-        self.retry_first = Some(Uuid::new_v4());
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_blank_for_test(&self) -> bool {
-        self.retry_first.is_none() && self.last_visited.is_none()
-    }
-
     pub(crate) fn bind(&mut self, vault: Uuid, session: u64, consent_epoch: usize) {
         if self.owner != Some((vault, session, consent_epoch)) {
             *self = Self::default();

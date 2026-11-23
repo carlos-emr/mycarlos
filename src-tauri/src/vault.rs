@@ -1083,16 +1083,13 @@ impl VaultStore {
         self.collection_resume.lock().unwrap().is_some()
     }
 
-    /// Whether a cache bound to one vault id is emptied when bound to another's, which is what
-    /// keeps a cache from one vault out of the next one's check.
+    /// Poisons the session mutex, as a panic in a holder would, for the switch tests.
     #[cfg(test)]
-    pub(crate) fn test_resume_cache_resets_for_another_vault(&self) -> bool {
-        let mut cache = crate::document_collection_pickup::ResumeCache::default();
-        cache.bind(Uuid::new_v4(), 1, 1);
-        cache.mark_for_test();
-        assert!(!cache.is_blank_for_test());
-        cache.bind(Uuid::new_v4(), 1, 1);
-        cache.is_blank_for_test()
+    pub(crate) fn test_poison_session(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = self.unlocked.lock().unwrap();
+            panic!("poisoned on purpose (test)");
+        }));
     }
 
     /// Runs `inside` while a key derivation is counted as running, for the switch test.
@@ -1231,7 +1228,10 @@ impl VaultStore {
         }
         match self.unlocked.try_lock() {
             Ok(guard) => guard.is_none(),
-            Err(_) => false,
+            // A holder panicked: the session in it is still what it was, so read it as `session()`
+            // would, rather than saying "busy" for ever.
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner().is_none(),
+            Err(std::sync::TryLockError::WouldBlock) => false,
         }
     }
 

@@ -7,6 +7,11 @@
 //! - **One store per slot, kept for the process.** The stores sit in an append-only list that is only
 //!   ever added to, so [`VaultSource::current`] can lend a reference borrowed from the source with no
 //!   lock and no unsafe code. A removed slot's store stays allocated, locked and unreachable.
+//! - **Main is not forced into the list.** The registry says which vaults exist, and it may leave
+//!   Main out: removing a vault frees its slot, and Main's vault is a vault like any other (the
+//!   design's "set aside and start again"). Re-adding Main here would bring back, as an unnamed
+//!   default, a vault the owner set aside. So the slots are exactly the registry's; only a device
+//!   with NO registry (or one that cannot be read) is taken to have Main alone.
 //! - **No registry file for one vault.** A device that has never added a vault has no `vaults.v1`; that
 //!   reads as "the Main slot alone, the default", and nothing is written, so a one-vault install is
 //!   byte for byte what it was. The file appears when a second vault is added (a later step).
@@ -175,8 +180,11 @@ impl VaultSlots {
 
     /// Moves the screen to another slot's vault. Both must be at rest; `stop_work` runs first, after
     /// the check and before the old store is locked, so whatever the app was doing for the old vault
-    /// (picks, page views, text reads, the AI helper) is stopped as a lock stops it. Nothing is
-    /// switched on a refusal. Never stops the document collection for good (see the module note).
+    /// (picks, page views, text reads, the AI helper) is stopped as a lock stops it. A refusal
+    /// BEFORE that point (an unknown slot, either vault not at rest) changes nothing. The one
+    /// refusal after it (the old vault began something between the check and the move) has
+    /// already run `stop_work` and locked the old vault: only the pointer is put back, and the new
+    /// store is not checked again. Never stops the document collection for good (see the module note).
     pub(crate) fn switch(&self, slot: SlotId, stop_work: impl FnOnce()) -> Result<(), SwitchError> {
         let _changing = self.changing.lock().unwrap_or_else(|p| p.into_inner());
         let target = self
@@ -195,7 +203,8 @@ impl VaultSlots {
         stop_work();
         old.lock();
         self.current.store(target, Ordering::Release);
-        // Something may have begun on the old store between the check and the move: put it back.
+        // Something may have begun on the old store between the check and the move. `stop_work` has
+        // run and the old vault is locked; put the pointer back (the new store is not re-checked).
         if !old.is_at_rest() {
             self.current.store(from, Ordering::Release);
             return Err(SwitchError::NotAtRest);
@@ -315,6 +324,29 @@ mod tests {
         ledgers.sort();
         ledgers.dedup();
         assert_eq!(ledgers.len(), 3, "no two vaults share a ledger");
+    }
+
+    #[test]
+    fn given_a_registry_without_main_when_opened_then_main_is_not_added_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut registry = Registry::new(HashCost::TEST).unwrap();
+        let only = registry.add_extra("Only").unwrap();
+        registry.save(temp.path()).unwrap();
+        let slots = slots_in(temp.path());
+        // The owner set Main's vault aside: it is not offered again as an unnamed default.
+        assert_eq!(slots.slots(), vec![only]);
+        assert_eq!(slots.current_slot(), only);
+        assert!(slots.store_of(SlotId::Main).is_none());
+    }
+
+    #[test]
+    fn given_a_session_mutex_poisoned_by_a_panic_when_asked_if_at_rest_then_it_reads_the_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let slots = slots_in(temp.path());
+        let store = slots.current();
+        store.test_poison_session();
+        // No session was open when the holder panicked: at rest, not "busy" for ever.
+        assert!(store.is_at_rest());
     }
 
     #[test]
@@ -460,7 +492,8 @@ mod tests {
     }
 
     #[test]
-    fn given_two_vaults_when_one_locks_or_the_screen_switches_then_no_resume_state_crosses() {
+    fn given_two_vaults_when_one_locks_or_the_screen_switches_then_only_the_old_ones_resume_state_is_dropped(
+    ) {
         let temp = tempfile::tempdir().unwrap();
         let (second, _third) = three_vault_device(temp.path());
         let slots = slots_in(temp.path());
@@ -476,7 +509,7 @@ mod tests {
         a.lock();
         assert!(!a.test_has_resume_cache());
         assert!(b.test_has_resume_cache());
-        // A switch from A to B (A's lock again) never hands A's cache to B, and B's own stays B's.
+        // A switch from A to B (A's lock) drops A's cache and leaves B's own where it was.
         a.test_hold_resume_cache();
         slots.switch(second, || {}).unwrap();
         assert!(
@@ -484,8 +517,8 @@ mod tests {
             "the old vault's cache is gone at the switch"
         );
         assert!(b.test_has_resume_cache());
-        // And a cache, when taken for a cycle, is bound to the vault it was made for: a cache bound
-        // to A's vault id is reset when B binds to it.
-        assert!(b.test_resume_cache_resets_for_another_vault());
+        // Not covered here: that a cycle binds its cache to its own vault id (`ResumeCache::bind`,
+        // tested in document_collection_pickup) and that the worker ticks the store that is current
+        // (`document_tick`, above). The Windows tick itself runs only on Windows.
     }
 }
