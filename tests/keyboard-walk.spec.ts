@@ -36,11 +36,11 @@ test("first setup works from the keyboard alone", async ({ page }) => {
   ).toBeVisible();
   await walk(page, "comfort settings");
 
-  const size = page.getByRole("textbox", { name: "Text size in percent" });
-  await page.getByRole("button", { name: "Larger text" }).focus();
+  const size = page.getByRole("textbox", { name: "App zoom in percent" });
+  await page.getByRole("button", { name: "Zoom in" }).focus();
   await page.keyboard.press("Enter");
   await expect(size).not.toHaveValue("100");
-  await expectAnnounced(page, `Text size ${await size.inputValue()}%`);
+  await expectAnnounced(page, `App zoom ${await size.inputValue()}%`);
 
   await page.getByRole("button", { name: "Longer delay" }).focus();
   await page.keyboard.press("Space");

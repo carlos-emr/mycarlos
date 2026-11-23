@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Confirm Cargo selects upstream Tauri and only the reviewed native patches."""
+"""Confirm Cargo selects upstream Tauri and only the reviewed native patches (glib, wry, the single-instance plugin)."""
 from pathlib import Path
 import json
 import os
@@ -21,7 +21,7 @@ def main():
         p["name"] for p in metadata["packages"]
         if p["source"] != registry and p["id"] != root
     )
-    patched = {"glib": "0.18.5", "tauri-plugin-single-instance": "2.4.0"}
+    patched = {"glib": "0.18.5", "tauri-plugin-single-instance": "2.4.0", "wry": "0.55.1"}
     if outside != sorted(patched):
         raise ValueError(f"Only reviewed native patches may be outside crates.io, found: {outside}")
     for name in [*patched, "tauri"]:

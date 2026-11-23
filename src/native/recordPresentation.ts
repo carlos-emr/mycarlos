@@ -14,6 +14,17 @@ export function formatBytes(value: number): string {
   return `${formatNumber(value / (1024 * 1024), undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MB`;
 }
 
+/** A backup's size, for the screen that offers to leave the videos out: in
+ * gigabytes from a gigabyte, as the file app counts them (1000s). */
+export function formatBackupSize(value: number): string {
+  const one = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+  if (value >= 1_000_000_000)
+    return `${formatNumber(value / 1_000_000_000, undefined, one)} GB`;
+  if (value >= 1_000_000)
+    return `${formatNumber(value / 1_000_000, undefined, one)} MB`;
+  return `${formatNumber(Math.max(1, Math.round(value / 1000)))} kB`;
+}
+
 /** The selected app locale formats sizes; the platform still determines
  * whether its file app counts in 1000s or 1024s. */
 export function formatFileSize(value: number, in1024s: boolean): string {

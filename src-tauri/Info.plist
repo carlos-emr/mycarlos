@@ -4,5 +4,7 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>myCarlos uses the camera to save photos of your health documents. Photos stay locked in myCarlos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>myCarlos uses the microphone to record sound with your videos. Videos stay locked in myCarlos.</string>
 </dict>
 </plist>

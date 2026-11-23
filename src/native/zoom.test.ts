@@ -543,12 +543,12 @@ describe("a size typed as a percent", () => {
     ["125%", 1.25, ""],
     [" 400 % ", 4, ""],
     ["80", 0.8, ""],
-    ["130", 1.25, "130% is between sizes, so it is 125%."],
-    ["112.5", 1.1, "112.5% is between sizes, so it is 110%."],
-    ["79", 0.8, "The smallest size is 80%."],
-    ["0", 0.8, "The smallest size is 80%."],
-    ["401", 4, "The largest size is 400%."],
-    ["10000", 4, "The largest size is 400%."],
+    ["130", 1.25, "130% is between zoom levels, so it is 125%."],
+    ["112.5", 1.1, "112.5% is between zoom levels, so it is 110%."],
+    ["79", 0.8, "The smallest zoom is 80%."],
+    ["0", 0.8, "The smallest zoom is 80%."],
+    ["401", 4, "The largest zoom is 400%."],
+    ["10000", 4, "The largest zoom is 400%."],
   ])("reads %j as %s", (typed, level, note) => {
     expect(humanValue(readTypedZoom(typed))).toEqual(
       humanValue({ level, note }),
@@ -559,7 +559,7 @@ describe("a size typed as a percent", () => {
     expect(humanValue(readTypedZoom("9".repeat(400)))).toEqual(
       humanValue({
         level: 4,
-        note: "The largest size is 400%.",
+        note: "The largest zoom is 400%.",
       }),
     );
   });
