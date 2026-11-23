@@ -227,7 +227,7 @@ describe("the anonymize preview (#72 part B)", () => {
     ).toBe(keeps.length);
     await user.click(keeps[0]);
     expect(shownString()).toContain("Has Bell's palsy.");
-    expect(shownString()).toContain("Follow up [NAME 1]'s palsy");
+    expect(shownString()).toContain("Follow up [NAME 1, other form 1]'s palsy");
     await user.click(
       screen.getByRole("button", { name: humanText("Undo the last removal") }),
     );

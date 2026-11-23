@@ -17,7 +17,9 @@ const run = (text: string, names: string[]) =>
 describe("an eponym candidate is marked, never decided", () => {
   it("removes the word as before and marks the phrase", () => {
     const r = run("Marion Graves has Graves disease.", ["Marion Graves"]);
-    expect(r.toSend).toBe("[NAME 1] has [NAME 1] disease.");
+    // The lone "Graves" is another form of the person already named, so it is "other form 1"
+    // (paste-back puts each form back as written, #214).
+    expect(r.toSend).toBe("[NAME 1] has [NAME 1, other form 1] disease.");
     const marked = r.onDevice.removed.filter((p) => p.eponym);
     expect(marked.map((p) => p.eponym)).toEqual(["Graves disease"]);
     expect(marked[0].original).toBe("Graves");
@@ -43,7 +45,9 @@ describe("keeping a candidate", () => {
     const r = run(text, ["Peter Bell"]);
     const first = r.onDevice.removed.filter((p) => p.eponym)[0];
     const kept = keepAsMedicalTerm(r, first.sentStart, first.sentEnd);
-    expect(kept.toSend).toBe("[NAME 1]: Bell's palsy. [NAME 1]'s palsy again.");
+    expect(kept.toSend).toBe(
+      "[NAME 1]: Bell's palsy. [NAME 1, other form 1]'s palsy again.",
+    );
     // One phrase kept and nothing else removed restores exactly.
     const one = run(once, ["Peter Bell"]);
     const part = one.onDevice.removed.filter((p) => p.eponym)[0];
