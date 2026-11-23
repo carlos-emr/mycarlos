@@ -9127,7 +9127,7 @@ mod tests {
             .replace("@cmd@", &marker)
             .replace("@cmdopen@", marker.trim_end_matches(']'));
         assert_eq!(
-            command_state_types(source),
+            command_state_types(&source),
             vec![
                 "Arc<ModelAddActive>",
                 "Arc<PendingPicks>",
