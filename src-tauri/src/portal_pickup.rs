@@ -5,6 +5,9 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct CheckResult {
     pub added: usize,
+    /// The clinics (by name, one entry per document) whose new documents were for a person who
+    /// is hidden and wait in Shared with me (#360). Names no person.
+    pub for_hidden: Vec<String>,
     pub refused: usize,
     pub receipts_pending: usize,
     pub issues: Vec<CheckIssue>,
@@ -467,6 +470,14 @@ where
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((record_id, added)) => {
                             result.added += usize::from(added);
+                            if added && store.take_arrived_for_hidden(record_id) {
+                                result.for_hidden.push(
+                                    link.clinic
+                                        .as_ref()
+                                        .map(|clinic| clinic.clinic_name.clone())
+                                        .unwrap_or_default(),
+                                );
+                            }
                             #[cfg(windows)]
                             if added {
                                 store.notify_local_arrival(record_id, &link, session);

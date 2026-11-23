@@ -485,6 +485,11 @@ impl From<VaultError> for PublicText {
                 code: "package_passphrase_tries_used",
                 message_key: "native.error.49",
             },
+            // Security says it beside the person's Hide: someone has to stay in the library.
+            VaultError::LastVisibleProfile => Self {
+                code: "last_visible_profile",
+                message_key: "native.error.50",
+            },
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
                 message_key: "native.error.21",
@@ -1670,6 +1675,12 @@ impl PendingPicks {
 #[serde(rename_all = "camelCase")]
 struct RecordIdRequest {
     record_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileIdRequest {
+    profile_id: Uuid,
 }
 
 /// An AI answer to keep with a document (#72): its document and the id `ai_summarize` /
@@ -5848,6 +5859,36 @@ async fn vault_unhide_record(
     .await
 }
 
+/// Hides a whole person (#360): one flag, one history entry, nothing deleted. Whatever the
+/// AI helper holds for their documents is forgotten, as for one hidden document.
+#[tauri::command]
+async fn vault_hide_profile(
+    store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileIdRequest,
+) -> CommandResult<()> {
+    for record_id in store.profile_record_ids(request.profile_id) {
+        picks.forget_texts_for(record_id);
+    }
+    run_blocking(store.inner(), move |store| {
+        store.hide_profile(request.profile_id, now_ms())
+    })
+    .await
+}
+
+/// Brings a hidden person back (#360), and says which documents arrived for them while they
+/// were hidden and wait in Shared with me, so the screen can offer to move them back.
+#[tauri::command]
+async fn vault_restore_profile(
+    store: State<'_, Arc<VaultStore>>,
+    request: ProfileIdRequest,
+) -> CommandResult<Vec<vault::ArrivedWhileHidden>> {
+    run_blocking(store.inner(), move |store| {
+        store.restore_profile(request.profile_id)
+    })
+    .await
+}
+
 /// What a vault set aside (#71) keeps, said wherever one is set aside.
 #[cfg(test)]
 const SET_ASIDE_KEPT: &str = "The vault set aside stays on this device, encrypted, with everything in it, and its passphrase or recovery key still opens it, but myCarlos cannot open it again for you yet.";
@@ -6237,6 +6278,8 @@ pub fn run() {
             vault_unlock_pdf,
             vault_hide_record,
             vault_unhide_record,
+            vault_hide_profile,
+            vault_restore_profile,
             vault_ai_result_save,
             vault_ai_results,
             vault_ai_result_read,
@@ -9537,6 +9580,7 @@ mod native_localization_tests {
             VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
             VaultError::PackagePassphraseTriesUsed,
+            VaultError::LastVisibleProfile,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
             VaultError::PdfLocked,

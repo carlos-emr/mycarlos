@@ -2522,3 +2522,5 @@ handover-export-error-weak = Essa frase secreta não pode ser usada. Pode ser f�
 handover-unfinished = Uma entrega não foi concluída. Qualquer chave que você copiou ou anotou não abre nada. Para entregar os registros, recomece para obter uma nova chave.
 
 native-error-49 = Esta sessão desbloqueada já tentou o máximo de frases secretas para um arquivo. Bloqueie o myCarlos e desbloqueie-o de novo para continuar tentando, ou deixe o myCarlos criar uma chave para o arquivo.
+
+native-error-50 = Pelo menos uma pessoa precisa ficar na biblioteca, então a última não pode ser ocultada. Adicione outra pessoa primeiro.

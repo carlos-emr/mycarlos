@@ -2575,3 +2575,5 @@ handover-export-error-weak = Tego hasła nie można użyć. Może być zbyt łat
 handover-unfinished = Przekazanie nie zostało zakończone. Żaden skopiowany ani zapisany klucz niczego nie otwiera. Aby przekazać dokumenty, zacznij od nowa i uzyskaj nowy klucz.
 
 native-error-49 = W tej odblokowanej sesji wypróbowano już maksymalną liczbę haseł dla pliku. Zablokuj myCarlos i odblokuj go ponownie, aby próbować dalej, albo pozwól, by myCarlos utworzył klucz dla pliku.
+
+native-error-50 = W bibliotece musi zostać co najmniej jedna osoba, więc ostatniej nie można ukryć. Najpierw dodaj inną osobę.

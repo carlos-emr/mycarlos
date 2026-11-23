@@ -2522,3 +2522,5 @@ handover-export-error-weak = Esa frase de contraseña no se puede usar. Puede se
 handover-unfinished = Una entrega no se terminó. Cualquier clave que haya copiado o anotado no abre nada. Para entregar los registros, empiece de nuevo para obtener una clave nueva.
 
 native-error-49 = Esta sesión desbloqueada ya probó el máximo de frases de contraseña para un archivo. Bloquee myCarlos y desbloquéelo de nuevo para seguir intentándolo, o deje que myCarlos cree una clave para el archivo.
+
+native-error-50 = Al menos una persona debe quedar en la biblioteca, así que no se puede ocultar a la última. Añada antes a otra persona.

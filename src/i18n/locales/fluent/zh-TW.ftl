@@ -2292,3 +2292,5 @@ handover-export-error-weak = 無法使用該口令。它可能太容易被猜到
 handover-unfinished = 有一次移交沒有完成。您複製或記下的任何金鑰都無法開啟任何內容。若要移交記錄，請重新開始以取得新的金鑰。
 
 native-error-49 = 此次解鎖期間已嘗試了檔案口令的最多次數。請鎖定 myCarlos 後重新解鎖以繼續嘗試，或改由 myCarlos 為檔案產生金鑰。
+
+native-error-50 = 資料庫中至少要留下一個人，因此無法隱藏最後一個人。請先新增另一個人。

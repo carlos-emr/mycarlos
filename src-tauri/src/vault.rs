@@ -53,6 +53,8 @@ mod native_portal_flow;
 mod original_pdf;
 // The profile handover package (#360 PR 1): its writer and reader are used by
 // the export and import commands of the later PRs.
+#[cfg(test)]
+mod hidden_profiles_tests;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_export;
 #[cfg_attr(not(test), allow(dead_code))]
@@ -87,13 +89,17 @@ const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 /// AI key draft (#389) also holds 14 provisionally, so whichever merges second renumbers. A
 /// renumber changes this line, the section in VAULT_FORMAT.md and the gates that name it.
 const MANIFEST_FORMAT_PROFILE_HANDOVER: u32 = 14;
-/// The first format that can hold a hidden profile; none does yet: nothing in the
-/// library, the lists, search, the AI helper or the notices honours `hidden` on a profile
-/// until the hide and restore pull request (#360 PR 7), which sets this to its own new format
-/// number. Until then a manifest with a hidden profile is refused at every format, so that no
-/// build ever reads one and lists that person.
-const HIDDEN_PROFILES_FORMAT: Option<u32> = None;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PROFILE_HANDOVER;
+/// Format 15 (provisional, #360 PR 7) lets a whole person be hidden: `hidden` on a profile.
+/// It has a number of its own, after the handover's 14, because a build that does not honour
+/// `hidden` would list a hidden person in its library, search and AI helper; an older build
+/// refuses a vault at 15 as newer instead. Its number is taken at merge, with no gap
+/// (VAULT_FORMAT.md, "Format numbers are taken at merge"): a renumber changes this line, the
+/// section in VAULT_FORMAT.md and the tests that name 14 and 15.
+const MANIFEST_FORMAT_HIDDEN_PROFILES: u32 = 15;
+/// The first format that can hold a hidden profile. The library, the lists, search, the AI
+/// helper, the notices and delivery filing all honour `hidden` on a profile from here.
+const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES);
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_HIDDEN_PROFILES;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
 /// And at most this many across every imported profile of a vault, so that handing over many
@@ -367,6 +373,9 @@ pub enum VaultError {
     /// `PACKAGE_PASSPHRASE_TRIES` are checked in one unlocked session (#360).
     #[error("too many package passphrases were tried in this unlocked session")]
     PackagePassphraseTriesUsed,
+    /// Hiding the last visible person: the library needs someone to show (#360).
+    #[error("the last visible person cannot be hidden")]
+    LastVisibleProfile,
     #[error("too many files were selected for one import")]
     ImportBatchLimit,
     #[error("a file to import is not a PDF")]
@@ -792,6 +801,17 @@ struct Manifest {
     refused_deliveries: Vec<RefusedDelivery>,
 }
 
+impl Manifest {
+    /// Whether `profile_id` is a person who is hidden (#360): their documents, folders and
+    /// lists are out of the library, search and the AI helper's reach. A profile that is not
+    /// in the manifest is not hidden (the caller's own lookup says it is missing).
+    fn person_is_hidden(&self, profile_id: Uuid) -> bool {
+        self.profiles
+            .iter()
+            .any(|profile| profile.id == profile_id && profile.hidden.is_some())
+    }
+}
+
 /// A clinic delivery that failed its checks (#143): what the portal's
 /// listing says of it, never the document or anything inside it.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -905,7 +925,11 @@ pub struct SnapshotCapture {
 pub struct VaultSnapshot {
     /// Runtime capture order, never part of the encrypted vault format.
     pub capture: SnapshotCapture,
+    /// The people the library shows: a hidden person is not among them (#360).
     pub profiles: Vec<PatientProfile>,
+    /// The hidden people, for Security's Hidden people list and nothing else: a name, when,
+    /// and how many documents. Their documents and folders are in no list.
+    pub hidden_profiles: Vec<HiddenProfile>,
     pub folders: Vec<VaultFolder>,
     pub records: Vec<VaultRecord>,
     pub portal_linking_enabled: bool,
@@ -921,6 +945,30 @@ pub struct VaultSnapshot {
     /// as the "Shared with me" folder, never as a person. Listed in `profiles`
     /// once the first file has arrived.
     pub shared_profile_id: Uuid,
+}
+
+/// The `how` a delivery's history entry carries when its person was hidden and it was filed
+/// in Shared with me (#360, section 8.6): the entry's `profile_id` is the person it was for.
+pub(crate) const HOW_PERSON_HIDDEN: &str = "personHidden";
+
+/// A document that arrived for a person while they were hidden and now waits in Shared with
+/// me (#360): offered back to them when they are restored.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArrivedWhileHidden {
+    pub record_id: Uuid,
+    pub display_name: String,
+}
+
+/// A hidden person as Security's Hidden people list shows them (#360).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenProfile {
+    pub id: Uuid,
+    pub display_name: String,
+    pub hidden_at_ms: u64,
+    /// All the person's documents, those hidden one by one included.
+    pub documents: usize,
 }
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
@@ -1143,6 +1191,10 @@ pub struct VaultStore {
     gone_links: Mutex<std::collections::HashSet<Uuid>>,
     cancel_io: Arc<AtomicBool>,
     idle: Arc<IdleDeadline>,
+    /// Documents that a clinic delivered in this session for a person who was hidden and that
+    /// were filed in Shared with me instead (#360, section 8.6). In memory, for the check that
+    /// filed them to say so (`take_arrived_for_hidden`); never saved.
+    arrived_for_hidden: Mutex<HashSet<Uuid>>,
     /// Typed package passphrases checked in this unlocked session (#360): in memory, back to
     /// nothing at every unlock and lock. See `profile_export::PACKAGE_PASSPHRASE_TRIES`.
     package_passphrase_tries: AtomicU32,
@@ -1177,6 +1229,7 @@ impl VaultStore {
             gone_links: Mutex::new(std::collections::HashSet::new()),
             cancel_io: Arc::new(AtomicBool::new(false)),
             idle: Arc::new(IdleDeadline::new(Instant::now())),
+            arrived_for_hidden: Mutex::new(HashSet::new()),
             package_passphrase_tries: AtomicU32::new(0),
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
@@ -1845,6 +1898,10 @@ impl VaultStore {
         self.portal_session.fetch_add(1, Ordering::AcqRel);
         // A new session starts with its tries unspent.
         self.package_passphrase_tries.store(0, Ordering::Release);
+        self.arrived_for_hidden
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
         *guard = Some(vault);
         self.idle.arm(Instant::now());
     }
@@ -2086,12 +2143,45 @@ impl VaultStore {
                     summary
                 })
                 .collect(),
-            profiles: unlocked.manifest.profiles.clone(),
-            folders: unlocked.manifest.folders.clone(),
+            // A hidden person is not in any list the library shows: only in `hidden_profiles`.
+            profiles: unlocked
+                .manifest
+                .profiles
+                .iter()
+                .filter(|profile| profile.hidden.is_none())
+                .cloned()
+                .collect(),
+            hidden_profiles: unlocked
+                .manifest
+                .profiles
+                .iter()
+                .filter_map(|profile| {
+                    let hidden = profile.hidden?;
+                    Some(HiddenProfile {
+                        id: profile.id,
+                        display_name: profile.display_name.clone(),
+                        hidden_at_ms: hidden.at_ms,
+                        documents: unlocked
+                            .manifest
+                            .records
+                            .iter()
+                            .filter(|record| record.profile_id == profile.id)
+                            .count(),
+                    })
+                })
+                .collect(),
+            folders: unlocked
+                .manifest
+                .folders
+                .iter()
+                .filter(|folder| !unlocked.manifest.person_is_hidden(folder.profile_id))
+                .cloned()
+                .collect(),
             records: unlocked
                 .manifest
                 .records
                 .iter()
+                .filter(|record| !unlocked.manifest.person_is_hidden(record.profile_id))
                 .map(|record| {
                     let verified =
                         delivery::verified_clinic(record, &unlocked.manifest.portal_links);
@@ -2416,7 +2506,7 @@ impl VaultStore {
             let profile = manifest
                 .profiles
                 .iter_mut()
-                .find(|p| p.id == id)
+                .find(|p| p.id == id && p.hidden.is_none())
                 .ok_or(VaultError::NotFound)?;
             let previous_full_names = previous_full_names
                 .map(|names| if names.is_empty() { None } else { Some(names) })
@@ -2451,7 +2541,7 @@ impl VaultStore {
             let profile = manifest
                 .profiles
                 .iter_mut()
-                .find(|profile| profile.id == profile_id)
+                .find(|profile| profile.id == profile_id && profile.hidden.is_none())
                 .ok_or(VaultError::NotFound)?;
             let name = display_name.trim();
             if profile.display_name != name {
@@ -2526,6 +2616,9 @@ impl VaultStore {
                 .find(|folder| folder.id == folder_id)
                 .cloned()
                 .ok_or(VaultError::NotFound)?;
+            if manifest.person_is_hidden(current.profile_id) {
+                return Err(VaultError::NotFound);
+            }
             if parent_id == Some(folder_id) {
                 return Err(VaultError::Invalid);
             }
@@ -2583,6 +2676,14 @@ impl VaultStore {
             return Err(VaultError::Invalid);
         }
         self.mutate_recorded(|manifest, entries| {
+            let hidden_person = manifest
+                .records
+                .iter()
+                .find(|record| record.id == record_id)
+                .is_some_and(|record| manifest.person_is_hidden(record.profile_id));
+            if hidden_person {
+                return Err(VaultError::NotFound);
+            }
             let record = manifest
                 .records
                 .iter_mut()
@@ -2639,7 +2740,11 @@ impl VaultStore {
                     profile_ids.insert(record.profile_id);
                 }
             }
-            if found != unique_record_ids.len() {
+            if found != unique_record_ids.len()
+                || profile_ids
+                    .iter()
+                    .any(|profile_id| manifest.person_is_hidden(*profile_id))
+            {
                 return Err(VaultError::NotFound);
             }
             let assignments = unique(folder_ids);
@@ -3006,7 +3111,10 @@ impl VaultStore {
                 .manifest
                 .records
                 .iter()
-                .find(|record| record.id == *record_id)
+                .find(|record| {
+                    record.id == *record_id
+                        && !unlocked.manifest.person_is_hidden(record.profile_id)
+                })
                 .ok_or(VaultError::NotFound)?;
             // Folder changes within the same person use assign_folders;
             // this operation changes the person and their keyed fingerprint.
@@ -3131,7 +3239,9 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         let original = prefer_original
             .then_some(record.original_pdf.as_ref())
@@ -3177,7 +3287,9 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         // The name is asked for just before a save picker opens. Refuse here, as
         // `export` will, so nobody chooses a destination for a lost object.
@@ -3260,12 +3372,9 @@ impl VaultStore {
         let Some(unlocked) = guard.as_mut() else {
             return;
         };
-        let Some(record) = unlocked
-            .manifest
-            .records
-            .iter()
-            .find(|record| record.id == record_id)
-        else {
+        let Some(record) = unlocked.manifest.records.iter().find(|record| {
+            record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+        }) else {
             return;
         };
         let mut entry =
@@ -3297,7 +3406,9 @@ impl VaultStore {
                 .manifest
                 .records
                 .iter()
-                .find(|record| record.id == record_id)
+                .find(|record| {
+                    record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+                })
                 .ok_or(VaultError::NotFound)?;
             if record.hidden.is_some() {
                 return Err(VaultError::NotFound);
@@ -3401,7 +3512,9 @@ impl VaultStore {
         let record = manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         if let Some(delivery) = record
             .delivery
@@ -3460,6 +3573,165 @@ impl VaultStore {
         self.set_hidden(record_id, None)
     }
 
+    /// The documents of a person, hidden or not: what the AI helper forgets when they are
+    /// hidden. Ids only.
+    pub(crate) fn profile_record_ids(&self, profile_id: Uuid) -> Vec<Uuid> {
+        let guard = self.session();
+        guard
+            .as_ref()
+            .map(|unlocked| {
+                unlocked
+                    .manifest
+                    .records
+                    .iter()
+                    .filter(|record| record.profile_id == profile_id)
+                    .map(|record| record.id)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Hides a whole person (#360, section 8): one flag on the profile, one manifest commit,
+    /// one history entry. Every document, folder and AI answer of that person leaves the
+    /// library, the lists, search and the AI helper's reach at once; nothing is deleted or
+    /// re-encrypted, no document's own `hidden` changes, and no link, passphrase or key does.
+    /// A person already hidden stays so. Refused for Shared with me (a holding folder) and for
+    /// the last visible person (the library needs a home): `LastVisibleProfile`.
+    ///
+    /// Hiding is tidiness, not secrecy: anyone with the passphrase can restore the person.
+    pub fn hide_profile(&self, profile_id: Uuid, now_ms: u64) -> Result<(), VaultError> {
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let manifest = &unlocked.manifest;
+        let shared = shared_profile_id(manifest.vault_id);
+        if profile_id == shared {
+            return Err(VaultError::Invalid);
+        }
+        let profile = manifest
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or(VaultError::NotFound)?;
+        if profile.hidden.is_some() {
+            return Ok(());
+        }
+        let visible_people = manifest
+            .profiles
+            .iter()
+            .filter(|profile| profile.id != shared && profile.hidden.is_none())
+            .count();
+        if visible_people <= 1 {
+            return Err(VaultError::LastVisibleProfile);
+        }
+        let mut entry = HistoryEntry::new(HistoryEvent::ProfileHidden, now_ms);
+        entry.profile_id = Some(profile_id);
+        entry.name = Some(profile.display_name.clone());
+        let mut next = unlocked.manifest.clone();
+        for profile in &mut next.profiles {
+            if profile.id == profile_id {
+                profile.hidden = Some(Hidden {
+                    at_ms: now_ms,
+                    reason: HiddenReason::Patient,
+                });
+            }
+        }
+        let redundant = commit_with_history(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            vec![entry],
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        Ok(())
+    }
+
+    /// Brings a hidden person back (#360): exactly the documents that were visible before are
+    /// visible again, since no document's own `hidden` was touched. Returns the documents that
+    /// arrived for them from a linked clinic while they were hidden and now wait in Shared with
+    /// me, so the screen can offer to move them back (`arrived_while_hidden`).
+    pub fn restore_profile(&self, profile_id: Uuid) -> Result<Vec<ArrivedWhileHidden>, VaultError> {
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.recovery.is_some() {
+            return Err(VaultError::RecoveryMode);
+        }
+        let profile = unlocked
+            .manifest
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or(VaultError::NotFound)?;
+        let Some(hidden) = profile.hidden else {
+            return Ok(Vec::new());
+        };
+        // Read before the commit, while the manifest still says who was hidden and since when.
+        let arrived = self.arrived_while_hidden(unlocked, profile_id, hidden.at_ms);
+        let mut entry = HistoryEntry::new(HistoryEvent::ProfileRestored, crate::now_ms());
+        entry.profile_id = Some(profile_id);
+        entry.name = Some(profile.display_name.clone());
+        let mut next = unlocked.manifest.clone();
+        for profile in &mut next.profiles {
+            if profile.id == profile_id {
+                profile.hidden = None;
+            }
+        }
+        let redundant = commit_with_history(
+            &self.root,
+            &unlocked.master_key,
+            &mut unlocked.manifest,
+            next,
+            vec![entry],
+        )?;
+        unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        Ok(arrived)
+    }
+
+    /// The documents a clinic delivered for `profile_id` after they were hidden at `since_ms`,
+    /// found from the history (a delivery for a hidden person is filed in Shared with me with
+    /// the intended person on its entry, `how` "personHidden") and still where they were
+    /// filed: one the patient has since moved, hidden or renamed into another place is not
+    /// offered. A history that cannot be read in full offers nothing: restoring never waits on it.
+    fn arrived_while_hidden(
+        &self,
+        unlocked: &UnlockedVault,
+        profile_id: Uuid,
+        since_ms: u64,
+    ) -> Vec<ArrivedWhileHidden> {
+        let Ok(view) = self.history_view_in_session(unlocked) else {
+            return Vec::new();
+        };
+        let shared = shared_profile_id(unlocked.manifest.vault_id);
+        let mut found: Vec<ArrivedWhileHidden> = Vec::new();
+        for entry in view.entries.iter().chain(view.later.iter()) {
+            if entry.event != HistoryEvent::DeliveryFiled
+                || entry.profile_id != Some(profile_id)
+                || entry.how.as_deref() != Some(HOW_PERSON_HIDDEN)
+                || entry.at_ms < since_ms
+            {
+                continue;
+            }
+            let Some(record_id) = entry.record_id else {
+                continue;
+            };
+            if found.iter().any(|arrived| arrived.record_id == record_id) {
+                continue;
+            }
+            if let Some(record) = unlocked.manifest.records.iter().find(|record| {
+                record.id == record_id && record.profile_id == shared && record.hidden.is_none()
+            }) {
+                found.push(ArrivedWhileHidden {
+                    record_id,
+                    display_name: record.display_name.clone(),
+                });
+            }
+        }
+        found
+    }
+
     fn set_hidden(&self, record_id: Uuid, hidden: Option<Hidden>) -> Result<(), VaultError> {
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
@@ -3470,7 +3742,9 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         if record.hidden.is_some() == hidden.is_some() {
             return Ok(());
@@ -5114,12 +5388,13 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             return Err(VaultError::Corrupt);
         }
     }
-    // Someone has to stay visible: the last profile of a vault is never hidden, and Shared
-    // with me never is (#360, section 8.5).
+    // Someone has to stay visible: the last visible person of a vault is never hidden, and
+    // Shared with me (a holding folder, not a person) never is (#360, section 8.5).
     if HIDDEN_PROFILES_FORMAT.is_some_and(|first| manifest.format_version >= first)
         && manifest
             .profiles
             .iter()
+            .filter(|profile| profile.id != shared_profile_id(vault_id))
             .all(|profile| profile.hidden.is_some())
     {
         return Err(VaultError::Corrupt);
@@ -8514,11 +8789,13 @@ impl Write for MacWriter<'_> {
     }
 }
 
+/// A person a change may be made to: here, and not hidden (a hidden person is restored
+/// first; their documents are out of reach until then, #360).
 fn require_profile(manifest: &Manifest, profile_id: Uuid) -> Result<(), VaultError> {
     if manifest
         .profiles
         .iter()
-        .any(|profile| profile.id == profile_id)
+        .any(|profile| profile.id == profile_id && profile.hidden.is_none())
     {
         Ok(())
     } else {

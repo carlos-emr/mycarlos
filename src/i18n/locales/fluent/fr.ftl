@@ -2522,3 +2522,5 @@ handover-export-error-weak = Cette phrase secrète ne peut pas être utilisée. 
 handover-unfinished = Une transmission n'a pas été terminée. Toute clé que vous avez copiée ou notée n'ouvre rien. Pour transmettre les dossiers, recommencez pour obtenir une nouvelle clé.
 
 native-error-49 = Cette session déverrouillée a déjà essayé le maximum de phrases secrètes pour un fichier. Verrouillez myCarlos puis déverrouillez-le de nouveau pour continuer, ou laissez myCarlos créer une clé pour le fichier.
+
+native-error-50 = Au moins une personne doit rester dans la bibliothèque : la dernière ne peut pas être masquée. Ajoutez d'abord une autre personne.

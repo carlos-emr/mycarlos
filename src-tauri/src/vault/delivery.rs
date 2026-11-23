@@ -1518,10 +1518,17 @@ impl VaultStore {
             .filter(|p| link.profile_id.is_none_or(|id| p.id == id))
             .map(|p| p.id)
             .collect::<Vec<_>>();
-        let profile_id = if matches.len() == 1 {
-            matches[0]
+        let matched = if matches.len() == 1 {
+            Some(matches[0])
         } else {
-            shared
+            None
+        };
+        // A person who is hidden is not filed into: the document waits in Shared with me, in
+        // plain view, with the person it was for on its history entry (#360, section 8.6).
+        let person_hidden = matched.is_some_and(|id| unlocked.manifest.person_is_hidden(id));
+        let profile_id = match matched {
+            Some(id) if !person_hidden => id,
+            _ => shared,
         };
         let stage = self.root.join("staging").join(Uuid::new_v4().to_string());
         create_private_dir_all(&stage)?;
@@ -1600,6 +1607,10 @@ impl VaultStore {
             entry.delivery_id = Some(outer.delivery_id.clone());
             entry.ciphertext_sha256 = Some(outer.ciphertext_sha256.clone());
             entry.profile_id = Some(profile_id);
+            if let (true, Some(intended)) = (person_hidden, matched) {
+                entry.profile_id = Some(intended);
+                entry.how = Some(HOW_PERSON_HIDDEN.to_owned());
+            }
             let prepared = prepare_history(
                 &self.root,
                 &unlocked.master_key,
@@ -1682,7 +1693,23 @@ impl VaultStore {
             remove_objects(&self.root, &history_written, Removable::UncommittedObject);
         }
         let _ = remove_owned_dir_all(&stage, Removable::ImportStaging);
+        if result.is_ok() && person_hidden {
+            // Said by the check that filed it, once: the document is in Shared with me.
+            self.arrived_for_hidden
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(id);
+        }
         result
+    }
+
+    /// Whether the document just filed as `record_id` was for a person who is hidden, and so
+    /// waits in Shared with me (#360, section 8.6). Said once: the flag is taken.
+    pub(crate) fn take_arrived_for_hidden(&self, record_id: Uuid) -> bool {
+        self.arrived_for_hidden
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&record_id)
     }
 }
 
@@ -5443,6 +5470,80 @@ mod approval_recovery_tests {
             .clone();
         (link, id, receipt)
     }
+    /// A document a clinic delivers for a person who is hidden is not filed into them: it waits
+    /// in Shared with me, in plain view, with the person it was for on its history entry
+    /// (#360, section 8.6). Restoring the person offers exactly that document back, and
+    /// moving it makes it theirs; one the patient moved elsewhere in the meantime is not offered.
+    #[test]
+    fn should_file_a_delivery_for_a_hidden_person_in_shared_with_me_and_offer_it_back_on_restore() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, outer, opened, checked) = signed_delivery();
+        let person = store.snapshot().unwrap().profiles[0].id;
+        store
+            .update_profile_details(
+                person,
+                ProfileDetails {
+                    full_name: Some(opened.manifest.patient.name.clone()),
+                    birth_date: Some(opened.manifest.patient.birth_date.clone()),
+                    previous_full_names: None,
+                },
+                &utc_date_text(crate::now_ms()),
+                crate::now_ms(),
+            )
+            .unwrap();
+        store.create_profile("FAKE Other Person", 6).unwrap();
+        add_link(&store, &link);
+        store.hide_profile(person, 100).unwrap();
+        let shared = store.shared_profile().unwrap();
+
+        let (id, added) = store
+            .commit_delivery(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                200,
+                store.portal_link_ticket(),
+            )
+            .unwrap();
+        assert!(added);
+        // In Shared with me, visible at once; the hidden person has nothing new in the library.
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(record.profile_id, shared);
+        assert_eq!(snapshot.hidden_profiles.len(), 1);
+        assert_eq!(snapshot.hidden_profiles[0].documents, 0);
+        // Said once to the check that filed it, naming nobody.
+        assert!(store.take_arrived_for_hidden(id));
+        assert!(!store.take_arrived_for_hidden(id));
+        // The history keeps who it was for, and that the person was hidden.
+        let entry = crate::vault::history_events_for_test(&store)
+            .into_iter()
+            .find(|e| e.event == HistoryEvent::DeliveryFiled)
+            .unwrap();
+        assert_eq!(entry.profile_id, Some(person));
+        assert_eq!(entry.how.as_deref(), Some(HOW_PERSON_HIDDEN));
+        // Its receipt is owed and sent as for any delivery.
+        assert_eq!(
+            store
+                .pending_receipts(&link, store.portal_link_ticket())
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Restore: offered back, by title; moving it makes it the person's.
+        let arrived = store.restore_profile(person).unwrap();
+        assert_eq!(arrived.len(), 1);
+        assert_eq!(arrived[0].record_id, id);
+        let moved = store.move_to_profile(vec![id], person, vec![]).unwrap();
+        assert_eq!(moved.moved, vec![id]);
+        // Hidden and restored again: it is no longer in Shared with me, so it is not offered.
+        store.create_profile("FAKE Third Person", 7).unwrap();
+        store.hide_profile(person, 300).unwrap();
+        assert!(store.restore_profile(person).unwrap().is_empty());
+    }
+
     /// Each unlock checks for new documents once (#128). A delivery its
     /// portal lists again at a later unlock, because the pickup confirmation
     /// did not reach the portal, is the one already filed: no second record,
@@ -8554,14 +8655,22 @@ mod approval_recovery_tests {
             change(&mut changed);
             structure_ok(&changed)
         };
-        // `hidden` has no format yet (PR 7 gives it one): refused at every format, this one
-        // included, so no build reads a hidden person it would then list.
-        for format in [MANIFEST_FORMAT_PROFILE_HANDOVER - 1, VAULT_FORMAT] {
+        // `hidden` has a format of its own, after the handover's (PR 7): refused below it, the
+        // handover's format included, so no build that does not honour it reads a hidden
+        // person and lists them; accepted at it.
+        for format in [
+            MANIFEST_FORMAT_PROFILE_HANDOVER - 1,
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
+        ] {
             assert!(!ok(&|m| {
                 m.format_version = format;
                 m.profiles[last].hidden = Some(hidden);
             }));
         }
+        assert!(ok(&|m| {
+            m.format_version = MANIFEST_FORMAT_HIDDEN_PROFILES;
+            m.profiles[last].hidden = Some(hidden);
+        }));
         // The rule itself is in place for the format that will hold it: a person hidden by the
         // patient, on an ordinary profile, is fine there; never as damaged, never Shared.
         let ordinary = |hidden: Option<Hidden>| {
@@ -8581,9 +8690,14 @@ mod approval_recovery_tests {
             id,
             Some(20)
         ));
-        assert!(!valid_handover_fields(
+        assert!(valid_handover_fields(
             &ordinary(Some(hidden)),
             VAULT_FORMAT,
+            id
+        ));
+        assert!(!valid_handover_fields(
+            &ordinary(Some(hidden)),
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
             id
         ));
         assert!(!valid_handover_fields_from(

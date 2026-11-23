@@ -175,6 +175,8 @@ fn main() {
             "vault_view_photo",
             "vault_hide_record",
             "vault_unhide_record",
+            "vault_hide_profile",
+            "vault_restore_profile",
             "vault_ai_result_save",
             "vault_ai_results",
             "vault_ai_result_read",
