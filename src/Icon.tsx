@@ -17,7 +17,9 @@ export type IconName =
   | "list"
   | "lock-open"
   | "more"
+  | "pause"
   | "pill"
+  | "play"
   | "plus"
   | "reset"
   | "search"
@@ -27,7 +29,8 @@ export type IconName =
   | "sort"
   | "star"
   | "text-size"
-  | "trash";
+  | "trash"
+  | "video";
 
 export function Icon({ name }: { name: IconName }) {
   let content: ReactNode;
@@ -214,6 +217,24 @@ export function Icon({ name }: { name: IconName }) {
         <>
           <path d="M4 8h4l1.5-2h5L16 8h4v11H4Z" />
           <circle cx="12" cy="13" r="3" />
+        </>
+      );
+      break;
+    case "pause":
+      content = (
+        <>
+          <path d="M9 6v12M15 6v12" />
+        </>
+      );
+      break;
+    case "play":
+      content = <path d="M8 5v14l11-7Z" />;
+      break;
+    case "video":
+      content = (
+        <>
+          <rect x="3" y="6" width="13" height="12" rx="2" />
+          <path d="M16 10.5 21 8v8l-5-2.5" />
         </>
       );
       break;

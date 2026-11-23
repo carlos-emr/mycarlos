@@ -58,7 +58,7 @@ function LanguageDialog({ onClose }: { onClose: () => void }) {
             <h2 id="language-dialog-title">{t("language.title")}</h2>
           </div>
         </header>
-        <LanguageSetting compact />
+        <LanguageSetting compact showTitle={false} />
         <footer className="native-dialog-actions">
           <button
             ref={closeRef}
