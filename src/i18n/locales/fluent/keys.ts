@@ -953,6 +953,33 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.placeholder.manual",
   "interface.AnonymizePreview.possibleNames",
   "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.removedSummary",
+  "interface.AnonymizePreview.removedCount.name",
+  "interface.AnonymizePreview.removedCount.doctor",
+  "interface.AnonymizePreview.removedCount.clinic",
+  "interface.AnonymizePreview.removedCount.healthCard",
+  "interface.AnonymizePreview.removedCount.recordNumber",
+  "interface.AnonymizePreview.removedCount.sin",
+  "interface.AnonymizePreview.removedCount.dateOfBirth",
+  "interface.AnonymizePreview.removedCount.age",
+  "interface.AnonymizePreview.removedCount.address",
+  "interface.AnonymizePreview.removedCount.postalCode",
+  "interface.AnonymizePreview.removedCount.phone",
+  "interface.AnonymizePreview.removedCount.email",
+  "interface.AnonymizePreview.removedCount.web",
+  "interface.AnonymizePreview.removedCount.unclearDate",
+  "interface.AnonymizePreview.removedCount.manual",
+  "interface.AnonymizePreview.removedCount.date",
+  "interface.AnonymizePreview.removedSummaryNone",
+  "interface.AnonymizePreview.toCheck",
+  "interface.AnonymizePreview.toCheckHelp",
+  "interface.AnonymizePreview.checkPicked",
+  "interface.AnonymizePreview.savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote",
+  "interface.AnonymizePreview.copy",
+  "interface.AnonymizePreview.copied",
+  "interface.AnonymizePreview.copyFailed",
+  "interface.AnonymizePreview.copyWarning",
   "interface.AnonymizePreview.removeSelected",
   "interface.AnonymizePreview.selectFirst",
   "interface.AnonymizePreview.phrase",
@@ -2306,6 +2333,57 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-possibleNames",
   "interface.AnonymizePreview.removeWord":
     "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.removedSummary":
+    "interface-AnonymizePreview-removedSummary",
+  "interface.AnonymizePreview.removedCount.name":
+    "interface-AnonymizePreview-removedCount-name",
+  "interface.AnonymizePreview.removedCount.doctor":
+    "interface-AnonymizePreview-removedCount-doctor",
+  "interface.AnonymizePreview.removedCount.clinic":
+    "interface-AnonymizePreview-removedCount-clinic",
+  "interface.AnonymizePreview.removedCount.healthCard":
+    "interface-AnonymizePreview-removedCount-healthCard",
+  "interface.AnonymizePreview.removedCount.recordNumber":
+    "interface-AnonymizePreview-removedCount-recordNumber",
+  "interface.AnonymizePreview.removedCount.sin":
+    "interface-AnonymizePreview-removedCount-sin",
+  "interface.AnonymizePreview.removedCount.dateOfBirth":
+    "interface-AnonymizePreview-removedCount-dateOfBirth",
+  "interface.AnonymizePreview.removedCount.age":
+    "interface-AnonymizePreview-removedCount-age",
+  "interface.AnonymizePreview.removedCount.address":
+    "interface-AnonymizePreview-removedCount-address",
+  "interface.AnonymizePreview.removedCount.postalCode":
+    "interface-AnonymizePreview-removedCount-postalCode",
+  "interface.AnonymizePreview.removedCount.phone":
+    "interface-AnonymizePreview-removedCount-phone",
+  "interface.AnonymizePreview.removedCount.email":
+    "interface-AnonymizePreview-removedCount-email",
+  "interface.AnonymizePreview.removedCount.web":
+    "interface-AnonymizePreview-removedCount-web",
+  "interface.AnonymizePreview.removedCount.unclearDate":
+    "interface-AnonymizePreview-removedCount-unclearDate",
+  "interface.AnonymizePreview.removedCount.manual":
+    "interface-AnonymizePreview-removedCount-manual",
+  "interface.AnonymizePreview.removedCount.date":
+    "interface-AnonymizePreview-removedCount-date",
+  "interface.AnonymizePreview.removedSummaryNone":
+    "interface-AnonymizePreview-removedSummaryNone",
+  "interface.AnonymizePreview.toCheck": "interface-AnonymizePreview-toCheck",
+  "interface.AnonymizePreview.toCheckHelp":
+    "interface-AnonymizePreview-toCheckHelp",
+  "interface.AnonymizePreview.checkPicked":
+    "interface-AnonymizePreview-checkPicked",
+  "interface.AnonymizePreview.savedFileNote":
+    "interface-AnonymizePreview-savedFileNote",
+  "interface.AnonymizePreview.pasteWhereNote":
+    "interface-AnonymizePreview-pasteWhereNote",
+  "interface.AnonymizePreview.copy": "interface-AnonymizePreview-copy",
+  "interface.AnonymizePreview.copied": "interface-AnonymizePreview-copied",
+  "interface.AnonymizePreview.copyFailed":
+    "interface-AnonymizePreview-copyFailed",
+  "interface.AnonymizePreview.copyWarning":
+    "interface-AnonymizePreview-copyWarning",
   "interface.AnonymizePreview.removeSelected":
     "interface-AnonymizePreview-removeSelected",
   "interface.AnonymizePreview.selectFirst":
@@ -3642,6 +3720,43 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.placeholder.manual": undefined;
   "interface.AnonymizePreview.possibleNames": undefined;
   "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.removedSummary": { list: FluentArgument };
+  "interface.AnonymizePreview.removedCount.name": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.doctor": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.clinic": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.healthCard": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.recordNumber": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.sin": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.dateOfBirth": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.age": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.address": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.postalCode": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.phone": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.email": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.web": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.unclearDate": {
+    count: FluentArgument;
+  };
+  "interface.AnonymizePreview.removedCount.manual": { count: FluentArgument };
+  "interface.AnonymizePreview.removedCount.date": { count: FluentArgument };
+  "interface.AnonymizePreview.removedSummaryNone": undefined;
+  "interface.AnonymizePreview.toCheck": { count: FluentArgument };
+  "interface.AnonymizePreview.toCheckHelp": undefined;
+  "interface.AnonymizePreview.checkPicked": { word: FluentArgument };
+  "interface.AnonymizePreview.savedFileNote": undefined;
+  "interface.AnonymizePreview.pasteWhereNote": undefined;
+  "interface.AnonymizePreview.copy": undefined;
+  "interface.AnonymizePreview.copied": undefined;
+  "interface.AnonymizePreview.copyFailed": undefined;
+  "interface.AnonymizePreview.copyWarning": undefined;
   "interface.AnonymizePreview.removeSelected": undefined;
   "interface.AnonymizePreview.selectFirst": undefined;
   "interface.AnonymizePreview.phrase": undefined;

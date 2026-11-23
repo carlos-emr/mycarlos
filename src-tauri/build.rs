@@ -179,6 +179,7 @@ fn main() {
             "vault_record_known_details",
             "vault_export_text_pick",
             "vault_export_text_picked",
+            "vault_export_text_copy",
             "vault_export_pick",
             "vault_export_picked",
             "vault_save_photo",

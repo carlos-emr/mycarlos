@@ -5234,7 +5234,7 @@ impl PageBoxesAnswer {
     }
 }
 
-/// Where a quote from a page's text is on the page picture, for Show in document (#292). The
+/// Where a quote from a page's text is on the page picture, for Show me in the document (#292). The
 /// record is decrypted into memory only and handed to the PDF helper, as for a page view
 /// (`pdf_view::boxes_in_helper`). A newer such request, a lock or the reader closing stops it;
 /// a page request does not.
@@ -5604,6 +5604,53 @@ struct TextSaveOutcome {
     hits: Vec<text_recheck::Hit>,
 }
 
+/// The native re-check every text that leaves the preview goes through, whether it is saved or
+/// copied (#72 part B, AI-02): too large, a code point the cleaning drops or a vault identifier
+/// still standing, or a date that page code skipped. `Ok(hits)` with hits is a refusal; nothing may
+/// be written or copied then. One function for both, so that Copy is never weaker than Save.
+async fn recheck_export_text(
+    store: &Arc<VaultStore>,
+    record_id: Uuid,
+    text: &str,
+) -> CommandResult<Vec<text_recheck::Hit>> {
+    // Refused before anything else looks at the text.
+    if text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let hits = text_recheck::forbidden_ranges(text);
+    if !hits.is_empty() {
+        return Ok(hits);
+    }
+    let known = run_blocking(store, move |store| store.known_identifiers(record_id)).await?;
+    let hits = text_recheck::identifier_hits(text, &known.names, &known.birth_dates);
+    if !hits.is_empty() {
+        return Ok(hits);
+    }
+    // The remover sends no date: each is a placeholder. One still standing
+    // means page code skipped it (AI-01, AI-02).
+    Ok(text_recheck::date_hits(text))
+}
+
+/// The file a save writes, and exactly what a copy returns: the fixed first line (and the cut
+/// line) from the app's language, written here, never by page code.
+fn compose_export_text(
+    locale: UiLocale,
+    text: &str,
+    cut_after_page: Option<u32>,
+) -> CommandResult<String> {
+    let mut content = locale.text(MessageId::AiHelperExportHeader)?;
+    content.push_str("\n\n");
+    content.push_str(text);
+    if let Some(page) = cut_after_page {
+        content.push_str("\n\n");
+        content.push_str(
+            &locale.render(MessageId::AiHelperExportCut, &[("page", &page.to_string())])?,
+        );
+    }
+    content.push('\n');
+    Ok(content)
+}
+
 /// Writes an anonymized text where the picker chose (#72 part B, AI-02):
 /// after the native re-check, with the fixed first line (and the cut line)
 /// from the app's language written here, never by page code. One save ends
@@ -5616,38 +5663,21 @@ async fn vault_export_text_picked(
     locale: Option<UiLocale>,
 ) -> CommandResult<TextSaveOutcome> {
     let store = store.pin();
-    // Refused before anything else looks at the text.
+    let record_id = request.record_id;
+    // The size check comes first, before the ticket is looked at.
     if request.text.len() > MAX_EXPORT_TEXT_BYTES {
         return Err(VaultError::Invalid.into());
     }
-    let record_id = request.record_id;
     let ticket = picks.peek_text(request.ticket, record_id)?;
-    let hits = text_recheck::forbidden_ranges(&request.text);
+    let hits = recheck_export_text(store.arc(), record_id, &request.text).await?;
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
-    let known = run_blocking(store.arc(), move |store| store.known_identifiers(record_id)).await?;
-    let hits = text_recheck::identifier_hits(&request.text, &known.names, &known.birth_dates);
-    if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
-    }
-    // The remover sends no date: each is a placeholder. One still standing
-    // means page code skipped it (AI-01, AI-02).
-    let hits = text_recheck::date_hits(&request.text);
-    if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
-    }
-    let locale = locale.unwrap_or_default();
-    let mut content = locale.text(MessageId::AiHelperExportHeader)?;
-    content.push_str("\n\n");
-    content.push_str(&request.text);
-    if let Some(page) = ticket.cut_after_page {
-        content.push_str("\n\n");
-        content.push_str(
-            &locale.render(MessageId::AiHelperExportCut, &[("page", &page.to_string())])?,
-        );
-    }
-    content.push('\n');
+    let content = compose_export_text(
+        locale.unwrap_or_default(),
+        &request.text,
+        ticket.cut_after_page,
+    )?;
     let destination = picks.take_text_export(request.pick_id, record_id)?;
     let Ok(destination_path) = destination.into_path() else {
         // Only computers read a document's text, and they pick paths.
@@ -5662,6 +5692,58 @@ async fn vault_export_text_picked(
     picks.take_text(request.ticket, record_id)?;
     Ok(TextSaveOutcome {
         saved: true,
+        hits: Vec::new(),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextExportCopyRequest {
+    record_id: Uuid,
+    ticket: Uuid,
+    text: String,
+}
+
+/// How a copy ended: the approved file text, to be put on the clipboard as it is, or a refusal
+/// with the same ranges a save would give. Never both.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextCopyOutcome {
+    approved: Option<String>,
+    hits: Vec<text_recheck::Hit>,
+}
+
+/// The text a copy may put on the clipboard (#72 part B): the same native re-check as a save, on
+/// the same text, and the same file content a save would write, first line and cut line included.
+/// Copy is never weaker than Save: the page writes to the clipboard only what this returns. It
+/// leaves the ticket alone (a copy is not a save), so a save may still follow.
+#[tauri::command]
+async fn vault_export_text_copy(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: TextExportCopyRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<TextCopyOutcome> {
+    let store = store.pin();
+    if request.text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let record_id = request.record_id;
+    let ticket = picks.peek_text(request.ticket, record_id)?;
+    let hits = recheck_export_text(store.arc(), record_id, &request.text).await?;
+    if !hits.is_empty() {
+        return Ok(TextCopyOutcome {
+            approved: None,
+            hits,
+        });
+    }
+    let content = compose_export_text(
+        locale.unwrap_or_default(),
+        &request.text,
+        ticket.cut_after_page,
+    )?;
+    Ok(TextCopyOutcome {
+        approved: Some(content),
         hits: Vec::new(),
     })
 }
@@ -6746,6 +6828,7 @@ pub fn run() {
             vault_record_known_details,
             vault_export_text_pick,
             vault_export_text_picked,
+            vault_export_text_copy,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
@@ -9325,6 +9408,159 @@ mod historical_identifier_export_tests {
         ))
         .is_err());
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn native_text_copy_gives_the_saved_file_or_the_same_refusal_and_never_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                // A cut document: the cut line is part of the file, so part of the copy.
+                cut_after_page: Some(2),
+                truncated: true,
+                pages_missing: false,
+                last_index: Some(1),
+                page_count: 3,
+                pages_digest: pages_digest([(0, "FAKE a"), (1, "FAKE b")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(Arc::clone(&store))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let copy = |text: &str| TextExportCopyRequest {
+            record_id: record,
+            ticket,
+            text: text.to_owned(),
+        };
+
+        // A vault identifier still standing: refused with the ranges Save gives, nothing approved.
+        let refused = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy("Zorvana"),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"));
+        assert!(refused.approved.is_none());
+        assert_eq!(refused.hits.len(), 1);
+        assert_eq!((refused.hits[0].start, refused.hits[0].end), (0, 7));
+        // The same refusal a save gives, over the same text.
+        let save_refused = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            TextExportPickedRequest {
+                record_id: record,
+                ticket,
+                pick_id,
+                text: "Zorvana".to_owned(),
+            },
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"));
+        assert!(!save_refused.saved);
+        assert_eq!(
+            save_refused
+                .hits
+                .iter()
+                .map(|hit| (hit.start, hit.end))
+                .collect::<Vec<_>>(),
+            refused
+                .hits
+                .iter()
+                .map(|hit| (hit.start, hit.end))
+                .collect::<Vec<_>>()
+        );
+        assert!(!destination.exists());
+        // A text over the size limit is an error for both, before the ticket is looked at.
+        let too_large = "x".repeat(MAX_EXPORT_TEXT_BYTES + 1);
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(&too_large),
+            None,
+        ))
+        .is_err());
+
+        // A clean text: the copy is the file a save writes (both build it with
+        // `compose_export_text`, here with the cut line of this ticket), and a copy does not use
+        // up the ticket: a second copy works.
+        let clean = "plain text with no identifier.";
+        let approved = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a clean text is approved"))
+        .approved
+        .expect("approved");
+        assert_eq!(
+            approved,
+            compose_export_text(UiLocale::default(), clean, Some(2))
+                .unwrap_or_else(|_| { panic!("the file text composes") })
+        );
+        assert!(approved.contains(clean));
+        assert!(approved.ends_with('\n'));
+        assert!(!destination.exists(), "a copy writes no file");
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("the ticket survives a copy"))
+        .approved
+        .is_some());
+        // A lock ends the ticket: a copy after it is refused, as a save is.
+        store.lock();
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .is_err());
+        // An unknown ticket is refused as it is for a save.
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            TextExportCopyRequest {
+                record_id: record,
+                ticket: Uuid::new_v4(),
+                text: clean.to_owned(),
+            },
+            None,
+        ))
+        .is_err());
     }
 
     #[test]

@@ -3204,6 +3204,9 @@ export function VaultLibrary({
                   text,
                 )
               }
+              copyText={(ticket, text) =>
+                bridge.copyTextExport(anonymizeRecord.id, ticket, text)
+              }
               exportHeader={translateNow("aiHelper.exportHeader")}
               onClose={() => setAnonymizeRecordId(null)}
             />
