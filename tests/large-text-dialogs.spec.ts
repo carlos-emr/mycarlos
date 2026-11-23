@@ -200,7 +200,7 @@ const rootFont = (page: Page) =>
 // Two ways to 200% text:
 // - A phone's own text size, or the browser's default text: 32px on a phone
 //   at 320 or 360px.
-// - The app's Text size (Preferences), which zooms the whole webview: at
+// - The app's App zoom (Preferences), which zooms the whole webview: at
 //   200% a 1280x720 window lays out like 640x360, drawn with twice the
 //   pixels, with 16px text (as large-text-accessibility.spec.ts models it).
 const LARGE_TEXT = [
@@ -219,7 +219,7 @@ const LARGE_TEXT = [
     phone: true,
   },
   {
-    name: "with the app's text size at 200%",
+    name: "with the app's zoom at 200%",
     width: 640,
     height: 360,
     font: 16,

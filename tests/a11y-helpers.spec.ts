@@ -22,9 +22,9 @@ const STYLE = `<style>
 </style>`;
 
 test("human-copy comparisons keep exact words and non-Fluent bidi controls", () => {
-  const announced = visibleHumanText("Text size \u2068110%\u2069");
-  expect(announced).toBe("Text size 110%");
-  expect(announced).not.toBe("Text size 100%");
+  const announced = visibleHumanText("App zoom \u2068110%\u2069");
+  expect(announced).toBe("App zoom 110%");
+  expect(announced).not.toBe("App zoom 100%");
   expect(visibleHumanText("\u202eFAKE.pdf")).toBe("\u202eFAKE.pdf");
   const label = messagePattern("en", "library.select", { name: "FAKE[1].pdf" });
   expect(label.test("Select \u2068FAKE[1].pdf\u2069")).toBe(true);

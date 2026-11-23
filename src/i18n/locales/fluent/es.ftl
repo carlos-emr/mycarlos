@@ -1330,31 +1330,31 @@ sidebar-settings = Configuración
 
 sidebar-storage = Bóveda local cifrada
 
-textSize-announce = Tamaño del texto { $percent }
+textSize-announce = Zoom de la aplicación { $percent }
 
-textSize-between = { $typed }% está entre dos tamaños, así que se usa { $size }.
+textSize-between = { $typed }% está entre dos niveles de zoom, así que se usa { $size }.
 
-textSize-box = Tamaño del texto en porcentaje
+textSize-box = Zoom de la aplicación en porcentaje
 
 textSize-followsDevice = Aquí, el tamaño del texto depende de su dispositivo: de su propio ajuste de tamaño del texto o del zoom del navegador.
 
-textSize-help = Agranda o reduce todo el contenido de myCarlos, del { $min }% al { $max }%. myCarlos recuerda el tamaño en este dispositivo. También puede mantener pulsada la tecla { $modifier } y pulsar más, menos o 0.
+textSize-help = Hace más grandes o más pequeños el texto, los botones y otros elementos de myCarlos, del { $min }% al { $max }%. myCarlos recuerda su ajuste en este dispositivo. Use { $modifier } con + o − para ampliar o reducir, o { $modifier } con 0 para volver al 100%.
 
 textSize-key-command = Comando
 
-textSize-larger = Texto más grande
+textSize-larger = Acercar
 
-textSize-largest = El tamaño más grande es { $max }%.
+textSize-largest = El zoom máximo es { $max }%.
 
 textSize-notNumber = Escriba un número del { $min } al { $max }.
 
-textSize-reset = Volver al tamaño normal
+textSize-reset = Volver al 100%
 
-textSize-smaller = Texto más pequeño
+textSize-smaller = Alejar
 
-textSize-smallest = El tamaño más pequeño es { $min }%.
+textSize-smallest = El zoom mínimo es { $min }%.
 
-textSize-title = Tamaño del texto
+textSize-title = Zoom de la aplicación
 
 unlock-autoLock =
     { $count ->

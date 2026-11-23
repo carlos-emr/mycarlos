@@ -1360,31 +1360,31 @@ sidebar-settings = Ustawienia
 
 sidebar-storage = Lokalny zaszyfrowany sejf
 
-textSize-announce = Rozmiar tekstu { $percent }
+textSize-announce = Powiększenie aplikacji { $percent }
 
-textSize-between = { $typed }% wypada między rozmiarami, więc ustawiono { $size }.
+textSize-between = { $typed }% wypada między poziomami powiększenia, więc ustawiono { $size }.
 
-textSize-box = Rozmiar tekstu w procentach
+textSize-box = Powiększenie aplikacji w procentach
 
 textSize-followsDevice = Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.
 
-textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym urządzeniu. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
+textSize-help = Powiększa lub pomniejsza tekst, przyciski i inne elementy w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje to ustawienie na tym urządzeniu. Użyj { $modifier } z + lub −, aby powiększać lub pomniejszać, albo { $modifier } z 0, aby wrócić do 100%.
 
 textSize-key-command = Command
 
-textSize-larger = Większy tekst
+textSize-larger = Powiększ
 
-textSize-largest = Największy rozmiar to { $max }%.
+textSize-largest = Największe powiększenie to { $max }%.
 
 textSize-notNumber = Proszę wpisać liczbę od { $min } do { $max }.
 
-textSize-reset = Przywróć normalny rozmiar
+textSize-reset = Wróć do 100%
 
-textSize-smaller = Mniejszy tekst
+textSize-smaller = Pomniejsz
 
-textSize-smallest = Najmniejszy rozmiar to { $min }%.
+textSize-smallest = Najmniejsze powiększenie to { $min }%.
 
-textSize-title = Rozmiar tekstu
+textSize-title = Powiększenie aplikacji
 
 unlock-autoLock =
     { $count ->
