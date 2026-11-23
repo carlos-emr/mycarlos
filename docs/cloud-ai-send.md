@@ -22,7 +22,8 @@ provider, **Anthropic**, from myCarlos itself, using the **patient's own API key
   confirmation for each send**. No background send, no "always allow".
 - **The page never sends and never holds the key.** Rust re-checks the final text (as it does before a
   save), builds and sends the request, validates the answer, restores the placeholders from the removed
-  list the page hands it, and keeps the answer natively, labelled as written in the cloud.
+  list the page hands it (checked natively: exact placeholders of this export that stand in the text sent,
+  bounded; a stated residual, not a proof, because only the page holds the document), and keeps the answer natively, labelled as written in the cloud.
 - **Recorded:** history entries for the send (written before it) and the answer: time, provider, model,
   document, request id, token counts. Never the text, the answer, the removed list or the key.
 - **No claims about the provider's data use.** The notice says the patient's account rules apply. The
