@@ -3888,16 +3888,18 @@ async fn vault_backup_pick(
 /// How big a backup would be, and how much of it is video, asked before the
 /// patient chooses where to save it.
 #[tauri::command]
-async fn vault_backup_size(store: State<'_, Arc<VaultStore>>) -> CommandResult<vault::BackupSize> {
-    run_blocking(store.inner(), |store| store.backup_size()).await
+async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.backup_size()).await
 }
 
 /// The records a backup was made without the file of, for the Hidden list to say
 /// why a video's file is missing: those whose latest history event is "hidden,
 /// left out of the backup".
 #[tauri::command]
-async fn vault_left_out_records(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), |store| store.left_out_records()).await
+async fn vault_left_out_records(store: State<'_, StoreHandle>) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.left_out_records()).await
 }
 
 #[tauri::command]
@@ -5514,10 +5516,9 @@ async fn vault_video_stop(
 /// How much room there is to record: asked before the camera and microphone are
 /// turned on, and again on every resume.
 #[tauri::command]
-async fn vault_video_space(
-    store: State<'_, Arc<VaultStore>>,
-) -> CommandResult<vault::RecordingSpace> {
-    run_blocking(store.inner(), VaultStore::recording_space).await
+async fn vault_video_space(store: State<'_, StoreHandle>) -> CommandResult<vault::RecordingSpace> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recording_space).await
 }
 
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
