@@ -369,11 +369,22 @@ impl VaultStore {
         &self,
         session: u64,
     ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
+        self.check_documents_using(session, Instant::now, || {
+            std::thread::sleep(Duration::from_millis(20))
+        })
+    }
+
+    /// `check_documents` with its clock and its wait between tries given, so a test can drive the
+    /// shared-admission wait (up to 10 s, then `DocumentCheckBusy`) without sleeping.
+    pub(super) fn check_documents_using(
+        &self,
+        session: u64,
+        now: impl Fn() -> Instant,
+        pause: impl FnMut(),
+    ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
         let _running = self
             .collection
-            .manual_acquire(&self.portal_check_running, Instant::now, || {
-                std::thread::sleep(Duration::from_millis(20))
-            })
+            .manual_acquire(&self.portal_check_running, now, pause)
             .ok_or(VaultError::DocumentCheckBusy)?;
         let result = crate::portal_pickup::check(self, session);
         if result.as_ref().is_ok_and(|r| r.issues.is_empty()) {
@@ -3557,6 +3568,41 @@ mod approval_recovery_tests {
         assert!(store
             .connect_portal_using(session, || finish_connect_link(&store, session), &http)
             .is_ok());
+    }
+
+    #[test]
+    fn a_document_check_waits_for_other_portal_work_then_refuses_and_leaves_it_running() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let running = store.start_portal_work().unwrap();
+        // The wait is the shared guard's: ten tries a second apart, then busy. The clock moves
+        // only when the check pauses, so no real time passes.
+        let clock = std::cell::Cell::new(Instant::now());
+        let pauses = std::cell::Cell::new(0u32);
+        let error = store
+            .check_documents_using(
+                session,
+                || clock.get(),
+                || {
+                    pauses.set(pauses.get() + 1);
+                    clock.set(clock.get() + Duration::from_secs(1));
+                },
+            )
+            .err()
+            .unwrap();
+        assert!(matches!(error, VaultError::DocumentCheckBusy));
+        assert_eq!(pauses.get(), 10);
+        // The refusal took nothing from the work that was running, and local records still read.
+        assert!(
+            store.start_portal_work().is_err(),
+            "the other work still holds the guard"
+        );
+        assert!(store.snapshot().unwrap().portal_links.is_empty());
+        drop(running);
+        assert!(
+            store.start_portal_work().is_ok(),
+            "the guard is free once that work ends"
+        );
     }
 
     #[test]
@@ -7963,6 +8009,45 @@ mod approval_recovery_tests {
             .iter()
             .all(|l| !l.incomplete));
         assert_eq!(store.remove_incomplete_portal_links(session).unwrap(), 0);
+    /// #160 review: a link with a push destination enrolled (or a revocation queued) is not
+    /// removed: the portal still holds a subscription for the device. Already gone is not a write.
+    #[test]
+    fn should_refuse_removing_a_link_with_notices_on_and_not_write_when_it_is_already_gone() {
+        use crate::document_notifications::{Owner, Permission, Platform, Policy};
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        store
+            .mutate_recorded(|m, _| {
+                let mut policy = Policy::new(m.remote_notices.clone()).unwrap();
+                policy.permission_changed(Permission::Granted);
+                policy.opt_in();
+                let owner = Owner::new(link.id, link.keys.device_key_id()).unwrap();
+                policy
+                    .reserve_destination(owner, Uuid::new_v4(), Platform::WindowsWns)
+                    .unwrap();
+                m.remote_notices = policy.saved().clone();
+                Ok(())
+            })
+            .unwrap();
+        let shown = store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .into_iter()
+            .find(|l| l.id == link.id)
+            .unwrap();
+        assert!(shown.notices_enrolled && !shown.has_documents);
+        let session = store.portal_link_ticket();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store.linked_ids().contains(&link.id));
+        // A link that is not there is not a write: no commit and no history entry.
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.remove_portal_link(Uuid::new_v4(), session).unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
     }
     /// #160: a link with a filed document keeps its keys (its custody proof is checked with them at
     /// every unlock), so removing it is refused and nothing changes.

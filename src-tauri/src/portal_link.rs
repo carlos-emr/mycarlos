@@ -241,6 +241,10 @@ pub struct LinkSummary {
     pub id: Uuid,
     pub portal_base: String,
     pub device_name: String,
+    /// When this link was started (the vault's own clock, milliseconds), so that two cards for
+    /// the same address can be told apart by the day they were made (#160). Already stored with
+    /// the link; only now shown.
+    pub linked_at_ms: u64,
     pub profile_id: Option<Uuid>,
     pub clinic_name: Option<String>,
     pub fingerprints: Vec<String>,
@@ -272,6 +276,9 @@ pub struct LinkSummary {
     pub stopped_at_ms: Option<u64>,
     /// A check found this device removed by its clinic, and saved it (#160).
     pub clinic_removed: bool,
+    /// Document notices are on for this clinic (a push destination is enrolled, or its revocation
+    /// is queued): the link cannot be removed until they are turned off (#160). The snapshot adds it.
+    pub notices_enrolled: bool,
 }
 
 impl StoredLink {
@@ -344,6 +351,7 @@ impl StoredLink {
             id: self.id,
             portal_base: self.portal_base.clone(),
             device_name: self.device_name.clone(),
+            linked_at_ms: self.created_at_ms,
             profile_id: self.profile_id,
             clinic_name: self.clinic.as_ref().map(|c| c.clinic_name.clone()),
             fingerprints: self
@@ -378,6 +386,7 @@ impl StoredLink {
             has_documents: false,
             stopped_at_ms: self.stopped_at_ms,
             clinic_removed: self.clinic_removed_at_ms.is_some(),
+            notices_enrolled: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

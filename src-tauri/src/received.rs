@@ -73,11 +73,35 @@ pub(crate) fn accept_command_line(
         .collect();
     let kept = offered
         .iter()
-        .filter(|path| path.is_absolute())
+        .filter(|path| path.is_absolute() && !is_device_path(path))
         .cloned()
         .map(ReceivedSource::Path)
         .collect();
     (offered.len(), kept)
+}
+
+/// A Windows device or raw-volume path that a program named on its command line must never open:
+/// `\\.\` (a device namespace: a pipe, a COM port, a disk) and `\\?\` anything but a drive
+/// (`\\?\C:\`) or a UNC share (`\\?\UNC\`). Opening one can block, or read something that is
+/// not a file the patient chose. A plain drive path and a plain UNC path stay (the handle is also
+/// checked to be a regular file before anything is read: `vault::open_regular_read`).
+fn is_device_path(path: &std::path::Path) -> bool {
+    let text = path.to_string_lossy();
+    if text.starts_with("\\\\.\\") {
+        return true;
+    }
+    match text.strip_prefix("\\\\?\\") {
+        None => false,
+        Some(rest) => {
+            let drive = rest.as_bytes();
+            let is_drive = drive.len() >= 3
+                && drive[0].is_ascii_alphabetic()
+                && drive[1] == b':'
+                && drive[2] == b'\\';
+            let is_unc = rest.len() >= 4 && rest[..4].eq_ignore_ascii_case("UNC\\");
+            !(is_drive || is_unc)
+        }
+    }
 }
 
 /// The name shown for a received file before it is cleaned by the vault's own naming rules.
@@ -181,6 +205,9 @@ pub(crate) struct ReceivedSummary {
     pub(crate) name: String,
     /// The label the document will carry once added.
     pub(crate) source_label: &'static str,
+    /// The file was named by a program started with its path (Open with, Send to, a second launch)
+    /// rather than shared by another app: the renderer asks the patient before it is added.
+    pub(crate) needs_confirm: bool,
 }
 
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
@@ -201,6 +228,13 @@ struct Waiting {
 }
 
 impl ReceivedFiles {
+    /// Initial argv and Windows second launches use exactly the same filtering and quota.
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+    pub(crate) fn receive_command_line(&self, args: impl IntoIterator<Item = OsString>) {
+        let (offered, sources) = accept_command_line(args);
+        self.receive(offered, sources);
+    }
+
     fn waiting(&self) -> MutexGuard<'_, Waiting> {
         self.waiting.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -256,8 +290,19 @@ impl ReceivedFiles {
                 id: *id,
                 name: file.name.clone(),
                 source_label: MANUAL_IMPORT_LABEL,
+                needs_confirm: matches!(file.source, ReceivedSource::Path(_)),
             })
             .collect()
+    }
+
+    /// Forgets exactly the waiting files named (the patient said Cancel): nothing was stored, and
+    /// a file that arrived since, or one an import has taken, is not touched. Unknown ids are
+    /// ignored. Returns how many were forgotten.
+    pub(crate) fn forget(&self, ids: &[Uuid]) -> usize {
+        let mut waiting = self.waiting();
+        let before = waiting.files.len();
+        waiting.files.retain(|(id, _)| !ids.contains(id));
+        before - waiting.files.len()
     }
 
     /// Removes and returns exactly the files named, in arrival order, or nothing at all when
@@ -296,10 +341,14 @@ impl ReceivedFiles {
         waiting.files.extend(later);
     }
 
-    /// Forgets the files named. Unknown ids are ignored: a file already imported is gone too.
-    #[cfg(test)]
-    pub(crate) fn discard(&self, ids: &[Uuid]) {
-        self.waiting().files.retain(|(id, _)| !ids.contains(id));
+    /// The ids of the waiting files that need no question: those shared from another app (a
+    /// content URI), which are added as they arrive. A file named by a path never is.
+    pub(crate) fn ids_needing_no_question(&self) -> Vec<Uuid> {
+        self.list()
+            .into_iter()
+            .filter(|file| !file.needs_confirm)
+            .map(|file| file.id)
+            .collect()
     }
 
     #[cfg(test)]
@@ -364,6 +413,47 @@ mod tests {
     }
 
     #[test]
+    fn refuses_windows_device_paths_and_keeps_drive_and_unc_paths() {
+        for refused in [
+            "\\\\.\\pipe\\FAKE.pdf",
+            "\\\\.\\COM1",
+            "\\\\.\\PhysicalDrive0",
+            "\\\\?\\GLOBALROOT\\Device\\FAKE\\a.pdf",
+            "\\\\?\\Volume{FAKE}\\a.pdf",
+            "\\\\?\\C:",
+        ] {
+            assert!(is_device_path(std::path::Path::new(refused)), "{refused}");
+        }
+        for kept in [
+            "C:\\Users\\FAKE\\a.pdf",
+            "\\\\server\\share\\a.pdf",
+            "\\\\?\\C:\\Users\\FAKE\\a.pdf",
+            "\\\\?\\UNC\\server\\share\\a.pdf",
+            "/tmp/FAKE.pdf",
+        ] {
+            assert!(!is_device_path(std::path::Path::new(kept)), "{kept}");
+        }
+    }
+
+    #[test]
+    fn files_shared_from_another_app_need_no_question_and_paths_always_do() {
+        let files = ReceivedFiles::default();
+        let uri = url("content://com.example.provider/doc/FAKE.pdf");
+        files
+            .add_share(vec![
+                ReceivedSource::Path(PathBuf::from("/tmp/FAKE a.pdf")),
+                ReceivedSource::ContentUri(uri),
+            ])
+            .unwrap();
+        let listed = files.list();
+        let free = files.ids_needing_no_question();
+        assert_eq!(free.len(), 1);
+        assert!(listed
+            .iter()
+            .any(|file| file.id == free[0] && !file.needs_confirm));
+    }
+
+    #[test]
     fn keeps_absolute_command_line_paths_after_the_program() {
         let absolute = std::env::temp_dir().join("FAKE lab.pdf");
         let args = vec![
@@ -380,6 +470,69 @@ mod tests {
             accept_command_line(vec![OsString::from("/opt/mycarlos/mycarlos")]),
             (0, Vec::new())
         );
+    }
+
+    #[test]
+    fn startup_and_early_forwarded_argv_share_filtering_and_arrival_order() {
+        let first = std::env::temp_dir().join("FAKE José 结果.pdf");
+        let later = std::env::temp_dir().join("FAKE later file.pdf");
+        let files = std::sync::Arc::new(ReceivedFiles::default());
+        files.receive_command_line([OsString::from("myCarlos"), first.into_os_string()]);
+        let callback_queue = std::sync::Arc::clone(&files);
+        callback_queue.receive_command_line([
+            OsString::from("myCarlos"),
+            OsString::from(format!("--hint=|{}", later.display())),
+            OsString::from("relative.pdf"),
+            later.into_os_string(),
+        ]);
+        assert_eq!(
+            files
+                .list()
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            ["FAKE José 结果.pdf", "FAKE later file.pdf"]
+        );
+        assert_eq!(
+            files.take_notice(),
+            ReceiveNotice {
+                dropped: 1,
+                refused_shares: 0
+            }
+        );
+    }
+
+    #[test]
+    fn forwarded_argv_respects_inflight_quota_and_restores_failed_startup_files_first() {
+        let files = ReceivedFiles::default();
+        let paths = (0..MAX_IMPORT_FILES - 1).map(|i| {
+            std::env::temp_dir()
+                .join(format!("FAKE initial {i}.pdf"))
+                .into_os_string()
+        });
+        files.receive_command_line(std::iter::once(OsString::from("myCarlos")).chain(paths));
+        let initial = files.list();
+        let taken = files
+            .take(&initial.iter().map(|file| file.id).collect::<Vec<_>>())
+            .unwrap();
+        let later = std::env::temp_dir().join("FAKE later.pdf").into_os_string();
+        files.receive_command_line([OsString::from("myCarlos"), later.clone(), later.clone()]);
+        assert!(
+            files.list().is_empty(),
+            "over-limit handoff is refused whole"
+        );
+        assert_eq!(
+            files.take_notice(),
+            ReceiveNotice {
+                dropped: 0,
+                refused_shares: 1
+            }
+        );
+        files.receive_command_line([OsString::from("myCarlos"), later]);
+        files.restore(taken);
+        assert_eq!(&files.list()[..initial.len()], initial);
+        assert_eq!(files.list().last().unwrap().name, "FAKE later.pdf");
+        assert_eq!(files.list().len(), MAX_IMPORT_FILES);
     }
 
     #[test]
@@ -491,7 +644,7 @@ mod tests {
             ["FAKE 0.pdf", "FAKE 2.pdf"]
         );
         assert!(files.take(&[ids[0]]).is_none(), "an id is used once");
-        files.discard(&[ids[1], Uuid::new_v4()]);
+        files.forget(&[ids[1], Uuid::new_v4()]);
         assert_eq!(files.len(), 0);
     }
 
@@ -548,5 +701,70 @@ mod tests {
         );
         assert_eq!(files.take_notice(), ReceiveNotice::default());
         assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn a_file_named_by_a_path_needs_a_confirmation_and_a_shared_one_does_not() {
+        let files = ReceivedFiles::default();
+        let path = std::env::temp_dir().join("FAKE opened.pdf");
+        let shared = Url::parse("content://provider/FAKE%20shared.pdf").unwrap();
+        files.add_share(vec![ReceivedSource::Path(path)]).unwrap();
+        files
+            .add_share(vec![ReceivedSource::ContentUri(shared)])
+            .unwrap();
+        let listed = files.list();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|file| file.needs_confirm)
+                .collect::<Vec<_>>(),
+            [true, false]
+        );
+    }
+
+    #[test]
+    fn cancel_forgets_exactly_the_files_shown_and_stores_nothing() {
+        let files = ReceivedFiles::default();
+        let first = std::env::temp_dir().join("FAKE first.pdf");
+        let second = std::env::temp_dir().join("FAKE second.pdf");
+        let shown = files.add_share(vec![ReceivedSource::Path(first)]).unwrap();
+        // One that arrived while the question was open is not part of it.
+        let later = files.add_share(vec![ReceivedSource::Path(second)]).unwrap();
+        assert_eq!(files.forget(&shown), 1);
+        assert_eq!(
+            files.list().iter().map(|file| file.id).collect::<Vec<_>>(),
+            later
+        );
+        // A repeat, or ids that are unknown, forget nothing more.
+        assert_eq!(files.forget(&shown), 0);
+        assert_eq!(files.forget(&[Uuid::new_v4()]), 0);
+        // Files an import has taken are not waiting, so cancelling cannot reach them.
+        let taken = files.take(&later).unwrap();
+        assert_eq!(files.forget(&later), 0);
+        files.finish(&taken);
+    }
+
+    #[test]
+    fn only_the_confirmed_files_can_be_taken_for_an_import() {
+        let files = ReceivedFiles::default();
+        let shown = files
+            .add_share(vec![ReceivedSource::Path(
+                std::env::temp_dir().join("FAKE a.pdf"),
+            )])
+            .unwrap();
+        let unshown = files
+            .add_share(vec![ReceivedSource::Path(
+                std::env::temp_dir().join("FAKE b.pdf"),
+            )])
+            .unwrap();
+        let taken = files.take(&shown).unwrap();
+        assert_eq!(taken.len(), 1);
+        // The one that arrived after the question stays waiting for its own.
+        assert_eq!(
+            files.list().iter().map(|file| file.id).collect::<Vec<_>>(),
+            unshown
+        );
+        // An id that is not waiting takes nothing at all.
+        assert!(files.take(&[Uuid::new_v4()]).is_none());
     }
 }

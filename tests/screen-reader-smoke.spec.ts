@@ -161,8 +161,8 @@ test("Settings are named and ordered for a screen reader", async ({ page }) => {
   await expectAnnounced(page, "6 minutes");
   await openSection(page, "Preferences");
   await screenReaderSmoke(page, "Preferences");
-  await page.getByRole("button", { name: "Larger text" }).click();
-  await expectAnnounced(page, "Text size 110%");
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expectAnnounced(page, "App zoom 110%");
   await expectOnlyFakedCommands(page);
 });
 

@@ -51,6 +51,10 @@ function words(locale: Locale): PlaceholderVocabulary {
         locale,
         "interface.AnonymizePreview.note.ageOver90",
       ),
+      otherForm: (n: number) =>
+        translatePlain(locale, "interface.AnonymizePreview.note.otherForm", {
+          n,
+        }),
     },
   };
 }
