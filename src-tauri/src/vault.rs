@@ -41,9 +41,18 @@ mod delivery;
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
 pub(crate) use delivery::AidFiling;
+#[allow(unused_imports)]
+pub use playback::PlaybackOpened;
+#[cfg(test)]
+pub(crate) use playback::MAX_RANGE_RESPONSE;
+pub(crate) use playback::{looks_like_token, PlaybackRefusal};
 #[cfg(test)]
 mod native_portal_flow;
 mod original_pdf;
+// Playback of a stored video (#359 PR 2): the scheme handler calls it; the command
+// that opens a video and the screen come next.
+#[allow(dead_code)]
+mod playback;
 // The recording core (#359 PR 1): the commands and screen that call it come next.
 #[allow(dead_code)]
 mod recording;
@@ -1035,6 +1044,9 @@ pub struct VaultStore {
     /// Recordings in progress (#359), by record id. In memory only; each has a journal
     /// in `recordings/`. A lock parks them.
     recordings: Mutex<HashMap<Uuid, recording::ActiveRecording>>,
+    /// Videos open for playback (#359), by token. In memory only; every one is
+    /// ended by a lock, a reset or a dropped session.
+    playback: Mutex<HashMap<String, playback::PlaybackSession>>,
     /// Push notice tokens this run has handled, and whether one still waits for a check
     /// (remote_notices.rs). In memory only, and holds no link or clinic.
     push_inbox: Mutex<crate::document_push::PushInbox>,
@@ -1061,6 +1073,7 @@ impl VaultStore {
             last_session: Mutex::new(None),
             last_set_aside: Mutex::new(None),
             recordings: Mutex::new(HashMap::new()),
+            playback: Mutex::new(HashMap::new()),
             push_inbox: Mutex::new(Default::default()),
         }
     }
@@ -1401,6 +1414,7 @@ impl VaultStore {
             // A recording keeps its own copy of the keys: park it (and so drop
             // them) with the session, not after it.
             self.park_recordings();
+            self.end_playback();
             *guard = None;
             self.idle.disarm();
             self.unlocked.clear_poison();
@@ -1805,6 +1819,7 @@ impl VaultStore {
                 // A recording in progress is parked first: its last frame is sealed
                 // and its journal says so, so that the next unlock can finish it.
                 self.park_recordings();
+                self.end_playback();
                 self.note_session_end(&guard, by);
                 *guard = None;
                 self.idle.disarm();
@@ -3979,6 +3994,7 @@ impl VaultStore {
         // keys dropped, before the session goes: it must not write into a vault
         // that is no longer where it was.
         self.park_recordings();
+        self.end_playback();
         *guard = None;
         self.idle.disarm();
         // How that vault's last session ended is nothing to the next one's.
