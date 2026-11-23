@@ -76,6 +76,9 @@ const MANIFEST_FORMAT_PROFILE_HANDOVER: u32 = 14;
 const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PROFILE_HANDOVER;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
+/// And at most this many across every imported profile of a vault, so that handing over many
+/// people cannot grow the manifest (which a vault holds at most `MAX_MANIFEST_BYTES` of) without end.
+const MAX_IMPORTED_HISTORY_TOTAL: usize = 20_000;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
@@ -560,7 +563,7 @@ impl ImportedHistoryEntry {
     fn valid(&self) -> bool {
         let name_ok = |name: &Option<String>| {
             name.as_ref()
-                .is_none_or(|n| n == n.trim() && validate_name(n).is_ok())
+                .is_none_or(|n| n == n.trim() && valid_record_name(n))
         };
         Self::event_allowed(self.event)
             && name_ok(&self.name)
@@ -2056,47 +2059,62 @@ impl VaultStore {
                 .manifest
                 .records
                 .iter()
-                .map(|record| VaultRecord {
-                    id: record.id,
-                    profile_id: record.profile_id,
-                    folder_ids: record.folder_ids.clone(),
-                    display_name: record.display_name.clone(),
-                    source_label: record.source_label.clone(),
-                    media_type: record.media_type.clone(),
-                    plaintext_size: record.plaintext_size,
-                    imported_at_ms: record.imported_at_ms,
-                    // A document hidden as damaged is not looked for at unlock:
-                    // its file may have come back since.
-                    available: if object_required(record) {
-                        !unlocked.unavailable.contains(&record.id)
-                    } else {
-                        object_is_present(root, record)
-                    },
-                    hidden: record.hidden,
-                    verified_clinic_name: delivery::verified_clinic(
-                        record,
-                        &unlocked.manifest.portal_links,
-                    ),
-                    reading_aid: record
-                        .reading_aid
-                        .as_ref()
-                        .and_then(crate::portal_delivery::AidCustody::view)
-                        .or_else(|| {
-                            record
-                                .carried
-                                .as_ref()
-                                .and_then(|c| c.reading_aid.as_ref())
-                                .and_then(crate::portal_delivery::CarriedAid::view)
+                .map(|record| {
+                    let verified =
+                        delivery::verified_clinic(record, &unlocked.manifest.portal_links);
+                    let carried_verified = record.carried.is_some() && verified.is_some();
+                    VaultRecord {
+                        id: record.id,
+                        profile_id: record.profile_id,
+                        folder_ids: record.folder_ids.clone(),
+                        display_name: record.display_name.clone(),
+                        source_label: record.source_label.clone(),
+                        media_type: record.media_type.clone(),
+                        plaintext_size: record.plaintext_size,
+                        imported_at_ms: record.imported_at_ms,
+                        // A document hidden as damaged is not looked for at unlock:
+                        // its file may have come back since.
+                        available: if object_required(record) {
+                            !unlocked.unavailable.contains(&record.id)
+                        } else {
+                            object_is_present(root, record)
+                        },
+                        hidden: record.hidden,
+                        verified_clinic_name: verified,
+                        // A carried aid and service date are shown only once a link of this vault
+                        // to the same clinic holds the signing key (design section 7, level 2):
+                        // whoever wrote a handover file could have made a consistent aid, and
+                        // "reviewed by a clinician" must not rest on the file alone.
+                        reading_aid: record
+                            .reading_aid
+                            .as_ref()
+                            .and_then(crate::portal_delivery::AidCustody::view)
+                            .or_else(|| {
+                                carried_verified
+                                    .then(|| {
+                                        record
+                                            .carried
+                                            .as_ref()
+                                            .and_then(|c| c.reading_aid.as_ref())
+                                            .and_then(crate::portal_delivery::CarriedAid::view)
+                                    })
+                                    .flatten()
+                            }),
+                        clinic_service_date: record
+                            .delivery
+                            .as_ref()
+                            .map(|delivery| &delivery.manifest)
+                            .or_else(|| {
+                                carried_verified
+                                    .then(|| record.carried.as_ref().map(|c| &c.delivery.manifest))
+                                    .flatten()
+                            })
+                            .map(|manifest| manifest.document.service_date.clone()),
+                        original_pdf_available: record.original_pdf.as_ref().map(|original| {
+                            object_presence_name(root, &original.object_name)
+                                == ObjectPresence::Present
                         }),
-                    clinic_service_date: record
-                        .delivery
-                        .as_ref()
-                        .map(|delivery| &delivery.manifest)
-                        .or(record.carried.as_ref().map(|c| &c.delivery.manifest))
-                        .map(|manifest| manifest.document.service_date.clone()),
-                    original_pdf_available: record.original_pdf.as_ref().map(|original| {
-                        object_presence_name(root, &original.object_name) == ObjectPresence::Present
-                    }),
+                    }
                 })
                 .collect(),
             recovery: unlocked.recovery,
@@ -4987,8 +5005,6 @@ fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
     }
 }
 
-/// Checks everything about a decrypted manifest except whether its objects
-/// are on disk, so a vault with a lost object can still be opened read-only.
 /// The profile fields format 14 adds (#360): each forbidden below it, so that an older build
 /// that accepted a newer number could never drop one it does not know.
 fn valid_handover_fields(profile: &PatientProfile, format_version: u32, vault_id: Uuid) -> bool {
@@ -5014,6 +5030,8 @@ fn valid_handover_fields(profile: &PatientProfile, format_version: u32, vault_id
         })
 }
 
+/// Checks everything about a decrypted manifest except whether its objects
+/// are on disk, so a vault with a lost object can still be opened read-only.
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
     if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
         || manifest.vault_id != vault_id
@@ -5057,6 +5075,16 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             .profiles
             .iter()
             .all(|profile| profile.hidden.is_some())
+    {
+        return Err(VaultError::Corrupt);
+    }
+    if manifest
+        .profiles
+        .iter()
+        .filter_map(|profile| profile.imported_history.as_ref())
+        .map(Vec::len)
+        .sum::<usize>()
+        > MAX_IMPORTED_HISTORY_TOTAL
     {
         return Err(VaultError::Corrupt);
     }
@@ -5197,6 +5225,14 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 .delivery
                 .as_ref()
                 .is_some_and(|c| !delivery_ids.insert((c.link_id, c.outer.delivery_id.as_str())))
+            || record.carried.as_ref().is_some_and(|c| {
+                // A delivery is one record's: carried evidence is keyed apart from filed
+                // (no link), by the delivery and, for a reading aid, its own id.
+                !delivery_ids.insert((Uuid::nil(), c.delivery.outer.delivery_id.as_str()))
+                    || c.reading_aid.as_ref().is_some_and(|a| {
+                        !delivery_ids.insert((Uuid::nil(), a.outer.delivery_id.as_str()))
+                    })
+            })
             || !delivery::valid_custody(record, &manifest.portal_links)
             // Format 8 is the first that can hold a reading aid; an older
             // build would drop the unknown field and with it the receipt.
