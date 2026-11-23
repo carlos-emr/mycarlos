@@ -42,6 +42,8 @@ class FakeRecorder extends EventTarget {
   pause() {
     this.state = "paused";
     this.calls.push("pause");
+    // As the real one: the event follows the pause.
+    this.dispatchEvent(new Event("pause"));
   }
   resume() {
     this.state = "recording";
@@ -398,6 +400,43 @@ describe("RecordDialog", () => {
     expect(
       bridge.videoAppend.mock.calls.every((call) => call[0] === "recording-1"),
     ).toBe(true);
+  });
+
+  it("keeps both a regular piece already queued and the piece cut at the pause, when both arrive after Pause", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    // A recorder that delivers late, as a real one does: requestData's piece comes after pause(),
+    // behind a regular timeslice piece that was already on its way, and the recorder's "pause"
+    // event follows them both.
+    const late: Blob[] = [];
+    const fake = recorder();
+    fake.requestData = () => {
+      fake.calls.push("requestData");
+      late.push(new Blob([new Uint8Array(10).fill(9)]));
+    };
+    fake.pause = () => {
+      fake.state = "paused";
+      fake.calls.push("pause");
+    };
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(bridge.videoPause).toHaveBeenCalledWith("recording-1"),
+    );
+    expect(fake.state).toBe("paused");
+    // Both arrive now, already paused: the regular piece first, then the one cut at the pause.
+    fake.emit(new Blob([new Uint8Array(5).fill(1)]));
+    for (const blob of late) fake.emit(blob);
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(2));
+    expect(bridge.videoAppend.mock.calls.map((call) => call[1])).toEqual([
+      0, 1,
+    ]);
+    // Once the recorder has said it is paused, a further piece is not kept.
+    fake.dispatchEvent(new Event("pause"));
+    fake.emit(new Blob([new Uint8Array(6).fill(2)]));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(bridge.videoAppend).toHaveBeenCalledTimes(2);
   });
 
   it("still saves the last piece when the recording is stopped while paused", async () => {

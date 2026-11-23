@@ -147,9 +147,10 @@ export function RecordDialog({
   const sendingRef = useRef<Promise<void> | null>(null);
   const failedSendRef = useRef<unknown>(null);
   const finishingRef = useRef(false);
-  // The piece cut when the pause was pressed has yet to come (a real recorder delivers it a moment
-  // later, already paused): it is the one piece a paused recording takes.
-  const pausePieceRef = useRef(false);
+  // From Pause being pressed until the recorder says it is paused: every piece in that time is
+  // kept, whichever it is (a regular piece may already be queued ahead of the one cut at the pause,
+  // and a real recorder delivers both a moment later).
+  const pausingRef = useRef(false);
   // The latest `finish`, for callbacks made before it exists and kept across renders.
   const finishRef = useRef<(why: RecordEnd) => Promise<void>>(async () => {});
 
@@ -290,15 +291,14 @@ export function RecordDialog({
   const onPiece = useCallback(
     (data: Blob) => {
       // Nothing is recorded while paused: a recorder is paused to stop frames and sound, and a piece
-      // that comes anyway is not kept. The exceptions are the piece cut at the pause and the last one
-      // as the recording ends.
+      // that comes anyway is not kept. The exceptions are the pieces of the moment of the pause (see
+      // `pausingRef`) and the last one as the recording ends.
       if (
         recorderRef.current?.state === "paused" &&
-        !pausePieceRef.current &&
+        !pausingRef.current &&
         !finishingRef.current
       )
         return;
-      pausePieceRef.current = false;
       if (data.size === 0) return;
       unsentRef.current.push(data);
       unsentBytesRef.current += data.size;
@@ -466,12 +466,22 @@ export function RecordDialog({
     setChanging(true);
     // What was cut so far goes to the vault before the pause, so the vault
     // can keep it safe through the pause.
-    pausePieceRef.current = true;
+    pausingRef.current = true;
     try {
       recorder.requestData();
     } catch {
-      // A recorder that cannot say what it has yet: the pieces come as they do.
+      // A recorder that cannot say what it has yet: the pieces come as they do, and no piece is
+      // owed for the pause.
+      pausingRef.current = false;
     }
+    // The pieces of the moment of the pause are all in by the time the recorder says it paused.
+    recorder.addEventListener(
+      "pause",
+      () => {
+        pausingRef.current = false;
+      },
+      { once: true },
+    );
     recorder.pause();
     clock.stop();
     setMicrophoneEnabled(false);
@@ -521,7 +531,7 @@ export function RecordDialog({
     }
     setChanging(false);
     setProblem(null);
-    pausePieceRef.current = false;
+    pausingRef.current = false;
     setMicrophoneEnabled(true);
     recorder.resume();
     clock.start();
