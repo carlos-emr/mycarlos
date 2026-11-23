@@ -106,6 +106,114 @@ impl ModelCard {
     }
 }
 
+// --- Persisted cards (#305 PR 2) --------------------------------------------------------------
+//
+// A checked card is kept on this computer, so that the settings and the reader's question know
+// a model's confirmed context after a restart. It is device data (nothing about a patient), kept
+// beside the models folder like the model choice, and never in the vault or a vault backup. It
+// is read as untrusted: another program can write that folder.
+//
+// The one rule that makes a bad file harmless: a stored card can only ever make the limits
+// MORE conservative than the catalogue's. A card's context is taken as `min(context_made,
+// catalogue)` (`confirmed_capacity`), so the worst a forged file does is lower the room for a
+// document, never raise it; its other fields are only shown. A missing, oversized, malformed or
+// unknown-version file is no file: the catalogue's limits apply, as before the first run.
+
+/// The file's name, beside the models folder.
+pub(crate) const CARDS_FILE: &str = "model-limits-v1.json";
+/// The largest file read: 32 entries are about 10 KiB.
+pub(crate) const MAX_CARDS_FILE_BYTES: usize = 64 * 1024;
+/// The most entries a file may hold (one per model and helper build).
+pub(crate) const MAX_STORED_CARDS: usize = 32;
+const MAX_HELPER_BUILD_CHARS: usize = 64;
+
+/// What names the helper that made a card: the app's version and the helper's contract. A card
+/// from another build is not used (it may have been made by other code): the model re-learns it.
+pub(crate) fn helper_build() -> String {
+    format!(
+        "{}+{}",
+        env!("CARGO_PKG_VERSION"),
+        crate::model_helper::CONTRACT
+    )
+}
+
+fn valid_sha256(text: &str) -> bool {
+    text.len() == 64
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+fn valid_build(text: &str) -> bool {
+    !text.is_empty()
+        && text.chars().count() <= MAX_HELPER_BUILD_CHARS
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'+' | b'-' | b'_' | b'/'))
+}
+
+/// One checked card, for one model file (its SHA-256) and one helper build.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoredCard {
+    pub(crate) sha256: String,
+    pub(crate) helper_build: String,
+    pub(crate) card: ModelCard,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CardFile {
+    v: u32,
+    entries: Vec<StoredCard>,
+}
+
+/// The entries of a cards file that are all in range, or none: a file that is too large, not
+/// JSON of exactly this shape, of another version or with more than [`MAX_STORED_CARDS`] entries is
+/// refused whole; within a good file an entry with a bad hash, build or card is dropped on its own
+/// (a card is run through `checked` again). A repeated model and build keeps the last.
+pub(crate) fn parse_card_file(bytes: &[u8]) -> Vec<StoredCard> {
+    if bytes.len() > MAX_CARDS_FILE_BYTES {
+        return Vec::new();
+    }
+    let Ok(file) = serde_json::from_slice::<CardFile>(bytes) else {
+        return Vec::new();
+    };
+    if file.v != 1 || file.entries.len() > MAX_STORED_CARDS {
+        return Vec::new();
+    }
+    let mut kept: Vec<StoredCard> = Vec::new();
+    for entry in file.entries {
+        if !valid_sha256(&entry.sha256)
+            || !valid_build(&entry.helper_build)
+            || entry
+                .card
+                .clone()
+                .checked(crate::model_helper::CONTEXT_TOKENS)
+                .is_err()
+        {
+            continue;
+        }
+        kept.retain(|other| {
+            !(other.sha256 == entry.sha256 && other.helper_build == entry.helper_build)
+        });
+        kept.push(entry);
+    }
+    kept
+}
+
+/// The file's bytes for `entries` (at most [`MAX_STORED_CARDS`], the newest last), or `None` if
+/// they cannot be written within the limits.
+pub(crate) fn card_file_bytes(entries: &[StoredCard]) -> Option<Vec<u8>> {
+    let from = entries.len().saturating_sub(MAX_STORED_CARDS);
+    let bytes = serde_json::to_vec(&CardFile {
+        v: 1,
+        entries: entries[from..].to_vec(),
+    })
+    .ok()?;
+    (bytes.len() <= MAX_CARDS_FILE_BYTES).then_some(bytes)
+}
+
 /// One catalogue model's limits, for the AI helper settings (`ai_model_limits`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -360,6 +468,126 @@ mod tests {
                 "fileBytes": model.size_bytes,
                 "neededBytes": 1
             })
+        );
+    }
+
+    fn stored(sha: &str, build: &str) -> StoredCard {
+        StoredCard {
+            sha256: sha.to_owned(),
+            helper_build: build.to_owned(),
+            card: card(),
+        }
+    }
+
+    const SHA_A: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const SHA_B: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+    #[test]
+    fn a_saved_file_comes_back_as_it_was_written() {
+        let entries = vec![
+            stored(SHA_A, "1.2.3+mycarlos-model/1"),
+            stored(SHA_B, "1.2.3+x"),
+        ];
+        let bytes = card_file_bytes(&entries).unwrap();
+        assert_eq!(parse_card_file(&bytes), entries);
+        assert!(bytes.len() < MAX_CARDS_FILE_BYTES);
+        // The build this app names is one a file accepts.
+        assert!(valid_build(&helper_build()), "{}", helper_build());
+    }
+
+    #[test]
+    fn a_missing_oversized_or_malformed_file_is_no_file() {
+        assert!(parse_card_file(b"").is_empty());
+        assert!(parse_card_file(b"not json").is_empty());
+        assert!(parse_card_file(&vec![b' '; MAX_CARDS_FILE_BYTES + 1]).is_empty());
+        for bad in [
+            r#"{"v":2,"entries":[]}"#,
+            r#"{"entries":[]}"#,
+            r#"{"v":1}"#,
+            r#"{"v":1,"entries":[],"extra":1}"#,
+            r#"{"v":1,"entries":[{"sha256":"a","helperBuild":"b","card":null}]}"#,
+            "[]",
+            "null",
+        ] {
+            assert!(parse_card_file(bad.as_bytes()).is_empty(), "{bad}");
+        }
+        // An unknown field inside an entry or its card refuses the whole file.
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&card_file_bytes(&[stored(SHA_A, "b")]).unwrap()).unwrap();
+        value["entries"][0]["card"]["mystery"] = serde_json::json!(1);
+        assert!(parse_card_file(value.to_string().as_bytes()).is_empty());
+    }
+
+    #[test]
+    fn too_many_entries_refuse_the_whole_file() {
+        let many: Vec<StoredCard> = (0..=MAX_STORED_CARDS)
+            .map(|n| stored(&format!("{n:064x}"), "b"))
+            .collect();
+        let bytes = serde_json::to_vec(&CardFile {
+            v: 1,
+            entries: many,
+        })
+        .unwrap();
+        assert!(parse_card_file(&bytes).is_empty());
+        // Writing more than the limit keeps the newest.
+        let more: Vec<StoredCard> = (0..MAX_STORED_CARDS + 5)
+            .map(|n| stored(&format!("{n:064x}"), "b"))
+            .collect();
+        let written = parse_card_file(&card_file_bytes(&more).unwrap());
+        assert_eq!(written.len(), MAX_STORED_CARDS);
+        assert_eq!(
+            written.last().unwrap().sha256,
+            format!("{:064x}", MAX_STORED_CARDS + 4)
+        );
+    }
+
+    #[test]
+    fn a_bad_entry_is_dropped_on_its_own_and_a_repeat_keeps_the_last() {
+        let mut out_of_range = stored(SHA_B, "b");
+        out_of_range.card.context_made = 9_000_000;
+        let mut newer = stored(SHA_A, "b");
+        newer.card.context_made = 4_096;
+        let entries = vec![
+            stored(SHA_A, "b"),
+            stored("NOT-A-HASH", "b"),
+            stored(SHA_A, "bad build!"),
+            stored(SHA_A, ""),
+            out_of_range,
+            newer.clone(),
+        ];
+        let bytes = serde_json::to_vec(&CardFile { v: 1, entries }).unwrap();
+        assert_eq!(parse_card_file(&bytes), vec![newer]);
+    }
+
+    #[test]
+    fn a_stored_card_can_only_lower_the_room_never_raise_it() {
+        let model = &CATALOG[0];
+        let catalogue = model.capacity;
+        // A forged card claiming a huge context is out of range: not kept at all.
+        let mut forged = stored(SHA_A, "b");
+        forged.card.context_made = 1_000_000;
+        let bytes = serde_json::to_vec(&CardFile {
+            v: 1,
+            entries: vec![forged],
+        })
+        .unwrap();
+        assert!(parse_card_file(&bytes).is_empty());
+        // A card at the most the helper is asked for gives no more than the catalogue's room.
+        let at_most = ModelCard {
+            context_made: 8_192,
+            ..card()
+        };
+        assert!(
+            confirmed_capacity(catalogue, Some(&at_most)).context_tokens
+                <= catalogue.context_tokens
+        );
+        // A smaller one lowers it.
+        let small = ModelCard {
+            context_made: 4_096,
+            ..card()
+        };
+        assert!(
+            confirmed_capacity(catalogue, Some(&small)).context_tokens < catalogue.context_tokens
         );
     }
 }
