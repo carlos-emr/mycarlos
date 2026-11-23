@@ -1183,6 +1183,10 @@ export const MESSAGE_KEYS = [
   "fileUnder.saveDetails",
   "fileUnder.confirm",
   "fileUnder.choose",
+  "fileUnder.differs",
+  "fileUnder.saveDetailsOnly",
+  "fileUnder.notOnItsOwn",
+  "handover.import.previousNames",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2569,6 +2573,10 @@ const FLUENT_IDS_BY_KEY = {
   "fileUnder.saveDetails": "fileUnder-saveDetails",
   "fileUnder.confirm": "fileUnder-confirm",
   "fileUnder.choose": "fileUnder-choose",
+  "fileUnder.differs": "fileUnder-differs",
+  "fileUnder.saveDetailsOnly": "fileUnder-saveDetailsOnly",
+  "fileUnder.notOnItsOwn": "fileUnder-notOnItsOwn",
+  "handover.import.previousNames": "handover-import-previousNames",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3873,6 +3881,10 @@ export interface MessageArgsByKey {
   "fileUnder.saveDetails": { person: FluentArgument; what: FluentArgument };
   "fileUnder.confirm": { person: FluentArgument };
   "fileUnder.choose": undefined;
+  "fileUnder.differs": undefined;
+  "fileUnder.saveDetailsOnly": { person: FluentArgument; what: FluentArgument };
+  "fileUnder.notOnItsOwn": undefined;
+  "handover.import.previousNames": { names: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

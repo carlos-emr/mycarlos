@@ -806,6 +806,13 @@ export function ProfileImportDialog({
           {preview.withClinicEvidence > 0 && (
             <p>{t("handover.import.evidenceNote")}</p>
           )}
+          {(preview.previousFullNames?.length ?? 0) > 0 && (
+            <p>
+              {t("handover.import.previousNames", {
+                names: (preview.previousFullNames ?? []).join(", "),
+              })}
+            </p>
+          )}
           {duplicate && (
             <fieldset disabled={busy !== ""}>
               <legend>{t("handover.import.duplicate.legend")}</legend>

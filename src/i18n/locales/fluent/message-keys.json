@@ -1181,5 +1181,9 @@
   "fileUnder.what.date",
   "fileUnder.saveDetails",
   "fileUnder.confirm",
-  "fileUnder.choose"
+  "fileUnder.choose",
+  "fileUnder.differs",
+  "fileUnder.saveDetailsOnly",
+  "fileUnder.notOnItsOwn",
+  "handover.import.previousNames"
 ]

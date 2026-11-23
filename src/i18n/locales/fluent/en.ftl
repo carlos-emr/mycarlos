@@ -2593,3 +2593,11 @@ fileUnder-saveDetails = Also save { $what } as the details of { $person }, so th
 fileUnder-confirm = File under { $person }
 
 fileUnder-choose = Choose a person
+
+fileUnder-differs = The clinic's details differ from this person's, so none are offered to be saved. Check that this is the right person.
+
+fileUnder-saveDetailsOnly = Also save { $what } as the details of { $person }.
+
+fileUnder-notOnItsOwn = The next documents from this clinic may still wait in Shared with me: this clinic's link is tied to another person, or another person already has the same name and birth date.
+
+handover-import-previousNames = Previous names in the file: { $names }. These names will also be used to file new clinic documents under this person.

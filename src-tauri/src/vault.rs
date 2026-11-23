@@ -976,6 +976,14 @@ pub struct ArrivedWhileHidden {
 pub struct ClinicPatient {
     pub name: String,
     pub birth_date: String,
+    /// The person the delivery's clinic link is tied to, if it is tied to one (it then files
+    /// only under that person). Opaque; may be a hidden person's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_person: Option<Uuid>,
+    /// Everyone, hidden people included (by opaque id), who matches these words today: more than
+    /// one leaves the document in Shared with me, so filing under one of them does not make the
+    /// next documents file themselves.
+    pub matching_people: Vec<Uuid>,
 }
 
 /// A hidden person as Security's Hidden people list shows them (#360).
@@ -2297,6 +2305,28 @@ impl VaultStore {
                             .map(|patient| ClinicPatient {
                                 name: patient.name.clone(),
                                 birth_date: patient.birth_date.clone(),
+                                link_person: record.delivery.as_ref().and_then(|custody| {
+                                    unlocked
+                                        .manifest
+                                        .portal_links
+                                        .iter()
+                                        .find(|link| link.id == custody.link_id)
+                                        .and_then(|link| link.profile_id)
+                                }),
+                                matching_people: unlocked
+                                    .manifest
+                                    .profiles
+                                    .iter()
+                                    .filter(|profile| {
+                                        profile.id != shared_profile_id(unlocked.manifest.vault_id)
+                                            && delivery::matches_patient(
+                                                profile,
+                                                &patient.name,
+                                                &patient.birth_date,
+                                            )
+                                    })
+                                    .map(|profile| profile.id)
+                                    .collect(),
                             }),
                         verified_clinic_name: verified,
                         // A carried aid and service date are shown only once a link of this vault

@@ -2613,7 +2613,7 @@ fileUnder-words = { $name }, nascimento { $date }
 
 fileUnder-clinicWords = Da clínica: { $name }, nascimento { $date }.
 
-fileUnder-rule = O myCarlos arquiva sozinho um documento de uma clínica apenas quando exatamente uma pessoa tem esta data de nascimento e este nome completo (ou um nome completo anterior). Nada é escolhido por você.
+fileUnder-rule = O myCarlos arquiva sozinho um documento de uma clínica apenas quando exatamente uma pessoa tem esta data de nascimento e este nome completo (ou um nome completo anterior). Nada é escolhido no seu lugar.
 
 fileUnder-person = Pessoa
 
@@ -2628,3 +2628,11 @@ fileUnder-saveDetails = Salvar também { $what } como dados de { $person }, para
 fileUnder-confirm = Arquivar em { $person }
 
 fileUnder-choose = Escolha uma pessoa
+
+fileUnder-differs = Os dados da clínica diferem dos desta pessoa, então nenhum é oferecido para ser salvo. Confira se é a pessoa certa.
+
+fileUnder-saveDetailsOnly = Salvar também { $what } como dados de { $person }.
+
+fileUnder-notOnItsOwn = Os próximos documentos desta clínica podem continuar esperando em Compartilhados comigo: o vínculo desta clínica é de outra pessoa, ou outra pessoa já tem o mesmo nome e data de nascimento.
+
+handover-import-previousNames = Nomes anteriores no arquivo: { $names }. Esses nomes também serão usados para arquivar novos documentos de clínicas nesta pessoa.

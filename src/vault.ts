@@ -48,6 +48,10 @@ export interface VaultFolder {
 export interface ClinicPatient {
   name: string;
   birthDate: string;
+  /** The person the clinic link is tied to, if any (it files only under them). */
+  linkPerson?: string;
+  /** Everyone (hidden people included, by opaque id) who matches these words today. */
+  matchingPeople?: string[];
 }
 
 export interface VaultRecord {
@@ -288,6 +292,9 @@ export interface ProfileImportPreview {
   displayName: string;
   fullName: string | null;
   birthDate: string | null;
+  /** The names the person had before: once imported they count when a clinic document is
+   * filed (#340). */
+  previousFullNames?: string[];
   documents: number;
   hidden: number;
   folders: number;

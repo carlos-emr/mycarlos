@@ -68,11 +68,22 @@ impl VaultStore {
 /// the patient chooses.
 pub(super) fn matches_patient(profile: &PatientProfile, name: &str, birth_date: &str) -> bool {
     profile.birth_date.as_deref() == Some(birth_date)
-        && (profile.full_name.as_deref() == Some(name)
+        && (profile
+            .full_name
+            .as_deref()
+            .is_some_and(|full| same_name(full, name))
             || profile
                 .previous_full_names
                 .as_ref()
-                .is_some_and(|names| names.iter().any(|previous| previous == name)))
+                .is_some_and(|names| names.iter().any(|previous| same_name(previous, name))))
+}
+
+/// Two names are the same when their trimmed Unicode NFC forms are equal (an accent typed as one
+/// character or as two is one name), so that look-alike duplicates are two matches, which
+/// leave the document in Shared with me, never a silent pick between them. Case and spelling are
+/// never folded.
+fn same_name(a: &str, b: &str) -> bool {
+    a.trim().nfc().eq(b.trim().nfc())
 }
 
 pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
@@ -5644,13 +5655,13 @@ mod approval_recovery_tests {
         });
         assert_eq!(to, shared);
         // ... and the document says what the clinic wrote, so the patient sees why.
+        let words = words.unwrap();
         assert_eq!(
-            words,
-            Some(ClinicPatient {
-                name,
-                birth_date: birth
-            })
+            (words.name.as_str(), words.birth_date.as_str()),
+            (name.as_str(), birth.as_str())
         );
+        // Nobody matches today, and the link is tied to no one.
+        assert_eq!((words.link_person, words.matching_people.len()), (None, 0));
         // Two people who match (a current and a previous name) are ambiguous: nothing is chosen.
         let (to, shared, words, ..) = run(&|make, name, birth| {
             make("FAKE Exact", name, birth, None);
@@ -5662,13 +5673,37 @@ mod approval_recovery_tests {
             );
         });
         assert_eq!(to, shared);
-        assert!(words.is_some());
+        // Both are named (by opaque id), so the screen can say why filing would not be on its own.
+        assert_eq!(words.unwrap().matching_people.len(), 2);
+        // A name with stray spaces around it is the same name: two such people are two matches,
+        // which leave the document in Shared with me instead of being picked between silently.
+        let (to, shared, ..) = run(&|make, name, birth| {
+            make("FAKE Exact", name, birth, None);
+            make("FAKE Padded", &format!("  {name} "), birth, None);
+        });
+        assert_eq!(to, shared);
+        // ... and one such person alone files it.
+        let (to, shared, ..) = run(&|make, name, birth| {
+            make("FAKE Padded", &format!("{name}  "), birth, None);
+        });
+        assert_ne!(to, shared);
         // A name that is nearly the clinic's is not a match: never fuzzy.
         let (to, shared, ..) = run(&|make, name, birth| {
             make("FAKE Near", &format!("{name} Jr"), birth, None);
             make("FAKE Cased", &name.to_uppercase(), birth, None);
         });
         assert_eq!(to, shared);
+    }
+
+    /// Names are compared trimmed and in Unicode NFC, never folded: an accent typed as one
+    /// character or as two is one name; another case or spelling is another name.
+    #[test]
+    fn should_compare_names_trimmed_and_in_nfc_and_never_fold_them() {
+        assert!(same_name("Zo\u{e9} Example", "Zoe\u{0301} Example"));
+        assert!(same_name("  Zo\u{e9} Example ", "Zoe\u{0301} Example"));
+        assert!(!same_name("Zoe Example", "Zo\u{e9} Example"));
+        assert!(!same_name("ZO\u{c9} EXAMPLE", "Zo\u{e9} Example"));
+        assert!(!same_name("Zo\u{e9}  Example", "Zo\u{e9} Example"));
     }
 
     /// A hidden person is never filed into, and the clinic's words for them (their name) are not

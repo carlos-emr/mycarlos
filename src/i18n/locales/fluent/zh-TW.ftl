@@ -2374,3 +2374,11 @@ fileUnder-saveDetails = 同時將 { $what } 儲存為 { $person } 的資料，�
 fileUnder-confirm = 歸檔到 { $person }
 
 fileUnder-choose = 請選擇一個人
+
+fileUnder-differs = 診所的資料與此人的資料不同，因此不會提供儲存。請確認這是否是正確的人。
+
+fileUnder-saveDetailsOnly = 同時將 { $what } 儲存為 { $person } 的資料。
+
+fileUnder-notOnItsOwn = 此診所之後的文件仍可能留在「與我分享」中：此診所的連結綁定了另一個人，或另一個人已有相同的姓名和出生日期。
+
+handover-import-previousNames = 檔案中的曾用名：{ $names }。這些名字也將用於把診所的新文件歸檔到此人名下。

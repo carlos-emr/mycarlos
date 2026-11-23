@@ -57,7 +57,7 @@ import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { ArrivedWhileHiddenDialog } from "./HiddenPeople";
-import { FileUnderDialog, detailsToFill } from "./FileUnder";
+import { FileUnderDialog, fileUnderPlan } from "./FileUnder";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
@@ -2778,7 +2778,7 @@ export function VaultLibrary({
                     const person = people.find((p) => p.id === to);
                     const fill =
                       saveDetails && person
-                        ? detailsToFill(person, clinic)
+                        ? fileUnderPlan(person, clinic).fill
                         : {};
                     moveToPerson(
                       [record.id],

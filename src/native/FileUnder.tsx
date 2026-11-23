@@ -10,23 +10,47 @@ import { useModalFocus } from "../useModalFocus";
 
 const BIRTH_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** What of the clinic's words may be saved to this person: only a field the person has none
- * of, and only a value the vault would accept as a name or a birth date. */
-export function detailsToFill(
-  person: Pick<PatientProfile, "fullName" | "birthDate">,
+/** A name as the vault compares it: trimmed, in Unicode NFC. Case and spelling are never folded. */
+const normalName = (name: string) => name.trim().normalize("NFC");
+
+/** What to offer for this person from the clinic's words: only a field the person has none of,
+ * only a value the vault would accept, trimmed and in NFC; and nothing at all, with a warning,
+ * when the person already has a name or birth date that differs from the clinic's. */
+export function fileUnderPlan(
+  person: Pick<PatientProfile, "fullName" | "birthDate" | "previousFullNames">,
   clinic: ClinicPatient,
-): { fullName?: string; birthDate?: string } {
-  const name = clinic.name.trim();
+): { fill: { fullName?: string; birthDate?: string }; differs: boolean } {
+  const name = normalName(clinic.name);
+  const known = [person.fullName, ...(person.previousFullNames ?? [])]
+    .filter((candidate): candidate is string => Boolean(candidate?.trim()))
+    .map(normalName);
+  const differs =
+    (known.length > 0 && !known.includes(name)) ||
+    (Boolean(person.birthDate) && person.birthDate !== clinic.birthDate);
+  if (differs) return { fill: {}, differs };
   return {
-    ...(!person.fullName?.trim() &&
-    name !== "" &&
-    [...name].length <= MAX_NAME_CHARS
-      ? { fullName: name }
-      : {}),
-    ...(!person.birthDate && BIRTH_DATE.test(clinic.birthDate)
-      ? { birthDate: clinic.birthDate }
-      : {}),
+    differs,
+    fill: {
+      ...(!person.fullName?.trim() &&
+      name !== "" &&
+      [...name].length <= MAX_NAME_CHARS
+        ? { fullName: name }
+        : {}),
+      ...(!person.birthDate && BIRTH_DATE.test(clinic.birthDate)
+        ? { birthDate: clinic.birthDate }
+        : {}),
+    },
   };
+}
+
+/** Whether the next documents from this clinic would file themselves under `person`: not when
+ * the clinic link is tied to someone else, nor when someone else matches the same words (two
+ * matches leave a document in Shared with me). */
+export function filesOnItsOwn(personId: string, clinic: ClinicPatient) {
+  return (
+    (clinic.linkPerson === undefined || clinic.linkPerson === personId) &&
+    (clinic.matchingPeople ?? []).every((id) => id === personId)
+  );
 }
 
 export function FileUnderDialog({
@@ -54,8 +78,10 @@ export function FileUnderDialog({
   const [save, setSave] = useState(false);
   useModalFocus(true, dialogRef, onCancel, selectRef);
   const person = people.find((candidate) => candidate.id === profileId);
-  const fill = person ? detailsToFill(person, clinic) : {};
+  const plan = person ? fileUnderPlan(person, clinic) : null;
+  const fill = plan?.fill ?? {};
   const offered = Object.keys(fill).length > 0;
+  const onItsOwn = person ? filesOnItsOwn(person.id, clinic) : true;
   useEffect(() => setSave(false), [profileId]);
   const what =
     fill.fullName !== undefined && fill.birthDate !== undefined
@@ -112,6 +138,9 @@ export function FileUnderDialog({
               ))}
             </select>
           </label>
+          {person && plan?.differs && (
+            <p role="alert">{t("fileUnder.differs")}</p>
+          )}
           {person && offered && (
             <label className="restore-choice">
               <input
@@ -121,13 +150,16 @@ export function FileUnderDialog({
                 onChange={(event) => setSave(event.target.checked)}
               />
               <span>
-                {t("fileUnder.saveDetails", {
-                  what,
-                  person: person.displayName,
-                })}
+                {t(
+                  onItsOwn
+                    ? "fileUnder.saveDetails"
+                    : "fileUnder.saveDetailsOnly",
+                  { what, person: person.displayName },
+                )}
               </span>
             </label>
           )}
+          {person && !onItsOwn && <p>{t("fileUnder.notOnItsOwn")}</p>}
           <footer className="dialog-actions">
             <button
               className="button"

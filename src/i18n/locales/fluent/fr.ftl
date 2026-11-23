@@ -2628,3 +2628,11 @@ fileUnder-saveDetails = Enregistrer aussi { $what } comme informations de { $per
 fileUnder-confirm = Classer sous { $person }
 
 fileUnder-choose = Choisissez une personne
+
+fileUnder-differs = Les informations de la clinique diffèrent de celles de cette personne : aucune n'est proposée à l'enregistrement. Vérifiez qu'il s'agit bien de la bonne personne.
+
+fileUnder-saveDetailsOnly = Enregistrer aussi { $what } comme informations de { $person }.
+
+fileUnder-notOnItsOwn = Les prochains documents de cette clinique pourront rester dans Partagés avec moi : le lien de cette clinique est lié à une autre personne, ou une autre personne a déjà le même nom et la même date de naissance.
+
+handover-import-previousNames = Anciens noms dans le fichier : { $names }. Ces noms serviront aussi à classer les nouveaux documents de clinique sous cette personne.

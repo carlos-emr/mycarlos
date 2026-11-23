@@ -2687,3 +2687,11 @@ fileUnder-saveDetails = Zapisz także { $what } jako dane osoby { $person }, aby
 fileUnder-confirm = Przypisz do: { $person }
 
 fileUnder-choose = Wybierz osobę
+
+fileUnder-differs = Dane kliniki różnią się od danych tej osoby, więc nie proponujemy zapisywania żadnych. Sprawdź, czy to właściwa osoba.
+
+fileUnder-saveDetailsOnly = Zapisz także { $what } jako dane osoby { $person }.
+
+fileUnder-notOnItsOwn = Kolejne dokumenty z tej kliniki mogą nadal czekać w Udostępnione mi: łącze tej kliniki jest przypisane do innej osoby albo inna osoba ma już to samo imię i nazwisko oraz datę urodzenia.
+
+handover-import-previousNames = Dawne imiona i nazwiska w pliku: { $names }. Będą one także używane do przypisywania nowych dokumentów z klinik do tej osoby.
