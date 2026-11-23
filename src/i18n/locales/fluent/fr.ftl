@@ -2569,3 +2569,5 @@ security-backup-leaveVideosOutHelp = La sauvegarde ne contiendra pas vos vidéos
 restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer ramène tout le reste, et vos vidéos n’y seront pas. Elles figurent parmi les documents masqués, comme des fichiers manquants.
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
+
+native-backupExclusionFailed = Ce téléphone n’a pas pu garder le coffre-fort hors des sauvegardes de l’appareil. Veuillez réessayer.

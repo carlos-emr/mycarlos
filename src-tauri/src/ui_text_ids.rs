@@ -727,6 +727,7 @@ pub enum MessageId {
     LockWarningTitle,
     NativeBackupNoteEmptied,
     NativeBackupNoteUntouched,
+    NativeBackupExclusionFailed,
     NativeCancel,
     NativeError01,
     NativeError02,
@@ -1936,6 +1937,7 @@ impl MessageId {
         Self::LockWarningTitle,
         Self::NativeBackupNoteEmptied,
         Self::NativeBackupNoteUntouched,
+        Self::NativeBackupExclusionFailed,
         Self::NativeCancel,
         Self::NativeError01,
         Self::NativeError02,
@@ -3519,6 +3521,7 @@ impl MessageId {
             Self::LockWarningTitle => "lockWarning-title",
             Self::NativeBackupNoteEmptied => "native-backup-noteEmptied",
             Self::NativeBackupNoteUntouched => "native-backup-noteUntouched",
+            Self::NativeBackupExclusionFailed => "native-backupExclusionFailed",
             Self::NativeCancel => "native-cancel",
             Self::NativeError01 => "native-error-01",
             Self::NativeError02 => "native-error-02",
@@ -5722,6 +5725,7 @@ impl MessageId {
             "interface.received.confirmTitleMany" => Some(Self::InterfaceReceivedConfirmTitleMany),
             "interface.received.confirmBody" => Some(Self::InterfaceReceivedConfirmBody),
             "interface.received.import" => Some(Self::InterfaceReceivedImport),
+            "native.backupExclusionFailed" => Some(Self::NativeBackupExclusionFailed),
             _ => None,
         }
     }

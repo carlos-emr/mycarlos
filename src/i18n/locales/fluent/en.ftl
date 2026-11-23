@@ -2534,3 +2534,5 @@ security-backup-leaveVideosOutHelp = The backup will not contain your videos. If
 restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
+
+native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.

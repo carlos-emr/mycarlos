@@ -2569,3 +2569,5 @@ security-backup-leaveVideosOutHelp = La copia de seguridad no contendrá tus vid
 restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se recupera todo lo demás, y tus videos no estarán. Aparecen entre los documentos ocultos, como archivos que faltan.
 security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
 interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad
+
+native-backupExclusionFailed = Este teléfono no pudo mantener la bóveda fuera de las copias de seguridad del dispositivo. Inténtelo de nuevo.

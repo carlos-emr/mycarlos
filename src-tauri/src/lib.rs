@@ -563,6 +563,10 @@ impl From<VaultError> for PublicText {
                 code: "pdf_view_no_sandbox",
                 message_key: "native.error.33",
             },
+            VaultError::BackupExclusionFailed => Self {
+                code: "backup_exclusion_failed",
+                message_key: "native.backupExclusionFailed",
+            },
             VaultError::NoSpace => Self {
                 code: "no_space",
                 message_key: "native.error.34",
@@ -2916,6 +2920,9 @@ async fn vault_create(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let store = store.pin();
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
@@ -2944,6 +2951,9 @@ async fn vault_unlock(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let store = store.pin();
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
@@ -3986,6 +3996,9 @@ async fn vault_recover(
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
+    // iOS: no vault is created or opened while the data folder cannot be kept out of device
+    // backups; the flag is set again on every attempt (backup_exclusion.rs).
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let store = store.pin();
     let started = desktop_background::close_locks();
     let relock = Arc::clone(picks.inner());
@@ -6656,11 +6669,10 @@ pub fn run() {
             // nothing is written, so this is what it was. Each slot has its own notification ledger
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
             // iOS: the whole data folder stays out of iCloud and computer backups (#422, guideline
-            // 5.1.3(ii)); a failure is not fatal (the vault is ciphertext either way) but is not
-            // hidden from a debug run.
-            if let Err(error) =
-                backup_exclusion::keep_out_of_device_backups(&app.path().app_local_data_dir()?)
-            {
+            // 5.1.3(ii)). Ben decided the exclusion is kept, so a failure refuses vault work.
+            if let Err(error) = backup_exclusion::configure(app.path().app_local_data_dir()?) {
+                // Not fatal to start: creating, unlocking and recovering a vault refuse until it
+                // can be set (and try again each time), so no health data is ever written first.
                 #[cfg(debug_assertions)]
                 eprintln!("could not exclude the data folder from backups: {error}");
                 #[cfg(not(debug_assertions))]

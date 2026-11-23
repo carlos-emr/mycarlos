@@ -59,7 +59,7 @@ App Store guideline 5.1.3(ii) forbids personal health information in iCloud. The
 backup would still carry its existence, sizes, dates and the header with the key wrapping, and `allowBackup` has
 no iOS equivalent. `backup_exclusion::keep_out_of_device_backups` sets the attribute `com.apple.MobileBackup` = 1
 (what `URLResourceValues.isExcludedFromBackup` sets) on the app's whole local data folder at start. The flag on
-a folder covers everything in it, files made later too. A failure is not fatal and is printed in a debug build.
+a folder covers everything in it, files made later too. A failure refuses vault work (below).
 The patient's own copy is the encrypted backup file they choose to save, which they can keep in iCloud Drive
 knowingly; that is their choice and is said in the privacy notice.
 
@@ -91,10 +91,14 @@ and say what it holds.)
 1. **Portal on iOS: decided, declared.** Ben decided to keep the clinic portal on iPhone and declare it (see the
    privacy manifest above). Still to confirm with counsel: whether the other things the portal sees need
    entries.
-2. **If the backup flag cannot be set, should the vault still be created?** Today a failure is not fatal (the
-   vault is ciphertext either way) and the app goes on. Refusing to create a vault when the flag fails would
-   keep health data from ever reaching iCloud, at the price of an app that cannot start on a device where the
-   call fails.
+2. **If the backup flag cannot be set: decided, refuse.** Ben decided the vault stays out of Apple backups
+   (iCloud and device backup; the mitigation is a separate myCarlos backup reminder). So when the flag cannot be
+   set, `vault_create`, `vault_unlock` and `vault_recover` refuse before touching the vault with "This phone
+   could not keep the vault out of device backups. Try again." (error code `backup_exclusion_failed`, message
+   `native-backupExclusionFailed` in all seven languages). The flag is set again on every attempt (and once at
+   start), so a failure that goes away stops refusing. After setting it the flag is read back, and a flag that
+   did not stick is the same refusal. Tested: the refusal and the retry, the message and code, and that the three
+   commands call the guard before the store; **not** on an iPhone.
 
 ## TestFlight workflow (draft for Ben: a patch, not applied)
 

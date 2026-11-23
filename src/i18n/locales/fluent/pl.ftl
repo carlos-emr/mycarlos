@@ -2649,3 +2649,5 @@ security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich
 restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
+
+native-backupExclusionFailed = Ten telefon nie zdołał wyłączyć skarbca z kopii zapasowych urządzenia. Spróbuj ponownie.

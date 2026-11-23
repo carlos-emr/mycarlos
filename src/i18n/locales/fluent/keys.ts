@@ -1205,6 +1205,7 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "native.backupExclusionFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2676,6 +2677,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "native.backupExclusionFailed": "native-backupExclusionFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4013,6 +4015,7 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "native.backupExclusionFailed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

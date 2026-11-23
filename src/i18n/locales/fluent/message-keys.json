@@ -1203,5 +1203,6 @@
   "interface.received.confirmTitleOne",
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
-  "interface.received.import"
+  "interface.received.import",
+  "native.backupExclusionFailed"
 ]

@@ -12,8 +12,36 @@
 //! one call on the app's data folder at start is enough. Android is handled by the manifest
 //! (`configure-android-security.mjs`); other systems have no such attribute and nothing is done.
 
+use crate::vault::VaultError;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// The folder to keep out of backups, set once at start (`configure`).
+static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Remembers the folder and excludes it. An error here does not stop the app from starting:
+/// creating, unlocking and recovering a vault call `ensure`, which refuses while it fails.
+pub(crate) fn configure(dir: PathBuf) -> Result<(), VaultError> {
+    let _ = DATA_DIR.set(dir);
+    ensure()
+}
+
+/// Ben's decision: the vault stays out of Apple backups, so when the flag cannot be set the vault
+/// is neither created nor opened ("This phone could not keep the vault out of device backups; try
+/// again"). The flag is set again on every call, so a failure that goes away stops refusing. Off iOS
+/// it is the no-op `keep_out_of_device_backups` is.
+pub(crate) fn ensure() -> Result<(), VaultError> {
+    ensure_using(|| match DATA_DIR.get() {
+        Some(dir) => keep_out_of_device_backups(dir),
+        // No folder configured (tests, or before setup): nothing to exclude.
+        None => Ok(()),
+    })
+}
+
+fn ensure_using(attempt: impl FnOnce() -> io::Result<()>) -> Result<(), VaultError> {
+    attempt().map_err(|_| VaultError::BackupExclusionFailed)
+}
 
 /// The attribute iOS reads as "exclude this from backups".
 #[cfg_attr(not(any(target_os = "ios", test)), allow(dead_code))]
@@ -126,6 +154,49 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_exclusion_refuses_and_a_later_success_stops_refusing() {
+        let fail = || Err(io::Error::other("FAKE the attribute could not be set"));
+        assert!(matches!(
+            ensure_using(fail),
+            Err(VaultError::BackupExclusionFailed)
+        ));
+        // Retried on every call: nothing is remembered between them.
+        assert!(ensure_using(|| Ok(())).is_ok());
+        assert!(matches!(
+            ensure_using(fail),
+            Err(VaultError::BackupExclusionFailed)
+        ));
+    }
+
+    #[test]
+    fn the_refusal_is_said_in_its_own_words() {
+        let public = crate::PublicError::from(VaultError::BackupExclusionFailed);
+        assert_eq!(public.code, "backup_exclusion_failed");
+        assert_eq!(public.message_key, "native.backupExclusionFailed");
+        assert!(crate::ui_text_ids::MessageId::from_legacy_key(public.message_key).is_some());
+    }
+
+    /// Creating, unlocking and recovering a vault refuse first, before anything is read or written.
+    #[test]
+    fn the_commands_that_open_a_vault_refuse_before_touching_it() {
+        let lib = include_str!("lib.rs");
+        for command in ["vault_create", "vault_unlock", "vault_recover"] {
+            let start = lib
+                .find(&format!("async fn {command}(\n"))
+                .unwrap_or_else(|| panic!("{command} exists"));
+            let body = &lib[start..start + 1500];
+            let guard = body
+                .find("backup_exclusion::ensure()")
+                .unwrap_or_else(|| panic!("{command} calls the guard"));
+            let pin = body.find("store.pin()").expect("it pins the store");
+            assert!(
+                guard < pin,
+                "{command}: the guard comes before the store is touched"
+            );
+        }
+    }
+
+    #[test]
     fn nothing_changes_off_ios() {
         let temp = tempfile::tempdir().unwrap();
         let missing = temp.path().join("not-made");
@@ -186,7 +257,7 @@ mod tests {
     fn setup_excludes_the_data_folder_before_any_vault_opens() {
         let lib = include_str!("lib.rs");
         let call = lib
-            .find("backup_exclusion::keep_out_of_device_backups(&app.path().app_local_data_dir()?)")
+            .find("backup_exclusion::configure(app.path().app_local_data_dir()?)")
             .expect("setup excludes the app's local data folder");
         let open = lib
             .find("vault_slots::VaultSlots::open(")

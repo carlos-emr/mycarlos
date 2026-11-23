@@ -2316,3 +2316,5 @@ security-backup-leaveVideosOutHelp = 备份将不包含您的视频。如果您�
 restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它会带回其他所有内容，但您的视频不会在其中。它们会作为缺失的文件列在隐藏文档中。
 security-backup-sizeCalculating = 正在计算备份大小…
 interface-hidden-videoLeftOut = 备份中未包含的视频
+
+native-backupExclusionFailed = 这部手机无法让保险库不被设备备份。请重试。
