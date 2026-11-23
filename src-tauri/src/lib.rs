@@ -2354,10 +2354,11 @@ async fn ai_summarize(
 #[tauri::command]
 async fn ai_speed_check(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     answer_id: Uuid,
 ) -> CommandResult<speed_check::Speed> {
+    let store = store.pin();
     let origin = store
         .answer_origin()
         .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
@@ -2365,7 +2366,7 @@ async fn ai_speed_check(
         .in_use_sha256()
         .ok_or_else(|| ai_error(model_runtime::AiError::NotInstalled))?;
     let stats = run_ai(
-        store.inner(),
+        store.arc(),
         origin,
         announce_answer(app, answer_id),
         move |runtime, ticket, watch| runtime.speed_check_for(ticket, watch),
@@ -5375,13 +5376,14 @@ struct VideoStarted {
 
 #[tauri::command]
 async fn vault_video_start(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoStartRequest,
 ) -> CommandResult<VideoStarted> {
+    let store = store.pin();
     if request.folder_ids.len() > MAX_VIDEO_FOLDERS {
         return Err(VaultError::Invalid.into());
     }
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store
             .recording_start(
                 request.profile_id,
@@ -5427,13 +5429,14 @@ fn decode_video_piece(data: &str) -> Result<Zeroizing<Vec<u8>>, VaultError> {
 
 #[tauri::command]
 async fn vault_video_append(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoAppendRequest,
 ) -> CommandResult<vault::RecordingProgress> {
+    let store = store.pin();
     let piece = decode_video_piece(&request.data)?;
     let (id, sequence) = (request.recording_id, request.sequence);
     drop(request);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.recording_append_numbered(id, Some(sequence), &piece)
     })
     .await
@@ -5447,10 +5450,11 @@ struct VideoRecordingRequest {
 
 #[tauri::command]
 async fn vault_video_pause(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordingRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.recording_pause(request.recording_id)
     })
     .await
@@ -5458,10 +5462,11 @@ async fn vault_video_pause(
 
 #[tauri::command]
 async fn vault_video_resume(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordingRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.recording_resume(request.recording_id)
     })
     .await
@@ -5477,10 +5482,11 @@ struct VideoSaved {
 
 #[tauri::command]
 async fn vault_video_stop(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordingRequest,
 ) -> CommandResult<VideoSaved> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store
             .recording_stop(request.recording_id, now_ms())
             .map(|record_id| VideoSaved { record_id })
@@ -5491,9 +5497,10 @@ async fn vault_video_stop(
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
 #[tauri::command]
 async fn vault_video_pending(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
 ) -> CommandResult<vault::PendingRecordings> {
-    run_blocking(store.inner(), VaultStore::recordings_pending).await
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recordings_pending).await
 }
 
 #[derive(Deserialize)]
@@ -5507,10 +5514,11 @@ struct VideoRecoverRequest {
 /// delete it.
 #[tauri::command]
 async fn vault_video_recover(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecoverRequest,
 ) -> CommandResult<VideoSaved> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store
             .recording_recover(request.recording_id, request.keep, now_ms())
             .map(|record_id| VideoSaved { record_id })
@@ -5537,23 +5545,22 @@ fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
 
 #[tauri::command]
 async fn vault_is_video(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordRequest,
 ) -> CommandResult<bool> {
-    run_blocking(store.inner(), move |store| {
-        is_video(store, request.record_id)
-    })
-    .await
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| is_video(store, request.record_id)).await
 }
 
 /// Opens a stored video for playback: the token the page puts in a `<video>`'s
 /// address, and the length of the file a player sees.
 #[tauri::command]
 async fn vault_video_open(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoRecordRequest,
 ) -> CommandResult<vault::PlaybackOpened> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.playback_open(request.record_id)
     })
     .await
@@ -5568,10 +5575,11 @@ struct VideoCloseRequest {
 /// Ends one video's playback (the player closed). Locking ends every one.
 #[tauri::command]
 async fn vault_video_close(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: VideoCloseRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.playback_close(&request.token);
         Ok(())
     })
@@ -5899,9 +5907,9 @@ pub fn run() {
             video_scheme::SCHEME,
             |context, request, responder| {
                 let store = video_scheme::webview_allowed(context.webview_label())
-                    .then(|| context.app_handle().try_state::<Arc<VaultStore>>())
+                    .then(|| context.app_handle().try_state::<StoreHandle>())
                     .flatten()
-                    .map(|store| Arc::clone(store.inner()));
+                    .map(|store| Arc::clone(store.arc()));
                 match store {
                     Some(store) => {
                         tauri::async_runtime::spawn_blocking(move || {
@@ -8128,6 +8136,105 @@ mod tests {
         assert_eq!(speed_threads(), model_runtime::threads());
         // Another model's speed is not this one's.
         assert_eq!(recorded_speed_for(&store, &"cd".repeat(32)), None);
+    }
+
+    /// Every command's `State<..>` parameter must be something the app manages: a command asking for
+    /// a type nobody manages panics ("state not managed") the first time it is called, and
+    /// nothing at build time says so (#393 made the vault `StoreHandle`; commands merged after it from
+    /// branches that began before it still asked for `Arc<VaultStore>`). Each managed type is listed
+    /// here with the text in the app's setup that manages it, so the list cannot drift from the code
+    /// in either direction: a new type fails until it is added WITH its evidence, and a removed
+    /// `manage` fails its evidence.
+    #[test]
+    fn every_state_a_command_asks_for_is_managed_by_the_setup() {
+        const MANAGED: &[(&str, &str)] = &[
+            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            (
+                "Arc<AttemptThrottle>",
+                "app.manage(Arc::new(AttemptThrottle::new(",
+            ),
+            ("Arc<local_model::Store>", "app.manage(models)"),
+            (
+                "Arc<ModelAddActive>",
+                "app.manage(Arc::new(ModelAddActive::default()))",
+            ),
+            (
+                "Arc<PendingPicks>",
+                "app.manage(Arc::new(PendingPicks::default()))",
+            ),
+            (
+                "Arc<ReceivedFiles>",
+                "app.manage(Arc::new(ReceivedFiles::default()))",
+            ),
+        ];
+        let library = include_str!("lib.rs");
+        let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let setup: String = startup.chars().filter(|c| !c.is_whitespace()).collect();
+        for (state, evidence) in MANAGED {
+            let evidence: String = evidence.chars().filter(|c| !c.is_whitespace()).collect();
+            assert!(
+                setup.contains(&evidence),
+                "{state} is no longer managed: {evidence}"
+            );
+        }
+        let command_marker = ["#[tauri", "::command]"].concat();
+        let mut asked = Vec::new();
+        for part in startup.split(&command_marker).skip(1) {
+            let Some(open) = part.find('(') else { continue };
+            let mut depth = 0usize;
+            let mut close = None;
+            for (index, c) in part[open..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(open + index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let params: String = part[open + 1..close.unwrap()]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            for (at, _) in params.match_indices("State<'") {
+                // `State<'_,TYPE>`: the type is everything after the first comma, up to the `>` that
+                // closes `State<`.
+                let rest = &params[at + 6..];
+                let comma = rest.find(',').unwrap();
+                let mut depth = 1usize;
+                let mut end = comma + 1;
+                for (index, c) in rest[comma + 1..].char_indices() {
+                    match c {
+                        '<' => depth += 1,
+                        '>' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = comma + 1 + index;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                asked.push(rest[comma + 1..end].to_owned());
+            }
+        }
+        assert!(
+            asked.len() > 100,
+            "the scan found only {} state parameters",
+            asked.len()
+        );
+        for state in &asked {
+            assert!(
+                MANAGED.iter().any(|(managed, _)| managed == state),
+                "a command asks for State<{state}>, which the setup does not manage: it would panic \
+                 \"state not managed\" when called"
+            );
+        }
     }
 
     #[test]
