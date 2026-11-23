@@ -60,6 +60,7 @@ mod portal_link;
 mod portal_pickup;
 mod reading_aid;
 mod received;
+mod sealed_inbox;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;

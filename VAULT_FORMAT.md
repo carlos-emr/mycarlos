@@ -1225,3 +1225,18 @@ A non-Shared encrypted profile may contain `previousFullNames`, a nonempty order
 The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
 
 Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.
+
+## Sealed inbox (inbox format 1, #49)
+
+A file shared to myCarlos while the vault is locked cannot be written into the vault, which needs the passphrase. It is sealed into an **inbox** folder outside `vault-home` (per vault id: `inbox/<vault_id>/`), with a public key, and imported at the next unlock after the patient confirms. This is a format of its own: **it is not a manifest format and does not change the vault format number**; older builds ignore the folder. Stage 1 (`sealed_inbox.rs`) defines the format, the key and the caps; nothing writes or reads the folder yet.
+
+- **Key.** `ikm = HKDF-SHA256(salt = vault_id, ikm = master_key).expand("mycarlos/inbox-x25519/v1", 32)`; the X25519 pair is HPKE `DeriveKeyPair(ikm)` (RFC 9180, DHKEM(X25519, HKDF-SHA256)). The secret is never stored; the public half goes to `inbox.pub` at unlock. `key_id = SHA-256("mycarlos/inbox/key-id/v1" || public)[..16]`. A public key is accepted only if it is exactly 32 bytes, not all zero, and not a low-order point (a trial encapsulation must succeed).
+- **Item** (`<32 lowercase hex item id>.mcin`; only names matching exactly this, or `.part` for an item being sealed, are ever touched):
+  - a fixed **80-byte header**: `MCINBOX1`, format byte 1, 7 zero bytes, item id (16), key id (16), HPKE encapsulated key (32). The whole header is the AAD of everything below;
+  - the **body**: 1 MiB plaintext chunks, XChaCha20-Poly1305 under `body_key`, nonce = chunk counter in the last 8 bytes, AAD = header \|\| chunk index (8, big-endian) \|\| final flag (1). The last chunk is always flagged, even when full;
+  - a fixed **1 040-byte trailer** written after the body: the sealed meta (version 1, name length, `received_at`, source, the plaintext size actually streamed, the cleaned name bounded to 512 bytes, zero padding to 1 024 bytes) under `meta_key`, nonce zero, AAD = header \|\| body length (8, big-endian);
+  - `body_key` and `meta_key` are `export("mycarlos/inbox/body-key/v1" | "mycarlos/inbox/meta-key/v1", 32)` of the HPKE context (base mode, `info = "mycarlos/inbox/v1"`); no key is in the file.
+  - The body length must equal the trailer's size plus one 16-byte tag per chunk; a file over 100 MiB, empty, or of any other length is refused. 100 MiB is enforced while streaming.
+- **Record id.** An item's document gets the record id `UUIDv4-shaped(HMAC-SHA256(HKDF(master_key, salt = vault_id, "mycarlos/inbox-record-id/v1"), item_id)[..16])`, so importing the same item twice is recognised by an id that already exists.
+- **Caps** (defaults): 100 items, 100 MiB per file, 512 MiB in the folder (`.part` files count), 512 MiB of free space left after sealing, 7 days from the sealed time. One function counts and admits; sealing happens under an exclusive lock file.
+
