@@ -26,12 +26,16 @@ import {
   type KnownIdentifiers,
   type PatientProfile,
   type TextCopyOutcome,
+  type TextRange,
   type TextSaveOutcome,
   type VaultRecord,
 } from "../vault";
 import type { DocumentText } from "../documentText";
 import {
   deidentify,
+  keepAllAsMedicalTerm,
+  keepAsMedicalTerm,
+  keptEponymRanges,
   removeMore,
   restoreChecked,
   type Deidentified,
@@ -131,6 +135,19 @@ const pageList = (pages: number[]) =>
  * the vault's own identifiers and writes the fixed first line (AI-02).
  * Nothing is saved without this preview and its confirmation. Computers
  * only, as the reader is. */
+/** The words around a removed word in the document, on one line, for the "Keep" rows. */
+function eponymContext(
+  source: string,
+  part: { start: number; end: number },
+): string {
+  const from = Math.max(0, part.start - 24);
+  const text = source
+    .slice(from, part.end + 24)
+    .replace(/\s+/gu, " ")
+    .trim();
+  return `${from > 0 ? "…" : ""}${text}${part.end + 24 < source.length ? "…" : ""}`;
+}
+
 export function AnonymizePreview({
   record,
   people,
@@ -158,10 +175,15 @@ export function AnonymizePreview({
     pickId: string,
     ticket: string,
     text: string,
+    kept?: TextRange[],
   ) => Promise<TextSaveOutcome>;
   /** The native re-check a save runs, for a copy: the file text approved to put on the
    * clipboard, or a refusal with the ranges still holding a detail. */
-  copyText: (ticket: string, text: string) => Promise<TextCopyOutcome>;
+  copyText: (
+    ticket: string,
+    text: string,
+    kept?: TextRange[],
+  ) => Promise<TextCopyOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   onClose: () => void;
@@ -289,6 +311,21 @@ export function AnonymizePreview({
     }
   };
 
+  /** Keeps one removed word as a medical term (a new step the patient can undo). */
+  const keepOne = (sentStart: number, sentEnd: number) => {
+    if (!current) return;
+    try {
+      const next = keepAsMedicalTerm(current, sentStart, sentEnd);
+      setHistory((steps) => [...steps, next]);
+    } catch {
+      /* the part is no longer a candidate */
+    }
+  };
+  const keepAll = (phrase: string) => {
+    if (!current) return;
+    setHistory((steps) => [...steps, keepAllAsMedicalTerm(current, phrase)]);
+  };
+
   /** The selection, as a range of the shown text, when it lies in it. */
   const selectedRange = (): [number, number] | null => {
     const selection = window.getSelection();
@@ -397,7 +434,11 @@ export function AnonymizePreview({
     setSaving(true);
     setError("");
     try {
-      const outcome = await copyText(ticket, current.toSend);
+      const outcome = await copyText(
+        ticket,
+        current.toSend,
+        keptEponymRanges(current),
+      );
       if (outcome.approved === null) {
         refuse(outcome.hits);
         return;
@@ -464,7 +505,12 @@ export function AnonymizePreview({
         );
         return;
       }
-      const outcome = await saveText(pickId, ticket, current.toSend);
+      const outcome = await saveText(
+        pickId,
+        ticket,
+        current.toSend,
+        keptEponymRanges(current),
+      );
       if (outcome.saved) {
         setTicket(null);
         setSaved(true);
@@ -507,6 +553,9 @@ export function AnonymizePreview({
       runs.push({ start: at, text: current.toSend.slice(at) });
   }
   const possibleNames = current?.onDevice.possibleNames ?? [];
+  const eponymCandidates = (current?.onDevice.removed ?? []).filter(
+    (part) => part.eponym !== undefined,
+  );
   // Capitalised words and long numbers still in the text: highlighted for the patient to look
   // at, never removed by themselves.
   const checks = current
@@ -822,6 +871,49 @@ export function AnonymizePreview({
                         {translateNow("interface.AnonymizePreview.removeWord", {
                           word: possible.original,
                         })}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {eponymCandidates.length > 0 && (
+              <div className="native-anonymize-possible">
+                <h3>
+                  {translateNow("interface.AnonymizePreview.eponymTitle")}
+                </h3>
+                <ul>
+                  {eponymCandidates.map((part) => (
+                    <li key={part.sentStart}>
+                      <span>
+                        {translateNow("interface.AnonymizePreview.eponymOne", {
+                          phrase: part.eponym ?? "",
+                        })}
+                      </span>{" "}
+                      {/* The words around it, so that "Graves' son" is told from "Graves'
+                          disease" before one is kept; each Keep has a name of its own. */}
+                      <q className="native-anonymize-context">
+                        {eponymContext(current?.onDevice.source ?? "", part)}
+                      </q>{" "}
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        aria-label={`${translateNow("interface.AnonymizePreview.eponymKeep")} “${eponymContext(current?.onDevice.source ?? "", part)}”`}
+                        onClick={() => keepOne(part.sentStart, part.sentEnd)}
+                      >
+                        {translateNow("interface.AnonymizePreview.eponymKeep")}
+                      </button>{" "}
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => keepAll(part.eponym ?? "")}
+                      >
+                        {translateNow(
+                          "interface.AnonymizePreview.eponymKeepAll",
+                          { phrase: part.eponym ?? "" },
+                        )}
                       </button>
                     </li>
                   ))}

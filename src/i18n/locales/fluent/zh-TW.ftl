@@ -2040,6 +2040,10 @@ interface-AnonymizePreview-pasteFlaggedSr = （請與原文核對）
 interface-AnonymizePreview-possibleNames = 可能是姓名的詞
 
 interface-AnonymizePreview-removeWord = 移除「{ $word }」
+interface-AnonymizePreview-eponymTitle = 這些可能是醫學術語
+interface-AnonymizePreview-eponymOne = 這可能是醫學術語：{ $phrase }
+interface-AnonymizePreview-eponymKeep = 保留
+interface-AnonymizePreview-eponymKeepAll = 全部保留「{ $phrase }」
 
 interface-AnonymizePreview-removedSummary = 已移除：{ $list }。
 

@@ -70,16 +70,22 @@ function renderPreview({
       _pickId: string,
       _ticket: string,
       _text: string,
+      _kept?: { start: number; end: number }[],
     ): Promise<TextSaveOutcome> => ({
       saved: true,
       hits: [],
     }),
   ),
   pickDestination = vi.fn(async (_ticket: string) => "pick-1" as string | null),
+  details = known,
   // The native copy: the same file a save writes, here "FAKE header line", a blank line, the
   // text and a newline, or a refusal.
   copyText = vi.fn(
-    async (_ticket: string, text: string): Promise<TextCopyOutcome> => ({
+    async (
+      _ticket: string,
+      text: string,
+      _kept?: { start: number; end: number }[],
+    ): Promise<TextCopyOutcome> => ({
       approved: `FAKE header line\n\n${text}\n`,
       hits: [],
     }),
@@ -94,7 +100,7 @@ function renderPreview({
       clinicNames={["Maplewood Family Health Team"]}
       readText={readText}
       cancelRead={cancelRead}
-      knownDetails={async () => known}
+      knownDetails={async () => details}
       pickDestination={pickDestination}
       saveText={saveText}
       copyText={copyText}
@@ -191,6 +197,59 @@ describe("the anonymize preview (#72 part B)", () => {
     ).toBeDisabled();
   });
 
+  it("offers to keep a name inside an eponym phrase as a medical term, one or all, and undoes it (#214)", async () => {
+    const user = userEvent.setup();
+    const eponymPages = [
+      {
+        index: 0,
+        text: "Patient: Peter Bell\nHas Bell's palsy. Follow up Bell's palsy in May.",
+      },
+    ];
+    const { copyText } = renderPreview({
+      text: documentText({
+        pages: eponymPages,
+        ...joinPages(eponymPages),
+      }),
+      details: { ...known, names: ["Peter Bell"] },
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    // Removed by default, as before.
+    expect(shownString()).not.toContain("Bell's palsy");
+    expect(
+      screen.getAllByText(/This may be a medical term:.*Bell's palsy/),
+    ).toHaveLength(2);
+    // Each Keep has a name of its own: the words around the term tell the two apart.
+    const keeps = screen.getAllByRole("button", { name: /^Keep “/ });
+    expect(
+      new Set(keeps.map((keep) => keep.getAttribute("aria-label"))).size,
+    ).toBe(keeps.length);
+    await user.click(keeps[0]);
+    expect(shownString()).toContain("Has Bell's palsy.");
+    expect(shownString()).toContain("Follow up [NAME 1]'s palsy");
+    await user.click(
+      screen.getByRole("button", { name: humanText("Undo the last removal") }),
+    );
+    expect(shownString()).not.toContain("Has Bell's palsy.");
+    await user.click(screen.getAllByRole("button", { name: /Keep all/ })[0]);
+    expect(shownString()).toContain("Has Bell's palsy.");
+    expect(shownString()).toContain("Follow up Bell's palsy");
+    // A copy names the kept phrases' places to the native check, which reads them against its
+    // own list (#366): a claim, never a fact.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    const [, copied, kept] = copyText.mock.calls[0];
+    expect(kept).toHaveLength(2);
+    for (const range of kept as { start: number; end: number }[])
+      expect((copied as string).slice(range.start, range.end)).toBe(
+        "Bell's palsy",
+      );
+    // The full name is never offered and stays removed.
+    expect(shownString()).not.toContain("Peter");
+  });
+
   it("saves only the preview's text, after the confirmation, and never without it", async () => {
     const user = userEvent.setup();
     const { saveText, pickDestination } = renderPreview();
@@ -259,7 +318,12 @@ describe("the anonymize preview (#72 part B)", () => {
     // Native code finds something inside a date placeholder: the whole
     // placeholder goes.
     const saveText = vi.fn(
-      async (_pickId: string, _ticket: string, text: string) => {
+      async (
+        _pickId: string,
+        _ticket: string,
+        text: string,
+        _kept?: { start: number; end: number }[],
+      ) => {
         const at = text.indexOf("[DATE 1]");
         return at >= 0
           ? { saved: false, hits: [{ start: at + 1, end: at + 3 }] }
@@ -542,7 +606,7 @@ describe("the anonymize preview (#72 part B)", () => {
       await screen.findByText(humanText("The text was copied.")),
     ).toBeInTheDocument();
     // The check ran on the shown text with the ticket, and the clipboard got what it returned.
-    expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString());
+    expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString(), []);
     expect(writeText).toHaveBeenCalledTimes(1);
     const copied = writeText.mock.calls[0][0];
     // A clipboard that refuses says so (a copy does not use up the ticket).
@@ -578,10 +642,16 @@ describe("the anonymize preview (#72 part B)", () => {
     });
     // The check finds "Ward" (offsets in the shown text) still standing.
     const { copyText } = renderPreview({
-      copyText: vi.fn(async (_ticket: string, text: string) => {
-        const at = text.indexOf("ward");
-        return { approved: null, hits: [{ start: at, end: at + 4 }] };
-      }),
+      copyText: vi.fn(
+        async (
+          _ticket: string,
+          text: string,
+          _kept?: { start: number; end: number }[],
+        ) => {
+          const at = text.indexOf("ward");
+          return { approved: null, hits: [{ start: at, end: at + 4 }] };
+        },
+      ),
     });
     await screen.findByRole("region", {
       name: humanText("The text that will be saved"),

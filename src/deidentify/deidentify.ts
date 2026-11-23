@@ -78,6 +78,11 @@ export interface Removed {
   /** Where its replacement is in the text to send. */
   sentStart: number;
   sentEnd: number;
+  /** A name taken out of a medical eponym's own phrase ("Graves" in "Graves' disease"): the phrase
+   * as the document wrote it. The name is removed by default; the preview offers to keep this
+   * one occurrence as a medical term (`keepAsMedicalTerm`). Never set for a full name, a word
+   * after a title, or anything that is not a lone word of a name. */
+  eponym?: string;
 }
 
 /** A word left in the text that may be a name: a name found elsewhere,
@@ -113,6 +118,9 @@ export interface OnDevice {
   source: string;
   /** What the cleaning changed, for the preview's warning. */
   cleaning: { replacedRuns: number; droppedCodePoints: number };
+  /** The medical-term phrases the patient chose to keep ("Graves' disease"), as the document
+   * wrote them: for `keptEponymRanges`, which the native re-check reads (#366). */
+  keptEponyms?: string[];
 }
 
 export interface Deidentified {
@@ -4298,6 +4306,9 @@ const GUARD_APOSTROPHE = /[’‘`´]/gu;
 const guardKey = (value: string) =>
   fold(value).toLowerCase().replace(GUARD_APOSTROPHE, "'");
 const EPONYM_FORMS = new Map<string, string[]>();
+// Forms made up from a name alone ("de quervain", "wolff-parkinson-white"): they guard the name
+// from removal, but are never offered as "a medical term" (the native check has no such phrase).
+const BARE_NAME_FORMS = new Set<string>();
 for (const entry of allowList.eponyms) {
   // An eponym named for several people stands alone too: "Wolff-Parkinson-White".
   const together =
@@ -4313,8 +4324,12 @@ for (const entry of allowList.eponyms) {
       const forms = EPONYM_FORMS.get(key) ?? [];
       // A name of several words is also guarded as it stands alone
       // ("Wolff-Parkinson-White", "De Quervain"), not only inside a phrase.
-      if (/[\s-]/u.test(whole)) forms.push(whole);
+      if (/[\s-]/u.test(whole)) {
+        forms.push(whole);
+        BARE_NAME_FORMS.add(whole);
+      }
       forms.push(...together);
+      for (const form of together) BARE_NAME_FORMS.add(form);
       for (const form of entry.forms) forms.push(guardKey(form));
       EPONYM_FORMS.set(key, forms);
     }
@@ -4402,7 +4417,7 @@ function readsAsDrug(
 // A title right before a word: "Dr. Holter" is a person even though "Holter" alone is on
 // the allow-list (#228 review).
 const TITLE_RIGHT_BEFORE =
-  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)[ \t]+$/u;
+  /(?:(?<![\p{L}])(?:Dr|Dre|Mr|Mrs|Ms|Mx|Miss|Mme|Mlle|Prof|Pr|Sr|Sra|Srta|Nurse|Pani|Pan)\.?|(?<![\p{L}])M\.)(?:[ \t]+|[ \t]*\r?\n[ \t]*)$/u;
 /** `afterPerson`: a name rule found the word right after a role, a relation or a title. */
 function isMedicalTerm(
   text: string,
@@ -4441,6 +4456,75 @@ function isMedicalTerm(
     }
   }
   return false;
+}
+
+/**
+ * The eponym phrase a lone word stands in ("Graves' disease", "Bell's palsy", "maladie d'Addison"),
+ * as the document wrote it, or null: only one word, not right after a title ("Mrs. Graves"), and
+ * only a phrase of the allow-list. A drug or a look-alike phrase is not offered. Read for the
+ * preview's "This may be a medical term"; it decides nothing about what is removed.
+ */
+function eponymPhraseAt(
+  text: string,
+  start: number,
+  end: number,
+): string | null {
+  const word = text.slice(start, end);
+  if (/[\s,;:]/u.test(word)) return null;
+  if (TITLE_RIGHT_BEFORE.test(text.slice(Math.max(0, start - 14), start)))
+    return null;
+  const from = Math.max(0, start - GUARD_REACH);
+  const windowText = text.slice(from, end + GUARD_REACH);
+  // The window as the guard reads it. A letter whose fold is longer or shorter (a ligature, "ß")
+  // moves the folded positions, so the word's span and the phrase found are carried between the
+  // folded copy and the document's own text through the copy's own map.
+  const matching = matchingCopy(windowText);
+  const guarded = matching.copy.toLowerCase().replace(GUARD_APOSTROPHE, "'");
+  if (guarded.length !== matching.copy.length) return null;
+  const copyAt = (offset: number) => {
+    let index = 0;
+    while (index < matching.copy.length && matching.toSource[index] < offset)
+      index += 1;
+    return index;
+  };
+  const spanStart = copyAt(start - from);
+  const spanEnd = copyAt(end - from);
+  // The longest phrase that holds the word ("Graves' disease", not "Graves'").
+  let best: { at: number; length: number } | null = null;
+  for (const key of new Set([
+    guardKey(word),
+    ...guardKey(word).split(/[^\p{L}'-]+/u),
+  ])) {
+    const forms = EPONYM_FORMS.get(key);
+    if (!forms) continue;
+    for (const form of forms) {
+      if (form === guardKey(word) || BARE_NAME_FORMS.has(form)) continue;
+      for (
+        let at = guarded.indexOf(form);
+        at >= 0;
+        at = guarded.indexOf(form, at + 1)
+      )
+        if (
+          at < spanEnd &&
+          spanStart < at + form.length &&
+          (!best || form.length > best.length)
+        )
+          best = { at, length: form.length };
+    }
+  }
+  if (best) {
+    const [phraseStart, phraseEnd] = toSourceRange(
+      matching,
+      best.at,
+      best.at + best.length,
+    );
+    const phrase = windowText.slice(phraseStart, phraseEnd);
+    // Only a word with a possessive ("Graves' son", "Bell's wife") is a person's relation, not a
+    // term: it is offered only inside a phrase that names the condition ("Graves' disease").
+    if (/^[\p{L}\p{M}-]+(?:['’‘`´]s?)?$/u.test(phrase)) return null;
+    return phrase;
+  }
+  return null;
 }
 
 /** A clinical role belongs to this occurrence, never to a surname globally.
@@ -4901,6 +4985,10 @@ function build(
     text += source.slice(at, finding.start);
     const sentStart = text.length;
     text += replacement;
+    const eponym =
+      kind === "name"
+        ? (eponymPhraseAt(source, finding.start, finding.end) ?? undefined)
+        : undefined;
     removed.push({
       kind,
       original,
@@ -4909,6 +4997,7 @@ function build(
       end: finding.end,
       sentStart,
       sentEnd: text.length,
+      ...(eponym ? { eponym } : {}),
     });
     at = finding.end;
   }
@@ -4988,6 +5077,104 @@ export function removeMore(
       end,
       replacement,
     },
+  ].sort((a, b) => a.start - b.start);
+  return build(source, findings, settings);
+}
+
+/**
+ * The patient keeps one removed word as a medical term (the preview's "Keep" beside "This may be a
+ * medical term: Graves' disease"): the part whose replacement stands at `sentStart` to `sentEnd`
+ * in the text to send, which must be marked `eponym`, is put back as the document wrote it. Every
+ * other removal stays as it was, so paste-back still restores exactly.
+ */
+export function keepAsMedicalTerm(
+  deidentified: Deidentified,
+  sentStart: number,
+  sentEnd: number,
+): Deidentified {
+  const part = deidentified.onDevice.removed.find(
+    (candidate) =>
+      candidate.sentStart === sentStart && candidate.sentEnd === sentEnd,
+  );
+  if (!part?.eponym) throw new RangeError("not a medical term candidate");
+  return keepEponyms(deidentified, (other) => other === part);
+}
+
+/** "Keep all" for one phrase: every removal marked with that eponym phrase, whichever its case. */
+export function keepAllAsMedicalTerm(
+  deidentified: Deidentified,
+  phrase: string,
+): Deidentified {
+  const wanted = guardKey(phrase);
+  return keepEponyms(
+    deidentified,
+    (part) => part.eponym !== undefined && guardKey(part.eponym) === wanted,
+  );
+}
+
+/**
+ * Where the patient's kept medical terms stand in the text to send, in UTF-16 units: every
+ * occurrence of each kept phrase, whichever its case. These go with a save or a copy as a CLAIM:
+ * the native re-check spares a standing surname only inside a range that is, in its own copy of
+ * the allow-list, a medical phrase, and only that phrase's name word (#366).
+ */
+export function keptEponymRanges(
+  deidentified: Deidentified,
+): { start: number; end: number }[] {
+  const phrases = deidentified.onDevice.keptEponyms ?? [];
+  if (phrases.length === 0) return [];
+  // The matching copy knows where each of its letters came from, so a letter whose fold is longer
+  // or shorter (a ligature, "ß") cannot shift a range. A lower-casing that changes the length
+  // (rare) gives no ranges: the native check then refuses, never spares.
+  const matching = matchingCopy(deidentified.toSend);
+  const folded = matching.copy.toLowerCase().replace(GUARD_APOSTROPHE, "'");
+  if (folded.length !== matching.copy.length) return [];
+  const ranges: { start: number; end: number }[] = [];
+  for (const phrase of new Set(phrases.map(guardKey))) {
+    if (!phrase) continue;
+    for (
+      let found = folded.indexOf(phrase);
+      found >= 0;
+      found = folded.indexOf(phrase, found + 1)
+    ) {
+      const [start, end] = toSourceRange(
+        matching,
+        found,
+        found + phrase.length,
+      );
+      ranges.push({ start, end });
+    }
+  }
+  return ranges.sort((a, b) => a.start - b.start).slice(0, 200);
+}
+
+function keepEponyms(
+  deidentified: Deidentified,
+  keep: (part: Removed) => boolean,
+): Deidentified {
+  const { removed, possibleNames, source, ...onDeviceSettings } =
+    deidentified.onDevice;
+  const kept = removed
+    .filter((part) => keep(part) && part.eponym)
+    .map((part) => part.eponym as string);
+  const settings = {
+    ...onDeviceSettings,
+    keptEponyms: [...(onDeviceSettings.keptEponyms ?? []), ...kept],
+  };
+  const findings: Finding[] = [
+    ...removed
+      .filter((part) => !keep(part))
+      .map((part) => ({
+        kind: part.kind,
+        start: part.start,
+        end: part.end,
+        replacement: part.replacement,
+      })),
+    ...possibleNames.map((possible) => ({
+      kind: "possibleName" as const,
+      start: possible.start,
+      end: possible.end,
+    })),
   ].sort((a, b) => a.start - b.start);
   return build(source, findings, settings);
 }

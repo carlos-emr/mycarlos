@@ -953,6 +953,10 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.placeholder.manual",
   "interface.AnonymizePreview.possibleNames",
   "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.eponymTitle",
+  "interface.AnonymizePreview.eponymOne",
+  "interface.AnonymizePreview.eponymKeep",
+  "interface.AnonymizePreview.eponymKeepAll",
   "interface.AnonymizePreview.removedSummary",
   "interface.AnonymizePreview.removedCount.name",
   "interface.AnonymizePreview.removedCount.doctor",
@@ -2333,6 +2337,14 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-possibleNames",
   "interface.AnonymizePreview.removeWord":
     "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.eponymTitle":
+    "interface-AnonymizePreview-eponymTitle",
+  "interface.AnonymizePreview.eponymOne":
+    "interface-AnonymizePreview-eponymOne",
+  "interface.AnonymizePreview.eponymKeep":
+    "interface-AnonymizePreview-eponymKeep",
+  "interface.AnonymizePreview.eponymKeepAll":
+    "interface-AnonymizePreview-eponymKeepAll",
   "interface.AnonymizePreview.removedSummary":
     "interface-AnonymizePreview-removedSummary",
   "interface.AnonymizePreview.removedCount.name":
@@ -3720,6 +3732,10 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.placeholder.manual": undefined;
   "interface.AnonymizePreview.possibleNames": undefined;
   "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.eponymTitle": undefined;
+  "interface.AnonymizePreview.eponymOne": { phrase: FluentArgument };
+  "interface.AnonymizePreview.eponymKeep": undefined;
+  "interface.AnonymizePreview.eponymKeepAll": { phrase: FluentArgument };
   "interface.AnonymizePreview.removedSummary": { list: FluentArgument };
   "interface.AnonymizePreview.removedCount.name": { count: FluentArgument };
   "interface.AnonymizePreview.removedCount.doctor": { count: FluentArgument };
