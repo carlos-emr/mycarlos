@@ -2067,6 +2067,8 @@ ai-explain-ready = Wyjaśnienie jest gotowe.
 ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 
 ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamknąć inne programy i spróbować ponownie.
+ai-error-memoryNumbers = Brakuje teraz wolnej pamięci dla asystenta AI. Potrzebuje około { $needed } wolnej pamięci, a wolne jest { $free }. Można zamknąć inne programy i spróbować ponownie.
+ai-error-memoryUnknown = Brakuje teraz wolnej pamięci dla asystenta AI. Potrzebuje około { $needed } wolnej pamięci, a ten komputer nie potrafił podać, ile jest wolnej. Można zamknąć inne programy i spróbować ponownie.
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
 

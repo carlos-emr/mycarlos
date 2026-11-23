@@ -704,6 +704,9 @@ export interface PublicError {
   /** How long to wait before the next try: after several wrong ones, or
    * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
+  /** For an AI refusal for lack of memory (`aiMemory`, #305): what a start needs and what is
+   * free now, in bytes (no `availableBytes` when this computer could not say). */
+  memory?: { neededBytes: number; availableBytes?: number };
 }
 
 /** A box the patient typed in, named in the language in use ("the folder

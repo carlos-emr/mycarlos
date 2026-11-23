@@ -2025,6 +2025,8 @@ ai-explain-ready = L’explication est prête.
 ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
+ai-error-memoryNumbers = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } de libres et { $free } sont libres. Fermez d’autres programmes, puis réessayez.
+ai-error-memoryUnknown = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } de libres, et cet ordinateur n’a pas pu dire combien en est libre. Fermez d’autres programmes, puis réessayez.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
 

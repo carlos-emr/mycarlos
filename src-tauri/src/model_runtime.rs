@@ -342,7 +342,7 @@ impl From<AiError> for LoadCheck {
     fn from(error: AiError) -> Self {
         match error {
             AiError::Failed => Self::CannotRun,
-            AiError::Memory => Self::Memory,
+            AiError::Memory(_) => Self::Memory,
             AiError::Damaged => Self::Damaged,
             AiError::NotInstalled
             | AiError::Busy
@@ -353,13 +353,24 @@ impl From<AiError> for LoadCheck {
     }
 }
 
+/// What a refusal for memory knew (#305): how much the start needs and how much is free now
+/// (none when this computer's free memory could not be read). The numbers the budget check
+/// already had, handed to the screen so it can say them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MemoryShortfall {
+    pub needed_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_bytes: Option<u64>,
+}
+
 /// Why a run gave nothing, as the renderer is told (`code`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiError {
     NotInstalled,
     Damaged,
-    /// Not enough free memory now.
-    Memory,
+    /// Not enough free memory now, with the numbers when the budget check had them.
+    Memory(Option<MemoryShortfall>),
     /// The model is being added or removed.
     Busy,
     /// The model's file could not be read from this computer's disk.
@@ -378,7 +389,7 @@ impl AiError {
         match self {
             Self::NotInstalled => "aiNotInstalled",
             Self::Damaged => "aiDamaged",
-            Self::Memory => "aiMemory",
+            Self::Memory(_) => "aiMemory",
             Self::Busy => "aiBusy",
             Self::Storage => "aiStorage",
             Self::SummaryTooLarge => "aiSummaryTooLarge",
@@ -542,7 +553,10 @@ impl ModelRuntime {
                 available_bytes,
             } = check_budget(needed_bytes(size), &*self.probe)
             {
-                unavailable = Some(AiError::Memory);
+                unavailable = Some(AiError::Memory(Some(MemoryShortfall {
+                    needed_bytes,
+                    available_bytes,
+                })));
                 return Err(RunnerError::Budget {
                     needed_bytes,
                     available_bytes,
@@ -555,7 +569,9 @@ impl ModelRuntime {
                     Unavailable::Unsupported => AiError::Failed,
                     Unavailable::Storage => AiError::Storage,
                     Unavailable::Busy => AiError::Busy,
-                    Unavailable::Memory => AiError::Memory,
+                    // The verified-model check has no numbers of its own: the budget check
+                    // above (the same rule) is the one that gives them.
+                    Unavailable::Memory => AiError::Memory(None),
                 });
                 RunnerError::NotRunning
             })?;
@@ -761,7 +777,13 @@ impl ModelRuntime {
 
 fn from_runner(error: &RunnerError) -> AiError {
     match error {
-        RunnerError::Budget { .. } => AiError::Memory,
+        RunnerError::Budget {
+            needed_bytes,
+            available_bytes,
+        } => AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: *needed_bytes,
+            available_bytes: *available_bytes,
+        })),
         RunnerError::Cancelled => AiError::Cancelled,
         RunnerError::SummaryTooLarge => AiError::SummaryTooLarge,
         RunnerError::Start(_)
@@ -1292,7 +1314,7 @@ mod tests {
         let codes: Vec<_> = [
             AiError::NotInstalled,
             AiError::Damaged,
-            AiError::Memory,
+            AiError::Memory(None),
             AiError::Busy,
             AiError::Cancelled,
             AiError::Failed,
@@ -1411,19 +1433,25 @@ mod tests {
         let (small, asked) = fake(Some(4 * GIB), Ok(()));
         assert_eq!(
             runtime(small, Some(GIB)).summarize(request(), Box::new(|_| ())),
-            Err(AiError::Memory)
+            Err(AiError::Memory(Some(MemoryShortfall {
+                needed_bytes: needed_bytes(4 * GIB),
+                available_bytes: Some(GIB),
+            })))
         );
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0);
         let (unknown, _) = fake(Some(GIB), Ok(()));
         assert_eq!(
             runtime(unknown, None).summarize(request(), Box::new(|_| ())),
-            Err(AiError::Memory)
+            Err(AiError::Memory(Some(MemoryShortfall {
+                needed_bytes: needed_bytes(GIB),
+                available_bytes: None,
+            })))
         );
         for (reason, error) in [
             (Unavailable::Damaged, AiError::Damaged),
             (Unavailable::Busy, AiError::Busy),
             (Unavailable::NotInstalled, AiError::NotInstalled),
-            (Unavailable::Memory, AiError::Memory),
+            (Unavailable::Memory, AiError::Memory(None)),
             (Unavailable::Storage, AiError::Storage),
             (Unavailable::Unsupported, AiError::Failed),
         ] {
