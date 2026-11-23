@@ -4756,12 +4756,13 @@ struct AndroidPdfRequest {
 #[tauri::command]
 async fn vault_read_android_pdf(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AndroidPdfRequest,
     activity: tauri::ipc::Channel<()>,
 ) -> CommandResult<()> {
     #[cfg(target_os = "android")]
     {
+        let store = store.pin();
         if !request.labels.valid() {
             return Err(VaultError::Invalid.into());
         }
@@ -4771,7 +4772,7 @@ async fn vault_read_android_pdf(
         let epoch = tauri_plugin_android_pdf::begin(&app)
             .await
             .ok_or_else(|| PublicError::from(VaultError::Cancelled))?;
-        let (document, title) = run_blocking(store.inner(), move |store| {
+        let (document, title) = run_blocking(store.arc(), move |store| {
             if !android_pdf::GATE.current(generation) {
                 return Err(VaultError::Cancelled);
             }
@@ -4788,7 +4789,7 @@ async fn vault_read_android_pdf(
             Err(_) => return Err(VaultError::PdfViewUnavailable.into()),
         };
         drop(document);
-        let activity_store = Arc::clone(store.inner());
+        let activity_store = Arc::clone(store.arc());
         let activity_app = app.clone();
         let renderer_activity = activity;
         #[derive(Deserialize)]
