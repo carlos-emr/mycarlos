@@ -12,6 +12,7 @@ export type {
   DocumentText,
   SourceSpan,
 } from "../documentText";
+import type { Speed } from "./speedEstimate";
 import type { DocumentText, SourceSpan } from "../documentText";
 import type { SummaryProgressEvent } from "./summaryProgress";
 
@@ -210,6 +211,9 @@ export interface LocalModel {
   ): Promise<ModelExplanation>;
   /** Stops the answer being written, if one is: the panel closed. */
   cancel(): void;
+  /** What the patient's speed check measured for this model on this computer (#305), or null
+   * when it has not been run. Absent from a model that cannot say. */
+  speed?(): Promise<Speed | null>;
 }
 
 /** Thrown by a model asked to work while none is installed, or while its

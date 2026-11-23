@@ -5,6 +5,8 @@ pub const FORMATTING_FAILURE_EN: &str =
 pub enum MessageId {
     AiErrorBusy,
     AiErrorMemory,
+    AiErrorMemoryNumbers,
+    AiErrorMemoryUnknown,
     AiErrorStorage,
     AiExplainBox,
     AiExplainHint,
@@ -75,6 +77,17 @@ pub enum MessageId {
     AiPreferencesTitle,
     AiResultMeta,
     AiSettingsSubtitle,
+    AiSpeedButton,
+    AiSpeedCancel,
+    AiSpeedCancelled,
+    AiSpeedEstimate,
+    AiSpeedEstimateLong,
+    AiSpeedFailed,
+    AiSpeedNone,
+    AiSpeedNote,
+    AiSpeedResult,
+    AiSpeedTitle,
+    AiSpeedWorking,
     AiSummaryAgain,
     AiSummaryButton,
     AiSummaryEnglishOnly,
@@ -208,6 +221,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewMovedDate,
     InterfaceAnonymizePreviewNoteAgeOver90,
     InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewNoteOtherForm,
     InterfaceAnonymizePreviewPasteAllMatched,
     InterfaceAnonymizePreviewPasteButton,
     InterfaceAnonymizePreviewPasteFlagged,
@@ -1133,6 +1147,8 @@ impl MessageId {
     pub const ALL: &'static [Self] = &[
         Self::AiErrorBusy,
         Self::AiErrorMemory,
+        Self::AiErrorMemoryNumbers,
+        Self::AiErrorMemoryUnknown,
         Self::AiErrorStorage,
         Self::AiExplainBox,
         Self::AiExplainHint,
@@ -1203,6 +1219,17 @@ impl MessageId {
         Self::AiPreferencesTitle,
         Self::AiResultMeta,
         Self::AiSettingsSubtitle,
+        Self::AiSpeedButton,
+        Self::AiSpeedCancel,
+        Self::AiSpeedCancelled,
+        Self::AiSpeedEstimate,
+        Self::AiSpeedEstimateLong,
+        Self::AiSpeedFailed,
+        Self::AiSpeedNone,
+        Self::AiSpeedNote,
+        Self::AiSpeedResult,
+        Self::AiSpeedTitle,
+        Self::AiSpeedWorking,
         Self::AiSummaryAgain,
         Self::AiSummaryButton,
         Self::AiSummaryEnglishOnly,
@@ -1336,6 +1363,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewMovedDate,
         Self::InterfaceAnonymizePreviewNoteAgeOver90,
         Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewNoteOtherForm,
         Self::InterfaceAnonymizePreviewPasteAllMatched,
         Self::InterfaceAnonymizePreviewPasteButton,
         Self::InterfaceAnonymizePreviewPasteFlagged,
@@ -2261,6 +2289,8 @@ impl MessageId {
         match self {
             Self::AiErrorBusy => "ai-error-busy",
             Self::AiErrorMemory => "ai-error-memory",
+            Self::AiErrorMemoryNumbers => "ai-error-memoryNumbers",
+            Self::AiErrorMemoryUnknown => "ai-error-memoryUnknown",
             Self::AiErrorStorage => "ai-error-storage",
             Self::AiExplainBox => "ai-explain-box",
             Self::AiExplainHint => "ai-explain-hint",
@@ -2331,6 +2361,17 @@ impl MessageId {
             Self::AiPreferencesTitle => "ai-preferences-title",
             Self::AiResultMeta => "ai-result-meta",
             Self::AiSettingsSubtitle => "ai-settings-subtitle",
+            Self::AiSpeedButton => "ai-speed-button",
+            Self::AiSpeedCancel => "ai-speed-cancel",
+            Self::AiSpeedCancelled => "ai-speed-cancelled",
+            Self::AiSpeedEstimate => "ai-speed-estimate",
+            Self::AiSpeedEstimateLong => "ai-speed-estimateLong",
+            Self::AiSpeedFailed => "ai-speed-failed",
+            Self::AiSpeedNone => "ai-speed-none",
+            Self::AiSpeedNote => "ai-speed-note",
+            Self::AiSpeedResult => "ai-speed-result",
+            Self::AiSpeedTitle => "ai-speed-title",
+            Self::AiSpeedWorking => "ai-speed-working",
             Self::AiSummaryAgain => "ai-summary-again",
             Self::AiSummaryButton => "ai-summary-button",
             Self::AiSummaryEnglishOnly => "ai-summary-englishOnly",
@@ -2479,6 +2520,9 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewNoteDaysAfter => {
                 "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewNoteOtherForm => {
+                "interface-AnonymizePreview-note-otherForm"
             }
             Self::InterfaceAnonymizePreviewPasteAllMatched => {
                 "interface-AnonymizePreview-pasteAllMatched"
@@ -4841,6 +4885,19 @@ impl MessageId {
             "ai.explain.ready" => Some(Self::AiExplainReady),
             "ai.failed" => Some(Self::AiFailed),
             "ai.error.memory" => Some(Self::AiErrorMemory),
+            "ai.speed.title" => Some(Self::AiSpeedTitle),
+            "ai.speed.note" => Some(Self::AiSpeedNote),
+            "ai.speed.button" => Some(Self::AiSpeedButton),
+            "ai.speed.working" => Some(Self::AiSpeedWorking),
+            "ai.speed.cancel" => Some(Self::AiSpeedCancel),
+            "ai.speed.result" => Some(Self::AiSpeedResult),
+            "ai.speed.cancelled" => Some(Self::AiSpeedCancelled),
+            "ai.speed.none" => Some(Self::AiSpeedNone),
+            "ai.speed.failed" => Some(Self::AiSpeedFailed),
+            "ai.speed.estimate" => Some(Self::AiSpeedEstimate),
+            "ai.speed.estimateLong" => Some(Self::AiSpeedEstimateLong),
+            "ai.error.memoryNumbers" => Some(Self::AiErrorMemoryNumbers),
+            "ai.error.memoryUnknown" => Some(Self::AiErrorMemoryUnknown),
             "ai.error.busy" => Some(Self::AiErrorBusy),
             "ai.error.storage" => Some(Self::AiErrorStorage),
             "ai.summary.pagesMissing" => Some(Self::AiSummaryPagesMissing),
@@ -5028,6 +5085,9 @@ impl MessageId {
             }
             "interface.AnonymizePreview.note.ageOver90" => {
                 Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
+            }
+            "interface.AnonymizePreview.note.otherForm" => {
+                Some(Self::InterfaceAnonymizePreviewNoteOtherForm)
             }
             "interface.AnonymizePreview.pasteTitle" => {
                 Some(Self::InterfaceAnonymizePreviewPasteTitle)

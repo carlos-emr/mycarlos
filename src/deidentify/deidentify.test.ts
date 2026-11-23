@@ -247,7 +247,9 @@ describe("the name remover (#72)", () => {
     // "Avery EXAMPLE", "Avery Example" and "Avery's" are the patient.
     expect(text).toContain("Re: [NAME 1]");
     expect(text).toContain("Thank you for seeing Mrs. [NAME 1],");
-    expect(text).toContain("[NAME 1]'s husband");
+    // A short form keeps the person's number and its own note, so paste-back never puts the
+    // full name back where only "Avery" stood.
+    expect(text).toContain("[NAME 1, other form 1]'s husband");
     // Her husband's whole name, across a line break, is one person.
     expect(text).toContain("[NAME 2], can be reached");
     // "Dr. Blake Sample" and "Dr. Sample" are one doctor.
@@ -516,7 +518,9 @@ describe("the name remover (#72)", () => {
       "Avery Example",
     ]);
     // "example, avery" reads as the name surname first.
-    expect(profile.toSend).toBe("Seen with [NAME 1]. For [NAME 1].");
+    expect(profile.toSend).toBe(
+      "Seen with [NAME 1]. For [NAME 1, other form 1].",
+    );
     expect(flagged(profile)).toEqual([]);
     // One tap removes a flagged word; the others stay flagged, in place.
     const [first] = price.onDevice.possibleNames;
@@ -805,7 +809,7 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     // Accents and look-alike letters fold: Côté stands as Cote and as Cоté.
     expect(
       out("Seen Renee COTE and Cоté.", { knownNames: ["Renée Côté"] }).toSend,
-    ).toBe("Seen [NAME 1] and [NAME 1].");
+    ).toBe("Seen [NAME 1] and [NAME 1, other form 1].");
     // Polish letters fold too.
     expect(
       out("Seen Lukasz Zolc.", { knownNames: ["Łukasz Żółć"] }).toSend,
@@ -814,7 +818,7 @@ describe("the name remover, part B (#72, threat model AI-01)", () => {
     // letters, a common word and a relationship word do not.
     expect(
       out("王小明 and 小明 came.", { knownNames: ["王小明"] }).toSend,
-    ).toBe("[NAME 1] and [NAME 1] came.");
+    ).toBe("[NAME 1] and [NAME 1, other form 1] came.");
     expect(
       out("Jo and Mom and the major issue.", {
         knownNames: ["Jo Major", "Mom"],

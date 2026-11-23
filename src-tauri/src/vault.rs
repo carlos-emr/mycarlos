@@ -1107,6 +1107,42 @@ impl VaultStore {
         }
     }
 
+    /// Puts an (empty) resume cache in this vault, as a paused document check leaves one.
+    #[cfg(test)]
+    pub(crate) fn test_hold_resume_cache(&self) {
+        *self.collection_resume.lock().unwrap() =
+            Some(crate::document_collection_pickup::ResumeCache::default());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_has_resume_cache(&self) -> bool {
+        self.collection_resume.lock().unwrap().is_some()
+    }
+
+    /// Poisons the session mutex, as a panic in a holder would, for the switch tests.
+    #[cfg(test)]
+    pub(crate) fn test_poison_session(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = self.unlocked.lock().unwrap();
+            panic!("poisoned on purpose (test)");
+        }));
+    }
+
+    /// Runs `inside` while a key derivation is counted as running, for the switch test.
+    #[cfg(test)]
+    pub(crate) fn test_hold_kdf(&self, inside: impl FnOnce()) {
+        let _work = self.start_kdf_work().unwrap();
+        inside();
+    }
+
+    /// Where this vault's notification ledger is, for the tests that check each slot has its own.
+    #[cfg(test)]
+    pub(crate) fn notifications_ledger_path(&self) -> Option<PathBuf> {
+        self.notifications
+            .get()
+            .map(|runtime| runtime.ledger_path().to_path_buf())
+    }
+
     fn drop_idle_collection_cache(&self) {
         {
             *self
@@ -1204,24 +1240,35 @@ impl VaultStore {
         self.drop_idle_collection_cache();
     }
 
-    /// Started at launch on Windows; it checks only while the patient has automatic
-    /// checks turned on. One weak app-owned worker; no strong vault reference while sleeping.
-    #[cfg(windows)]
-    pub(crate) fn start_document_collection(self: &Arc<Self>) -> std::io::Result<()> {
-        let weak = Arc::downgrade(self);
-        std::thread::Builder::new()
-            .name("document-checks".into())
-            .spawn(move || loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let Some(store) = weak.upgrade() else {
-                    break;
-                };
-                if store.collection.is_shutdown() {
-                    break;
-                }
-                store.automatic_document_tick();
-            })
-            .map(|_| ())
+    /// One tick of the automatic document check, run once a second by the app's single worker
+    /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
+    /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
+    /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
+    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
+    /// there is nothing to run).
+    pub(crate) fn document_tick(&self) -> bool {
+        if self.collection.is_shutdown() {
+            return false;
+        }
+        #[cfg(windows)]
+        self.automatic_document_tick();
+        true
+    }
+
+    /// Whether nothing is open or running in this vault: no session, no unlock or benchmark deriving
+    /// a key, no import or export holding the session lock. Never waits: a vault that is busy says
+    /// so. A switch to another vault (#357) is refused unless this holds for both.
+    pub(crate) fn is_at_rest(&self) -> bool {
+        if self.kdf_running.load(Ordering::Acquire) {
+            return false;
+        }
+        match self.unlocked.try_lock() {
+            Ok(guard) => guard.is_none(),
+            // A holder panicked: the session in it is still what it was, so read it as `session()`
+            // would, rather than saying "busy" for ever.
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner().is_none(),
+            Err(std::sync::TryLockError::WouldBlock) => false,
+        }
     }
 
     #[cfg(windows)]

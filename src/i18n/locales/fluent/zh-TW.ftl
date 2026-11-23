@@ -1827,6 +1827,19 @@ ai-explain-ready = 解釋已產生。
 ai-failed = AI 助理未能完成。請重試。
 
 ai-error-memory = 目前可用記憶體不足，AI 助理無法執行。請關閉其他程式後重試。
+ai-error-memoryNumbers = 目前可用記憶體不足，AI 助理無法執行。它需要約 { $needed } GB 可用記憶體，而現在只有 { $free } GB 可用。請關閉其他程式後重試。
+ai-error-memoryUnknown = 目前可用記憶體不足，AI 助理無法執行。它需要約 { $needed } GB 可用記憶體，而此電腦無法告知目前有多少可用記憶體。請關閉其他程式後重試。
+ai-speed-title = 此電腦上的速度
+ai-speed-note = 這會在一小段虛構的文字上執行一次 AI 助理，並在一兩分鐘內較多占用處理器。不會向任何地方傳送任何內容，也不會用到您的任何資料。您可以隨時停止。
+ai-speed-button = 檢查此電腦的速度
+ai-speed-working = 正在檢查速度…
+ai-speed-cancel = 停止檢查
+ai-speed-result = 在此電腦上測得：AI 助理每秒約讀取 { $read } 個詞，約寫出 { $write } 個。
+ai-speed-cancelled = 檢查已停止，未保存任何內容。
+ai-speed-none = 尚未檢查。
+ai-speed-failed = 無法測出速度。請重試。
+ai-speed-estimate = 在此電腦上，這最多可能需要約 { $minutes } 分鐘。
+ai-speed-estimateLong = 在此電腦上，這麼長的文件可能無法在 AI 助理獲得的時間內完成。
 
 ai-error-busy = 正在新增或移除 AI 助理的模型。請在完成後重試。
 
@@ -1988,6 +2001,7 @@ interface-AnonymizePreview-placeholder-manual = 已移除
 interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之後 { $days } 天
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = 其他寫法 { $n }
 
 interface-AnonymizePreview-pasteTitle = 放回資訊
 

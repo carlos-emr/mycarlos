@@ -1026,6 +1026,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // No add or download running when the row opens (#275).
           case "ai_model_add_active":
             return null;
+          // Nothing measured yet (the speed check, #305).
+          case "ai_model_speed":
+            return null;
           case "vault_status":
             return state.status;
           case "vault_notification_status":
