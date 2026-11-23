@@ -4,6 +4,7 @@ import { translate } from "./support/fluent";
 import {
   FAKE_CLINIC_DOCUMENT,
   fakeCalls,
+  fakePersonId,
   fakeSnapshot,
   fakeVaultWith,
   sidebar,
@@ -32,12 +33,17 @@ test.beforeEach(({}, testInfo) => {
 
 async function arrive(
   page: Page,
-  person: { fullName?: string; birthDate?: string } = {},
+  person: {
+    fullName?: string;
+    birthDate?: string;
+    previousFullNames?: string[];
+  } = {},
+  words: { linkPerson?: string; matchingPeople?: string[] } = {},
 ) {
   await fakeVaultWith(page, {
     start: "unlocked",
     portal: "linked",
-    clinicPatient: { name: CLINIC_NAME, birthDate: CLINIC_BIRTH },
+    clinicPatient: { name: CLINIC_NAME, birthDate: CLINIC_BIRTH, ...words },
     people: [{ displayName: CHILD, ...person }],
   });
   await page.goto("/");
@@ -123,7 +129,7 @@ test("File under… files by the patient's choice, saves details only when the b
 test("Ticking the box saves the clinic's name and birth date as the person's details, and nothing already there is overwritten", async ({
   page,
 }) => {
-  const details = await arrive(page, { fullName: "FAKE Existing Name" });
+  const details = await arrive(page, { fullName: CLINIC_NAME });
   await details
     .getByRole("button", { name: en("fileUnder.button"), exact: true })
     .click();
@@ -137,7 +143,7 @@ test("Ticking the box saves the clinic's name and birth date as the person's det
   await expect(dialog).toContainText(
     en("fileUnder.what.date", { date: CLINIC_BIRTH }),
   );
-  await expect(dialog).not.toContainText(CLINIC_NAME + "”");
+  await expect(dialog).not.toContainText("“" + CLINIC_NAME + "”");
   await dialog.getByRole("checkbox").check();
   await dialog
     .getByRole("button", { name: en("fileUnder.confirm", { person: CHILD }) })
@@ -150,7 +156,7 @@ test("Ticking the box saves the clinic's name and birth date as the person's det
     .toBe(1);
   const [call] = await fakeCalls(page, "vault_update_profile_details");
   expect(call.request).toMatchObject({
-    details: { fullName: "FAKE Existing Name", birthDate: CLINIC_BIRTH },
+    details: { fullName: CLINIC_NAME, birthDate: CLINIC_BIRTH },
   });
 });
 
@@ -176,4 +182,61 @@ test("A person who already has a full name and a birth date is offered nothing t
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   expect(await fakeCalls(page, "vault_move_to_person")).toEqual([]);
+});
+
+test("A person whose name or birth date differs from the clinic's is offered nothing to save, with a warning, and a name already known as a previous one is not a difference", async ({
+  page,
+}) => {
+  const details = await arrive(page, { fullName: "FAKE Existing Name" });
+  await details
+    .getByRole("button", { name: en("fileUnder.button"), exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: en("fileUnder.title", { document: FAKE_CLINIC_DOCUMENT }),
+  });
+  await dialog
+    .getByLabel(en("fileUnder.person"))
+    .selectOption({ label: CHILD });
+  await expect(dialog.getByRole("alert")).toHaveText(en("fileUnder.differs"));
+  await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+});
+
+test("A previous name that is the clinic's is no difference: the birth date alone is offered", async ({
+  page,
+}) => {
+  const details = await arrive(page, {
+    fullName: "FAKE Married Name",
+    previousFullNames: [CLINIC_NAME],
+  });
+  await details
+    .getByRole("button", { name: en("fileUnder.button"), exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: en("fileUnder.title", { document: FAKE_CLINIC_DOCUMENT }),
+  });
+  await dialog
+    .getByLabel(en("fileUnder.person"))
+    .selectOption({ label: CHILD });
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog).toContainText(
+    en("fileUnder.what.date", { date: CLINIC_BIRTH }),
+  );
+});
+
+test("No promise that the next documents file themselves when the clinic's link is tied to someone else or another person already matches", async ({
+  page,
+}) => {
+  const details = await arrive(page, {}, { matchingPeople: [fakePersonId(2)] });
+  await details
+    .getByRole("button", { name: en("fileUnder.button"), exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: en("fileUnder.title", { document: FAKE_CLINIC_DOCUMENT }),
+  });
+  await dialog
+    .getByLabel(en("fileUnder.person"))
+    .selectOption({ label: CHILD });
+  await expect(dialog).toContainText(en("fileUnder.notOnItsOwn"));
+  await expect(dialog).not.toContainText("on their own");
+  await expect(dialog.getByRole("checkbox")).toBeVisible();
 });
