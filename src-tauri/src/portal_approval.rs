@@ -641,7 +641,9 @@ mod native {
             // to ten minutes and a code cannot be stretched (v1 keeps its looser rule).
             || (version == V2
                 && c.expires_at
-                    != (c.issued_at + challenge_life(version, &c.approval_kind)).min(intent_exp))
+                    != c.issued_at
+                        .saturating_add(challenge_life(version, &c.approval_kind))
+                        .min(intent_exp))
             || c.expires_at > attempt.expires_at
             || !wire::key_id(&c.kid)
         {
