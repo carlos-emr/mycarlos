@@ -59,6 +59,35 @@ attribute), and that nothing happens off iOS. **Not tested: on an iPhone.** A de
 unlock, then on a computer make an encrypted Finder backup and look in it for the app's `Library/Application
 Support` folder (it must be absent), or inspect with `xattr -l` on a development build.
 
+## The webview's own storage (reviewed)
+
+The exclusion covers the app's local data folder. WKWebView keeps `localStorage` and IndexedDB under
+`Library/WebKit`, which **an iOS backup does take**, so nothing about a person or a document may live there.
+The renderer uses `localStorage` only, for the choices below (the list is pinned by a test in
+`scripts/check-ios-privacy.test.mjs`, which fails when a key is added until it is read and listed there). It
+uses no IndexedDB, Cache API or cookies (the same test refuses them).
+
+| Key                                                                                                                                                         | Holds                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mycarlos.language.v1`, `mycarlos.appearance.v1`, `mycarlos.zoom.v1`, `mycarlos.aiLabelShort.v1`, `mycarlos.videoQuality.v1`, `mycarlos.cameraExplained.v1` | interface choices and a notice flag                                                                                                                                                                                                                         |
+| `mycarlos.autoLockMinutes.v1`                                                                                                                               | the idle lock minutes                                                                                                                                                                                                                                       |
+| `mycarlos.recoveryOfferHour.v1`, `mycarlos.unfinishedRecoveryKey.v1`                                                                                        | times and a flag of a recovery-key step; **no key**                                                                                                                                                                                                         |
+| `mycarlos.oldBackupsGuide.v1`                                                                                                                               | the step for older backups and **the name of the backup file the patient saved**: the one entry that could carry a name if the patient put it in the file name. It is kept and is said in the privacy notice; Ben may prefer to drop the name from storage. |
+
+(The #360 "unfinished handover" key does not exist on `main` yet; whoever merges it must add its key to the test
+and say what it holds.)
+
+## Decisions for Ben (not changed here)
+
+1. **Portal on iOS versus "Data Not Collected".** The privacy manifest and the store answers say nothing is
+   collected because the portal client is off on Android and the iOS state is to be confirmed. If the portal is
+   switched on for iOS, the clinic receives device identifiers and delivery metadata, and the answers in
+   `mycarlos-store-forms-draft-20261124.md` change together with `NSPrivacyCollectedDataTypes`.
+2. **If the backup flag cannot be set, should the vault still be created?** Today a failure is not fatal (the
+   vault is ciphertext either way) and the app goes on. Refusing to create a vault when the flag fails would
+   keep health data from ever reaching iCloud, at the price of an app that cannot start on a device where the
+   call fails.
+
 ## TestFlight workflow (draft for Ben: a patch, not applied)
 
 `mycarlos-422-5-ios-release-workflow-20261124.patch` (in `/root/supervisor/for-ben/`, a new file under `.github/`,

@@ -173,3 +173,49 @@ test("the manifest is copied into the one generated iOS app folder", async () =>
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+// WKWebView keeps localStorage and IndexedDB under Library/WebKit, which an iOS backup takes: the
+// backup exclusion of the app's data folder does not cover it (#422). Nothing about a person or a
+// document may live there. This list is the review: a new key makes this test fail until it is read
+// and added here with what it holds.
+const REVIEWED_WEBVIEW_STORAGE = {
+  "mycarlos.language.v1": "the interface language choice",
+  "mycarlos.autoLockMinutes.v1": "the idle lock minutes",
+  "mycarlos.appearance.v1": "theme and text size choice",
+  "mycarlos.aiLabelShort.v1": "a preference for the AI label wording",
+  "mycarlos.zoom.v1": "a zoom level",
+  "mycarlos.videoQuality.v1": "the video quality choice",
+  "mycarlos.cameraExplained.v1": "whether the camera notice was shown",
+  "mycarlos.recoveryOfferHour.v1":
+    "when the recovery-key offer was last made (a time)",
+  "mycarlos.unfinishedRecoveryKey.v1":
+    "when a recovery key setup began (times and a flag; no key)",
+  "mycarlos.oldBackupsGuide.v1":
+    "the step for older backups, and the NAME of the backup file the patient saved (the one entry that could carry a person's name if they put it in the file name): reviewed, kept, and said in the privacy notice",
+};
+
+test("the webview's own storage keys are the reviewed ones, and nothing else is used", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const sources = execFileSync(
+    "git",
+    ["ls-files", "src", ":(exclude)*.test.ts", ":(exclude)*.test.tsx"],
+    { encoding: "utf8" },
+  )
+    .split("\n")
+    .filter((file) => /\.(ts|tsx)$/.test(file) && !file.endsWith("keys.ts"));
+  const found = new Set();
+  for (const file of sources) {
+    const text = await readFile(file, "utf8");
+    for (const key of text.matchAll(/"(mycarlos\.[A-Za-z]+\.v\d+)"/g))
+      found.add(key[1]);
+    assert.doesNotMatch(
+      text,
+      /indexedDB|IDBFactory|caches\.open|document\.cookie/,
+      file,
+    );
+  }
+  assert.deepEqual(
+    [...found].sort(),
+    Object.keys(REVIEWED_WEBVIEW_STORAGE).sort(),
+  );
+});

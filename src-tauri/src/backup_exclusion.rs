@@ -25,7 +25,13 @@ pub(crate) fn keep_out_of_device_backups(dir: &Path) -> io::Result<()> {
     #[cfg(target_os = "ios")]
     {
         std::fs::create_dir_all(dir)?;
-        set_flag(dir, IOS_EXCLUDE_ATTRIBUTE)
+        set_flag(dir, IOS_EXCLUDE_ATTRIBUTE)?;
+        // Read back: a flag that did not stick is reported, not assumed.
+        if flag_is_set(dir, IOS_EXCLUDE_ATTRIBUTE)? {
+            Ok(())
+        } else {
+            Err(io::Error::other("the backup exclusion flag did not stick"))
+        }
     }
     #[cfg(not(target_os = "ios"))]
     {
@@ -73,6 +79,43 @@ fn set_flag(path: &Path, name: &str) -> io::Result<()> {
     }
 }
 
+/// Whether the one-byte flag attribute `name` on `path` is set to 1.
+#[cfg(any(target_os = "ios", all(test, unix)))]
+fn flag_is_set(path: &Path, name: &str) -> io::Result<bool> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let name = CString::new(name).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let mut value = [0u8; 4];
+    // SAFETY: both strings are NUL-terminated and `value` is four writable bytes.
+    #[cfg(target_vendor = "apple")]
+    let length = unsafe {
+        libc::getxattr(
+            path.as_ptr(),
+            name.as_ptr(),
+            value.as_mut_ptr().cast(),
+            value.len(),
+            0,
+            0,
+        )
+    };
+    // SAFETY: as above.
+    #[cfg(not(target_vendor = "apple"))]
+    let length = unsafe {
+        libc::getxattr(
+            path.as_ptr(),
+            name.as_ptr(),
+            value.as_mut_ptr().cast(),
+            value.len(),
+        )
+    };
+    if length < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(length == 1 && value[0] == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,30 +136,62 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn the_flag_is_written_as_one_byte_of_value_one() {
-        use std::ffi::CString;
-        use std::os::unix::ffi::OsStrExt;
+    fn the_flag_is_written_as_one_byte_of_value_one_and_read_back() {
         let temp = tempfile::tempdir().unwrap();
+        let name = "user.mycarlos-backup-flag-test";
         // The user namespace stands in for iOS's attribute, which only iOS honours.
-        match set_flag(temp.path(), "user.mycarlos-backup-flag-test") {
+        match set_flag(temp.path(), name) {
             // A file system without user attributes (some tmpfs and overlay set-ups): nothing to read back.
             Err(error) if error.raw_os_error() == Some(libc::ENOTSUP) => return,
             other => other.unwrap(),
         }
-        let path = CString::new(temp.path().as_os_str().as_bytes()).unwrap();
-        let name = CString::new("user.mycarlos-backup-flag-test").unwrap();
-        let mut value = [0u8; 4];
-        // SAFETY: both strings are NUL-terminated and `value` is four writable bytes.
-        let length = unsafe {
-            libc::getxattr(
-                path.as_ptr(),
-                name.as_ptr(),
-                value.as_mut_ptr().cast(),
-                value.len(),
-            )
-        };
-        assert_eq!(length, 1);
-        assert_eq!(value[0], 1);
+        assert!(flag_is_set(temp.path(), name).unwrap());
+        // A folder that never had the flag is not reported as flagged.
+        let other = temp.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        assert!(flag_is_set(&other, name).is_err());
+    }
+
+    /// The module must be built on every platform: iOS calls it. A `#[cfg]` line left above it
+    /// (the line above a `mod` is whatever gate its neighbour had) built it for Linux and
+    /// Windows only, which broke the iOS build and never excluded the vault.
+    #[test]
+    fn lib_declares_the_module_for_every_platform_and_keeps_the_camera_gate() {
+        let lib = include_str!("lib.rs");
+        let lines: Vec<&str> = lib.lines().collect();
+        let at = lines
+            .iter()
+            .position(|line| *line == "mod backup_exclusion;")
+            .expect("lib.rs declares backup_exclusion");
+        assert!(
+            !lines[at - 1].trim_start().starts_with("#["),
+            "backup_exclusion must have no attribute above it: {}",
+            lines[at - 1]
+        );
+        let camera = lines
+            .iter()
+            .position(|line| *line == "mod camera_permission;")
+            .expect("lib.rs declares camera_permission");
+        assert_eq!(
+            lines[camera - 1],
+            "#[cfg(any(target_os = \"linux\", windows))]",
+            "camera_permission keeps its desktop gate"
+        );
+    }
+
+    /// iOS is the only place the exclusion does anything, and it is not built here: the call
+    /// site is pinned by source. It runs before any vault is opened, so nothing is written
+    /// into a folder that a backup could take first.
+    #[test]
+    fn setup_excludes_the_data_folder_before_any_vault_opens() {
+        let lib = include_str!("lib.rs");
+        let call = lib
+            .find("backup_exclusion::keep_out_of_device_backups(&app.path().app_local_data_dir()?)")
+            .expect("setup excludes the app's local data folder");
+        let open = lib
+            .find("vault_slots::VaultSlots::open(")
+            .expect("setup opens the vaults");
+        assert!(call < open, "the exclusion comes before the vaults open");
     }
 
     #[cfg(unix)]

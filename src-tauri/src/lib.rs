@@ -4,8 +4,8 @@ mod ui_text;
 mod ui_text_ids;
 use ui_text::UiLocale;
 use ui_text_ids::MessageId;
-#[cfg(any(target_os = "linux", windows))]
 mod backup_exclusion;
+#[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
 mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
