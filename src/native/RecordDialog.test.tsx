@@ -395,10 +395,14 @@ describe("RecordDialog", () => {
     // After the resume pieces are taken again, in the same recording and the next sequence.
     recorder().emit(new Blob([new Uint8Array(9).fill(4)]));
     await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(3));
-    const sequences = bridge.videoAppend.mock.calls.map((call) => call[1]);
+    const sequences = vi
+      .mocked(bridge.videoAppend)
+      .mock.calls.map((call) => call[1]);
     expect(sequences).toEqual([0, 1, 2]);
     expect(
-      bridge.videoAppend.mock.calls.every((call) => call[0] === "recording-1"),
+      vi
+        .mocked(bridge.videoAppend)
+        .mock.calls.every((call) => call[0] === "recording-1"),
     ).toBe(true);
   });
 
@@ -427,9 +431,9 @@ describe("RecordDialog", () => {
     fake.emit(new Blob([new Uint8Array(5).fill(1)]));
     for (const blob of late) fake.emit(blob);
     await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(2));
-    expect(bridge.videoAppend.mock.calls.map((call) => call[1])).toEqual([
-      0, 1,
-    ]);
+    expect(
+      vi.mocked(bridge.videoAppend).mock.calls.map((call) => call[1]),
+    ).toEqual([0, 1]);
     // Once the recorder has said it is paused, a further piece is not kept.
     fake.dispatchEvent(new Event("pause"));
     fake.emit(new Blob([new Uint8Array(6).fill(2)]));
@@ -446,11 +450,11 @@ describe("RecordDialog", () => {
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
     );
-    const before = bridge.videoAppend.mock.calls.length;
+    const before = vi.mocked(bridge.videoAppend).mock.calls.length;
     fireEvent.click(button("Stop and save"));
     await waitFor(() => expect(bridge.videoStop).toHaveBeenCalled());
     // The recorder's last piece, at the stop, is kept.
-    expect(bridge.videoAppend.mock.calls.length).toBe(before + 1);
+    expect(vi.mocked(bridge.videoAppend).mock.calls.length).toBe(before + 1);
   });
 
   it("shows the time recorded as text that is not a live region", async () => {
