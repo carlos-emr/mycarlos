@@ -125,9 +125,9 @@ describe("ComfortSetup (#69)", () => {
     );
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("dark");
-    // Where to change it later names it beside Text size.
+    // Where to change it later names it beside App zoom (the desktop "Text size" control, #356).
     expect(
-      screen.getByText(humanText(/Text size and Appearance under Preferences/)),
+      screen.getByText(humanText(/App zoom and Appearance under Preferences/)),
     ).toBeVisible();
     // Continue keeps it.
     await user.click(
