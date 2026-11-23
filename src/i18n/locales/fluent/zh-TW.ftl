@@ -2395,6 +2395,8 @@ handover-export-done = 已為 { $name } 儲存 { $count } 份文件，並重新�
 
 handover-export-doneApart = 請把檔案和金鑰分開保管。此檔案不會改變您的保險庫。
 
+handover-export-hideOffer = 在此保險庫中隱藏 { $name }
+
 handover-export-leftOut = 因檔案無法讀取而未包含的文件：{ $count }
 
 handover-export-evidenceLeftOut = 無法包含診所簽章的文件（文件本身在檔案中）：{ $count }

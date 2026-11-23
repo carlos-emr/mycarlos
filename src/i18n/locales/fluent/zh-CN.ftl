@@ -2395,6 +2395,8 @@ handover-export-done = 已为 { $name } 保存 { $count } 份文档，并重新�
 
 handover-export-doneApart = 请把文件和密钥分开保管。此文件不会改变您的保险库。
 
+handover-export-hideOffer = 在此保险库中隐藏 { $name }
+
 handover-export-leftOut = 因文件无法读取而未包含的文档：{ $count }
 
 handover-export-evidenceLeftOut = 无法包含诊所签名的文档（文档本身在文件中）：{ $count }

@@ -1736,7 +1736,9 @@ export function VaultLibrary({
       setSelectedIds([]);
       setActiveRecordId(null);
       await refresh();
-      setNotice(
+      // Said to a screen reader (the polite line the library keeps for news), with no line on the
+      // screen: the person leaving the lists is what shows.
+      setSharedAnnouncement(
         deferredText(() => translateNow("hiddenPeople.hidden", { name })),
       );
     });
@@ -1748,7 +1750,7 @@ export function VaultLibrary({
     void run(async () => {
       const arrived = await bridge.restoreProfile!(id);
       await refresh();
-      setNotice(
+      setSharedAnnouncement(
         deferredText(() => translateNow("hiddenPeople.restored", { name })),
       );
       if (arrived.length > 0) setArrivedFor({ profileId: id, name, arrived });
@@ -3120,6 +3122,10 @@ export function VaultLibrary({
               // vault and ends the key: no Copy there.
               canCopy={keyboardHints}
               onUnfinished={onUnfinishedHandover}
+              // A person already hidden cannot be hidden again; otherwise the saved file offers it.
+              onHidePerson={
+                handoverHidden || !bridge.hideProfile ? undefined : hidePerson
+              }
               onClose={() => {
                 setHandover(null);
                 setHandoverHidden(null);

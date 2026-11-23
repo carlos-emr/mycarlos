@@ -1244,6 +1244,7 @@ export const MESSAGE_KEYS = [
   "handover.export.doneTitle",
   "handover.export.done",
   "handover.export.doneApart",
+  "handover.export.hideOffer",
   "handover.export.leftOut",
   "handover.export.evidenceLeftOut",
   "handover.count.documents",
@@ -2840,6 +2841,7 @@ const FLUENT_IDS_BY_KEY = {
   "handover.export.doneTitle": "handover-export-doneTitle",
   "handover.export.done": "handover-export-done",
   "handover.export.doneApart": "handover-export-doneApart",
+  "handover.export.hideOffer": "handover-export-hideOffer",
   "handover.export.leftOut": "handover-export-leftOut",
   "handover.export.evidenceLeftOut": "handover-export-evidenceLeftOut",
   "handover.count.documents": "handover-count-documents",
@@ -4301,6 +4303,7 @@ export interface MessageArgsByKey {
   "handover.export.doneTitle": undefined;
   "handover.export.done": { count: FluentArgument; name: FluentArgument };
   "handover.export.doneApart": undefined;
+  "handover.export.hideOffer": { name: FluentArgument };
   "handover.export.leftOut": { count: FluentArgument };
   "handover.export.evidenceLeftOut": { count: FluentArgument };
   "handover.count.documents": { count: FluentArgument };

@@ -107,6 +107,7 @@ export function ProfileExportDialog({
   people,
   sizesIn1024s,
   canCopy = true,
+  onHidePerson,
   onClose,
   onLocked,
   onUnfinished,
@@ -125,6 +126,10 @@ export function ProfileExportDialog({
    * choice or by saving the file (false). A lock leaves it true, so the next unlock says
    * that the key opens nothing. */
   onUnfinished?: (unfinished: boolean) => void;
+  /** Hides a whole person in this vault. When given, a saved file offers it (default off): at the
+   * end of an export the parent can hide the person they have just handed over (design Q16).
+   * Not given for a person who is already hidden. */
+  onHidePerson?: (profileId: string) => void;
 }) {
   const { t } = useI18n();
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -132,6 +137,8 @@ export function ProfileExportDialog({
     "choose",
   );
   const [profileId, setProfileId] = useState(people[0]?.id ?? "");
+  // The offer made once the file is saved: hide this person in the vault. Off unless chosen.
+  const [hideAfter, setHideAfter] = useState(false);
   const [includeHistory, setIncludeHistory] = useState(true);
   const [kind, setKind] = useState<"generated" | "passphrase">("generated");
   const [passphrase, setPassphrase] = useState("");
@@ -155,6 +162,8 @@ export function ProfileExportDialog({
   const finish = () => {
     onUnfinished?.(false);
     onClose();
+    // Hidden after the dialog has closed: the patient chose it at the end of a saved file.
+    if (step === "done" && hideAfter && person) onHidePerson?.(person.id);
   };
 
   // The key copied is taken off the clipboard again after a minute, if nothing
@@ -508,6 +517,26 @@ export function ProfileExportDialog({
             </p>
           )}
           <p>{t("handover.export.doneApart")}</p>
+          {onHidePerson &&
+            person &&
+            (people.length <= 1 ? (
+              // The only person the library shows cannot be hidden: said, not a dead checkbox.
+              <p>{t("hiddenPeople.lastPerson")}</p>
+            ) : (
+              <div className="handover-hide-offer">
+                <label className="restore-choice">
+                  <input
+                    type="checkbox"
+                    checked={hideAfter}
+                    onChange={(event) => setHideAfter(event.target.checked)}
+                  />
+                  {t("handover.export.hideOffer", { name: person.displayName })}
+                </label>
+                <p className="native-dialog-status">
+                  {t("hiddenPeople.confirm.body", { name: person.displayName })}
+                </p>
+              </div>
+            ))}
           <footer className="dialog-actions">
             <button className="button primary" type="button" onClick={finish}>
               {t("handover.close")}

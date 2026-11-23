@@ -2733,6 +2733,8 @@ handover-export-done =
 
 handover-export-doneApart = Przechowuj plik i klucz oddzielnie. Ten plik nie zmienia Twojego sejfu.
 
+handover-export-hideOffer = Ukryj osobę: { $name } w tym sejfie
+
 handover-export-leftOut =
     { $count ->
         [one] Pominięto jeden dokument, bo jego pliku nie można odczytać.

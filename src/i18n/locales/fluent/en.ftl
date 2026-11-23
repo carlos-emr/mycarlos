@@ -2617,6 +2617,8 @@ handover-export-done =
 
 handover-export-doneApart = Keep the file and the key apart. This file does not change your vault.
 
+handover-export-hideOffer = Hide { $name } in this vault
+
 handover-export-leftOut =
     { $count ->
         [one] One document left out because its file cannot be read.

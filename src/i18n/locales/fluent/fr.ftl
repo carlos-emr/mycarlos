@@ -2652,6 +2652,8 @@ handover-export-done =
 
 handover-export-doneApart = Conservez le fichier et la clé séparément. Ce fichier ne modifie pas votre coffre.
 
+handover-export-hideOffer = Masquer { $name } dans ce coffre
+
 handover-export-leftOut =
     { $count ->
         [one] Un document exclu, car son fichier est illisible.

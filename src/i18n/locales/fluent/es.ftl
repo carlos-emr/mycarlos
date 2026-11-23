@@ -2652,6 +2652,8 @@ handover-export-done =
 
 handover-export-doneApart = Guarde el archivo y la clave por separado. Este archivo no cambia su bóveda.
 
+handover-export-hideOffer = Ocultar a { $name } en esta bóveda
+
 handover-export-leftOut =
     { $count ->
         [one] Un documento excluido porque su archivo no se puede leer.

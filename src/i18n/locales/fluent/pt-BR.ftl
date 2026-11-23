@@ -2652,6 +2652,8 @@ handover-export-done =
 
 handover-export-doneApart = Guarde o arquivo e a chave separadamente. Este arquivo não altera o seu cofre.
 
+handover-export-hideOffer = Ocultar { $name } neste cofre
+
 handover-export-leftOut =
     { $count ->
         [one] Um documento deixado de fora porque o arquivo não pode ser lido.

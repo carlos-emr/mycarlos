@@ -570,6 +570,16 @@ export function SecuritySettings({
                 )}
               </>
             )}
+            <p>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || readOnly}
+                onClick={() => void onSaveBackup(leaveVideosOut)}
+              >
+                {translateNow("security.backup.save")}
+              </button>
+            </p>
             {oldBackupsGuide && (
               <section
                 className="old-backups-guide"
@@ -621,50 +631,6 @@ export function SecuritySettings({
                 )}
               </section>
             )}
-          </div>
-        </section>
-        {(onHandOver || onAddFromFile) && (
-          <section className="setting-row native-handover-settings">
-            <div>
-              <h2>{translateNow("handover.section.title")}</h2>
-              <p>{translateNow("handover.section.body")}</p>
-            </div>
-            <div>
-              {onHandOver && (
-                <button
-                  className="button"
-                  type="button"
-                  aria-haspopup="dialog"
-                  disabled={busy || readOnly || people.length === 0}
-                  onClick={onHandOver}
-                >
-                  {translateNow("handover.export.button")}
-                </button>
-              )}
-              {onAddFromFile && (
-                <button
-                  className="button"
-                  type="button"
-                  aria-haspopup="dialog"
-                  disabled={busy || readOnly}
-                  onClick={onAddFromFile}
-                >
-                  {translateNow("handover.import.button")}
-                </button>
-              )}
-            </div>
-          </section>
-        )}
-        <section className="setting-row">
-          <div>
-            <button
-              className="button"
-              type="button"
-              disabled={busy || readOnly}
-              onClick={() => void onSaveBackup(leaveVideosOut)}
-            >
-              {translateNow("security.backup.save")}
-            </button>
           </div>
         </section>
         <section className="setting-row native-setting-form">
@@ -824,6 +790,40 @@ export function SecuritySettings({
               dialogHost,
             )}
         </section>
+        {/* After the people and the hidden people: handing a person's records over is about them, so it
+            sits at the end of the settings, not between the backup and the lock. */}
+        {(onHandOver || onAddFromFile) && (
+          <section className="setting-row native-handover-settings">
+            <div>
+              <h2>{translateNow("handover.section.title")}</h2>
+              <p>{translateNow("handover.section.body")}</p>
+            </div>
+            <div>
+              {onHandOver && (
+                <button
+                  className="button"
+                  type="button"
+                  aria-haspopup="dialog"
+                  disabled={busy || readOnly || people.length === 0}
+                  onClick={onHandOver}
+                >
+                  {translateNow("handover.export.button")}
+                </button>
+              )}
+              {onAddFromFile && (
+                <button
+                  className="button"
+                  type="button"
+                  aria-haspopup="dialog"
+                  disabled={busy || readOnly}
+                  onClick={onAddFromFile}
+                >
+                  {translateNow("handover.import.button")}
+                </button>
+              )}
+            </div>
+          </section>
+        )}
         {/* #71: the privacy notice says what is kept. */}
         <section
           className="setting-row kept-setting"
