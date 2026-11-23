@@ -3120,6 +3120,7 @@ async fn background_set_keep_running(
     store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<desktop_background::Status> {
+    let store = store.pin();
     #[cfg(desktop)]
     {
         let background = background_state(&app)?;
@@ -4173,6 +4174,7 @@ async fn vault_backup_picked(
     picks: State<'_, Arc<PendingPicks>>,
     request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let store = store.pin();
     let leave_videos_out = request.leave_videos_out;
     let store = store.pin();
     let destination = picks
@@ -5170,6 +5172,7 @@ async fn vault_read_android_pdf(
     request: AndroidPdfRequest,
     activity: tauri::ipc::Channel<()>,
 ) -> CommandResult<()> {
+    let store = store.pin();
     #[cfg(target_os = "android")]
     {
         let store = store.pin();
@@ -5335,7 +5338,7 @@ impl PageBoxesAnswer {
     }
 }
 
-/// Where a quote from a page's text is on the page picture, for Show in document (#292). The
+/// Where a quote from a page's text is on the page picture, for Show me in the document (#292). The
 /// record is decrypted into memory only and handed to the PDF helper, as for a page view
 /// (`pdf_view::boxes_in_helper`). A newer such request, a lock or the reader closing stops it;
 /// a page request does not.
@@ -5693,6 +5696,10 @@ struct TextExportPickedRequest {
     record_id: Uuid,
     ticket: Uuid,
     text: String,
+    /// Ranges (UTF-16) of medical terms the patient kept (#366). A claim, not a fact: the native
+    /// re-check spares a hit only inside a range that is an allow-listed phrase in its own list.
+    #[serde(default)]
+    kept: Vec<text_recheck::Hit>,
 }
 
 /// How a text save ended: written, or refused with the ranges that still
@@ -5703,6 +5710,60 @@ struct TextExportPickedRequest {
 struct TextSaveOutcome {
     saved: bool,
     hits: Vec<text_recheck::Hit>,
+}
+
+/// The native re-check every text that leaves the preview goes through, whether it is saved or
+/// copied (#72 part B, AI-02): too large, a code point the cleaning drops or a vault identifier
+/// still standing, or a date that page code skipped. `Ok(hits)` with hits is a refusal; nothing may
+/// be written or copied then. One function for both, so that Copy is never weaker than Save.
+async fn recheck_export_text(
+    store: &Arc<VaultStore>,
+    record_id: Uuid,
+    text: &str,
+    kept: &[text_recheck::Hit],
+) -> CommandResult<Vec<text_recheck::Hit>> {
+    // Refused before anything else looks at the text.
+    if text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let hits = text_recheck::forbidden_ranges(text);
+    if !hits.is_empty() {
+        return Ok(hits);
+    }
+    let known = run_blocking(store, move |store| store.known_identifiers(record_id)).await?;
+    // A medical term the patient kept ("Graves' disease") is not an identifier, but only as the
+    // native allow-list reads it (#366): never on the page's word.
+    let hits = text_recheck::without_kept_terms(
+        text,
+        text_recheck::identifier_hits(text, &known.names, &known.birth_dates),
+        kept,
+    );
+    if !hits.is_empty() {
+        return Ok(hits);
+    }
+    // The remover sends no date: each is a placeholder. One still standing
+    // means page code skipped it (AI-01, AI-02).
+    Ok(text_recheck::date_hits(text))
+}
+
+/// The file a save writes, and exactly what a copy returns: the fixed first line (and the cut
+/// line) from the app's language, written here, never by page code.
+fn compose_export_text(
+    locale: UiLocale,
+    text: &str,
+    cut_after_page: Option<u32>,
+) -> CommandResult<String> {
+    let mut content = locale.text(MessageId::AiHelperExportHeader)?;
+    content.push_str("\n\n");
+    content.push_str(text);
+    if let Some(page) = cut_after_page {
+        content.push_str("\n\n");
+        content.push_str(
+            &locale.render(MessageId::AiHelperExportCut, &[("page", &page.to_string())])?,
+        );
+    }
+    content.push('\n');
+    Ok(content)
 }
 
 /// Writes an anonymized text where the picker chose (#72 part B, AI-02):
@@ -5717,38 +5778,21 @@ async fn vault_export_text_picked(
     locale: Option<UiLocale>,
 ) -> CommandResult<TextSaveOutcome> {
     let store = store.pin();
-    // Refused before anything else looks at the text.
+    let record_id = request.record_id;
+    // The size check comes first, before the ticket is looked at.
     if request.text.len() > MAX_EXPORT_TEXT_BYTES {
         return Err(VaultError::Invalid.into());
     }
-    let record_id = request.record_id;
     let ticket = picks.peek_text(request.ticket, record_id)?;
-    let hits = text_recheck::forbidden_ranges(&request.text);
+    let hits = recheck_export_text(store.arc(), record_id, &request.text, &request.kept).await?;
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
-    let known = run_blocking(store.arc(), move |store| store.known_identifiers(record_id)).await?;
-    let hits = text_recheck::identifier_hits(&request.text, &known.names, &known.birth_dates);
-    if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
-    }
-    // The remover sends no date: each is a placeholder. One still standing
-    // means page code skipped it (AI-01, AI-02).
-    let hits = text_recheck::date_hits(&request.text);
-    if !hits.is_empty() {
-        return Ok(TextSaveOutcome { saved: false, hits });
-    }
-    let locale = locale.unwrap_or_default();
-    let mut content = locale.text(MessageId::AiHelperExportHeader)?;
-    content.push_str("\n\n");
-    content.push_str(&request.text);
-    if let Some(page) = ticket.cut_after_page {
-        content.push_str("\n\n");
-        content.push_str(
-            &locale.render(MessageId::AiHelperExportCut, &[("page", &page.to_string())])?,
-        );
-    }
-    content.push('\n');
+    let content = compose_export_text(
+        locale.unwrap_or_default(),
+        &request.text,
+        ticket.cut_after_page,
+    )?;
     let destination = picks.take_text_export(request.pick_id, record_id)?;
     let Ok(destination_path) = destination.into_path() else {
         // Only computers read a document's text, and they pick paths.
@@ -5763,6 +5807,61 @@ async fn vault_export_text_picked(
     picks.take_text(request.ticket, record_id)?;
     Ok(TextSaveOutcome {
         saved: true,
+        hits: Vec::new(),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TextExportCopyRequest {
+    record_id: Uuid,
+    ticket: Uuid,
+    text: String,
+    /// See `TextExportPickedRequest::kept`.
+    #[serde(default)]
+    kept: Vec<text_recheck::Hit>,
+}
+
+/// How a copy ended: the approved file text, to be put on the clipboard as it is, or a refusal
+/// with the same ranges a save would give. Never both.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextCopyOutcome {
+    approved: Option<String>,
+    hits: Vec<text_recheck::Hit>,
+}
+
+/// The text a copy may put on the clipboard (#72 part B): the same native re-check as a save, on
+/// the same text, and the same file content a save would write, first line and cut line included.
+/// Copy is never weaker than Save: the page writes to the clipboard only what this returns. It
+/// leaves the ticket alone (a copy is not a save), so a save may still follow.
+#[tauri::command]
+async fn vault_export_text_copy(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: TextExportCopyRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<TextCopyOutcome> {
+    let store = store.pin();
+    if request.text.len() > MAX_EXPORT_TEXT_BYTES {
+        return Err(VaultError::Invalid.into());
+    }
+    let record_id = request.record_id;
+    let ticket = picks.peek_text(request.ticket, record_id)?;
+    let hits = recheck_export_text(store.arc(), record_id, &request.text, &request.kept).await?;
+    if !hits.is_empty() {
+        return Ok(TextCopyOutcome {
+            approved: None,
+            hits,
+        });
+    }
+    let content = compose_export_text(
+        locale.unwrap_or_default(),
+        &request.text,
+        ticket.cut_after_page,
+    )?;
+    Ok(TextCopyOutcome {
+        approved: Some(content),
         hits: Vec::new(),
     })
 }
@@ -6847,6 +6946,7 @@ pub fn run() {
             vault_record_known_details,
             vault_export_text_pick,
             vault_export_text_picked,
+            vault_export_text_copy,
             vault_export_pick,
             vault_export_picked,
             vault_save_photo,
@@ -9031,10 +9131,16 @@ mod tests {
     /// Every command's `State<..>` parameter must be something the app manages: a command asking for
     /// a type nobody manages panics ("state not managed") the first time it is called, and
     /// nothing at build time says so (#393 made the vault `StoreHandle`; commands merged after it from
-    /// branches that began before it still asked for `Arc<VaultStore>`). Each managed type is listed
-    /// here with the text in the app's setup that manages it, so the list cannot drift from the code
-    /// in either direction: a new type fails until it is added WITH its evidence, and a removed
-    /// `manage` fails its evidence.
+    /// branches that began before it still asked for `Arc<VaultStore>`, #421). Each managed type is
+    /// listed here with the text in the app's `.setup` closure that manages it, so the list cannot
+    /// drift from the code in either direction: a new type fails until it is added WITH its evidence,
+    /// and a removed `manage` fails its evidence.
+    ///
+    /// Reads every source file under `src/` (a command in a module is found, not only one in
+    /// `lib.rs`), accepts `#[tauri::command(..)]` with arguments, and every spelling of the type:
+    /// `State<'_, T>`, `State<'a, T>`, `State<T>` and `tauri::State<..>`. The older, narrower scan of
+    /// the VaultStore type is `no_source_file_takes_or_manages_the_store_directly` in
+    /// `vault_source.rs`, and `scripts/vault-store-handle-codemod.py` rewrites what that one finds.
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[
@@ -9052,28 +9158,112 @@ mod tests {
                 "Arc<PendingPicks>",
                 "app.manage(Arc::new(PendingPicks::default()))",
             ),
-            (
-                "Arc<ReceivedFiles>",
-                "app.manage(Arc::new(ReceivedFiles::default()))",
-            ),
+            ("Arc<ReceivedFiles>", ".manage(Arc::clone(&received))"),
         ];
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
-        let setup: String = startup.chars().filter(|c| !c.is_whitespace()).collect();
+        // The evidence must be in `run()`, which builds the app and its setup (ReceivedFiles is
+        // managed on the builder, before the setup closure, so files a start-up callback takes are not
+        // lost): a `manage` elsewhere (a test app, a helper) does not make the real app manage a type.
+        let run_text = startup.split_once("pub fn run() {").unwrap().1;
+        let setup: String = run_text
+            .split_once(".invoke_handler(")
+            .unwrap()
+            .0
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         for (state, evidence) in MANAGED {
             let evidence: String = evidence.chars().filter(|c| !c.is_whitespace()).collect();
             assert!(
                 setup.contains(&evidence),
-                "{state} is no longer managed: {evidence}"
+                "{state} is no longer managed by run(): {evidence}"
             );
         }
-        let command_marker = ["#[tauri", "::command]"].concat();
+
         let mut asked = Vec::new();
-        for part in startup.split(&command_marker).skip(1) {
-            let Some(open) = part.find('(') else { continue };
+        let mut folders = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(folder) = folders.pop() {
+            for item in std::fs::read_dir(&folder).unwrap() {
+                let path = item.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    // Not the tests: they define commands and apps of their own.
+                    for state in command_state_types(production_part(&source)) {
+                        asked.push((path.display().to_string(), state));
+                    }
+                }
+            }
+        }
+        assert!(
+            asked.len() > 100,
+            "the scan found only {} state parameters",
+            asked.len()
+        );
+        for (file, state) in &asked {
+            assert!(
+                MANAGED.iter().any(|(managed, _)| managed == state),
+                "{file}: a command asks for State<{state}>, which the setup does not manage: it \
+                 would panic \"state not managed\" when called"
+            );
+        }
+    }
+
+    #[test]
+    fn the_state_scan_reads_every_spelling_and_ignores_what_is_not_a_command() {
+        // The marker is assembled here so this text is not itself counted as a command.
+        let marker = ["#[tauri", "::command]"].concat();
+        let source = "\
+            @cmd@\n\
+            async fn a(picks: State<'_, Arc<ModelAddActive>>, x: u8) {}\n\
+            @cmdopen@(rename_all = \"snake_case\")]\n\
+            fn b(picks: tauri::State<'a, Arc<PendingPicks>>) {}\n\
+            @cmd@\n\
+            fn c(\n    one: State<Arc<ReceivedFiles>>,\n    two: tauri::State<'_,\n        Arc<local_model::Store>,\n    >,\n) {}\n\
+            @cmd@\n\
+            fn d<T: Send>(value: T) {}\n\
+            fn helper(state: State<'_, NotACommand>) {}\n"
+            .replace("@cmd@", &marker)
+            .replace("@cmdopen@", marker.trim_end_matches(']'));
+        assert_eq!(
+            command_state_types(&source),
+            vec![
+                "Arc<ModelAddActive>",
+                "Arc<PendingPicks>",
+                "Arc<ReceivedFiles>",
+                "Arc<local_model::Store>"
+            ]
+        );
+    }
+
+    /// `source` up to its main test module (`#[cfg(test)]` then `mod tests {`). Smaller inline test
+    /// modules before it are kept, so a command in one is read too.
+    fn production_part(source: &str) -> &str {
+        source
+            .split_once("\n#[cfg(test)]\nmod tests {")
+            .map_or(source, |(head, _)| head)
+    }
+
+    /// The `State<..>` types in the parameters of every command function (the Tauri command attribute) in `source`.
+    fn command_state_types(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for part in source.split("#[tauri::command").skip(1) {
+            // The attribute may carry arguments: `#[tauri::command(rename_all = "..")]`.
+            let Some(after_attribute) = part.find(']').map(|at| &part[at + 1..]) else {
+                continue;
+            };
+            let Some(fn_at) = after_attribute.find("fn ") else {
+                continue;
+            };
+            let signature = &after_attribute[fn_at..];
+            let Some(open) = signature.find('(') else {
+                continue;
+            };
             let mut depth = 0usize;
             let mut close = None;
-            for (index, c) in part[open..].char_indices() {
+            for (index, c) in signature[open..].char_indices() {
                 match c {
                     '(' => depth += 1,
                     ')' => {
@@ -9086,45 +9276,48 @@ mod tests {
                     _ => {}
                 }
             }
-            let params: String = part[open + 1..close.unwrap()]
+            let Some(close) = close else { continue };
+            let params: String = signature[open + 1..close]
                 .chars()
                 .filter(|c| !c.is_whitespace())
                 .collect();
-            for (at, _) in params.match_indices("State<'") {
-                // `State<'_,TYPE>`: the type is everything after the first comma, up to the `>` that
-                // closes `State<`.
-                let rest = &params[at + 6..];
-                let comma = rest.find(',').unwrap();
+            for (at, _) in params.match_indices("State<") {
+                // A word ending in `State` (`SomeState<..>`) is not Tauri's.
+                if params[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                {
+                    continue;
+                }
+                let mut rest = &params[at + "State<".len()..];
+                // An optional lifetime first: `'_,` or `'a,`.
+                if rest.starts_with('\'') {
+                    let Some(comma) = rest.find(',') else {
+                        continue;
+                    };
+                    rest = &rest[comma + 1..];
+                }
                 let mut depth = 1usize;
-                let mut end = comma + 1;
-                for (index, c) in rest[comma + 1..].char_indices() {
+                let mut end = rest.len();
+                for (index, c) in rest.char_indices() {
                     match c {
                         '<' => depth += 1,
                         '>' => {
                             depth -= 1;
                             if depth == 0 {
-                                end = comma + 1 + index;
+                                end = index;
                                 break;
                             }
                         }
                         _ => {}
                     }
                 }
-                asked.push(rest[comma + 1..end].to_owned());
+                // A trailing comma inside the generics (`Arc<X>,>`) is not part of the type.
+                found.push(rest[..end].trim_end_matches(',').to_owned());
             }
         }
-        assert!(
-            asked.len() > 100,
-            "the scan found only {} state parameters",
-            asked.len()
-        );
-        for state in &asked {
-            assert!(
-                MANAGED.iter().any(|(managed, _)| managed == state),
-                "a command asks for State<{state}>, which the setup does not manage: it would panic \
-                 \"state not managed\" when called"
-            );
-        }
+        found
     }
 
     #[test]
@@ -9396,6 +9589,7 @@ mod historical_identifier_export_tests {
             ticket,
             pick_id,
             text: "Zorvana".to_owned(),
+            kept: vec![],
         };
         // The current label alone must not reject the unique former token.
         let current_only = vec!["FAKE Neralis".to_owned()];
@@ -9426,6 +9620,276 @@ mod historical_identifier_export_tests {
         ))
         .is_err());
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn a_kept_medical_term_passes_copy_and_save_only_as_the_native_allow_list_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        // A save may not write inside the vault's own folder, so the file goes to another one.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let destination = elsewhere.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(temp.path().join("FAKE-vault")));
+        // The profile's own surname is also the eponym's name word.
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Graves", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                cut_after_page: None,
+                truncated: false,
+                pages_missing: false,
+                last_index: Some(0),
+                page_count: 1,
+                pages_digest: pages_digest([(0, "FAKE a")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(StoreHandle::single(Arc::clone(&store)))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let text = "History of Graves' disease. Graves' son drove.";
+        let copy = |kept: Vec<text_recheck::Hit>| {
+            tauri::async_runtime::block_on(vault_export_text_copy(
+                app.state(),
+                app.state(),
+                TextExportCopyRequest {
+                    record_id: record,
+                    ticket,
+                    text: text.to_owned(),
+                    kept,
+                },
+                None,
+            ))
+            .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"))
+        };
+        let range = |start, end| text_recheck::Hit { start, end };
+        // Nothing kept: both standing surnames are refused, as before.
+        assert_eq!(copy(vec![]).hits.len(), 2);
+        // The patient kept "Graves' disease" (11..26): that one passes, "Graves' son" does not.
+        let partly = copy(vec![range(11, 26)]);
+        assert!(partly.approved.is_none());
+        assert_eq!(
+            partly
+                .hits
+                .iter()
+                .map(|h| (h.start, h.end))
+                .collect::<Vec<_>>(),
+            [(28, 34)]
+        );
+        // A page's claim over a place that is no phrase of the native list spares nothing.
+        assert_eq!(copy(vec![range(28, 39)]).hits.len(), 2);
+        // Both kept as phrases of the list: only a text whose every hit is such a phrase passes.
+        let only_term = "History of Graves' disease.";
+        let approved = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            TextExportCopyRequest {
+                record_id: record,
+                ticket,
+                text: only_term.to_owned(),
+                kept: vec![range(11, 26)],
+            },
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("copy"));
+        assert!(approved.hits.is_empty());
+        assert!(approved.approved.unwrap().contains("Graves' disease"));
+        // Save takes the same decision and writes the file.
+        let saved = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            TextExportPickedRequest {
+                record_id: record,
+                ticket,
+                pick_id,
+                text: only_term.to_owned(),
+                kept: vec![range(11, 26)],
+            },
+            None,
+        ))
+        .unwrap_or_else(|error| panic!("save: {}", error.code));
+        assert!(saved.saved && saved.hits.is_empty());
+        assert!(std::fs::read_to_string(&destination)
+            .unwrap()
+            .contains("Graves' disease"));
+    }
+
+    #[test]
+    fn native_text_copy_gives_the_saved_file_or_the_same_refusal_and_never_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("FAKE-vault");
+        let destination = temp.path().join("FAKE-export.txt");
+        let store = Arc::new(VaultStore::new(root));
+        store
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Zorvana", 1)
+            .unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = store
+            .import(
+                profile,
+                vec![],
+                vec![vault::ImportSource {
+                    display_name: "FAKE.pdf".to_owned(),
+                    reader: Box::new(std::io::Cursor::new(b"%PDF-1.7 FAKE source".to_vec())),
+                }],
+                2,
+            )
+            .unwrap()
+            .imported[0];
+        let picks = Arc::new(PendingPicks::default());
+        let ticket = picks.store_text(
+            picks.session(),
+            TextTicket {
+                record_id: record,
+                // A cut document: the cut line is part of the file, so part of the copy.
+                cut_after_page: Some(2),
+                truncated: true,
+                pages_missing: false,
+                last_index: Some(1),
+                page_count: 3,
+                pages_digest: pages_digest([(0, "FAKE a"), (1, "FAKE b")]),
+            },
+        );
+        let pick_id = picks.store_text_export(
+            picks.session(),
+            record,
+            tauri_plugin_fs::FilePath::Path(destination.clone()),
+        );
+        let app = tauri::test::mock_builder()
+            .manage(StoreHandle::single(Arc::clone(&store)))
+            .manage(picks)
+            .build(production_context())
+            .unwrap();
+        let copy = |text: &str| TextExportCopyRequest {
+            record_id: record,
+            ticket,
+            text: text.to_owned(),
+            kept: vec![],
+        };
+
+        // A vault identifier still standing: refused with the ranges Save gives, nothing approved.
+        let refused = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy("Zorvana"),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"));
+        assert!(refused.approved.is_none());
+        assert_eq!(refused.hits.len(), 1);
+        assert_eq!((refused.hits[0].start, refused.hits[0].end), (0, 7));
+        // The same refusal a save gives, over the same text.
+        let save_refused = tauri::async_runtime::block_on(vault_export_text_picked(
+            app.state(),
+            app.state(),
+            TextExportPickedRequest {
+                record_id: record,
+                ticket,
+                pick_id,
+                text: "Zorvana".to_owned(),
+                kept: vec![],
+            },
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a refusal is an outcome, not an error"));
+        assert!(!save_refused.saved);
+        assert_eq!(
+            save_refused
+                .hits
+                .iter()
+                .map(|hit| (hit.start, hit.end))
+                .collect::<Vec<_>>(),
+            refused
+                .hits
+                .iter()
+                .map(|hit| (hit.start, hit.end))
+                .collect::<Vec<_>>()
+        );
+        assert!(!destination.exists());
+        // A text over the size limit is an error for both, before the ticket is looked at.
+        let too_large = "x".repeat(MAX_EXPORT_TEXT_BYTES + 1);
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(&too_large),
+            None,
+        ))
+        .is_err());
+
+        // A clean text: the copy is the file a save writes (both build it with
+        // `compose_export_text`, here with the cut line of this ticket), and a copy does not use
+        // up the ticket: a second copy works.
+        let clean = "plain text with no identifier.";
+        let approved = tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("a clean text is approved"))
+        .approved
+        .expect("approved");
+        assert_eq!(
+            approved,
+            compose_export_text(UiLocale::default(), clean, Some(2))
+                .unwrap_or_else(|_| { panic!("the file text composes") })
+        );
+        assert!(approved.contains(clean));
+        assert!(approved.ends_with('\n'));
+        assert!(!destination.exists(), "a copy writes no file");
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .unwrap_or_else(|_| panic!("the ticket survives a copy"))
+        .approved
+        .is_some());
+        // A lock ends the ticket: a copy after it is refused, as a save is.
+        store.lock();
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            copy(clean),
+            None,
+        ))
+        .is_err());
+        // An unknown ticket is refused as it is for a save.
+        assert!(tauri::async_runtime::block_on(vault_export_text_copy(
+            app.state(),
+            app.state(),
+            TextExportCopyRequest {
+                record_id: record,
+                ticket: Uuid::new_v4(),
+                text: clean.to_owned(),
+                kept: vec![],
+            },
+            None,
+        ))
+        .is_err());
     }
 
     #[test]
@@ -9518,6 +9982,7 @@ mod historical_identifier_export_tests {
             ticket,
             pick_id,
             text: "Velorina".to_owned(),
+            kept: vec![],
         };
         let with_previous = store.known_identifiers(record).unwrap();
         let hits = text_recheck::identifier_hits(

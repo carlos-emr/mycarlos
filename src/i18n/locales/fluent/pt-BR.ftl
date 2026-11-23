@@ -1898,7 +1898,7 @@ ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrad
 
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Ver no documento
+ai-summary-showInDocument = Mostrar-me no documento
 
 ai-summary-folded = O resumo está recolhido para dar espaço à página.
 
@@ -2243,6 +2243,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (confira com o original)
 interface-AnonymizePreview-possibleNames = Palavras que podem ser nomes
 
 interface-AnonymizePreview-removeWord = Remover “{ $word }”
+interface-AnonymizePreview-eponymTitle = Estes podem ser termos médicos
+interface-AnonymizePreview-eponymOne = Isto pode ser um termo médico: { $phrase }
+interface-AnonymizePreview-eponymKeep = Manter
+interface-AnonymizePreview-eponymKeepAll = Manter todos “{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = Removido: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nada foi removido ainda.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } nome
+   *[other] { $count } nomes
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } médico
+   *[other] { $count } médicos
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clínica
+   *[other] { $count } clínicas
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } número do cartão de saúde
+   *[other] { $count } números do cartão de saúde
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } número do prontuário
+   *[other] { $count } números do prontuário
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } número de seguro social
+   *[other] { $count } números de seguro social
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } data de nascimento
+   *[other] { $count } datas de nascimento
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } idade
+   *[other] { $count } idades
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } endereço
+   *[other] { $count } endereços
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } código postal
+   *[other] { $count } códigos postais
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } número de telefone
+   *[other] { $count } números de telefone
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } endereço de e-mail
+   *[other] { $count } endereços de e-mail
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } endereço da web
+   *[other] { $count } endereços da web
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } data ambígua
+   *[other] { $count } datas ambíguas
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removido por você
+   *[other] { $count } removidos por você
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } data substituída
+   *[other] { $count } datas substituídas
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } palavra para verificar
+   *[other] { $count } palavras para verificar
+}
+
+interface-AnonymizePreview-toCheckHelp = Ficam destacadas as palavras que começam com letra maiúscula no meio de uma frase e os números com três ou mais dígitos. Podem identificar alguém. Isso não encontra tudo. Não pega nomes escritos em maiúsculas, nomes no início de uma linha, nomes em escritas sem maiúsculas (como chinês, coreano ou árabe) nem nomes que também são meses, medicamentos ou termos médicos (como “June” ou “Bell”). Selecione uma palavra destacada, escolha Remover e leia todo o texto você mesmo.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” pode identificar alguém.
+
+interface-AnonymizePreview-savedFileNote = O arquivo salvo não é protegido pelo myCarlos. Ele não tem nomes, mas contém os detalhes médicos. Exclua-o quando terminar.
+
+interface-AnonymizePreview-pasteWhereNote = O lugar onde você colar isto decide o que será guardado: um serviço de chat pode guardar ou aprender com o texto, dependendo das configurações da sua conta.
+
+interface-AnonymizePreview-copy = Copiar o texto
+
+interface-AnonymizePreview-copied = O texto foi copiado.
+
+interface-AnonymizePreview-copyFailed = Não foi possível copiar o texto.
+
+interface-AnonymizePreview-copyWarning = O texto copiado pode ficar neste dispositivo: o histórico da área de transferência do Windows e a sincronização da área de transferência entre dispositivos podem guardar uma cópia.
 
 interface-AnonymizePreview-removeSelected = Remover o texto selecionado
 

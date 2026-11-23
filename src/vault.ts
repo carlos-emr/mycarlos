@@ -820,7 +820,17 @@ export interface VaultBridge {
     recordId: string,
     ticket: string,
     text: string,
+    kept?: TextRange[],
   ): Promise<TextSaveOutcome>;
+  /** The text a copy may put on the clipboard: the same native re-check as
+   * a save, on the same text, and the file a save would write. Refused with
+   * the same ranges a save gives; a copy never uses up the ticket. */
+  copyTextExport(
+    recordId: string,
+    ticket: string,
+    text: string,
+    kept?: TextRange[],
+  ): Promise<TextCopyOutcome>;
   /** Keeps an AI answer with its document, encrypted. A new answer to the
    * same question (tool, language, term) is the one shown; the old one stays
    * in the vault, hidden, never deleted (D3). */
@@ -853,6 +863,20 @@ export interface TextSaveOutcome {
   saved: boolean;
   /** Ranges of the text, in UTF-16 units, that still hold a detail the
    * vault knows or a character the cleaning drops. Empty when saved. */
+  hits: { start: number; end: number }[];
+}
+
+/** A range of the text, in UTF-16 units: a medical term the patient kept (#366). A claim the
+ * native re-check checks against its own list, never a fact. */
+export interface TextRange {
+  start: number;
+  end: number;
+}
+
+/** How a copy ended: the approved file text, to put on the clipboard as it
+ * is, or a refusal with a save's ranges. */
+export interface TextCopyOutcome {
+  approved: string | null;
   hits: { start: number; end: number }[];
 }
 
@@ -1454,9 +1478,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, ticket },
         locale: getLocale(),
       }),
-    exportTextToPicked: (pickId, recordId, ticket, text) =>
+    exportTextToPicked: (pickId, recordId, ticket, text, kept) =>
       invoke<TextSaveOutcome>("vault_export_text_picked", {
-        request: { pickId, recordId, ticket, text },
+        request: { pickId, recordId, ticket, text, kept: kept ?? [] },
+        locale: getLocale(),
+      }),
+    copyTextExport: (recordId, ticket, text, kept) =>
+      invoke<TextCopyOutcome>("vault_export_text_copy", {
+        request: { recordId, ticket, text, kept: kept ?? [] },
         locale: getLocale(),
       }),
     saveAiResult: (recordId, keptId, sources) =>
