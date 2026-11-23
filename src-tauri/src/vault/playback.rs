@@ -20,9 +20,10 @@
 //! is reset, or the session is dropped. A token cannot be used after a lock
 //! even if the same vault is opened again. The vault's lock ends playback.
 //!
-//! Serving a range reports the read as activity, like any transfer making
-//! progress, so the vault does not lock under a video that is playing; one
-//! that stops asking does not hold it open.
+//! Serving a range is not activity: a player buffers ahead while it is paused,
+//! and that must not keep an unattended device unlocked. The viewer tells the
+//! automatic lock when the video is actually playing (VaultApp's media hold),
+//! and the lock waits only for as long as it is.
 
 use super::*;
 use crate::mp4_stream::{self, Source, VirtualHead};
@@ -210,6 +211,7 @@ impl ChunkReader {
 
 /// A video opened for playback.
 pub(super) struct PlaybackSession {
+    record_id: Uuid,
     reader: ChunkReader,
     head: VirtualHead,
     opened: Instant,
@@ -425,6 +427,15 @@ impl VaultStore {
             .remove(token);
     }
 
+    /// Ends every playback of one record: hiding a document ends the video that
+    /// is playing from it.
+    pub(super) fn end_playback_for(&self, record_id: Uuid) {
+        self.playback
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|_, session| session.record_id != record_id);
+    }
+
     /// Ends every playback and drops their keys: the lock, a reset and a dropped
     /// session all do this, so no token outlives the unlock it was made in.
     pub(super) fn end_playback(&self) {
@@ -470,9 +481,6 @@ impl VaultStore {
         } else {
             Vec::new()
         };
-        // Bytes that were read are activity: the vault does not lock under a
-        // video that is playing.
-        self.idle.touch(Instant::now());
         Ok(PlaybackReply {
             status: 206,
             total,
@@ -508,6 +516,7 @@ fn open_session(mut reader: ChunkReader) -> Result<PlaybackSession, VaultError> 
         return Err(VaultError::Corrupt);
     }
     Ok(PlaybackSession {
+        record_id: reader.record_id,
         reader,
         head,
         opened: Instant::now(),
@@ -1119,15 +1128,43 @@ mod tests {
     }
 
     #[test]
-    fn serving_bytes_counts_as_activity_but_refusing_does_not() {
+    fn serving_bytes_is_not_activity_so_a_paused_player_buffering_ahead_holds_nothing() {
         let temp = tempfile::tempdir().unwrap();
         let (store, record, _) = stored_video(temp.path(), 2, 5000);
         let opened = store.playback_open(record).unwrap();
-        // A refusal changes nothing; a read touches the idle deadline (checked by
-        // the deadline not being due a moment after a read made now).
-        let _ = serve(&store, "0".repeat(64).as_str(), None);
-        let now = Instant::now();
+        let unlocked = Instant::now();
+        let due_unless_touched = unlocked
+            + Duration::from_secs(15 * 60)
+            + crate::idle::MARGIN
+            + Duration::from_millis(40);
+        std::thread::sleep(Duration::from_millis(120));
         assert!(serve(&store, &opened.token, Some("bytes=0-9")).is_ok());
-        assert!(!store.idle().is_due(now + Duration::from_secs(1)));
+        assert!(serve(&store, &opened.token, Some("bytes=100-199")).is_ok());
+        // Nothing moved the deadline: it is where the unlock left it.
+        assert!(store.idle().is_due(due_unless_touched));
+    }
+
+    #[test]
+    fn hiding_a_document_ends_the_video_playing_from_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, _) = stored_video(temp.path(), 2, 5000);
+        let kept = store.playback_open(record).unwrap();
+        let other = {
+            let profile = store.snapshot().unwrap().profiles[0].id;
+            let id = store
+                .recording_start(profile, vec![], "FAKE other.mp4", 7)
+                .unwrap();
+            let movie = [ftyp(), moov(), fragment(1, 0, 0, 3000)].concat();
+            store.recording_append(id, &movie).unwrap();
+            store.recording_stop(id, 8).unwrap().unwrap()
+        };
+        let elsewhere = store.playback_open(other).unwrap();
+        store.hide_record(record, 9).unwrap();
+        assert_eq!(
+            serve(&store, &kept.token, None),
+            Err(PlaybackRefusal::UnknownToken)
+        );
+        // Another document's video plays on.
+        assert!(serve(&store, &elsewhere.token, None).is_ok());
     }
 }
