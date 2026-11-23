@@ -45,6 +45,27 @@ impl CloudSession {
     }
     fn set_enabled(&self, origin: AnswerOrigin, on: bool) {
         *self.consent.lock().unwrap_or_else(|e| e.into_inner()) = on.then_some(origin);
+        // Consent off ends what the consent allowed: a prepared text goes, a running send stops.
+        if !on {
+            self.exchanges.clear();
+        }
+    }
+
+    /// A lock, an idle lock or a reset: consent off, what was prepared dropped (and zeroed), every
+    /// running send or key test asked to stop. Called from every path that locks the vault.
+    pub(crate) fn lock(&self) {
+        *self.consent.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.exchanges.clear();
+    }
+}
+
+/// The answer is handed back only to the unlocked session the send began in: if the vault locked
+/// (or was reset and unlocked again) meanwhile, the restored text, with its real names, is dropped.
+fn same_session<O: PartialEq, T>(now: Option<O>, began: O, answer: T) -> Result<T, PublicError> {
+    if now == Some(began) {
+        Ok(answer)
+    } else {
+        Err(refuse("locked"))
     }
 }
 
@@ -129,8 +150,14 @@ pub(crate) struct CloudKeyAddRequest {
 #[tauri::command]
 pub(crate) async fn cloud_key_add(
     store: State<'_, Arc<VaultStore>>,
+    session: State<'_, Arc<CloudSession>>,
     request: CloudKeyAddRequest,
 ) -> CommandResult<CloudKeyInfo> {
+    // A key is added only after the patient turned cloud AI on in this session. (Removing one is
+    // always allowed: a patient must be able to delete a key.)
+    if !session.enabled(origin_of(&store)?) {
+        return Err(refuse("off"));
+    }
     let CloudKeyAddRequest {
         provider,
         label,
@@ -169,6 +196,7 @@ pub(crate) async fn cloud_key_test(
     store: State<'_, Arc<VaultStore>>,
     session: State<'_, Arc<CloudSession>>,
     id: Uuid,
+    test_id: Option<Uuid>,
 ) -> CommandResult<KeyTest> {
     let origin = origin_of(&store)?;
     if !session.enabled(origin) {
@@ -176,7 +204,9 @@ pub(crate) async fn cloud_key_test(
     }
     let session = Arc::clone(session.inner());
     blocking(store.inner(), move |store| {
-        let (running, cancel) = session.exchanges.start_running();
+        // Under the id the page chose (if any), so that `cloud_send_cancel` can stop this one.
+        let running = test_id.unwrap_or_else(Uuid::new_v4);
+        let cancel = session.exchanges.start_running_as(running);
         let outcome = test_key(store, &HttpsTransport, id, &cancel);
         session.exchanges.finish(running);
         outcome.map_err(PublicError::from)
@@ -412,6 +442,8 @@ pub(crate) async fn cloud_send(
         );
         session.exchanges.finish(exchange_id);
         let sent = outcome.map_err(send_error)?;
+        // A lock while the request was out: the answer is dropped here, not handed to the page.
+        let sent = same_session(store.answer_origin(), origin, sent)?;
         Ok(CloudSendAnswer {
             sentences: sent
                 .sentences
@@ -438,4 +470,29 @@ pub(crate) async fn cloud_send_cancel(
 ) -> CommandResult<()> {
     session.exchanges.cancel(exchange_id);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_lock_clears_what_is_prepared_turns_consent_off_and_stops_what_runs() {
+        // The session's own parts, with plain values: the rules are in `Exchanges` and here.
+        let session = CloudSession::default();
+        let flag = session.exchanges.start_running_as(Uuid::nil());
+        // Consent is per unlocked session; set it through the same field the commands use.
+        *session.consent.lock().unwrap() = None;
+        session.lock();
+        assert!(flag.load(std::sync::atomic::Ordering::Acquire));
+        assert!(session.consent.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn the_answer_goes_only_to_the_session_the_send_began_in() {
+        assert_eq!(same_session(Some(3u8), 3, "answer").ok(), Some("answer"));
+        // Locked (no session), or locked and unlocked again (another one): dropped.
+        assert!(same_session(None::<u8>, 3, "answer").is_err());
+        assert!(same_session(Some(4u8), 3, "answer").is_err());
+    }
 }

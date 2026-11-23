@@ -2812,12 +2812,14 @@ async fn vault_lock(
     pdf_view::cancel_views();
     pdf_view::cancel_text_reads();
     local_runner::on_lock();
+    cloud_ai_on_lock();
     run_blocking(store.inner(), |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         pdf_view::cancel_views();
         pdf_view::cancel_text_reads();
         local_runner::on_lock();
+        cloud_ai_on_lock();
         Ok(())
     })
     .await
@@ -2842,9 +2844,17 @@ fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool 
         pdf_view::cancel_views();
         pdf_view::cancel_text_reads();
         local_runner::on_lock();
+        cloud_ai_on_lock();
         picks.clear();
     }
     locked
+}
+
+/// A lock, an idle lock or a reset ends the cloud AI session (#72): what was prepared is dropped, a
+/// send that is running is asked to stop, and consent goes off. Nothing with the feature off.
+fn cloud_ai_on_lock() {
+    #[cfg(feature = "cloud-ai")]
+    cloud_ai::on_lock();
 }
 
 /// Counts time as activity until it is dropped, on every path, for at most
@@ -5331,7 +5341,9 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    cloud_ai_on_lock();
     run_blocking(store.inner(), VaultStore::reset).await?;
+    cloud_ai_on_lock();
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
@@ -5550,7 +5562,11 @@ pub fn run() {
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
             #[cfg(feature = "cloud-ai")]
-            app.manage(Arc::new(cloud_ai::commands::CloudSession::default()));
+            {
+                let session = Arc::new(cloud_ai::commands::CloudSession::default());
+                cloud_ai::install(Arc::clone(&session));
+                app.manage(session);
+            }
             app.manage(Arc::new(ReceivedFiles::default()));
             // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
             // second launch while the app is open is not forwarded yet (#53).

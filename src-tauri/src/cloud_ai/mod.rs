@@ -31,6 +31,26 @@ pub(crate) mod send;
 #[cfg(feature = "cloud-ai")]
 pub(crate) mod commands;
 
+/// The one cloud session of the process, kept here (set when the app is built) so that EVERY way
+/// the vault locks (the command, the idle backstop, a reset) can reach it without plumbing: a lock
+/// drops what was prepared, stops a send that is running and turns consent off.
+#[cfg(feature = "cloud-ai")]
+static SESSION: std::sync::OnceLock<std::sync::Arc<commands::CloudSession>> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "cloud-ai")]
+pub(crate) fn install(session: std::sync::Arc<commands::CloudSession>) {
+    let _ = SESSION.set(session);
+}
+
+/// Called wherever the vault locks or is reset.
+#[cfg(feature = "cloud-ai")]
+pub(crate) fn on_lock() {
+    if let Some(session) = SESSION.get() {
+        session.lock();
+    }
+}
+
 // Until the live contract check pins the VERIFY values (the `anthropic-version` header and the
 // shape of `output_config.format`, see TESTING.md), NO build may have the feature on (debug builds
 // ship too: the evaluation downloads are `tauri build --debug`). Local work opts in with

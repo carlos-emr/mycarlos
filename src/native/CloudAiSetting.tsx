@@ -201,9 +201,12 @@ export function CloudAiSetting({ bridge }: { bridge: CloudAiBridge | null }) {
             setBusy(true);
             void bridge
               .removeKey(key.id)
-              .then(() =>
-                setKeys((list) => (list ?? []).filter((k) => k.id !== key.id)),
-              )
+              .then(() => {
+                const left = (keys ?? []).filter((k) => k.id !== key.id);
+                setKeys(left);
+                // Removing the last key turns cloud AI off (the native side does the same).
+                if (left.length === 0) setEnabled(false);
+              })
               .catch(() => setError(message("cloudAi.err.generic")))
               .finally(() => setBusy(false));
           }}

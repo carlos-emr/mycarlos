@@ -104,9 +104,9 @@ fn main() {
             "ai_summarize",
             "ai_explain",
             "ai_cancel",
-            // Declared in every build, granted by capabilities/cloud-ai.json, and registered only
-            // with the `cloud-ai` feature (src/cloud_ai/commands.rs): a build without it has the
-            // grants but no handlers, so a call is refused as an unknown command.
+            // Declared in every build and granted in every build by capabilities/cloud-ai.json, but
+            // registered only with the `cloud-ai` feature (src/cloud_ai/commands.rs): a build without
+            // it has these grants and no handlers (inert; a call is refused as an unknown command).
             "cloud_ai_enabled",
             "cloud_ai_set_enabled",
             "cloud_key_list",

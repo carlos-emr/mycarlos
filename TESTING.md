@@ -912,8 +912,8 @@ Do this once, with a throwaway Anthropic account and key, never a real patient's
 2. Unlock a vault that holds only FAKE documents. Settings, AI helper, Cloud AI: tick "I
    understand", turn it on, add your throwaway key, and press **Test this key**. Expected: "The
    key was accepted." (This is `GET /v1/models`; it confirms `anthropic-version` is accepted and
-   the key shape. A rejection says "The key was not accepted"; read the history entry, which holds
-   no key.) If the service names a different required version, change `ANTHROPIC_VERSION` only.
+   the key shape. A rejection says "The key was not accepted". The test writes no history entry:
+   it sends only the key, never a document.) If the service names a different required version, change `ANTHROPIC_VERSION` only.
 3. Open a FAKE document, Anonymize, and press **Send to my AI provider…**. Read the page's
    confirmation, then the native one: it must name Anthropic, the key's label, the model, the
    document's title, the size and the cost, and only its "Send" button goes ahead (Cancel, Escape

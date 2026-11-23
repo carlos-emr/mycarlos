@@ -89,6 +89,16 @@ impl<T, O: Copy + PartialEq> Exchanges<T, O> {
         (id, flag)
     }
 
+    /// As `start_running`, under an id the page chose, so that it can cancel that one test.
+    pub(crate) fn start_running_as(&self, id: Uuid) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.running
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, Arc::clone(&flag));
+        flag
+    }
+
     pub(crate) fn finish(&self, id: Uuid) {
         self.running
             .lock()

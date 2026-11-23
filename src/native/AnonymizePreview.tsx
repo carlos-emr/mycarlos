@@ -423,6 +423,28 @@ export function AnonymizePreview({
     setPutBack({ parts: result.parts, flagged: result.flagged.length });
   };
 
+  /** What native code still found (a refused Save, or a refused cloud send): taken out, placeholders
+   * and moved dates whole, for the patient to check and try again. */
+  const refuse = (hits: { start: number; end: number }[]) => {
+    if (!current) return;
+    let step = current;
+    for (const hit of [...hits].sort((a, b) => b.start - a.start)) {
+      try {
+        step = removeMore(step, hit.start, hit.end, { over: true });
+      } catch {
+        // Out of the text: nothing to do.
+      }
+    }
+    setHistory((steps) => [...steps, step]);
+    setNotice(
+      deferredText(() =>
+        translateNow("interface.AnonymizePreview.refused", {
+          count: hits.length,
+        }),
+      ),
+    );
+  };
+
   const save = async () => {
     setConfirming(false);
     if (!current || !ticket) return;
@@ -447,24 +469,7 @@ export function AnonymizePreview({
         );
         return;
       }
-      // What native code still found: taken out, placeholders and moved
-      // dates whole, for the patient to check and save again.
-      let step = current;
-      for (const hit of [...outcome.hits].sort((a, b) => b.start - a.start)) {
-        try {
-          step = removeMore(step, hit.start, hit.end, { over: true });
-        } catch {
-          // Out of the text: nothing to do.
-        }
-      }
-      setHistory((steps) => [...steps, step]);
-      setNotice(
-        deferredText(() =>
-          translateNow("interface.AnonymizePreview.refused", {
-            count: outcome.hits.length,
-          }),
-        ),
-      );
+      refuse(outcome.hits);
     } catch (failure) {
       setError(deferredText(() => vaultErrorMessage(failure)));
     } finally {
@@ -890,6 +895,7 @@ export function AnonymizePreview({
               {current && (
                 <CloudSendStep
                   bridge={cloudAi}
+                  onRefused={refuse}
                   recordId={record.id}
                   text={current.toSend}
                   source={current.onDevice.source}

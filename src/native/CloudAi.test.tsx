@@ -13,7 +13,13 @@ import { CloudAiSetting } from "./CloudAiSetting";
 import { CloudSendStep } from "./CloudSendStep";
 
 // The step as the preview renders it: the text, the document's own text and what was removed.
-const Step = ({ bridge }: { bridge: CloudAiBridge }) => (
+const Step = ({
+  bridge,
+  onRefused,
+}: {
+  bridge: CloudAiBridge;
+  onRefused?: (hits: { start: number; end: number }[]) => void;
+}) => (
   <CloudSendStep
     bridge={bridge}
     recordId="record-1"
@@ -21,6 +27,7 @@ const Step = ({ bridge }: { bridge: CloudAiBridge }) => (
     source="FAKE text Morgan"
     labels={["NAME"]}
     removed={[{ replacement: "[NAME 1]", original: "Morgan", manual: false }]}
+    onRefused={onRefused}
     disabled={false}
   />
 );
@@ -422,15 +429,18 @@ describe("with the cloud AI flag on", () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
       bridge.prepare = vi.fn(async () => {
-        throw { code: "recheck" };
+        throw { code: "recheck", hits: [{ start: 2, end: 5 }] };
       });
-      render(<Step bridge={bridge} />);
+      const onRefused = vi.fn();
+      render(<Step bridge={bridge} onRefused={onRefused} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
       expect(await screen.findByText(/Nothing was kept\./)).toBeVisible();
       expect(screen.queryByRole("alertdialog")).toBeNull();
       expect(calls.send).toBe(0);
+      // The preview is told which parts to mark, as for a refused Save.
+      expect(onRefused).toHaveBeenCalledWith([{ start: 2, end: 5 }]);
     });
   });
 });

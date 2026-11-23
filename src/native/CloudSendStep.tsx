@@ -25,6 +25,7 @@ export function CloudSendStep({
   source,
   labels,
   removed,
+  onRefused,
   disabled,
 }: {
   bridge: CloudAiBridge | null;
@@ -35,6 +36,9 @@ export function CloudSendStep({
   source: string;
   labels: string[];
   removed: CloudPrepareRequest["removed"];
+  /** The native re-check refused the text: the ranges that still hold something, for the preview
+   * to mark (the same marking a refused Save gives). */
+  onRefused?: (hits: { start: number; end: number }[]) => void;
   disabled: boolean;
 }) {
   const { t } = useI18n();
@@ -79,7 +83,12 @@ export function CloudSendStep({
       });
       exchange.current = next.exchangeId;
       setPrepared(next);
-    } catch {
+    } catch (failure) {
+      if (cloudErrorCode(failure) === "recheck") {
+        const hits = (failure as { hits?: { start: number; end: number }[] })
+          .hits;
+        if (hits && hits.length > 0) onRefused?.(hits);
+      }
       setStatus(message("cloudAi.sendFailed"));
     } finally {
       setBusy(false);
