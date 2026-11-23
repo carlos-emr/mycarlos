@@ -900,6 +900,14 @@ pub struct VaultRecord {
     pub original_pdf_available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_clinic_name: Option<String>,
+    /// When the delivery of a document that came in a handover file was checked on the device
+    /// it came from (#360, section 7, level 1): the evidence stands up by itself, and is not
+    /// trust in the clinic from here. Present only while no link of this vault to the same
+    /// clinic holds the signing key; once one does, `verified_clinic_name` takes over and this
+    /// is absent. Never from a file's own say-so: it is the carried receipt's time, which the
+    /// vault checked against the carried device key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checked_on_original_device_ms: Option<u64>,
     /// Exact service date from a clinic delivery; an empty string means the
     /// clinic did not record one. This is independent of the date added here.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2203,6 +2211,11 @@ impl VaultStore {
                             object_is_present(root, record)
                         },
                         hidden: record.hidden,
+                        checked_on_original_device_ms: record
+                            .carried
+                            .as_ref()
+                            .filter(|_| verified.is_none())
+                            .map(|carried| carried.delivery.checked_at_ms),
                         verified_clinic_name: verified,
                         // A carried aid and service date are shown only once a link of this vault
                         // to the same clinic holds the signing key (design section 7, level 2):

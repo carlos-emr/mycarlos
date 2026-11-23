@@ -8564,6 +8564,87 @@ mod approval_recovery_tests {
         assert_eq!(shown(&store), filed);
     }
 
+    /// The re-link upgrade (#360 PR 6, design section 7). A record that came in a handover
+    /// file stands at level 1 ("checked on the original device", with the time) until a link of
+    /// this vault to the same clinic holds the signing key as an active key; then it is level 2
+    /// ("verified with the clinic", with its aid and date), and unlinking returns it to level 1.
+    /// Nothing about the file itself (its package, its person) ever authorises the step: only
+    /// the clinic's id and a key of its that is active.
+    #[test]
+    fn a_carried_record_moves_from_checked_on_the_original_device_to_verified_only_through_a_link_of_this_vault_to_that_clinic(
+    ) {
+        let (_temp, store, link, record_id) = with_aid();
+        let level = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+            (
+                record.checked_on_original_device_ms,
+                record.verified_clinic_name.clone(),
+                record.reading_aid.is_some(),
+                record.clinic_service_date.is_some(),
+            )
+        };
+        let clinic_name = link.clinic.as_ref().unwrap().clinic_name.clone();
+        let carried = carried_manifest(&store, &link, record_id);
+        let checked_at = carried
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .and_then(|r| r.carried.as_ref())
+            .map(|c| c.delivery.checked_at_ms)
+            .unwrap();
+        // Filed here: a delivery of this vault's own, so level 2 and no level 1.
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        store
+            .mutate_recorded(|m, _| {
+                *m = carried.clone();
+                m.format_version = VAULT_FORMAT;
+                Ok(())
+            })
+            .unwrap();
+        // Carried, with no link: level 1, with the time the source device checked it, and no
+        // aid or date: those wait for the clinic's key.
+        assert_eq!(level(&store), (Some(checked_at), None, false, false));
+        // Linked to another clinic, or to the same clinic with the key revoked, or to a link
+        // not yet set up: still level 1.
+        let mut other = link.clone();
+        other.clinic.as_mut().unwrap().clinic_id = "FAKE-other-clinic".into();
+        let mut revoked = link.clone();
+        for key in &mut revoked.clinic.as_mut().unwrap().clinic_keys {
+            key.status = KeyStatus::Revoked;
+        }
+        let mut unfinished = link.clone();
+        unfinished.clinic = None;
+        for not_yet in [other, revoked, unfinished] {
+            store
+                .mutate_recorded(|m, _| {
+                    m.portal_links = vec![not_yet.clone()];
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(level(&store), (Some(checked_at), None, false, false));
+        }
+        // Linked to the same clinic, holding the signing key as an active key: level 2, with
+        // what the clinic signed, and level 1 is gone.
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links = vec![link.clone()];
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        let store = restart(store);
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        // Disconnecting the link takes the trust with it: the evidence is still there.
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.clear();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(level(&store), (Some(checked_at), None, false, false));
+    }
+
     #[test]
     fn a_carried_record_never_owes_a_receipt_and_never_has_one_sent() {
         let (_temp, store, link, record_id) = vault_with_readable_pair_original();
