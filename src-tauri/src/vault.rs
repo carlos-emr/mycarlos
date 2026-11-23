@@ -37,6 +37,8 @@ use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
 mod delivery;
+// Notice keys (#230): enrolled and wiped by the commands and the tray (tray_notices.rs).
+mod notice_keys;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
@@ -1441,6 +1443,16 @@ impl VaultStore {
         })
     }
 
+    /// Whether the vault is unlocked, without waiting: `None` while another call holds the
+    /// session (an unlock or a transfer), or when it is poisoned (the next `session()` locks it).
+    /// For the window's main thread, which must never wait on the vault (#206).
+    pub(crate) fn is_unlocked_now(&self) -> Option<bool> {
+        match self.unlocked.try_lock() {
+            Ok(guard) => Some(guard.is_some()),
+            Err(_) => None,
+        }
+    }
+
     // Reserve before taking the session lock. Never queue an unlock behind a
     // benchmark: it could otherwise reopen the vault after an explicit lock.
     fn start_kdf_work(&self) -> Result<KdfWork<'_>, VaultError> {
@@ -2197,6 +2209,11 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(link_id);
+        // The Portal removed this device: its notice key (#230) is finished with it, and no
+        // request is needed to say so.
+        if let Some(keys) = crate::notice_key::kept() {
+            let _ = keys.wipe_link(link_id);
+        }
     }
 
     fn link_portal_using(
@@ -9343,6 +9360,22 @@ mod tests {
         let next_runtime = restarted.snapshot().unwrap();
         assert_ne!(next_runtime.capture.epoch, first.capture.epoch);
         assert_eq!(next_runtime.capture.sequence, 1);
+    }
+
+    #[test]
+    fn is_unlocked_now_never_waits_for_the_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        assert_eq!(store.is_unlocked_now(), Some(false));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        assert_eq!(store.is_unlocked_now(), Some(true));
+        {
+            // Another call (an unlock, a transfer) holds the session: no answer, and no wait.
+            let _held = store.session();
+            assert_eq!(store.is_unlocked_now(), None);
+        }
+        store.lock();
+        assert_eq!(store.is_unlocked_now(), Some(false));
     }
 
     #[test]

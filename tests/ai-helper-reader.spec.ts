@@ -277,7 +277,7 @@ test.describe("with a model on this device", () => {
     await expectOnlyFakedCommands(page);
   });
 
-  test("after Show in document, Tab goes on from the marked words, not back to Close", async ({
+  test("after Show me in the document, Tab goes on from the marked words, not back to Close", async ({
     page,
   }) => {
     const reader = await openReader(page, { model: INSTALLED });

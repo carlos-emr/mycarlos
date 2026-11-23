@@ -11,7 +11,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "src-tauri" / "vendor"
 # The local copies, in the order upstream.json lists them. Anything else is unreviewed.
-REVIEWED = ["glib", "wry"]
+REVIEWED = ["glib", "tauri-plugin-single-instance", "wry"]
 
 
 def file_contents(directory):
