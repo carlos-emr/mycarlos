@@ -46,6 +46,9 @@ mod model_download;
 mod model_helper;
 mod model_limits;
 mod model_runtime;
+// The recording core (#359) and, in the next step, the playback address use it.
+#[allow(dead_code)]
+mod mp4_stream;
 mod notice_key;
 #[cfg(windows)]
 mod notice_store_windows;
