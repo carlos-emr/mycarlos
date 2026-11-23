@@ -23,9 +23,13 @@
 //!   from by trying the passphrase against the slot folders.
 //! - **Duplicates.** At most [`DUPLICATE_NAME_CAP`] vaults share a name, so an unlock always makes that
 //!   many passphrase attempts (real ones and decoys): the timing never says how many share it. An
-//!   unknown name must run the same decoy attempts (the unlock path's job, a later step). A file that is not exactly that, or whose payload is not
-//!   consistent, is `Damaged` and treated as no registry by the caller (fail closed, never repaired
-//!   by guessing). Written with an atomic replace, so a power loss leaves the old file or the new one.
+//!   unknown name must run the same decoy attempts (the unlock path's job, a later step).
+//! - **Damaged and unsupported.** A file that is not exactly what this version writes, or whose
+//!   payload is not consistent, is `Damaged`: it is never read as an empty registry, never repaired by
+//!   guessing and never overwritten. A file with a NEWER file version or name-normalisation number than
+//!   this version knows is `Unsupported` instead (a downgrade must not mistake a good registry for a
+//!   broken one): it is refused the same way and never set aside. Written with an atomic replace, so
+//!   a power loss leaves the old file or the new one.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -114,6 +118,11 @@ pub(crate) enum RegistryError {
     Cost,
     /// [`DUPLICATE_NAME_CAP`] vaults already have this name.
     NameTaken,
+    /// The file was written by a NEWER version of the app (a later file version or name
+    /// normalisation). It is good, only not readable here: never replaced, never set aside.
+    Unsupported,
+    /// `set_aside_damaged` found nothing damaged to set aside.
+    NotDamaged,
 }
 
 impl From<io::Error> for RegistryError {
@@ -493,6 +502,10 @@ impl Registry {
             return Err(RegistryError::Damaged);
         }
         let version = u16::from_be_bytes([bytes[8], bytes[9]]);
+        // A newer file's layout is not known, so nothing else of it is read.
+        if version > FILE_VERSION {
+            return Err(RegistryError::Unsupported);
+        }
         if version != FILE_VERSION {
             return Err(RegistryError::Damaged);
         }
@@ -503,6 +516,13 @@ impl Registry {
         // The file is exactly the bucket of what it holds: no short, long or half-written file.
         if end > bytes.len() || bytes.len() != bucket(end) {
             return Err(RegistryError::Damaged);
+        }
+        // The normalisation number is read before the rest of the payload: a newer one means the
+        // names were hashed under rules this version does not have, whatever else the file holds.
+        let numbers: NumbersOnly = serde_json::from_slice(&bytes[HEADER_BYTES..end])
+            .map_err(|_| RegistryError::Damaged)?;
+        if numbers.normalisation > NORMALISATION_VERSION {
+            return Err(RegistryError::Unsupported);
         }
         let stored: Stored = serde_json::from_slice(&bytes[HEADER_BYTES..end])
             .map_err(|_| RegistryError::Damaged)?;
@@ -637,8 +657,19 @@ impl RegistryLock {
 /// the only record of which slot folders belong to a vault, and recovery from it is by the owner (try
 /// the passphrase against the slot folders listed by [`unregistered_slot_folders`] with an empty
 /// registry). Whoever does that writes a new registry afterwards; until then `save` refuses.
+///
+/// Under the device lock it reads the file again, and moves it only if it is still `Damaged`: a good
+/// one (another writer repaired it meanwhile) is `NotDamaged`, a newer one is `Unsupported`, and
+/// neither is touched. **It takes the device lock itself, so it must not be called from inside
+/// [`Registry::update`]** (the lock is not re-entrant: it would wait for itself); `update` refuses a
+/// damaged file with `Damaged`, and the caller then calls this.
 pub(crate) fn set_aside_damaged(data_dir: &Path) -> Result<PathBuf, RegistryError> {
     let _lock = RegistryLock::take(data_dir)?;
+    match Registry::load(data_dir) {
+        Err(RegistryError::Damaged) => {}
+        Ok(_) => return Err(RegistryError::NotDamaged),
+        Err(other) => return Err(other),
+    }
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
@@ -656,7 +687,21 @@ fn create_private_dir_all(path: &Path) -> io::Result<()> {
         use std::os::unix::fs::DirBuilderExt;
         builder.mode(0o700);
     }
-    builder.create(path)
+    builder.create(path)?;
+    // A folder that was already there (the app's data folder) is made private too, as the vault's
+    // own folders are (`create_private_dir_all` in vault.rs).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// Just the number a later version may change, to tell "newer" from "broken" before anything else.
+#[derive(Deserialize)]
+struct NumbersOnly {
+    normalisation: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -982,7 +1027,8 @@ mod tests {
             good[..good.len() - 1].to_vec(),
             [good.clone(), vec![0]].concat(),
             mutated(&registry, |b| b[0] ^= 1),
-            mutated(&registry, |b| b[9] = 2),
+            // Version 0 never existed (a newer one is `Unsupported`, tested apart).
+            mutated(&registry, |b| b[9] = 0),
             mutated(&registry, |b| {
                 b[10..14].copy_from_slice(&u32::MAX.to_be_bytes())
             }),
@@ -1316,8 +1362,14 @@ mod tests {
         let registry = registry();
         let text = String::from_utf8_lossy(&registry.to_bytes()).into_owned();
         assert!(text.contains(&format!("\"normalisation\":{NORMALISATION_VERSION}")));
+        // A newer number is a good file this version cannot read; zero never existed.
         let mut other = stored(vec![]);
         other.normalisation = NORMALISATION_VERSION + 1;
+        assert_eq!(
+            Registry::from_bytes(&file_with(&other)),
+            Err(RegistryError::Unsupported)
+        );
+        other.normalisation = 0;
         assert_eq!(
             Registry::from_bytes(&file_with(&other)),
             Err(RegistryError::Damaged)
@@ -1523,5 +1575,85 @@ mod tests {
         );
         assert_eq!(outcome, Err(RegistryError::UnknownSlot));
         assert_eq!(fs::read(data.join(FILE_NAME)).unwrap(), before);
+    }
+
+    #[test]
+    fn given_a_newer_file_version_or_normalisation_when_read_then_it_is_unsupported_and_never_moved(
+    ) {
+        let mut newer_version = registry().to_bytes();
+        newer_version[8..10].copy_from_slice(&(FILE_VERSION + 1).to_be_bytes());
+        // Nothing past the version of a newer file is looked at, so even a garbled rest is "newer".
+        newer_version[10..14].copy_from_slice(&u32::MAX.to_be_bytes());
+        let mut newer_numbers = stored(vec![]);
+        newer_numbers.normalisation = NORMALISATION_VERSION + 1;
+        let newer_numbers = file_with(&newer_numbers);
+        for bytes in [newer_version, newer_numbers] {
+            assert_eq!(
+                Registry::from_bytes(&bytes),
+                Err(RegistryError::Unsupported)
+            );
+            let temp = tempfile::tempdir().unwrap();
+            let data = temp.path();
+            fs::write(data.join(FILE_NAME), &bytes).unwrap();
+            assert_eq!(Registry::load(data), Err(RegistryError::Unsupported));
+            assert_eq!(registry().save(data), Err(RegistryError::Unsupported));
+            let outcome = Registry::update(data, || Registry::new(HashCost::TEST), |_| Ok(()));
+            assert_eq!(outcome, Err(RegistryError::Unsupported));
+            // Never set aside: a downgrade must not lose the names of a good registry.
+            assert_eq!(set_aside_damaged(data), Err(RegistryError::Unsupported));
+            assert_eq!(fs::read(data.join(FILE_NAME)).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn given_a_healthy_or_absent_registry_when_set_aside_is_asked_then_nothing_is_moved() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path();
+        assert_eq!(set_aside_damaged(data), Err(RegistryError::NotDamaged));
+        registry().save(data).unwrap();
+        let before = fs::read(data.join(FILE_NAME)).unwrap();
+        assert_eq!(set_aside_damaged(data), Err(RegistryError::NotDamaged));
+        assert_eq!(fs::read(data.join(FILE_NAME)).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn given_a_data_folder_that_already_exists_when_saved_into_then_it_is_made_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        registry().save(temp.path()).unwrap();
+        assert_eq!(
+            fs::metadata(temp.path()).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    /// The stored format freezes with the first saved name, so these outputs are pinned: if a
+    /// dependency bump (`caseless`, `unicode-normalization`) changes one, every name already saved
+    /// would stop matching. Do not edit an expectation; raise `NORMALISATION_VERSION` and keep the
+    /// old rules readable instead.
+    #[test]
+    fn given_the_pinned_rules_when_names_are_normalised_then_the_outputs_are_the_golden_ones() {
+        let golden: [(&str, &str); 14] = [
+            ("Weiß", "weiss"),
+            ("STRAẞE", "strasse"),
+            ("ΟΔΥΣΣΕΥΣ", "οδυσσευσ"),
+            ("σας", "σασ"),
+            ("İstanbul", "i\u{307}stanbul"),
+            ("ﬁnance", "finance"),
+            ("Ａna　Ｌopez", "ana lopez"),
+            ("  Ana \t\n  López ", "ana lópez"),
+            ("Jose\u{301}", "josé"),
+            ("a\u{200B}b\u{00AD}c\u{2060}d\u{FEFF}e", "abcde"),
+            // NFKC after the fold turns the single letter into two: pinned as it is.
+            ("ǅ", "d\u{17E}"),
+            ("ᾼ", "αι"),
+            ("北京 Ａ", "北京 a"),
+            ("\u{212A}elvin", "kelvin"),
+        ];
+        for (typed, expected) in golden {
+            assert_eq!(norm(typed), expected, "{typed:?}");
+        }
     }
 }
