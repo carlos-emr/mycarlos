@@ -625,6 +625,12 @@ impl crate::model_runtime::ModelSource for RuntimeSource {
         self.0.installed_size()
     }
 
+    /// The card an earlier session of this build's helper made for the model in use.
+    fn card(&self) -> Option<crate::model_limits::ModelCard> {
+        let (_, model) = self.0.in_use()?;
+        self.0.stored_card(model.sha256)
+    }
+
     fn verified(
         &self,
     ) -> Result<crate::model_runtime::Verified, crate::model_runtime::Unavailable> {
@@ -1121,7 +1127,10 @@ impl Store {
             let path = self.dir.join(model.file_name);
             #[cfg(target_os = "linux")]
             {
-                let needed = crate::model_runtime::needed_bytes(model.size_bytes);
+                let needed = crate::model_runtime::needed_for(
+                    model.size_bytes,
+                    self.stored_card(model.sha256).as_ref(),
+                );
                 if probe.available_bytes().is_none_or(|free| free < needed) {
                     return Err(ModelError::Memory);
                 }
@@ -2018,6 +2027,8 @@ mod tests {
             vocabulary: 248_320,
             recurrent: false,
             hybrid: true,
+            kv_bytes_per_token: 32 * 1024,
+            weights_bytes: 3_013_000_000,
         }
     }
 

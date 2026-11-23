@@ -85,6 +85,11 @@ pub(crate) trait ModelSource: Send + Sync {
     /// The installed model's size from the list, before anything is read, for the memory
     /// check; `None` when there is none.
     fn installed_size(&self) -> Option<u64>;
+    /// The card the helper made for the installed model in an earlier session, when there is one
+    /// (it can only raise what a start asks for: `needed_for`).
+    fn card(&self) -> Option<crate::model_limits::ModelCard> {
+        None
+    }
     /// The model, verified again now.
     fn verified(&self) -> Result<Verified, Unavailable>;
 }
@@ -409,8 +414,23 @@ pub(crate) fn threads() -> u32 {
 /// verified. On Linux the sealed copy and the weights read from it are both in memory until the
 /// helper has loaded and closed it.
 pub(crate) fn needed_bytes(size: u64) -> u64 {
-    let copies = if cfg!(target_os = "linux") { 2 } else { 1 };
-    size.saturating_mul(copies).saturating_add(WORKING_BYTES)
+    size.saturating_mul(copies()).saturating_add(WORKING_BYTES)
+}
+
+/// The copies of the weights held in memory at a start: on Linux the sealed copy beside the
+/// loaded weights.
+pub(crate) fn copies() -> u64 {
+    if cfg!(target_os = "linux") {
+        2
+    } else {
+        1
+    }
+}
+
+/// What a start of a model of `size` bytes asks for, given the card the helper made for it when
+/// there is one: today's rule, or the card's formula when that is more (#305), never less.
+pub(crate) fn needed_for(size: u64, card: Option<&crate::model_limits::ModelCard>) -> u64 {
+    crate::model_limits::needed_with_card(needed_bytes(size), size, copies(), card)
 }
 
 /// The free memory still needed once the model is verified, checked again just before the
@@ -551,7 +571,7 @@ impl ModelRuntime {
             if let Budget::Refused {
                 needed_bytes,
                 available_bytes,
-            } = check_budget(needed_bytes(size), &*self.probe)
+            } = check_budget(needed_for(size, self.source.card().as_ref()), &*self.probe)
             {
                 unavailable = Some(AiError::Memory(Some(MemoryShortfall {
                     needed_bytes,
@@ -1394,6 +1414,68 @@ mod tests {
                 chat_format: model_helper::ChatFormat::Builtin,
             })
         }
+    }
+
+    /// A source whose model has a card from an earlier session.
+    struct WithCard(Fake, Option<crate::model_limits::ModelCard>);
+
+    impl ModelSource for WithCard {
+        fn installed_size(&self) -> Option<u64> {
+            self.0.installed_size()
+        }
+        fn card(&self) -> Option<crate::model_limits::ModelCard> {
+            self.1.clone()
+        }
+        fn verified(&self) -> Result<Verified, Unavailable> {
+            self.0.verified()
+        }
+    }
+
+    fn a_card(kv_bytes_per_token: u32) -> crate::model_limits::ModelCard {
+        crate::model_limits::ModelCard {
+            architecture: "qwen35".to_owned(),
+            trained_context: 262_144,
+            context_made: 8_192,
+            parameters: 4_330_000_000,
+            layers: 32,
+            vocabulary: 248_320,
+            recurrent: false,
+            hybrid: false,
+            kv_bytes_per_token,
+            weights_bytes: 3_013_000_000,
+        }
+    }
+
+    #[test]
+    fn a_cache_heavy_models_card_raises_what_a_start_asks_for_and_never_lowers_it() {
+        let size = 3 * GIB;
+        let free = needed_bytes(size) + GIB;
+        let summarize = |card: Option<crate::model_limits::ModelCard>| {
+            let (fake, _) = fake(Some(size), Ok(()));
+            ModelRuntime::new(
+                Box::new(WithCard(fake, card)),
+                Box::new(Fixed(Some(free))),
+                never_launch,
+            )
+            .summarize(summary(vec![page(0, "FAKE text")], "en"), Box::new(|_| ()))
+        };
+        // No card, a small cache, an unknown cache: today's rule fits, so the start goes on (and
+        // fails only at the launch this test never allows).
+        for card in [None, Some(a_card(32 * 1024)), Some(a_card(0))] {
+            assert_eq!(summarize(card), Err(AiError::Failed));
+        }
+        // A cache of 384 KiB a token (3 GiB at the full context) needs more than the computer has
+        // free: refused for memory, with the formula's number, never today's.
+        let heavy = a_card(384 * 1024);
+        let asked = needed_for(size, Some(&heavy));
+        assert!(asked > free, "{asked} {free}");
+        assert_eq!(
+            summarize(Some(heavy)),
+            Err(AiError::Memory(Some(MemoryShortfall {
+                needed_bytes: asked,
+                available_bytes: Some(free),
+            })))
+        );
     }
 
     fn never_launch(_: &Verified) -> Result<RunnerConfig, AiError> {
