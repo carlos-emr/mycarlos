@@ -2319,3 +2319,163 @@ personDetails-previousEntry = Nombre completo anterior { $number }
 personDetails-previousRemove = Quitar nombre completo anterior { $number }
 personDetails-previousAdd = Añadir nombre completo anterior
 personDetails-previousInvalid = Use hasta 16 nombres distintos y no vacíos, de hasta 120 caracteres cada uno, sin caracteres de control.
+
+handover-section-title = Entregar los registros de una persona
+
+handover-section-body = Copie los documentos de una persona en un archivo para otro dispositivo, por ejemplo para dar a un niño sus propios registros. El archivo tiene su propia clave y no cambia su bóveda. También puede añadir una persona desde un archivo que alguien le haya dado.
+
+handover-export-button = Entregar registros…
+
+handover-import-button = Añadir una persona desde un archivo…
+
+handover-close = Cerrar
+
+handover-export-title = Entregar los registros de una persona
+
+handover-export-about = Esto crea un archivo con los documentos de una persona, con su propia clave, para que lo lea otro dispositivo. Nada cambia en su bóveda.
+
+handover-export-caution = Esto copia registros de salud. Una carta puede nombrar a otras personas, como un padre, una madre o un tutor, y cada documento se copia completo y sin editar. Compruebe que la persona que abrirá el archivo es la correcta y puede leerlo.
+
+handover-export-person = De quién son los registros
+
+handover-export-history = Incluir el historial de estos documentos (cuándo se añadieron, renombraron o movieron)
+
+handover-export-keyKind-legend = Cómo se protege el archivo
+
+handover-export-keyKind-generated = Una clave que crea myCarlos (recomendado)
+
+handover-export-keyKind-passphrase = Una frase de contraseña que elijo
+
+handover-export-passphrase = Frase de contraseña del archivo
+
+handover-export-passphraseHint = Al menos 15 caracteres y difícil de adivinar. No puede ser la frase de contraseña de su bóveda ni su clave de recuperación.
+
+handover-export-continue = Continuar
+
+handover-export-preparing = Preparando…
+
+handover-export-keyTitle = Anote la clave de este archivo
+
+handover-export-keyBody = Quien tenga el archivo y esta clave puede leer estos registros. Entregue la clave a la persona por separado del archivo. myCarlos no la conserva: si se pierde, cree el archivo de nuevo.
+
+handover-export-keyLabel = Clave del archivo
+
+handover-export-keyGroup = Grupo { $number }: { $characters }
+
+handover-export-copy = Copiar la clave
+
+handover-export-copied = Clave copiada. Borre el portapapeles cuando la haya usado.
+
+handover-export-copyFailed = No se pudo copiar la clave. Anótela en su lugar.
+
+handover-export-keySaved = He anotado la clave o la he guardado en un lugar seguro
+
+handover-export-saveTitle = Guardar el archivo
+
+handover-export-summary = El archivo contendrá los registros de { $name }:
+
+handover-export-apart = Guarde el archivo y la clave por separado.
+
+handover-export-provider = En algunos teléfonos, si falla el guardado, el lugar elegido puede quedar vacío o incompleto. Si ocurre, elimine ese archivo e inténtelo de nuevo.
+
+handover-export-chooseWhere = Elegir dónde guardar…
+
+handover-export-saving = Guardando y comprobando el archivo…
+
+handover-export-noLocation = No se eligió ningún lugar. No se guardó nada.
+
+handover-export-doneTitle = Archivo guardado
+
+handover-export-done = Se guardaron { $documents } documentos de { $name } y se releyó el archivo para comprobarlo.
+
+handover-export-doneApart = Guarde el archivo y la clave por separado. Este archivo no cambia su bóveda.
+
+handover-export-leftOut = Documentos excluidos porque su archivo no se puede leer: { $count }
+
+handover-export-evidenceLeftOut = Documentos cuya firma de la clínica no se pudo incluir (el documento sí está en el archivo): { $count }
+
+handover-count-documents = Documentos: { $count }
+
+handover-count-hidden = Ocultos por usted: { $count }
+
+handover-count-folders = Carpetas: { $count }
+
+handover-count-answers = Respuestas del asistente de IA: { $count }
+
+handover-count-evidence = Documentos con la entrega firmada de una clínica: { $count }
+
+handover-count-size = Tamaño: { $size }
+
+handover-import-title = Añadir una persona desde un archivo
+
+handover-import-about = Elija un archivo que alguien le dio y tenga a mano la clave o la frase de contraseña que le dieron. La persona llega como una persona nueva; nada de lo que ya está aquí cambia.
+
+handover-import-choose = Elegir el archivo…
+
+handover-import-noFile = No se eligió ningún archivo. No cambió nada.
+
+handover-import-keyTitle = Abrir el archivo
+
+handover-import-key = Clave
+
+handover-import-passphrase = Frase de contraseña
+
+handover-import-keyHint = Siete grupos de cuatro letras y números. Las mayúsculas, los espacios y los guiones no importan.
+
+handover-import-passphraseHint = La frase de contraseña que eligió para el archivo quien lo creó.
+
+handover-import-open = Abrir el archivo
+
+handover-import-opening = Abriendo…
+
+handover-import-error-typo = Esa clave no parece correcta. Compárela con la que le dieron.
+
+handover-import-error-recovery = Esa es una clave de recuperación, no la clave de este archivo. Pida la clave creada para el archivo.
+
+handover-import-error-wrong = Eso no abre este archivo.
+
+handover-import-error-newer = Este archivo lo creó una versión más reciente de myCarlos. Actualice myCarlos e inténtelo de nuevo.
+
+handover-import-error-damaged = Este archivo está incompleto, ha sido modificado o no se puede añadir aquí. Pida una copia nueva.
+
+handover-import-previewTitle = Lo que dice el archivo
+
+handover-import-says = El archivo dice que contiene los registros de { $name }.
+
+handover-import-birth = Nacimiento: { $date }, según lo registró quien creó el archivo.
+
+handover-import-madeOn = Creado el { $date }.
+
+handover-import-evidenceNote = Algunos documentos llevan la entrega firmada de una clínica. Hasta que vincule este dispositivo con esa clínica, myCarlos solo puede decir que se comprobaron en el dispositivo que creó el archivo, no que esa clínica los avale.
+
+handover-import-duplicate-legend = Puede que ya tenga a esta persona
+
+handover-import-duplicate-package = El archivo no dice nada nuevo: este mismo archivo ya se añadió aquí.
+
+handover-import-duplicate-content = El archivo dice que contiene documentos como { $count } que usted ya tiene en otra persona de aquí.
+
+handover-import-duplicate-anyway = Añadirla como otra persona de todos modos
+
+handover-import-nameLabel = Cómo llamar a esta persona aquí
+
+handover-import-add = Añadir esta persona
+
+handover-import-adding = Añadiendo y comprobando los registros…
+
+handover-import-doneTitle = Listo
+
+handover-import-done = Se añadieron { $documents } documentos de { $name }.
+
+handover-import-doneAnswers = Respuestas del asistente de IA que llegaron con ellos, marcadas como de un archivo importado: { $count }
+
+handover-import-doneEvidence = Los documentos de la clínica muestran solo lo que se pudo comprobar aquí. Para comprobarlos con la clave de la clínica en este dispositivo, vincule este dispositivo con la clínica.
+
+handover-import-doneDropped = Elementos del archivo excluidos por no cumplir las reglas de esta bóveda: { $count }
+
+handover-import-receipt = Código de recibo:
+
+handover-import-receiptNote = Puede dar este código a quien creó el archivo. Muestra que alguien con el archivo y su clave lo añadió aquí. No demuestra que su copia siga a salvo.
+
+handover-import-nothingNew = No se añadió nada: esta bóveda ya tiene a esta persona.
+
+handover-importedAnswer = De un archivo importado

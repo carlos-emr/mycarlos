@@ -2284,3 +2284,163 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+handover-section-title = Hand a person's records over
+
+handover-section-body = Copy one person's documents into a file for another device, for example to give a child their own records. The file has its own key and does not change your vault. You can also add a person from a file someone gave you.
+
+handover-export-button = Hand records over…
+
+handover-import-button = Add a person from a file…
+
+handover-close = Close
+
+handover-export-title = Hand a person's records over
+
+handover-export-about = This makes a file holding one person's documents, with a key of its own, for another device to read. Nothing in your vault changes.
+
+handover-export-caution = This copies health records. A letter may name other people, such as a parent or guardian, and each document is copied whole and unedited. Check that the person who will open the file is the right one and can read it.
+
+handover-export-person = Whose records
+
+handover-export-history = Include the history of these documents (when they were added, renamed or moved)
+
+handover-export-keyKind-legend = How the file is locked
+
+handover-export-keyKind-generated = A key myCarlos makes (recommended)
+
+handover-export-keyKind-passphrase = A passphrase I choose
+
+handover-export-passphrase = Passphrase for the file
+
+handover-export-passphraseHint = At least 15 characters, and not easy to guess. It must not be your vault's passphrase or your recovery key.
+
+handover-export-continue = Continue
+
+handover-export-preparing = Preparing…
+
+handover-export-keyTitle = Write down the key for this file
+
+handover-export-keyBody = Anyone who has the file and this key can read these records. Give the key to the person separately from the file. myCarlos does not keep it: if it is lost, make the file again.
+
+handover-export-keyLabel = Key for the file
+
+handover-export-keyGroup = Group { $number }: { $characters }
+
+handover-export-copy = Copy the key
+
+handover-export-copied = Key copied. Clear your clipboard once you have used it.
+
+handover-export-copyFailed = The key could not be copied. Write it down instead.
+
+handover-export-keySaved = I have written the key down or put it somewhere safe
+
+handover-export-saveTitle = Save the file
+
+handover-export-summary = The file will hold { $name }'s records:
+
+handover-export-apart = Keep the file and the key apart.
+
+handover-export-provider = On some phones, if saving fails the place you chose can be left empty or incomplete. If that happens, delete that file and try again.
+
+handover-export-chooseWhere = Choose where to save…
+
+handover-export-saving = Saving and checking the file…
+
+handover-export-noLocation = No place was chosen. Nothing was saved.
+
+handover-export-doneTitle = File saved
+
+handover-export-done = Saved { $documents } documents for { $name }, and read the file back to check it.
+
+handover-export-doneApart = Keep the file and the key apart. This file does not change your vault.
+
+handover-export-leftOut = Documents left out because their file cannot be read: { $count }
+
+handover-export-evidenceLeftOut = Documents whose clinic signature could not be included (the document itself is in the file): { $count }
+
+handover-count-documents = Documents: { $count }
+
+handover-count-hidden = Hidden by you: { $count }
+
+handover-count-folders = Folders: { $count }
+
+handover-count-answers = AI helper answers: { $count }
+
+handover-count-evidence = Documents with a clinic's signed delivery: { $count }
+
+handover-count-size = Size: { $size }
+
+handover-import-title = Add a person from a file
+
+handover-import-about = Choose a file someone gave you, and have the key or passphrase they gave you ready. The person arrives as a new person; nothing already here is changed.
+
+handover-import-choose = Choose the file…
+
+handover-import-noFile = No file was chosen. Nothing changed.
+
+handover-import-keyTitle = Open the file
+
+handover-import-key = Key
+
+handover-import-passphrase = Passphrase
+
+handover-import-keyHint = Seven groups of four letters and numbers. Capitals, spaces and dashes do not matter.
+
+handover-import-passphraseHint = The passphrase whoever made the file chose for it.
+
+handover-import-open = Open the file
+
+handover-import-opening = Opening…
+
+handover-import-error-typo = That key does not look right. Check it against what you were given.
+
+handover-import-error-recovery = That is a recovery key, not the key for this file. Ask for the key made for the file.
+
+handover-import-error-wrong = That does not open this file.
+
+handover-import-error-newer = This file was made by a newer myCarlos. Update myCarlos and try again.
+
+handover-import-error-damaged = This file is incomplete, has been changed, or cannot be added here. Ask for a new copy.
+
+handover-import-previewTitle = What the file says
+
+handover-import-says = The file says it holds the records of { $name }.
+
+handover-import-birth = Born { $date }, as whoever made the file recorded it.
+
+handover-import-madeOn = Made on { $date }.
+
+handover-import-evidenceNote = Some documents carry a clinic's signed delivery. Until you link this device to that clinic, myCarlos can only say that they were checked on the device that made the file, not that this clinic vouches for them.
+
+handover-import-duplicate-legend = You may already have this person
+
+handover-import-duplicate-package = The file says nothing new: this same file was already added here.
+
+handover-import-duplicate-content = The file says it holds documents like { $count } you already have under another person here.
+
+handover-import-duplicate-anyway = Add it as another person anyway
+
+handover-import-nameLabel = What to call this person here
+
+handover-import-add = Add this person
+
+handover-import-adding = Adding and checking the records…
+
+handover-import-doneTitle = Done
+
+handover-import-done = Added { $documents } documents for { $name }.
+
+handover-import-doneAnswers = AI helper answers that came with them, marked as from an imported file: { $count }
+
+handover-import-doneEvidence = Clinic documents show only what could be checked here. To have them checked with the clinic's key on this device, link this device to the clinic.
+
+handover-import-doneDropped = Items in the file left out because they did not meet this vault's rules: { $count }
+
+handover-import-receipt = Receipt code:
+
+handover-import-receiptNote = You can give this code to whoever made the file. It shows that someone with the file and its key added it here. It does not show that your copy is still safe.
+
+handover-import-nothingNew = Nothing was added: this vault already has this person.
+
+handover-importedAnswer = From an imported file

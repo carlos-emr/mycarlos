@@ -45,6 +45,7 @@ import {
   RecoveryKeySetup,
   type OpeningRecoverySetup,
 } from "./RecoveryKeySetup";
+import { ProfileExportDialog, ProfileImportDialog } from "./ProfileHandover";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { AiSettings } from "./AiSettings";
@@ -426,6 +427,8 @@ export function VaultLibrary({
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
+  // Handing a person's records over, or adding one from a file (#360).
+  const [handover, setHandover] = useState<"export" | "import" | null>(null);
   const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
     null,
   );
@@ -2587,6 +2590,8 @@ export function VaultLibrary({
                 sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
+                onHandOver={() => setHandover("export")}
+                onAddFromFile={() => setHandover("import")}
                 onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
@@ -2682,6 +2687,30 @@ export function VaultLibrary({
               }}
               onLocked={() => void lockAndConceal()}
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
+            />
+          )}
+          {handover === "export" && (
+            <ProfileExportDialog
+              bridge={bridge}
+              people={people}
+              sizesIn1024s={sizesIn1024s}
+              onClose={() => setHandover(null)}
+              onLocked={() => {
+                setHandover(null);
+                void lockAndConceal();
+              }}
+            />
+          )}
+          {handover === "import" && (
+            <ProfileImportDialog
+              bridge={bridge}
+              sizesIn1024s={sizesIn1024s}
+              onClose={() => setHandover(null)}
+              onLocked={() => {
+                setHandover(null);
+                void lockAndConceal();
+              }}
+              onImported={() => void refresh()}
             />
           )}
           {renameTarget && (

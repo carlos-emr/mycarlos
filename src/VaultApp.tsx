@@ -709,6 +709,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         track(bridge.pickBackupDestination(localDate)),
       saveBackupToPicked: (pickId) =>
         transfer(() => bridge.saveBackupToPicked(pickId)),
+      // A person's records handed over, or added from a file (#360): pickers are
+      // tracked as the backup's are, and writing or adding is a transfer the lock waits for.
+      pickProfileExportDestination: (exportId, localDate) =>
+        track(bridge.pickProfileExportDestination(exportId, localDate)),
+      saveProfileExportToPicked: (pickId) =>
+        transfer(() => bridge.saveProfileExportToPicked(pickId)),
+      pickProfileImportSource: () => track(bridge.pickProfileImportSource()),
+      importProfile: (request) => transfer(() => bridge.importProfile(request)),
       pickRestoreSource: () => track(bridge.pickRestoreSource()),
       restore: async (pickId, credential, replace) => {
         try {

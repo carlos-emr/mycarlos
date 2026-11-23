@@ -695,6 +695,19 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         return snapshot;
       };
 
+      // What the fake says a handed-over person's file holds (#360).
+      const HANDOVER_SUMMARY = {
+        documents: 3,
+        hidden: 1,
+        folders: 2,
+        aiAnswers: 1,
+        withClinicEvidence: 1,
+        leftOutDamaged: 0,
+        evidenceLeftOut: 0,
+        historyEntries: 5,
+        plaintextBytes: 123456,
+      };
+
       const refuse = (
         code: string,
         messageKey: string,
@@ -1538,6 +1551,80 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               name: `myCarlos backup FAKE ${setup.keyLabel}.mycarlosbackup`,
               bytes: 4096 * state.backupsSaved,
             };
+          // --- Handing a person's records over, and adding one from a file (#360) ---
+          case "vault_profile_export_prepare": {
+            refusePaused();
+            profileOf(request.profileId);
+            return {
+              exportId: makePick("handoverExport"),
+              generatedKey:
+                request.passphrase === undefined
+                  ? "2345-6789-ABCD-EFGH-JKMN-PQRS-TVWX"
+                  : null,
+              summary: HANDOVER_SUMMARY,
+            };
+          }
+          case "vault_profile_export_pick":
+            refusePaused();
+            pick(request.exportId, "handoverExport", false);
+            return makePick("handoverExportPick");
+          case "vault_profile_export_picked":
+            pick(request.pickId, "handoverExportPick", true);
+            refusePaused();
+            return {
+              name: "mycarlos-handover-FAKE.mycarlosprofile",
+              bytes: 123456,
+              summary: HANDOVER_SUMMARY,
+            };
+          case "vault_profile_import_pick":
+            refusePaused();
+            return makePick("handoverImport");
+          case "vault_profile_import_key_kind":
+            pick(request.pickId, "handoverImport", false);
+            return "key";
+          case "vault_profile_import_inspect": {
+            pick(request.pickId, "handoverImport", false);
+            if (request.key === "BAD")
+              throw refuse("package_key_typo", "native.error.19");
+            return {
+              exportedAtMs: Date.UTC(2026, 10, 14),
+              displayName: "FAKE Child",
+              fullName: "FAKE Child Example",
+              birthDate: "2015-04-09",
+              documents: 3,
+              hidden: 1,
+              folders: 2,
+              aiAnswers: 1,
+              withClinicEvidence: 1,
+              historyEntries: 5,
+              plaintextBytes: 123456,
+              alreadyHere: null,
+            };
+          }
+          case "vault_profile_import": {
+            refusePaused();
+            pick(request.pickId, "handoverImport", true);
+            const id = makeUuid(200 + snapshot.profiles.length + 1);
+            snapshot.profiles.push({
+              id,
+              displayName: request.displayName ?? "FAKE Child",
+              createdAtMs: Date.now(),
+            });
+            return {
+              status: "imported",
+              profileId: id,
+              documents: 3,
+              folders: 2,
+              hidden: 1,
+              aiAnswers: 1,
+              aiAnswersDropped: 0,
+              evidenceKept: 1,
+              evidenceDropped: 0,
+              historyEntries: 5,
+              receiptCode: "AB12-CD34",
+              alreadyHere: null,
+            };
+          }
           // --- The unlock screen: restore from a backup ---
           case "vault_restore_pick":
             if (!setup.backup) throw refuse("not_found", "native.error.18");

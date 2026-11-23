@@ -2365,3 +2365,163 @@ personDetails-previousEntry = Poprzednie pełne imię i nazwisko { $number }
 personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $number }
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
+
+handover-section-title = Przekazanie dokumentów osoby
+
+handover-section-body = Skopiuj dokumenty jednej osoby do pliku dla innego urządzenia, na przykład aby dać dziecku jego własne dokumenty. Plik ma własny klucz i nie zmienia Twojego sejfu. Możesz też dodać osobę z pliku, który ktoś Ci przekazał.
+
+handover-export-button = Przekaż dokumenty…
+
+handover-import-button = Dodaj osobę z pliku…
+
+handover-close = Zamknij
+
+handover-export-title = Przekazanie dokumentów osoby
+
+handover-export-about = Tworzy plik z dokumentami jednej osoby, z własnym kluczem, który może odczytać inne urządzenie. Nic w Twoim sejfie się nie zmienia.
+
+handover-export-caution = Kopiowane są dokumenty zdrowotne. List może wymieniać inne osoby, na przykład rodzica lub opiekuna, a każdy dokument jest kopiowany w całości i bez zmian. Upewnij się, że osoba, która otworzy plik, jest właściwa i może go odczytać.
+
+handover-export-person = Czyje dokumenty
+
+handover-export-history = Dołącz historię tych dokumentów (kiedy dodano, zmieniono nazwę lub przeniesiono)
+
+handover-export-keyKind-legend = Jak zablokowany jest plik
+
+handover-export-keyKind-generated = Klucz tworzony przez myCarlos (zalecane)
+
+handover-export-keyKind-passphrase = Hasło, które wybiorę
+
+handover-export-passphrase = Hasło do pliku
+
+handover-export-passphraseHint = Co najmniej 15 znaków i trudne do odgadnięcia. Nie może to być hasło Twojego sejfu ani klucz odzyskiwania.
+
+handover-export-continue = Dalej
+
+handover-export-preparing = Przygotowywanie…
+
+handover-export-keyTitle = Zapisz klucz do tego pliku
+
+handover-export-keyBody = Każdy, kto ma plik i ten klucz, może odczytać te dokumenty. Przekaż klucz osobie oddzielnie od pliku. myCarlos go nie przechowuje: jeśli zostanie zgubiony, utwórz plik ponownie.
+
+handover-export-keyLabel = Klucz do pliku
+
+handover-export-keyGroup = Grupa { $number }: { $characters }
+
+handover-export-copy = Kopiuj klucz
+
+handover-export-copied = Klucz skopiowany. Wyczyść schowek po jego użyciu.
+
+handover-export-copyFailed = Nie udało się skopiować klucza. Zapisz go zamiast tego.
+
+handover-export-keySaved = Zapisałem(-am) klucz lub schowałem(-am) go w bezpiecznym miejscu
+
+handover-export-saveTitle = Zapisz plik
+
+handover-export-summary = Plik będzie zawierał dokumenty osoby { $name }:
+
+handover-export-apart = Przechowuj plik i klucz oddzielnie.
+
+handover-export-provider = Na niektórych telefonach, jeśli zapis się nie powiedzie, wybrane miejsce może pozostać puste lub niekompletne. W takim razie usuń ten plik i spróbuj ponownie.
+
+handover-export-chooseWhere = Wybierz miejsce zapisu…
+
+handover-export-saving = Zapisywanie i sprawdzanie pliku…
+
+handover-export-noLocation = Nie wybrano miejsca. Nic nie zapisano.
+
+handover-export-doneTitle = Plik zapisany
+
+handover-export-done = Zapisano dokumenty osoby { $name }: { $documents }. Plik został odczytany ponownie w celu sprawdzenia.
+
+handover-export-doneApart = Przechowuj plik i klucz oddzielnie. Ten plik nie zmienia Twojego sejfu.
+
+handover-export-leftOut = Pominięte dokumenty, których pliku nie można odczytać: { $count }
+
+handover-export-evidenceLeftOut = Dokumenty, których podpisu kliniki nie dało się dołączyć (sam dokument jest w pliku): { $count }
+
+handover-count-documents = Dokumenty: { $count }
+
+handover-count-hidden = Ukryte przez Ciebie: { $count }
+
+handover-count-folders = Foldery: { $count }
+
+handover-count-answers = Odpowiedzi asystenta AI: { $count }
+
+handover-count-evidence = Dokumenty z podpisanym przekazaniem przez klinikę: { $count }
+
+handover-count-size = Rozmiar: { $size }
+
+handover-import-title = Dodaj osobę z pliku
+
+handover-import-about = Wybierz plik, który ktoś Ci przekazał, i przygotuj klucz lub hasło, które Ci podano. Osoba zostanie dodana jako nowa; nic z tego, co już tu jest, się nie zmieni.
+
+handover-import-choose = Wybierz plik…
+
+handover-import-noFile = Nie wybrano pliku. Nic się nie zmieniło.
+
+handover-import-keyTitle = Otwórz plik
+
+handover-import-key = Klucz
+
+handover-import-passphrase = Hasło
+
+handover-import-keyHint = Siedem grup po cztery litery i cyfry. Wielkość liter, spacje i myślniki nie mają znaczenia.
+
+handover-import-passphraseHint = Hasło, które wybrała dla pliku osoba, która go utworzyła.
+
+handover-import-open = Otwórz plik
+
+handover-import-opening = Otwieranie…
+
+handover-import-error-typo = Ten klucz wygląda niepoprawnie. Porównaj go z tym, który otrzymałeś(-aś).
+
+handover-import-error-recovery = To jest klucz odzyskiwania, a nie klucz do tego pliku. Poproś o klucz utworzony dla pliku.
+
+handover-import-error-wrong = To nie otwiera tego pliku.
+
+handover-import-error-newer = Ten plik utworzyła nowsza wersja myCarlos. Zaktualizuj myCarlos i spróbuj ponownie.
+
+handover-import-error-damaged = Ten plik jest niekompletny, został zmieniony lub nie można go tu dodać. Poproś o nową kopię.
+
+handover-import-previewTitle = Co mówi plik
+
+handover-import-says = Plik podaje, że zawiera dokumenty osoby { $name }.
+
+handover-import-birth = Data urodzenia: { $date }, tak jak zapisała osoba tworząca plik.
+
+handover-import-madeOn = Utworzony: { $date }.
+
+handover-import-evidenceNote = Niektóre dokumenty mają podpisane przekazanie przez klinikę. Dopóki nie połączysz tego urządzenia z tą kliniką, myCarlos może powiedzieć tylko, że sprawdzono je na urządzeniu, które utworzyło plik, a nie że klinika za nie ręczy.
+
+handover-import-duplicate-legend = Być może masz już tę osobę
+
+handover-import-duplicate-package = Plik nie wnosi nic nowego: ten sam plik został już tu dodany.
+
+handover-import-duplicate-content = Plik podaje, że zawiera dokumenty takie jak { $count }, które masz już przy innej osobie tutaj.
+
+handover-import-duplicate-anyway = Dodaj mimo to jako kolejną osobę
+
+handover-import-nameLabel = Jak nazwać tę osobę tutaj
+
+handover-import-add = Dodaj tę osobę
+
+handover-import-adding = Dodawanie i sprawdzanie dokumentów…
+
+handover-import-doneTitle = Gotowe
+
+handover-import-done = Dodano dokumenty osoby { $name }: { $documents }.
+
+handover-import-doneAnswers = Odpowiedzi asystenta AI, które przyszły z nimi, oznaczone jako z zaimportowanego pliku: { $count }
+
+handover-import-doneEvidence = Dokumenty kliniki pokazują tylko to, co dało się tu sprawdzić. Aby sprawdzić je kluczem kliniki na tym urządzeniu, połącz to urządzenie z kliniką.
+
+handover-import-doneDropped = Elementy pliku pominięte, bo nie spełniały zasad tego sejfu: { $count }
+
+handover-import-receipt = Kod potwierdzenia:
+
+handover-import-receiptNote = Możesz podać ten kod osobie, która utworzyła plik. Pokazuje on, że ktoś mający plik i jego klucz dodał go tutaj. Nie dowodzi, że Twoja kopia jest nadal bezpieczna.
+
+handover-import-nothingNew = Nic nie dodano: ten sejf ma już tę osobę.
+
+handover-importedAnswer = Z zaimportowanego pliku

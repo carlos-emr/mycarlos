@@ -83,6 +83,10 @@ interface SecuritySettingsProps {
   sizesIn1024s?: boolean;
   onSetUpRecoveryKey: () => void;
   onSaveBackup: () => Promise<void>;
+  /** Hand a person's records over (#360); offered when there is a person to hand over. */
+  onHandOver?: () => void;
+  /** Add a person from a handover file (#360). */
+  onAddFromFile?: () => void;
   onSpeedTest: () => Promise<SpeedTestReport>;
   /** Where the profile dialogs are drawn: beside the library's other dialogs,
    * outside the page it makes inert while one is open. Without it, in place. */
@@ -185,6 +189,8 @@ export function SecuritySettings({
   sizesIn1024s = false,
   onSetUpRecoveryKey,
   onSaveBackup,
+  onHandOver,
+  onAddFromFile,
   onSpeedTest,
   dialogHost,
   onDialogChange,
@@ -653,6 +659,38 @@ export function SecuritySettings({
             )}
           </div>
         </section>
+        {(onHandOver || onAddFromFile) && (
+          <section className="setting-row native-handover-settings">
+            <div>
+              <h2>{translateNow("handover.section.title")}</h2>
+              <p>{translateNow("handover.section.body")}</p>
+            </div>
+            <div>
+              {onHandOver && (
+                <button
+                  className="button"
+                  type="button"
+                  aria-haspopup="dialog"
+                  disabled={busy || readOnly || people.length === 0}
+                  onClick={onHandOver}
+                >
+                  {translateNow("handover.export.button")}
+                </button>
+              )}
+              {onAddFromFile && (
+                <button
+                  className="button"
+                  type="button"
+                  aria-haspopup="dialog"
+                  disabled={busy || readOnly}
+                  onClick={onAddFromFile}
+                >
+                  {translateNow("handover.import.button")}
+                </button>
+              )}
+            </div>
+          </section>
+        )}
         <section className="setting-row">
           <div>
             <h2>{translateNow("security.copies.title")}</h2>

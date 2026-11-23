@@ -2319,3 +2319,163 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+handover-section-title = Transmettre les dossiers d'une personne
+
+handover-section-body = Copiez les documents d'une personne dans un fichier pour un autre appareil, par exemple pour donner à un enfant ses propres dossiers. Le fichier a sa propre clé et ne modifie pas votre coffre. Vous pouvez aussi ajouter une personne à partir d'un fichier que quelqu'un vous a remis.
+
+handover-export-button = Transmettre des dossiers…
+
+handover-import-button = Ajouter une personne depuis un fichier…
+
+handover-close = Fermer
+
+handover-export-title = Transmettre les dossiers d'une personne
+
+handover-export-about = Cela crée un fichier contenant les documents d'une personne, avec sa propre clé, qu'un autre appareil pourra lire. Rien ne change dans votre coffre.
+
+handover-export-caution = Cela copie des dossiers de santé. Une lettre peut nommer d'autres personnes, comme un parent ou un tuteur, et chaque document est copié en entier, sans modification. Vérifiez que la personne qui ouvrira le fichier est la bonne et qu'elle peut le lire.
+
+handover-export-person = De qui sont les dossiers
+
+handover-export-history = Inclure l'historique de ces documents (quand ils ont été ajoutés, renommés ou déplacés)
+
+handover-export-keyKind-legend = Comment le fichier est verrouillé
+
+handover-export-keyKind-generated = Une clé créée par myCarlos (recommandé)
+
+handover-export-keyKind-passphrase = Une phrase secrète que je choisis
+
+handover-export-passphrase = Phrase secrète du fichier
+
+handover-export-passphraseHint = Au moins 15 caractères, et difficile à deviner. Ce ne doit pas être la phrase secrète de votre coffre ni votre clé de récupération.
+
+handover-export-continue = Continuer
+
+handover-export-preparing = Préparation…
+
+handover-export-keyTitle = Notez la clé de ce fichier
+
+handover-export-keyBody = Quiconque possède le fichier et cette clé peut lire ces dossiers. Remettez la clé à la personne séparément du fichier. myCarlos ne la conserve pas : si elle est perdue, refaites le fichier.
+
+handover-export-keyLabel = Clé du fichier
+
+handover-export-keyGroup = Groupe { $number } : { $characters }
+
+handover-export-copy = Copier la clé
+
+handover-export-copied = Clé copiée. Videz le presse-papiers une fois la clé utilisée.
+
+handover-export-copyFailed = La clé n'a pas pu être copiée. Notez-la plutôt.
+
+handover-export-keySaved = J'ai noté la clé ou je l'ai rangée en lieu sûr
+
+handover-export-saveTitle = Enregistrer le fichier
+
+handover-export-summary = Le fichier contiendra les dossiers de { $name } :
+
+handover-export-apart = Conservez le fichier et la clé séparément.
+
+handover-export-provider = Sur certains téléphones, si l'enregistrement échoue, l'emplacement choisi peut rester vide ou incomplet. Dans ce cas, supprimez ce fichier et réessayez.
+
+handover-export-chooseWhere = Choisir où enregistrer…
+
+handover-export-saving = Enregistrement et vérification du fichier…
+
+handover-export-noLocation = Aucun emplacement n'a été choisi. Rien n'a été enregistré.
+
+handover-export-doneTitle = Fichier enregistré
+
+handover-export-done = { $documents } documents de { $name } ont été enregistrés, et le fichier a été relu pour le vérifier.
+
+handover-export-doneApart = Conservez le fichier et la clé séparément. Ce fichier ne modifie pas votre coffre.
+
+handover-export-leftOut = Documents exclus car leur fichier est illisible : { $count }
+
+handover-export-evidenceLeftOut = Documents dont la signature de la clinique n'a pas pu être incluse (le document est bien dans le fichier) : { $count }
+
+handover-count-documents = Documents : { $count }
+
+handover-count-hidden = Masqués par vous : { $count }
+
+handover-count-folders = Dossiers : { $count }
+
+handover-count-answers = Réponses de l'assistant IA : { $count }
+
+handover-count-evidence = Documents avec la remise signée d'une clinique : { $count }
+
+handover-count-size = Taille : { $size }
+
+handover-import-title = Ajouter une personne depuis un fichier
+
+handover-import-about = Choisissez un fichier que quelqu'un vous a remis et gardez à portée de main la clé ou la phrase secrète qu'on vous a donnée. La personne arrive comme une nouvelle personne ; rien de ce qui est déjà ici n'est modifié.
+
+handover-import-choose = Choisir le fichier…
+
+handover-import-noFile = Aucun fichier n'a été choisi. Rien n'a changé.
+
+handover-import-keyTitle = Ouvrir le fichier
+
+handover-import-key = Clé
+
+handover-import-passphrase = Phrase secrète
+
+handover-import-keyHint = Sept groupes de quatre lettres et chiffres. Les majuscules, les espaces et les tirets n'ont pas d'importance.
+
+handover-import-passphraseHint = La phrase secrète choisie pour le fichier par la personne qui l'a créé.
+
+handover-import-open = Ouvrir le fichier
+
+handover-import-opening = Ouverture…
+
+handover-import-error-typo = Cette clé ne semble pas correcte. Comparez-la avec celle qu'on vous a donnée.
+
+handover-import-error-recovery = C'est une clé de récupération, pas la clé de ce fichier. Demandez la clé créée pour le fichier.
+
+handover-import-error-wrong = Cela n'ouvre pas ce fichier.
+
+handover-import-error-newer = Ce fichier a été créé par une version plus récente de myCarlos. Mettez myCarlos à jour et réessayez.
+
+handover-import-error-damaged = Ce fichier est incomplet, a été modifié ou ne peut pas être ajouté ici. Demandez-en une nouvelle copie.
+
+handover-import-previewTitle = Ce que dit le fichier
+
+handover-import-says = Le fichier indique qu'il contient les dossiers de { $name }.
+
+handover-import-birth = Né(e) le { $date }, tel que l'a noté la personne qui a créé le fichier.
+
+handover-import-madeOn = Créé le { $date }.
+
+handover-import-evidenceNote = Certains documents portent la remise signée d'une clinique. Tant que vous n'avez pas lié cet appareil à cette clinique, myCarlos peut seulement dire qu'ils ont été vérifiés sur l'appareil qui a créé le fichier, pas que cette clinique s'en porte garante.
+
+handover-import-duplicate-legend = Vous avez peut-être déjà cette personne
+
+handover-import-duplicate-package = Le fichier n'apporte rien de nouveau : ce même fichier a déjà été ajouté ici.
+
+handover-import-duplicate-content = Le fichier indique qu'il contient des documents comme { $count } que vous avez déjà pour une autre personne ici.
+
+handover-import-duplicate-anyway = L'ajouter quand même comme autre personne
+
+handover-import-nameLabel = Comment appeler cette personne ici
+
+handover-import-add = Ajouter cette personne
+
+handover-import-adding = Ajout et vérification des dossiers…
+
+handover-import-doneTitle = Terminé
+
+handover-import-done = { $documents } documents ont été ajoutés pour { $name }.
+
+handover-import-doneAnswers = Réponses de l'assistant IA arrivées avec eux, marquées comme provenant d'un fichier importé : { $count }
+
+handover-import-doneEvidence = Les documents de la clinique n'indiquent que ce qui a pu être vérifié ici. Pour les faire vérifier avec la clé de la clinique sur cet appareil, liez cet appareil à la clinique.
+
+handover-import-doneDropped = Éléments du fichier exclus car ils ne respectaient pas les règles de ce coffre : { $count }
+
+handover-import-receipt = Code de réception :
+
+handover-import-receiptNote = Vous pouvez donner ce code à la personne qui a créé le fichier. Il montre que quelqu'un qui avait le fichier et sa clé l'a ajouté ici. Il ne prouve pas que votre copie est toujours en sécurité.
+
+handover-import-nothingNew = Rien n'a été ajouté : ce coffre a déjà cette personne.
+
+handover-importedAnswer = D'un fichier importé

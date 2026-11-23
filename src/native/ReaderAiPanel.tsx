@@ -15,7 +15,7 @@ import {
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
 import { useSummaryProgress } from "./useSummaryProgress";
-import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
+import { keptSources, keptSummaryInfo, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
 import { estimateFit, type FitEstimate } from "../ai/capacity";
 import {
@@ -127,6 +127,8 @@ export function ReaderAiPanel({
   // Whether the summary shown is one the vault kept, and whether keeping
   // the latest answer failed (it is still shown).
   const [fromKept, setFromKept] = useState(false);
+  // The kept answer came in a handover file, not from this computer's model (#360).
+  const [fromImported, setFromImported] = useState(false);
   // Why the answer on screen was not kept, if it was not.
   const [keepFailed, setKeepFailed] = useState<
     "ai.keepFailed" | "ai.keepFull" | "ai.summaryTooLarge" | null
@@ -260,6 +262,7 @@ export function ReaderAiPanel({
     );
     if (!live.current) return;
     setFromKept(false);
+    setFromImported(false);
     setSummary(result);
     // A new summary: no sentence of it is shown yet.
     setShownIndex(null);
@@ -288,14 +291,15 @@ export function ReaderAiPanel({
     const fresh = again > 0;
     Promise.resolve(
       !fresh && aiRef.current.kept
-        ? keptSummary(aiRef.current.kept, SUMMARY_LANGUAGE)
+        ? keptSummaryInfo(aiRef.current.kept, SUMMARY_LANGUAGE)
         : null,
     )
       .then(async (found) => {
         if (found) {
           if (!live.current) return;
           setFromKept(true);
-          setSummary(found);
+          setFromImported(found.imported);
+          setSummary(found.summary);
           // A new summary: no sentence of it is shown yet.
           setShownIndex(null);
           setUnfolded(false);
@@ -679,6 +683,9 @@ export function ReaderAiPanel({
               at={summary.createdAt}
             />
             {keepFailed && <p role="alert">{t(keepFailed)}</p>}
+            {fromKept && fromImported && (
+              <p className="field-hint">{t("handover.importedAnswer")}</p>
+            )}
             {fromKept && (
               <button
                 ref={againRef}

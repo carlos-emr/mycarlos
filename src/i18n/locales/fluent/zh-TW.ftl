@@ -2117,3 +2117,163 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 新增曾用全名
 personDetails-previousInvalid = 最多輸入16個不同的非空姓名，每個不超過120個字元，且不含控制字元。
+
+handover-section-title = 移交某人的記錄
+
+handover-section-body = 將某人的文件複製到一個檔案中供另一台裝置使用，例如把孩子自己的記錄交給孩子。該檔案有自己的金鑰，不會改變您的保險庫。您也可以從別人交給您的檔案中新增一個人。
+
+handover-export-button = 移交記錄…
+
+handover-import-button = 從檔案新增一個人…
+
+handover-close = 關閉
+
+handover-export-title = 移交某人的記錄
+
+handover-export-about = 這會產生一個包含某人文件的檔案，帶有自己的金鑰，供另一台裝置讀取。您的保險庫不會有任何改變。
+
+handover-export-caution = 這會複製健康記錄。信件中可能提到其他人，例如父母或監護人，每份文件都會完整複製、不作編輯。請確認將開啟該檔案的人是正確的人，並且能夠閱讀它。
+
+handover-export-person = 誰的記錄
+
+handover-export-history = 包含這些文件的歷史記錄（新增、重新命名或移動的時間）
+
+handover-export-keyKind-legend = 檔案如何上鎖
+
+handover-export-keyKind-generated = 由 myCarlos 產生的金鑰（建議）
+
+handover-export-keyKind-passphrase = 我自己選擇的口令
+
+handover-export-passphrase = 檔案口令
+
+handover-export-passphraseHint = 至少 15 個字元，且不易被猜到。不能是您保險庫的口令或復原金鑰。
+
+handover-export-continue = 繼續
+
+handover-export-preparing = 正在準備…
+
+handover-export-keyTitle = 記下此檔案的金鑰
+
+handover-export-keyBody = 拿到該檔案和此金鑰的人都可以閱讀這些記錄。請把金鑰與檔案分開交給對方。myCarlos 不會保存它：如果遺失，請重新產生檔案。
+
+handover-export-keyLabel = 檔案金鑰
+
+handover-export-keyGroup = 第 { $number } 組：{ $characters }
+
+handover-export-copy = 複製金鑰
+
+handover-export-copied = 金鑰已複製。用完後請清空剪貼簿。
+
+handover-export-copyFailed = 無法複製金鑰，請改為手寫記下。
+
+handover-export-keySaved = 我已記下金鑰或妥善保存
+
+handover-export-saveTitle = 儲存檔案
+
+handover-export-summary = 檔案將包含 { $name } 的記錄：
+
+handover-export-apart = 請把檔案和金鑰分開保管。
+
+handover-export-provider = 在某些手機上，如果儲存失敗，您選擇的位置可能會留下空檔案或不完整的檔案。如果發生這種情況，請刪除該檔案後重試。
+
+handover-export-chooseWhere = 選擇儲存位置…
+
+handover-export-saving = 正在儲存並檢查檔案…
+
+handover-export-noLocation = 未選擇位置，沒有儲存任何內容。
+
+handover-export-doneTitle = 檔案已儲存
+
+handover-export-done = 已為 { $name } 儲存 { $documents } 份文件，並重新讀取檔案進行了檢查。
+
+handover-export-doneApart = 請把檔案和金鑰分開保管。此檔案不會改變您的保險庫。
+
+handover-export-leftOut = 因檔案無法讀取而未包含的文件：{ $count }
+
+handover-export-evidenceLeftOut = 無法包含診所簽章的文件（文件本身在檔案中）：{ $count }
+
+handover-count-documents = 文件：{ $count }
+
+handover-count-hidden = 您已隱藏的：{ $count }
+
+handover-count-folders = 資料夾：{ $count }
+
+handover-count-answers = AI 助手的回答：{ $count }
+
+handover-count-evidence = 附有診所簽章送達記錄的文件：{ $count }
+
+handover-count-size = 大小：{ $size }
+
+handover-import-title = 從檔案新增一個人
+
+handover-import-about = 選擇別人交給您的檔案，並準備好他們給您的金鑰或口令。這個人會作為新的一個人加入，這裡已有的內容不會改變。
+
+handover-import-choose = 選擇檔案…
+
+handover-import-noFile = 未選擇檔案，沒有任何改變。
+
+handover-import-keyTitle = 開啟檔案
+
+handover-import-key = 金鑰
+
+handover-import-passphrase = 口令
+
+handover-import-keyHint = 七組，每組四個字母和數字。大小寫、空格和短橫線都無關緊要。
+
+handover-import-passphraseHint = 製作該檔案的人為它選擇的口令。
+
+handover-import-open = 開啟檔案
+
+handover-import-opening = 正在開啟…
+
+handover-import-error-typo = 該金鑰看起來不對，請與您拿到的金鑰核對。
+
+handover-import-error-recovery = 這是復原金鑰，不是此檔案的金鑰。請索取為該檔案產生的金鑰。
+
+handover-import-error-wrong = 這無法開啟此檔案。
+
+handover-import-error-newer = 此檔案由更新版本的 myCarlos 製作。請更新 myCarlos 後重試。
+
+handover-import-error-damaged = 此檔案不完整、已被更改，或無法新增到這裡。請索取新的副本。
+
+handover-import-previewTitle = 檔案的內容
+
+handover-import-says = 檔案聲稱其中包含 { $name } 的記錄。
+
+handover-import-birth = 出生日期：{ $date }，由製作檔案的人記錄。
+
+handover-import-madeOn = 製作於 { $date }。
+
+handover-import-evidenceNote = 部分文件附有診所的簽章送達記錄。在您把此裝置與該診所連結之前，myCarlos 只能說明它們是在製作檔案的裝置上檢查過的，而不能說明該診所為其擔保。
+
+handover-import-duplicate-legend = 您可能已經有這個人
+
+handover-import-duplicate-package = 此檔案沒有新內容：同一個檔案已經新增過了。
+
+handover-import-duplicate-content = 檔案聲稱包含與您在此處另一個人下已有的 { $count } 份文件相同的文件。
+
+handover-import-duplicate-anyway = 仍然新增為另一個人
+
+handover-import-nameLabel = 在這裡如何稱呼此人
+
+handover-import-add = 新增此人
+
+handover-import-adding = 正在新增並檢查記錄…
+
+handover-import-doneTitle = 完成
+
+handover-import-done = 已為 { $name } 新增 { $documents } 份文件。
+
+handover-import-doneAnswers = 隨文件一起到來的 AI 助手回答，已標記為來自匯入的檔案：{ $count }
+
+handover-import-doneEvidence = 診所文件只顯示在此處能夠檢查到的內容。若要在此裝置上用診所的金鑰檢查它們，請把此裝置與該診所連結。
+
+handover-import-doneDropped = 因不符合此保險庫的規則而未包含的項目：{ $count }
+
+handover-import-receipt = 回執碼：
+
+handover-import-receiptNote = 您可以把這個代碼告訴製作檔案的人。它說明有人拿著檔案和金鑰把它新增到了這裡，但並不說明您的副本仍然安全。
+
+handover-import-nothingNew = 沒有新增任何內容：此保險庫已經有這個人。
+
+handover-importedAnswer = 來自匯入的檔案
