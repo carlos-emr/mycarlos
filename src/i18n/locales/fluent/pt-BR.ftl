@@ -2524,3 +2524,61 @@ handover-unfinished = Uma entrega não foi concluída. Qualquer chave que você 
 native-error-49 = Esta sessão desbloqueada já tentou o máximo de frases secretas para um arquivo. Bloqueie o myCarlos e desbloqueie-o de novo para continuar tentando, ou deixe o myCarlos criar uma chave para o arquivo.
 
 native-error-50 = Pelo menos uma pessoa precisa ficar na biblioteca, então a última não pode ser ocultada. Adicione outra pessoa primeiro.
+
+hiddenPeople-title = Pessoas ocultas
+
+hiddenPeople-body = As pessoas que você ocultou ficam fora da biblioteca, da busca e do assistente de IA. Nada é excluído: elas continuam neste cofre e nas suas cópias de segurança. Quem souber a sua frase secreta pode trazê-las de volta.
+
+hiddenPeople-list = Pessoas ocultas
+
+hiddenPeople-since = oculta em { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } documento
+       *[other] { $count } documentos
+    }
+
+hiddenPeople-restore = Restaurar
+
+hiddenPeople-restoreFor = Restaurar { $name }
+
+hiddenPeople-handOver = Entregar…
+
+hiddenPeople-handOverFor = Entregar os registros de { $name }
+
+hiddenPeople-hide = Ocultar
+
+hiddenPeople-hideFor = Ocultar { $name }
+
+hiddenPeople-lastPerson = Pelo menos uma pessoa precisa ficar na biblioteca.
+
+hiddenPeople-confirm-title = Ocultar { $name }?
+
+hiddenPeople-confirm-body = Isto oculta { $name } e todos os documentos dessa pessoa no myCarlos. Nada é excluído. Eles continuam neste cofre e nas suas cópias de segurança, e você pode trazê-los de volta a qualquer momento em Pessoas ocultas. Ocultar não impede que quem souber a sua frase secreta os restaure.
+
+hiddenPeople-confirm-hide = Ocultar { $name }
+
+hiddenPeople-hidden = { $name } agora está oculta.
+
+hiddenPeople-restored = { $name } voltou para a biblioteca.
+
+hiddenPeople-arrived-title = Mover os documentos novos para { $name }?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] Enquanto { $name } estava oculta, chegou { $count } documento para essa pessoa e está em Compartilhados comigo. Movê-lo para { $name }?
+       *[other] Enquanto { $name } estava oculta, chegaram { $count } documentos para essa pessoa e estão em Compartilhados comigo. Movê-los para { $name }?
+    }
+
+hiddenPeople-arrived-move = Mover para { $name }
+
+hiddenPeople-arrived-leave = Deixar em Compartilhados comigo
+
+hiddenPeople-arrived-list = Documentos que chegaram
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] Chegou um documento de { $clinic } e está em Compartilhados comigo. A pessoa a quem se destina está oculta.
+       *[other] Chegaram { $count } documentos de { $clinic } e estão em Compartilhados comigo. As pessoas a quem se destinam estão ocultas.
+    }

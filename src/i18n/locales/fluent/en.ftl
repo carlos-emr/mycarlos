@@ -2489,3 +2489,61 @@ handover-unfinished = A handover was not finished. Any key you copied or wrote d
 native-error-49 = This unlocked session has already tried the most passphrases it can for a file. Lock myCarlos and unlock it again to keep trying, or let myCarlos make a key for the file instead.
 
 native-error-50 = At least one person has to stay in the library, so the last one cannot be hidden. Add another person first.
+
+hiddenPeople-title = Hidden people
+
+hiddenPeople-body = People you have hidden are out of the library, search and the AI helper. Nothing is deleted: they stay in this vault and in your backups. Anyone who knows your passphrase can bring them back.
+
+hiddenPeople-list = Hidden people
+
+hiddenPeople-since = hidden on { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } document
+       *[other] { $count } documents
+    }
+
+hiddenPeople-restore = Restore
+
+hiddenPeople-restoreFor = Restore { $name }
+
+hiddenPeople-handOver = Hand over…
+
+hiddenPeople-handOverFor = Hand { $name }'s records over
+
+hiddenPeople-hide = Hide
+
+hiddenPeople-hideFor = Hide { $name }
+
+hiddenPeople-lastPerson = At least one person has to stay in the library.
+
+hiddenPeople-confirm-title = Hide { $name }?
+
+hiddenPeople-confirm-body = This hides { $name } and all their documents in myCarlos. Nothing is deleted. They stay in this vault and in your backups, and you can bring them back at any time under Hidden people. Hiding does not stop anyone who knows your passphrase from restoring them.
+
+hiddenPeople-confirm-hide = Hide { $name }
+
+hiddenPeople-hidden = { $name } is now hidden.
+
+hiddenPeople-restored = { $name } is back in the library.
+
+hiddenPeople-arrived-title = Move the new documents to { $name }?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] While { $name } was hidden, { $count } document arrived for them and is in Shared with me. Move it to { $name }?
+       *[other] While { $name } was hidden, { $count } documents arrived for them and are in Shared with me. Move them to { $name }?
+    }
+
+hiddenPeople-arrived-move = Move to { $name }
+
+hiddenPeople-arrived-leave = Leave in Shared with me
+
+hiddenPeople-arrived-list = Documents that arrived
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] A document arrived from { $clinic } and is in Shared with me. The person it is for is hidden.
+       *[other] { $count } documents arrived from { $clinic } and are in Shared with me. The people they are for are hidden.
+    }

@@ -2577,3 +2577,64 @@ handover-unfinished = Przekazanie nie zostało zakończone. Żaden skopiowany an
 native-error-49 = W tej odblokowanej sesji wypróbowano już maksymalną liczbę haseł dla pliku. Zablokuj myCarlos i odblokuj go ponownie, aby próbować dalej, albo pozwól, by myCarlos utworzył klucz dla pliku.
 
 native-error-50 = W bibliotece musi zostać co najmniej jedna osoba, więc ostatniej nie można ukryć. Najpierw dodaj inną osobę.
+
+hiddenPeople-title = Ukryte osoby
+
+hiddenPeople-body = Ukryte osoby nie są widoczne w bibliotece, wyszukiwaniu ani u asystenta AI. Nic nie jest usuwane: zostają w tym sejfie i w kopiach zapasowych. Każdy, kto zna Twoje hasło, może je przywrócić.
+
+hiddenPeople-list = Ukryte osoby
+
+hiddenPeople-since = ukryta { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } dokument
+        [few] { $count } dokumenty
+       *[other] { $count } dokumentów
+    }
+
+hiddenPeople-restore = Przywróć
+
+hiddenPeople-restoreFor = Przywróć: { $name }
+
+hiddenPeople-handOver = Przekaż…
+
+hiddenPeople-handOverFor = Przekaż dokumenty osoby { $name }
+
+hiddenPeople-hide = Ukryj
+
+hiddenPeople-hideFor = Ukryj: { $name }
+
+hiddenPeople-lastPerson = W bibliotece musi zostać co najmniej jedna osoba.
+
+hiddenPeople-confirm-title = Ukryć osobę { $name }?
+
+hiddenPeople-confirm-body = To ukrywa osobę { $name } i wszystkie jej dokumenty w myCarlos. Nic nie jest usuwane. Zostają w tym sejfie i w kopiach zapasowych, a w każdej chwili możesz je przywrócić w sekcji Ukryte osoby. Ukrycie nie powstrzyma nikogo, kto zna Twoje hasło, przed ich przywróceniem.
+
+hiddenPeople-confirm-hide = Ukryj: { $name }
+
+hiddenPeople-hidden = Osoba { $name } jest teraz ukryta.
+
+hiddenPeople-restored = Osoba { $name } wróciła do biblioteki.
+
+hiddenPeople-arrived-title = Przenieść nowe dokumenty do osoby { $name }?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] Gdy osoba { $name } była ukryta, dotarł dla niej { $count } dokument, który jest w Udostępnione mi. Przenieść go do osoby { $name }?
+        [few] Gdy osoba { $name } była ukryta, dotarły dla niej { $count } dokumenty, które są w Udostępnione mi. Przenieść je do osoby { $name }?
+       *[other] Gdy osoba { $name } była ukryta, dotarło dla niej { $count } dokumentów, które są w Udostępnione mi. Przenieść je do osoby { $name }?
+    }
+
+hiddenPeople-arrived-move = Przenieś do: { $name }
+
+hiddenPeople-arrived-leave = Zostaw w Udostępnione mi
+
+hiddenPeople-arrived-list = Dokumenty, które dotarły
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] Z { $clinic } dotarł dokument i jest w Udostępnione mi. Osoba, której dotyczy, jest ukryta.
+        [few] Z { $clinic } dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+       *[other] Z { $clinic } dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+    }

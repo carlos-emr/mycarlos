@@ -1143,6 +1143,29 @@ export const MESSAGE_KEYS = [
   "handover.unfinished",
   "native.error.49",
   "native.error.50",
+  "hiddenPeople.title",
+  "hiddenPeople.body",
+  "hiddenPeople.list",
+  "hiddenPeople.since",
+  "hiddenPeople.documents",
+  "hiddenPeople.restore",
+  "hiddenPeople.restoreFor",
+  "hiddenPeople.handOver",
+  "hiddenPeople.handOverFor",
+  "hiddenPeople.hide",
+  "hiddenPeople.hideFor",
+  "hiddenPeople.lastPerson",
+  "hiddenPeople.confirm.title",
+  "hiddenPeople.confirm.body",
+  "hiddenPeople.confirm.hide",
+  "hiddenPeople.hidden",
+  "hiddenPeople.restored",
+  "hiddenPeople.arrived.title",
+  "hiddenPeople.arrived.body",
+  "hiddenPeople.arrived.move",
+  "hiddenPeople.arrived.leave",
+  "hiddenPeople.arrived.list",
+  "portal.arrivedForHidden",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2489,6 +2512,29 @@ const FLUENT_IDS_BY_KEY = {
   "handover.unfinished": "handover-unfinished",
   "native.error.49": "native-error-49",
   "native.error.50": "native-error-50",
+  "hiddenPeople.title": "hiddenPeople-title",
+  "hiddenPeople.body": "hiddenPeople-body",
+  "hiddenPeople.list": "hiddenPeople-list",
+  "hiddenPeople.since": "hiddenPeople-since",
+  "hiddenPeople.documents": "hiddenPeople-documents",
+  "hiddenPeople.restore": "hiddenPeople-restore",
+  "hiddenPeople.restoreFor": "hiddenPeople-restoreFor",
+  "hiddenPeople.handOver": "hiddenPeople-handOver",
+  "hiddenPeople.handOverFor": "hiddenPeople-handOverFor",
+  "hiddenPeople.hide": "hiddenPeople-hide",
+  "hiddenPeople.hideFor": "hiddenPeople-hideFor",
+  "hiddenPeople.lastPerson": "hiddenPeople-lastPerson",
+  "hiddenPeople.confirm.title": "hiddenPeople-confirm-title",
+  "hiddenPeople.confirm.body": "hiddenPeople-confirm-body",
+  "hiddenPeople.confirm.hide": "hiddenPeople-confirm-hide",
+  "hiddenPeople.hidden": "hiddenPeople-hidden",
+  "hiddenPeople.restored": "hiddenPeople-restored",
+  "hiddenPeople.arrived.title": "hiddenPeople-arrived-title",
+  "hiddenPeople.arrived.body": "hiddenPeople-arrived-body",
+  "hiddenPeople.arrived.move": "hiddenPeople-arrived-move",
+  "hiddenPeople.arrived.leave": "hiddenPeople-arrived-leave",
+  "hiddenPeople.arrived.list": "hiddenPeople-arrived-list",
+  "portal.arrivedForHidden": "portal-arrivedForHidden",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3753,6 +3799,29 @@ export interface MessageArgsByKey {
   "handover.unfinished": undefined;
   "native.error.49": undefined;
   "native.error.50": undefined;
+  "hiddenPeople.title": undefined;
+  "hiddenPeople.body": undefined;
+  "hiddenPeople.list": undefined;
+  "hiddenPeople.since": { date: FluentArgument };
+  "hiddenPeople.documents": { count: FluentArgument };
+  "hiddenPeople.restore": undefined;
+  "hiddenPeople.restoreFor": { name: FluentArgument };
+  "hiddenPeople.handOver": undefined;
+  "hiddenPeople.handOverFor": { name: FluentArgument };
+  "hiddenPeople.hide": undefined;
+  "hiddenPeople.hideFor": { name: FluentArgument };
+  "hiddenPeople.lastPerson": undefined;
+  "hiddenPeople.confirm.title": { name: FluentArgument };
+  "hiddenPeople.confirm.body": { name: FluentArgument };
+  "hiddenPeople.confirm.hide": { name: FluentArgument };
+  "hiddenPeople.hidden": { name: FluentArgument };
+  "hiddenPeople.restored": { name: FluentArgument };
+  "hiddenPeople.arrived.title": { name: FluentArgument };
+  "hiddenPeople.arrived.body": { count: FluentArgument; name: FluentArgument };
+  "hiddenPeople.arrived.move": { name: FluentArgument };
+  "hiddenPeople.arrived.leave": undefined;
+  "hiddenPeople.arrived.list": undefined;
+  "portal.arrivedForHidden": { clinic: FluentArgument; count: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

@@ -15,7 +15,7 @@ import {
   inDialogHost,
   trimmedDetails,
 } from "./PersonDetails";
-import type { PatientProfile, PersonDetails } from "../vault";
+import type { HiddenProfile, PatientProfile, PersonDetails } from "../vault";
 import { SecretInput } from "./SecretInput";
 import { SpokenCount } from "./SpokenCount";
 import {
@@ -42,6 +42,7 @@ import {
 } from "./recordPresentation";
 import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
+import { HiddenPeopleList, HidePersonButton } from "./HiddenPeople";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatFileSize } from "./recordPresentation";
 
@@ -87,6 +88,12 @@ interface SecuritySettingsProps {
   onHandOver?: () => void;
   /** Add a person from a handover file (#360). */
   onAddFromFile?: () => void;
+  /** Hide a whole person, bring one back, and the people who are hidden (#360). */
+  hiddenPeople?: HiddenProfile[];
+  onHidePerson?: (profileId: string) => void;
+  onRestorePerson?: (profileId: string) => void;
+  /** Hand a hidden person's records over. */
+  onHandOverHidden?: (person: HiddenProfile) => void;
   onSpeedTest: () => Promise<SpeedTestReport>;
   /** Where the profile dialogs are drawn: beside the library's other dialogs,
    * outside the page it makes inert while one is open. Without it, in place. */
@@ -163,6 +170,10 @@ function newBackupText(
 }
 
 export function SecuritySettings({
+  hiddenPeople,
+  onHidePerson,
+  onRestorePerson,
+  onHandOverHidden,
   clinicDocuments,
   busy,
   readOnly,
@@ -725,6 +736,28 @@ export function SecuritySettings({
               dialogHost={dialogHost}
               onDialogChange={onDialogChange}
               refusalText={notice}
+              actions={
+                onHidePerson
+                  ? (person) => (
+                      <HidePersonButton
+                        person={person}
+                        onlyOne={people.length <= 1}
+                        busy={busy}
+                        readOnly={readOnly}
+                        onHide={onHidePerson}
+                      />
+                    )
+                  : undefined
+              }
+            />
+          )}
+          {onRestorePerson && (
+            <HiddenPeopleList
+              hidden={hiddenPeople ?? []}
+              busy={busy}
+              readOnly={readOnly}
+              onRestore={onRestorePerson}
+              onHandOver={onHandOverHidden}
             />
           )}
           {addOpen &&

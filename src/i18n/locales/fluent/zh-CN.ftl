@@ -2294,3 +2294,49 @@ handover-unfinished = 有一次移交没有完成。您复制或记下的任何�
 native-error-49 = 此次解锁期间已尝试了文件口令的最多次数。请锁定 myCarlos 后重新解锁以继续尝试，或改由 myCarlos 为文件生成密钥。
 
 native-error-50 = 资料库中至少要留下一个人，因此无法隐藏最后一个人。请先添加另一个人。
+
+hiddenPeople-title = 已隐藏的人
+
+hiddenPeople-body = 您隐藏的人不会出现在资料库、搜索和 AI 助手中。不会删除任何内容：他们仍保存在此保险库和您的备份中。任何知道您口令的人都可以将他们恢复。
+
+hiddenPeople-list = 已隐藏的人
+
+hiddenPeople-since = 隐藏于 { $date }
+
+hiddenPeople-documents = { $count } 份文档
+
+hiddenPeople-restore = 恢复
+
+hiddenPeople-restoreFor = 恢复 { $name }
+
+hiddenPeople-handOver = 移交…
+
+hiddenPeople-handOverFor = 移交 { $name } 的记录
+
+hiddenPeople-hide = 隐藏
+
+hiddenPeople-hideFor = 隐藏 { $name }
+
+hiddenPeople-lastPerson = 资料库中至少要留下一个人。
+
+hiddenPeople-confirm-title = 隐藏 { $name }？
+
+hiddenPeople-confirm-body = 这会在 myCarlos 中隐藏 { $name } 及其所有文档。不会删除任何内容。他们仍保存在此保险库和您的备份中，您随时可以在“已隐藏的人”中恢复。隐藏并不能阻止任何知道您口令的人将其恢复。
+
+hiddenPeople-confirm-hide = 隐藏 { $name }
+
+hiddenPeople-hidden = { $name } 现已隐藏。
+
+hiddenPeople-restored = { $name } 已回到资料库。
+
+hiddenPeople-arrived-title = 要把新文档移到 { $name } 吗？
+
+hiddenPeople-arrived-body = { $name } 被隐藏期间，有 { $count } 份文档送达，目前在“与我分享”中。要把它们移到 { $name } 吗？
+
+hiddenPeople-arrived-move = 移到 { $name }
+
+hiddenPeople-arrived-leave = 留在“与我分享”
+
+hiddenPeople-arrived-list = 送达的文档
+
+portal-arrivedForHidden = 来自 { $clinic } 的 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。

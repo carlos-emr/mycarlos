@@ -96,9 +96,29 @@ export interface SnapshotCapture {
   sequence: number;
 }
 
+/** A person who is hidden (#360): Security's Hidden people list shows them and nothing
+ * else does. */
+export interface HiddenProfile {
+  id: string;
+  displayName: string;
+  hiddenAtMs: number;
+  /** All the person's documents, those hidden one by one included. */
+  documents: number;
+}
+
+/** A document that arrived for a person while they were hidden and waits in Shared with
+ * me (#360). */
+export interface ArrivedWhileHidden {
+  recordId: string;
+  displayName: string;
+}
+
 export interface VaultSnapshot {
   capture: SnapshotCapture;
+  /** The people the library shows: a hidden person is not among them. */
   profiles: PatientProfile[];
+  /** The people who are hidden (#360); absent in a fake that has none. */
+  hiddenProfiles?: HiddenProfile[];
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
@@ -509,6 +529,9 @@ export interface VaultBridge {
   }>;
   checkDocuments?(): Promise<{
     added: number;
+    /** The clinic of each new document that was for a person who is hidden and waits in
+     * Shared with me (#360); names no person. */
+    forHidden?: string[];
     refused: number;
     receiptsPending: number;
     issues?: { linkId: string; clinicName: string; code: string }[];
@@ -651,6 +674,11 @@ export interface VaultBridge {
    * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
   viewPhoto(recordId: string): Promise<string>;
   /** Hides a document (#71). There is no way to delete one. */
+  /** Hides a whole person (#360): one step, nothing deleted. */
+  hideProfile?(profileId: string): Promise<void>;
+  /** Brings a hidden person back; says which documents arrived for them while they were
+   * hidden and wait in Shared with me. */
+  restoreProfile?(profileId: string): Promise<ArrivedWhileHidden[]>;
   hideRecord(recordId: string): Promise<void>;
   /** Puts a hidden document back. One hidden as damaged only once its file
    * is back. */
@@ -1350,6 +1378,12 @@ export function createVaultBridge(): VaultBridge {
     readAiResult: (recordId, resultId) =>
       invoke<string>("vault_ai_result_read", {
         request: { recordId, resultId },
+      }),
+    hideProfile: (profileId) =>
+      invoke<void>("vault_hide_profile", { request: { profileId } }),
+    restoreProfile: (profileId) =>
+      invoke<ArrivedWhileHidden[]>("vault_restore_profile", {
+        request: { profileId },
       }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),

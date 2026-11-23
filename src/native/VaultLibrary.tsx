@@ -10,7 +10,11 @@ import {
   type UiText,
   type MessageKey,
 } from "../i18n";
-import type { PersonDetails } from "../vault";
+import type {
+  ArrivedWhileHidden,
+  PatientProfile,
+  PersonDetails,
+} from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
@@ -52,6 +56,7 @@ import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
+import { ArrivedWhileHiddenDialog } from "./HiddenPeople";
 import { RecordDetails } from "./RecordDetails";
 import { DocumentReader } from "./DocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
@@ -432,6 +437,17 @@ export function VaultLibrary({
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
   // Handing a person's records over, or adding one from a file (#360).
   const [handover, setHandover] = useState<"export" | "import" | null>(null);
+  // A hidden person whose records are being handed over: the dialog offers only them.
+  const [handoverHidden, setHandoverHidden] = useState<PatientProfile | null>(
+    null,
+  );
+  // Documents that arrived for a person while they were hidden, offered back once they are
+  // restored (#360, section 8.6).
+  const [arrivedFor, setArrivedFor] = useState<{
+    profileId: string;
+    name: string;
+    arrived: ArrivedWhileHidden[];
+  } | null>(null);
   const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
     null,
   );
@@ -1408,6 +1424,33 @@ export function VaultLibrary({
           translateNow("interface.notice.hidden", { name: record.displayName }),
         ),
       );
+    });
+  };
+  // A whole person is hidden or restored in one step (#360): nothing is deleted, and the
+  // person's documents, folders and AI answers leave or rejoin the library together.
+  const hidePerson = (id: string) => {
+    const name = profileName(id);
+    void run(async () => {
+      await bridge.hideProfile!(id);
+      setSelectedIds([]);
+      setActiveRecordId(null);
+      await refresh();
+      setNotice(
+        deferredText(() => translateNow("hiddenPeople.hidden", { name })),
+      );
+    });
+  };
+  const restorePerson = (id: string) => {
+    const name =
+      snapshot.hiddenProfiles?.find((person) => person.id === id)
+        ?.displayName ?? "";
+    void run(async () => {
+      const arrived = await bridge.restoreProfile!(id);
+      await refresh();
+      setNotice(
+        deferredText(() => translateNow("hiddenPeople.restored", { name })),
+      );
+      if (arrived.length > 0) setArrivedFor({ profileId: id, name, arrived });
     });
   };
   const unhideRecord = (record: VaultRecord) => {
@@ -2595,6 +2638,19 @@ export function VaultLibrary({
                 onSaveBackup={saveBackup}
                 onHandOver={() => setHandover("export")}
                 onAddFromFile={() => setHandover("import")}
+                hiddenPeople={snapshot.hiddenProfiles}
+                onHidePerson={bridge.hideProfile ? hidePerson : undefined}
+                onRestorePerson={
+                  bridge.restoreProfile ? restorePerson : undefined
+                }
+                onHandOverHidden={(person) => {
+                  setHandoverHidden({
+                    id: person.id,
+                    displayName: person.displayName,
+                    createdAtMs: 0,
+                  });
+                  setHandover("export");
+                }}
                 onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
@@ -2692,18 +2748,38 @@ export function VaultLibrary({
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
+          {arrivedFor && (
+            <ArrivedWhileHiddenDialog
+              name={arrivedFor.name}
+              arrived={arrivedFor.arrived}
+              onLeave={() => setArrivedFor(null)}
+              onMove={() => {
+                const { profileId: to, arrived } = arrivedFor;
+                setArrivedFor(null);
+                moveToPerson(
+                  arrived.map((document) => document.recordId),
+                  to,
+                  null,
+                );
+              }}
+            />
+          )}
           {handover === "export" && (
             <ProfileExportDialog
               bridge={bridge}
-              people={people}
+              people={handoverHidden ? [handoverHidden] : people}
               sizesIn1024s={sizesIn1024s}
               // On a phone, leaving myCarlos to paste the key elsewhere locks the
               // vault and ends the key: no Copy there.
               canCopy={keyboardHints}
               onUnfinished={onUnfinishedHandover}
-              onClose={() => setHandover(null)}
+              onClose={() => {
+                setHandover(null);
+                setHandoverHidden(null);
+              }}
               onLocked={() => {
                 setHandover(null);
+                setHandoverHidden(null);
                 void lockAndConceal();
               }}
             />

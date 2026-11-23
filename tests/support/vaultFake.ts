@@ -241,6 +241,9 @@ export interface FakeVaultSetup {
   boxesAbsent?: string;
 }
 
+/** The id of the n-th extra person (`people` in the setup), counting from 1. */
+export const fakePersonId = (n: number) => fakeUuid(500 + n);
+
 // The refusals the fake makes itself, by message key, in English as the
 // native side sends them (the screens show the messageKey's own text).
 const NATIVE_MESSAGES: MessageKey[] = [
@@ -319,6 +322,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           id: string;
           displayName: string;
           createdAtMs: number;
+          /** Set while the whole person is hidden (#360). */
+          hidden?: { atMs: number } | null;
           fullName?: string;
           birthDate?: string;
           previousFullNames?: string[];
@@ -377,6 +382,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         >;
         /** The files the next import picker "chooses" (FAKE names). */
         importQueue: string[];
+        /** Documents that arrived for a hidden person, by person (#360). */
+        arrivedWhileHidden: Record<
+          string,
+          { recordId: string; displayName: string }[]
+        >;
         /** Files shared to myCarlos, waiting (#61). */
         received: { id: string; name: string; sourceLabel: string }[];
         /** The next id for a file shared while the page is open. */
@@ -644,6 +654,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           nextPickId: 1000,
           picks: {},
           importQueue: [],
+          arrivedWhileHidden: {},
           backupsSaved: 0,
           received: setup.received.map((name, index) => ({
             id: makeUuid(600 + index + 1),
@@ -690,7 +701,29 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           epoch: state.captureEpoch,
           sequence: ++state.captureSequence,
         };
-        const snapshot = { ...copy(state.snapshot), capture };
+        const whole = copy(state.snapshot);
+        // A hidden person is in no list the library shows, only in Hidden people (#360).
+        const hiddenIds = new Set(
+          whole.profiles.filter((p) => p.hidden).map((p) => p.id),
+        );
+        const snapshot = {
+          ...whole,
+          profiles: whole.profiles
+            .filter((p) => !p.hidden)
+            .map(({ hidden: _hidden, ...rest }) => rest),
+          hiddenProfiles: whole.profiles
+            .filter((p) => p.hidden)
+            .map((p) => ({
+              id: p.id,
+              displayName: p.displayName,
+              hiddenAtMs: p.hidden?.atMs ?? 0,
+              documents: whole.records.filter((r) => r.profileId === p.id)
+                .length,
+            })),
+          folders: whole.folders.filter((f) => !hiddenIds.has(f.profileId)),
+          records: whole.records.filter((r) => !hiddenIds.has(r.profileId)),
+          capture,
+        };
         save();
         return snapshot;
       };
@@ -1422,6 +1455,31 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_unhide_record":
             recordById(request.recordId).hidden = null;
             return;
+          // Hiding a whole person (#360): the last visible person and Shared with me stay.
+          case "vault_hide_profile": {
+            refuseLocked();
+            const person = profileOf(request.profileId);
+            if (person.id === snapshot.sharedProfileId)
+              throw refuse("invalid", "native.error.19");
+            const visible = snapshot.profiles.filter(
+              (p) => p.id !== snapshot.sharedProfileId && !p.hidden,
+            );
+            if (!person.hidden && visible.length <= 1)
+              throw refuse("last_visible_profile", "native.error.50");
+            person.hidden ??= { atMs: Date.now() };
+            wrote("profileHidden", { name: person.displayName });
+            return;
+          }
+          case "vault_restore_profile": {
+            refuseLocked();
+            const person = profileOf(request.profileId);
+            if (!person.hidden) return [];
+            person.hidden = null;
+            wrote("profileRestored", { name: person.displayName });
+            const arrived = state.arrivedWhileHidden[person.id] ?? [];
+            delete state.arrivedWhileHidden[person.id];
+            return arrived;
+          }
           case "vault_portal_link": {
             const links = (snapshot.portalLinks ??= []);
             const made = {
@@ -1826,6 +1884,29 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         },
         pickFiles: (names: string[]) => {
           state.importQueue = names;
+          save();
+        },
+        // A clinic document that arrived for a person while they were hidden: it is in
+        // Shared with me, and a restore offers it back (#360).
+        arriveWhileHidden: (profileId: string, name: string) => {
+          const shared = sharedProfile();
+          const id = makeUuid(900 + state.snapshot.records.length);
+          state.snapshot.records.push({
+            id,
+            profileId: shared,
+            folderIds: [],
+            displayName: name,
+            sourceLabel: "FAKE clinic",
+            mediaType: "application/pdf",
+            plaintextSize: 100,
+            importedAtMs: Date.now(),
+            available: true,
+            hidden: null,
+          });
+          (state.arrivedWhileHidden[profileId] ??= []).push({
+            recordId: id,
+            displayName: name,
+          });
           save();
         },
         settle: (command: string, outcome: Outcome) => {

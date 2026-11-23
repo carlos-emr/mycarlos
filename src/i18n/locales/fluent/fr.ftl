@@ -2524,3 +2524,61 @@ handover-unfinished = Une transmission n'a pas été terminée. Toute clé que v
 native-error-49 = Cette session déverrouillée a déjà essayé le maximum de phrases secrètes pour un fichier. Verrouillez myCarlos puis déverrouillez-le de nouveau pour continuer, ou laissez myCarlos créer une clé pour le fichier.
 
 native-error-50 = Au moins une personne doit rester dans la bibliothèque : la dernière ne peut pas être masquée. Ajoutez d'abord une autre personne.
+
+hiddenPeople-title = Personnes masquées
+
+hiddenPeople-body = Les personnes que vous avez masquées sont absentes de la bibliothèque, de la recherche et de l'assistant IA. Rien n'est supprimé : elles restent dans ce coffre et dans vos sauvegardes. Toute personne qui connaît votre phrase secrète peut les rétablir.
+
+hiddenPeople-list = Personnes masquées
+
+hiddenPeople-since = masquée le { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } document
+       *[other] { $count } documents
+    }
+
+hiddenPeople-restore = Rétablir
+
+hiddenPeople-restoreFor = Rétablir { $name }
+
+hiddenPeople-handOver = Transmettre…
+
+hiddenPeople-handOverFor = Transmettre les dossiers de { $name }
+
+hiddenPeople-hide = Masquer
+
+hiddenPeople-hideFor = Masquer { $name }
+
+hiddenPeople-lastPerson = Au moins une personne doit rester dans la bibliothèque.
+
+hiddenPeople-confirm-title = Masquer { $name } ?
+
+hiddenPeople-confirm-body = Cela masque { $name } et tous ses documents dans myCarlos. Rien n'est supprimé. Ils restent dans ce coffre et dans vos sauvegardes, et vous pouvez les rétablir à tout moment sous Personnes masquées. Masquer n'empêche pas une personne qui connaît votre phrase secrète de les rétablir.
+
+hiddenPeople-confirm-hide = Masquer { $name }
+
+hiddenPeople-hidden = { $name } est maintenant masquée.
+
+hiddenPeople-restored = { $name } est de retour dans la bibliothèque.
+
+hiddenPeople-arrived-title = Déplacer les nouveaux documents vers { $name } ?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] Pendant que { $name } était masquée, { $count } document est arrivé pour cette personne et se trouve dans Partagés avec moi. Le déplacer vers { $name } ?
+       *[other] Pendant que { $name } était masquée, { $count } documents sont arrivés pour cette personne et se trouvent dans Partagés avec moi. Les déplacer vers { $name } ?
+    }
+
+hiddenPeople-arrived-move = Déplacer vers { $name }
+
+hiddenPeople-arrived-leave = Laisser dans Partagés avec moi
+
+hiddenPeople-arrived-list = Documents arrivés
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] Un document est arrivé de { $clinic } et se trouve dans Partagés avec moi. La personne concernée est masquée.
+       *[other] { $count } documents sont arrivés de { $clinic } et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
+    }
