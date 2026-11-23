@@ -191,10 +191,9 @@ impl VaultStore {
         let label = checked_label(label)?;
         let key = Zeroizing::new(key.trim().to_owned());
         check_key_shape(&key)?;
-        let key_last4: String = {
-            let chars: Vec<char> = key.chars().collect();
-            chars[chars.len() - 4..].iter().collect()
-        };
+        // The shape check above allows printable ASCII only, so this slices on a boundary and
+        // copies four bytes: no copy of the key is made.
+        let key_last4: String = key[key.len() - 4..].to_owned();
         let outcome = self.mutate_recorded(|manifest, entries| {
             if manifest.cloud_ai_keys.len() >= MAX_CLOUD_KEYS {
                 return Ok(Err(CloudKeyError::TooMany));
