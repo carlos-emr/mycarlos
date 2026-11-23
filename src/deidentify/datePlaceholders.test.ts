@@ -129,6 +129,7 @@ describe("dates become placeholders in calendar order", () => {
       daysAfter: (days: number, label: string, number: number) =>
         `${days} ${days === 1 ? "jour" : "jours"} après ${label} ${number}`,
       ageOver90: "90 et plus",
+      otherForm: (n: number) => `autre forme ${n}`,
     };
     const result = send(
       "Vu le 2026-10-08 puis le 2026-10-22. Patiente âgée de 93 ans.",

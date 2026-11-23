@@ -209,7 +209,7 @@ const FITS = [
   { label: "1280-text200", width: 1280, height: 800, font: 32, narrow: true },
   { label: "360-text100", width: 360, height: 740, font: 16, narrow: true },
   { label: "360-text200", width: 360, height: 740, font: 32, narrow: true },
-  // The app's own Text size (Preferences) zooms the whole webview: at 200% a
+  // The app's App zoom (Preferences) zooms the whole webview: at 200% a
   // 1280x720 window lays out like 640x360 with 16px text, drawn with twice
   // the pixels (as large-text-accessibility.spec.ts models it).
   {

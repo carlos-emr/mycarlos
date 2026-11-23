@@ -1,5 +1,6 @@
 import { hasVaultErrorCode } from "../vault";
 import { locateQuote } from "./locateQuote";
+import { usableSpeed } from "./speedEstimate";
 import type { SummaryProgressEvent } from "./summaryProgress";
 import {
   ModelCancelled,
@@ -60,6 +61,8 @@ export interface ModelBridge {
     recordId?: string,
   ): Promise<ModelExplanation>;
   aiCancel(): Promise<void>;
+  /** What the speed check measured, when the native side has it (#305). */
+  aiModelSpeed?(): Promise<unknown>;
 }
 
 /** The model on this computer, run natively in its own sandboxed helper.
@@ -96,6 +99,13 @@ export function nativeLocalModel(bridge: ModelBridge): LocalModel {
     explain: (term, context, lang, keepFor) =>
       bridge.aiExplain(term, context, lang, keepFor).catch(refused),
     cancel: () => void bridge.aiCancel().catch(() => undefined),
+    // Only what is in range counts (`usableSpeed`); anything else is "not measured".
+    speed: bridge.aiModelSpeed
+      ? () =>
+          bridge.aiModelSpeed!()
+            .then(usableSpeed)
+            .catch(() => null)
+      : undefined,
   };
 }
 

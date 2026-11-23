@@ -17,6 +17,9 @@ mod document_notification_windows;
 pub mod document_notifications;
 // The platform push hooks (one per platform, each with its own device test) and the Preferences
 // choice will call this; until then only the reconcile after opening the vault uses it.
+// Its tests need the Linux memfd and /proc, so they run on the Linux host only.
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
+mod android_pdf;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -37,6 +40,7 @@ mod model_acl;
 mod quote_locate;
 mod quote_provenance;
 // K20 (evaluation only): the safety checks with a quote fallback (pure std, with addressee).
+mod disk_space;
 mod safety;
 mod summary_contract;
 mod summary_progress;
@@ -46,6 +50,10 @@ mod model_download;
 mod model_helper;
 mod model_limits;
 mod model_runtime;
+mod video_scheme;
+// The recording core (#359) and, in the next step, the playback address use it.
+#[allow(dead_code)]
+mod mp4_stream;
 mod notice_key;
 #[cfg(windows)]
 mod notice_store_windows;
@@ -63,6 +71,7 @@ mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;
+mod speed_check;
 mod text_recheck;
 mod throttle;
 mod unicode_cleaning_table;
@@ -160,6 +169,8 @@ struct PublicError {
     note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
     retry_after_ms: Option<u64>,
+    /// For an AI refusal for lack of memory: what the start needs and what is free (#305).
+    memory: Option<model_runtime::MemoryShortfall>,
 }
 
 // Keep the established IPC fields and omission rules; only user-facing text is formatted.
@@ -179,6 +190,8 @@ impl Serialize for PublicError {
             note_key: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             retry_after_ms: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            memory: Option<model_runtime::MemoryShortfall>,
         }
         let text = |key| {
             UiLocale::En
@@ -193,6 +206,7 @@ impl Serialize for PublicError {
             note: self.note_key.map(text),
             note_key: self.note_key,
             retry_after_ms: self.retry_after_ms,
+            memory: self.memory,
         }
         .serialize(serializer)
     }
@@ -206,6 +220,7 @@ impl From<ui_text::UiTextError> for PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -267,6 +282,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: Some(left_ms),
+            memory: None,
         }
     }
 
@@ -277,6 +293,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -306,6 +323,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -316,6 +334,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -525,6 +544,10 @@ impl From<VaultError> for PublicText {
                 code: "pdf_too_large",
                 message_key: "native.error.30",
             },
+            VaultError::PdfMobileTooLarge => Self {
+                code: "pdf_mobile_too_large",
+                message_key: "reader.android.tooLarge",
+            },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
                 message_key: "native.error.31",
@@ -629,6 +652,7 @@ impl From<VaultError> for PublicError {
             record_id,
             note_key: None,
             retry_after_ms,
+            memory: None,
         }
     }
 }
@@ -678,10 +702,14 @@ impl Drop for PassphraseRequest {
     }
 }
 
+/// Writes the backup to a place the patient chose, optionally leaving the videos
+/// out (#359).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PickRequest {
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BackupWriteRequest {
     pick_id: Uuid,
+    #[serde(default)]
+    leave_videos_out: bool,
 }
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
@@ -1036,6 +1064,44 @@ impl FileStart {
 impl std::io::Write for FileStart {
     fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
         let take = data.len().min(self.bytes.len() - self.seen);
+        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
+        self.seen += take;
+        if self.complete() {
+            Err(std::io::Error::other("the first bytes are read"))
+        } else {
+            Ok(data.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The first `N` bytes of a record's file, and no more (as `FileStart`).
+struct FileStartN<const N: usize> {
+    bytes: [u8; N],
+    seen: usize,
+}
+
+impl<const N: usize> Default for FileStartN<N> {
+    fn default() -> Self {
+        Self {
+            bytes: [0; N],
+            seen: 0,
+        }
+    }
+}
+
+impl<const N: usize> FileStartN<N> {
+    fn complete(&self) -> bool {
+        self.seen == N
+    }
+}
+
+impl<const N: usize> std::io::Write for FileStartN<N> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        let take = data.len().min(N - self.seen);
         self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
         self.seen += take;
         if self.complete() {
@@ -1774,7 +1840,9 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
             model,
             capacity: Some(capacity),
         } => {
-            let card = model_runtime::app().runner().card_for(&model.sha256);
+            // The one place cards are read from (this run's, else the saved one), as the start
+            // and the settings read them.
+            let card = models.stored_card(&model.sha256);
             local_model::ModelStatus::Installed {
                 capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
                 model,
@@ -1792,18 +1860,18 @@ fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::Mod
 }
 
 /// Each model's limits, for the AI helper settings (model limits): how much of a document it
-/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
-/// helper has run a model in this session, its room follows the context the helper made, and
-/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// reads at a time, the file's size, and the free memory a start needs (today's rule, or the card's
+/// formula when that is more). Once the helper has run a model (in this run of the app or an
+/// earlier one of this build, whose card is saved), its room follows the context the helper made,
+/// and the file's own claims (trained context, parameters) are given as such. Nothing here reads
 /// the model file: the helper's checked card does (`model_limits`).
 #[tauri::command]
 fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
-    let runner = model_runtime::app().runner();
     models
         .models()
         .into_iter()
         .map(|row| {
-            let card = runner.card_for(row.model.sha256);
+            let card = models.stored_card(row.model.sha256);
             model_limits::limits(
                 row.index,
                 &row.model,
@@ -2291,6 +2359,92 @@ async fn ai_summarize(
     })
 }
 
+/// The speed check (#305 PR 4): how fast the AI helper reads and writes on this computer, from one
+/// short fixed FAKE request, started only by the patient. It takes the same single answer slot and
+/// the unlocked session's hold as any answer (so it cannot run while locked or beside another
+/// answer), a lock or `ai_cancel` stops it, and its threads are the app's own (never more than the
+/// computer's CPUs). The result is kept per model, build and thread count.
+#[tauri::command]
+async fn ai_speed_check(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    models: State<'_, Arc<local_model::Store>>,
+    answer_id: Uuid,
+) -> CommandResult<speed_check::Speed> {
+    let store = store.pin();
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let sha256 = models
+        .in_use_sha256()
+        .ok_or_else(|| ai_error(model_runtime::AiError::NotInstalled))?;
+    let stats = run_ai(
+        store.arc(),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.speed_check_for(ticket, watch),
+    )
+    .await?;
+    let Some(speed) = speed_check::measure(&stats) else {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    };
+    // Kept only under the thread count it was read on: a check whose helper ran on another count
+    // than the app's own now (it changed since the helper started) is no measurement for this key.
+    if !speed_check::read_on(&stats, speed_threads()) {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    }
+    if !keep_speed(&models, sha256, speed, now_ms()) {
+        return Err(ai_error(model_runtime::AiError::Storage));
+    }
+    Ok(speed)
+}
+
+/// The thread count a speed is kept and found under: the app's own (`model_runtime::threads`),
+/// which is the count the helper reads a prompt on (`Stats::batch_threads`), never the answer's
+/// own count (a fixed few, at most 3). One key for the check that saves it and the question that
+/// reads it.
+fn speed_threads() -> u32 {
+    model_runtime::threads()
+}
+
+fn keep_speed(
+    models: &local_model::Store,
+    sha256: &str,
+    speed: speed_check::Speed,
+    at_ms: u64,
+) -> bool {
+    models.save_speed(sha256, speed_threads(), speed, at_ms)
+}
+
+fn recorded_speed(models: &local_model::Store) -> Option<speed_check::Speed> {
+    recorded_speed_for(models, models.in_use_sha256()?)
+}
+
+fn recorded_speed_for(models: &local_model::Store, sha256: &str) -> Option<speed_check::Speed> {
+    models.speed_for(sha256, speed_threads())
+}
+
+/// What was measured for the model in use on this computer, for the reader's "about N minutes"
+/// and the settings: nothing until the patient has run the check.
+#[tauri::command]
+fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_check::Speed> {
+    recorded_speed(&models)
+}
+
 /// What a term means in its sentence, from the model on this computer (#72). With the
 /// document, which must be a readable PDF, the answer is also kept for that document's save.
 #[tauri::command]
@@ -2584,7 +2738,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
     let message_key = match error {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
-        AiError::Memory => "ai.error.memory",
+        AiError::Memory(_) => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
         AiError::SummaryTooLarge => "ai.summaryTooLarge",
@@ -2596,6 +2750,11 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        // How much a refusal for memory needed and how much was free (#305).
+        memory: match error {
+            AiError::Memory(shortfall) => shortfall,
+            _ => None,
+        },
     }
 }
 
@@ -2710,6 +2869,7 @@ async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTest
             note_key: None,
             record_id: None,
             retry_after_ms: None,
+            memory: None,
         })??;
     let RuntimeInfo {
         platform,
@@ -2814,19 +2974,23 @@ fn after_open(store: &Arc<VaultStore>) {
 
 #[tauri::command]
 async fn vault_lock(
+    app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     let store = store.pin();
     stop_work_for_lock(&picks);
     let picks = Arc::clone(picks.inner());
-    run_blocking(store.arc(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         stop_work_for_lock(&picks);
         Ok(())
     })
-    .await
+    .await;
+    // Again once locked: a reader still being opened stops too.
+    cancel_native_pdf(&app);
+    result
 }
 
 /// What stops with a lock, whichever way the vault locks (the command, the idle deadline, and a
@@ -2972,6 +3136,7 @@ fn audit_history_result(result: CommandResult<vault::HistoryView>) -> CommandRes
                 record_id: None,
                 note_key: None,
                 retry_after_ms: None,
+                memory: None,
             })
         }
         Err(error) => Err(error),
@@ -3105,6 +3270,7 @@ fn approval_check_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms,
+        memory: None,
     }
 }
 
@@ -3156,6 +3322,7 @@ fn approval_code_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        memory: None,
     }
 }
 
@@ -3731,13 +3898,31 @@ async fn vault_backup_pick(
     Ok(destination.map(|destination| picks.backups.store(session, destination)))
 }
 
+/// How big a backup would be, and how much of it is video, asked before the
+/// patient chooses where to save it.
+#[tauri::command]
+async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.backup_size()).await
+}
+
+/// The records a backup was made without the file of, for the Hidden list to say
+/// why a video's file is missing: those whose latest history event is "hidden,
+/// left out of the backup".
+#[tauri::command]
+async fn vault_left_out_records(store: State<'_, StoreHandle>) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.left_out_records()).await
+}
+
 #[tauri::command]
 async fn vault_backup_picked(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: PickRequest,
+    request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
+    let leave_videos_out = request.leave_videos_out;
     let store = store.pin();
     let destination = picks
         .backups
@@ -3752,7 +3937,7 @@ async fn vault_backup_picked(
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
         return run_blocking(store.arc(), move |store| {
-            store.backup_atomic(&path, now_ms())?;
+            store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
             Ok(SavedBackup {
                 name,
                 bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
@@ -3773,7 +3958,8 @@ async fn vault_backup_picked(
     run_blocking(store.arc(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
-        store.verify_for_backup()?;
+        let plan = store.plan_backup(leave_videos_out)?;
+        store.verify_for_backup_planned(&plan)?;
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -3784,12 +3970,13 @@ async fn vault_backup_picked(
             .map_err(|_| VaultError::Storage)?;
         opened.store(true, Ordering::Release);
         drop(opening);
-        store.backup(
+        store.backup_planned(
             std::io::BufWriter::new(Counted {
                 inner: output,
                 bytes: counted,
             }),
             now_ms(),
+            &plan,
         )?;
         store.record_backup_saved(&place);
         Ok(())
@@ -4530,8 +4717,174 @@ async fn vault_view_page(
 
 /// Stops any page being drawn: the reader closed.
 #[tauri::command]
-fn vault_view_cancel() {
+fn vault_view_cancel(app: tauri::AppHandle) {
     pdf_view::cancel_views();
+    cancel_native_pdf(&app);
+}
+
+/// Cancels both the Android native reader and an older open still waiting to reach it.
+fn cancel_native_pdf(_app: &tauri::AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        let generation = android_pdf::GATE.next();
+        let app = _app.clone();
+        tauri::async_runtime::spawn(async move {
+            tauri_plugin_android_pdf::close(&app, generation).await;
+        });
+    }
+}
+
+/// The words the Android reader shows and speaks, from the page's own translations: the plugin has
+/// none of its own. Short, with no control characters.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AndroidPdfLabels {
+    close: String,
+    previous: String,
+    next: String,
+    zoom_in: String,
+    zoom_out: String,
+    /// "Page {page} of {total}, picture of the letter": the placeholders are filled in natively.
+    page: String,
+    /// "Page {page} of {total}".
+    page_status: String,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl AndroidPdfLabels {
+    fn valid(&self) -> bool {
+        [
+            &self.close,
+            &self.previous,
+            &self.next,
+            &self.zoom_in,
+            &self.zoom_out,
+            &self.page,
+            &self.page_status,
+        ]
+        .into_iter()
+        .all(|label| {
+            !label.is_empty() && label.len() <= 160 && !label.chars().any(char::is_control)
+        })
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AndroidPdfRequest {
+    record_id: Uuid,
+    labels: AndroidPdfLabels,
+}
+
+/// Android uses a separate, bridge-free native PdfRenderer view, never the app webview. The bytes
+/// go from the vault into a sealed in-memory file and nowhere else (`android_pdf.rs`).
+#[tauri::command]
+async fn vault_read_android_pdf(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    request: AndroidPdfRequest,
+    activity: tauri::ipc::Channel<()>,
+) -> CommandResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        let store = store.pin();
+        if !request.labels.valid() {
+            return Err(VaultError::Invalid.into());
+        }
+        let generation = android_pdf::GATE.next();
+        // The plugin's lifecycle epoch changes on backgrounding even when no reader is visible
+        // yet, so returning to the app cannot revive an export that was already under way.
+        let epoch = tauri_plugin_android_pdf::begin(&app)
+            .await
+            .ok_or_else(|| PublicError::from(VaultError::Cancelled))?;
+        let (document, title) = run_blocking(store.arc(), move |store| {
+            if !android_pdf::GATE.current(generation) {
+                return Err(VaultError::Cancelled);
+            }
+            android_pdf::prepare(store, request.record_id)
+        })
+        .await?;
+        if !android_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        // The descriptor stays ours until the reader has closed: the plugin duplicates it.
+        let memfd = match android_pdf::sealed_memfd(&android_pdf::Linux, &document) {
+            Ok(fd) => fd,
+            // The system refuses a memfd: no file is made instead. A recoverable message.
+            Err(_) => return Err(VaultError::PdfViewUnavailable.into()),
+        };
+        drop(document);
+        let activity_store = Arc::clone(store.arc());
+        let activity_app = app.clone();
+        let renderer_activity = activity;
+        #[derive(Deserialize)]
+        struct ReaderInput {
+            event: String,
+        }
+        let reader_activity = android_pdf::ActivityGate::new(generation);
+        let activity = tauri::ipc::Channel::<()>::new(move |message| {
+            let Ok(input) = message.deserialize::<ReaderInput>() else {
+                return Ok(());
+            };
+            if reader_activity.accepts(&android_pdf::GATE, &input.event) {
+                if activity_store.idle().touch_before_deadline(Instant::now()) {
+                    let _ = renderer_activity.send(());
+                } else {
+                    cancel_native_pdf(&activity_app);
+                }
+            }
+            Ok(())
+        });
+        use std::os::fd::AsRawFd;
+        let shown = tauri_plugin_android_pdf::open(
+            &app,
+            tauri_plugin_android_pdf::Document {
+                generation,
+                epoch,
+                fd: memfd.as_raw_fd(),
+                size: memfd_size(&memfd),
+                title: &title,
+                labels: tauri_plugin_android_pdf::Labels {
+                    close: &request.labels.close,
+                    previous: &request.labels.previous,
+                    next: &request.labels.next,
+                    zoom_in: &request.labels.zoom_in,
+                    zoom_out: &request.labels.zoom_out,
+                    page: &request.labels.page,
+                    page_status: &request.labels.page_status,
+                },
+                activity,
+            },
+        )
+        .await;
+        drop(memfd);
+        if !android_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        if !shown {
+            return Err(VaultError::PdfViewFailed.into());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, store, request.record_id, request.labels, activity);
+        Err(VaultError::PdfViewUnavailable.into())
+    }
+}
+
+#[cfg(target_os = "android")]
+fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
+    use std::os::fd::AsRawFd;
+    // SAFETY: fstat on a descriptor this function borrows for the call.
+    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(fd.as_raw_fd(), &mut stat) } == 0 {
+        stat.st_size as u64
+    } else {
+        0
+    }
 }
 
 /// Where a quoted span of a page's text is on the page picture (#292).
@@ -5195,6 +5548,261 @@ async fn vault_view_photo(
     .await
 }
 
+// ---- video recording and playback (#359) ------------------------------------
+//
+// The page records with the webview's own MediaRecorder and sends each piece
+// (about one a second) here as base64 in the ordinary JSON arguments: a byte
+// body would arrive on Android as a JSON array of numbers several times its
+// size. Each piece carries a sequence number the vault checks. Playback goes
+// by a token for the `mycarlos-video` address (video_scheme.rs); no path, id or
+// name of a file ever reaches the page.
+
+/// The most base64 text one piece may be: `MAX_RECORDING_PIECE` bytes, 4/3
+/// larger, with room for padding. Checked before anything is decoded.
+const MAX_VIDEO_PIECE_BASE64: usize = vault::MAX_RECORDING_PIECE / 3 * 4 + 8;
+/// The most folders a recording may be filed in at once, as an import's.
+const MAX_VIDEO_FOLDERS: usize = 64;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoStartRequest {
+    profile_id: Uuid,
+    folder_ids: Vec<Uuid>,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoStarted {
+    recording_id: Uuid,
+}
+
+#[tauri::command]
+async fn vault_video_start(
+    store: State<'_, StoreHandle>,
+    request: VideoStartRequest,
+) -> CommandResult<VideoStarted> {
+    let store = store.pin();
+    if request.folder_ids.len() > MAX_VIDEO_FOLDERS {
+        return Err(VaultError::Invalid.into());
+    }
+    run_blocking(store.arc(), move |store| {
+        store
+            .recording_start(
+                request.profile_id,
+                request.folder_ids,
+                &request.name,
+                now_ms(),
+            )
+            .map(|recording_id| VideoStarted { recording_id })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoAppendRequest {
+    recording_id: Uuid,
+    sequence: u64,
+    data: String,
+}
+
+// The piece's text is wiped however the command ends.
+impl Drop for VideoAppendRequest {
+    fn drop(&mut self) {
+        self.data.zeroize();
+    }
+}
+
+/// A piece's bytes from its base64 text: refused, before it is decoded, if the
+/// text is longer than a piece may be.
+fn decode_video_piece(data: &str) -> Result<Zeroizing<Vec<u8>>, VaultError> {
+    // The length of the text is checked, not of the bytes it would decode to:
+    // decoding allocates a piece's size, and a hostile page could otherwise send
+    // text for a far larger one before anything bounded it. The limit is the
+    // base64 length of `MAX_RECORDING_PIECE` bytes (4/3 of it) plus padding.
+    if data.len() > MAX_VIDEO_PIECE_BASE64 {
+        return Err(VaultError::Invalid);
+    }
+    BASE64
+        .decode(data)
+        .map(Zeroizing::new)
+        .map_err(|_| VaultError::Invalid)
+}
+
+#[tauri::command]
+async fn vault_video_append(
+    store: State<'_, StoreHandle>,
+    request: VideoAppendRequest,
+) -> CommandResult<vault::RecordingProgress> {
+    let store = store.pin();
+    let piece = decode_video_piece(&request.data)?;
+    let (id, sequence) = (request.recording_id, request.sequence);
+    drop(request);
+    run_blocking(store.arc(), move |store| {
+        store.recording_append_numbered(id, Some(sequence), &piece)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecordingRequest {
+    recording_id: Uuid,
+}
+
+#[tauri::command]
+async fn vault_video_pause(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordingRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.recording_pause(request.recording_id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn vault_video_resume(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordingRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.recording_resume(request.recording_id)
+    })
+    .await
+}
+
+/// What ended a recording: the video that was added to the library, or nothing
+/// (nothing complete had been recorded).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoSaved {
+    record_id: Option<Uuid>,
+}
+
+#[tauri::command]
+async fn vault_video_stop(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordingRequest,
+) -> CommandResult<VideoSaved> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store
+            .recording_stop(request.recording_id, now_ms())
+            .map(|record_id| VideoSaved { record_id })
+    })
+    .await
+}
+
+/// How much room there is to record: asked before the camera and microphone are
+/// turned on, and again on every resume.
+#[tauri::command]
+async fn vault_video_space(store: State<'_, StoreHandle>) -> CommandResult<vault::RecordingSpace> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recording_space).await
+}
+
+/// The recordings a crash or a lock left unfinished, for the question at unlock.
+#[tauri::command]
+async fn vault_video_pending(
+    store: State<'_, StoreHandle>,
+) -> CommandResult<vault::PendingRecordings> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recordings_pending).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecoverRequest {
+    recording_id: Uuid,
+    keep: bool,
+}
+
+/// Answers the question at unlock: keep what was saved (it becomes a video) or
+/// delete it.
+#[tauri::command]
+async fn vault_video_recover(
+    store: State<'_, StoreHandle>,
+    request: VideoRecoverRequest,
+) -> CommandResult<VideoSaved> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store
+            .recording_recover(request.recording_id, request.keep, now_ms())
+            .map(|record_id| VideoSaved { record_id })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoRecordRequest {
+    record_id: Uuid,
+}
+
+/// Whether a record is a video myCarlos recorded: the history says it was added
+/// with the camera, and its file starts as an MP4 does (`ftyp` at byte 4). The
+/// origin decides, never the bytes alone: an iPhone's HEIC photo, an M4A voice
+/// memo and a camera raw file also carry `ftyp`, and are not videos. The
+/// details ask this before offering Play video.
+fn is_video(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    if !store.added_with_camera(record_id)? {
+        return Ok(false);
+    }
+    let mut start = FileStartN::<8>::default();
+    let exported = store.read_for_view(record_id, &mut start);
+    if start.complete() {
+        return Ok(&start.bytes[4..8] == b"ftyp");
+    }
+    exported.map(|()| false)
+}
+
+#[tauri::command]
+async fn vault_is_video(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordRequest,
+) -> CommandResult<bool> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| is_video(store, request.record_id)).await
+}
+
+/// Opens a stored video for playback: the token the page puts in a `<video>`'s
+/// address, and the length of the file a player sees.
+#[tauri::command]
+async fn vault_video_open(
+    store: State<'_, StoreHandle>,
+    request: VideoRecordRequest,
+) -> CommandResult<vault::PlaybackOpened> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.playback_open(request.record_id)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct VideoCloseRequest {
+    token: String,
+}
+
+/// Ends one video's playback (the player closed). Locking ends every one.
+#[tauri::command]
+async fn vault_video_close(
+    store: State<'_, StoreHandle>,
+    request: VideoCloseRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.playback_close(&request.token);
+        Ok(())
+    })
+    .await
+}
+
 #[tauri::command]
 async fn vault_is_locked_pdf(
     store: State<'_, StoreHandle>,
@@ -5504,10 +6112,34 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
+        // The address a stored video plays from (#359): only a token made at this
+        // unlock is answered, and nothing else is served.
+        // Only the main window may ask, and the answer (a range of ciphertext
+        // decrypted) is made off the UI thread.
+        .register_asynchronous_uri_scheme_protocol(
+            video_scheme::SCHEME,
+            |context, request, responder| {
+                let store = video_scheme::webview_allowed(context.webview_label())
+                    .then(|| context.app_handle().try_state::<StoreHandle>())
+                    .flatten()
+                    .map(|store| Arc::clone(store.arc()));
+                match store {
+                    Some(store) => {
+                        tauri::async_runtime::spawn_blocking(move || {
+                            responder.respond(video_scheme::respond(&store, &request));
+                        });
+                    }
+                    None => responder.respond(video_scheme::refused()),
+                }
+            },
+        )
         .setup(|app| {
             // The window is made here, not by the configuration, so that it
             // can refuse to open others: nothing in the app opens a window,
@@ -5611,6 +6243,23 @@ pub fn run() {
                 Box::new(local_model::RuntimeSource(Arc::clone(&models))),
                 Box::new(local_model::SystemMemory),
             );
+            // Each checked card the helper makes is saved beside the models (#305), so the
+            // settings know a model's confirmed context after a restart.
+            {
+                let saver = Arc::clone(&models);
+                // Readable at once; written on a thread of its own, so a start does not wait for
+                // the disk.
+                model_runtime::app()
+                    .runner()
+                    .set_card_saver(Box::new(move |sha256, card| {
+                        saver.remember_card(sha256, card);
+                        let (saver, sha256, card) =
+                            (Arc::clone(&saver), sha256.to_owned(), card.clone());
+                        let _ = std::thread::Builder::new()
+                            .name("model-card-save".into())
+                            .spawn(move || saver.save_card(&sha256, &card));
+                    }));
+            }
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
@@ -5624,12 +6273,15 @@ pub fn run() {
             }
             let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            let idle_app = app.handle().clone();
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
                     // The vault the screen is on at this tick, not the one at start-up.
-                    lock_if_idle(vaults.arc(), &picks, Instant::now());
+                    if lock_if_idle(vaults.arc(), &picks, Instant::now()) {
+                        cancel_native_pdf(&idle_app);
+                    }
                 })?;
             Ok(())
         })
@@ -5647,6 +6299,8 @@ pub fn run() {
             ai_model_download,
             ai_model_remove,
             ai_summarize,
+            ai_speed_check,
+            ai_model_speed,
             ai_explain,
             ai_cancel,
             kdf_benchmark,
@@ -5678,6 +6332,8 @@ pub fn run() {
             vault_recovery_key_cancel,
             vault_recover,
             vault_backup_pick,
+            vault_backup_size,
+            vault_left_out_records,
             vault_backup_picked,
             vault_restore_pick,
             vault_restore_inspect,
@@ -5698,6 +6354,7 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_read_android_pdf,
             vault_page_boxes,
             vault_document_text,
             vault_document_text_cancel,
@@ -5709,6 +6366,17 @@ pub fn run() {
             vault_save_photo,
             vault_is_photo,
             vault_view_photo,
+            vault_video_start,
+            vault_video_append,
+            vault_video_pause,
+            vault_video_resume,
+            vault_video_stop,
+            vault_video_space,
+            vault_video_pending,
+            vault_video_recover,
+            vault_is_video,
+            vault_video_open,
+            vault_video_close,
             vault_is_locked_pdf,
             vault_unlock_pdf,
             vault_hide_record,
@@ -6452,6 +7120,36 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_for_memory_carries_what_was_needed_and_what_was_free() {
+        use model_runtime::{AiError, MemoryShortfall};
+        let refusal = ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_641_000_000,
+            available_bytes: Some(1_950_000_000),
+        })));
+        assert_eq!(refusal.code, "aiMemory");
+        let sent = serde_json::to_value(&refusal).unwrap();
+        assert_eq!(sent["code"], "aiMemory");
+        assert_eq!(sent["messageKey"], "ai.error.memory");
+        assert_eq!(sent["memory"]["neededBytes"], 3_641_000_000u64);
+        assert_eq!(sent["memory"]["availableBytes"], 1_950_000_000u64);
+        // A computer that could not say what is free sends only the need.
+        let unknown = serde_json::to_value(ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_000_000_000,
+            available_bytes: None,
+        }))))
+        .unwrap();
+        assert_eq!(unknown["memory"]["neededBytes"], 3_000_000_000u64);
+        assert!(unknown["memory"].get("availableBytes").is_none());
+        // Every other refusal, and a memory refusal with no numbers, sends none.
+        for error in [AiError::Memory(None), AiError::Busy, AiError::Failed] {
+            assert!(serde_json::to_value(ai_error(error))
+                .unwrap()
+                .get("memory")
+                .is_none());
+        }
+    }
+
+    #[test]
     fn ai_errors_carry_their_code_and_words_the_catalogue_has() {
         use model_runtime::AiError;
         for (error, code, words) in [
@@ -6461,7 +7159,7 @@ mod tests {
                 "isn't on this device",
             ),
             (AiError::Damaged, "aiDamaged", "isn't on this device"),
-            (AiError::Memory, "aiMemory", "enough free memory"),
+            (AiError::Memory(None), "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
             (
@@ -7218,7 +7916,7 @@ mod tests {
         // and a failure, as an answer stopped at its limit ends.
         for ending in [
             Ok(()),
-            Err(AiError::Memory),
+            Err(AiError::Memory(None)),
             Err(AiError::Cancelled),
             Err(AiError::Failed),
         ] {
@@ -7361,6 +8059,7 @@ mod tests {
             replaces,
             differs_from_this_device: differs,
             document_count: 3,
+            left_out: 0,
             fingerprint: [0; 32],
         };
         assert!(restore_warning(&preview(RestoreReplaces::Nothing, false)).is_none());
@@ -7576,6 +8275,20 @@ mod tests {
         ] {
             assert!(production_csp.contains(directive));
         }
+        // Stored videos play from the app's own scheme and nowhere else (#359).
+        for csp in [production_csp, security["devCsp"].as_str().unwrap()] {
+            assert!(
+                csp.contains("media-src 'self' mycarlos-video: http://mycarlos-video.localhost;")
+            );
+            let connect = csp
+                .split(';')
+                .find(|d| d.trim_start().starts_with("connect-src"))
+                .unwrap();
+            assert!(
+                !connect.contains("mycarlos-video"),
+                "scripts may not fetch videos"
+            );
+        }
         assert!(security["devCsp"].as_str().unwrap().contains("ws://*:1421"));
         assert_eq!(security["freezePrototype"], true);
         assert_eq!(config["build"]["removeUnusedCommands"], true);
@@ -7629,6 +8342,126 @@ mod tests {
                     || library.contains(&format!("    {command}\n"))
             );
             assert!(build_script.contains(&format!("\"{command}\"")));
+        }
+    }
+
+    /// The speed check saves under the key the reader's question looks it up by (a mismatch once
+    /// made a result that was never found again on a computer with five or more cores).
+    #[test]
+    fn a_measured_speed_is_found_again_by_the_question_that_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = local_model::Store::new(temp.path().join("models"), local_model::CATALOG);
+        let sha = local_model::CATALOG[0].sha256;
+        assert_eq!(recorded_speed_for(&store, sha), None);
+        let speed = speed_check::Speed {
+            prompt_milli_tps: 9_000,
+            answer_milli_tps: 2_500,
+        };
+        // `ai_speed_check` saves through `keep_speed`; `ai_model_speed` reads through
+        // `recorded_speed_for`: the same key, whatever the cores.
+        assert!(keep_speed(&store, sha, speed, 1));
+        assert_eq!(recorded_speed_for(&store, sha), Some(speed));
+        assert_eq!(speed_threads(), model_runtime::threads());
+        // Another model's speed is not this one's.
+        assert_eq!(recorded_speed_for(&store, &"cd".repeat(32)), None);
+    }
+
+    /// Every command's `State<..>` parameter must be something the app manages: a command asking for
+    /// a type nobody manages panics ("state not managed") the first time it is called, and
+    /// nothing at build time says so (#393 made the vault `StoreHandle`; commands merged after it from
+    /// branches that began before it still asked for `Arc<VaultStore>`). Each managed type is listed
+    /// here with the text in the app's setup that manages it, so the list cannot drift from the code
+    /// in either direction: a new type fails until it is added WITH its evidence, and a removed
+    /// `manage` fails its evidence.
+    #[test]
+    fn every_state_a_command_asks_for_is_managed_by_the_setup() {
+        const MANAGED: &[(&str, &str)] = &[
+            ("StoreHandle", "app.manage(StoreHandle::from_source(slots))"),
+            (
+                "Arc<AttemptThrottle>",
+                "app.manage(Arc::new(AttemptThrottle::new(",
+            ),
+            ("Arc<local_model::Store>", "app.manage(models)"),
+            (
+                "Arc<ModelAddActive>",
+                "app.manage(Arc::new(ModelAddActive::default()))",
+            ),
+            (
+                "Arc<PendingPicks>",
+                "app.manage(Arc::new(PendingPicks::default()))",
+            ),
+            (
+                "Arc<ReceivedFiles>",
+                "app.manage(Arc::new(ReceivedFiles::default()))",
+            ),
+        ];
+        let library = include_str!("lib.rs");
+        let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let setup: String = startup.chars().filter(|c| !c.is_whitespace()).collect();
+        for (state, evidence) in MANAGED {
+            let evidence: String = evidence.chars().filter(|c| !c.is_whitespace()).collect();
+            assert!(
+                setup.contains(&evidence),
+                "{state} is no longer managed: {evidence}"
+            );
+        }
+        let command_marker = ["#[tauri", "::command]"].concat();
+        let mut asked = Vec::new();
+        for part in startup.split(&command_marker).skip(1) {
+            let Some(open) = part.find('(') else { continue };
+            let mut depth = 0usize;
+            let mut close = None;
+            for (index, c) in part[open..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(open + index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let params: String = part[open + 1..close.unwrap()]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            for (at, _) in params.match_indices("State<'") {
+                // `State<'_,TYPE>`: the type is everything after the first comma, up to the `>` that
+                // closes `State<`.
+                let rest = &params[at + 6..];
+                let comma = rest.find(',').unwrap();
+                let mut depth = 1usize;
+                let mut end = comma + 1;
+                for (index, c) in rest[comma + 1..].char_indices() {
+                    match c {
+                        '<' => depth += 1,
+                        '>' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = comma + 1 + index;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                asked.push(rest[comma + 1..end].to_owned());
+            }
+        }
+        assert!(
+            asked.len() > 100,
+            "the scan found only {} state parameters",
+            asked.len()
+        );
+        for state in &asked {
+            assert!(
+                MANAGED.iter().any(|(managed, _)| managed == state),
+                "a command asks for State<{state}>, which the setup does not manage: it would panic \
+                 \"state not managed\" when called"
+            );
         }
     }
 
@@ -7823,7 +8656,7 @@ mod tests {
             let _ = serde_json::from_slice::<PassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<ChangePassphraseRequest>(&payload);
             let _ = serde_json::from_slice::<RecoverRequest>(&payload);
-            let _ = serde_json::from_slice::<PickRequest>(&payload);
+            let _ = serde_json::from_slice::<BackupWriteRequest>(&payload);
             let _ = serde_json::from_slice::<BackupPickRequest>(&payload);
             let _ = serde_json::from_slice::<RestoreRequest>(&payload);
             let _ = serde_json::from_slice::<ConfirmRecoveryKeyRequest>(&payload);
@@ -8633,6 +9466,181 @@ mod photo_command_tests {
         let saved = body("fn save_photo(");
         assert!(saved.contains("store.import_from("));
         assert!(saved.contains("\"camera\""));
+    }
+
+    // ---- video (#359) -------------------------------------------------------
+
+    #[test]
+    fn a_piece_of_video_is_decoded_only_within_its_limit() {
+        let bytes = vec![7_u8; 1000];
+        let text = BASE64.encode(&bytes);
+        assert_eq!(*decode_video_piece(&text).unwrap(), bytes);
+        assert!(decode_video_piece("").unwrap().is_empty());
+        for bad in ["not base64!", "AAA", "====", "\u{0}"] {
+            assert!(
+                matches!(decode_video_piece(bad), Err(VaultError::Invalid)),
+                "{bad:?}"
+            );
+        }
+        // The largest piece goes through; one character more of text is refused
+        // before it is decoded.
+        let largest = BASE64.encode(vec![1_u8; vault::MAX_RECORDING_PIECE]);
+        assert!(largest.len() <= MAX_VIDEO_PIECE_BASE64);
+        assert_eq!(
+            decode_video_piece(&largest).unwrap().len(),
+            vault::MAX_RECORDING_PIECE
+        );
+        let too_long = "A".repeat(MAX_VIDEO_PIECE_BASE64 + 1);
+        assert!(matches!(
+            decode_video_piece(&too_long),
+            Err(VaultError::Invalid)
+        ));
+    }
+
+    #[test]
+    fn the_video_requests_take_exactly_the_fields_they_name() {
+        let id = Uuid::new_v4();
+        let ok = |value: serde_json::Value| serde_json::from_value::<VideoAppendRequest>(value);
+        assert!(ok(serde_json::json!({"recordingId": id, "sequence": 3, "data": "AAAA"})).is_ok());
+        for bad in [
+            serde_json::json!({"recordingId": id, "sequence": 3, "data": "AAAA", "path": "/x"}),
+            serde_json::json!({"recordingId": id, "sequence": -1, "data": "AAAA"}),
+            serde_json::json!({"recordingId": "nope", "sequence": 3, "data": "AAAA"}),
+            serde_json::json!({"recordingId": id, "data": "AAAA"}),
+        ] {
+            assert!(ok(bad).is_err());
+        }
+        assert!(
+            serde_json::from_value::<VideoStartRequest>(serde_json::json!({
+                "profileId": id, "folderIds": [], "name": "FAKE clip.mp4"
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<VideoStartRequest>(serde_json::json!({
+                "profileId": id, "folderIds": [], "name": "FAKE", "extra": 1
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<VideoRecoverRequest>(serde_json::json!({
+                "recordingId": id, "keep": true
+            }))
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_value::<VideoRecoverRequest>(serde_json::json!({
+                "recordingId": id
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<VideoCloseRequest>(serde_json::json!({
+                "token": "x", "recordId": id
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn the_video_commands_are_wired_as_the_renderer_calls_them() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        for command in [
+            "async fn vault_video_start(",
+            "async fn vault_video_pause(",
+            "async fn vault_video_resume(",
+            "async fn vault_video_stop(",
+            "async fn vault_video_space(",
+            "async fn vault_video_pending(",
+            "async fn vault_video_recover(",
+            "async fn vault_is_video(",
+            "async fn vault_video_open(",
+            "async fn vault_video_close(",
+        ] {
+            assert!(body(command).contains("run_blocking("), "{command}");
+        }
+        // A piece is decoded, with its limit checked, before the blocking work,
+        // and numbered so a lost or repeated one is noticed.
+        let append = body("async fn vault_video_append(");
+        assert!(append.contains("decode_video_piece(&request.data)"));
+        assert!(append.contains("recording_append_numbered("));
+        assert!(append.contains("run_blocking("));
+        // Playback hands out a token, never a path.
+        let open = body("async fn vault_video_open(");
+        assert!(open.contains("playback_open("));
+        assert!(!open.contains("objects"));
+    }
+
+    #[test]
+    fn a_record_is_a_video_when_its_file_starts_as_an_mp4_does() {
+        use crate::mp4_stream::fake::{fragment, ftyp, moov};
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let id = store
+            .recording_start(profile, vec![], "FAKE clip.mp4", 5)
+            .unwrap();
+        let movie = [ftyp(), moov(), fragment(1, 0, 0, 3000)].concat();
+        store.recording_append(id, &movie).unwrap();
+        let video = store.recording_stop(id, 6).unwrap().unwrap();
+        assert!(is_video(&store, video).unwrap());
+        // A photo, a PDF-like file and a tiny file are not, and neither is anything
+        // else that carries `ftyp` where an MP4 does and was imported: an iPhone's
+        // HEIC and AVIF photos, an M4A voice memo, a camera raw (CR3) and a PDF
+        // with `ftyp` in the same place.
+        let with_ftyp = |brand: &[u8; 4]| {
+            let mut bytes = vec![0, 0, 0, 0x18];
+            bytes.extend_from_slice(b"ftyp");
+            bytes.extend_from_slice(brand);
+            bytes.extend_from_slice(&[0; 12]);
+            bytes
+        };
+        let mut pdf = b"%PDF".to_vec();
+        pdf.extend_from_slice(b"ftyp FAKE junk, not an MP4");
+        for (name, bytes) in [
+            (
+                "FAKE a.jpg",
+                vec![0xff, 0xd8, 0xff, 0xe0, 0, 0x10, b'J', b'F', b'I', b'F'],
+            ),
+            ("FAKE b.pdf", b"%PDF-1.7 FAKE".to_vec()),
+            ("FAKE c.txt", b"hi".to_vec()),
+            ("FAKE d.heic", with_ftyp(b"heic")),
+            ("FAKE e.avif", with_ftyp(b"avif")),
+            ("FAKE f.m4a", with_ftyp(b"M4A ")),
+            ("FAKE g.cr3", with_ftyp(b"crx ")),
+            ("FAKE h.mov", with_ftyp(b"qt  ")),
+            ("FAKE i.mp4 (picked, not recorded)", with_ftyp(b"isom")),
+            ("FAKE j.pdf", pdf),
+        ] {
+            store
+                .import(
+                    profile,
+                    vec![],
+                    vec![ImportSource {
+                        display_name: name.to_owned(),
+                        reader: Box::new(std::io::Cursor::new(bytes)),
+                    }],
+                    9,
+                )
+                .unwrap();
+        }
+        let records = store.snapshot().unwrap().records;
+        for record in records.iter().filter(|r| r.id != video) {
+            assert!(
+                !is_video(&store, record.id).unwrap(),
+                "{}",
+                record.display_name
+            );
+        }
+        assert!(matches!(
+            is_video(&store, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
     }
 }
 

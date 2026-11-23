@@ -101,7 +101,7 @@ test("catalogue progress survives visiting Shared while Check stays in its reser
   await expect(check).toHaveCount(0);
   await navigate("Security");
   await expect(
-    page.getByRole("heading", { name: "Clinic documents", exact: true }),
+    page.getByRole("heading", { name: "Connected clinics", exact: true }),
   ).toBeVisible();
   await expect(check).toHaveCount(0);
   await navigate(/^Shared with me/);

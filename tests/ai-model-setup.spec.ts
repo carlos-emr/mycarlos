@@ -70,7 +70,11 @@ async function openAiSettings(page: Page, setup: FakeAiSetup = {}) {
 /** The AI helper's row on its page. */
 const aiRow = (page: Page) =>
   page.locator("section.setting-row").filter({
-    has: page.getByRole("heading", { name: en("ai.preferences.title") }),
+    // Starts with: the settings also have an "About the AI helper" row, and
+    // this row's heading can end in a "Not installed" pill.
+    has: page.getByRole("heading", {
+      name: new RegExp(`^${en("ai.preferences.title")}`),
+    }),
   });
 const rowButton = (row: Locator, key: Parameters<typeof translate>[1]) =>
   row.getByRole("button", {
