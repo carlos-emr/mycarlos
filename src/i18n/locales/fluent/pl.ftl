@@ -1741,6 +1741,8 @@ interface-history-event-portalLinkStarted = Rozpoczęto łączenie z przychodni�
 
 interface-history-event-portalLinked = Połączono z przychodnią
 
+interface-history-event-portalLinkRemoved = Usunięto powiązanie z przychodnią
+
 interface-history-event-profileCreated = Dodano profil pacjenta
 
 interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
@@ -1902,6 +1904,19 @@ portal-tryAgain = Spróbuj ponownie
 portal-tryAgainFor = Spróbuj ponownie: { $clinic }
 
 portal-linkAnother = Połącz z inną przychodnią
+
+portal-removeLink = Usuń to powiązanie
+
+portal-removeTitle = Usunąć to powiązanie?
+
+portal-removeBody = { $clinic }, urządzenie „{ $device }”. To urządzenie przestaje być powiązane na tym komputerze, a jego zapisane klucze zostają usunięte. Przychodnia może nadal wyświetlać to urządzenie.
+
+portal-removeConfirm = Usuń powiązanie
+
+portal-removeKept = Dokumenty z tej przychodni są zapisane w Twoim sejfie, więc to powiązanie pozostaje.
+
+portal-removed = Powiązanie usunięte.
+
 
 ai-summary-button = Podsumowanie
 

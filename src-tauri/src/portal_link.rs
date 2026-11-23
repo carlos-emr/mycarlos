@@ -257,6 +257,9 @@ pub struct LinkSummary {
     /// How many of this clinic's documents failed their checks and are
     /// remembered, so not downloaded again (#143). The store adds it.
     pub refused_deliveries: usize,
+    /// A document or reading aid from this clinic is filed in the vault. Its custody proof needs
+    /// this link's private keys, so such a link cannot be removed (#160). The snapshot adds it.
+    pub has_documents: bool,
 }
 
 impl StoredLink {
@@ -353,6 +356,7 @@ impl StoredLink {
             approval_code_submitted: false,
             approval_code_locked: false,
             refused_deliveries: 0,
+            has_documents: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

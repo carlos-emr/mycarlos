@@ -3197,6 +3197,19 @@ async fn vault_forget_refused_deliveries(
 }
 
 #[tauri::command]
+async fn vault_portal_remove_link(
+    store: State<'_, Arc<VaultStore>>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.inner());
+    tauri::async_runtime::spawn_blocking(move || store.remove_portal_link(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 async fn vault_check_documents(
     store: State<'_, Arc<VaultStore>>,
 ) -> CommandResult<portal_pickup::CheckResult> {
@@ -5592,6 +5605,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_portal_remove_link,
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,

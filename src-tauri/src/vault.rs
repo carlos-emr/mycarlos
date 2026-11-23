@@ -65,7 +65,11 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// model-file draft (#298) takes the next number when it merges. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+/// Format 14 (removing a clinic link, #160) adds the `portalLinkRemoved` history event. No
+/// manifest field changed; an older build refuses the vault because it cannot read the event.
+/// The number is provisional until merge (it follows merge order, as for every format).
+const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 14;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_LINK_REMOVAL;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
@@ -1951,6 +1955,16 @@ impl VaultStore {
                     let mut summary = self.link_summary(link);
                     summary.refused_deliveries =
                         refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary.has_documents = unlocked.manifest.records.iter().any(|record| {
+                        record
+                            .delivery
+                            .as_ref()
+                            .is_some_and(|c| c.link_id == link.id)
+                            || record
+                                .reading_aid
+                                .as_ref()
+                                .is_some_and(|a| a.link_id == link.id)
+                    });
                     summary
                 })
                 .collect(),
@@ -2096,6 +2110,72 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .contains(&link_id)
+    }
+
+    /// Removes a clinic link that has never delivered a document (#160): the link with its
+    /// private keys (zeroized on drop), its remembered refusals, its waiting reading aids and its
+    /// push registration, and one history entry, in one commit. A link with a filed document or
+    /// reading aid is refused (`Invalid`): its custody proof is checked with the link's keys at
+    /// every unlock, so the keys must stay. Nobody is told: the clinic may still list the device.
+    /// Removing a link that is already gone is not an error. Refused while a document check or
+    /// other portal work holds the portal guard (`Portal(Busy)`), and when the session changed
+    /// since the caller took `session` (`Portal(Cancelled)`).
+    pub fn remove_portal_link(&self, link_id: Uuid, session: u64) -> Result<(), VaultError> {
+        use portal_link::LinkError;
+        let _work = self.start_portal_work()?;
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        let removed = self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            let Some(index) = manifest.portal_links.iter().position(|l| l.id == link_id) else {
+                return Ok(false);
+            };
+            let has_custody = manifest.records.iter().any(|record| {
+                record
+                    .delivery
+                    .as_ref()
+                    .is_some_and(|c| c.link_id == link_id)
+                    || record
+                        .reading_aid
+                        .as_ref()
+                        .is_some_and(|a| a.link_id == link_id)
+            });
+            if has_custody {
+                return Err(VaultError::Invalid);
+            }
+            let link = manifest.portal_links.remove(index);
+            manifest.refused_deliveries.retain(|r| r.link_id != link_id);
+            manifest.waiting_aids.retain(|a| a.link_id != link_id);
+            manifest.remote_notices.drop_link(link_id);
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkRemoved, crate::now_ms());
+            entry.portal_link_id = Some(link_id);
+            entry.profile_id = link.profile_id;
+            entry.name = link
+                .clinic
+                .as_ref()
+                .map(|clinic| clinic.clinic_name.clone());
+            entries.push(entry);
+            Ok(true)
+        })?;
+        if removed {
+            // After the commit: the vault is the source of truth, and this state only caches it.
+            self.forget_link_state(link_id);
+        }
+        Ok(())
+    }
+
+    /// Drops what this run remembers about a link that is no longer in the vault.
+    fn forget_link_state(&self, link_id: Uuid) {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&link_id);
+        // Also clears the approval polling progress.
+        self.invalidate_collection_cache();
     }
 
     pub(crate) fn mark_link_gone(&self, link_id: Uuid) {
@@ -17456,9 +17536,10 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS,
             // Their hidden answers capped apart, format 11.
             MANIFEST_FORMAT_AI_HIDDEN_CAP,
-            // Remembered refusals (#143), format 12: the last before previous
-            // full names (13).
+            // Remembered refusals (#143), format 12.
             MANIFEST_FORMAT_REFUSED,
+            // Previous full names, format 13: the last before link removal (14).
+            MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

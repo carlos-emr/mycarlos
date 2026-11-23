@@ -44,6 +44,7 @@ export const eventLabels: Record<AuditHistoryEntry["event"], MessageKey> = {
   profileDetailsChanged: "interface.history.event.profileDetailsChanged",
   portalLinkStarted: "interface.history.event.portalLinkStarted",
   portalLinked: "interface.history.event.portalLinked",
+  portalLinkRemoved: "interface.history.event.portalLinkRemoved",
   deviceApprovalRequested: "interface.history.event.deviceApprovalRequested",
   deviceApprovalVerified: "interface.history.event.deviceApprovalVerified",
   deviceApprovalStatusChanged:

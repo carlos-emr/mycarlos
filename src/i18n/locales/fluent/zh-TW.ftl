@@ -1537,6 +1537,8 @@ interface-history-event-portalLinkStarted = 已開始連結診所
 
 interface-history-event-portalLinked = 已連結診所
 
+interface-history-event-portalLinkRemoved = 已移除診所連結
+
 interface-history-event-profileCreated = 病患檔案已新增
 
 interface-history-event-profileDetailsChanged = 個人資料已變更
@@ -1674,6 +1676,19 @@ portal-tryAgain = 重試
 portal-tryAgainFor = 重試：{ $clinic }
 
 portal-linkAnother = 連結另一家診所
+
+portal-removeLink = 移除此連結
+
+portal-removeTitle = 要移除此連結嗎？
+
+portal-removeBody = { $clinic }，裝置「{ $device }」。此裝置將不再於這部電腦上連結，其已儲存的裝置金鑰也會被清除。診所仍可能列出此裝置。
+
+portal-removeConfirm = 移除連結
+
+portal-removeKept = 此診所的文件已儲存在您的保管庫中，因此保留此連結。
+
+portal-removed = 連結已移除。
+
 
 ai-summary-button = 摘要
 

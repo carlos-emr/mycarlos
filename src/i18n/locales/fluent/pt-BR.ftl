@@ -1706,6 +1706,8 @@ interface-history-event-portalLinkStarted = Vinculação com a clínica iniciada
 
 interface-history-event-portalLinked = Clínica vinculada
 
+interface-history-event-portalLinkRemoved = Vínculo com a clínica removido
+
 interface-history-event-profileCreated = Perfil de paciente adicionado
 
 interface-history-event-profileDetailsChanged = Dados pessoais alterados
@@ -1862,6 +1864,19 @@ portal-tryAgain = Tentar de novo
 portal-tryAgainFor = Tentar de novo para { $clinic }
 
 portal-linkAnother = Vincular outra clínica
+
+portal-removeLink = Remover este vínculo
+
+portal-removeTitle = Remover este vínculo?
+
+portal-removeBody = { $clinic }, dispositivo “{ $device }”. Este dispositivo deixa de estar vinculado neste computador e suas chaves salvas são apagadas. A clínica ainda pode listar este dispositivo.
+
+portal-removeConfirm = Remover vínculo
+
+portal-removeKept = Os documentos desta clínica estão salvos no seu cofre, então este vínculo permanece.
+
+portal-removed = Vínculo removido.
+
 
 ai-summary-button = Resumo
 

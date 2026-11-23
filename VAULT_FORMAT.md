@@ -1206,8 +1206,7 @@ Rule for any code that removes a clinic link: **it must forget that link's remem
 refusals in the same write; a refusal whose link is gone makes the vault read as
 damaged.** The check that enforces it is the "for a saved link" test in
 `validate_manifest_structure` (a refusal whose `linkId` is in no `portalLinks` entry
-is `Corrupt`). The vault has no unlink today (linking again adds a second link with a
-new id, and the old link keeps its refusals), so nothing breaks yet.
+is `Corrupt`). The one code path that unlinks is `remove_portal_link` (format 14, below), which forgets them in the same commit.
 
 A format 1–11 vault opens with no refusals and is upgraded at its next writable
 unlock to the newest format this build writes (a build with only this change writes
@@ -1225,3 +1224,11 @@ A non-Shared encrypted profile may contain `previousFullNames`, a nonempty order
 The details request omits the list to preserve it; explicit `[]` clears it. Names are validated, trimmed and exact duplicates removed on writes; excessive or invalid input is rejected without eviction. Save updates details and list atomically, with the existing identifier-free details-changed event. There is no native automatic retention. Edit details visibly suggests the original full name after a distinct nonempty change; the patient can remove that suggestion for the draft. Cancel discards all changes.
 
 Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.
+
+## Format 14: removing a clinic link
+
+This build understands manifest formats 1–14. A vault at 13 upgrades to 14 at its next writable unlock, in a commit of its own, like any older one. A format newer than 14 is refused as newer. Format numbers are taken at merge (above): 14 is provisional until #160 merges. Header, object and backup container formats do not change.
+
+No manifest field changes. The format exists because of one new history event, `portalLinkRemoved`, which an older build cannot read: it would refuse the history as corrupt, so it must refuse the vault as newer instead. The event records `portalLinkId`, the profile id and the clinic name, never keys, device ids or documents.
+
+Removing a link (`vault_portal_remove_link`) is one commit that deletes the `portalLinks` entry, its remembered refusals (`refusedDeliveries`), its waiting reading aids, its remote notices (active and revoked) and its `gone_links` marker, and appends the event. A link with any filed document (a record whose `delivery.linkId` or `readingAid.linkId` names it) is refused with `Invalid`: custody evidence must not be dropped silently. Removing a link that is already gone succeeds without a commit. The call holds the vault-wide portal guard (`Portal(Busy)` while another portal operation runs) and the session ticket (`Portal(Cancelled)` after a lock). Removal is local only: the clinic may still list this device until it is removed there. The rule in format 12 (a link's refusals go with it) is now enforced by this one code path.

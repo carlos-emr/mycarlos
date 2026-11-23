@@ -75,6 +75,10 @@ pub enum HistoryEvent {
     SetAside,
     PortalLinkStarted,
     PortalLinked,
+    /// The patient removed a clinic link that never delivered a document (#160). Its private
+    /// keys, remembered refusals, waiting reading aids and push registration went with it. No
+    /// clinic is told: the clinic may still list the device.
+    PortalLinkRemoved,
     DeviceApprovalRequested,
     DeviceApprovalVerified,
     DeviceApprovalStatusChanged,

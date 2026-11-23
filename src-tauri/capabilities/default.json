@@ -31,6 +31,7 @@
     "allow-vault-portal-link",
     "allow-vault-portal-connect",
     "allow-vault-check-documents",
+    "allow-vault-portal-remove-link",
     "allow-vault-forget-refused-deliveries",
     "allow-vault-notification-status",
     "allow-vault-set-notifications",

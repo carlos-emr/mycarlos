@@ -159,6 +159,13 @@ impl RemoteNotices {
         &self.revocations
     }
 
+    /// The link was removed from this vault without ever being able to sign again: its
+    /// destination and any revocation waiting on it are dropped. There is nobody to revoke for.
+    pub fn drop_link(&mut self, link_id: Uuid) {
+        self.active.retain(|d| d.owner.link_id != link_id);
+        self.revocations.retain(|d| d.owner.link_id != link_id);
+    }
+
     pub fn is_empty(&self) -> bool {
         !self.opted_in && self.active.is_empty() && self.revocations.is_empty()
     }
