@@ -31,6 +31,12 @@ pub(crate) const PARAMETERS: std::ops::RangeInclusive<u64> = 100_000_000..=40_00
 pub(crate) const LAYERS: std::ops::RangeInclusive<u32> = 1..=1_024;
 /// Vocabulary size: the logits buffer grows with it.
 pub(crate) const VOCABULARY: std::ops::RangeInclusive<u32> = 1..=524_288;
+/// The most a token of context may be said to take (the candidates run 6 to 384 KiB; a model
+/// without grouped-query attention takes about 1.25 MiB): a larger number is kept at this, so the
+/// card still counts and the requirement stays high, never dropped back to today's rule.
+pub(crate) const MAX_KV_BYTES_PER_TOKEN: u32 = 4 * 1024 * 1024;
+/// The model's tensors: 0 (unknown) to 64 GiB.
+pub(crate) const WEIGHTS_BYTES: std::ops::RangeInclusive<u64> = 0..=(64 << 30);
 
 /// What the model helper says about the model it loaded, after llama.cpp has read the file.
 /// Built in the helper from llama.cpp's own accessors (`engine::Engine::card`); checked in the
@@ -51,6 +57,15 @@ pub(crate) struct ModelCard {
     /// the context).
     pub(crate) recurrent: bool,
     pub(crate) hybrid: bool,
+    /// What the model's attention cache takes per token of context, in bytes, as the helper
+    /// works it out from llama.cpp's own numbers (layers x key/value heads x head sizes x 2 bytes);
+    /// 0 when it cannot say (a recurrent or hybrid model has layers with no cache, and llama.cpp
+    /// gives no per-layer count), which the memory rule reads as "unknown", never as "none".
+    #[serde(default)]
+    pub(crate) kv_bytes_per_token: u32,
+    /// The size of the model's tensors in memory (`llama_model_size`), 0 when unknown.
+    #[serde(default)]
+    pub(crate) weights_bytes: u64,
 }
 
 /// Why a card was not kept. The model still runs as before; its limits stay the catalogue's.
@@ -78,7 +93,7 @@ pub(crate) fn clean_architecture(name: &str) -> String {
 impl ModelCard {
     /// The card, when every field is in range and the helper made at most the context it was
     /// asked for (`requested`), and no more than the model's own.
-    pub(crate) fn checked(self, requested: u32) -> Result<Self, CardRejected> {
+    pub(crate) fn checked(mut self, requested: u32) -> Result<Self, CardRejected> {
         if self.architecture.is_empty()
             || clean_architecture(&self.architecture) != self.architecture
         {
@@ -102,6 +117,12 @@ impl ModelCard {
         if !VOCABULARY.contains(&self.vocabulary) {
             return Err(CardRejected::Vocabulary);
         }
+        // Neither number drops the card: the weights are kept at the most believed (the file's
+        // own size is what the formula uses when it is more), and a cache above the most believed
+        // is kept at it (the model is heavy, not unknown, and asks for more memory than any
+        // computer here has free: a refusal for memory, with its numbers).
+        self.weights_bytes = self.weights_bytes.min(*WEIGHTS_BYTES.end());
+        self.kv_bytes_per_token = self.kv_bytes_per_token.min(MAX_KV_BYTES_PER_TOKEN);
         Ok(self)
     }
 }
@@ -214,6 +235,48 @@ pub(crate) fn card_file_bytes(entries: &[StoredCard]) -> Option<Vec<u8>> {
     (bytes.len() <= MAX_CARDS_FILE_BYTES).then_some(bytes)
 }
 
+// --- The memory a start needs, from the card (#305 PR 3) --------------------------------------
+//
+// `needed = weights x copies + cache per token x context made + the runtime's own memory`. It is
+// used only as `max(formula, today's rule)` (`model_runtime::needed_bytes`), so a card can raise
+// what a start asks for, for a model whose cache is heavy, and never lower it, until the numbers
+// are measured on all three desktop platforms (design, section 5). A model with no card, or a
+// card that says "unknown" (a cache of 0), is asked today's rule.
+
+/// The compute buffers and the runtime's own memory above the weights and the cache. The helper's
+/// measured peak above the file was 508 to 626 MiB (the larger catalogue model, full context).
+pub(crate) const COMPUTE_BASE_BYTES: u64 = 512 * 1024 * 1024;
+
+/// What the card's own numbers say a start needs: the file's size (`size_bytes`) once for each
+/// copy held in memory (`copies`), the cache at the context made, and the runtime's memory.
+/// `None` when the card cannot say what the cache takes (0 bytes a token).
+pub(crate) fn formula_bytes(size_bytes: u64, copies: u64, card: &ModelCard) -> Option<u64> {
+    if card.kv_bytes_per_token == 0 {
+        return None;
+    }
+    let cache = u64::from(card.kv_bytes_per_token).saturating_mul(u64::from(card.context_made));
+    // The tensors the helper counted, or the file's size, whichever is more.
+    let weights = size_bytes.max(card.weights_bytes);
+    Some(
+        weights
+            .saturating_mul(copies)
+            .saturating_add(cache)
+            .saturating_add(COMPUTE_BASE_BYTES),
+    )
+}
+
+/// What a start asks for: today's rule, or the card's formula when that is more. Never less than
+/// today's rule.
+pub(crate) fn needed_with_card(
+    today: u64,
+    size_bytes: u64,
+    copies: u64,
+    card: Option<&ModelCard>,
+) -> u64 {
+    card.and_then(|card| formula_bytes(size_bytes, copies, card))
+        .map_or(today, |formula| formula.max(today))
+}
+
 /// One catalogue model's limits, for the AI helper settings (`ai_model_limits`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -232,8 +295,13 @@ pub(crate) struct ModelLimits {
     pub(crate) parameters: Option<u64>,
     /// The file's size.
     pub(crate) file_bytes: u64,
-    /// The free memory a start needs, by today's rule (`model_runtime::needed_bytes`).
+    /// The free memory a start needs: today's rule (`model_runtime::needed_bytes`), or the
+    /// card's formula when that is more.
     pub(crate) needed_bytes: u64,
+    /// What the card's own numbers say, for the record (none until the helper has run the model,
+    /// or when it could not say what the cache takes). Never used to ask for less.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) formula_bytes: Option<u64>,
 }
 
 /// A model's capacity: `catalogue`'s until the helper has made its context (`card`, already
@@ -263,7 +331,14 @@ pub(crate) fn limits(
         trained_context: card.map(|card| card.trained_context),
         parameters: card.map(|card| card.parameters),
         file_bytes: model.size_bytes,
-        needed_bytes,
+        needed_bytes: needed_with_card(
+            needed_bytes,
+            model.size_bytes,
+            crate::model_runtime::copies(),
+            card,
+        ),
+        formula_bytes: card
+            .and_then(|card| formula_bytes(model.size_bytes, crate::model_runtime::copies(), card)),
     }
 }
 
@@ -281,8 +356,11 @@ mod tests {
             parameters: 4_330_000_000,
             layers: 32,
             vocabulary: 248_320,
+            // A model with a plain attention cache (a hybrid or recurrent one says 0: unknown).
             recurrent: false,
-            hybrid: true,
+            hybrid: false,
+            kv_bytes_per_token: 32 * 1024,
+            weights_bytes: 3_013_000_000,
         }
     }
 
@@ -361,6 +439,16 @@ mod tests {
             with(|c| c.vocabulary = 524_289),
             Err(CardRejected::Vocabulary)
         );
+        // A cache above the most believed is kept at it, not dropped.
+        assert_eq!(
+            with(|c| c.kv_bytes_per_token = u32::MAX).map(|c| c.kv_bytes_per_token),
+            Ok(MAX_KV_BYTES_PER_TOKEN)
+        );
+        // Weights above the most believed are kept at it, not a reason to drop the card.
+        assert_eq!(
+            with(|c| c.weights_bytes = u64::MAX).map(|c| c.weights_bytes),
+            Ok(64 << 30)
+        );
     }
 
     #[test]
@@ -384,7 +472,9 @@ mod tests {
             "layers": 32,
             "vocabulary": 248_320,
             "recurrent": false,
-            "hybrid": true
+            "hybrid": false,
+            "kvBytesPerToken": 32_768,
+            "weightsBytes": 3_013_000_000u64
         });
         assert_eq!(serde_json::to_value(card()).unwrap(), json);
         assert_eq!(
@@ -411,6 +501,7 @@ mod tests {
                 parameters: None,
                 file_bytes: model.size_bytes,
                 needed_bytes: 7_000_000_000,
+                formula_bytes: None,
             }
         );
         let confirmed = limits(0, model, Some(&card()), 7_000_000_000);
@@ -456,7 +547,10 @@ mod tests {
     #[test]
     fn limits_read_as_the_settings_take_them() {
         let model = &CATALOG[0];
-        let value = serde_json::to_value(limits(0, model, Some(&card()), 1)).unwrap();
+        let today = crate::model_runtime::needed_bytes(model.size_bytes);
+        let value = serde_json::to_value(limits(0, model, Some(&card()), today)).unwrap();
+        let formula =
+            formula_bytes(model.size_bytes, crate::model_runtime::copies(), &card()).unwrap();
         assert_eq!(
             value,
             serde_json::json!({
@@ -466,7 +560,9 @@ mod tests {
                 "trainedContext": 262_144,
                 "parameters": 4_330_000_000u64,
                 "fileBytes": model.size_bytes,
-                "neededBytes": 1
+                // Today's rule, or the formula when that is more: never less than today's.
+                "neededBytes": today.max(formula),
+                "formulaBytes": formula
             })
         );
     }
@@ -589,5 +685,69 @@ mod tests {
         assert!(
             confirmed_capacity(catalogue, Some(&small)).context_tokens < catalogue.context_tokens
         );
+    }
+
+    const GIB: u64 = 1 << 30;
+
+    #[test]
+    fn the_formula_is_the_weights_the_cache_and_the_runtime() {
+        // A default-model-like card: 32 KiB a token at 8,192 is 256 MiB of cache.
+        let size = 3_013_027_808;
+        let on_other = formula_bytes(size, 1, &card()).unwrap();
+        assert_eq!(on_other, size + 32 * 1024 * 8_192 + COMPUTE_BASE_BYTES);
+        // On Linux the sealed copy is a second copy of the weights.
+        assert_eq!(
+            formula_bytes(size, 2, &card()).unwrap(),
+            2 * size + 32 * 1024 * 8_192 + COMPUTE_BASE_BYTES
+        );
+        // A cache that is unknown (0) gives no formula at all, never "no cache".
+        let unknown = ModelCard {
+            kv_bytes_per_token: 0,
+            ..card()
+        };
+        assert_eq!(formula_bytes(size, 1, &unknown), None);
+    }
+
+    #[test]
+    fn a_start_never_asks_for_less_than_todays_rule() {
+        let size = 3_013_027_808;
+        let today = size + GIB;
+        // The default model: the formula (about 3.8 GB) is under today's rule (4.1 GB): today's stays.
+        assert_eq!(needed_with_card(today, size, 1, Some(&card())), today);
+        // No card, or a card that cannot say: today's.
+        assert_eq!(needed_with_card(today, size, 1, None), today);
+        let unknown = ModelCard {
+            kv_bytes_per_token: 0,
+            ..card()
+        };
+        assert_eq!(needed_with_card(today, size, 1, Some(&unknown)), today);
+        // A cache-heavy model (384 KiB a token: 3 GiB at 8,192) asks for more than today's rule.
+        let heavy = ModelCard {
+            kv_bytes_per_token: 384 * 1024,
+            ..card()
+        };
+        let asked = needed_with_card(today, size, 1, Some(&heavy));
+        assert!(asked > today + 2 * GIB, "{asked}");
+        assert_eq!(asked, formula_bytes(size, 1, &heavy).unwrap());
+        // Whatever the card says, never below today's rule.
+        for kv in [0, 1, 1_000, 32 * 1024, 1_048_576] {
+            let some = ModelCard {
+                kv_bytes_per_token: kv,
+                ..card()
+            };
+            assert!(needed_with_card(today, size, 1, Some(&some)) >= today);
+        }
+    }
+
+    #[test]
+    fn an_older_card_without_the_new_fields_reads_as_unknown() {
+        let json = serde_json::json!({
+            "architecture": "qwen35", "trainedContext": 262_144, "contextMade": 8_192,
+            "parameters": 4_330_000_000u64, "layers": 32, "vocabulary": 248_320,
+            "recurrent": false, "hybrid": true
+        });
+        let old: ModelCard = serde_json::from_value(json).unwrap();
+        assert_eq!((old.kv_bytes_per_token, old.weights_bytes), (0, 0));
+        assert!(old.checked(8_192).is_ok());
     }
 }
