@@ -1843,6 +1843,22 @@ ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
+aiHelper-resultLabelShort = AI draft
+
+aiHelper-resultLabelHide = Don't show this again
+
+aiHelper-resultLabelInfo = What “AI draft” means
+
+ai-label-settingsTitle = Warning on AI answers
+
+ai-label-settingsBody = Each AI answer says it was written by AI and may be wrong. After “Don't show this again”, a short “AI draft” tag stands in for the full sentence. The tag is never removed. The choice is kept on this device, and starts over if the model or the tool changes.
+
+ai-label-settingsShowFull = Show the full warning again
+
+ai-label-settingsFullShown = The full warning is shown on every AI answer.
+
+ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Show in document

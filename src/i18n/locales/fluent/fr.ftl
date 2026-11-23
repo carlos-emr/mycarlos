@@ -1879,6 +1879,22 @@ ai-notInstalled-openPreferences = Ouvrir les paramètres de l’assistant IA
 
 aiHelper-resultLabel = Écrit par une IA et peut contenir des erreurs. Vérifiez auprès de votre médecin.
 
+aiHelper-resultLabelShort = Brouillon IA
+
+aiHelper-resultLabelHide = Ne plus afficher
+
+aiHelper-resultLabelInfo = Ce que signifie « Brouillon IA »
+
+ai-label-settingsTitle = Avertissement sur les réponses de l’IA
+
+ai-label-settingsBody = Chaque réponse de l’IA indique qu’elle a été écrite par une IA et peut contenir des erreurs. Après « Ne plus afficher », une courte étiquette « Brouillon IA » remplace la phrase complète. L’étiquette n’est jamais retirée. Le choix est gardé sur cet appareil et recommence si le modèle ou l’outil change.
+
+ai-label-settingsShowFull = Afficher de nouveau l’avertissement complet
+
+ai-label-settingsFullShown = L’avertissement complet est affiché sur chaque réponse de l’IA.
+
+ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affichée sur les réponses de l’IA pour lesquelles vous l’avez choisie.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Voir dans le document

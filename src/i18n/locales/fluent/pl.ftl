@@ -1919,6 +1919,22 @@ ai-notInstalled-openPreferences = Otwórz ustawienia asystenta AI
 
 aiHelper-resultLabel = Napisane przez AI, może zawierać błędy. Proszę skonsultować się z lekarzem.
 
+aiHelper-resultLabelShort = Szkic AI
+
+aiHelper-resultLabelHide = Nie pokazuj ponownie
+
+aiHelper-resultLabelInfo = Co oznacza „Szkic AI”
+
+ai-label-settingsTitle = Ostrzeżenie przy odpowiedziach AI
+
+ai-label-settingsBody = Każda odpowiedź AI informuje, że została napisana przez AI i może zawierać błędy. Po wybraniu „Nie pokazuj ponownie” pełne zdanie zastępuje krótka etykieta „Szkic AI”. Etykieta nigdy nie znika. Wybór jest zapamiętany na tym urządzeniu i zaczyna się od nowa, gdy zmieni się model lub narzędzie.
+
+ai-label-settingsShowFull = Pokaż ponownie pełne ostrzeżenie
+
+ai-label-settingsFullShown = Pełne ostrzeżenie jest pokazywane przy każdej odpowiedzi AI.
+
+ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana przy odpowiedziach AI, dla których ją wybrano.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Pokaż w dokumencie
