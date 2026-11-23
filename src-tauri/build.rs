@@ -32,10 +32,11 @@ fn extraction_rules_exclude_everything(rules: &str) -> bool {
 }
 
 /// The camera dialog (D97) needs Android's camera permission declared, or
-/// Android refuses it without asking. The camera is not required, nor the
-/// autofocus the permission implies, so devices without them can install the
-/// app, and nothing asks for the microphone.
-fn declares_camera_only(manifest: &str) -> bool {
+/// Android refuses it without asking, and video recording (#359) needs the
+/// microphone's too. Neither the camera, the autofocus the permission implies
+/// nor the microphone is required, so devices without them can install the
+/// app. Nothing else about sound or the camera is declared.
+fn declares_camera_and_microphone(manifest: &str) -> bool {
     manifest.contains("<uses-permission android:name=\"android.permission.CAMERA\" />")
         && manifest.contains(
             "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
@@ -43,7 +44,13 @@ fn declares_camera_only(manifest: &str) -> bool {
         && manifest.contains(
             "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />",
         )
-        && !manifest.contains("android.permission.RECORD_AUDIO")
+        && manifest.contains("<uses-permission android:name=\"android.permission.RECORD_AUDIO\" />")
+        && manifest.contains(
+            "<uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />",
+        )
+        && manifest.contains(
+            "<uses-feature android:name=\"android.hardware.microphone\" android:required=\"false\" />",
+        )
 }
 
 fn main() {
@@ -70,8 +77,8 @@ fn main() {
             "Android backup exclusions must be applied with `npm run android:secure` before every Android build"
         );
         assert!(
-            declares_camera_only(&contents),
-            "The camera must be declared (not required, and no microphone) with `npm run android:secure` before every Android build"
+            declares_camera_and_microphone(&contents),
+            "The camera and the microphone must be declared (neither required) with `npm run android:secure` before every Android build"
         );
     }
     let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
@@ -90,6 +97,11 @@ fn main() {
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
             "runtime_info",
+            "background_status",
+            "background_set_keep_running",
+            "background_set_start_at_login",
+            "background_report_locale",
+            "tray_waiting_status",
             "ai_model_catalog",
             "ai_model_status",
             "ai_models",
@@ -102,6 +114,8 @@ fn main() {
             "ai_model_download",
             "ai_model_remove",
             "ai_summarize",
+            "ai_speed_check",
+            "ai_model_speed",
             "ai_explain",
             "ai_cancel",
             "kdf_benchmark",
@@ -133,6 +147,8 @@ fn main() {
             "vault_recovery_key_cancel",
             "vault_recover",
             "vault_backup_pick",
+            "vault_backup_size",
+            "vault_left_out_records",
             "vault_backup_picked",
             "vault_restore_pick",
             "vault_restore_inspect",
@@ -150,22 +166,36 @@ fn main() {
             "vault_import_picked",
             "received_list",
             "received_accept",
+            "received_discard",
             "vault_move_to_person",
             "vault_is_locked_pdf",
             "vault_unlock_pdf",
             "vault_view_page",
             "vault_view_cancel",
+            "vault_read_android_pdf",
             "vault_page_boxes",
             "vault_document_text",
             "vault_document_text_cancel",
             "vault_record_known_details",
             "vault_export_text_pick",
             "vault_export_text_picked",
+            "vault_export_text_copy",
             "vault_export_pick",
             "vault_export_picked",
             "vault_save_photo",
             "vault_is_photo",
             "vault_view_photo",
+            "vault_video_start",
+            "vault_video_append",
+            "vault_video_pause",
+            "vault_video_resume",
+            "vault_video_stop",
+            "vault_video_space",
+            "vault_video_pending",
+            "vault_video_recover",
+            "vault_is_video",
+            "vault_video_open",
+            "vault_video_close",
             "vault_hide_record",
             "vault_unhide_record",
             "vault_ai_result_save",

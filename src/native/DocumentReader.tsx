@@ -160,7 +160,7 @@ type DocumentReaderProps = {
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
   /** Where a quoted span of a page's text is on its picture (#292), exactly
-   * or not at all. Without it, Show in document marks the text only. */
+   * or not at all. Without it, Show me in the document marks the text only. */
   pageBoxes?: (
     page: number,
     span: { start: number; end: number; quoted: string },
@@ -172,6 +172,8 @@ type DocumentReaderProps = {
   /** Opens on the clinic's reading aid, under its notice, when the record has one. The original is
    * always one tap away, and the notice comes first every time the aid is shown. */
   startWithAid?: boolean;
+  /** A platform-native original reader, when the reading aid remains in the app. */
+  onOpenOriginal?: () => void;
 };
 
 /** Reads a stored document inside myCarlos, one page at a time. Each page is
@@ -192,6 +194,7 @@ function ReadingDocument({
   onClose,
   ai,
   startWithAid = false,
+  onOpenOriginal,
 }: DocumentReaderProps) {
   useI18n();
   const aid = record.readingAid;
@@ -536,7 +539,7 @@ function ReadingDocument({
           end: Math.max(0, Math.min(shownText.length, highlight.end - lead)),
         }
       : null;
-  // Each "Show in document" brings the words into view and focus, even
+  // Each "Show me in the document" brings the words into view and focus, even
   // the same words again: the highlight is a new object each time. Only the
   // text box scrolls to them: the focus stays on the marked words, the
   // version a screen reader reads, and the picture keeps its own scroll.
@@ -660,6 +663,10 @@ function ReadingDocument({
             aid={aid}
             reviewedAtMs={aid.reviewedAtMs}
             onOpenOriginal={() => {
+              if (onOpenOriginal) {
+                onOpenOriginal();
+                return;
+              }
               initialAid.current = false;
               setView("original");
             }}

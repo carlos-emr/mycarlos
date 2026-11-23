@@ -1,3 +1,8 @@
+import {
+  AI_LABEL_STORAGE_KEY,
+  rememberShortAiLabel,
+  showFullAiLabelAgain,
+} from "../aiLabelPreference";
 import { humanText, visibleText } from "../test/humanText";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -224,7 +229,7 @@ describe("the reader's AI helper", () => {
     ).toBeVisible();
     expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
     const links = within(panel).getAllByRole("button", {
-      name: "Show in document",
+      name: "Show me in the document",
     });
     expect(links).toHaveLength(2);
     expect(links[1]).toHaveAccessibleDescription(
@@ -239,6 +244,89 @@ describe("the reader's AI helper", () => {
       ),
     ).toBeVisible();
     expect(model.calls).toHaveLength(1);
+  });
+
+  it("shortens the warning to an AI draft tag after Don't show this again, never removes the tag, and brings the sentence back from the info button", async () => {
+    window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    try {
+      const model = fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: your potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+      });
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const sentence =
+        "Written by AI and may be wrong. Check with your doctor.";
+      expect(await within(panel).findByText(sentence)).toBeVisible();
+      await user.click(
+        within(panel).getByRole("button", { name: "Don't show this again" }),
+      );
+      // The full sentence is hidden; the short tag stays, and says what it means on demand.
+      expect(within(panel).getByText("AI draft")).toBeVisible();
+      expect(within(panel).getByText(sentence)).not.toBeVisible();
+      const info = within(panel).getByRole("button", {
+        name: "What “AI draft” means",
+      });
+      expect(info).toHaveAttribute("aria-expanded", "false");
+      await user.click(info);
+      expect(info).toHaveAttribute("aria-expanded", "true");
+      expect(within(panel).getByText(sentence)).toBeVisible();
+      // The focus went to the button that took Hide's place, not to the page.
+      expect(info).toHaveFocus();
+      // The choice is kept: the same tool and model show the tag again, with no Hide button.
+      expect(window.localStorage.getItem(AI_LABEL_STORAGE_KEY)).toContain(
+        "summary:",
+      );
+      expect(
+        within(panel).queryByRole("button", { name: "Don't show this again" }),
+      ).toBeNull();
+    } finally {
+      window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    }
+  });
+
+  it("shows the full sentence again for a model the choice was not made for, and describes Hide by the warning", async () => {
+    window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    // A choice for some other model.
+    rememberShortAiLabel("summary", "f".repeat(64));
+    try {
+      const model = fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: your potassium is a little high.",
+            quote: "Potassium 5.4 mmol/L",
+          },
+        ],
+      });
+      renderReader(model);
+      await firstPage();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "Summary" }));
+      const panel = screen.getByRole("region", {
+        name: "Summary in plain words",
+      });
+      const sentence =
+        "Written by AI and may be wrong. Check with your doctor.";
+      expect(await within(panel).findByText(sentence)).toBeVisible();
+      expect(within(panel).queryByText("AI draft")).toBeNull();
+      // Hide is described by the warning it hides.
+      const hide = within(panel).getByRole("button", {
+        name: "Don't show this again",
+      });
+      expect(hide).toHaveAccessibleDescription(sentence);
+    } finally {
+      showFullAiLabelAgain();
+      window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
+    }
   });
 
   it("labels every answer with the words of the AI helper notice, in all seven languages", () => {
@@ -274,7 +362,7 @@ describe("the reader's AI helper", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     const mark = await waitFor(() => {
@@ -321,10 +409,10 @@ describe("the reader's AI helper", () => {
     await user.click(screen.getByRole("button", { name: "Previous page" }));
     await firstPage();
     await waitFor(() => expect(pageText().open).toBe(false));
-    // "Show in document" turns to the sentence's page with the text open.
+    // "Show me in the document" turns to the sentence's page with the text open.
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     await waitFor(() => expect(pageText().open).toBe(true));
@@ -1111,11 +1199,16 @@ describe("the reader's AI helper", () => {
 
   // Refused as the native side refuses (lib.rs ai_error): a code and the key
   // of its words, passed on by the real bridge.
-  const refusingModel = (code: string, messageKey?: string) => {
+  const refusingModel = (
+    code: string,
+    messageKey?: string,
+    extra: Record<string, unknown> = {},
+  ) => {
     const refusal = {
       code,
       message: "FAKE native words",
       ...(messageKey === undefined ? {} : { messageKey }),
+      ...extra,
     };
     return nativeLocalModel({
       aiModelStatus: async () => ({ state: "installed", model: FAKE_MODEL }),
@@ -1200,6 +1293,182 @@ describe("the reader's AI helper", () => {
       expect(alert.textContent).not.toContain("FAKE native words");
     },
   );
+
+  // After the patient has run the speed check (#305), a summary says how long it may take on this
+  // computer, when that is long enough to matter; before it, or with numbers that are not rates,
+  // it says nothing about time.
+  it.each([
+    [{ promptMilliTps: 10_000, answerMilliTps: 2_500 }, true],
+    [{ promptMilliTps: 5_000_000, answerMilliTps: 5_000_000 }, false],
+    [null, false],
+    [{ promptMilliTps: "fast", answerMilliTps: 1 }, false],
+  ])(
+    "says how long a summary may take only when it was measured and is long (%j)",
+    async (speed, shown) => {
+      renderReader(
+        nativeLocalModel({
+          aiModelStatus: async () => ({
+            state: "installed",
+            model: FAKE_MODEL,
+            capacity: { contextTokens: 8192, documentTokens: 6510 },
+          }),
+          aiSummarize: () => new Promise(() => undefined),
+          aiExplain: () => new Promise(() => undefined),
+          aiCancel: async () => undefined,
+          aiModelSpeed: async () => speed,
+        }),
+      );
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      // Fluent wraps a number in isolation marks (U+2068, U+2069).
+      const note =
+        /On this computer, this may take up to about \u2068?\d+\u2069? min\./;
+      if (shown) expect(await screen.findByText(note)).toBeVisible();
+      else {
+        await screen.findByRole("progressbar");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(screen.queryByText(note)).toBeNull();
+      }
+    },
+  );
+
+  // The speed is asked before the model is: a panel closed meanwhile starts nothing (#305).
+  it("starts no summary when the panel is closed while the speed is being asked", async () => {
+    let release: (value: unknown) => void = () => {};
+    const aiSummarize = vi.fn(() => new Promise<never>(() => undefined));
+    const { unmount } = renderReader(
+      nativeLocalModel({
+        aiModelStatus: async () => ({
+          state: "installed",
+          model: FAKE_MODEL,
+          capacity: { contextTokens: 8192, documentTokens: 6510 },
+        }),
+        aiSummarize,
+        aiExplain: () => new Promise(() => undefined),
+        aiCancel: async () => undefined,
+        aiModelSpeed: () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByRole("progressbar");
+    unmount();
+    release({ promptMilliTps: 10_000, answerMilliTps: 2_500 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(aiSummarize).not.toHaveBeenCalled();
+  });
+
+  it("says a document this long may not finish when the estimate is past the answer limit", async () => {
+    renderReader(
+      nativeLocalModel({
+        aiModelStatus: async () => ({
+          state: "installed",
+          model: FAKE_MODEL,
+          capacity: { contextTokens: 8192, documentTokens: 6510 },
+        }),
+        aiSummarize: () => new Promise(() => undefined),
+        aiExplain: () => new Promise(() => undefined),
+        aiCancel: async () => undefined,
+        aiModelSpeed: async () => ({
+          promptMilliTps: 500,
+          answerMilliTps: 200,
+        }),
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(
+      await screen.findByText(/a document this long may not finish/),
+    ).toBeVisible();
+  });
+
+  // The refusal for memory says how much is needed and how much is free (#305): the need rounded
+  // up and the free amount rounded down, so it never claims to be closer to enough than it is.
+  it("says how much memory is needed and how much is free", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_641_000_000, availableBytes: 1_949_999_999 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "There isn't enough free memory for the AI helper right now. It needs about 3.7 GB free and 1.9 GB is free. Close some other programs, then try again.",
+    );
+  });
+
+  it("says so when this computer could not say how much is free", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_600_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect(await screen.findByRole("alert")).toHaveHumanTextContent(
+      "There isn't enough free memory for the AI helper right now. It needs about 3.6 GB free, and this computer could not say how much is free. Close some other programs, then try again.",
+    );
+  });
+
+  it("says the numbers in the language chosen after the refusal", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 2_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByRole("alert");
+    act(() => setLocaleOverride("fr"));
+    expect(screen.getByRole("alert")).toHaveHumanTextContent(
+      "Il lui faut environ 3,6 Go de mémoire libre; il en reste 2,0 Go.",
+    );
+  });
+
+  it("keeps another refusal's own words even when it carries a stray memory field", async () => {
+    renderReader(
+      refusingModel("aiBusy", "ai.error.busy", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 1_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(OWN_WORDS[2][2]);
+    expect(alert.textContent).not.toContain("GB");
+  });
+
+  it("ignores numbers that are not numbers", async () => {
+    renderReader(
+      refusingModel("aiMemory", "ai.error.memory", {
+        memory: { neededBytes: "lots", availableBytes: -1 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      OWN_WORDS[1][2],
+    );
+  });
 
   it("says a refusal's own words in the language chosen after it", async () => {
     renderReader(refusingModel("aiMemory", "ai.error.memory"));
@@ -1730,7 +1999,7 @@ describe("the AI helper beside a clinic reading aid", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     await waitFor(() =>
@@ -1768,7 +2037,7 @@ describe("the AI helper beside a clinic reading aid", () => {
   );
 });
 
-describe("Show in document also marks the page picture (#292)", () => {
+describe("Show me in the document also marks the page picture (#292)", () => {
   const repeat = () =>
     fakeLocalModel({
       sentences: () => [
@@ -1784,7 +2053,7 @@ describe("Show in document also marks the page picture (#292)", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Summary" }));
     await user.click(
-      await screen.findByRole("button", { name: "Show in document" }),
+      await screen.findByRole("button", { name: "Show me in the document" }),
     );
     await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
     return { user, unmount };
@@ -1914,7 +2183,9 @@ describe("Show in document also marks the page picture (#292)", () => {
     }));
     const { user } = await show({ pageBoxes });
     await waitFor(() => expect(overlay()).not.toBeNull());
-    await user.click(screen.getByRole("button", { name: "Show in document" }));
+    await user.click(
+      screen.getByRole("button", { name: "Show me in the document" }),
+    );
     await waitFor(() => expect(overlay()).not.toBeNull());
     expect(pageBoxes).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("button", { name: "Previous page" }));
@@ -1983,7 +2254,7 @@ describe("Show in document also marks the page picture (#292)", () => {
           screen.getByRole("region", { name: "Summary in plain words" }),
         ).toContainElement(unfold);
         expect(
-          screen.queryByRole("button", { name: "Show in document" }),
+          screen.queryByRole("button", { name: "Show me in the document" }),
         ).toBeNull();
         expect(document.getElementById("reader-ai-whole")).not.toBeVisible();
         // The marked words keep the focus, as on a large window.
@@ -1995,7 +2266,9 @@ describe("Show in document also marks the page picture (#292)", () => {
         // Unfolded: the whole summary, with its label, and the focus back on
         // the sentence whose words are shown.
         await user.click(unfold);
-        const shown = screen.getByRole("button", { name: "Show in document" });
+        const shown = screen.getByRole("button", {
+          name: "Show me in the document",
+        });
         await waitFor(() => expect(shown).toHaveFocus());
         expect(unfoldButton()).toBeNull();
         expect(
@@ -2024,7 +2297,7 @@ describe("Show in document also marks the page picture (#292)", () => {
     await waitFor(() => expect(overlay()).not.toBeNull());
     expect(unfoldButton()).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Show in document" }),
+      screen.getByRole("button", { name: "Show me in the document" }),
     ).toBeVisible();
   });
 
@@ -2032,7 +2305,9 @@ describe("Show in document also marks the page picture (#292)", () => {
     try {
       await show({ pageBoxes: oneBox() });
       await waitFor(() => expect(overlay()).not.toBeNull());
-      const shown = screen.getByRole("button", { name: "Show in document" });
+      const shown = screen.getByRole("button", {
+        name: "Show me in the document",
+      });
       act(() => shown.focus());
       await browser.viewport(1100, 400);
       const unfold = await screen.findByRole("button", {
@@ -2053,7 +2328,7 @@ describe("Show in document also marks the page picture (#292)", () => {
       await firstPage();
       expect(unfoldButton()).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Show in document" }),
+        screen.getByRole("button", { name: "Show me in the document" }),
       ).toBeVisible();
     } finally {
       await browser.viewport(1100, 760);
@@ -2109,7 +2384,7 @@ describe("Show in document also marks the page picture (#292)", () => {
       // While it works, the old sentence's words can still be shown, but
       // the panel stays whole: the working line and the status stay heard.
       await user.click(
-        screen.getByRole("button", { name: "Show in document" }),
+        screen.getByRole("button", { name: "Show me in the document" }),
       );
       await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
       expect(unfoldButton()).toBeNull();
@@ -2136,7 +2411,7 @@ describe("Show in document also marks the page picture (#292)", () => {
       await browser.viewport(1100, 760);
       await waitFor(() =>
         expect(
-          screen.getByRole("button", { name: "Show in document" }),
+          screen.getByRole("button", { name: "Show me in the document" }),
         ).toHaveFocus(),
       );
     } finally {

@@ -142,7 +142,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ]),
     );
     expect(bridge.connectPortal).toHaveBeenCalledOnce();
@@ -209,7 +209,7 @@ describe("native clinic document controls", () => {
     });
     await waitFor(() =>
       expect(noticeCalls(props.setNotice)).toContainEqual([
-        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Clinic documents, says what to do next.",
+        "The portal request could not be completed. Check your connection and device clock, then try again. Device linked. Its approval status in Security, under Connected clinics, says what to do next.",
       ]),
     );
     await userEvent
@@ -237,7 +237,7 @@ describe("native clinic document controls", () => {
     ],
     [
       "approval_expired",
-      "This approval request expired. To ask again for this device, go to Security, under Clinic documents.",
+      "This approval request expired. To ask again for this device, go to Security, under Connected clinics.",
       "portal.approvalExpired",
     ],
     [
@@ -280,7 +280,7 @@ describe("native clinic document controls", () => {
       const form = await fillConnectForm();
       await act(async () => fireEvent.submit(form));
       const guidance =
-        "Device linked. Its approval status in Security, under Clinic documents, says what to do next.";
+        "Device linked. Its approval status in Security, under Connected clinics, says what to do next.";
       await waitFor(() =>
         expect(noticeCalls(props.setNotice)).toContainEqual([
           `${reason} ${guidance}`,
@@ -392,6 +392,49 @@ describe("native clinic document controls", () => {
     expect(screen.queryByText(incomplete)).not.toBeInTheDocument();
   });
 
+  it("tells two cards for the same address apart by device name and the day linked (#160)", async () => {
+    const day = (iso: string) => new Date(iso).getTime();
+    const second: PortalLinkSummary = {
+      ...link,
+      id: "second-link",
+      deviceName: "FAKE reception desktop",
+      deviceKeyId: "FAKE_second",
+      linkedAtMs: day("2026-11-12T12:00:00Z"),
+    };
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [
+          { ...link, linkedAtMs: day("2026-10-03T12:00:00Z") },
+          second,
+        ],
+      },
+    });
+    const cards = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.closest(".portal-link") as HTMLElement);
+    expect(cards).toHaveLength(2);
+    const lines = cards.map(
+      (card) => card.querySelector(".portal-device-line")!.textContent,
+    );
+    // Same clinic, same address; the lines differ, and each names its device and day.
+    expect(lines[0]).not.toBe(lines[1]);
+    expect(lines[0]).toContain("myCarlos on Windows");
+    expect(lines[0]).toMatch(/Oct\w* 3, 2026/);
+    expect(lines[1]).toContain("FAKE reception desktop");
+    expect(lines[1]).toMatch(/Nov\w* 12, 2026/);
+  });
+
+  it("shows only the device name when the link's day is not known", () => {
+    fixture({ snapshot: { ...snapshot, portalLinks: [link] } });
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).toContain("myCarlos on Windows");
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).not.toMatch(/linked/);
+  });
+
   it("lists a device a check found removed with the earlier attempts, for the session", async () => {
     const approved: PortalLinkSummary = {
       ...link,
@@ -449,7 +492,7 @@ describe("native clinic document controls", () => {
     expect(props.setNotice).toHaveBeenCalledOnce();
     expect(noticeCalls(props.setNotice)).toEqual([
       [
-        "Device linked. Its approval status is shown in Security, under Clinic documents.",
+        "Device linked. Its approval status is shown in Security, under Connected clinics.",
       ],
     ]);
   });
@@ -584,10 +627,10 @@ describe("native clinic document controls", () => {
     const input = screen.getByLabelText("Device code") as HTMLInputElement;
     expect(input.selectionEnd! - input.selectionStart!).toBe(deviceCode.length);
     if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
-      const section = screen.getByRole("region", { name: "Clinic documents" });
+      const section = screen.getByRole("region", { name: "Connected clinics" });
       await page.viewport(1100, Math.ceil(section.scrollHeight) + 50);
       await page
-        .getByRole("region", { name: "Clinic documents" })
+        .getByRole("region", { name: "Connected clinics" })
         .screenshot({ path: "portal-pending-after.png" });
     }
     await page.viewport(360, 780);
@@ -601,11 +644,11 @@ describe("native clinic document controls", () => {
       expect(field.scrollHeight).toBeLessThanOrEqual(field.clientHeight + 2);
       if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
         const section = screen.getByRole("region", {
-          name: "Clinic documents",
+          name: "Connected clinics",
         });
         await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
         await page
-          .getByRole("region", { name: "Clinic documents" })
+          .getByRole("region", { name: "Connected clinics" })
           .screenshot({ path: "portal-pending-narrow-200.png" });
       }
     } finally {
@@ -1735,6 +1778,36 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledOnce();
   });
 
+  it("moves an open Link another clinic dialog to the panel when a check finds the last working device removed (#293)", async () => {
+    const offered: PortalLinkSummary = { ...pending, approvalCanRestart: true };
+    const gone = checked(
+      () =>
+        reply(offered, {
+          issue: { code: "portal_device_removed", message: "Native text." },
+        }),
+      offered,
+    );
+    const address = () => screen.queryByLabelText("Portal HTTPS address");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Link another clinic" }),
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    fireEvent.change(address()!, {
+      target: { value: "https://portal.example.test/patient" },
+    });
+    // The poll's own answer (not the check button's) says the device was removed.
+    await pass(10_000);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Link another clinic" }),
+    ).toBeNull();
+    expect(address()).toBeVisible();
+    expect(address()).toHaveValue("https://portal.example.test/patient");
+    expect(address()).toHaveFocus();
+    gone.unmount();
+    vi.useRealTimers();
+  });
+
   it("says a removed device plainly and stops, and words other refusals neutrally", async () => {
     const removed =
       "This device was removed from your clinic portal account. To use it again, connect it again with a new linking code from your patient portal.";
@@ -2166,11 +2239,11 @@ describe("the code a clinic emails (#141)", () => {
       expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
       if (import.meta.env.VITE_CAPTURE_PORTAL_UI === "1") {
         const section = screen.getByRole("region", {
-          name: "Clinic documents",
+          name: "Connected clinics",
         });
         await page.viewport(360, Math.ceil(section.scrollHeight) + 50);
         await page
-          .getByRole("region", { name: "Clinic documents" })
+          .getByRole("region", { name: "Connected clinics" })
           .screenshot({ path: "portal-code-narrow-200.png" });
       }
     } finally {
@@ -2367,6 +2440,72 @@ describe("Link another clinic (#145)", () => {
     expect(linkAnother()).toBeNull();
   });
 
+  it("shows the form directly when the only clinic's device was removed from its portal (#293)", () => {
+    const waits = new PortalWaits();
+    const { props, rerender } = fixture({ waits });
+    // A working link: the form waits behind the button.
+    expect(addressBox()).toBeNull();
+    expect(linkAnother()).not.toBeNull();
+    // The portal says this device was removed: that link no longer counts as linked.
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    expect(addressBox()).toBeVisible();
+    expect(linkAnother()).toBeNull();
+    // A second, working clinic brings the button back, and the removed one stays an earlier attempt.
+    rerender(
+      <PortalDocuments
+        {...props}
+        waits={waits}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [
+            link,
+            { ...link, id: "link-2", clinicName: "FAKE Second Clinic" },
+          ],
+        }}
+      />,
+    );
+    expect(addressBox()).toBeNull();
+    expect(linkAnother()).not.toBeNull();
+  });
+
+  it("keeps what was typed and puts the focus on the panel's form when the last working link is removed under an open dialog (#293)", async () => {
+    const waits = new PortalWaits();
+    const { props, rerender } = fixture({ waits });
+    const user = userEvent.setup();
+    await user.click(linkAnother()!);
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    // The portal says the only working device was removed, while the dialog is open.
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    // Not left in a dialog with no button to return to: the dialog is gone, the same form stands
+    // on the panel with what was typed, and the focus is on its first field (not on the page).
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(linkAnother()).toBeNull();
+    expect(addressBox()).toBeVisible();
+    expect(addressBox()).toHaveValue("https://portal.example.test/patient");
+    expect(addressBox()).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("keeps a dialog that is still behind a working link when another clinic's device is removed", async () => {
+    const waits = new PortalWaits();
+    const second = { ...link, id: "link-2", clinicName: "FAKE Second Clinic" };
+    const { props, rerender } = fixture({
+      waits,
+      snapshot: { ...snapshot, portalLinks: [link, second] },
+    });
+    await userEvent.setup().click(linkAnother()!);
+    waits.deviceRemoved(link.id);
+    rerender(<PortalDocuments {...props} waits={waits} />);
+    // One working clinic is left: the dialog stays open and the form stays behind the button.
+    expect(screen.getByRole("dialog")).toBeVisible();
+  });
+
   it("puts the linked clinics first, and the form behind Link another clinic", () => {
     fixture();
     expect(addressBox()).toBeNull();
@@ -2493,7 +2632,7 @@ describe("what a screen reader is told in the clinic panel (clinic audit)", () =
   const mismatch =
     "This code doesn't match this clinic. Check that you linked your clinic's real portal address, then try again.";
   const panelHeading = () =>
-    screen.getByRole("heading", { name: "Clinic documents" });
+    screen.getByRole("heading", { name: "Connected clinics" });
 
   it("takes focus to a code's field when it needs correcting, so the reason is heard (S1)", async () => {
     const { bridge, props, rerender } = fixture({
