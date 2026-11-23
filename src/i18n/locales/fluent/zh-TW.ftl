@@ -2001,6 +2001,7 @@ interface-AnonymizePreview-placeholder-manual = 已移除
 interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之後 { $days } 天
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = 其他寫法 { $n }
 
 interface-AnonymizePreview-pasteTitle = 放回資訊
 

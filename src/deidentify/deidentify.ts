@@ -170,12 +170,17 @@ export interface PlaceholderNotes {
   daysAfter: (days: number, label: string, number: number) => string;
   /** An age of 90 or over: the age itself stays on the device. */
   ageOver90: string;
+  /** A person's name written in another form than the first one the text showed ("Bell" after
+   * "Peter Bell"): the first other form is 1, the next 2. The number before it still names the
+   * person; the note only keeps the forms apart so each is put back as it was written. */
+  otherForm: (n: number) => string;
 }
 
 export const DEFAULT_NOTES: PlaceholderNotes = {
   daysAfter: (days, label, number) =>
     `${days} ${days === 1 ? "day" : "days"} after ${label} ${number}`,
   ageOver90: "90+",
+  otherForm: (n) => `other form ${n}`,
 };
 
 export const DEFAULT_LABELS: PlaceholderLabels = {
@@ -4713,6 +4718,7 @@ function build(
     }
     return number;
   };
+  const formsOf = new Map<string, Map<string, number>>();
   const placeholder = (finding: Finding, original: string) => {
     const kind = finding.kind as Exclude<RemovedKind, "manual">;
     // A doctor is one placeholder by surname: "Dr. Blake Sample" and "Dr.
@@ -4728,11 +4734,31 @@ function build(
       (kind === "doctor" ? words[words.length - 1] : words.join(" "))
     }`;
     const number = numberFor(kind, kind, identity);
-    return noted(
-      labels[kind],
-      number,
-      kind === "age" ? notes.ageOver90 : undefined,
-    );
+    // A known person written in another form (a surname after the full name, or the full name
+    // after a surname) keeps the person's number and takes a note of its own: paste-back puts
+    // each placeholder back as the words that stood there, never the first form's words.
+    let note = kind === "age" ? notes.ageOver90 : undefined;
+    if (kind === "name" && finding.person) {
+      const form = [
+        ...new Set(
+          fold(original)
+            .toLowerCase()
+            .split(/[^\p{L}\p{N}'’-]+/u)
+            .filter(Boolean),
+        ),
+      ]
+        .sort()
+        .join(" ");
+      const forms = formsOf.get(finding.person) ?? new Map<string, number>();
+      formsOf.set(finding.person, forms);
+      let index = forms.get(form);
+      if (index === undefined) {
+        index = forms.size;
+        forms.set(form, index);
+      }
+      if (index > 0) note = notes.otherForm(index);
+    }
+    return noted(labels[kind], number, note);
   };
 
   // Dates (#72): none is sent. Each distinct whole date gets a number in
@@ -4964,6 +4990,7 @@ interface Mark {
   number: number;
   ageOver90?: true;
   daysAfter?: { days: number; ref: number };
+  otherForm?: number;
 }
 
 function readMark(
@@ -4982,6 +5009,8 @@ function readMark(
   const note = inner[2];
   if (note === undefined) return { number };
   if (note === notes.ageOver90) return { number, ageOver90: true };
+  for (let n = 1; n <= 99; n += 1)
+    if (note === notes.otherForm(n)) return { number, otherForm: n };
   // A gap note: find its two numbers by writing it again. A language may
   // group the digits of a long gap ("1,234", "1 234").
   const values = new Set<number>();
@@ -5019,13 +5048,15 @@ function spellings(
   const noteIn = (language: PlaceholderVocabulary) =>
     mark.ageOver90
       ? language.notes.ageOver90
-      : mark.daysAfter
-        ? language.notes.daysAfter(
-            mark.daysAfter.days,
-            language.labels.unclearDate,
-            mark.daysAfter.ref,
-          )
-        : undefined;
+      : mark.otherForm
+        ? language.notes.otherForm(mark.otherForm)
+        : mark.daysAfter
+          ? language.notes.daysAfter(
+              mark.daysAfter.days,
+              language.labels.unclearDate,
+              mark.daysAfter.ref,
+            )
+          : undefined;
   const result = new Set<string>();
   for (const language of languages) {
     const word = language.labels[kind];

@@ -221,6 +221,7 @@ pub enum MessageId {
     InterfaceAnonymizePreviewMovedDate,
     InterfaceAnonymizePreviewNoteAgeOver90,
     InterfaceAnonymizePreviewNoteDaysAfter,
+    InterfaceAnonymizePreviewNoteOtherForm,
     InterfaceAnonymizePreviewPasteAllMatched,
     InterfaceAnonymizePreviewPasteButton,
     InterfaceAnonymizePreviewPasteFlagged,
@@ -1347,6 +1348,7 @@ impl MessageId {
         Self::InterfaceAnonymizePreviewMovedDate,
         Self::InterfaceAnonymizePreviewNoteAgeOver90,
         Self::InterfaceAnonymizePreviewNoteDaysAfter,
+        Self::InterfaceAnonymizePreviewNoteOtherForm,
         Self::InterfaceAnonymizePreviewPasteAllMatched,
         Self::InterfaceAnonymizePreviewPasteButton,
         Self::InterfaceAnonymizePreviewPasteFlagged,
@@ -2488,6 +2490,9 @@ impl MessageId {
             }
             Self::InterfaceAnonymizePreviewNoteDaysAfter => {
                 "interface-AnonymizePreview-note-daysAfter"
+            }
+            Self::InterfaceAnonymizePreviewNoteOtherForm => {
+                "interface-AnonymizePreview-note-otherForm"
             }
             Self::InterfaceAnonymizePreviewPasteAllMatched => {
                 "interface-AnonymizePreview-pasteAllMatched"
@@ -5025,6 +5030,9 @@ impl MessageId {
             }
             "interface.AnonymizePreview.note.ageOver90" => {
                 Some(Self::InterfaceAnonymizePreviewNoteAgeOver90)
+            }
+            "interface.AnonymizePreview.note.otherForm" => {
+                Some(Self::InterfaceAnonymizePreviewNoteOtherForm)
             }
             "interface.AnonymizePreview.pasteTitle" => {
                 Some(Self::InterfaceAnonymizePreviewPasteTitle)

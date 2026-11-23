@@ -964,6 +964,7 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.footerNote",
   "interface.AnonymizePreview.note.daysAfter",
   "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.note.otherForm",
   "interface.AnonymizePreview.pasteTitle",
   "interface.AnonymizePreview.pasteHelp",
   "interface.AnonymizePreview.pasteLabel",
@@ -2276,6 +2277,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-note-daysAfter",
   "interface.AnonymizePreview.note.ageOver90":
     "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.note.otherForm":
+    "interface-AnonymizePreview-note-otherForm",
   "interface.AnonymizePreview.pasteTitle":
     "interface-AnonymizePreview-pasteTitle",
   "interface.AnonymizePreview.pasteHelp":
@@ -3545,6 +3548,7 @@ export interface MessageArgsByKey {
     number: FluentArgument;
   };
   "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.note.otherForm": { n: FluentArgument };
   "interface.AnonymizePreview.pasteTitle": undefined;
   "interface.AnonymizePreview.pasteHelp": undefined;
   "interface.AnonymizePreview.pasteLabel": undefined;
