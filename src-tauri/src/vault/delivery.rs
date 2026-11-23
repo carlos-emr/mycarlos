@@ -2814,6 +2814,13 @@ impl VaultStore {
             let mut next = link.clone();
             next.approval_history.push(prior.clone());
             let version = http.contract_version(&link, &|| self.portal_link_ticket() != session);
+            // A v2 request no challenge ever answered (the clinic's CARLOS may not take v2 yet)
+            // is not repeated: the next one goes back to v1, which every clinic takes.
+            let version = if crate::portal_approval::stay_on_v1(&link) {
+                crate::portal_approval::CONTRACT_V1
+            } else {
+                version
+            };
             next.approval = Some(crate::portal_approval::create(&link, now, version)?);
             link = self.save_approval_state(&link, next, session, true)?;
         } else if link.approval.is_none() {
@@ -4301,13 +4308,20 @@ mod approval_recovery_tests {
     fn connect_with_request_made_at(
         made_at: u64,
     ) -> (tempfile::TempDir, VaultStore, StoredLink, Attempt) {
+        connect_with_request_of(made_at, portal_approval::CONTRACT_V1)
+    }
+
+    /// A linked store with a saved request made at `made_at` under contract `version`.
+    fn connect_with_request_of(
+        made_at: u64,
+        version: u8,
+    ) -> (tempfile::TempDir, VaultStore, StoredLink, Attempt) {
         let (temp, store) = new_connect_store();
         let session = store.portal_link_ticket();
         let linked = finish_connect_link(&store, session).unwrap();
         let link = saved(&store);
         assert_eq!(link.id, linked.id);
-        let attempt =
-            portal_approval::create(&link, made_at, portal_approval::CONTRACT_V1).unwrap();
+        let attempt = portal_approval::create(&link, made_at, version).unwrap();
         store
             .mutate_recorded(|m, _| {
                 m.portal_links[0].approval = Some(attempt.clone());
@@ -5101,6 +5115,35 @@ mod approval_recovery_tests {
             )))
         ));
         assert_eq!(only_gets(&http), vec![new_id, attempt.request_id]);
+    }
+
+    #[test]
+    fn a_v2_staff_request_gives_its_time_left_in_hours_by_the_portals_clock() {
+        let now = crate::now_ms() / 1000;
+        let (_temp, store, link, attempt) =
+            connect_with_request_of(now, portal_approval::CONTRACT_V2);
+        let session = store.portal_link_ticket();
+        assert_eq!(attempt.expires_at, now + 86_400);
+        // The clinic's staff challenge lasts the day, as the portal's v2 contract has it.
+        let challenge = portal_approval::signed_challenge(&link, &attempt, now, now + 86_400);
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge.clone())], vec![]);
+        http.portal_time = Some(now + 100);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert!(check.issue.is_none());
+        assert_eq!(check.link.approval_status, Some(State::ChallengeReady));
+        // Hours, not minutes: well over the hour the v1 bound allowed.
+        assert_eq!(check.expires_in_ms, Some((86_400 - 100) * 1000));
+        assert!(check.expires_in_ms.unwrap() > 3_600_000);
+        assert!(!check.link.approval_can_restart);
+        // A portal clock 280 s behind this device's (within the allowed 300) still counts.
+        let mut http = Script::new(vec![Reply::ChallengeReady(challenge)], vec![]);
+        http.portal_time = Some(now - 280);
+        let check = store
+            .poll_staff_approval_using(link.id, session, &http)
+            .unwrap();
+        assert_eq!(check.expires_in_ms, Some((86_400 + 280) * 1000));
     }
 
     #[test]

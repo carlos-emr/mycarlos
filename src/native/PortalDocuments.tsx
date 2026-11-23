@@ -871,7 +871,7 @@ export function PortalDocuments({
               ? // A request staff may answer later in the day (contract v2, #144): no
                 // minute countdown, but how long it stays open and that unlocking checks.
                 t("portal.approvalStaffOpen", {
-                  count: Math.ceil(left / 3_600_000),
+                  count: Math.round(left / 3_600_000),
                 })
               : left > 0
                 ? t("portal.approvalTimeLeft", {

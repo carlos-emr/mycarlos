@@ -103,6 +103,36 @@ mod native {
     /// A v2 request the portal has no challenge for is open this long (`min(exp, iat + 600)`):
     /// a late answer cannot revive a request the device may already have replaced.
     const UNANSWERED_OPEN: u64 = 600;
+    /// Whether a challenge's own window is right for its contract: it ends after it began and lasts
+    /// at most what its kind may (`challenge_life`); under v2 exactly `min(issued_at + life,
+    /// intent.exp)`, so a staff challenge cannot be cut to ten minutes and a code cannot be
+    /// stretched (v1 keeps its looser rule).
+    pub(crate) fn challenge_window_ok(
+        version: u8,
+        kind: &str,
+        issued_at: u64,
+        expires_at: u64,
+        intent_exp: u64,
+    ) -> bool {
+        let life = challenge_life(version, kind);
+        expires_at > issued_at
+            && expires_at - issued_at <= life
+            && (version != V2 || expires_at == issued_at.saturating_add(life).min(intent_exp))
+    }
+    /// When a request ends, by its contract: a verified challenge's end (never past the intent's),
+    /// else a v1 intent's own end, or a v2 request's ten minutes unanswered.
+    pub(crate) fn request_end(
+        version: u8,
+        intent_iat: u64,
+        intent_exp: u64,
+        challenge_end: Option<u64>,
+    ) -> u64 {
+        match challenge_end {
+            Some(end) => end.min(intent_exp),
+            None if version == V2 => intent_exp.min(intent_iat.saturating_add(UNANSWERED_OPEN)),
+            None => intent_exp,
+        }
+    }
     /// The version and the times of a saved intent. The intent is this device's own signed
     /// text; `valid_saved` checks its signature and every field when the vault is read.
     fn intent_terms(attempt: &Attempt) -> Option<(u8, u64, u64)> {
@@ -538,19 +568,30 @@ mod native {
     /// intent's own expiry, or the saved, verified challenge's when it is
     /// earlier (the portal moves its expiry to the challenge's then).
     pub(crate) fn request_expires_at(link: &StoredLink, attempt: &Attempt) -> u64 {
-        let challenged = attempt
+        let challenge_end = attempt
             .challenge
             .as_deref()
-            .and_then(|challenge| verify_challenge(link, attempt, challenge, false).ok());
-        if let Some(c) = challenged {
-            return c.expires_at.min(attempt.expires_at);
-        }
-        // No challenge yet: a v1 request lasts its intent's ten minutes; a v2 request is open
-        // only ten minutes while unanswered, even though its intent may allow a day.
+            .and_then(|challenge| verify_challenge(link, attempt, challenge, false).ok())
+            .map(|c| c.expires_at);
         match intent_terms(attempt) {
-            Some((V2, iat, exp)) => exp.min(iat.saturating_add(UNANSWERED_OPEN)),
-            _ => attempt.expires_at,
+            Some((version, iat, exp)) => request_end(version, iat, exp, challenge_end),
+            // Not a readable intent: the end the attempt was saved with.
+            None => challenge_end.map_or(attempt.expires_at, |end| end.min(attempt.expires_at)),
         }
+    }
+    /// Whether the next request for this device should stay on contract v1 even though the portal
+    /// lists v2: an earlier v2 request that no challenge ever answered (the clinic's CARLOS may
+    /// not take v2 yet, which the portal cannot tell), so a misconfiguration does not use up the
+    /// device's requests one unanswered day-long intent at a time.
+    pub(crate) fn stay_on_v1(link: &StoredLink) -> bool {
+        link.approval
+            .iter()
+            .chain(link.approval_history.iter())
+            .any(|attempt| {
+                uses_contract_v2(attempt)
+                    && attempt.challenge.is_none()
+                    && attempt.acceptance.is_none()
+            })
     }
     /// The `approval_kind` of a challenge that asks the patient for the code
     /// their clinic emailed (clinic code v1).
@@ -635,15 +676,13 @@ mod native {
             || !matches!(c.approval_kind.as_str(), "staff_first" | CODE_KIND)
             || c.predecessor_device_key_id.is_some()
             || c.predecessor_version.is_some()
-            || c.expires_at <= c.issued_at
-            || c.expires_at - c.issued_at > challenge_life(version, &c.approval_kind)
-            // v2: exactly `min(issued_at + life, intent.exp)`, so a staff challenge cannot be cut
-            // to ten minutes and a code cannot be stretched (v1 keeps its looser rule).
-            || (version == V2
-                && c.expires_at
-                    != c.issued_at
-                        .saturating_add(challenge_life(version, &c.approval_kind))
-                        .min(intent_exp))
+            || !challenge_window_ok(
+                version,
+                &c.approval_kind,
+                c.issued_at,
+                c.expires_at,
+                intent_exp,
+            )
             || c.expires_at > attempt.expires_at
             || !wire::key_id(&c.kid)
         {
@@ -1166,7 +1205,7 @@ mod native {
             let end = local + 500;
             for usable in [local, local - BOUND, local + BOUND, local + 200] {
                 assert_eq!(
-                    portal_clock(Some(usable), end, local),
+                    portal_clock(Some(usable), end, local, 600),
                     Some(usable),
                     "{usable}"
                 );
@@ -1174,12 +1213,29 @@ mod native {
             // A stuck or far-off date, or none at all: this device's clock is
             // used instead.
             for unusable in [local - BOUND - 1, local + BOUND + 1, 0, u64::MAX] {
-                assert_eq!(portal_clock(Some(unusable), end, local), None, "{unusable}");
+                assert_eq!(
+                    portal_clock(Some(unusable), end, local, 600),
+                    None,
+                    "{unusable}"
+                );
             }
-            assert_eq!(portal_clock(None, end, local), None);
+            assert_eq!(portal_clock(None, end, local, 600), None);
             // Nor does a date leaving the request an hour or more count.
-            assert_eq!(portal_clock(Some(local), local + 3_600, local), None);
-            assert_eq!(portal_clock(Some(local), local + 3_599, local), Some(local));
+            assert_eq!(portal_clock(Some(local), local + 3_600, local, 600), None);
+            assert_eq!(
+                portal_clock(Some(local), local + 3_599, local, 600),
+                Some(local)
+            );
+            // A v2 request lasts up to a day: a date leaving it that long still counts, and one
+            // leaving it more than a day and the slack does not.
+            assert_eq!(
+                portal_clock(Some(local), local + 86_400, local, 86_400),
+                Some(local)
+            );
+            assert_eq!(
+                portal_clock(Some(local), local + 89_400, local, 86_400),
+                None
+            );
         }
         #[test]
         fn approval_http_keeps_the_last_portal_clock_it_was_given() {
@@ -1376,6 +1432,69 @@ mod native {
             assert!(verify_challenge(&link, &v2, &old, true).is_err());
         }
         #[test]
+        fn should_follow_the_shared_challenge_expiry_and_open_request_cases() {
+            let (x, _) = v2_fixture();
+            let cases = x["challenge_expiry_cases"].as_array().unwrap();
+            assert!(cases.len() >= 8);
+            for case in cases {
+                let id = case["id"].as_str().unwrap();
+                let version = case["version"].as_u64().unwrap() as u8;
+                assert_eq!(
+                    challenge_window_ok(
+                        version,
+                        case["approval_kind"].as_str().unwrap(),
+                        case["issued_at"].as_u64().unwrap(),
+                        case["expires_at"].as_u64().unwrap(),
+                        case["intent_exp"].as_u64().unwrap(),
+                    ),
+                    case["valid"].as_bool().unwrap(),
+                    "{id}"
+                );
+            }
+            let cases = x["open_request_cases"].as_array().unwrap();
+            assert!(cases.len() >= 6);
+            for case in cases {
+                let id = case["id"].as_str().unwrap();
+                let end = request_end(
+                    case["version"].as_u64().unwrap() as u8,
+                    case["intent_iat"].as_u64().unwrap(),
+                    case["intent_exp"].as_u64().unwrap(),
+                    case["challenge_expires_at"].as_u64(),
+                );
+                assert_eq!(
+                    case["now"].as_u64().unwrap() < end,
+                    case["open"].as_bool().unwrap(),
+                    "{id}"
+                );
+            }
+        }
+        #[test]
+        fn should_go_back_to_v1_after_a_v2_request_no_challenge_ever_answered() {
+            let (_, mut link, _) = crate::portal_approval::first_fixture();
+            let now = 1_792_454_400;
+            assert!(!stay_on_v1(&link));
+            // A v1 request, answered or not, says nothing about v2.
+            link.approval = Some(create(&link, now, V1).unwrap());
+            assert!(!stay_on_v1(&link));
+            // A v2 request the clinic answered with a challenge: v2 works.
+            let v2 = create(&link, now, V2).unwrap();
+            let mut answered = v2.clone();
+            answered.challenge = Some(crate::portal_approval::signed_challenge(
+                &link,
+                &v2,
+                now,
+                now + 86_400,
+            ));
+            link.approval = Some(answered);
+            assert!(!stay_on_v1(&link));
+            // A v2 request nothing answered, current or in the history: back to v1.
+            link.approval = Some(v2.clone());
+            assert!(stay_on_v1(&link));
+            link.approval = Some(create(&link, now + 1, V1).unwrap());
+            link.approval_history = vec![v2];
+            assert!(stay_on_v1(&link));
+        }
+        #[test]
         fn should_sign_v2_only_when_the_portal_lists_it() {
             let answer = |status: u16, body: &str| crate::portal_client::ApiResponse {
                 status,
@@ -1409,7 +1528,7 @@ pub(crate) use native::{code_challenge_kid, send_code};
 pub(crate) use native::{contract_version, create, device_removed, publish, refresh};
 #[cfg(test)]
 pub(crate) use native::{read_versions, V2 as CONTRACT_V2};
-pub(crate) use native::{uses_contract_v2, V1 as CONTRACT_V1};
+pub(crate) use native::{stay_on_v1, uses_contract_v2, V1 as CONTRACT_V1};
 
 /// How far a reply's `Date` may be from this device's clock and still be
 /// taken as the portal's clock (#131). The portal accepts this device's
@@ -1418,19 +1537,37 @@ pub(crate) use native::{uses_contract_v2, V1 as CONTRACT_V1};
 /// clock that judged the request: a stuck header, or another server's.
 pub const PORTAL_CLOCK_BOUND_SECONDS: u64 = 300;
 
+/// How much longer than a request's own longest life its end may still be ahead of the portal's
+/// date for that date to stand for the portal's clock (a v1 request lasts ten minutes, so an
+/// hour: 600 + 3 000 s, as before).
+const PORTAL_CLOCK_SLACK_SECONDS: u64 = 3_000;
+
+/// The longest a request of this contract may last, in seconds: ten minutes, or for v2 (where
+/// clinic staff may answer later in the day) a day.
+fn longest_request(attempt: &Attempt) -> u64 {
+    if uses_contract_v2(attempt) {
+        86_400
+    } else {
+        600
+    }
+}
+
 /// The portal's clock from its reply, when it can stand for it: near this
-/// device's clock (`PORTAL_CLOCK_BOUND_SECONDS`), and leaving the request
-/// less than an hour (requests last ten minutes). Otherwise `None`, and
-/// this device's clock is used, as when the portal gave no date. Shared by
-/// the time left, the restart offer and the restart itself.
+/// device's clock (`PORTAL_CLOCK_BOUND_SECONDS`), and leaving the request no
+/// more than its contract's longest life (`longest`, ten minutes for v1, a
+/// day for v2) plus `PORTAL_CLOCK_SLACK_SECONDS`: a date that puts the end
+/// further off is not the clock that judged it. Otherwise `None`, and this
+/// device's clock is used, as when the portal gave no date. Shared by the
+/// time left, the restart offer and the restart itself.
 pub(crate) fn portal_clock(
     portal_now: Option<u64>,
     request_end: u64,
     local_now: u64,
+    longest: u64,
 ) -> Option<u64> {
     portal_now.filter(|&now| {
         now.abs_diff(local_now) <= PORTAL_CLOCK_BOUND_SECONDS
-            && request_end.saturating_sub(now) < 3_600
+            && request_end.saturating_sub(now) < longest + PORTAL_CLOCK_SLACK_SECONDS
     })
 }
 
@@ -1447,7 +1584,14 @@ pub(crate) fn deciding_portal_time(
     local_now: u64,
 ) -> Option<u64> {
     portal_has_it
-        .then(|| portal_clock(portal_now, request_expires_at(link, attempt), local_now))
+        .then(|| {
+            portal_clock(
+                portal_now,
+                request_expires_at(link, attempt),
+                local_now,
+                longest_request(attempt),
+            )
+        })
         .flatten()
 }
 

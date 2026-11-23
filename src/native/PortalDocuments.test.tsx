@@ -1910,9 +1910,9 @@ describe("automatic approval status checks (#131)", () => {
   });
 
   it("says how long a request that staff may answer later stays open, not a minute countdown (#144)", async () => {
-    checked(() => reply(pending, { expiresInMs: 23.5 * 3_600_000 }));
+    checked(() => reply(pending, { expiresInMs: 24 * 3_600_000 }));
     await pass(10_000);
-    // About 23.5 hours left: said in hours, rounded up, with where the answer is looked for.
+    // A day left (a few seconds gone): said in hours, rounded, with where the answer is looked for.
     expect(
       screen.getByText(
         translate("en", "portal.approvalStaffOpen", { count: 24 }),
