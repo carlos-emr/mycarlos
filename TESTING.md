@@ -395,6 +395,95 @@ On the iOS Simulator, also check the items in [issue #5](https://github.com/carl
 Developers can find a fuller checklist, including large files and interrupted transfers, in
 [EVALUATION.md](EVALUATION.md); it needs a development setup.
 
+## Recording and playing a video (#359)
+
+Use **made-up people and documents only** (a person named "FAKE Patient", a filing folder of your own),
+and point the camera at something harmless. Sound is recorded: anyone talking near the device is heard.
+
+**On every platform**
+
+1. In **My records** choose **Record a video**. Where the webview cannot record MP4 the button is
+   replaced by "Video recording isn't available on this device" and a **Why?** that explains: check
+   that, and that **Take a photo** still works.
+2. In the dialog read the notice about sound, then choose **Use the camera and microphone**. The system
+   (or, on Windows and Linux, the app alone) allows it; nothing is recorded yet. Then **Start recording**.
+3. Check the **Recording** badge and the **Recorded 0:07** time. Press **Pause recording**: the badge says
+   **Paused**, the note says the camera and microphone are still on, the time stops, and a screen reader
+   says "Recording paused." **Resume recording**: it counts on.
+4. **Stop and save.** The video appears in the list; open it and choose **Play video**. Seek by the bar
+   and with the arrow keys; check that it neither starts by itself nor repeats, that sound plays, and that
+   the time shown is the time you recorded **without** the pause.
+5. Close the player, then **Lock now** while a video is open: the player goes and nothing plays.
+6. **Idle lock.** Set the automatic lock to 1 minute. Record for 2 minutes without touching the screen:
+   it must **not** lock. Pause and wait: it **must** lock about a minute later, and after unlocking the
+   video that was saved is there with a note.
+7. **A crash.** Start recording, then end myCarlos from the system (kill it). Open it again and unlock: it
+   asks "myCarlos closed while you were recording. Keep the video that was saved?" with **Keep the video**
+   focused. Try **Delete it**: it asks again and says it cannot be undone. Keep it and play it.
+8. **Hiding while recording.** Switch to another app while recording: the recording ends and is saved.
+9. **Room.** On a device or volume with little free space (a small disk image is enough), **Record a video**
+   with under 1 GB free: the dialog says there is not enough room and neither the camera nor the
+   microphone turns on. With a little more, record until it warns about the room left and then stops by
+   itself, saved: "Saved. There was no more room." (If the disk fills before it can stop, the message says the video is kept as an unfinished recording and will be finished when there is room. On iOS and Android the free space myCarlos sees can be less than Settings shows, because it leaves out what the system can reclaim.)
+10. **Hide a video** from its details while it plays: the player stops.
+
+11. **Backups with videos.** In Security, under the backup, read "About … GB, of which videos …" before saving.
+    Tick **Leave videos out**: the size drops, and the note says the videos will not be brought back.
+    Save it, then **Restore backup** from the start screen on a second device or after setting the vault
+    aside: it says "This backup was made without videos…" before you agree. After restoring, the videos are
+    listed with the hidden documents as missing files, and everything else opens as before. Save a backup
+    without ticking the box and check the videos come back and play.
+
+**Windows (WebView2).** Windows has no per-app prompt for the microphone: "Let desktop apps access your
+microphone" in Settings > Privacy decides. Switch it off and check the dialog says where to look. On an
+**N or KN edition** without the Media Feature Pack, expect the "isn't available" line.
+
+**macOS.** The system asks for the camera and the microphone with the texts in the dialog's explanation.
+An unsigned build without the hardened runtime asks; a signed one needs the camera and audio-input
+entitlements (not yet signed, #24).
+
+**Linux (WebKitGTK).** Install `gstreamer1.0-plugins-bad` and `gstreamer1.0-plugins-ugly` (and
+`gstreamer1.0-libav`) first: without them there is no Record. Nothing asks: the app allows the camera and
+microphone for its own pages. Check that the screen is never offered.
+
+**Android.** A phone with Android 7 or older shows the "isn't available" line. Otherwise the phone asks once
+for the camera and the microphone (also try **Don't ask again** and check the message). Rotate the phone
+while recording, take a call (the recording ends and is saved), and lock the phone.
+
+**iPhone and iPad.** From iOS 14.5; before that, the "isn't available" line. The simulator has no camera:
+use a real device. The prompt text is the one in the dialog's explanation.
+
+### Camera and microphone on Apple devices (the Wry patch, #359 PR 7)
+
+myCarlos carries a patch to Wry (`src-tauri/vendor/wry.patch`) so that on a Mac, an iPhone and an iPad the
+webview answers a camera and microphone request as the other platforms do: **video, alone or with sound, from
+myCarlos's own page, and nothing else**. The decision itself is tested on any computer; the Apple code that
+asks it is compiled and run only on an Apple device, so it needs these checks. Use the CI's macOS build and an
+iPhone or iPad build (not `tauri dev`: the development server is refused on purpose, so the camera does not
+work there).
+
+1. **A photo** (My records, **Take a photo**): the system asks for the camera once; the preview appears; take a
+   photo. It must work as before the patch.
+2. **A video with sound** (**Record a video**): the system asks for the camera and then the microphone, once each;
+   recording, pause, resume and stop work, and the sound is in the saved video.
+3. **Denied in Settings.** Turn the camera off for myCarlos in System Settings (macOS: Privacy & Security;
+   iOS: Settings > myCarlos), then try again: the dialog says it could not start, and the camera light stays
+   off. Turn it back on.
+4. **Nothing turns on by itself.** Open myCarlos, open every screen except the photo and video dialogs, and
+   watch the camera light and the orange or green indicator: it must stay off. After closing a dialog or
+   locking, it must go off at once.
+5. **Not from another page.** This is the one the patch adds, and cannot be tried from the app's own screens:
+   it is covered by the unit tests of the decision. If you have a debugging build with the Safari Web
+   Inspector attached, run `navigator.mediaDevices.getUserMedia({audio:true})` in the console: it must be
+   refused (sound alone), where before the patch it asked the system.
+6. **Both versions.** Repeat 1 and 2 on the oldest macOS and iOS you have. The patched method exists only on
+   macOS 12 and later and iOS 15 and later: on macOS 10.13 to 11 and on iOS 14.5 to 14.8 (the app's lower end)
+   WebKit never calls it, so its own default answers and step 5 will not show the patch's refusal there. Note
+   which of those you tried; if they matter, the minimums are the thing to raise.
+
+If any of 1 to 3 fails, the patch is wrong for that system: the delegate method is the only place to look
+(`src-tauri/vendor/wry/src/wkwebview/class/wry_web_view_ui_delegate.rs`).
+
 ## Accessibility checks
 
 The automated tests catch missing labels and low contrast, but not whether the app makes sense to

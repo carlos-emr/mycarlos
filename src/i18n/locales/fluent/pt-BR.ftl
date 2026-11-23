@@ -1879,6 +1879,22 @@ ai-notInstalled-openPreferences = Abrir as configurações do assistente de IA
 
 aiHelper-resultLabel = Escrito por IA e pode estar errado. Confira com seu médico.
 
+aiHelper-resultLabelShort = Rascunho de IA
+
+aiHelper-resultLabelHide = Não mostrar novamente
+
+aiHelper-resultLabelInfo = O que significa “Rascunho de IA”
+
+ai-label-settingsTitle = Aviso nas respostas da IA
+
+ai-label-settingsBody = Cada resposta da IA informa que foi escrita por IA e pode conter erros. Depois de “Não mostrar novamente”, uma etiqueta curta “Rascunho de IA” substitui a frase completa. A etiqueta nunca é removida. A escolha fica guardada neste dispositivo e recomeça se o modelo ou a ferramenta mudar.
+
+ai-label-settingsShowFull = Mostrar o aviso completo novamente
+
+ai-label-settingsFullShown = O aviso completo é mostrado em cada resposta da IA.
+
+ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrada nas respostas da IA para as quais você a escolheu.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = Ver no documento
@@ -2407,3 +2423,18 @@ interface-RecordingRecovery-deleteSure = Excluir esta gravação? Isso não pode
 interface-RecordingRecovery-savedLocked = O myCarlos bloqueou enquanto você gravava. O vídeo foi salvo: { $name }
 interface-RecordingRecovery-savedLockedPaused = O myCarlos bloqueou enquanto uma gravação estava em pausa. O vídeo foi salvo: { $name }
 interface-RecordDialog-videoSavedFailed = A gravação parou porque uma parte não pôde ser salva. O que foi salvo antes disso foi mantido: { $name }
+interface-RecordDialog-notEnoughRoom = Não há espaço suficiente para gravar um vídeo. Cerca de 1 GB precisa estar livre. Libere espaço neste dispositivo e escolha Tentar de novo.
+interface-RecordDialog-lowOnRoom = O espaço está acabando. A gravação é salva quando não houver mais espaço.
+interface-RecordDialog-lowOnRoomMinutes = O espaço está acabando: restam cerca de { $minutes } minutos de gravação. A gravação é salva quando não houver mais espaço.
+interface-RecordDialog-videoSavedNoRoom = Salvo. Não havia mais espaço: { $name }
+interface-RecordDialog-videoKeptUnfinished = Não havia mais espaço, então o vídeo não pôde ser concluído. Ele foi mantido como uma gravação inacabada: libere espaço e o myCarlos a concluirá na próxima vez que você desbloquear.
+interface-RecordingRecovery-finishedWithRoom = Há espaço de novo, então seu vídeo inacabado foi concluído: { $name }
+interface-RecordingRecovery-stillNoRoom = Ainda não há espaço suficiente para concluir seu vídeo inacabado: { $name }. Libere espaço; ele foi mantido.
+security-backup-size = Cerca de { $size }.
+security-backup-sizeWithVideos = Cerca de { $size }, dos quais { $videos } são vídeos.
+security-backup-sizeNoVideos = Cerca de { $size }, sem vídeos.
+security-backup-leaveVideosOut = Deixar os vídeos de fora
+security-backup-leaveVideosOutHelp = O backup não conterá seus vídeos. Se você restaurá-lo, os vídeos não voltam.
+restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta todo o resto, e seus vídeos não estarão lá. Eles aparecem entre os documentos ocultos, como arquivos ausentes.
+security-backup-sizeCalculating = Calculando o tamanho do backup…
+interface-hidden-videoLeftOut = Vídeo deixado de fora do backup

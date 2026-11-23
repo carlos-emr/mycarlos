@@ -251,6 +251,7 @@ describe("the question about a recording that was cut short", () => {
       startedAtMs: 1,
       paused: false,
       parked: false,
+      stopped: false,
       ...overrides,
     }) satisfies PendingRecording;
 
@@ -354,6 +355,106 @@ describe("the question about a recording that was cut short", () => {
     expect(notice).toHaveHumanTextContent(
       "myCarlos locked while a recording was paused. The video was saved: FAKE Paused.mp4",
     );
+  });
+
+  it("says a recording the patient ended for want of room was finished now there is room, not that a lock ended it", async () => {
+    const bridge = renderLibrary(base, {
+      videoPending: vi.fn(async () => ({
+        recordings: [pending({ parked: true, stopped: true })],
+        unreadable: 0,
+      })),
+      videoRecover: vi.fn(async () => ({ recordId: "video-1" })),
+    });
+    await waitFor(() =>
+      expect(bridge.videoRecover).toHaveBeenCalledWith("recording-9", true),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          `There is room again, so your unfinished video was finished: ${VIDEO_NAME}`,
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText(/locked while you were recording/)),
+    ).toBeNull();
+  });
+
+  it("says there is still no room for one, tries the others, and does not call it a failure", async () => {
+    const bridge = renderLibrary(base, {
+      videoPending: vi.fn(async () => ({
+        recordings: [
+          pending({ id: "recording-1", parked: true, stopped: true }),
+          pending({
+            id: "recording-2",
+            displayName: "FAKE Other.mp4",
+            parked: true,
+          }),
+        ],
+        unreadable: 0,
+      })),
+      videoRecover: vi.fn(async (id: string) => {
+        if (id === "recording-1")
+          throw { code: "no_space", message: "FAKE no room" };
+        return { recordId: "video-2" };
+      }),
+    });
+    await waitFor(() => expect(bridge.videoRecover).toHaveBeenCalledTimes(2));
+    const notice = await screen.findByText(
+      humanText(
+        /There is still not enough room to finish your unfinished video/,
+      ),
+    );
+    expect(notice).toHaveHumanTextContent(
+      "myCarlos locked while you were recording. The video was saved: FAKE Other.mp4",
+    );
+    expect(notice).not.toHaveHumanTextContent("could not");
+  });
+
+  it("works out the backup's size once for a set of documents, not each time Security opens", async () => {
+    const backupSize = vi.fn(async () => ({
+      totalBytes: 1_000_000,
+      withoutVideosBytes: 500_000,
+      videoBytes: 500_000,
+      videoCount: 1,
+    }));
+    renderLibrary(base, { backupSize });
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    await waitFor(() => expect(backupSize).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    expect(
+      await screen.findByRole("checkbox", {
+        name: humanText("Leave videos out"),
+      }),
+    ).toBeVisible();
+    expect(backupSize).toHaveBeenCalledTimes(1);
+  });
+
+  it("says in the Hidden list that a backup left a video's file out, asking the history when it opens", async () => {
+    const clip = {
+      id: "video-1",
+      profileId: "profile-1",
+      folderIds: [],
+      displayName: VIDEO_NAME,
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/octet-stream",
+      plaintextSize: 100,
+      importedAtMs: 1,
+      available: false,
+      hidden: { atMs: 2, reason: "damaged" as const },
+    };
+    const leftOutRecords = vi.fn(async () => ["video-1"]);
+    renderLibrary({ ...base, records: [clip] }, { leftOutRecords });
+    expect(leftOutRecords).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Security" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(/^Hidden 1 document/) }),
+    );
+    expect(
+      await screen.findByText(humanText(/Video left out of the backup/)),
+    ).toBeVisible();
+    expect(leftOutRecords).toHaveBeenCalledTimes(1);
   });
 
   it("waits for the next unlock when the patient does not answer", async () => {

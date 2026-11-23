@@ -16,6 +16,11 @@ pub enum MessageId {
     AiFailed,
     AiKeepFailed,
     AiKeepFull,
+    AiLabelSettingsBody,
+    AiLabelSettingsFullShown,
+    AiLabelSettingsShortShown,
+    AiLabelSettingsShowFull,
+    AiLabelSettingsTitle,
     AiModelAccepted,
     AiModelAdd,
     AiModelAdded,
@@ -135,6 +140,9 @@ pub enum MessageId {
     AiHelperNoticeTestBuild,
     AiHelperNoticeTitle,
     AiHelperResultLabel,
+    AiHelperResultLabelHide,
+    AiHelperResultLabelInfo,
+    AiHelperResultLabelShort,
     AppearanceDark,
     AppearanceErrorNotRemembered,
     AppearanceErrorUnreadable,
@@ -325,6 +333,9 @@ pub enum MessageId {
     InterfaceRecordDialogAboutStandardPerHour,
     InterfaceRecordDialogHigh,
     InterfaceRecordDialogKeepRecording,
+    InterfaceRecordDialogLowOnRoom,
+    InterfaceRecordDialogLowOnRoomMinutes,
+    InterfaceRecordDialogNotEnoughRoom,
     InterfaceRecordDialogNothingWasRecorded,
     InterfaceRecordDialogPauseRecording,
     InterfaceRecordDialogPaused,
@@ -349,10 +360,12 @@ pub enum MessageId {
     InterfaceRecordDialogThisDeviceCannotRecordMp4,
     InterfaceRecordDialogUnavailable,
     InterfaceRecordDialogUseTheCameraAndMicrophone,
+    InterfaceRecordDialogVideoKeptUnfinished,
     InterfaceRecordDialogVideoNeedsBoth,
     InterfaceRecordDialogVideoSaved,
     InterfaceRecordDialogVideoSavedFailed,
     InterfaceRecordDialogVideoSavedHidden,
+    InterfaceRecordDialogVideoSavedNoRoom,
     InterfaceRecordDialogVideoSavedSlow,
     InterfaceRecordDialogVideoSavedStopped,
     InterfaceRecordDialogWhy,
@@ -363,12 +376,14 @@ pub enum MessageId {
     InterfaceRecordingRecoveryDelete,
     InterfaceRecordingRecoveryDeleteSure,
     InterfaceRecordingRecoveryDeleted,
+    InterfaceRecordingRecoveryFinishedWithRoom,
     InterfaceRecordingRecoveryKeep,
     InterfaceRecordingRecoveryKept,
     InterfaceRecordingRecoveryName,
     InterfaceRecordingRecoveryNothingToKeep,
     InterfaceRecordingRecoverySavedLocked,
     InterfaceRecordingRecoverySavedLockedPaused,
+    InterfaceRecordingRecoveryStillNoRoom,
     InterfaceSecuritySettingsEvaluationBuild,
     InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
     InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -471,6 +486,7 @@ pub enum MessageId {
     InterfaceHiddenFileMissing,
     InterfaceHiddenRecord,
     InterfaceHiddenRestore,
+    InterfaceHiddenVideoLeftOut,
     InterfaceHideDamagedTitle,
     InterfaceHistoryAppVersion,
     InterfaceHistoryApprovalAccepted,
@@ -1037,6 +1053,7 @@ pub enum MessageId {
     RestoreConsequenceSame,
     RestoreConsequenceUnreadable,
     RestoreIntro,
+    RestoreLeftOut,
     RestoreMethodPassphrase,
     RestoreMethodRecoveryKey,
     RestoreOpenWith,
@@ -1056,7 +1073,13 @@ pub enum MessageId {
     SecurityAutoLockShorter,
     SecurityAutoLockTitle,
     SecurityBackupBody,
+    SecurityBackupLeaveVideosOut,
+    SecurityBackupLeaveVideosOutHelp,
     SecurityBackupSave,
+    SecurityBackupSize,
+    SecurityBackupSizeCalculating,
+    SecurityBackupSizeNoVideos,
+    SecurityBackupSizeWithVideos,
     SecurityBackupTitle,
     SecurityCopiesBody,
     SecurityDevBuildBody,
@@ -1155,6 +1178,11 @@ impl MessageId {
         Self::AiFailed,
         Self::AiKeepFailed,
         Self::AiKeepFull,
+        Self::AiLabelSettingsBody,
+        Self::AiLabelSettingsFullShown,
+        Self::AiLabelSettingsShortShown,
+        Self::AiLabelSettingsShowFull,
+        Self::AiLabelSettingsTitle,
         Self::AiModelAccepted,
         Self::AiModelAdd,
         Self::AiModelAdded,
@@ -1274,6 +1302,9 @@ impl MessageId {
         Self::AiHelperNoticeTestBuild,
         Self::AiHelperNoticeTitle,
         Self::AiHelperResultLabel,
+        Self::AiHelperResultLabelHide,
+        Self::AiHelperResultLabelInfo,
+        Self::AiHelperResultLabelShort,
         Self::AppearanceDark,
         Self::AppearanceErrorNotRemembered,
         Self::AppearanceErrorUnreadable,
@@ -1464,6 +1495,9 @@ impl MessageId {
         Self::InterfaceRecordDialogAboutStandardPerHour,
         Self::InterfaceRecordDialogHigh,
         Self::InterfaceRecordDialogKeepRecording,
+        Self::InterfaceRecordDialogLowOnRoom,
+        Self::InterfaceRecordDialogLowOnRoomMinutes,
+        Self::InterfaceRecordDialogNotEnoughRoom,
         Self::InterfaceRecordDialogNothingWasRecorded,
         Self::InterfaceRecordDialogPauseRecording,
         Self::InterfaceRecordDialogPaused,
@@ -1488,10 +1522,12 @@ impl MessageId {
         Self::InterfaceRecordDialogThisDeviceCannotRecordMp4,
         Self::InterfaceRecordDialogUnavailable,
         Self::InterfaceRecordDialogUseTheCameraAndMicrophone,
+        Self::InterfaceRecordDialogVideoKeptUnfinished,
         Self::InterfaceRecordDialogVideoNeedsBoth,
         Self::InterfaceRecordDialogVideoSaved,
         Self::InterfaceRecordDialogVideoSavedFailed,
         Self::InterfaceRecordDialogVideoSavedHidden,
+        Self::InterfaceRecordDialogVideoSavedNoRoom,
         Self::InterfaceRecordDialogVideoSavedSlow,
         Self::InterfaceRecordDialogVideoSavedStopped,
         Self::InterfaceRecordDialogWhy,
@@ -1502,12 +1538,14 @@ impl MessageId {
         Self::InterfaceRecordingRecoveryDelete,
         Self::InterfaceRecordingRecoveryDeleteSure,
         Self::InterfaceRecordingRecoveryDeleted,
+        Self::InterfaceRecordingRecoveryFinishedWithRoom,
         Self::InterfaceRecordingRecoveryKeep,
         Self::InterfaceRecordingRecoveryKept,
         Self::InterfaceRecordingRecoveryName,
         Self::InterfaceRecordingRecoveryNothingToKeep,
         Self::InterfaceRecordingRecoverySavedLocked,
         Self::InterfaceRecordingRecoverySavedLockedPaused,
+        Self::InterfaceRecordingRecoveryStillNoRoom,
         Self::InterfaceSecuritySettingsEvaluationBuild,
         Self::InterfaceSecuritySettingsMyCarlosAlsoKeepsAHistoryWhenThe,
         Self::InterfaceSecuritySettingsMyCarlosNeverDeletesADocumentHidingOne,
@@ -1610,6 +1648,7 @@ impl MessageId {
         Self::InterfaceHiddenFileMissing,
         Self::InterfaceHiddenRecord,
         Self::InterfaceHiddenRestore,
+        Self::InterfaceHiddenVideoLeftOut,
         Self::InterfaceHideDamagedTitle,
         Self::InterfaceHistoryAppVersion,
         Self::InterfaceHistoryApprovalAccepted,
@@ -2176,6 +2215,7 @@ impl MessageId {
         Self::RestoreConsequenceSame,
         Self::RestoreConsequenceUnreadable,
         Self::RestoreIntro,
+        Self::RestoreLeftOut,
         Self::RestoreMethodPassphrase,
         Self::RestoreMethodRecoveryKey,
         Self::RestoreOpenWith,
@@ -2195,7 +2235,13 @@ impl MessageId {
         Self::SecurityAutoLockShorter,
         Self::SecurityAutoLockTitle,
         Self::SecurityBackupBody,
+        Self::SecurityBackupLeaveVideosOut,
+        Self::SecurityBackupLeaveVideosOutHelp,
         Self::SecurityBackupSave,
+        Self::SecurityBackupSize,
+        Self::SecurityBackupSizeCalculating,
+        Self::SecurityBackupSizeNoVideos,
+        Self::SecurityBackupSizeWithVideos,
         Self::SecurityBackupTitle,
         Self::SecurityCopiesBody,
         Self::SecurityDevBuildBody,
@@ -2294,6 +2340,11 @@ impl MessageId {
             Self::AiFailed => "ai-failed",
             Self::AiKeepFailed => "ai-keepFailed",
             Self::AiKeepFull => "ai-keepFull",
+            Self::AiLabelSettingsBody => "ai-label-settingsBody",
+            Self::AiLabelSettingsFullShown => "ai-label-settingsFullShown",
+            Self::AiLabelSettingsShortShown => "ai-label-settingsShortShown",
+            Self::AiLabelSettingsShowFull => "ai-label-settingsShowFull",
+            Self::AiLabelSettingsTitle => "ai-label-settingsTitle",
             Self::AiModelAccepted => "ai-model-accepted",
             Self::AiModelAdd => "ai-model-add",
             Self::AiModelAdded => "ai-model-added",
@@ -2413,6 +2464,9 @@ impl MessageId {
             Self::AiHelperNoticeTestBuild => "aiHelper-notice-testBuild",
             Self::AiHelperNoticeTitle => "aiHelper-notice-title",
             Self::AiHelperResultLabel => "aiHelper-resultLabel",
+            Self::AiHelperResultLabelHide => "aiHelper-resultLabelHide",
+            Self::AiHelperResultLabelInfo => "aiHelper-resultLabelInfo",
+            Self::AiHelperResultLabelShort => "aiHelper-resultLabelShort",
             Self::AppearanceDark => "appearance-dark",
             Self::AppearanceErrorNotRemembered => "appearance-error-notRemembered",
             Self::AppearanceErrorUnreadable => "appearance-error-unreadable",
@@ -2723,6 +2777,11 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
             Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
+            Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
+            Self::InterfaceRecordDialogLowOnRoomMinutes => {
+                "interface-RecordDialog-lowOnRoomMinutes"
+            }
+            Self::InterfaceRecordDialogNotEnoughRoom => "interface-RecordDialog-notEnoughRoom",
             Self::InterfaceRecordDialogNothingWasRecorded => {
                 "interface-RecordDialog-nothingWasRecorded"
             }
@@ -2767,6 +2826,9 @@ impl MessageId {
             Self::InterfaceRecordDialogUseTheCameraAndMicrophone => {
                 "interface-RecordDialog-useTheCameraAndMicrophone"
             }
+            Self::InterfaceRecordDialogVideoKeptUnfinished => {
+                "interface-RecordDialog-videoKeptUnfinished"
+            }
             Self::InterfaceRecordDialogVideoNeedsBoth => "interface-RecordDialog-videoNeedsBoth",
             Self::InterfaceRecordDialogVideoSaved => "interface-RecordDialog-videoSaved",
             Self::InterfaceRecordDialogVideoSavedFailed => {
@@ -2774,6 +2836,9 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogVideoSavedHidden => {
                 "interface-RecordDialog-videoSavedHidden"
+            }
+            Self::InterfaceRecordDialogVideoSavedNoRoom => {
+                "interface-RecordDialog-videoSavedNoRoom"
             }
             Self::InterfaceRecordDialogVideoSavedSlow => "interface-RecordDialog-videoSavedSlow",
             Self::InterfaceRecordDialogVideoSavedStopped => {
@@ -2791,6 +2856,9 @@ impl MessageId {
             Self::InterfaceRecordingRecoveryDelete => "interface-RecordingRecovery-delete",
             Self::InterfaceRecordingRecoveryDeleteSure => "interface-RecordingRecovery-deleteSure",
             Self::InterfaceRecordingRecoveryDeleted => "interface-RecordingRecovery-deleted",
+            Self::InterfaceRecordingRecoveryFinishedWithRoom => {
+                "interface-RecordingRecovery-finishedWithRoom"
+            }
             Self::InterfaceRecordingRecoveryKeep => "interface-RecordingRecovery-keep",
             Self::InterfaceRecordingRecoveryKept => "interface-RecordingRecovery-kept",
             Self::InterfaceRecordingRecoveryName => "interface-RecordingRecovery-name",
@@ -2802,6 +2870,9 @@ impl MessageId {
             }
             Self::InterfaceRecordingRecoverySavedLockedPaused => {
                 "interface-RecordingRecovery-savedLockedPaused"
+            }
+            Self::InterfaceRecordingRecoveryStillNoRoom => {
+                "interface-RecordingRecovery-stillNoRoom"
             }
             Self::InterfaceSecuritySettingsEvaluationBuild => {
                 "interface-SecuritySettings-evaluationBuild"
@@ -3009,6 +3080,7 @@ impl MessageId {
             Self::InterfaceHiddenFileMissing => "interface-hidden-fileMissing",
             Self::InterfaceHiddenRecord => "interface-hidden-record",
             Self::InterfaceHiddenRestore => "interface-hidden-restore",
+            Self::InterfaceHiddenVideoLeftOut => "interface-hidden-videoLeftOut",
             Self::InterfaceHideDamagedTitle => "interface-hideDamaged-title",
             Self::InterfaceHistoryAppVersion => "interface-history-appVersion",
             Self::InterfaceHistoryApprovalAccepted => "interface-history-approval-accepted",
@@ -3637,6 +3709,7 @@ impl MessageId {
             Self::RestoreConsequenceSame => "restore-consequence-same",
             Self::RestoreConsequenceUnreadable => "restore-consequence-unreadable",
             Self::RestoreIntro => "restore-intro",
+            Self::RestoreLeftOut => "restore-leftOut",
             Self::RestoreMethodPassphrase => "restore-method-passphrase",
             Self::RestoreMethodRecoveryKey => "restore-method-recoveryKey",
             Self::RestoreOpenWith => "restore-openWith",
@@ -3656,7 +3729,13 @@ impl MessageId {
             Self::SecurityAutoLockShorter => "security-autoLock-shorter",
             Self::SecurityAutoLockTitle => "security-autoLock-title",
             Self::SecurityBackupBody => "security-backup-body",
+            Self::SecurityBackupLeaveVideosOut => "security-backup-leaveVideosOut",
+            Self::SecurityBackupLeaveVideosOutHelp => "security-backup-leaveVideosOutHelp",
             Self::SecurityBackupSave => "security-backup-save",
+            Self::SecurityBackupSize => "security-backup-size",
+            Self::SecurityBackupSizeCalculating => "security-backup-sizeCalculating",
+            Self::SecurityBackupSizeNoVideos => "security-backup-sizeNoVideos",
+            Self::SecurityBackupSizeWithVideos => "security-backup-sizeWithVideos",
             Self::SecurityBackupTitle => "security-backup-title",
             Self::SecurityCopiesBody => "security-copies-body",
             Self::SecurityDevBuildBody => "security-devBuild-body",
@@ -4839,6 +4918,14 @@ impl MessageId {
             "ai.notInstalled.body" => Some(Self::AiNotInstalledBody),
             "ai.notInstalled.openPreferences" => Some(Self::AiNotInstalledOpenPreferences),
             "aiHelper.resultLabel" => Some(Self::AiHelperResultLabel),
+            "aiHelper.resultLabelShort" => Some(Self::AiHelperResultLabelShort),
+            "aiHelper.resultLabelHide" => Some(Self::AiHelperResultLabelHide),
+            "aiHelper.resultLabelInfo" => Some(Self::AiHelperResultLabelInfo),
+            "ai.label.settingsTitle" => Some(Self::AiLabelSettingsTitle),
+            "ai.label.settingsBody" => Some(Self::AiLabelSettingsBody),
+            "ai.label.settingsShowFull" => Some(Self::AiLabelSettingsShowFull),
+            "ai.label.settingsFullShown" => Some(Self::AiLabelSettingsFullShown),
+            "ai.label.settingsShortShown" => Some(Self::AiLabelSettingsShortShown),
             "ai.result.meta" => Some(Self::AiResultMeta),
             "ai.summary.showInDocument" => Some(Self::AiSummaryShowInDocument),
             "ai.summary.folded" => Some(Self::AiSummaryFolded),
@@ -5320,6 +5407,33 @@ impl MessageId {
             "interface.RecordDialog.videoSavedFailed" => {
                 Some(Self::InterfaceRecordDialogVideoSavedFailed)
             }
+            "interface.RecordDialog.notEnoughRoom" => {
+                Some(Self::InterfaceRecordDialogNotEnoughRoom)
+            }
+            "interface.RecordDialog.lowOnRoom" => Some(Self::InterfaceRecordDialogLowOnRoom),
+            "interface.RecordDialog.lowOnRoomMinutes" => {
+                Some(Self::InterfaceRecordDialogLowOnRoomMinutes)
+            }
+            "interface.RecordDialog.videoSavedNoRoom" => {
+                Some(Self::InterfaceRecordDialogVideoSavedNoRoom)
+            }
+            "interface.RecordDialog.videoKeptUnfinished" => {
+                Some(Self::InterfaceRecordDialogVideoKeptUnfinished)
+            }
+            "interface.RecordingRecovery.finishedWithRoom" => {
+                Some(Self::InterfaceRecordingRecoveryFinishedWithRoom)
+            }
+            "interface.RecordingRecovery.stillNoRoom" => {
+                Some(Self::InterfaceRecordingRecoveryStillNoRoom)
+            }
+            "security.backup.size" => Some(Self::SecurityBackupSize),
+            "security.backup.sizeWithVideos" => Some(Self::SecurityBackupSizeWithVideos),
+            "security.backup.sizeNoVideos" => Some(Self::SecurityBackupSizeNoVideos),
+            "security.backup.leaveVideosOut" => Some(Self::SecurityBackupLeaveVideosOut),
+            "security.backup.leaveVideosOutHelp" => Some(Self::SecurityBackupLeaveVideosOutHelp),
+            "restore.leftOut" => Some(Self::RestoreLeftOut),
+            "security.backup.sizeCalculating" => Some(Self::SecurityBackupSizeCalculating),
+            "interface.hidden.videoLeftOut" => Some(Self::InterfaceHiddenVideoLeftOut),
             "portal.deviceLine" => Some(Self::PortalDeviceLine),
             "portal.deviceLineLinked" => Some(Self::PortalDeviceLineLinked),
             _ => None,

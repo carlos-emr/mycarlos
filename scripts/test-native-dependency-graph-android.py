@@ -25,6 +25,7 @@ def metadata(**changes):
         "mycarlos": package("mycarlos", source=None),
         "tauri": package("tauri"),
         "glib": package("glib", ROOT / "src-tauri/vendor/glib/Cargo.toml", None),
+        "wry": package("wry", ROOT / "src-tauri/vendor/wry/Cargo.toml", None),
         "tauri-plugin-android-pdf": package(
             "tauri-plugin-android-pdf", ROOT / "src-tauri/android-pdf/Cargo.toml", None
         ),

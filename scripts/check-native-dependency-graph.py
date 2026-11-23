@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Confirm Cargo selects upstream Tauri, the reviewed glib backport and first-party plugin code."""
+"""Confirm Cargo selects upstream Tauri, the reviewed local glib and wry, and first-party plugin code."""
 from pathlib import Path
 import json
 import os
@@ -14,7 +14,7 @@ FIRST_PARTY = {"tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml"}
 
 def validate_metadata(metadata):
     # cargo-audit cannot match advisories for path or git packages, so the only
-    # packages allowed outside crates.io are this crate, the reviewed glib and the
+    # packages allowed outside crates.io are this crate, the reviewed glib and wry, and the
     # first-party plugins whose whole source is in this repository.
     registry = "registry+https://github.com/rust-lang/crates.io-index"
     root = metadata["resolve"]["root"]
@@ -24,6 +24,7 @@ def validate_metadata(metadata):
     )
     local_manifests = {
         "glib": ROOT / "src-tauri/vendor/glib/Cargo.toml",
+        "wry": ROOT / "src-tauri/vendor/wry/Cargo.toml",
         **{name: ROOT / path for name, path in FIRST_PARTY.items()},
     }
     if outside != sorted(local_manifests):
@@ -47,7 +48,7 @@ def main():
         "--manifest-path", str(ROOT / "src-tauri/Cargo.toml"),
     ], text=True))
     validate_metadata(metadata)
-    print("All-target graph selects upstream Tauri, the reviewed glib backport and the first-party Android plugin")
+    print("All-target graph selects upstream Tauri, the reviewed glib backport and wry patch, and the first-party Android plugin")
 
 
 if __name__ == "__main__":

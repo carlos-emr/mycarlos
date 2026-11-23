@@ -778,6 +778,7 @@ state, described in the recovery-key sections above.
 | Minutes until the automatic lock | `mycarlos.autoLockMinutes.v1` | Nothing about the patient |
 | Size of the interface (zoom), on a computer | `mycarlos.zoom.v1` | A large size suggests that whoever uses the app sees poorly |
 | Appearance (System, Light or Dark) | `mycarlos.appearance.v1` | The chosen appearance; no vault, patient or document |
+| "Don't show this again" on the AI warning (#351) | `mycarlos.aiLabelShort.v1` | That this device's user chose the short "AI draft" tag for a tool and model (`tool:revision:model-sha256`); no vault, patient or document. A different model or tool revision, or Settings → AI helper, clears it. The tag itself is never removed |
 
 **Waiting keys for tray notices (myCarlos integration planned in #230; Portal contract in carlos-portal#88).** To let a
 locked myCarlos in the tray ask a linked portal "is anything waiting?", the planned integration
@@ -1242,3 +1243,85 @@ A recording is stored in the existing `MCVO1` object format, one 1 MiB frame at 
 - **What stays on disk**: nothing readable. The journal, tail and object are ciphertext; the object's name is opaque and its length shows roughly how long the recording is, like any record's.
 - **Index and playback head**: the trailing index (an `mcvx` box and a 12-byte footer) holds one entry per fragment that carries the primary track; a fragment without it (rare) is folded into the entry before it, so entries stay contiguous. A fragment that names an explicit base data offset is refused (the normaliser moves every fragment, so an absolute offset would point at the wrong bytes). The synthetic `sidx` holds at most 65,535 references: a recording longer than that (about 18 hours at one fragment a second) groups consecutive fragments under one reference, so seeking there lands on a group's start rather than the recording being refused.
 - **Media type and label**: a recording is stored with the same `application/octet-stream` type and "Manual import — unverified" label as every other record (the manifest check requires them); what it is, is told by its contents, as for a photo.
+
+## Video records (#359, no new format)
+
+A recorded video is an ordinary record: **no manifest, header, object or backup format changes, and no
+format number is taken.** What makes it a video is its contents.
+
+- **Object.** An `MCVO1` object like any other (1 MiB frames, every non-final frame full size). Its
+  plaintext is the fragmented MP4 the webview recorded after the normaliser (one `ftyp` and one `moov`,
+  fragments renumbered from 1, pauses closed up in every track), then a trailing index: an `mcvx` box
+  (one entry per fragment that carries the primary track: its offset, size, start and duration) and a
+  12-byte `mcve` footer that says how long it is, so it is found from the end. A player skips both as
+  unknown boxes.
+- **Record.** `mediaType` is `application/octet-stream` and `sourceLabel` the usual manual-import label,
+  as for every record (the manifest check requires them; a photo is the same). The name is generated once
+  (`Video, 20 Nov 2026, 3.05 PM.mp4`); the size, folders and history are the usual ones. The history
+  entry is `imported` with the way `camera`, as a photo's.
+- **A video is one myCarlos recorded.** The history says it was added with the camera (the `imported` event
+  with the way `camera`) **and** its file starts as an MP4 does (`ftyp` at byte 4); a name ending in `.mp4`
+  decides nothing. The bytes alone never decide: an iPhone's HEIC and AVIF photos, an M4A voice memo, a
+  camera raw file and a PDF can carry `ftyp` where an MP4 does, and imports are stored without a type.
+  Nothing else is called a video until importing videos is built. A record whose history piece is damaged is
+  not offered as a video; its file is kept as any document is. A video restored without its history (a
+  vault rebuilt from a backup that lacks the history pieces) likewise loses **Play video** but is kept, and
+  can still be saved out as any document can. A video restored from a backup that left its file out is not a
+  video to play either: its details show no error.
+- **Played from a synthetic head.** The player is served `ftyp`, `moov`, a `sidx` built in memory from the
+  index, then the stored fragments: the stored bytes are unchanged, and the head is never stored. A
+  recording longer than a `sidx` can index (65,535 fragments) groups fragments under one reference.
+- **In a backup.** A video is a document in a backup and an export like any other, streamed without being
+  held whole. A backup of a vault with hours of video is very large, so the backup screen shows its size
+  beforehand and offers to leave the videos out: that is **backup container format 2**, below. It is not a
+  vault format and takes no manifest format number.
+- **An older myCarlos** opens a vault that holds videos and shows them as documents it cannot read as
+  PDFs or photos; they stay exportable. It does not know `recordings/` (see above); a vault with an
+  unfinished recording in it was not opened with an older build here, and the first newer unlock finishes
+  or asks about it.
+
+## Backup container format 2: videos left out (#359)
+
+A backup is `MYCARLOS-BACKUP\n` (format 1) as described under "Portable encrypted backup". When the patient
+chooses to leave the videos out, the backup is **format 2**; an ordinary backup stays format 1.
+
+```text
+"MYCARLOS-BACKUP2\n"                    17 bytes (the first 16 differ from format 1's magic)
+entry*   kind 1 header | kind 2 manifest | kind 4 note | kind 3 object ...
+         the note ("left-out.json", right after the manifest): JSON {"omitted": [record id, ...]}
+trailer  as format 1, with format 2 and "omitted": [record id, ...] (ids, never names)
+         HMAC-SHA-256 tag over the 17-byte magic and the trailer
+```
+
+- **What it holds.** The same entries as a format-1 backup except the objects of the omitted records (the
+  videos myCarlos recorded: the history says they were added with the camera and the file starts as an MP4
+  does, never the bytes alone, so an iPhone HEIC photo, an M4A voice memo or a camera raw file is never
+  omitted; a video the patient hid stays in the backup, since restoring a document the patient hid needs its
+  file and marking it as missing would erase that choice; their history, names and sizes are in the manifest
+  as usual). The videos are found once for each save and the same list is used for the size, the check and
+  the write.
+  The trailer still lists every entry's length and SHA-256 (the note included) and is authenticated as
+  before, so a damaged or altered backup is found: one flipped bit anywhere, a cut, or an addition is refused.
+- **Its manifest** is the vault's, encrypted as any manifest is, with each omitted record marked
+  **hidden as damaged** (the existing mark for a document whose file is missing, which a restore accepts
+  without the file and which keeps the record restorable if the file comes back). The vault being backed up
+  is not changed.
+- **Told before it is restored.** The note comes right after the manifest, so the restore screen can say
+  "This backup was made without videos" from the first part of the file, before the patient agrees. The note
+  must list only records of the manifest that the manifest already marks as lacking their file, or the backup
+  is refused.
+- **On restore** the other documents are byte-identical; each omitted record is a record with its name, date
+  and folders and no file, listed with the hidden documents as a missing file, and the restored vault's
+  history says, once for each, that it was hidden as left out of the backup (`how` "leftOutOfBackup"). The
+  restored vault can be backed up again; the omitted videos stay marked. The vault the restore replaces is
+  set aside, never erased, so a video that was in it is in the set-aside copy.
+- **An older build** refuses a format-2 backup as not a backup (its first 16 bytes are not the magic it
+  knows), the safe outcome: it would find a manifest naming files the backup lacks.
+- **Size shown first.** The screen adds the real sizes of the files it would copy (plus about 160 bytes an
+  entry for the headers and the trailer): "About 14.2 GB, of which videos 12.9 GB". One question gives both
+  sizes, with and without the videos (the one without is sized with the manifest as the backup will hold it,
+  never undercounted), so ticking the box needs no second one, and the screen asks once for each set of
+  documents. A destination the app cannot measure (an Android document provider) is not checked; a failure
+  there says whether the earlier file at that place was emptied. Before any byte is written to a chosen file, the room at its destination is checked
+  against that size.
+

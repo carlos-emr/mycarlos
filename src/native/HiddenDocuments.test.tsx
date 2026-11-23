@@ -22,9 +22,14 @@ const record = (
   ...extra,
 });
 
-function show(records: VaultRecord[], onRestore = vi.fn()) {
+function show(
+  records: VaultRecord[],
+  onRestore = vi.fn(),
+  leftOutIds?: ReadonlySet<string>,
+) {
   render(
     <HiddenDocuments
+      leftOutIds={leftOutIds}
       records={records}
       folderNameById={new Map([["f1", "FAKE Letters"]])}
       busy={false}
@@ -80,6 +85,26 @@ describe("HiddenDocuments (#71)", () => {
         name: humanText("Restore FAKE back.pdf"),
       }),
     ).toBeEnabled();
+  });
+
+  it("says a video whose file a backup left out was left out, not that it is damaged or missing", () => {
+    show(
+      [
+        record("clip", { atMs: 2, reason: "damaged" }, { available: false }),
+        record("lost", { atMs: 1, reason: "damaged" }, { available: false }),
+      ],
+      vi.fn(),
+      new Set(["clip"]),
+    );
+    const [clip, lost] = screen.getAllByRole("article");
+    expect(
+      within(clip).getByText(humanText(/Video left out of the backup/)),
+    ).toBeVisible();
+    expect(within(clip).queryByText(humanText(/file missing/))).toBeNull();
+    // Another document whose file is missing is still said to be.
+    expect(
+      within(lost).getByText(humanText(/Damaged: file missing/)),
+    ).toBeVisible();
   });
 
   it("says when nothing is hidden", () => {

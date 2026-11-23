@@ -7,7 +7,11 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import { useModalFocus } from "../useModalFocus";
-import { vaultErrorMessage, type VaultBridge } from "../vault";
+import {
+  vaultErrorMessage,
+  type RecordingProgress,
+  type VaultBridge,
+} from "../vault";
 import {
   cameraFailure,
   cameraFailureMessage,
@@ -17,6 +21,8 @@ import {
 import {
   MAX_UNSENT_BYTES,
   QUALITIES,
+  isNoSpace,
+  minutesLeft,
   RecordedClock,
   deliveredHeight,
   formatClock,
@@ -32,11 +38,23 @@ import {
 /** The part of the bridge recording uses. */
 export type RecordBridge = Pick<
   VaultBridge,
-  "videoStart" | "videoAppend" | "videoPause" | "videoResume" | "videoStop"
+  | "videoStart"
+  | "videoAppend"
+  | "videoPause"
+  | "videoResume"
+  | "videoStop"
+  | "videoSpace"
 >;
 
 /** How a recording ended: the patient asked, or something else did. */
-export type RecordEnd = "asked" | "stopped" | "slow" | "hidden" | "failed";
+export type RecordEnd =
+  | "asked"
+  | "stopped"
+  | "slow"
+  | "hidden"
+  | "failed"
+  | "space"
+  | "unfinished";
 
 type Stage =
   | "explain"
@@ -98,6 +116,12 @@ export function RecordDialog({
   const [highOk, setHighOk] = useState(false);
   const [delivered, setDelivered] = useState<number | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
+  // No room to record: the dialog says so and offers Try again, the camera and
+  // microphone still off.
+  const [needsRoom, setNeedsRoom] = useState(false);
+  // How room stands while recording: a warning from 512 MiB left, and the
+  // recording ends and is saved at 256 MiB.
+  const [room, setRoom] = useState<RecordingProgress | null>(null);
   // A pause or a resume is on its way: the toggle waits for it.
   const [changing, setChanging] = useState(false);
   const [status, setStatus] = useTextState();
@@ -138,6 +162,7 @@ export function RecordDialog({
     const attempt = attemptRef.current;
     setFailure(null);
     setProblem(null);
+    setNeedsRoom(false);
     setStage("starting");
     setStatus(
       deferredText(() =>
@@ -145,6 +170,16 @@ export function RecordDialog({
       ),
     );
     try {
+      // Room first: with too little, neither the camera nor the microphone is
+      // turned on.
+      const space = await bridge.videoSpace?.();
+      if (attempt !== attemptRef.current) return;
+      if (space && !space.canRecord) {
+        setNeedsRoom(true);
+        setStage("failed");
+        setStatus("");
+        return;
+      }
       if (!navigator.mediaDevices?.getUserMedia)
         throw new DOMException("No camera interface", "NotFoundError");
       const stream = await whileAsking(
@@ -179,7 +214,7 @@ export function RecordDialog({
       setStage("failed");
       setStatus("");
     }
-  }, [phone, stopCamera, whileAsking]);
+  }, [bridge, phone, stopCamera, whileAsking]);
 
   // The preview, once there is a stream and a place for it.
   useEffect(() => {
@@ -226,12 +261,16 @@ export function RecordDialog({
           sequenceRef.current = progress.nextSequence;
           unsentRef.current.shift();
           unsentBytesRef.current -= piece.size;
+          setRoom(progress);
+          // At the reserve the recording ends and is saved: "Saved. There was
+          // no more room."
+          if (progress.space === "stop") void finishRef.current("space");
         } catch (error) {
           failedSendRef.current = error;
-          // The vault would not take a piece (a disk that is full, a recording
-          // that cannot go on): the recorder is stopped at once, not left
-          // saying Recording, and what was saved before it is kept.
-          void finishRef.current("failed");
+          // The vault would not take a piece: the recorder is stopped at once,
+          // not left saying Recording, and what was saved before it is kept. A
+          // disk that filled anyway is told as no room.
+          void finishRef.current(isNoSpace(error) ? "space" : "failed");
         } finally {
           bytes.fill(0);
         }
@@ -290,17 +329,36 @@ export function RecordDialog({
       recorderRef.current = null;
       stopCamera();
       await sendNext();
+      const sendFailed = failedSendRef.current;
       try {
-        const sendFailed = failedSendRef.current;
         const saved = await bridge.videoStop(id);
         recordingIdRef.current = null;
         if (!openRef.current) return;
-        // A piece the vault would not take: what was saved before it is kept.
-        if (sendFailed && !saved.recordId) throw sendFailed;
-        onSaved(saved.recordId, sendFailed && why === "asked" ? "failed" : why);
+        // A piece the vault would not take, and nothing complete before it:
+        // nothing was kept, and the library says so.
+        if (sendFailed && !saved.recordId) {
+          onSaved(null, isNoSpace(sendFailed) ? "space" : "failed");
+          return;
+        }
+        onSaved(
+          saved.recordId,
+          sendFailed && why === "asked"
+            ? isNoSpace(sendFailed)
+              ? "space"
+              : "failed"
+            : why,
+        );
       } catch (error) {
         recordingIdRef.current = null;
         if (!openRef.current) return;
+        // Only when Stop itself was refused for want of room: ending it needed
+        // room to finish it (a recording cut off mid-fragment or by a write the
+        // disk refused is finished by copying it), so the vault kept it, not
+        // lost, to be finished when there is room.
+        if (isNoSpace(error)) {
+          onSaved(null, "unfinished");
+          return;
+        }
         setStage("failed");
         setFailure(null);
         setProblem(vaultErrorMessage(error));
@@ -324,6 +382,7 @@ export function RecordDialog({
       return;
     }
     setProblem(null);
+    setRoom(null);
     setStage("starting");
     let startedId: string | null = null;
     try {
@@ -428,6 +487,14 @@ export function RecordDialog({
     const id = recordingIdRef.current;
     if (stage !== "paused" || !recorder || !id || changing) return;
     setChanging(true);
+    // Room is looked at again before recording goes on: with too little, the
+    // recording is saved as it is, not continued into a full disk.
+    const space = await bridge.videoSpace?.().catch(() => undefined);
+    if (space && !space.canRecord) {
+      setChanging(false);
+      void finishRef.current("space");
+      return;
+    }
     try {
       await bridge.videoResume(id);
     } catch (error) {
@@ -665,6 +732,22 @@ export function RecordDialog({
               )}
             </div>
           )}
+          {recordingNow && room?.space === "low" && (
+            <p className="camera-failure" role="alert">
+              {(() => {
+                const minutes = minutesLeft(
+                  room.freeBytes,
+                  room.storedBytes,
+                  clock.elapsed(),
+                );
+                return minutes === null
+                  ? translateNow("interface.RecordDialog.lowOnRoom")
+                  : translateNow("interface.RecordDialog.lowOnRoomMinutes", {
+                      minutes,
+                    });
+              })()}
+            </p>
+          )}
           {confirmStop && (
             <div
               className="record-confirm"
@@ -695,9 +778,11 @@ export function RecordDialog({
           )}
           {stage === "failed" && (
             <p className="camera-failure" role="alert">
-              {failure
-                ? `${cameraFailureMessage(failure, platform)} ${translateNow("interface.RecordDialog.videoNeedsBoth")}`
-                : problem}
+              {needsRoom
+                ? translateNow("interface.RecordDialog.notEnoughRoom")
+                : failure
+                  ? `${cameraFailureMessage(failure, platform)} ${translateNow("interface.RecordDialog.videoNeedsBoth")}`
+                  : problem}
             </p>
           )}
           {stage !== "failed" && problem && (
@@ -795,7 +880,7 @@ export function RecordDialog({
               <button className="button" type="button" onClick={close}>
                 {translateNow("photo.close")}
               </button>
-              {failure && (
+              {(failure || needsRoom) && (
                 <button
                   ref={retryRef}
                   className="button primary"

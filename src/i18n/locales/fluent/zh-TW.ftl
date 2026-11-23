@@ -1691,6 +1691,22 @@ ai-notInstalled-openPreferences = 開啟 AI 助理設定
 
 aiHelper-resultLabel = 由 AI 撰寫，可能有誤。請向您的醫師確認。
 
+aiHelper-resultLabelShort = AI 草稿
+
+aiHelper-resultLabelHide = 不再顯示
+
+aiHelper-resultLabelInfo = 「AI 草稿」是什麼意思
+
+ai-label-settingsTitle = AI 回答上的提示
+
+ai-label-settingsBody = 每則 AI 回答都會說明由 AI 撰寫、可能有誤。選擇「不再顯示」後，完整的句子會由簡短的「AI 草稿」標籤取代。標籤不會被移除。此選擇儲存在本裝置上，模型或工具更換後會重新開始。
+
+ai-label-settingsShowFull = 再次顯示完整提示
+
+ai-label-settingsFullShown = 每則 AI 回答都顯示完整提示。
+
+ai-label-settingsShortShown = 在您選擇過的 AI 回答上，顯示簡短的「AI 草稿」標籤。
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
 ai-summary-showInDocument = 在文件中顯示
@@ -2205,3 +2221,18 @@ interface-RecordingRecovery-deleteSure = 要刪除此錄製嗎？此操作無法
 interface-RecordingRecovery-savedLocked = myCarlos 在您錄製時鎖定了。影片已儲存：{ $name }
 interface-RecordingRecovery-savedLockedPaused = myCarlos 在錄製暫停時鎖定了。影片已儲存：{ $name }
 interface-RecordDialog-videoSavedFailed = 錄製已停止，因為其中一部分無法儲存。先前已儲存的內容已保留：{ $name }
+interface-RecordDialog-notEnoughRoom = 沒有足夠的空間錄製影片，需要約 1 GB 的可用空間。請在此裝置上釋出一些空間，然後選擇「重試」。
+interface-RecordDialog-lowOnRoom = 剩餘空間不多。空間用完時，錄製內容會被儲存。
+interface-RecordDialog-lowOnRoomMinutes = 剩餘空間不多：大約還能錄製 { $minutes } 分鐘。空間用完時，錄製內容會被儲存。
+interface-RecordDialog-videoSavedNoRoom = 已儲存。空間已用完：{ $name }
+interface-RecordDialog-videoKeptUnfinished = 空間已用完，影片無法完成。它已作為未完成的錄製保留：請釋出一些空間，下次解鎖時 myCarlos 會完成它。
+interface-RecordingRecovery-finishedWithRoom = 現在又有空間了，因此您未完成的影片已完成：{ $name }
+interface-RecordingRecovery-stillNoRoom = 空間仍然不足，無法完成您未完成的影片：{ $name }。請釋出一些空間；它已保留。
+security-backup-size = 約 { $size }。
+security-backup-sizeWithVideos = 約 { $size }，其中影片佔 { $videos }。
+security-backup-sizeNoVideos = 約 { $size }，不含影片。
+security-backup-leaveVideosOut = 不包含影片
+security-backup-leaveVideosOutHelp = 備份將不包含您的影片。如果您還原該備份，影片不會還原。
+restore-leftOut = 此備份是在不含影片的情況下製作的。還原它會帶回其他所有內容，但您的影片不會在其中。它們會作為遺失的檔案列在隱藏文件中。
+security-backup-sizeCalculating = 正在計算備份大小…
+interface-hidden-videoLeftOut = 備份中未包含的影片

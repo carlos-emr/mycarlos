@@ -49,6 +49,9 @@ const MAX_JOURNAL_BYTES: usize = 64 * 1024;
 /// The most one piece from the webview may be. Pieces are about a second of
 /// video; a larger one is refused, not buffered.
 pub(crate) const MAX_RECORDING_PIECE: usize = 8 * 1024 * 1024;
+/// Which history the camera-made records were read from, and them.
+pub(super) type CameraMade = ((Uuid, u64, String), Arc<HashSet<Uuid>>);
+
 /// The label the history gives a recording: the same as a photo taken in the app.
 const RECORDING_HOW: &str = "camera";
 
@@ -87,6 +90,14 @@ struct Journal {
     /// copy a crash interrupts is found and removed rather than left behind.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     copying: Vec<String>,
+    /// The patient ended it (Stop) and it could not be finished then (a lock did
+    /// not park it): so that the next unlock can say why it is being finished.
+    #[serde(default, skip_serializing_if = "is_false")]
+    stopped: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn recordings_dir(root: &Path) -> PathBuf {
@@ -505,6 +516,10 @@ pub(super) struct ActiveRecording {
     poisoned: bool,
     /// The sequence number the next piece must carry (pieces sent with one).
     next_sequence: u64,
+    /// Where room was last found, and when it is next looked at (in sealed frames).
+    space: SpaceLevel,
+    free_bytes: Option<u64>,
+    next_space_check: u64,
 }
 
 /// A finished object, ready to be verified, published and committed.
@@ -514,6 +529,50 @@ struct FinishedRecording<'a> {
     object_path: &'a Path,
     object_key: &'a SecretKey,
     encrypted: EncryptedObject,
+}
+
+/// At least this much room is needed to start recording, and again on every
+/// resume: about 15 minutes at High, and the reserve below besides.
+pub(crate) const MIN_FREE_TO_RECORD: u64 = 1 << 30;
+/// From here the page warns that room is running low.
+pub(crate) const LOW_FREE_WARNING: u64 = 512 << 20;
+/// At this much the recording is ended and saved: what is left is the reserve for
+/// the last frame, the verification pass, the manifest commit and the history.
+pub(crate) const STOP_FREE: u64 = 256 << 20;
+/// Room is looked at again after this many sealed frames (about 8 MiB).
+const SPACE_CHECK_EVERY_FRAMES: u64 = 8;
+
+/// How much room there is, as the page needs to say it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SpaceLevel {
+    /// Plenty.
+    Ok,
+    /// Under 512 MiB: warn.
+    Low,
+    /// Under 256 MiB: end the recording and save it.
+    Stop,
+    /// The volume could not be asked: nothing is refused on a guess.
+    Unknown,
+}
+
+/// What `recording_space` reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingSpace {
+    pub free_bytes: Option<u64>,
+    pub level: SpaceLevel,
+    /// Enough to start (or resume) recording: at least 1 GiB, or not known.
+    pub can_record: bool,
+}
+
+fn space_level(free: Option<u64>) -> SpaceLevel {
+    match free {
+        None => SpaceLevel::Unknown,
+        Some(free) if free < STOP_FREE => SpaceLevel::Stop,
+        Some(free) if free < LOW_FREE_WARNING => SpaceLevel::Low,
+        Some(_) => SpaceLevel::Ok,
+    }
 }
 
 /// What a caller learns after a piece.
@@ -531,6 +590,9 @@ pub struct RecordingProgress {
     /// The sequence number the next piece must carry, so that a lost or repeated
     /// piece is noticed.
     pub next_sequence: u64,
+    /// How much room there was when it was last looked at (every 8 MiB or so).
+    pub space: SpaceLevel,
+    pub free_bytes: Option<u64>,
 }
 
 /// One unfinished recording found in `recordings/`, for the question at unlock.
@@ -544,6 +606,9 @@ pub struct PendingRecording {
     pub paused: bool,
     /// It was parked by a lock (not a crash).
     pub parked: bool,
+    /// The patient ended it and it could not be finished for want of room: it is
+    /// finished when there is room again, and the notice says so.
+    pub stopped: bool,
 }
 
 /// All the journals found, and how many could not be read.
@@ -569,6 +634,12 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
+        // Too little room is refused before anything is written (and, in the
+        // page, before the camera or microphone is turned on).
+        let start_space = self.space_now();
+        if !start_space.can_record {
+            return Err(VaultError::NoSpace);
+        }
         require_profile(&unlocked.manifest, profile_id)?;
         validate_folder_ids(&unlocked.manifest, profile_id, &folder_ids)?;
         let vault_id = unlocked.manifest.vault_id;
@@ -590,6 +661,7 @@ impl VaultStore {
             tail_name: None,
             superseded: Vec::new(),
             copying: Vec::new(),
+            stopped: false,
         };
         let dir = recordings_dir(&self.root);
         create_private_dir_all(&dir)?;
@@ -635,12 +707,19 @@ impl VaultStore {
                     paused: false,
                     poisoned: false,
                     next_sequence: 0,
+                    // Where the start found room: until the first look at 8 MiB.
+                    space: start_space.level,
+                    free_bytes: start_space.free_bytes,
+                    next_space_check: 0,
                 },
             );
         Ok(record_id)
     }
 
-    /// Adds a piece. The caller sends them in order and one at a time.
+    /// Adds a piece. The caller sends them in order and one at a time. The
+    /// commands number their pieces (`recording_append_numbered`); this is for
+    /// the tests.
+    #[cfg(test)]
     pub fn recording_append(
         &self,
         id: Uuid,
@@ -677,10 +756,16 @@ impl VaultStore {
             if sequence != recording.next_sequence {
                 // The piece just added, sent again: it is already in.
                 if sequence.checked_add(1) == Some(recording.next_sequence) {
-                    return Ok(progress_of(&recording.normaliser, recording.next_sequence));
+                    return Ok(progress_of(recording));
                 }
                 return Err(VaultError::Invalid);
             }
+        }
+        // The room that was left for the last frame, the check and the commit is
+        // not spent: once it is reached the page ends the recording, and a piece
+        // sent after that is refused.
+        if recording.space == SpaceLevel::Stop {
+            return Err(VaultError::NoSpace);
         }
         recording.scratch.clear();
         if recording
@@ -710,9 +795,18 @@ impl VaultStore {
             atomic_bytes(&recordings_dir(&self.root).join(name), &sealed)?;
         }
         recording.next_sequence += 1;
+        // Room is looked at again every 8 sealed frames (about 8 MiB).
+        if let Some(appender) = recording.appender.as_ref() {
+            if appender.index >= recording.next_space_check {
+                recording.next_space_check = appender.index + SPACE_CHECK_EVERY_FRAMES;
+                let free = self.free_space_now();
+                recording.free_bytes = free;
+                recording.space = space_level(free);
+            }
+        }
         // Video that keeps arriving keeps the vault from locking on idle.
         self.idle.touch(Instant::now());
-        Ok(progress_of(&recording.normaliser, recording.next_sequence))
+        Ok(progress_of(recording))
     }
 
     /// Pauses: the partial frame is sealed to a tail file first, so that a crash
@@ -802,6 +896,7 @@ impl VaultStore {
             && !entries.is_empty()
             && recording.normaliser.written() == recording.normaliser.complete_end();
         if !clean {
+            recording.journal.stopped = true;
             self.park_one(&mut recording)?;
             return self.recording_recover(id, true, now_ms);
         }
@@ -904,6 +999,7 @@ impl VaultStore {
                     started_at_ms: journal.started_at_ms,
                     paused: journal.state == JournalState::Paused,
                     parked: journal.state == JournalState::Parked,
+                    stopped: journal.stopped,
                 }),
                 Err(_) => found.unreadable += 1,
             }
@@ -1039,6 +1135,15 @@ impl VaultStore {
         if scan.index().is_empty() || complete_end == 0 {
             remove_recording_files(&self.root, &journal, true);
             return Ok(None);
+        }
+        // Recovery writes the recording again, so it needs about its size in room
+        // besides the reserve: without it the journal stays, nothing is lost, and
+        // the patient is told to make room.
+        if let Some(free) = self.free_space_now() {
+            let size = fs::metadata(&old_path).map_or(0, |m| m.len());
+            if free < size.saturating_add(STOP_FREE) {
+                return Err(VaultError::NoSpace);
+            }
         }
         // Pass 2: copy up to that point into a new object under a new key.
         let mut new_key = Zeroizing::new([0_u8; 32]);
@@ -1280,6 +1385,109 @@ impl VaultStore {
         })
     }
 
+    /// The records that were added with the camera, from the history: the
+    /// Imported events whose way is `camera`. This is the origin of a video:
+    /// only myCarlos's own recording (and its photos, which are JPEGs) is added
+    /// that way, and nothing is called a video because of what its bytes look
+    /// like (an iPhone's HEIC photo, an M4A voice memo, a camera raw file and
+    /// even a PDF can carry `ftyp` where an MP4 does). A record whose history
+    /// piece is damaged is not named here: it is then not offered as a video
+    /// and not left out of a backup, which keeps it.
+    ///
+    /// The answer is kept for as long as the history is the same one (its
+    /// length and its head, which change with every event), so that opening a
+    /// document's details does not read the whole history each time. It is not
+    /// kept when part of the history could not be read, so that a piece that
+    /// comes back is read.
+    pub(super) fn camera_made_records(
+        &self,
+        unlocked: &UnlockedVault,
+    ) -> Result<Arc<HashSet<Uuid>>, VaultError> {
+        let history = &unlocked.manifest.history;
+        let key = (
+            unlocked.manifest.vault_id,
+            history.count,
+            history.head.clone(),
+        );
+        if let Some((kept, found)) = self
+            .camera_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            if *kept == key {
+                return Ok(Arc::clone(found));
+            }
+        }
+        let view = self.history_view_in_session(unlocked)?;
+        let found: Arc<HashSet<Uuid>> = Arc::new(
+            view.entries
+                .iter()
+                .chain(view.later.iter())
+                .filter(|entry| {
+                    entry.event == HistoryEvent::Imported
+                        && entry.how.as_deref() == Some(RECORDING_HOW)
+                })
+                .filter_map(|entry| entry.record_id)
+                .collect(),
+        );
+        *self
+            .camera_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            view.complete.then(|| (key, Arc::clone(&found)));
+        Ok(found)
+    }
+
+    /// Whether the history says the record was added with the camera, and its
+    /// file is there to be read (`NotFound` for a record the vault does not
+    /// have). A video restored from a backup that left its file out is still
+    /// marked as lacking it and is not a video to play: that is `false`, not an
+    /// error, so its details show nothing wrong.
+    pub fn added_with_camera(&self, record_id: Uuid) -> Result<bool, VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let record = unlocked
+            .manifest
+            .records
+            .iter()
+            .find(|record| record.id == record_id)
+            .ok_or(VaultError::NotFound)?;
+        if !object_required(record)
+            && object_presence_name(&self.root, &record.object_name) != ObjectPresence::Present
+        {
+            return Ok(false);
+        }
+        Ok(self.camera_made_records(unlocked)?.contains(&record_id))
+    }
+
+    /// How much room the vault's volume has, and whether that is enough to
+    /// record: asked before the camera and microphone are turned on, and again
+    /// on every resume. Only of a vault that is open and writable, as recording
+    /// is.
+    pub fn recording_space(&self) -> Result<RecordingSpace, VaultError> {
+        self.require_writable_session()?;
+        Ok(self.space_now())
+    }
+
+    /// As `recording_space`, for a caller that already holds the session.
+    fn space_now(&self) -> RecordingSpace {
+        let free = self.free_space_now();
+        RecordingSpace {
+            free_bytes: free,
+            level: space_level(free),
+            can_record: free.is_none_or(|free| free >= MIN_FREE_TO_RECORD),
+        }
+    }
+
+    pub(super) fn free_space_now(&self) -> Option<u64> {
+        let probe = self
+            .free_space
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        probe(&self.root)
+    }
+
     fn require_writable_session(&self) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -1290,13 +1498,16 @@ impl VaultStore {
     }
 }
 
-fn progress_of(normaliser: &Mp4Normaliser, next_sequence: u64) -> RecordingProgress {
+fn progress_of(recording: &ActiveRecording) -> RecordingProgress {
+    let normaliser = &recording.normaliser;
     RecordingProgress {
         stored_bytes: normaliser.written(),
         fragments: normaliser.index().len(),
         has_video: normaliser.init().map(InitInfo::has_video),
         has_audio: normaliser.init().map(InitInfo::has_audio),
-        next_sequence,
+        next_sequence: recording.next_sequence,
+        space: recording.space,
+        free_bytes: recording.free_bytes,
     }
 }
 
@@ -1546,8 +1757,16 @@ mod tests {
         assert_eq!(pending.unreadable, 0);
         assert_eq!(pending.recordings.len(), 1);
         assert!(pending.recordings[0].parked);
+        // Parked by a lock, not ended by the patient.
+        assert!(!pending.recordings[0].stopped);
         assert_eq!(pending.recordings[0].display_name, "FAKE parked.mp4");
         let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        // A recording finished by recovery has the origin of one finished at once.
+        assert!(store.added_with_camera(record).unwrap());
+        assert!(matches!(
+            store.added_with_camera(Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
         let plain = stored(&store, record);
         let index = index_of(&plain);
         assert_eq!(index.entries.len(), 2);
@@ -2373,5 +2592,293 @@ mod tests {
             + crate::idle::MARGIN
             + Duration::from_secs(1);
         assert!(store.idle().is_due(held_until));
+    }
+
+    // ---- room on the disk ---------------------------------------------------
+
+    use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+
+    /// The disk has `free` bytes, as far as the vault can tell, until the test
+    /// changes it. Returns how many times it was asked.
+    fn pretend_room(store: &VaultStore, free: &Arc<AtomicU64>) -> Arc<AtomicU64> {
+        let asked = Arc::new(AtomicU64::new(0));
+        let (free, counted) = (Arc::clone(free), Arc::clone(&asked));
+        *store.free_space.lock().unwrap() = Box::new(move |_| {
+            counted.fetch_add(1, AtomicOrdering::SeqCst);
+            Some(free.load(AtomicOrdering::SeqCst))
+        });
+        asked
+    }
+
+    const MIB: u64 = 1 << 20;
+    const GIB: u64 = 1 << 30;
+
+    #[test]
+    fn the_levels_are_where_the_design_puts_them() {
+        assert_eq!(space_level(None), SpaceLevel::Unknown);
+        assert_eq!(space_level(Some(0)), SpaceLevel::Stop);
+        assert_eq!(space_level(Some(256 * MIB - 1)), SpaceLevel::Stop);
+        assert_eq!(space_level(Some(256 * MIB)), SpaceLevel::Low);
+        assert_eq!(space_level(Some(512 * MIB - 1)), SpaceLevel::Low);
+        assert_eq!(space_level(Some(512 * MIB)), SpaceLevel::Ok);
+        assert_eq!(space_level(Some(u64::MAX)), SpaceLevel::Ok);
+        assert_eq!((MIN_FREE_TO_RECORD, STOP_FREE), (GIB, 256 * MIB));
+    }
+
+    #[test]
+    fn a_recording_is_refused_below_one_gib_and_nothing_is_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(GIB - 1));
+        pretend_room(&store, &free);
+        let space = store.recording_space().unwrap();
+        assert!(!space.can_record);
+        assert_eq!(space.free_bytes, Some(GIB - 1));
+        assert!(matches!(
+            store.recording_start(profile, vec![], "FAKE full.mp4", 5),
+            Err(VaultError::NoSpace)
+        ));
+        assert!(recordings_files(temp.path()).is_empty());
+        assert!(store.recordings.lock().unwrap().is_empty());
+        // Exactly one GiB is enough.
+        free.store(GIB, AtomicOrdering::SeqCst);
+        assert!(store.recording_space().unwrap().can_record);
+        assert!(store
+            .recording_start(profile, vec![], "FAKE ok.mp4", 5)
+            .is_ok());
+    }
+
+    #[test]
+    fn a_volume_that_cannot_be_asked_refuses_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        *store.free_space.lock().unwrap() = Box::new(|_| None);
+        let space = store.recording_space().unwrap();
+        assert!(space.can_record);
+        assert_eq!(space.level, SpaceLevel::Unknown);
+        assert!(store
+            .recording_start(profile, vec![], "FAKE unknown.mp4", 5)
+            .is_ok());
+    }
+
+    #[test]
+    fn room_is_looked_at_every_eight_frames_and_the_level_follows_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(10 * GIB));
+        let asked = pretend_room(&store, &free);
+        let id = store
+            .recording_start(profile, vec![], "FAKE watched.mp4", 5)
+            .unwrap();
+        let after_start = asked.load(AtomicOrdering::SeqCst);
+        // 20 frames of video (a fragment of 1 MiB is one frame): many pieces,
+        // few looks at the disk.
+        let clip = movie(21, 1_048_000);
+        let mut progress = None;
+        for part in clip.chunks(1_000_000) {
+            progress = Some(store.recording_append(id, part).unwrap());
+        }
+        let looks = asked.load(AtomicOrdering::SeqCst) - after_start;
+        // At frame 0, 8 and 16 of about 21.
+        assert_eq!(looks, 3, "looked {looks} times for about 21 frames");
+        assert_eq!(progress.unwrap().space, SpaceLevel::Ok);
+        // Room falls to the warning, and the next look says so.
+        free.store(400 * MIB, AtomicOrdering::SeqCst);
+        let mut level = SpaceLevel::Ok;
+        for n in 0..9_u64 {
+            let part = fragment(100 + n as u32, 0, 0, 1_040_000);
+            level = store
+                .recording_append(id, &part)
+                .map(|p| p.space)
+                .unwrap_or(level);
+            if level != SpaceLevel::Ok {
+                break;
+            }
+        }
+        assert_eq!(level, SpaceLevel::Low);
+    }
+
+    #[test]
+    fn at_the_reserve_the_recording_is_told_to_stop_takes_no_more_and_is_saved_normally() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(10 * GIB));
+        pretend_room(&store, &free);
+        let id = store
+            .recording_start(profile, vec![], "FAKE reserve.mp4", 5)
+            .unwrap();
+        // The recorder's pieces are whole fragments of about one frame each.
+        let piece = |n: u64| fragment(n as u32 + 1, n * 30000, n * 48128, 1_048_000);
+        store
+            .recording_append(id, &[ftyp(), moov(), piece(0)].concat())
+            .unwrap();
+        store.recording_append(id, &piece(1)).unwrap();
+        // The disk fills to the reserve; a look at the disk finds it.
+        free.store(STOP_FREE - 1, AtomicOrdering::SeqCst);
+        let mut told = None;
+        let mut next = 2;
+        while told.is_none() && next < 40 {
+            let progress = store.recording_append(id, &piece(next)).unwrap();
+            next += 1;
+            if progress.space == SpaceLevel::Stop {
+                told = Some(progress);
+            }
+        }
+        let told = told.expect("told to stop");
+        assert_eq!(told.space, SpaceLevel::Stop);
+        assert_eq!(told.free_bytes, Some(STOP_FREE - 1));
+        // Nothing more is taken: the room left is the reserve for finishing.
+        assert!(matches!(
+            store.recording_append(id, &piece(next)),
+            Err(VaultError::NoSpace)
+        ));
+        // It is saved as any recording is, with what there was: every fragment
+        // that was taken, and no copy of it made (a copy needs room).
+        let before = object_files(temp.path());
+        let record = store.recording_stop(id, 6).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len() as u64, next);
+        assert_eq!(object_files(temp.path()).len(), before.len() + 1);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn recovery_needs_about_the_recordings_size_again_and_waits_if_there_is_not_room() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE recover.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(4, 700_000), 250_000);
+        drop(store); // a crash
+        let store = reopen(temp.path());
+        let free = Arc::new(AtomicU64::new(100 * MIB));
+        pretend_room(&store, &free);
+        assert!(matches!(
+            store.recording_recover(id, true, 9),
+            Err(VaultError::NoSpace)
+        ));
+        // Nothing was lost: the question is still there, and nothing was added.
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
+        assert!(store.snapshot().unwrap().records.is_empty());
+        free.store(10 * GIB, AtomicOrdering::SeqCst);
+        let record = store.recording_recover(id, true, 10).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 2);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn declining_a_recording_needs_no_room() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let id = store
+            .recording_start(profile, vec![], "FAKE decline.mp4", 5)
+            .unwrap();
+        feed(&store, id, &movie(4, 700_000), 250_000);
+        drop(store);
+        let store = reopen(temp.path());
+        pretend_room(&store, &Arc::new(AtomicU64::new(0)));
+        assert_eq!(store.recording_recover(id, false, 9).unwrap(), None);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn room_is_only_asked_of_a_vault_that_is_open_and_writable() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _) = new_store(temp.path());
+        assert!(store.recording_space().is_ok());
+        store.lock();
+        assert!(matches!(store.recording_space(), Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn a_recording_that_ends_mid_fragment_on_a_full_disk_is_kept_unfinished_not_lost() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(10 * GIB));
+        pretend_room(&store, &free);
+        let id = store
+            .recording_start(profile, vec![], "FAKE midway.mp4", 5)
+            .unwrap();
+        // Two whole fragments, then half of a third: the recorder ended where the
+        // disk filled.
+        let whole = movie(2, 400_000);
+        let third = fragment(3, 60000, 96256, 400_000);
+        store.recording_append(id, &whole).unwrap();
+        store.recording_append(id, &third[..200_000]).unwrap();
+        // Finishing it means copying it, which needs room that is not there.
+        free.store(100 * MIB, AtomicOrdering::SeqCst);
+        assert!(matches!(
+            store.recording_stop(id, 6),
+            Err(VaultError::NoSpace)
+        ));
+        // Not lost: it is parked, nothing was added, and it is asked about when
+        // the vault is next opened (or recovered now, with room).
+        assert!(store.snapshot().unwrap().records.is_empty());
+        let pending = store.recordings_pending().unwrap();
+        assert_eq!((pending.recordings.len(), pending.unreadable), (1, 0));
+        assert!(pending.recordings[0].parked);
+        // The patient ended it: the next unlock says why it is being finished.
+        assert!(pending.recordings[0].stopped);
+        free.store(10 * GIB, AtomicOrdering::SeqCst);
+        let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        assert_eq!(index_of(&stored(&store, record)).entries.len(), 2);
+        assert!(recordings_files(temp.path()).is_empty());
+    }
+
+    #[test]
+    fn a_write_that_fails_for_want_of_room_keeps_what_was_written_for_later() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let free = Arc::new(AtomicU64::new(10 * GIB));
+        pretend_room(&store, &free);
+        let id = store
+            .recording_start(profile, vec![], "FAKE filled.mp4", 5)
+            .unwrap();
+        let piece = |n: u64| fragment(n as u32 + 1, n * 30000, n * 48128, 1_048_000);
+        store
+            .recording_append(id, &[ftyp(), moov(), piece(0)].concat())
+            .unwrap();
+        store.recording_append(id, &piece(1)).unwrap();
+        // The disk fills under the next frame: the write is refused.
+        FAIL_AT_TEST_BOUNDARY.set(&["recording.chunk-write"]);
+        let refused = store.recording_append(id, &piece(2));
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+        assert!(matches!(refused, Err(VaultError::NoSpace)), "{refused:?}");
+        free.store(50 * MIB, AtomicOrdering::SeqCst);
+        // Ending it needs room to finish it by copy: not there, so it is kept.
+        assert!(matches!(
+            store.recording_stop(id, 6),
+            Err(VaultError::NoSpace)
+        ));
+        assert_eq!(store.recordings_pending().unwrap().recordings.len(), 1);
+        free.store(10 * GIB, AtomicOrdering::SeqCst);
+        let record = store.recording_recover(id, true, 9).unwrap().unwrap();
+        assert!(!index_of(&stored(&store, record)).entries.is_empty());
+    }
+
+    #[test]
+    fn the_camera_origin_is_kept_per_history_and_follows_new_recordings() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let record = |name: &str, at: u64| {
+            let id = store.recording_start(profile, vec![], name, at).unwrap();
+            let movie = [mp4_stream::fake::ftyp(), mp4_stream::fake::moov()].concat();
+            store.recording_append(id, &movie).unwrap();
+            store
+                .recording_append(id, &mp4_stream::fake::fragment(1, 0, 0, 3000))
+                .unwrap();
+            store.recording_stop(id, at + 1).unwrap().unwrap()
+        };
+        let first = record("FAKE one.mp4", 5);
+        // Asked twice (the second is the kept answer), and the same.
+        assert!(store.added_with_camera(first).unwrap());
+        assert!(store.added_with_camera(first).unwrap());
+        // A later recording changes the history, so the kept answer is replaced.
+        let second = record("FAKE two.mp4", 9);
+        assert!(store.added_with_camera(second).unwrap());
+        assert!(store.added_with_camera(first).unwrap());
     }
 }
