@@ -103,6 +103,12 @@ mod native {
     /// A v2 request the portal has no challenge for is open this long (`min(exp, iat + 600)`):
     /// a late answer cannot revive a request the device may already have replaced.
     const UNANSWERED_OPEN: u64 = 600;
+    /// Whether a challenge's version is its intent's, and a version this build speaks: every object
+    /// of a flow carries its intent's version, so a v2 challenge cannot answer a v1 intent (the
+    /// shared contract's `version_mismatch` case).
+    pub(crate) fn challenge_version_ok(challenge_version: u8, intent_version: u8) -> bool {
+        matches!(intent_version, V1 | V2) && challenge_version == intent_version
+    }
     /// Whether a challenge's own window is right for its contract: it ends after it began and lasts
     /// at most what its kind may (`challenge_life`); under v2 exactly `min(issued_at + life,
     /// intent.exp)`, so a staff challenge cannot be cut to ten minutes and a code cannot be
@@ -655,8 +661,7 @@ mod native {
         let (x, ed) = link.keys.public();
         // The intent's own version and end: every object of a flow carries its intent's version.
         let (version, _, intent_exp) = intent_terms(attempt).ok_or_else(bad)?;
-        if !matches!(version, V1 | V2)
-            || c.v != version
+        if !challenge_version_ok(c.v, version)
             || c.typ != "mycarlos-device-approval-challenge"
             || c.aud != "carlos-mycarlos-device-approval"
             || c.clinic_id != clinic.clinic_id
@@ -1435,15 +1440,22 @@ mod native {
             assert!(cases.len() >= 8);
             for case in cases {
                 let id = case["id"].as_str().unwrap();
+                // `version` is the challenge's; a case may name a different `intent_version`
+                // (`version_mismatch`: a challenge's v must equal its intent's v).
                 let version = case["version"].as_u64().unwrap() as u8;
+                let intent_version = case
+                    .get("intent_version")
+                    .and_then(|v| v.as_u64())
+                    .map_or(version, |v| v as u8);
                 assert_eq!(
-                    challenge_window_ok(
-                        version,
-                        case["approval_kind"].as_str().unwrap(),
-                        case["issued_at"].as_u64().unwrap(),
-                        case["expires_at"].as_u64().unwrap(),
-                        case["intent_exp"].as_u64().unwrap(),
-                    ),
+                    challenge_version_ok(version, intent_version)
+                        && challenge_window_ok(
+                            intent_version,
+                            case["approval_kind"].as_str().unwrap(),
+                            case["issued_at"].as_u64().unwrap(),
+                            case["expires_at"].as_u64().unwrap(),
+                            case["intent_exp"].as_u64().unwrap(),
+                        ),
                     case["valid"].as_bool().unwrap(),
                     "{id}"
                 );
@@ -1523,10 +1535,10 @@ mod native {
     }
 }
 pub(crate) use native::request_expires_at;
-pub(crate) use native::{code_challenge_kid, send_code};
-pub(crate) use native::{contract_version, create, device_removed, publish, refresh};
 #[cfg(test)]
 pub(crate) use native::V2 as CONTRACT_V2;
+pub(crate) use native::{code_challenge_kid, send_code};
+pub(crate) use native::{contract_version, create, device_removed, publish, refresh};
 pub(crate) use native::{stay_on_v1, uses_contract_v2, V1 as CONTRACT_V1};
 
 /// How far a reply's `Date` may be from this device's clock and still be
