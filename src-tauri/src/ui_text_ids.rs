@@ -441,6 +441,10 @@ pub enum MessageId {
     InterfaceHistoryEventPortalLinked,
     InterfaceHistoryEventProfileCreated,
     InterfaceHistoryEventProfileDetailsChanged,
+    InterfaceHistoryEventProfileExported,
+    InterfaceHistoryEventProfileHidden,
+    InterfaceHistoryEventProfileImported,
+    InterfaceHistoryEventProfileRestored,
     InterfaceHistoryEventReadingAidFiled,
     InterfaceHistoryEventRecoveryKeySet,
     InterfaceHistoryEventRenamed,
@@ -1496,6 +1500,10 @@ impl MessageId {
         Self::InterfaceHistoryEventPortalLinked,
         Self::InterfaceHistoryEventProfileCreated,
         Self::InterfaceHistoryEventProfileDetailsChanged,
+        Self::InterfaceHistoryEventProfileExported,
+        Self::InterfaceHistoryEventProfileHidden,
+        Self::InterfaceHistoryEventProfileImported,
+        Self::InterfaceHistoryEventProfileRestored,
         Self::InterfaceHistoryEventReadingAidFiled,
         Self::InterfaceHistoryEventRecoveryKeySet,
         Self::InterfaceHistoryEventRenamed,
@@ -2787,6 +2795,10 @@ impl MessageId {
             Self::InterfaceHistoryEventProfileDetailsChanged => {
                 "interface-history-event-profileDetailsChanged"
             }
+            Self::InterfaceHistoryEventProfileExported => "interface-history-event-profileExported",
+            Self::InterfaceHistoryEventProfileHidden => "interface-history-event-profileHidden",
+            Self::InterfaceHistoryEventProfileImported => "interface-history-event-profileImported",
+            Self::InterfaceHistoryEventProfileRestored => "interface-history-event-profileRestored",
             Self::InterfaceHistoryEventReadingAidFiled => "interface-history-event-readingAidFiled",
             Self::InterfaceHistoryEventRecoveryKeySet => "interface-history-event-recoveryKeySet",
             Self::InterfaceHistoryEventRenamed => "interface-history-event-renamed",
@@ -4830,6 +4842,18 @@ impl MessageId {
             "native.filter.models" => Some(Self::NativeFilterModels),
             "interface.history.event.aiResultSaved" => {
                 Some(Self::InterfaceHistoryEventAiResultSaved)
+            }
+            "interface.history.event.profileExported" => {
+                Some(Self::InterfaceHistoryEventProfileExported)
+            }
+            "interface.history.event.profileHidden" => {
+                Some(Self::InterfaceHistoryEventProfileHidden)
+            }
+            "interface.history.event.profileRestored" => {
+                Some(Self::InterfaceHistoryEventProfileRestored)
+            }
+            "interface.history.event.profileImported" => {
+                Some(Self::InterfaceHistoryEventProfileImported)
             }
             "interface.history.how.summary" => Some(Self::InterfaceHistoryHowSummary),
             "interface.history.how.explain" => Some(Self::InterfaceHistoryHowExplain),

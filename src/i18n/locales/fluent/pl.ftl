@@ -1745,6 +1745,14 @@ interface-history-event-profileCreated = Dodano profil pacjenta
 
 interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
 
+interface-history-event-profileExported = Osoba wyeksportowana do pliku przekazania
+
+interface-history-event-profileHidden = Osoba ukryta
+
+interface-history-event-profileRestored = Osoba przywrócona
+
+interface-history-event-profileImported = Osoba dodana z pliku przekazania
+
 interface-history-event-readingAidFiled = Zapisano pomoc w czytaniu
 
 interface-history-event-recoveryKeySet = Ustawiono klucz odzyskiwania

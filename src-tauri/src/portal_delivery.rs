@@ -2,7 +2,7 @@
 //! PDF verification and durable filing are separate mandatory steps in the vault.
 
 use crate::portal_link::{frame, StoredLink};
-use crate::portal_link::{ClinicKey, KeyStatus};
+use crate::portal_link::{ClinicKey, KeyStatus, LinkedClinic};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use p256::{
     ecdsa::{signature::Verifier, Signature, VerifyingKey},
@@ -728,6 +728,66 @@ pub struct Custody {
     pub receipt: String,
     pub receipt_outcome: Option<ReceiptOutcome>,
 }
+/// Clinic evidence that travels with a document in a profile handover (#360), kept on the
+/// record in place of `Custody` and `AidCustody` when the clinic link it was checked through
+/// is not in this vault. A link holds a device's private keys and stays on the device it was
+/// made on, so none of this is a link: it is public and signed material only. Never the
+/// device's private keys, the sealed ciphertext, the portal address, the device's name or an
+/// approval attempt.
+///
+/// What it says is bounded by what it is: the document was checked, with these clinic keys,
+/// on the device it came from. It is not trust in the clinic from the device that holds it; only
+/// a link of this vault to the same clinic, whose key list holds the signing key, gives that.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Carried {
+    /// The clinic as the source device had pinned it when it checked: its id and name, its
+    /// keys with their status then, and the clinic's own ids for the source device.
+    pub clinic: LinkedClinic,
+    /// The source device's public keys (URL-safe base64, 32 bytes each): the signing key
+    /// checks the receipts, and the id the clinic knows the device by is derived from both.
+    pub device_x25519: String,
+    pub device_ed25519: String,
+    pub delivery: CarriedDelivery,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading_aid: Option<CarriedAid>,
+}
+/// `Custody` without the id of a link that does not exist in this vault. The receipt is as the
+/// source signed it and is never sent again: `receipt_outcome` is kept as it was, and a vault
+/// that holds only carried evidence queues no receipt.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CarriedDelivery {
+    pub outer: Outer,
+    pub manifest: Manifest,
+    pub manifest_compact: String,
+    pub pdf_document_id: String,
+    pub pdf_version: u32,
+    pub checked_at_ms: u64,
+    pub anchor_head: String,
+    pub receipt: String,
+    pub receipt_outcome: Option<ReceiptOutcome>,
+}
+/// `AidCustody` without a link id; see `CarriedDelivery`.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CarriedAid {
+    pub outer: Outer,
+    pub manifest_compact: String,
+    pub json: String,
+    pub checked_at_ms: u64,
+    pub anchor_head: String,
+    pub receipt: String,
+    pub receipt_outcome: Option<ReceiptOutcome>,
+}
+impl Carried {
+    /// The source device's public keys, or None when either is not 32 bytes of canonical base64.
+    pub(crate) fn device_keys(&self) -> Option<([u8; 32], [u8; 32])> {
+        let key = |text: &str| -> Option<[u8; 32]> { decode(text)?.try_into().ok() };
+        Some((key(&self.device_x25519)?, key(&self.device_ed25519)?))
+    }
+}
+
 /// A reading aid the vault holds (format 8), kept on the record of the original it reads:
 /// the signed manifest, the checked JSON and the receipt signed at filing. Like `Custody`
 /// it lives inside the encrypted manifest. The manifest is kept as its signed compact form
@@ -788,8 +848,23 @@ impl AidCustody {
     /// The reader's view of this aid, or None when the kept JSON or manifest cannot be read as
     /// one (it was checked when it arrived and on every manifest read, so this is a safety net).
     pub fn view(&self) -> Option<ReadingAidView> {
-        let json: serde_json::Value = serde_json::from_str(&self.json).ok()?;
-        let (payload, _) = split_compact(&self.manifest_compact, 16 * 1024).ok()?;
+        reading_aid_view(&self.outer.delivery_id, &self.json, &self.manifest_compact)
+    }
+}
+impl CarriedAid {
+    /// The reader's view of a carried aid, as for a filed one.
+    pub fn view(&self) -> Option<ReadingAidView> {
+        reading_aid_view(&self.outer.delivery_id, &self.json, &self.manifest_compact)
+    }
+}
+fn reading_aid_view(
+    delivery_id: &str,
+    aid_json: &str,
+    manifest_compact: &str,
+) -> Option<ReadingAidView> {
+    {
+        let json: serde_json::Value = serde_json::from_str(aid_json).ok()?;
+        let (payload, _) = split_compact(manifest_compact, 16 * 1024).ok()?;
         let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
         let text = |v: &serde_json::Value, key: &str| v.get(key)?.as_str().map(str::to_owned);
         let points = json
@@ -810,7 +885,7 @@ impl AidCustody {
             .collect::<Option<Vec<_>>>()?;
         let notice = json.get("notice")?;
         Some(ReadingAidView {
-            delivery_id: self.outer.delivery_id.clone(),
+            delivery_id: delivery_id.to_owned(),
             language: text(&json, "language")?,
             reviewed_at_ms: claims
                 .pointer("/approval/reviewed_at")?

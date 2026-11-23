@@ -36,6 +36,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
+mod carried;
 mod delivery;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
@@ -69,7 +70,16 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// model-file draft (#298) takes the next number when it merges. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+/// Format 14 (provisional, #360) is the profile handover: a profile can be hidden, can say
+/// the handover file it came from and carry the excerpt of its old history, and a record can
+/// carry the clinic evidence of a delivery whose link did not come along. Its number is taken
+/// at merge, with no gap (VAULT_FORMAT.md, "Format numbers are taken at merge"); the cloud
+/// AI key draft (#389) also holds 14 provisionally, so whichever merges second renumbers. A
+/// renumber changes this line, the section in VAULT_FORMAT.md and the gates that name it.
+const MANIFEST_FORMAT_PROFILE_HANDOVER: u32 = 14;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_PROFILE_HANDOVER;
+/// At most this many entries of a person's old history are kept on an imported profile.
+const MAX_IMPORTED_HISTORY: usize = 2_000;
 const MAX_PREVIOUS_FULL_NAMES: usize = 16;
 const MANIFEST_FORMAT_V1: u32 = 1;
 /// Format 12 (#143) remembers clinic deliveries that failed their checks. It
@@ -487,6 +497,84 @@ pub struct PatientProfile {
         deserialize_with = "present_previous_names"
     )]
     pub previous_full_names: Option<Vec<String>>,
+    /// Set while the whole person is hidden (#360): every document of this person is out of
+    /// the library, the lists and the AI helper's reach, and nothing is deleted or
+    /// re-encrypted. Each document's own `hidden` is left as it was, so restoring the person
+    /// brings back exactly what was visible. Format 14 only; never on Shared with me, and
+    /// never `damaged`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<Hidden>,
+    /// Set when this person was made by importing a handover file (#360): which file, so
+    /// that the same file is recognised again. Format 14 only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_from: Option<ImportedFrom>,
+    /// The excerpt of this person's history in the vault they came from, read-only and not
+    /// a verified chain (#360, section 5.3). Format 14 only; nonempty when present, and only
+    /// on a profile with `imported_from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_history: Option<Vec<ImportedHistoryEntry>>,
+}
+
+/// Which handover file a profile was made from, and when (#360).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImportedFrom {
+    pub package_id: Uuid,
+    pub at_ms: u64,
+}
+
+/// One entry of the old history kept on an imported profile (#360). It is a record-level
+/// event of the source vault with everything about the source stripped (the app version,
+/// places, sessions, link ids). `hash` and `prev` are the source chain's, kept so the
+/// handover file's own list of hashes can be compared; this vault does not rebuild that
+/// chain from them.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImportedHistoryEntry {
+    pub at_ms: u64,
+    pub event: HistoryEvent,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub how: Option<String>,
+    pub hash: String,
+    pub prev: String,
+}
+
+impl ImportedHistoryEntry {
+    /// The events a handover excerpt may hold: the ones that describe a person's documents.
+    fn event_allowed(event: HistoryEvent) -> bool {
+        matches!(
+            event,
+            HistoryEvent::Imported
+                | HistoryEvent::Renamed
+                | HistoryEvent::Moved
+                | HistoryEvent::Hidden
+                | HistoryEvent::Restored
+                | HistoryEvent::DeliveryFiled
+                | HistoryEvent::ReadingAidFiled
+                | HistoryEvent::AiResultSaved
+        )
+    }
+
+    fn valid(&self) -> bool {
+        let name_ok = |name: &Option<String>| {
+            name.as_ref()
+                .is_none_or(|n| n == n.trim() && validate_name(n).is_ok())
+        };
+        Self::event_allowed(self.event)
+            && name_ok(&self.name)
+            && name_ok(&self.old_name)
+            && self.how.as_ref().is_none_or(|how| {
+                !how.is_empty() && how.len() <= 32 && how.bytes().all(|b| b.is_ascii_alphanumeric())
+            })
+            && crate::portal_delivery::hash(&self.hash)
+            && crate::portal_delivery::hash(&self.prev)
+    }
 }
 
 // A present identity field must be a string, never null. Together with the
@@ -567,6 +655,11 @@ struct StoredRecord {
     /// What the AI helper wrote about this document (#72). Format 10 only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     ai_results: Vec<StoredAiResult>,
+    /// The clinic evidence of a delivery whose link is not in this vault (#360): the record
+    /// arrived in a profile handover. Instead of `delivery` and `reading_aid`, never beside
+    /// them. Format 14 only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    carried: Option<crate::portal_delivery::Carried>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1471,6 +1564,9 @@ impl VaultStore {
                     full_name: None,
                     birth_date: None,
                     previous_full_names: None,
+                    hidden: None,
+                    imported_from: None,
+                    imported_history: None,
                 }],
                 folders: Vec::new(),
                 records: Vec::new(),
@@ -1988,11 +2084,20 @@ impl VaultStore {
                     reading_aid: record
                         .reading_aid
                         .as_ref()
-                        .and_then(crate::portal_delivery::AidCustody::view),
+                        .and_then(crate::portal_delivery::AidCustody::view)
+                        .or_else(|| {
+                            record
+                                .carried
+                                .as_ref()
+                                .and_then(|c| c.reading_aid.as_ref())
+                                .and_then(crate::portal_delivery::CarriedAid::view)
+                        }),
                     clinic_service_date: record
                         .delivery
                         .as_ref()
-                        .map(|delivery| delivery.manifest.document.service_date.clone()),
+                        .map(|delivery| &delivery.manifest)
+                        .or(record.carried.as_ref().map(|c| &c.delivery.manifest))
+                        .map(|manifest| manifest.document.service_date.clone()),
                     original_pdf_available: record.original_pdf.as_ref().map(|original| {
                         object_presence_name(root, &original.object_name) == ObjectPresence::Present
                     }),
@@ -2240,6 +2345,9 @@ impl VaultStore {
                 full_name,
                 birth_date,
                 previous_full_names: previous_full_names.filter(|names| !names.is_empty()),
+                hidden: None,
+                imported_from: None,
+                imported_history: None,
             });
             Ok(id)
         })
@@ -2633,6 +2741,7 @@ impl VaultStore {
                     delivery: None,
                     reading_aid: None,
                     ai_results: Vec::new(),
+                    carried: None,
                 };
                 // Preserve raw bytes before helper parsing/rendering, including
                 // unsigned or too-large PDFs whose signatures cannot be ruled
@@ -2705,6 +2814,9 @@ impl VaultStore {
                     full_name: None,
                     birth_date: None,
                     previous_full_names: None,
+                    hidden: None,
+                    imported_from: None,
+                    imported_history: None,
                 });
             }
             next.records
@@ -3244,8 +3356,12 @@ impl VaultStore {
             .iter()
             .find(|record| record.id == record_id)
             .ok_or(VaultError::NotFound)?;
-        if let Some(custody) = &record.delivery {
-            let delivery = &custody.manifest;
+        if let Some(delivery) = record
+            .delivery
+            .as_ref()
+            .map(|custody| &custody.manifest)
+            .or(record.carried.as_ref().map(|c| &c.delivery.manifest))
+        {
             known.names.push(delivery.patient.name.clone());
             if !delivery.patient.birth_date.is_empty() {
                 known.birth_dates.push(delivery.patient.birth_date.clone());
@@ -4877,6 +4993,31 @@ fn object_presence_name(root: &Path, object_name: &str) -> ObjectPresence {
 
 /// Checks everything about a decrypted manifest except whether its objects
 /// are on disk, so a vault with a lost object can still be opened read-only.
+/// The profile fields format 14 adds (#360): each forbidden below it, so that an older build
+/// that accepted a newer number could never drop one it does not know.
+fn valid_handover_fields(profile: &PatientProfile, format_version: u32, vault_id: Uuid) -> bool {
+    if profile.hidden.is_none()
+        && profile.imported_from.is_none()
+        && profile.imported_history.is_none()
+    {
+        return true;
+    }
+    format_version >= MANIFEST_FORMAT_PROFILE_HANDOVER
+        // A person is hidden by the patient, never as a damaged file; Shared with me is where
+        // a hidden person's new documents go and is never hidden itself, nor a handover.
+        && profile.hidden.is_none_or(|hidden| hidden.reason == HiddenReason::Patient)
+        && (profile.id != shared_profile_id(vault_id)
+            || (profile.hidden.is_none()
+                && profile.imported_from.is_none()
+                && profile.imported_history.is_none()))
+        && profile.imported_history.as_ref().is_none_or(|history| {
+            profile.imported_from.is_some()
+                && !history.is_empty()
+                && history.len() <= MAX_IMPORTED_HISTORY
+                && history.iter().all(ImportedHistoryEntry::valid)
+        })
+}
+
 fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<(), VaultError> {
     if !(MANIFEST_FORMAT_V1..=VAULT_FORMAT).contains(&manifest.format_version)
         || manifest.vault_id != vault_id
@@ -4908,9 +5049,31 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
                 && (profile.full_name.is_some() || profile.birth_date.is_some()))
             || (profile.id == shared_profile_id(vault_id)
                 && (profile.full_name.is_some() || profile.birth_date.is_some()))
+            || !valid_handover_fields(profile, manifest.format_version, vault_id)
         {
             return Err(VaultError::Corrupt);
         }
+    }
+    // Someone has to stay visible: the last profile of a vault is never hidden, and Shared
+    // with me never is (#360, section 8.5).
+    if manifest.format_version >= MANIFEST_FORMAT_PROFILE_HANDOVER
+        && manifest
+            .profiles
+            .iter()
+            .all(|profile| profile.hidden.is_some())
+    {
+        return Err(VaultError::Corrupt);
+    }
+    // One handover file makes one profile (#360): a second profile from the same file is a
+    // manifest no build writes.
+    let mut packages = HashSet::new();
+    if !manifest
+        .profiles
+        .iter()
+        .filter_map(|profile| profile.imported_from.as_ref())
+        .all(|from| packages.insert(from.package_id))
+    {
+        return Err(VaultError::Corrupt);
     }
 
     let mut folders_by_id = HashMap::new();
@@ -5031,7 +5194,9 @@ fn validate_manifest_structure(manifest: &Manifest, vault_id: Uuid) -> Result<()
             &mut object_ids,
             &mut object_names,
         )?;
-        if (manifest.format_version < 6 && record.delivery.is_some())
+        if (manifest.format_version < MANIFEST_FORMAT_PROFILE_HANDOVER && record.carried.is_some())
+            || !carried::valid_carried(record)
+            || (manifest.format_version < 6 && record.delivery.is_some())
             || record
                 .delivery
                 .as_ref()
@@ -9795,6 +9960,9 @@ mod tests {
                     full_name: None,
                     birth_date: None,
                     previous_full_names: None,
+                    hidden: None,
+                    imported_from: None,
+                    imported_history: None,
                 },
                 PatientProfile {
                     id: second_profile,
@@ -9803,6 +9971,9 @@ mod tests {
                     full_name: None,
                     birth_date: None,
                     previous_full_names: None,
+                    hidden: None,
+                    imported_from: None,
+                    imported_history: None,
                 },
             ],
             folders: vec![
@@ -9839,6 +10010,7 @@ mod tests {
                     delivery: None,
                     reading_aid: None,
                     ai_results: Vec::new(),
+                    carried: None,
                 },
                 StoredRecord {
                     id: second_record,
@@ -9857,6 +10029,7 @@ mod tests {
                     delivery: None,
                     reading_aid: None,
                     ai_results: Vec::new(),
+                    carried: None,
                 },
             ],
             history: HistoryState::default(),
@@ -15552,6 +15725,9 @@ mod tests {
                 full_name: None,
                 birth_date: None,
                 previous_full_names: None,
+                hidden: None,
+                imported_from: None,
+                imported_history: None,
             }],
             folders: vec![],
             records: records
@@ -15579,6 +15755,7 @@ mod tests {
                     delivery: None,
                     reading_aid: None,
                     ai_results: Vec::new(),
+                    carried: None,
                 })
                 .collect(),
             history: HistoryState::default(),
@@ -17477,9 +17654,11 @@ mod tests {
             MANIFEST_FORMAT_AI_RESULTS,
             // Their hidden answers capped apart, format 11.
             MANIFEST_FORMAT_AI_HIDDEN_CAP,
-            // Remembered refusals (#143), format 12: the last before previous
-            // full names (13).
+            // Remembered refusals (#143), format 12.
             MANIFEST_FORMAT_REFUSED,
+            // Previous full names, format 13: the last before the profile
+            // handover (14, #360).
+            MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

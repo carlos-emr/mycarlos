@@ -1006,6 +1006,10 @@ export const MESSAGE_KEYS = [
   "ai.model.refusedUnavailable",
   "native.filter.models",
   "interface.history.event.aiResultSaved",
+  "interface.history.event.profileExported",
+  "interface.history.event.profileHidden",
+  "interface.history.event.profileRestored",
+  "interface.history.event.profileImported",
   "interface.history.how.summary",
   "interface.history.how.explain",
   "ai.summary.again",
@@ -2256,6 +2260,14 @@ const FLUENT_IDS_BY_KEY = {
   "native.filter.models": "native-filter-models",
   "interface.history.event.aiResultSaved":
     "interface-history-event-aiResultSaved",
+  "interface.history.event.profileExported":
+    "interface-history-event-profileExported",
+  "interface.history.event.profileHidden":
+    "interface-history-event-profileHidden",
+  "interface.history.event.profileRestored":
+    "interface-history-event-profileRestored",
+  "interface.history.event.profileImported":
+    "interface-history-event-profileImported",
   "interface.history.how.summary": "interface-history-how-summary",
   "interface.history.how.explain": "interface-history-how-explain",
   "ai.summary.again": "ai-summary-again",
@@ -3417,6 +3429,10 @@ export interface MessageArgsByKey {
   "ai.model.refusedUnavailable": undefined;
   "native.filter.models": undefined;
   "interface.history.event.aiResultSaved": undefined;
+  "interface.history.event.profileExported": undefined;
+  "interface.history.event.profileHidden": undefined;
+  "interface.history.event.profileRestored": undefined;
+  "interface.history.event.profileImported": undefined;
   "interface.history.how.summary": undefined;
   "interface.history.how.explain": undefined;
   "ai.summary.again": undefined;
