@@ -192,6 +192,8 @@ opt-level = 1
 # Reviewed local deltas and upstream provenance: vendor/README.md.
 [patch.crates-io]
 glib = { path = "vendor/glib" }
+# Wry with its macOS/iOS camera-and-microphone decision narrowed (#359 PR 7).
+wry = { path = "vendor/wry" }
 
 [[test]]
 name = "model_helper"
