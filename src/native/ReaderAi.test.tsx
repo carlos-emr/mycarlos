@@ -4,7 +4,14 @@ import {
   showFullAiLabelAgain,
 } from "../aiLabelPreference";
 import { humanText, visibleText } from "../test/humanText";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page as browser } from "vitest/browser";
@@ -2104,6 +2111,84 @@ describe("Show me in the document also marks the page picture (#292)", () => {
       expect(status()).toContain(
         "Page 2: the quoted words are marked on the page picture and in Text on this page.",
       ),
+    );
+  });
+
+  it("draws the text's mark again when the page picture fails to load, so the quote is never unmarked", async () => {
+    const pageBoxes = vi.fn(async () => ({
+      rects: [[0.1, 0.2, 0.5, 0.25]] as [number, number, number, number][],
+    }));
+    await show({ pageBoxes });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    const text = document.querySelector(".native-reader-text")!;
+    await waitFor(() =>
+      expect(text).toHaveClass("native-reader-text-mark-quiet"),
+    );
+    // The image breaks (a damaged data URL, or a webview that dropped it).
+    fireEvent.error(
+      screen.getByRole("img", { name: humanText(/^Page 2 of 2/) }),
+    );
+    await waitFor(() =>
+      expect(text).not.toHaveClass("native-reader-text-mark-quiet"),
+    );
+    const mark = document.querySelector(".native-reader-text mark")!;
+    expect(getComputedStyle(mark).outlineStyle).toBe("solid");
+  });
+
+  it("keeps the quiet state while another quote's boxes are on their way, and draws the mark when none can be placed", async () => {
+    type Answer = {
+      rects: [number, number, number, number][];
+      absent?: string;
+    };
+    let answer: (value: Answer) => void = () => undefined;
+    let call = 0;
+    const pageBoxes = vi.fn(
+      () =>
+        new Promise<Answer>((resolve) => {
+          call += 1;
+          if (call === 1) resolve({ rects: [[0.1, 0.2, 0.5, 0.25]] });
+          else answer = resolve;
+        }),
+    );
+    renderReader(
+      fakeLocalModel({
+        sentences: () => [
+          {
+            text: "FAKE: repeat the test in two weeks.",
+            quote: "Repeat in 2 weeks.",
+          },
+          { text: "FAKE: this is page two.", quote: "FAKE text on page 2." },
+        ],
+      }),
+      { pageBoxes },
+    );
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const shows = await screen.findAllByRole("button", {
+      name: "Show me in the document",
+    });
+    await user.click(shows[0]);
+    await screen.findByRole("img", { name: humanText(/^Page 2 of 2/) });
+    await waitFor(() => expect(overlay()).not.toBeNull());
+    const text = document.querySelector(".native-reader-text")!;
+    await waitFor(() =>
+      expect(text).toHaveClass("native-reader-text-mark-quiet"),
+    );
+    // Another quote: its boxes are still on their way, and the text mark does not flash.
+    await user.click(
+      (
+        await screen.findAllByRole("button", {
+          name: "Show me in the document",
+        })
+      )[1],
+    );
+    await waitFor(() => expect(pageBoxes).toHaveBeenCalledTimes(2));
+    expect(text).toHaveClass("native-reader-text-mark-quiet");
+    // Nothing could be placed: the text's mark is the highlight again.
+    answer({ rects: [], absent: "unaligned" });
+    await waitFor(() =>
+      expect(text).not.toHaveClass("native-reader-text-mark-quiet"),
     );
   });
 

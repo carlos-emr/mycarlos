@@ -133,7 +133,11 @@ const unfold = (reader: Locator) =>
 
 /** Summary (after the AI helper's notice), then the page-2 sentence's Show
  * in document. */
-async function showQuote(page: Page, reader: Locator) {
+async function showQuote(
+  page: Page,
+  reader: Locator,
+  { keyboard = false }: { keyboard?: boolean } = {},
+) {
   await reader
     .getByRole("button", { name: en("ai.summary.button"), exact: true })
     .click();
@@ -152,7 +156,13 @@ async function showQuote(page: Page, reader: Locator) {
     exact: true,
   });
   await expect(show).toHaveCount(FAKE_PAGE_COUNT);
-  await show.nth(1).click();
+  if (keyboard) {
+    // As a keyboard user does it: focus the button and press Enter.
+    await show.nth(1).focus();
+    await page.keyboard.press("Enter");
+  } else {
+    await show.nth(1).click();
+  }
   await expect(picture(reader, 2)).toBeVisible();
 }
 
@@ -473,6 +483,23 @@ test("keeps the summary usable and its button pressable at 200% text in a 1280 x
   expect(box.height).toBeGreaterThanOrEqual(folded ? 56 : 120);
   if (folded) expect(await reachable(unfold(reader))).toBe(true);
   await shot(page, "show-in-document-summary-200-percent");
+});
+
+test("a keyboard user still sees a 2 px focus ring on the quiet mark", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const reader = await openReader(page);
+  await showQuote(page, reader, { keyboard: true });
+  await expect(boxes(reader)).toHaveCount(2);
+  await expect(mark(reader)).toBeFocused();
+  const ring = await markLook(reader);
+  // The fill is not drawn, but the focus the keys moved there is visible, as WCAG 2.4.7 needs.
+  expect(ring.background).toBe(TRANSPARENT);
+  expect(ring.focusVisible).toBe(true);
+  expect(ring.outline).toBe("solid");
+  expect(ring.outlineWidth).toBe("2px");
+  expect(ring.hiddenFromAssistiveTechnology).toBe(false);
 });
 
 test("draws no box where the helper cannot place every word, and says the words are in the text", async ({
