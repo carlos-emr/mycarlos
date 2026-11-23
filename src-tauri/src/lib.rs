@@ -1784,7 +1784,11 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
             model,
             capacity: Some(capacity),
         } => {
-            let card = model_runtime::app().runner().card_for(&model.sha256);
+            // This session's card, else the one saved by an earlier session of this build.
+            let card = model_runtime::app()
+                .runner()
+                .card_for(&model.sha256)
+                .or_else(|| models.stored_card(&model.sha256));
             local_model::ModelStatus::Installed {
                 capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
                 model,
@@ -1813,7 +1817,9 @@ fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limi
         .models()
         .into_iter()
         .map(|row| {
-            let card = runner.card_for(row.model.sha256);
+            let card = runner
+                .card_for(row.model.sha256)
+                .or_else(|| models.stored_card(row.model.sha256));
             model_limits::limits(
                 row.index,
                 &row.model,
@@ -5630,6 +5636,21 @@ pub fn run() {
                 Box::new(local_model::RuntimeSource(Arc::clone(&models))),
                 Box::new(local_model::SystemMemory),
             );
+            // Each checked card the helper makes is saved beside the models (#305), so the
+            // settings know a model's confirmed context after a restart.
+            {
+                let saver = Arc::clone(&models);
+                // Written on a thread of its own: a start does not wait for the disk.
+                model_runtime::app()
+                    .runner()
+                    .set_card_saver(Box::new(move |sha256, card| {
+                        let (saver, sha256, card) =
+                            (Arc::clone(&saver), sha256.to_owned(), card.clone());
+                        let _ = std::thread::Builder::new()
+                            .name("model-card-save".into())
+                            .spawn(move || saver.save_card(&sha256, &card));
+                    }));
+            }
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));

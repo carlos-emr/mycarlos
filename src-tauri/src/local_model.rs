@@ -435,8 +435,107 @@ impl Store {
         self.dir.with_file_name(CHOICE_FILE)
     }
 
+    /// The checked model cards (#305), beside the models folder as the choice is: not where the
+    /// sandboxed helper reads, and not in the vault.
+    fn cards_path(&self) -> PathBuf {
+        self.dir.with_file_name(crate::model_limits::CARDS_FILE)
+    }
+
+    /// The saved cards that are in range; none for a missing, oversized or malformed file (the
+    /// catalogue's limits then apply). Read each time: the file is small, and another program may
+    /// have changed it.
+    fn saved_cards(&self) -> Vec<crate::model_limits::StoredCard> {
+        use std::io::Read as _;
+        // A regular file only: another program could leave a pipe or a device here, and opening
+        // one would hang the synchronous commands that read this.
+        if !is_regular_file(&self.cards_path()) {
+            return Vec::new();
+        }
+        let Ok(file) = File::open(self.cards_path()) else {
+            return Vec::new();
+        };
+        let mut bytes = Vec::new();
+        // One byte past the limit is enough to see that it is too large.
+        if file
+            .take(crate::model_limits::MAX_CARDS_FILE_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
+            return Vec::new();
+        }
+        crate::model_limits::parse_card_file(&bytes)
+    }
+
+    /// The card the helper made for the model with this SHA-256, saved by this build of the
+    /// helper in an earlier session.
+    pub(crate) fn stored_card(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
+        let build = crate::model_limits::helper_build();
+        self.saved_cards()
+            .into_iter()
+            .find(|entry| entry.sha256 == sha256 && entry.helper_build == build)
+            .map(|entry| entry.card)
+    }
+
+    /// Saves a checked card for a model, in place of an older one for the same file and build.
+    /// A failure is ignored: the card then lives for this session only.
+    pub(crate) fn save_card(&self, sha256: &str, card: &crate::model_limits::ModelCard) {
+        let _one_writer = self.cards_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let build = crate::model_limits::helper_build();
+        let mut entries = self.saved_cards();
+        entries.retain(|entry| !(entry.sha256 == sha256 && entry.helper_build == build));
+        entries.push(crate::model_limits::StoredCard {
+            sha256: sha256.to_owned(),
+            helper_build: build,
+            card: card.clone(),
+        });
+        self.write_cards(&entries);
+    }
+
+    /// Forgets every saved card of a model whose file is removed.
+    fn forget_cards(&self, sha256: &str) {
+        let _one_writer = self.cards_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let before = self.saved_cards();
+        let kept: Vec<_> = before
+            .iter()
+            .filter(|entry| entry.sha256 != sha256)
+            .cloned()
+            .collect();
+        if kept.len() != before.len() {
+            self.write_cards(&kept);
+        }
+    }
+
+    fn write_cards(&self, entries: &[crate::model_limits::StoredCard]) {
+        let Some(bytes) = crate::model_limits::card_file_bytes(entries) else {
+            return;
+        };
+        let path = self.cards_path();
+        let part = path.with_extension("json.part");
+        // Never create over something that is not a regular file (a pipe would hang the create).
+        if fs::symlink_metadata(&part).is_ok_and(|meta| !meta.is_file())
+            || fs::symlink_metadata(&path).is_ok_and(|meta| !meta.is_file())
+        {
+            return;
+        }
+        let written = File::create(&part).and_then(|mut file| {
+            file.write_all(&bytes)?;
+            file.sync_all()
+        });
+        if written.is_ok() && fs::rename(&part, &path).is_ok() {
+            if let Some(parent) = path.parent() {
+                sync_dir(parent);
+            }
+        } else {
+            let _ = remove_model_file(&part);
+        }
+    }
+
     /// The choice as saved; none, or one that can't be read, is no choice.
     fn choice(&self) -> Choice {
+        // A regular file only: a pipe or a device in its place would hang this call.
+        if !is_regular_file(&self.choice_path()) {
+            return Choice::default();
+        }
         fs::read(self.choice_path())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -607,6 +706,9 @@ pub(crate) struct Store {
     uses: Arc<AtomicUsize>,
     /// Asked to stop the add in progress.
     cancel_add: AtomicBool,
+    /// One writer of the cards file at a time: a read-modify-write of the same file and its
+    /// `.part` from two threads would lose cards (#305).
+    cards_lock: Mutex<()>,
 }
 
 /// The one place a file is removed here. The models folder holds a public
@@ -634,6 +736,7 @@ impl Store {
             after_placement_lock: Mutex::new(None),
             uses: Arc::new(AtomicUsize::new(0)),
             cancel_add: AtomicBool::new(false),
+            cards_lock: Mutex::new(()),
         }
     }
 
@@ -994,6 +1097,7 @@ impl Store {
                 Err(_) => return Err(ModelError::Storage),
             }
         }
+        self.forget_cards(model.sha256);
         let mut choice = self.choice();
         let before = choice.clone();
         choice.added_by_you.retain(|added| added != model.sha256);
@@ -1400,6 +1504,11 @@ fn restrict_dir(dir: &Path) {
     }
     #[cfg(not(unix))]
     let _ = dir;
+}
+
+/// Whether `path` is a regular file (not a link, a pipe or a device), without opening it.
+fn is_regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file())
 }
 
 fn sync_dir(dir: &Path) {
@@ -1923,6 +2032,161 @@ mod tests {
             .add(&source(&temp, &bytes), &good(), |_, _| {})
             .unwrap();
         assert_eq!(folder_names(&store), ["fake.gguf"]);
+    }
+
+    fn a_card(context_made: u32) -> crate::model_limits::ModelCard {
+        crate::model_limits::ModelCard {
+            architecture: "qwen35".to_owned(),
+            trained_context: 262_144,
+            context_made,
+            parameters: 4_330_000_000,
+            layers: 32,
+            vocabulary: 248_320,
+            recurrent: false,
+            hybrid: true,
+        }
+    }
+
+    #[test]
+    fn a_saved_card_comes_back_for_this_build_and_is_replaced_by_a_newer_one() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let sha = "ab".repeat(32);
+        assert!(store.stored_card(&sha).is_none());
+        store.save_card(&sha, &a_card(8_192));
+        assert_eq!(store.stored_card(&sha), Some(a_card(8_192)));
+        store.save_card(&sha, &a_card(4_096));
+        assert_eq!(store.stored_card(&sha), Some(a_card(4_096)));
+        // Another model's card is not this one's.
+        assert!(store.stored_card(&"cd".repeat(32)).is_none());
+        // The file sits beside the models folder, never inside it (where the helper reads).
+        assert!(store.cards_path().is_file());
+        assert!(folder_names(&store).is_empty());
+    }
+
+    #[test]
+    fn a_card_from_another_helper_build_is_not_used() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let sha = "ab".repeat(32);
+        let other = crate::model_limits::StoredCard {
+            sha256: sha.clone(),
+            helper_build: "0.0.0+old-contract".to_owned(),
+            card: a_card(8_192),
+        };
+        fs::write(
+            store.cards_path(),
+            crate::model_limits::card_file_bytes(&[other]).unwrap(),
+        )
+        .unwrap();
+        assert!(store.stored_card(&sha).is_none());
+        // Saving now keeps the old build's entry and adds this one.
+        store.save_card(&sha, &a_card(4_096));
+        assert_eq!(store.stored_card(&sha), Some(a_card(4_096)));
+        assert_eq!(store.saved_cards().len(), 2);
+    }
+
+    #[test]
+    fn a_tampered_cards_file_is_no_file_and_a_save_replaces_it() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let sha = "ab".repeat(32);
+        for bad in [
+            b"garbage".to_vec(),
+            vec![b' '; crate::model_limits::MAX_CARDS_FILE_BYTES + 10],
+            br#"{"v":1,"entries":[],"extra":true}"#.to_vec(),
+            br#"{"v":9,"entries":[]}"#.to_vec(),
+        ] {
+            fs::write(store.cards_path(), &bad).unwrap();
+            assert!(store.stored_card(&sha).is_none());
+            assert!(store.saved_cards().is_empty());
+        }
+        // A forged entry that claims more than the helper was ever asked for is dropped; so is a
+        // card for a file that is not a hash.
+        let mut forged = serde_json::json!({
+            "v": 1,
+            "entries": [{
+                "sha256": sha,
+                "helperBuild": crate::model_limits::helper_build(),
+                "card": serde_json::to_value(a_card(8_192)).unwrap()
+            }]
+        });
+        forged["entries"][0]["card"]["contextMade"] = serde_json::json!(4_000_000);
+        fs::write(store.cards_path(), forged.to_string()).unwrap();
+        assert!(store.stored_card(&sha).is_none());
+        store.save_card(&sha, &a_card(8_192));
+        assert_eq!(store.stored_card(&sha), Some(a_card(8_192)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn something_that_is_not_a_regular_file_is_no_cards_file_and_is_never_written_over() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let sha = "ab".repeat(32);
+        // A directory in the file's place: no cards, and a save leaves it alone.
+        fs::create_dir(store.cards_path()).unwrap();
+        assert!(store.saved_cards().is_empty());
+        store.save_card(&sha, &a_card(8_192));
+        assert!(store.cards_path().is_dir());
+        assert!(store.stored_card(&sha).is_none());
+        // A link to a real file is not followed either (a fresh folder: nothing is removed here).
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let target = store.cards_path().with_extension("target");
+        fs::write(
+            &target,
+            crate::model_limits::card_file_bytes(&[crate::model_limits::StoredCard {
+                sha256: sha.clone(),
+                helper_build: crate::model_limits::helper_build(),
+                card: a_card(8_192),
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&target, store.cards_path()).unwrap();
+        assert!(store.stored_card(&sha).is_none());
+    }
+
+    #[test]
+    fn writers_of_the_cards_file_do_not_lose_each_others_cards() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let store = Arc::new(store);
+        let threads: Vec<_> = (0..8)
+            .map(|n| {
+                let store = Arc::clone(&store);
+                std::thread::spawn(move || {
+                    for round in 0..5 {
+                        store.save_card(&format!("{:064x}", n * 10 + round), &a_card(8_192));
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        // 40 distinct models, all kept up to the limit of 32 (the newest), none lost to a race.
+        assert_eq!(
+            store.saved_cards().len(),
+            crate::model_limits::MAX_STORED_CARDS
+        );
+    }
+
+    #[test]
+    fn a_save_that_cannot_be_written_is_ignored_and_remove_forgets_the_models_cards() {
+        // No parent folder to write in: nothing happens, nothing panics.
+        let store = Store::new(
+            PathBuf::from("/nonexistent-dir-for-test/a/models"),
+            fake(1 << 20).1,
+        );
+        store.save_card(&"ab".repeat(32), &a_card(8_192));
+        assert!(store.stored_card(&"ab".repeat(32)).is_none());
+        // Removing a model forgets its cards (and only its own).
+        let (temp, bytes, store) = setup(1 << 20);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        let sha = store.catalog[0].sha256;
+        store.save_card(sha, &a_card(8_192));
+        store.save_card(&"cd".repeat(32), &a_card(4_096));
+        store.remove(None).unwrap();
+        assert!(store.stored_card(sha).is_none());
+        assert_eq!(store.stored_card(&"cd".repeat(32)), Some(a_card(4_096)));
     }
 
     #[test]
