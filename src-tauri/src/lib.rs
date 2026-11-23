@@ -1290,6 +1290,10 @@ struct PendingPicks {
     /// document's save to take: gone once saved, at lock, and when the
     /// document is hidden.
     ai_answers: KeptAnswers,
+    /// The text of pages the reader was shown (#240), so an explanation kept for a document can
+    /// only be of a sentence that document's pages gave: gone at lock and when the document is
+    /// hidden.
+    shown_pages: ShownPages,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1329,6 +1333,84 @@ impl TextTicket {
     /// not), covers only part of the document.
     fn partial(&self, last_page: u32, last_page_cut: bool) -> bool {
         self.truncated || last_page_cut || self.last_index.is_some_and(|last| last_page < last)
+    }
+}
+
+/// The text of the pages `vault_view_page` showed, as native read it from the document (#240):
+/// what a sentence given to `ai_explain` for a document is checked against. Whitespace is
+/// collapsed on both sides, since the page's line breaks and spacing are not the reader's.
+/// A page shown again replaces its earlier entry; the oldest go past the caps below, and every
+/// entry is bound to the session it was shown in.
+#[derive(Default)]
+struct ShownPages(Mutex<Vec<ShownPage>>);
+
+struct ShownPage {
+    session: u64,
+    record_id: Uuid,
+    page: u32,
+    /// The page's text and its readable text, each with whitespace collapsed.
+    texts: [String; 2],
+}
+
+/// Pages kept at most, and characters across them: well above the six pages the reader itself
+/// keeps drawn, so a page it shows again from its own cache is still known here.
+const MAX_SHOWN_PAGES: usize = 32;
+const MAX_SHOWN_CHARS: usize = 8 * 1024 * 1024;
+
+/// `text` with every run of whitespace as one space and none at either end.
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+impl ShownPages {
+    fn list(&self) -> std::sync::MutexGuard<'_, Vec<ShownPage>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn note(&self, session: u64, record_id: Uuid, page: u32, text: &str, readable_text: &str) {
+        let texts = [
+            collapse_whitespace(text),
+            collapse_whitespace(readable_text),
+        ];
+        let mut list = self.list();
+        // Nothing from an earlier session stays, and a page shown again replaces itself.
+        list.retain(|held| {
+            held.session == session && !(held.record_id == record_id && held.page == page)
+        });
+        list.push(ShownPage {
+            session,
+            record_id,
+            page,
+            texts,
+        });
+        let size = |held: &ShownPage| held.texts[0].len() + held.texts[1].len();
+        while list.len() > MAX_SHOWN_PAGES
+            || (list.len() > 1 && list.iter().map(size).sum::<usize>() > MAX_SHOWN_CHARS)
+        {
+            list.remove(0);
+        }
+    }
+
+    /// Whether `context` (whitespace aside) is inside a page shown for `record_id` in `session`.
+    /// An empty context says nothing about the document, so it passes.
+    fn shows(&self, session: u64, record_id: Uuid, context: &str) -> bool {
+        let wanted = collapse_whitespace(context);
+        wanted.is_empty()
+            || self.list().iter().any(|held| {
+                held.session == session
+                    && held.record_id == record_id
+                    && held.texts.iter().any(|text| text.contains(&wanted))
+            })
+    }
+
+    fn forget_record(&self, record_id: Uuid) {
+        self.list().retain(|held| held.record_id != record_id);
+    }
+
+    fn clear(&self) {
+        self.list().clear();
     }
 }
 
@@ -1545,8 +1627,20 @@ impl PendingPicks {
         self.ai_answers.forget(kept_id);
     }
 
+    /// The reader was shown this page of `record_id` in `session` (#240).
+    fn note_shown_page(&self, session: u64, record_id: Uuid, page: u32, shown: &ViewedPage) {
+        self.shown_pages
+            .note(session, record_id, page, &shown.text, &shown.readable_text);
+    }
+
+    /// Whether `context` is from pages shown for `record_id` in `session` (#240).
+    fn context_was_shown(&self, session: u64, record_id: Uuid, context: &str) -> bool {
+        self.shown_pages.shows(session, record_id, context)
+    }
+
     /// The document was hidden: its tickets end, and its kept answers.
     fn forget_texts_for(&self, record_id: Uuid) {
+        self.shown_pages.forget_record(record_id);
         self.ai_answers.forget_record(record_id);
         self.texts.retain(|held| held.record_id != record_id);
     }
@@ -1647,6 +1741,7 @@ impl PendingPicks {
         self.texts.clear();
         self.text_exports.clear();
         self.ai_answers.clear();
+        self.shown_pages.clear();
     }
 }
 
@@ -2283,7 +2378,8 @@ async fn ai_summarize(
 }
 
 /// What a term means in its sentence, from the model on this computer (#72). With the
-/// document, which must be a readable PDF, the answer is also kept for that document's save.
+/// document, which must be a readable PDF, the answer is also kept for that document's save,
+/// and its sentence must then be from the pages the reader was shown for that document (#240).
 #[tauri::command]
 async fn ai_explain(
     app: tauri::AppHandle,
@@ -2299,6 +2395,12 @@ async fn ai_explain(
     let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
+        // The sentence an explanation is kept with must be from this document's own pages, as
+        // native showed them to the reader (#240): the model's words are never filed on a
+        // document under a sentence it does not contain.
+        if !picks.context_was_shown(session, record_id, &request.context) {
+            return Err(VaultError::Invalid.into());
+        }
         // Validation may outlive its originating session. It must not count
         // as unowned activity in whichever session is open when it returns.
         let store = Arc::clone(store.inner());
@@ -4412,6 +4514,7 @@ impl ViewedPage {
 #[tauri::command]
 async fn vault_view_page(
     store: State<'_, Arc<VaultStore>>,
+    picks: State<'_, Arc<PendingPicks>>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
     use pdf_unlock::Refusal;
@@ -4428,6 +4531,7 @@ async fn vault_view_page(
     drop(request);
     // Taken now: a newer page request, a lock or the reader closing stops this one.
     let ticket = pdf_view::ViewTicket::new();
+    let session = picks.session();
     let result = run_blocking(store.inner(), move |store| {
         let size = store
             .snapshot()?
@@ -4466,6 +4570,11 @@ async fn vault_view_page(
     // A lock can also happen after the blocking task finishes, before this command resumes.
     if !ticket.is_current() {
         return Err(VaultError::Cancelled.into());
+    }
+    // What the reader is shown is what an explanation's sentence is checked against (#240), in
+    // the session it was shown in: a lock since makes `session` a stale one.
+    if let Ok(shown) = &result {
+        picks.note_shown_page(session, record_id, page, shown);
     }
     result
 }
@@ -8512,6 +8621,94 @@ mod photo_command_tests {
                 "photo_body"
             );
         }
+    }
+
+    #[test]
+    fn an_explained_sentence_must_be_from_pages_shown_for_that_document() {
+        let shown = ShownPages::default();
+        let (here, other, session) = (Uuid::from_u128(1), Uuid::from_u128(2), 7);
+        shown.note(
+            session,
+            here,
+            0,
+            "FAKE Patient\n  has a   fake\tcondition. Next sentence.",
+            "FAKE Patient has a fake condition. Next sentence.",
+        );
+        // As the reader cuts it from the page, with the page's own line breaks and spacing.
+        assert!(shown.shows(session, here, "has a fake condition."));
+        assert!(shown.shows(session, here, "FAKE Patient\nhas a   fake condition."));
+        assert!(shown.shows(session, here, "  Next sentence.  "));
+        // Nothing to mislead with: an empty sentence.
+        assert!(shown.shows(session, here, ""));
+        assert!(shown.shows(session, here, " \n "));
+        // Words the pages never held, a sentence that only looks like theirs, another
+        // document's pages, and another session's.
+        assert!(!shown.shows(session, here, "has a different condition."));
+        assert!(!shown.shows(session, here, "fake condition. Another sentence."));
+        assert!(!shown.shows(
+            session,
+            here,
+            "has a fake condition. Next sentence. And more."
+        ));
+        assert!(!shown.shows(session, other, "has a fake condition."));
+        assert!(!shown.shows(session + 1, here, "has a fake condition."));
+        // The text is checked as it is: case matters, and so does a word's spelling.
+        assert!(!shown.shows(session, here, "HAS A FAKE CONDITION."));
+        // A page shown again replaces itself; another session's pages go on a new note.
+        shown.note(session, here, 0, "FAKE changed page.", "FAKE changed page.");
+        assert!(!shown.shows(session, here, "has a fake condition."));
+        assert!(shown.shows(session, here, "FAKE changed page."));
+        shown.note(
+            session + 1,
+            here,
+            1,
+            "FAKE next session.",
+            "FAKE next session.",
+        );
+        assert!(!shown.shows(session, here, "FAKE changed page."));
+        assert!(shown.shows(session + 1, here, "FAKE next session."));
+        // A document hidden, and a lock, forget what was shown.
+        shown.forget_record(here);
+        assert!(!shown.shows(session + 1, here, "FAKE next session."));
+        shown.note(session + 1, here, 1, "FAKE again.", "FAKE again.");
+        shown.clear();
+        assert!(!shown.shows(session + 1, here, "FAKE again."));
+    }
+
+    #[test]
+    fn the_pages_shown_are_bounded_and_the_oldest_go_first() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(3);
+        for page in 0..(MAX_SHOWN_PAGES as u32 + 5) {
+            let text = format!("FAKE page number {page}.");
+            shown.note(1, record, page, &text, &text);
+        }
+        assert_eq!(shown.list().len(), MAX_SHOWN_PAGES);
+        assert!(!shown.shows(1, record, "FAKE page number 0."));
+        assert!(shown.shows(1, record, "FAKE page number 36."));
+        // Size is bounded too, and the page just shown always stays.
+        let big = "x".repeat(MAX_SHOWN_CHARS);
+        shown.note(1, record, 99, &big, "");
+        assert_eq!(shown.list().len(), 1);
+        assert!(shown.shows(1, record, "xxxx"));
+    }
+
+    #[test]
+    fn explaining_for_a_document_checks_its_sentence_against_the_pages_shown_first() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        // Before the model is asked anything, and before anything is kept.
+        let explain = body("async fn ai_explain(");
+        let checked = explain.find("context_was_shown(").unwrap();
+        assert!(checked < explain.find("run_ai(").unwrap());
+        assert!(explain.contains("&request.context"));
+        // What the reader is shown is noted only from a page native really drew.
+        let view = body("async fn vault_view_page(");
+        assert!(view.contains("note_shown_page("));
+        assert!(view.find("note_shown_page(").unwrap() > view.find("ticket.is_current()").unwrap());
     }
 
     #[test]
