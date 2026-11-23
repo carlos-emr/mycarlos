@@ -1869,11 +1869,13 @@ portal-removeLink = Supprimer ce lien
 
 portal-removeTitle = Supprimer ce lien ?
 
-portal-removeBody = { $clinic }, appareil « { $device } ». Cet appareil n’est plus lié sur cet ordinateur et ses clés enregistrées sont effacées. Votre clinique peut encore afficher cet appareil.
+portal-removeBody = { $clinic }, appareil « { $device } ». Cet appareil n’est plus lié ici et ses clés enregistrées sont effacées de cet appareil. Les sauvegardes antérieures de votre coffre conservent ces clés jusqu’à leur remplacement. Votre clinique peut encore afficher cet appareil.
 
 portal-removeConfirm = Supprimer le lien
 
 portal-removeKept = Des documents de cette clinique sont enregistrés dans votre coffre : ce lien est donc conservé.
+
+portal-removeNotices = Les avis de documents sont activés pour cette clinique. Désactivez-les d’abord, puis supprimez le lien.
 
 portal-removed = Lien supprimé.
 

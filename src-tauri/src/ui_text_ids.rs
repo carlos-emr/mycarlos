@@ -847,6 +847,7 @@ pub enum MessageId {
     PortalRemoveConfirm,
     PortalRemoveKept,
     PortalRemoveLink,
+    PortalRemoveNotices,
     PortalRemoveTitle,
     PortalRemoved,
     PortalRequestApproval,
@@ -1909,6 +1910,7 @@ impl MessageId {
         Self::PortalRemoveConfirm,
         Self::PortalRemoveKept,
         Self::PortalRemoveLink,
+        Self::PortalRemoveNotices,
         Self::PortalRemoveTitle,
         Self::PortalRemoved,
         Self::PortalRequestApproval,
@@ -3251,6 +3253,7 @@ impl MessageId {
             Self::PortalRemoveConfirm => "portal-removeConfirm",
             Self::PortalRemoveKept => "portal-removeKept",
             Self::PortalRemoveLink => "portal-removeLink",
+            Self::PortalRemoveNotices => "portal-removeNotices",
             Self::PortalRemoveTitle => "portal-removeTitle",
             Self::PortalRemoved => "portal-removed",
             Self::PortalRequestApproval => "portal-requestApproval",
@@ -4565,6 +4568,7 @@ impl MessageId {
             "portal.removeBody" => Some(Self::PortalRemoveBody),
             "portal.removeConfirm" => Some(Self::PortalRemoveConfirm),
             "portal.removeKept" => Some(Self::PortalRemoveKept),
+            "portal.removeNotices" => Some(Self::PortalRemoveNotices),
             "portal.removed" => Some(Self::PortalRemoved),
             "interface.history.damagedStorageOnly" => {
                 Some(Self::InterfaceHistoryDamagedStorageOnly)

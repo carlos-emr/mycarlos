@@ -1869,11 +1869,13 @@ portal-removeLink = Remover este vínculo
 
 portal-removeTitle = Remover este vínculo?
 
-portal-removeBody = { $clinic }, dispositivo “{ $device }”. Este dispositivo deixa de estar vinculado neste computador e suas chaves salvas são apagadas. A clínica ainda pode listar este dispositivo.
+portal-removeBody = { $clinic }, dispositivo “{ $device }”. Este dispositivo deixa de estar vinculado aqui e suas chaves salvas são apagadas deste dispositivo. Backups anteriores do seu cofre mantêm essas chaves até serem substituídos. A clínica ainda pode listar este dispositivo.
 
 portal-removeConfirm = Remover vínculo
 
 portal-removeKept = Os documentos desta clínica estão salvos no seu cofre, então este vínculo permanece.
+
+portal-removeNotices = Os avisos de documentos estão ativados para esta clínica. Desative-os primeiro e depois remova o vínculo.
 
 portal-removed = Vínculo removido.
 

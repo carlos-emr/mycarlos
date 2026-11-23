@@ -831,6 +831,7 @@ export const MESSAGE_KEYS = [
   "portal.removeBody",
   "portal.removeConfirm",
   "portal.removeKept",
+  "portal.removeNotices",
   "portal.removed",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
@@ -2029,6 +2030,7 @@ const FLUENT_IDS_BY_KEY = {
   "portal.removeBody": "portal-removeBody",
   "portal.removeConfirm": "portal-removeConfirm",
   "portal.removeKept": "portal-removeKept",
+  "portal.removeNotices": "portal-removeNotices",
   "portal.removed": "portal-removed",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
@@ -3241,6 +3243,7 @@ export interface MessageArgsByKey {
   "portal.removeBody": { clinic: FluentArgument; device: FluentArgument };
   "portal.removeConfirm": undefined;
   "portal.removeKept": undefined;
+  "portal.removeNotices": undefined;
   "portal.removed": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;

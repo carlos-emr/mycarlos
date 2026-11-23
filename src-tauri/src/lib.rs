@@ -2791,7 +2791,7 @@ fn after_open(store: &Arc<VaultStore>) {
     tauri::async_runtime::spawn_blocking(move || {
         // Notice keys of any other vault go (#230).
         if let Some(vault_id) = store.open_vault_id() {
-            notice_key::after_open(vault_id);
+            notice_key::after_open(vault_id, &store.linked_ids());
         }
         store.after_open();
     });

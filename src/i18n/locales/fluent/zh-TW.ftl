@@ -1681,11 +1681,13 @@ portal-removeLink = 移除此連結
 
 portal-removeTitle = 要移除此連結嗎？
 
-portal-removeBody = { $clinic }，裝置「{ $device }」。此裝置將不再於這部電腦上連結，其已儲存的裝置金鑰也會被清除。診所仍可能列出此裝置。
+portal-removeBody = { $clinic }，裝置「{ $device }」。此裝置將不再在此處連結，其已儲存的裝置金鑰也會從此裝置清除。您保險庫的先前備份仍保留這些金鑰，直到被取代。診所仍可能列出此裝置。
 
 portal-removeConfirm = 移除連結
 
 portal-removeKept = 此診所的文件已儲存在您的保管庫中，因此保留此連結。
+
+portal-removeNotices = 已為這間診所開啟文件通知。請先關閉，再移除連結。
 
 portal-removed = 連結已移除。
 

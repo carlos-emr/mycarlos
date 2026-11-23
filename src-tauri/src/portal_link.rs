@@ -260,6 +260,9 @@ pub struct LinkSummary {
     /// A document or reading aid from this clinic is filed in the vault. Its custody proof needs
     /// this link's private keys, so such a link cannot be removed (#160). The snapshot adds it.
     pub has_documents: bool,
+    /// Document notices are on for this clinic (a push destination is enrolled, or its revocation
+    /// is queued): the link cannot be removed until they are turned off (#160). The snapshot adds it.
+    pub notices_enrolled: bool,
 }
 
 impl StoredLink {
@@ -357,6 +360,7 @@ impl StoredLink {
             approval_code_locked: false,
             refused_deliveries: 0,
             has_documents: false,
+            notices_enrolled: false,
             device_key_id: self.keys.device_key_id(),
             device_fingerprint: hex(&B64
                 .decode(self.keys.device_key_id())

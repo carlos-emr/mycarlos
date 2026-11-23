@@ -1833,11 +1833,13 @@ portal-removeLink = Remove this link
 
 portal-removeTitle = Remove this link?
 
-portal-removeBody = { $clinic }, device “{ $device }”. This device stops being linked on this computer, and its saved device keys are erased. Your clinic may still list this device.
+portal-removeBody = { $clinic }, device “{ $device }”. This device stops being linked here, and its saved device keys are erased from this device. Earlier backups of your vault still hold those keys until they are replaced. Your clinic may still list this device.
 
 portal-removeConfirm = Remove link
 
 portal-removeKept = Documents from this clinic are saved in your vault, so this link stays.
+
+portal-removeNotices = Document notices are on for this clinic. Turn them off first, then remove the link.
 
 portal-removed = Link removed.
 

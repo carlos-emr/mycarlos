@@ -1955,6 +1955,10 @@ impl VaultStore {
                     let mut summary = self.link_summary(link);
                     summary.refused_deliveries =
                         refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary.notices_enrolled = unlocked
+                        .manifest
+                        .remote_notices
+                        .has_destination_for(link.id);
                     summary.has_documents = unlocked.manifest.records.iter().any(|record| {
                         record
                             .delivery
@@ -2127,6 +2131,18 @@ impl VaultStore {
         if cancelled() {
             return Err(VaultError::Portal(LinkError::Cancelled));
         }
+        {
+            // Already gone is not a write: look under the session lock and return early, as
+            // `forget_refusals` does, so a double click makes no commit and no history entry.
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if open.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+            if !open.manifest.portal_links.iter().any(|l| l.id == link_id) {
+                return Ok(());
+            }
+        }
         let removed = self.mutate_recorded(|manifest, entries| {
             if cancelled() {
                 return Err(VaultError::Portal(LinkError::Cancelled));
@@ -2147,6 +2163,12 @@ impl VaultStore {
             if has_custody {
                 return Err(VaultError::Invalid);
             }
+            // A push destination or a queued revocation means the portal still holds a
+            // subscription for this device: removing the link would strand it. Refused until the
+            // patient turns notices off and the revocation has gone out.
+            if manifest.remote_notices.has_destination_for(link_id) {
+                return Err(VaultError::Invalid);
+            }
             let link = manifest.portal_links.remove(index);
             manifest.refused_deliveries.retain(|r| r.link_id != link_id);
             manifest.waiting_aids.retain(|a| a.link_id != link_id);
@@ -2164,6 +2186,9 @@ impl VaultStore {
         if removed {
             // After the commit: the vault is the source of truth, and this state only caches it.
             self.forget_link_state(link_id);
+            // The link's notice key goes too; a crash before this is covered by the sweep when
+            // the vault is next opened (`notice_key::after_open`).
+            crate::notice_key::after_link_removed(link_id);
         }
         Ok(())
     }
@@ -8201,6 +8226,14 @@ impl VaultStore {
     /// The open vault's id, for what is kept outside it (#230's notice keys).
     pub(crate) fn open_vault_id(&self) -> Option<Uuid> {
         self.session().as_ref().map(|open| open.manifest.vault_id)
+    }
+
+    /// The ids of the clinic links in the open vault (none when locked).
+    pub(crate) fn linked_ids(&self) -> HashSet<Uuid> {
+        self.session()
+            .as_ref()
+            .map(|open| open.manifest.portal_links.iter().map(|l| l.id).collect())
+            .unwrap_or_default()
     }
 }
 

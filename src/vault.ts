@@ -153,6 +153,8 @@ export interface PortalLinkSummary {
   /** A document or reading aid from this clinic is saved in the vault: its custody
    * proof needs this link's keys, so the link cannot be removed (#160). */
   hasDocuments?: boolean;
+  /** Document notices are on for this clinic: the link cannot be removed until they are off (#160). */
+  noticesEnrolled?: boolean;
   approvalRequestLimitReached?: boolean;
   /** The clinic asked for the code it emailed (#141): the request that
    * approved this device, when one did, else the current one. */

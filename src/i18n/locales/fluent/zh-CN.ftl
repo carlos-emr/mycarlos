@@ -1681,11 +1681,13 @@ portal-removeLink = 移除此关联
 
 portal-removeTitle = 要移除此关联吗？
 
-portal-removeBody = { $clinic }，设备“{ $device }”。此设备将不再在这台电脑上关联，其已保存的设备密钥也会被清除。诊所仍可能列出此设备。
+portal-removeBody = { $clinic }，设备“{ $device }”。此设备将不再在此处关联，其已保存的设备密钥也会从此设备清除。您保险库的早期备份仍保留这些密钥，直到被替换。诊所仍可能列出此设备。
 
 portal-removeConfirm = 移除关联
 
 portal-removeKept = 此诊所的文档已保存在您的保管库中，因此保留此关联。
+
+portal-removeNotices = 已为这家诊所开启文件通知。请先关闭，再移除关联。
 
 portal-removed = 关联已移除。
 

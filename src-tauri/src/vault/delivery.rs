@@ -7834,6 +7834,46 @@ mod approval_recovery_tests {
         assert!(snapshot_link(&store, other.id).is_some());
         assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 1);
     }
+    /// #160 review: a link with a push destination enrolled (or a revocation queued) is not
+    /// removed: the portal still holds a subscription for the device. Already gone is not a write.
+    #[test]
+    fn should_refuse_removing_a_link_with_notices_on_and_not_write_when_it_is_already_gone() {
+        use crate::document_notifications::{Owner, Permission, Platform, Policy};
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        store
+            .mutate_recorded(|m, _| {
+                let mut policy = Policy::new(m.remote_notices.clone()).unwrap();
+                policy.permission_changed(Permission::Granted);
+                policy.opt_in();
+                let owner = Owner::new(link.id, link.keys.device_key_id()).unwrap();
+                policy
+                    .reserve_destination(owner, Uuid::new_v4(), Platform::WindowsWns)
+                    .unwrap();
+                m.remote_notices = policy.saved().clone();
+                Ok(())
+            })
+            .unwrap();
+        let shown = store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .into_iter()
+            .find(|l| l.id == link.id)
+            .unwrap();
+        assert!(shown.notices_enrolled && !shown.has_documents);
+        let session = store.portal_link_ticket();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store.linked_ids().contains(&link.id));
+        // A link that is not there is not a write: no commit and no history entry.
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.remove_portal_link(Uuid::new_v4(), session).unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+    }
     /// #160: a link with a filed document keeps its keys (its custody proof is checked with them at
     /// every unlock), so removing it is refused and nothing changes.
     #[test]

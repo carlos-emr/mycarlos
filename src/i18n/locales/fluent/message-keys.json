@@ -830,6 +830,7 @@
   "portal.removeBody",
   "portal.removeConfirm",
   "portal.removeKept",
+  "portal.removeNotices",
   "portal.removed",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",

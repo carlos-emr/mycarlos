@@ -1909,11 +1909,13 @@ portal-removeLink = Usuń to powiązanie
 
 portal-removeTitle = Usunąć to powiązanie?
 
-portal-removeBody = { $clinic }, urządzenie „{ $device }”. To urządzenie przestaje być powiązane na tym komputerze, a jego zapisane klucze zostają usunięte. Przychodnia może nadal wyświetlać to urządzenie.
+portal-removeBody = { $clinic }, urządzenie „{ $device }”. To urządzenie przestaje być tu powiązane, a jego zapisane klucze zostają usunięte z tego urządzenia. Wcześniejsze kopie zapasowe sejfu zachowują te klucze, dopóki nie zostaną zastąpione. Przychodnia może nadal wyświetlać to urządzenie.
 
 portal-removeConfirm = Usuń powiązanie
 
 portal-removeKept = Dokumenty z tej przychodni są zapisane w Twoim sejfie, więc to powiązanie pozostaje.
+
+portal-removeNotices = Powiadomienia o dokumentach są włączone dla tej przychodni. Najpierw je wyłącz, potem usuń powiązanie.
 
 portal-removed = Powiązanie usunięte.
 

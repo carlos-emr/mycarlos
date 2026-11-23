@@ -593,9 +593,22 @@ export function PortalDocuments({
     setRemoving(null);
     const ids = [...workingLinks, ...earlierLinks].map((l) => l.id);
     const at = ids.indexOf(link.id);
-    setFocusAfterRemove(ids[at + 1] ?? ids[at - 1] ?? "");
+    const next = ids[at + 1] ?? ids[at - 1] ?? "";
     void run(async () => {
-      await bridge.removePortalLink!(link.id);
+      try {
+        await bridge.removePortalLink!(link.id);
+      } catch (error) {
+        // The vault refused: documents from this clinic are saved, or notices are on. Nothing
+        // changed, so focus stays where it is, and the card says why.
+        if (hasVaultErrorCode(error, "invalid")) {
+          setStatusLine({ text: message("portal.removeKept") });
+          await refresh();
+          return;
+        }
+        throw error;
+      }
+      // Only a removal that happened moves focus to a card that is still there.
+      setFocusAfterRemove(next);
       await refresh();
       setStatusLine({ text: message("portal.removed") });
     });
@@ -1044,8 +1057,11 @@ export function PortalDocuments({
           bridge.removePortalLink &&
           (link.hasDocuments ? (
             <p className="portal-remove-kept">{t("portal.removeKept")}</p>
+          ) : link.noticesEnrolled ? (
+            <p className="portal-remove-kept">{t("portal.removeNotices")}</p>
           ) : (
             <button
+              id={`portal-remove-${link.id}`}
               className="button"
               type="button"
               aria-describedby={whose}
@@ -1191,9 +1207,12 @@ export function PortalDocuments({
           onCancel={() => {
             const id = removing.id;
             setRemoving(null);
-            // The dialog's opener is still there: focus goes back to it.
+            // The dialog's opener is still there: focus goes back to the button that opened it.
             requestAnimationFrame(() =>
-              document.getElementById(`portal-link-title-${id}`)?.focus(),
+              (
+                document.getElementById(`portal-remove-${id}`) ??
+                document.getElementById(`portal-link-title-${id}`)
+              )?.focus(),
             );
           }}
           onConfirm={() => remove(removing)}

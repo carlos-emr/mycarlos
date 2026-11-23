@@ -2792,15 +2792,44 @@ describe("Remove this link (#160)", () => {
     );
   });
 
-  it("Cancel removes nothing and returns focus to the card", async () => {
+  it("Cancel removes nothing and returns focus to the Remove button", async () => {
     const user = userEvent.setup();
     const { bridge } = fixture();
     await user.click(screen.getByRole("button", { name: "Remove this link" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(bridge.removePortalLink).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(document.activeElement?.id).toBe("portal-link-title-fake-link"),
+      expect(document.activeElement?.id).toBe("portal-remove-fake-link"),
     );
+  });
+
+  it("says why when the vault refuses, and does not move focus", async () => {
+    const user = userEvent.setup();
+    const { bridge } = fixture();
+    (bridge.removePortalLink as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: "invalid",
+    });
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    await user.click(screen.getByRole("button", { name: "Remove link" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain(
+        "Documents from this clinic are saved in your vault",
+      ),
+    );
+    expect(document.activeElement?.id).not.toBe("portal-link-title-fake-link");
+  });
+
+  it("offers no removal while notices are on for the clinic, and says so", () => {
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [{ ...link, noticesEnrolled: true }],
+      },
+    });
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+    expect(screen.getByText(/Document notices are on/)).toBeVisible();
   });
 
   it("offers no removal for a clinic whose documents are saved, and says why", () => {
