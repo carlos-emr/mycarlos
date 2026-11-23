@@ -2564,6 +2564,39 @@ describe("durable vault UI", () => {
     expect(bridge.acceptReceived).toHaveBeenCalledTimes(2);
   });
 
+  it("names a shared file that could no longer be opened and still adds the others (#61)", async () => {
+    const user = userEvent.setup();
+    const { bridge, arrive } = sharedVault(["Jamie"], ["FAKE_Letter.pdf"]);
+    // Native forgets a file that was moved or deleted while the vault was locked, and names it.
+    const accept = vi.mocked(bridge.acceptReceived);
+    const normal = accept.getMockImplementation()!;
+    accept.mockImplementation(async () => ({
+      ...(await normal()),
+      unreadable: ["FAKE_Gone.pdf"],
+    }));
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    await screen.findByRole("button", {
+      name: humanText("Shared with me, 1 new"),
+    });
+    arrive("FAKE_Scan.pdf");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(
+      await screen.findByText(
+        humanText(
+          "FAKE_Gone.pdf could not be opened (it may have been moved or deleted), so myCarlos did not add it.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole("button", {
+        name: humanText("Shared with me, 2 new"),
+      }),
+    ).toBeVisible();
+  });
+
   it("shows in Shared with me why nothing can be moved while changes are paused (#61)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(["Jamie"], [], {

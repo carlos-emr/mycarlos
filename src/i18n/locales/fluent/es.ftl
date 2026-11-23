@@ -301,6 +301,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = Se movió { $name } a { $where }.
 
 interface-notice-notPdf = { $name } no es un documento PDF, por lo que myCarlos no lo añadió. Por ahora solo se pueden compartir documentos PDF con myCarlos.
+interface-notice-receivedNotOpened = No se pudo abrir { $name } (puede que se haya movido o eliminado), así que myCarlos no lo añadió.
 
 interface-notice-pdfUnlocked = Se añadió una copia desbloqueada. El original bloqueado ahora se llama { $name }.
 

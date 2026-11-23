@@ -4280,6 +4280,31 @@ struct ReceivedAcceptOutcome {
     skipped_duplicates: Vec<String>,
     /// Files that are not PDF documents: not added, and forgotten.
     not_pdf: Vec<String>,
+    /// Files that could not be opened when the vault was open (moved, renamed or deleted while it
+    /// was locked, or not a regular file): not added, and forgotten, so one gone file never holds
+    /// back the others.
+    unreadable: Vec<String>,
+}
+
+/// How opening one received file went, for the batch.
+enum ReceivedOpen {
+    Source(ImportSource),
+    NotPdf,
+    Unreadable,
+}
+
+/// Sorts the opening of one received file: a file that is not a PDF, or that is gone or not a
+/// regular file, is a problem with that file alone (it is named and forgotten); anything else
+/// (the vault, the storage) fails the batch and every file keeps waiting.
+fn sort_received_open(
+    opened: Result<ImportSource, VaultError>,
+) -> Result<ReceivedOpen, VaultError> {
+    match opened {
+        Ok(source) => Ok(ReceivedOpen::Source(source)),
+        Err(VaultError::NotPdf) => Ok(ReceivedOpen::NotPdf),
+        Err(VaultError::NotFound | VaultError::Invalid) => Ok(ReceivedOpen::Unreadable),
+        Err(error) => Err(error),
+    }
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
@@ -4295,8 +4320,9 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
-/// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
-/// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
+/// file arrives while the vault is open. A file that is not a PDF, or that can no longer be
+/// opened (moved or deleted while the vault was locked), is not added and is forgotten, and named
+/// in the outcome. When anything else fails, every file keeps waiting for the next ask.
 #[tauri::command]
 async fn received_accept(
     app: tauri::AppHandle,
@@ -4309,6 +4335,7 @@ async fn received_accept(
             imported: Vec::new(),
             skipped_duplicates: Vec::new(),
             not_pdf: Vec::new(),
+            unreadable: Vec::new(),
         });
     }
     let taken = received
@@ -4319,14 +4346,15 @@ async fn received_accept(
         let shared = store.shared_profile()?;
         let mut sources = Vec::with_capacity(files.len());
         let mut not_pdf = Vec::new();
+        let mut unreadable = Vec::new();
         {
             let _opening = Opening::new(store.idle());
             for (_, file) in files {
                 let name = file.name.clone();
-                match open_received_source(&app, file) {
-                    Ok(source) => sources.push(source),
-                    Err(VaultError::NotPdf) => not_pdf.push(name),
-                    Err(error) => return Err(error),
+                match sort_received_open(open_received_source(&app, file))? {
+                    ReceivedOpen::Source(source) => sources.push(source),
+                    ReceivedOpen::NotPdf => not_pdf.push(name),
+                    ReceivedOpen::Unreadable => unreadable.push(name),
                 }
             }
         }
@@ -4335,6 +4363,7 @@ async fn received_accept(
             imported: outcome.imported,
             skipped_duplicates: outcome.skipped_duplicates,
             not_pdf,
+            unreadable,
         })
     })
     .await;
@@ -8511,6 +8540,34 @@ mod photo_command_tests {
                     .code,
                 "photo_body"
             );
+        }
+    }
+
+    #[test]
+    fn one_received_file_that_is_gone_or_not_a_pdf_never_holds_back_the_others() {
+        let source = || ImportSource {
+            display_name: "FAKE.pdf".into(),
+            reader: Box::new(std::io::empty()),
+        };
+        assert!(matches!(
+            sort_received_open(Ok(source())),
+            Ok(ReceivedOpen::Source(_))
+        ));
+        assert!(matches!(
+            sort_received_open(Err(VaultError::NotPdf)),
+            Ok(ReceivedOpen::NotPdf)
+        ));
+        // Moved or deleted while the vault was locked, or no longer a regular file.
+        for gone in [VaultError::NotFound, VaultError::Invalid] {
+            assert!(matches!(
+                sort_received_open(Err(gone)),
+                Ok(ReceivedOpen::Unreadable)
+            ));
+        }
+        // The vault or the storage failing is not the file's fault: the batch fails and every
+        // file keeps waiting.
+        for failure in [VaultError::Storage, VaultError::Locked] {
+            assert!(sort_received_open(Err(failure)).is_err());
         }
     }
 

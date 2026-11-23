@@ -440,6 +440,7 @@ interface-notice-movedMany = 已将 { $count } 份文档移至 { $where }。
 interface-notice-movedNamed = { $name } 已移至 { $where }。
 
 interface-notice-notPdf = { $name } 不是 PDF 文档，因此 myCarlos 未添加该文件。目前只有 PDF 文档可以分享至 myCarlos。
+interface-notice-receivedNotOpened = 无法打开 { $name }（可能已被移动或删除），因此 myCarlos 没有添加它。
 
 interface-notice-pdfUnlocked = 已添加解锁副本。锁定的原始文档现在名称为 { $name }。
 

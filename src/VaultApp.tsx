@@ -1524,11 +1524,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         ...outcome.notPdf.map((name) =>
           translateNow("interface.notice.notPdf", { name }),
         ),
+        ...(outcome.unreadable ?? []).map((name) =>
+          translateNow("interface.notice.receivedNotOpened", { name }),
+        ),
         ...outcome.skippedDuplicates.map((name) =>
           translateNow("interface.notice.alreadyShared", { name }),
         ),
       ];
-      if (outcome.notPdf.length || outcome.skippedDuplicates.length)
+      if (
+        outcome.notPdf.length ||
+        (outcome.unreadable?.length ?? 0) ||
+        outcome.skippedDuplicates.length
+      )
         setSessionNotice(deferredText(() => said().join(" ")));
     } catch {
       // They keep waiting: the next ask tries again.
