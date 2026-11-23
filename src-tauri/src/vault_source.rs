@@ -13,7 +13,6 @@
 //! `current` returns a reference borrowed from the source, so a handle needs no unsafe code and no
 //! lock to hand out a store; a source that can change which store is current keeps every store it has
 //! made for as long as it lives (the single store lives as long as the app does, today).
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -144,23 +143,100 @@ mod tests {
     }
 
     /// Every command takes the store through the handle: a command that still takes
-    /// `State<'_, Arc<VaultStore>>` would keep working only while the device has one vault, so it
-    /// fails the build here. Run `scripts/vault-store-handle-codemod.py` to fix one.
+    /// `State<'_, Arc<VaultStore>>` (or reads it with `app.state::<Arc<VaultStore>>()`) would keep
+    /// working only while the device has one vault, and an app or test that still manages the bare
+    /// `Arc<VaultStore>` would panic at the first command (the extraction acceptance test did). The
+    /// scan covers every source file under `src/`, ignores white space and line breaks, and accepts
+    /// any lifetime name and any path before `Arc` and `VaultStore`. Run
+    /// `scripts/vault-store-handle-codemod.py` to fix a command.
     #[test]
-    fn no_command_takes_the_store_directly() {
-        let source = include_str!("lib.rs");
-        for (number, line) in source.lines().enumerate() {
-            for old in [
-                "State<'_, Arc<VaultStore>>",
-                "State<Arc<VaultStore>>",
-                "state::<Arc<VaultStore>>",
-            ] {
-                assert!(
-                    !line.contains(old),
-                    "lib.rs line {} takes the store directly ({old}): run scripts/vault-store-handle-codemod.py",
-                    number + 1
-                );
+    fn no_source_file_takes_or_manages_the_store_directly() {
+        let mut offences = Vec::new();
+        let mut folders = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(folder) = folders.pop() {
+            for item in std::fs::read_dir(&folder).unwrap() {
+                let path = item.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs")
+                    && path
+                        .file_name()
+                        .is_some_and(|name| name != "vault_source.rs")
+                {
+                    let source = std::fs::read_to_string(&path).unwrap();
+                    if let Some(found) = takes_store_directly(&source) {
+                        offences.push(format!("{}: {found}", path.display()));
+                    }
+                }
             }
         }
+        assert!(
+            offences.is_empty(),
+            "run scripts/vault-store-handle-codemod.py (and wrap a managed store in \
+             StoreHandle::single): {offences:#?}"
+        );
+    }
+
+    #[test]
+    fn the_scan_finds_every_spelling_of_the_old_type_and_leaves_the_new_one_alone() {
+        for old in [
+            "fn f(store: State<'_, Arc<VaultStore>>) {}",
+            "fn f(store: State<'a,Arc<crate::vault::VaultStore>>) {}",
+            "fn f(store: State<\n    '_,\n    std::sync::Arc<vault::VaultStore>,\n>) {}",
+            "fn f(store: State<Arc<VaultStore>>) {}",
+            "let s = app.state::<Arc<VaultStore>>();",
+            "let s = app . state :: < Arc < VaultStore > > ();",
+            "tauri::test::mock_builder().manage(Arc::clone(&store)).build()",
+            "app.manage(Arc::new(VaultStore::new(root)));",
+            "app.manage(\n    Arc::new(crate::vault::VaultStore::new(root)),\n);",
+            "app.manage(store);",
+        ] {
+            assert!(takes_store_directly(old).is_some(), "{old}");
+        }
+        for fine in [
+            "fn f(store: State<'_, StoreHandle>) {}",
+            "fn f(picks: State<'_, Arc<PendingPicks>>) {}",
+            "let s = app.state::<StoreHandle>();",
+            "app.manage(StoreHandle::single(Arc::clone(&store)));",
+            "app.manage(Arc::clone(&picks));",
+            "fn g(store: &Arc<VaultStore>) {}",
+        ] {
+            assert!(takes_store_directly(fine).is_none(), "{fine}");
+        }
+    }
+
+    /// The first spelling of the old type, or of a managed bare store, in `source`.
+    fn takes_store_directly(source: &str) -> Option<String> {
+        // No white space, and no trailing comma in a type argument list (`Arc<..>,>`).
+        let text: String = source
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .replace(",>", ">");
+        for opener in ["State<", "state::<"] {
+            for (at, _) in text.match_indices(opener) {
+                let rest = &text[at + opener.len()..];
+                // The type argument ends at the first `>>`: `Arc<..VaultStore>>`.
+                if let Some(end) = rest.find(">>") {
+                    let argument = &rest[..end];
+                    if argument.contains("Arc<") && argument.ends_with("VaultStore") {
+                        return Some(format!("{opener}{argument}>>"));
+                    }
+                }
+            }
+        }
+        for manage in [
+            ".manage(Arc::clone(&store))",
+            ".manage(store)",
+            "manage(Arc::new(",
+        ] {
+            for (at, _) in text.match_indices(manage) {
+                let rest = &text[at..text.len().min(at + 80)];
+                if manage != "manage(Arc::new(" || rest.contains("VaultStore::new") {
+                    return Some(manage.to_owned());
+                }
+            }
+        }
+        None
     }
 }
