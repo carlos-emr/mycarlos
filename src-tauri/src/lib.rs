@@ -2922,7 +2922,7 @@ async fn vault_create(
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
         forget_vault(throttle.inner()).await;
-        refuse_unlock_closed_meanwhile(store.inner(), &relock, started).await?;
+        refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     }
     created
 }
@@ -7036,7 +7036,7 @@ mod tests {
                 "async fn vault_create(",
                 concat!(
                     "if created.is_ok() { forget_vault(throttle.inner()).await; ",
-                    "refuse_unlock_closed_meanwhile(store.inner(), &relock, started).await?; }",
+                    "refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?; }",
                 ),
             ),
             (
