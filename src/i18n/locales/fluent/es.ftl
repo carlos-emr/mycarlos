@@ -2602,3 +2602,29 @@ portal-arrivedForHiddenNoClinic =
         [one] Llegó un documento y está en Compartido conmigo. La persona a la que corresponde está oculta.
        *[other] Llegaron { $count } documentos y están en Compartido conmigo. Las personas a las que corresponden están ocultas.
     }
+
+fileUnder-button = Archivar en…
+
+fileUnder-title = Archivar { $document } en una persona
+
+fileUnder-fromClinic = De la clínica
+
+fileUnder-words = { $name }, nacimiento { $date }
+
+fileUnder-clinicWords = De la clínica: { $name }, nacimiento { $date }.
+
+fileUnder-rule = myCarlos archiva un documento de una clínica por sí solo únicamente cuando exactamente una persona tiene esta fecha de nacimiento y este nombre completo (o un nombre completo anterior). No se elige nada por usted.
+
+fileUnder-person = Persona
+
+fileUnder-what-both = el nombre completo «{ $name }» y la fecha de nacimiento { $date }
+
+fileUnder-what-name = el nombre completo «{ $name }»
+
+fileUnder-what-date = la fecha de nacimiento { $date }
+
+fileUnder-saveDetails = Guardar también { $what } como datos de { $person }, para que los próximos documentos de esta clínica se archiven en { $person } por sí solos.
+
+fileUnder-confirm = Archivar en { $person }
+
+fileUnder-choose = Elija una persona

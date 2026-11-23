@@ -2602,3 +2602,29 @@ portal-arrivedForHiddenNoClinic =
         [one] Chegou um documento e está em Compartilhados comigo. A pessoa a quem se destina está oculta.
        *[other] Chegaram { $count } documentos e estão em Compartilhados comigo. As pessoas a quem se destinam estão ocultas.
     }
+
+fileUnder-button = Arquivar em…
+
+fileUnder-title = Arquivar { $document } em uma pessoa
+
+fileUnder-fromClinic = Da clínica
+
+fileUnder-words = { $name }, nascimento { $date }
+
+fileUnder-clinicWords = Da clínica: { $name }, nascimento { $date }.
+
+fileUnder-rule = O myCarlos arquiva sozinho um documento de uma clínica apenas quando exatamente uma pessoa tem esta data de nascimento e este nome completo (ou um nome completo anterior). Nada é escolhido por você.
+
+fileUnder-person = Pessoa
+
+fileUnder-what-both = o nome completo “{ $name }” e a data de nascimento { $date }
+
+fileUnder-what-name = o nome completo “{ $name }”
+
+fileUnder-what-date = a data de nascimento { $date }
+
+fileUnder-saveDetails = Salvar também { $what } como dados de { $person }, para que os próximos documentos desta clínica sejam arquivados em { $person } sozinhos.
+
+fileUnder-confirm = Arquivar em { $person }
+
+fileUnder-choose = Escolha uma pessoa

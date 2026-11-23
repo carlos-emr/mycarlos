@@ -2348,3 +2348,29 @@ interface-history-aboutHiddenPeople = 有 { $count } 筆與已隱藏的人有關
 interface-history-how-personHidden = 該人被隱藏期間歸檔到「與我分享」
 
 portal-arrivedForHiddenNoClinic = 有 { $count } 份文件已送達，目前在「與我分享」中。對應的人已被隱藏。
+
+fileUnder-button = 歸檔到…
+
+fileUnder-title = 把 { $document } 歸檔到某人
+
+fileUnder-fromClinic = 來自診所
+
+fileUnder-words = { $name }，出生日期 { $date }
+
+fileUnder-clinicWords = 來自診所：{ $name }，出生日期 { $date }。
+
+fileUnder-rule = 只有當恰好一個人擁有此出生日期和此全名（或曾用全名）時，myCarlos 才會自行歸檔診所文件。不會替您做任何選擇。
+
+fileUnder-person = 人員
+
+fileUnder-what-both = 全名「{ $name }」和出生日期 { $date }
+
+fileUnder-what-name = 全名「{ $name }」
+
+fileUnder-what-date = 出生日期 { $date }
+
+fileUnder-saveDetails = 同時將 { $what } 儲存為 { $person } 的資料，這樣此診所之後的文件會自動歸檔到 { $person }。
+
+fileUnder-confirm = 歸檔到 { $person }
+
+fileUnder-choose = 請選擇一個人

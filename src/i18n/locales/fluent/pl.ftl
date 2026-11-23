@@ -2661,3 +2661,29 @@ portal-arrivedForHiddenNoClinic =
         [few] Dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
        *[other] Dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
     }
+
+fileUnder-button = Przypisz do…
+
+fileUnder-title = Przypisz dokument { $document } do osoby
+
+fileUnder-fromClinic = Od kliniki
+
+fileUnder-words = { $name }, data urodzenia { $date }
+
+fileUnder-clinicWords = Od kliniki: { $name }, data urodzenia { $date }.
+
+fileUnder-rule = myCarlos sam przypisuje dokument z kliniki tylko wtedy, gdy dokładnie jedna osoba ma tę datę urodzenia i to pełne imię i nazwisko (lub dawne). Nic nie jest wybierane za Ciebie.
+
+fileUnder-person = Osoba
+
+fileUnder-what-both = pełne imię i nazwisko „{ $name }” oraz datę urodzenia { $date }
+
+fileUnder-what-name = pełne imię i nazwisko „{ $name }”
+
+fileUnder-what-date = datę urodzenia { $date }
+
+fileUnder-saveDetails = Zapisz także { $what } jako dane osoby { $person }, aby kolejne dokumenty z tej kliniki trafiały do osoby { $person } samodzielnie.
+
+fileUnder-confirm = Przypisz do: { $person }
+
+fileUnder-choose = Wybierz osobę

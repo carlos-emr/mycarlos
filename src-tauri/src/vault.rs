@@ -900,6 +900,12 @@ pub struct VaultRecord {
     pub original_pdf_available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_clinic_name: Option<String>,
+    /// The patient name and birth date the clinic wrote on a clinic document waiting in Shared
+    /// with me (#340), so that the patient sees why it did not file itself. Absent for any other
+    /// document, and absent when they are a hidden person's: Shared with me must not show who
+    /// is hidden.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clinic_patient: Option<ClinicPatient>,
     /// Exact service date from a clinic delivery; an empty string means the
     /// clinic did not record one. This is independent of the date added here.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -962,6 +968,14 @@ pub(crate) const HOW_PERSON_HIDDEN: &str = "personHidden";
 pub struct ArrivedWhileHidden {
     pub record_id: Uuid,
     pub display_name: String,
+}
+
+/// The clinic's own words for the patient of a document (#340): as the signed delivery says them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClinicPatient {
+    pub name: String,
+    pub birth_date: String,
 }
 
 /// A hidden person as Security's Hidden people list shows them (#360).
@@ -2261,6 +2275,29 @@ impl VaultStore {
                             object_is_present(root, record)
                         },
                         hidden: record.hidden,
+                        clinic_patient: record
+                            .delivery
+                            .as_ref()
+                            .filter(|_| {
+                                record.profile_id == shared_profile_id(unlocked.manifest.vault_id)
+                            })
+                            .map(|custody| &custody.manifest.patient)
+                            .filter(|patient| {
+                                // Not a hidden person's words: Shared with me must not show who
+                                // is hidden (#360).
+                                !unlocked.manifest.profiles.iter().any(|profile| {
+                                    profile.hidden.is_some()
+                                        && delivery::matches_patient(
+                                            profile,
+                                            &patient.name,
+                                            &patient.birth_date,
+                                        )
+                                })
+                            })
+                            .map(|patient| ClinicPatient {
+                                name: patient.name.clone(),
+                                birth_date: patient.birth_date.clone(),
+                            }),
                         verified_clinic_name: verified,
                         // A carried aid and service date are shown only once a link of this vault
                         // to the same clinic holds the signing key (design section 7, level 2):

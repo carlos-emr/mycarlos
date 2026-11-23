@@ -1170,6 +1170,19 @@ export const MESSAGE_KEYS = [
   "interface.history.aboutHiddenPeople",
   "interface.history.how.personHidden",
   "portal.arrivedForHiddenNoClinic",
+  "fileUnder.button",
+  "fileUnder.title",
+  "fileUnder.fromClinic",
+  "fileUnder.words",
+  "fileUnder.clinicWords",
+  "fileUnder.rule",
+  "fileUnder.person",
+  "fileUnder.what.both",
+  "fileUnder.what.name",
+  "fileUnder.what.date",
+  "fileUnder.saveDetails",
+  "fileUnder.confirm",
+  "fileUnder.choose",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2543,6 +2556,19 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.aboutHiddenPeople": "interface-history-aboutHiddenPeople",
   "interface.history.how.personHidden": "interface-history-how-personHidden",
   "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
+  "fileUnder.button": "fileUnder-button",
+  "fileUnder.title": "fileUnder-title",
+  "fileUnder.fromClinic": "fileUnder-fromClinic",
+  "fileUnder.words": "fileUnder-words",
+  "fileUnder.clinicWords": "fileUnder-clinicWords",
+  "fileUnder.rule": "fileUnder-rule",
+  "fileUnder.person": "fileUnder-person",
+  "fileUnder.what.both": "fileUnder-what-both",
+  "fileUnder.what.name": "fileUnder-what-name",
+  "fileUnder.what.date": "fileUnder-what-date",
+  "fileUnder.saveDetails": "fileUnder-saveDetails",
+  "fileUnder.confirm": "fileUnder-confirm",
+  "fileUnder.choose": "fileUnder-choose",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3834,6 +3860,19 @@ export interface MessageArgsByKey {
   "interface.history.aboutHiddenPeople": { count: FluentArgument };
   "interface.history.how.personHidden": undefined;
   "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
+  "fileUnder.button": undefined;
+  "fileUnder.title": { document: FluentArgument };
+  "fileUnder.fromClinic": undefined;
+  "fileUnder.words": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.clinicWords": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.rule": undefined;
+  "fileUnder.person": undefined;
+  "fileUnder.what.both": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.what.name": { name: FluentArgument };
+  "fileUnder.what.date": { date: FluentArgument };
+  "fileUnder.saveDetails": { person: FluentArgument; what: FluentArgument };
+  "fileUnder.confirm": { person: FluentArgument };
+  "fileUnder.choose": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

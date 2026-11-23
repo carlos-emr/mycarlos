@@ -43,6 +43,13 @@ export interface VaultFolder {
   createdAtMs: number;
 }
 
+/** The patient name and birth date a clinic wrote on a document (#340), as its signed delivery
+ * says them. */
+export interface ClinicPatient {
+  name: string;
+  birthDate: string;
+}
+
 export interface VaultRecord {
   id: string;
   profileId: string;
@@ -60,6 +67,9 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** What the clinic wrote as the patient, on a clinic document waiting in Shared with me, so
+   * that the patient sees why it did not file itself (#340). Never a hidden person's. */
+  clinicPatient?: ClinicPatient;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
   /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from

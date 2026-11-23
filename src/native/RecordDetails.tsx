@@ -30,6 +30,8 @@ interface RecordDetailsProps {
   /** People and their folders that this document can move to. */
   moveTargets?: MoveTarget[];
   onMoveTo?: (profileId: string, folderId: string | null) => void;
+  /** File a clinic document under a person, with the clinic's words in view (#340). */
+  onFileUnder?: () => void;
   /** Takes the document out of view (#71); it is never deleted. */
   onHide: () => void;
   onExport: () => void;
@@ -61,6 +63,7 @@ export function RecordDetails({
   onMove,
   moveTargets,
   onMoveTo,
+  onFileUnder,
   onHide,
   onExport,
   onRead,
@@ -202,6 +205,17 @@ export function RecordDetails({
               <RecordSource record={record} />
             </dd>
           </div>
+          {record.clinicPatient && (
+            <div>
+              <dt>{translateNow("fileUnder.fromClinic")}</dt>
+              <dd>
+                {translateNow("fileUnder.words", {
+                  name: record.clinicPatient.name,
+                  date: record.clinicPatient.birthDate,
+                })}
+              </dd>
+            </div>
+          )}
           <div>
             <dt>{translateNow("library.column.added")}</dt>
             <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
@@ -328,6 +342,17 @@ export function RecordDetails({
               {translateNow("interface.RecordDetails.move")}
             </button>
           </div>
+          {onFileUnder && (
+            <button
+              className="button"
+              type="button"
+              aria-haspopup="dialog"
+              disabled={busy || readOnly}
+              onClick={onFileUnder}
+            >
+              {translateNow("fileUnder.button")}
+            </button>
+          )}
           <button
             className="button"
             type="button"

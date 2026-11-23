@@ -2602,3 +2602,29 @@ portal-arrivedForHiddenNoClinic =
         [one] Un document est arrivé et se trouve dans Partagés avec moi. La personne concernée est masquée.
        *[other] { $count } documents sont arrivés et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
     }
+
+fileUnder-button = Classer sous…
+
+fileUnder-title = Classer { $document } sous une personne
+
+fileUnder-fromClinic = De la clinique
+
+fileUnder-words = { $name }, né(e) le { $date }
+
+fileUnder-clinicWords = De la clinique : { $name }, né(e) le { $date }.
+
+fileUnder-rule = myCarlos classe un document de clinique tout seul uniquement lorsqu'une seule personne a cette date de naissance et ce nom complet (ou un ancien nom complet). Rien n'est choisi à votre place.
+
+fileUnder-person = Personne
+
+fileUnder-what-both = le nom complet « { $name } » et la date de naissance { $date }
+
+fileUnder-what-name = le nom complet « { $name } »
+
+fileUnder-what-date = la date de naissance { $date }
+
+fileUnder-saveDetails = Enregistrer aussi { $what } comme informations de { $person }, afin que les prochains documents de cette clinique soient classés sous { $person } tout seuls.
+
+fileUnder-confirm = Classer sous { $person }
+
+fileUnder-choose = Choisissez une personne

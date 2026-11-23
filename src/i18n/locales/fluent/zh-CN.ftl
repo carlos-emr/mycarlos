@@ -2348,3 +2348,29 @@ interface-history-aboutHiddenPeople = 有 { $count } 条与已隐藏的人有关
 interface-history-how-personHidden = 该人被隐藏期间归档到“与我分享”
 
 portal-arrivedForHiddenNoClinic = 有 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。
+
+fileUnder-button = 归档到…
+
+fileUnder-title = 把 { $document } 归档到某人
+
+fileUnder-fromClinic = 来自诊所
+
+fileUnder-words = { $name }，出生日期 { $date }
+
+fileUnder-clinicWords = 来自诊所：{ $name }，出生日期 { $date }。
+
+fileUnder-rule = 只有当恰好一个人拥有此出生日期和此全名（或曾用全名）时，myCarlos 才会自行归档诊所文档。不会替您做任何选择。
+
+fileUnder-person = 人员
+
+fileUnder-what-both = 全名“{ $name }”和出生日期 { $date }
+
+fileUnder-what-name = 全名“{ $name }”
+
+fileUnder-what-date = 出生日期 { $date }
+
+fileUnder-saveDetails = 同时将 { $what } 保存为 { $person } 的资料，这样此诊所之后的文档会自动归档到 { $person }。
+
+fileUnder-confirm = 归档到 { $person }
+
+fileUnder-choose = 请选择一个人

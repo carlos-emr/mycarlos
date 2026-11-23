@@ -241,6 +241,9 @@ export interface FakeVaultSetup {
   boxesAbsent?: string;
   /** People (by display name) who are hidden when the vault opens (#360). */
   hiddenPeople?: string[];
+  /** The patient the clinic's first delivery names (#340): the document arrives in Shared
+   * with me carrying these words. */
+  clinicPatient?: { name: string; birthDate: string };
 }
 
 /** The id of the n-th extra person (`people` in the setup), counting from 1. */
@@ -292,6 +295,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        /** What the clinic wrote as the patient, on a document in Shared with me (#340). */
+        clinicPatient?: { name: string; birthDate: string };
         clinicServiceDate?: string;
         readingAid?: {
           deliveryId: string;
@@ -1614,6 +1619,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               importedAtMs: Date.now(),
               available: true,
               verifiedClinicName: setup.clinic,
+              ...(setup.clinicPatient
+                ? { clinicPatient: { ...setup.clinicPatient } }
+                : {}),
               ...(setup.clinicServiceDate !== null
                 ? { clinicServiceDate: setup.clinicServiceDate }
                 : {}),
@@ -2054,6 +2062,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       boxesAbsent: setup.boxesAbsent ?? null,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
+      clinicPatient: setup.clinicPatient ?? null,
       resetPhrase: translate("en", "native.reset.phrase"),
       speedReport: FAKE_SPEED_REPORT,
       messages: Object.fromEntries(
