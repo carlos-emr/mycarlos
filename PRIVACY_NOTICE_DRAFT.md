@@ -1,59 +1,132 @@
 # myCarlos Privacy Notice Draft
 
-**Unpublished English draft for operator and legal review.** This evaluation build is for made-up information only. Do not use real patient information until the required release and privacy approvals are complete. Translations and links from the app must wait for approval of the English notice.
+**Unpublished English draft for the publisher and legal review.** This evaluation build is for made-up information only. Do not use real patient information until the required release and privacy approvals are complete. Translations (the app has seven languages, and French is needed for Quebec) and the in-app link to this notice must wait for approval of the English text.
 
-Effective date: **[TO COMPLETE]**
+How to read the brackets: **[PUBLISHER: …]** is a fact only the publisher can supply. **[CONFIRM: …]** is a statement that depends on what the final release contains and must be checked before publishing. **[LEGAL REVIEW: …]** needs a lawyer. Nothing in brackets is an answer yet.
 
-Software publisher and privacy contact: **[LEGAL NAME, ADDRESS, EMAIL AND PHONE]**
+**Features described here that are still in review and not on `main` yet** (remove or keep each section as the release decides): hidden people and handover packages (#360 stack), removing or stopping a clinic link (#160), the backup reminder (#429), and cloud AI (#72).
 
-Clinic or portal operator, if you connect one: **[NAME AND PRIVACY NOTICE LINK]**
+Version and effective date: **[PUBLISHER: VERSION AND EFFECTIVE DATE]**
+
+Software publisher (the legal entity, its address, email and phone): **[PUBLISHER: LEGAL NAME, ADDRESS, EMAIL AND PHONE]**
+
+Privacy contact, and the person in charge of protecting personal information (Quebec's Law 25 asks for this person's title and contact details to be published): **[PUBLISHER: PRIVACY OFFICER'S TITLE, EMAIL AND PHONE]**
+
+Contact for a suspected security or privacy incident: **[PUBLISHER: INCIDENT CONTACT AND HOW QUICKLY IT IS ANSWERED]**
+
+Clinic or portal operator, if you connect one: **[CLINIC OR PORTAL OPERATOR: NAME AND PRIVACY NOTICE LINK]**
+
+## In short
+
+- myCarlos keeps your health documents in an **encrypted vault on your device**. The publisher has no account system, no server for your documents and no way to read your vault or reset your passphrase.
+- **Nothing leaves your device unless you choose it:** linking a clinic portal, downloading an AI model, saving or sharing a copy, or (only in a build that includes it) sending a prepared text to a cloud AI service with your own key. The tables below say exactly what each one sends.
+- myCarlos has **no advertising, no analytics and no crash-reporting service**.
+- If you lose your passphrase and your recovery key, **nobody can open your vault**. If you lose your device without a **myCarlos encrypted backup**, you lose your vault: the vault is kept out of your device's own backups wherever the platform allows it.
+- Hiding something does not delete it, and the app has no button that deletes a document or its history. The last section says how to remove everything.
+- myCarlos is for adults. It can hold records of other people you care for. It is **not a medical device and gives no medical advice**.
 
 ## Your records on your device
 
-myCarlos is a patient-run local application. You control your device and vault and choose which records to add, which supported connections to use, and where to save copies. This control does not extend to records held by a connected portal, clinic, support provider or another service you choose.
+myCarlos is a patient-run local application. You control your device and vault and choose which records to add, which connections to use, and where to save copies. This control does not extend to records held by a connected portal, clinic, support provider or another service you choose.
 
-myCarlos lets you keep documents and photos in an encrypted vault on your device. The vault can contain document names and contents, folders, information about the people whose records you manage, saved AI answers, clinic links and delivery records. You choose which files to add and which people to keep records for. Make sure you are entitled to manage someone else's information.
+The vault can contain document names and contents, photos, **videos with their sound**, folders, information about the people whose records you manage (names, birth dates, earlier names), saved AI answers, clinic links and their delivery records, and an encrypted history of what was done. You choose which files to add and which people to keep records for. Make sure you are entitled to manage someone else's information.
 
-The app unlocks the vault using your passphrase or recovery key. Keep those secrets private and keep your recovery kit somewhere safe. The publisher does not provide an account password-reset service for your vault. Losing both ways to unlock it can mean losing access to your records.
+The app unlocks the vault with your passphrase or recovery key. Keep those secrets private and keep your recovery kit somewhere safe. The publisher does not provide a password-reset service. Losing both ways to unlock the vault can mean losing access to your records.
 
 Encryption protects stored contents, but it does not conceal everything. Someone with access to the vault files or a backup may still see that a vault exists, file sizes and dates, and some recovery and encryption settings. Information is readable while you use the unlocked app. Device security, screen access and the applications you share files with also matter.
 
-The device keeps some app preferences and recovery-workflow reminders outside the encrypted vault. These can include language, appearance, text size, and details of a backup you selected, such as its file name. On Windows builds where document notices are supported, the device also keeps notice settings and a limited record of notice outcomes outside the encrypted vault. That record uses hashed references to arrivals rather than document titles or contents. **[PUBLISHER TO CONFIRM THE FINAL RELEASE'S DEVICE STORAGE AND OPERATING SYSTEM BACKUP BEHAVIOR.]**
+## What leaves your device
 
-## Connections to a clinic portal
+| When | What is sent, and to whom | Who learns what |
+| --- | --- | --- |
+| Nothing is turned on (the default) | Nothing. | No one. |
+| You link a clinic portal | Public keys made on your device for that one clinic (a fresh pair for each link, never an advertising or hardware identifier), your device's name, requests to check for documents, delivery receipts. | The clinic's portal: your device's public keys and identifiers, the times of the checks, your internet address, and delivery and receipt information. It may keep records after you stop checking or remove a link. |
+| You turn on document notices | A device-made destination number for each linked clinic, and (on platforms that have one) a wake-up token from the system's notice service. [CONFIRM: WHICH PLATFORMS AND SERVICES THIS RELEASE USES. Today Windows has its own notice and no push service is linked.] | The portal learns the destination number; it never receives your name or a document title in the notice, and the token only says "check". |
+| You download an AI model | A web request for one named model file. | The download site and its delivery hosts (today Hugging Face and its content network) see your internet address, the time and which file. |
+| You save, share or export a copy | The copy goes where you put it. | Whoever can reach that place. myCarlos cannot retrieve or erase it. |
+| You use a cloud AI service (**only in a build that includes it**) | A text you prepared with identifying details removed, after a preview and a confirmation for each document, using your own account key. | Your provider, under your agreement with them. See "AI features". |
+| You contact the publisher for support | Whatever you send. | The publisher and its mail provider. Do not send documents or screenshots. [PUBLISHER: SUPPORT CHANNEL] |
 
-If this build supports it and you choose to link a clinic portal, myCarlos connects to that portal to link your device, check for documents, download copies and send delivery receipts. The portal can associate your device with your portal account. It receives device public keys and identifiers, connection times and your internet address, along with delivery and receipt information. It may retain records after you remove a link.
+## What stays on the device outside the vault
 
-Clinic delivery packages are encrypted for the receiving device. myCarlos checks received packages before adding accepted documents to the vault. This does not make all portal records private from the portal operator: accounts and delivery metadata are handled separately. The clinic and portal notice explains those uses. You can remove a supported clinic link. This does not erase documents already saved in your vault or records held by the clinic.
+The device keeps some app settings outside the encrypted vault: language, appearance, text size, how long the app waits before it locks, and details of a backup you selected, such as its file name. For the backup reminder it also keeps, in a small file inside the vault's own folder, three calendar days (the day you last saved a backup, the day you last saved one that left your videos out, and the day a "Not now" ends); no times, names, places or counts. On Windows builds with document notices, the device also keeps notice settings and a limited record of notice outcomes that uses hashed references to arrivals rather than document titles. Notice keys are wrapped with a key held in the device's own secure key store, not inside the vault. **[CONFIRM: THE FINAL RELEASE'S DEVICE STORAGE AND OPERATING SYSTEM BACKUP BEHAVIOUR BY PLATFORM.]**
 
-Enabled document checks contact the portal. Your operating system may display a document notice. **[CONFIRM WHICH CONNECTIONS, BACKGROUND CHECKS AND NOTIFICATION SERVICES THIS RELEASE ENABLES, THEIR PROVIDERS AND LOCATIONS.]** Linking and delivery availability vary by build and platform.
+## Photos, video, camera and microphone
 
-## AI features and model downloads
+myCarlos turns the camera on only when you choose to take a photo or record a video, and the microphone only when you choose to record video with sound. Nothing is shown or recorded before that choice, and the photo dialog never asks for sound. A photo is cleaned of location and camera details before it is stored. A recording is stored encrypted as it is made, so an interrupted recording can be recovered; a recording that is still in progress is **not** in a backup until it ends. The phone or computer shows its own permission question first, and you can refuse.
 
-Where supported, Summary uses an AI model on your device. It does not upload the document to a hosted AI service. Saved answers are kept encrypted with the document. An answer can be wrong; check it against the original and ask your care team about medical decisions.
+## Backups
 
-If you choose to download a model, the app contacts its download host and permitted delivery hosts. They receive your internet address and request information, including which model file is requested and when. The model files currently come from Hugging Face and its delivery infrastructure. **[CONFIRM HOSTS, THEIR PRIVACY NOTICE LINKS AND ANY RELEASE CHANGES.]** This network download is separate from processing your document locally.
+You can save an encrypted **myCarlos backup**. It contains the vault as it is: hidden documents, the history, the clinic links with their private keys, and any cloud-AI key you added. Anyone who has the backup file and the secret that opens it can read it. Changing a passphrase or recovery key does not change older backups or vaults already set aside. A backup can **leave your videos out** to be smaller; the app says so, and a backup without videos is not treated as a full backup by the reminder.
 
-You can also save text with identifying details removed for use elsewhere. Removal can miss names, dates and other identifying details, including text you did not notice in the original. Review the whole preview and remove more where needed. Saving this file does not send it to an AI service. If you later upload it, the service you choose handles it under its own terms and privacy notice.
+**What the device's own backups do:**
 
-## Copies outside the vault
+- **Android:** the app switches off Android's cloud backup and device-to-device transfer for itself, and the build checks that. Whether a phone maker's own transfer tool respects this has not been tested on every phone. [CONFIRM]
+- **iPhone and iPad:** [PUBLISHER: DECISION PENDING. The vault is currently in the app's data folder, which normal iPhone backups (including iCloud) carry, encrypted. The plan is to keep the vault out of iCloud and device backups; when that is built, say so here and say that a lost phone is then not restored from a device backup.]
+- **Windows, macOS and Linux:** the vault is in your user's local application data folder, which your own computer backups (for example File History or Time Machine) may include, encrypted. The app does not exclude it. If your computer is lost, replaced or reset, and your own backups do not include myCarlos's folder, you need your myCarlos backup.
 
-An imported file may remain in its original location or in the app that shared it. A readable export, exported text or recovery kit is outside the vault's protection. Other people, applications, synced folders or cloud services may receive copies depending on where you save or share it. myCarlos cannot retrieve or erase those copies.
+**Backup reminder.** The app shows a quiet note, which you can put off for 14 days, when your vault has documents and you have not saved a full backup, the last one is 30 days old, or 20 or more documents were added since it.
 
-You can save an encrypted backup. It includes retained vault information, including hidden documents and history. Protect it and the secrets that open it. Operating system backups may also keep app data, depending on the platform. Changing a passphrase or recovery key does not change older backups or vaults already set aside.
+## People, family and hiding
 
-## What stays when you hide or replace something
+You can keep records for **more than one person** (for example yourself and someone you care for). People in one vault are not private from each other: anyone who unlocks the vault can open every person's records. Documents a clinic sends for a person who does not match any profile wait in "Shared with me" until you move them. A letter about a child can name the parent or guardian.
 
-Hiding a document does not delete it. It stays encrypted in the vault and in later backups. Older saved AI answers can also remain hidden. The vault keeps an encrypted history of actions, which can include names, earlier names and saved file locations. The app does not offer deletion of that history.
+**Hiding a person is tidiness, not secrecy.** A hidden person's records are left out of lists, the AI helper and notices, and the history leaves out entries about them, but nothing is deleted or re-encrypted, and anyone who knows the passphrase can restore them. The Hidden people list shows each hidden person's name, the day hidden and their document count. A new clinic document for a hidden person is filed in "Shared with me" with the clinic named and the person not.
 
-Starting again or replacing the current vault with a backup sets the old vault aside rather than erasing it. Anyone who can reach an old vault or backup and has its old unlocking secret may still open it. Removal outside the app depends on your platform and may remove all app data. Ask for the instructions for your device before deleting anything.
+**Handing a person's records to another vault.** You can export one person's records as a **handover package**, protected by its own key or a passphrase you type, and import such a package into another vault. A package is a copy outside the vault's protection: anyone who holds the file and its key can read it, and it shows how many documents it holds and how large they are. Before an import, the app shows the names the file lists for the person, including earlier names, because **an imported person's earlier names are also used to file future clinic documents** under that person. You can choose not to import. A malicious file could name a person so that a later clinic document with the same name and birth date is filed under them; you would see the document in that person's list.
 
-There is no promised automatic expiry for your vault records. **[PUBLISHER TO CONFIRM PLATFORM REMOVAL INSTRUCTIONS AND ANY RELEASE RETENTION CHANGES.]** The clinic's record-retention rules are separate.
+**Children.** myCarlos is for adults. It can hold a child's records for a parent or guardian. It is not designed for use by a child. [LEGAL REVIEW: CHILDREN'S PRIVACY, PARENTAL CONSENT AND ANY PLAN FOR A CHILD'S OWN VAULT.]
 
-## Questions and your choices
+## Files shared into myCarlos
 
-You can review records in the app, save copies and manage supported clinic connections. To correct the clinic's source record, ask the clinic. To ask about access, correction, deletion, representatives, complaints or other rights that apply to you, contact **[CLINIC OR PORTAL PRIVACY CONTACT]** for information they hold and **[PUBLISHER PRIVACY CONTACT]** for information the publisher receives.
+When you open or share a PDF into myCarlos from another app, the app first holds it as a pending item. It is **not** written to the vault until you unlock and confirm it. The file stays where it came from, in the other app or location, unencrypted; myCarlos cannot remove it. Choose what you share, and remember that a file saved to a synced folder may be copied elsewhere.
 
-The publisher supplies the software. A connected portal may be run by any organization or person; check the notice for the specific service you connect. Where a clinic sends documents, it decides what to send. The portal operator runs that connected service. **[IDENTIFY THE ACTUAL ORGANIZATIONS, THEIR RESPONSIBILITIES, HOSTING AND SUPPORT PROVIDERS, AND ANY SUPPORT DATA COLLECTION.]** If you send a file, screenshot or diagnostic material for support, it may contain health information. Agree on a suitable channel and what to include first.
+## Reading documents, readable copies and screenshots
 
-**[LEGAL REVIEW TO COMPLETE: APPLICABLE RIGHTS, REQUEST AND COMPLAINT PROCESS, RELEVANT AUTHORITY, CHANGES TO THIS NOTICE AND CONTACT DETAILS.]** This draft does not establish a legal basis, a compliance certification, or approval to use real health information.
+Reading a document shows it on your screen. On Android, a stored PDF is read in a separate native view that has no web bridge. **myCarlos allows screenshots and does not hide its window in the recent-apps picture**, so what is on the screen can appear in a screenshot, a screen recording or the app switcher. A readable export, exported text or a recovery kit is outside the vault's protection: other people, applications, synced folders or cloud services may receive copies depending on where you save or share it, and myCarlos cannot retrieve or erase them.
+
+## AI features
+
+**On your device (computers).** On Windows (and Linux, which is for testing), Summary and Explain use an AI model that runs on your computer, in a separate, restricted process. It does not upload the document to any service. Saved answers are kept encrypted with the document; a newer answer for the same document, tool and language replaces the older one in view, and the older one stays hidden in the vault. An answer can be wrong: check it against the original and ask your care team about medical decisions. Each summary sentence shows the words it came from. **Phones do not have the AI helper in this release.** [CONFIRM: PLATFORMS OF THE FINAL RELEASE]
+
+**Downloading a model.** If you choose to download a model, the app contacts the download host and its permitted delivery hosts over HTTPS, and only for that file. They receive your internet address and request information, including which file and when. The files currently come from Hugging Face and its delivery network (`huggingface.co` and its content hosts). Each file is checked against a fixed fingerprint before it is used. [CONFIRM: HOSTS, THEIR PRIVACY NOTICE LINKS AND ANY RELEASE CHANGES.] This download is separate from processing your document on your device.
+
+**Saving text with identifying details removed.** You can save text with identifying details removed, to use elsewhere. Removal can miss names, dates and other identifying details, including some you did not notice. Review the whole preview and remove more where needed. Saving the file does not send it anywhere. If you later give it to an AI service, that service handles it under its own terms and privacy notice.
+
+**Cloud AI (only in a build that includes it; it does not run unless you set it up).** [CONFIRM: THIS SECTION APPLIES ONLY IF THE RELEASE COMPILES THE CLOUD FEATURE IN. Today it is behind a build switch that no release has on; remove this section, or say "this release does not include it", until that changes.] Where it is included, it is off by default. To use it you add **your own account key** from your provider; myCarlos keeps it only in the vault (so it is in every backup, and in older backups after you remove it) and never shows it again. For each document you see a preview of the exact text, with identifying details removed, and a confirmation that names the provider, the model and the cost, before anything is sent. The text is sent over HTTPS to the provider's address that is fixed in the app, and nothing is sent in the background. The history records the time, provider, model and document, never the text, the answer or the key. What the provider keeps, and whether it uses the text, is governed by your account with them; myCarlos cannot see or change it. The provider is outside Canada. [LEGAL REVIEW: TRANSFERS OUTSIDE CANADA AND OUTSIDE QUEBEC.]
+
+## Clinic portals
+
+If this build supports it and you choose to link a clinic portal, myCarlos connects to that portal to link your device, check for documents, download copies and send delivery receipts. The portal can associate your device with your portal account. **[CONFIRM: THE PORTAL CLIENT IS OFF ON ANDROID TODAY AND PRODUCTION CLINIC KEYS ARE NOT YET INSTALLED; SAY WHICH PLATFORMS THIS RELEASE ENABLES.]**
+
+Clinic delivery packages are encrypted for the receiving device. myCarlos checks them before adding accepted documents to the vault. This does not make all portal records private from the portal operator: accounts and delivery details are handled separately, and the clinic and portal notice explains those uses. The clinic decides what to send.
+
+**Removing a link, and stopping.** When a clinic has not delivered any document to you, you can remove its link: its keys and waiting items on your device are deleted. A clinic that has delivered documents cannot be removed, because the keys are needed to prove the documents came from that clinic; you can instead **stop checking** it, after which myCarlos does not contact it or use its notices, and the clinic's card moves under earlier attempts. A link is also refused removal while notices are on for it. Removing or stopping is local: **the clinic may still list your device until it removes it.** Earlier backups still hold the keys. Documents already saved stay in your vault, and the clinic's own records are not erased. If a clinic's portal reports that it removed your device, myCarlos remembers that and does not ask again.
+
+## Keeping, hiding, erasing
+
+Hiding a document does not delete it. It stays encrypted in the vault and in later backups. The vault keeps an encrypted history of actions, which can include names, earlier names and saved file locations. **The app has no button that deletes a single document or the history.**
+
+"Start again" or restoring a backup **sets the old vault aside** rather than erasing it. Anyone who can reach it and has its old unlocking secret may still open it. To remove a vault set aside and free its space: on a computer, close myCarlos and delete the vault folder shown in the app; **on a phone, the only way is to clear myCarlos's data in the phone's settings or uninstall it, which removes every vault on the phone.** [CONFIRM: THE SETTINGS SCREEN'S "ERASE ENTIRE VAULT" TEXT TELLS A DIFFERENT STORY ("PERMANENTLY DELETES"); CHECK WHAT THE RELEASED BUTTON REALLY DOES AND MAKE THIS SECTION AGREE.] Copies you saved elsewhere, backups, and records held by a clinic are not erased by any of these steps.
+
+There is no automatic expiry of your vault records. The clinic's retention rules are separate. [PUBLISHER: ANY RETENTION OR "ERASE EVERYTHING" CHANGE IN THE RELEASE.]
+
+## Security and its limits
+
+Your vault is protected with strong, standard encryption keyed from your passphrase or recovery key. The vault, its backups and the app's design have **not had an independent security review yet.** myCarlos does not claim to be certified, "HIPAA compliant" or free from risk. A lost or guessed passphrase, a compromised device, someone watching your screen, or malware on your device can defeat protections that the app cannot control.
+
+## If something goes wrong
+
+To report a suspected security or privacy incident, contact **[PUBLISHER: INCIDENT CONTACT]**. Do not send patient files, vaults, passwords or screenshots. If the publisher learns of an incident that may harm you, it will tell you and the authorities where the law requires it. [LEGAL REVIEW: BREACH NOTIFICATION DUTIES UNDER PIPEDA, QUEBEC LAW 25, PROVINCIAL LAW AND, IF OFFERED THERE, US AND EU LAW; THE INCIDENT REGISTER.] The publisher holds very little: no vault, no passphrase, no documents. What it may hold is support correspondence and website logs.
+
+## Your choices, rights and questions
+
+You can review records in the app, save copies, manage supported clinic connections, and remove the app. To correct a clinic's source record, ask the clinic; documents in myCarlos are copies. To ask about access, correction, deletion, withdrawing consent, representatives or to make a complaint, contact **[CLINIC OR PORTAL PRIVACY CONTACT]** for information they hold and **[PUBLISHER PRIVACY CONTACT]** for information the publisher receives. You may also complain to the Office of the Privacy Commissioner of Canada, or the commissioner of your province (in Quebec, the Commission d'accès à l'information). [LEGAL REVIEW: RIGHTS, THE REQUEST AND COMPLAINT PROCESS, THE RELEVANT AUTHORITIES FOR EACH PLACE THE APP IS OFFERED.]
+
+The publisher supplies the software. A connected portal may be run by any organization or person; read the notice for the specific service you connect. [PUBLISHER: THE ACTUAL ORGANIZATIONS, THEIR RESPONSIBILITIES, HOSTING AND SUPPORT PROVIDERS, AND ANY SUPPORT DATA COLLECTION.] [LEGAL REVIEW: WHETHER ANY PROVINCIAL HEALTH PRIVACY LAW TREATS THE PUBLISHER OR A PORTAL OPERATOR AS AN AGENT OR SERVICE PROVIDER.]
+
+## Language, changes and where to find this notice
+
+This notice is available in English [PUBLISHER: AND FRENCH AND THE OTHER LANGUAGES THE APP OFFERS, WITH LEGAL REVIEW OF THE TRANSLATIONS]. The app links to the published notice at **[PUBLISHER: URL]**, and the stores link to the same text. When the notice changes, the version and date above change, and a short list of what changed is kept here: **[PUBLISHER: CHANGE HISTORY]**.
+
+This draft does not establish a legal basis, a compliance certification, or approval to use real health information.
