@@ -1206,6 +1206,46 @@ describe("the reader's AI helper", () => {
     },
   );
 
+  // After the patient has run the speed check (#305), a summary says how long it may take on this
+  // computer, when that is long enough to matter; before it, or with numbers that are not rates,
+  // it says nothing about time.
+  it.each([
+    [{ promptMilliTps: 10_000, answerMilliTps: 2_500 }, true],
+    [{ promptMilliTps: 5_000_000, answerMilliTps: 5_000_000 }, false],
+    [null, false],
+    [{ promptMilliTps: "fast", answerMilliTps: 1 }, false],
+  ])(
+    "says how long a summary may take only when it was measured and is long (%j)",
+    async (speed, shown) => {
+      renderReader(
+        nativeLocalModel({
+          aiModelStatus: async () => ({
+            state: "installed",
+            model: FAKE_MODEL,
+            capacity: { contextTokens: 8192, documentTokens: 6510 },
+          }),
+          aiSummarize: () => new Promise(() => undefined),
+          aiExplain: () => new Promise(() => undefined),
+          aiCancel: async () => undefined,
+          aiModelSpeed: async () => speed,
+        }),
+      );
+      await firstPage();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Summary" }));
+      // Fluent wraps a number in isolation marks (U+2068, U+2069).
+      const note =
+        /On this computer, this may take up to about \u2068?\d+\u2069? min\./;
+      if (shown) expect(await screen.findByText(note)).toBeVisible();
+      else {
+        await screen.findByRole("progressbar");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(screen.queryByText(note)).toBeNull();
+      }
+    },
+  );
+
   // The refusal for memory says how much is needed and how much is free (#305): the need rounded
   // up and the free amount rounded down, so it never claims to be closer to enough than it is.
   it("says how much memory is needed and how much is free", async () => {

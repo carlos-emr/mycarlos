@@ -17,6 +17,8 @@
     "allow-ai-model-download",
     "allow-ai-model-remove",
     "allow-ai-summarize",
+    "allow-ai-speed-check",
+    "allow-ai-model-speed",
     "allow-ai-cancel",
     "allow-kdf-benchmark",
     "allow-vault-status",

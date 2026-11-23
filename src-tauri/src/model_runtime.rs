@@ -806,6 +806,25 @@ impl ModelRuntime {
         Ok(ExplainResult { text, model })
     }
 
+    /// The speed check (#305 PR 4): the fixed FAKE explain request through the normal runner,
+    /// and the counts and times the helper reported for it. The answer is dropped. It takes the
+    /// runner's one slot like any answer, so it cannot overlap one, and a cancel or a lock stops it.
+    pub(crate) fn speed_check_for(
+        &self,
+        ticket: crate::local_runner::Ticket,
+        watch: AnswerWatch,
+    ) -> Result<crate::model_helper::Stats, AiError> {
+        let _ends = self.answer_ends(ticket);
+        let request = crate::speed_check::check_request();
+        check_explain(&request)?;
+        self.runner.watch_answer(ticket, watch);
+        self.start(ticket)?;
+        self.runner
+            .explain(ticket, request.term.trim(), &request.context, &request.lang)
+            .map_err(|error| from_runner(&error))?;
+        self.runner.last_stats().ok_or(AiError::Failed)
+    }
+
     /// Ends the run in flight, if any: its process stops; the next run starts it again.
     pub(crate) fn cancel(&self) {
         self.runner.cancel_all();

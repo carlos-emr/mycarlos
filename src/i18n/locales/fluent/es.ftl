@@ -2027,6 +2027,16 @@ ai-failed = El asistente de IA no pudo terminar. Intente de nuevo.
 ai-error-memory = Ahora mismo no hay suficiente memoria libre para el asistente de IA. Cierre otros programas e intente de nuevo.
 ai-error-memoryNumbers = Ahora mismo no hay suficiente memoria libre para el asistente de IA. Necesita unos { $needed } GB libres y hay { $free } GB libres. Cierre otros programas e intente de nuevo.
 ai-error-memoryUnknown = Ahora mismo no hay suficiente memoria libre para el asistente de IA. Necesita unos { $needed } GB libres, y este equipo no pudo decir cuánta hay libre. Cierre otros programas e intente de nuevo.
+ai-speed-title = Velocidad en este equipo
+ai-speed-note = Esto ejecuta el asistente de IA una vez sobre un texto inventado y corto, y usa mucho el procesador durante uno o dos minutos. No envía nada a ninguna parte ni usa nada suyo. Puede detenerlo en cualquier momento.
+ai-speed-button = Comprobar la velocidad de este equipo
+ai-speed-working = Comprobando la velocidad…
+ai-speed-cancel = Detener la comprobación
+ai-speed-result = Medido en este equipo: el asistente de IA lee unas { $read } palabras por segundo y escribe unas { $write }.
+ai-speed-cancelled = Se detuvo la comprobación. No se guardó nada.
+ai-speed-none = Aún no se ha comprobado.
+ai-speed-failed = No se pudo medir la velocidad. Inténtelo de nuevo.
+ai-speed-estimate = En este equipo, esto puede tardar hasta unos { $minutes } min.
 
 ai-error-busy = Se está agregando o quitando el modelo del asistente de IA. Intente de nuevo cuando termine.
 

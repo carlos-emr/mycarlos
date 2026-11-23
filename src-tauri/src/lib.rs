@@ -63,6 +63,7 @@ mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;
+mod speed_check;
 mod text_recheck;
 mod throttle;
 mod unicode_cleaning_table;
@@ -2293,6 +2294,55 @@ async fn ai_summarize(
         answer: result,
         kept_id,
     })
+}
+
+/// The speed check (#305 PR 4): how fast the AI helper reads and writes on this computer, from one
+/// short fixed FAKE request, started only by the patient. It takes the same single answer slot and
+/// the unlocked session's hold as any answer (so it cannot run while locked or beside another
+/// answer), a lock or `ai_cancel` stops it, and its threads are the app's own (never more than the
+/// computer's CPUs). The result is kept per model, build and thread count.
+#[tauri::command]
+async fn ai_speed_check(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    answer_id: Uuid,
+) -> CommandResult<speed_check::Speed> {
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let sha256 = models
+        .in_use_sha256()
+        .ok_or_else(|| ai_error(model_runtime::AiError::NotInstalled))?;
+    let stats = run_ai(
+        store.inner(),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.speed_check_for(ticket, watch),
+    )
+    .await?;
+    let Some(speed) = speed_check::measure(&stats) else {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    };
+    let threads = stats.threads.max(1);
+    if !models.save_speed(sha256, threads, speed, now_ms()) {
+        return Err(ai_error(model_runtime::AiError::Storage));
+    }
+    Ok(speed)
+}
+
+/// What was measured for the model in use on this computer, for the reader's "about N minutes"
+/// and the settings: nothing until the patient has run the check.
+#[tauri::command]
+fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_check::Speed> {
+    models.speed_for(models.in_use_sha256()?, model_runtime::threads())
 }
 
 /// What a term means in its sentence, from the model on this computer (#72). With the
@@ -5616,6 +5666,8 @@ pub fn run() {
             ai_model_download,
             ai_model_remove,
             ai_summarize,
+            ai_speed_check,
+            ai_model_speed,
             ai_explain,
             ai_cancel,
             kdf_benchmark,

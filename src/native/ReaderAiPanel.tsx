@@ -20,6 +20,12 @@ import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
 import { estimateFit, type FitEstimate } from "../ai/capacity";
 import {
+  SHOW_FROM_MINUTES,
+  summaryMinutes,
+  tokensRead,
+  type Speed,
+} from "../ai/speedEstimate";
+import {
   ModelCancelled,
   ModelNotInstalled,
   type AiTool,
@@ -167,6 +173,9 @@ export function ReaderAiPanel({
   // Whole minutes the answer has been working for, shown from the first
   // (#72: a long document's summary may take up to 20 minutes).
   const [workingMinutes, setWorkingMinutes] = useState(0);
+  // How long a summary may take on this computer, once the patient has run the speed check and
+  // the document is long enough for it to matter (#305). Null says nothing.
+  const [timeNote, setTimeNote] = useState<number | null>(null);
   useEffect(() => {
     if (!working) return;
     const started = Date.now();
@@ -301,6 +310,7 @@ export function ReaderAiPanel({
     const mine = ++run.current;
     progress.reset();
     setTooLong(null);
+    setTimeNote(null);
     setWorking(true);
     setFailed(null);
     setKeepFailed(null);
@@ -332,6 +342,20 @@ export function ReaderAiPanel({
         if (document.pages.every((page) => !page.text.trim())) {
           setNoText(true);
           return;
+        }
+        // The time it may take, from the speed this computer measured (if it was).
+        {
+          const measured: Speed | null =
+            (await aiRef.current.model.speed?.().catch(() => null)) ?? null;
+          const known = statusRef.current;
+          const room = known?.state === "installed" ? known.capacity : null;
+          if (live.current && measured && room) {
+            const minutes = summaryMinutes(
+              tokensRead(document, room),
+              measured,
+            );
+            setTimeNote(minutes >= SHOW_FROM_MINUTES ? minutes : null);
+          }
         }
         // A document longer than the model reads at a time waits for the
         // patient's choice (#301): an estimate from its length, so only a
@@ -610,6 +634,11 @@ export function ReaderAiPanel({
             {progress.view.stage === "before" && (
               <p id="reader-ai-stage" className="native-reader-ai-wait">
                 {stageWords}
+              </p>
+            )}
+            {timeNote !== null && (
+              <p className="native-reader-ai-wait">
+                {t("ai.speed.estimate", { minutes: timeNote })}
               </p>
             )}
             <progress
