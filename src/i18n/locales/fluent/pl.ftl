@@ -2670,7 +2670,7 @@ notices-own-show = Pokaż pełny tekst licencji
 
 notices-source-title = Pobierz kod źródłowy
 
-notices-source-body = Pełny kod źródłowy tej wersji myCarlos wraz z instrukcją budowania jest dostępny pod adresem poniżej. Wpisz go w przeglądarce internetowej. Jeśli nie możesz się z nim połączyć, poproś o kod źródłowy osobę, od której dostałeś myCarlos.
+notices-source-body = To jest Odpowiadający Kod Źródłowy tej wersji myCarlos ({ $version }): pełny kod źródłowy wraz z instrukcją budowania jest dostępny pod adresem poniżej. Wpisz go w przeglądarce internetowej. Jeśli nie możesz się z nim połączyć, poproś o kod źródłowy osobę, od której dostałeś myCarlos.
 
 notices-list-title = Biblioteki i narzędzia
 
@@ -2699,3 +2699,7 @@ notices-copy = Kopiuj adres
 notices-copied = Adres skopiowany.
 
 notices-copyFailed = Zaznacz cały adres i skopiuj go.
+
+notices-usedUnder = Używane na licencji { $license }
+
+notices-repository = Kod źródłowy: { $address }

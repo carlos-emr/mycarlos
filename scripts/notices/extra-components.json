@@ -34,5 +34,72 @@
         "file": "assets/CGATS_LICENSE.txt"
       }
     ]
+  },
+  {
+    "name": "nlohmann/json",
+    "version": "3.12.0 (vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on)",
+    "license": "MIT",
+    "source": "https://github.com/nlohmann/json",
+    "standardHolder": "2013-2025 Niels Lohmann <https://nlohmann.me>"
+  },
+  {
+    "name": "cpp-httplib",
+    "version": "vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on",
+    "license": "MIT",
+    "source": "https://github.com/yhirose/cpp-httplib",
+    "textFrom": [
+      {
+        "package": "llama-cpp-sys-2@0.1.160",
+        "file": "llama.cpp/vendor/cpp-httplib/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "subprocess.h",
+    "version": "vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on",
+    "license": "Unlicense",
+    "source": "https://github.com/sheredom/subprocess.h"
+  },
+  {
+    "name": "xxHash",
+    "version": "vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on",
+    "license": "BSD-2-Clause",
+    "source": "https://github.com/Cyan4973/xxHash",
+    "textFrom": [
+      {
+        "package": "llama-cpp-sys-2@0.1.160",
+        "file": "llama.cpp/vendor/hash/xxhash/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "rotate-bits",
+    "version": "vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on",
+    "license": "MIT",
+    "source": "https://github.com/jb55/rotate-bits",
+    "textFrom": [
+      {
+        "package": "llama-cpp-sys-2@0.1.160",
+        "file": "llama.cpp/vendor/hash/rotate-bits/LICENSE.md"
+      }
+    ]
+  },
+  {
+    "name": "SHA-256 (Igor Pavlov)",
+    "version": "vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on",
+    "license": "LicenseRef-PublicDomain",
+    "source": "https://www.7-zip.org/sdk.html",
+    "textFrom": [
+      {
+        "package": "llama-cpp-sys-2@0.1.160",
+        "file": "llama.cpp/vendor/hash/sha256/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "SHA-1 (Steve Reid)",
+    "version": "vendored by llama-cpp-sys-2 0.1.160; compiled in because that crate's default `common` feature is on",
+    "license": "LicenseRef-PublicDomain",
+    "source": "https://github.com/ggml-org/llama.cpp/tree/master/vendor/hash/sha1"
   }
 ]

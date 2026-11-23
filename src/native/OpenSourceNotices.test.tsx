@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
+  BUILD_LABEL,
   OpenSourceNotices,
   SOURCE_ADDRESS,
   type NoticesData,
@@ -27,6 +28,8 @@ const data: NoticesData = {
         name: "fake-serde",
         version: "1.0.200",
         license: "MIT OR Apache-2.0",
+        applied: ["MIT"],
+        repository: "https://example.invalid/fake-serde",
         texts: [
           { id: "bbb", name: "LICENSE-APACHE" },
           { id: "aaa", name: "LICENSE-MIT" },
@@ -110,6 +113,51 @@ describe("Open-source notices", () => {
     ).toBeVisible();
   });
 
+  it("names this version of myCarlos in the source offer, with its heading levels in order", () => {
+    renderNotices();
+    expect(
+      screen.getByText(
+        humanText(/Corresponding Source of this version of myCarlos/),
+      ),
+    ).toHaveTextContent(BUILD_LABEL);
+    const levels = screen
+      .getAllByRole("heading")
+      .map((heading) => Number(heading.tagName.slice(1)));
+    // One page heading, then sections, then the offer under the licence: never a skipped level.
+    expect(levels.filter((level) => level === 1)).toHaveLength(1);
+    expect(levels.some((level) => level > 3)).toBe(false);
+    for (let i = 1; i < levels.length; i += 1) {
+      expect(levels[i] - levels[i - 1]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("announces the count once the typing pauses, not at each keystroke", async () => {
+    const user = userEvent.setup();
+    renderNotices();
+    const search = await screen.findByRole("searchbox");
+    await screen.findByText(humanText("4 libraries and tools"));
+    await user.type(search, "fake-s");
+    // The list follows the typing at once; the announced count has not moved yet.
+    expect(
+      within(screen.getByRole("list")).getAllByRole("listitem"),
+    ).toHaveLength(1);
+    expect(screen.getByText(humanText("4 libraries and tools"))).toBeVisible();
+    expect(
+      await screen.findByText(humanText("1 of 4 libraries and tools")),
+    ).toBeVisible();
+  });
+
+  it("names each licence text region by library and file, for a screen reader", async () => {
+    const user = userEvent.setup();
+    renderNotices();
+    await user.click(await screen.findByText(/^fake-react/));
+    const text = await screen.findByRole("region", {
+      name: "fake-react 19.0.0: LICENSE",
+    });
+    expect(text).toHaveTextContent("FAKE MIT text, Copyright the fake authors");
+    expect(text).toHaveAttribute("tabindex", "0");
+  });
+
   it("shows the full text of myCarlos's own licence when asked", async () => {
     const user = userEvent.setup();
     renderNotices();
@@ -148,9 +196,20 @@ describe("Open-source notices", () => {
       screen.getAllByText("FAKE MIT text, Copyright the fake authors"),
     ).toHaveLength(1);
     expect(
-      screen.getByRole("heading", { name: "LICENSE-APACHE" }),
+      screen.getByRole("region", {
+        name: "fake-serde 1.0.200: LICENSE-APACHE",
+      }),
     ).toBeVisible();
-    expect(screen.getByRole("heading", { name: "LICENSE-MIT" })).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "fake-serde 1.0.200: LICENSE-MIT" }),
+    ).toBeVisible();
+    // A dual licence says which one it is used under, and where its source is.
+    expect(screen.getByText(humanText("Used under MIT"))).toBeVisible();
+    expect(
+      screen.getByText(
+        humanText("Source code: https://example.invalid/fake-serde"),
+      ),
+    ).toBeVisible();
     expect(
       within(
         screen.getByText(/^fake-serde/).closest("li") as HTMLElement,
@@ -164,8 +223,11 @@ describe("Open-source notices", () => {
     await screen.findByText(humanText("4 libraries and tools"));
     await user.click(screen.getByText(/^fake-llama/));
     expect(
-      await screen.findByText(
-        /Bundled with myCarlos · https:\/\/example\.invalid\/fake-llama/,
+      await screen.findByText(humanText("Bundled with myCarlos")),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        humanText("Source code: https://example.invalid/fake-llama"),
       ),
     ).toBeVisible();
     await user.click(screen.getByText(/^fake-free/));

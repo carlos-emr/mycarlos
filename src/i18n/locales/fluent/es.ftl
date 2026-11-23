@@ -2590,7 +2590,7 @@ notices-own-show = Mostrar el texto completo de la licencia
 
 notices-source-title = Obtener el código fuente
 
-notices-source-body = El código fuente completo de esta versión de myCarlos, con las instrucciones para compilarlo, está disponible en la dirección de abajo. Escríbala en un navegador web. Si no puede acceder, pida el código fuente a quien le dio myCarlos.
+notices-source-body = Este es el Código Fuente Correspondiente de esta versión de myCarlos ({ $version }): el código fuente completo, con las instrucciones para compilarlo, está disponible en la dirección de abajo. Escríbala en un navegador web. Si no puede acceder, pida el código fuente a quien le dio myCarlos.
 
 notices-list-title = Bibliotecas y herramientas
 
@@ -2619,3 +2619,7 @@ notices-copy = Copiar la dirección
 notices-copied = Dirección copiada.
 
 notices-copyFailed = Seleccione toda la dirección y cópiela.
+
+notices-usedUnder = Se usa bajo { $license }
+
+notices-repository = Código fuente: { $address }

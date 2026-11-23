@@ -8,6 +8,10 @@ export interface NoticeComponent {
   version: string;
   /** The SPDX licence expression the package declares. */
   license: string;
+  /** The licence ids that apply when the declared expression offers a choice or a pair. */
+  applied?: ReadonlyArray<string>;
+  /** The package's own source address (a bundled tool's `source`). */
+  repository?: string;
   source?: string;
   /** The licence and notice files that came with it, by id into `texts`. */
   texts: ReadonlyArray<{ id: string; name: string }>;
@@ -24,6 +28,12 @@ export interface NoticesData {
   /** The full text of the licence myCarlos itself is under (the repository's LICENSE). */
   ownLicence: string;
 }
+
+/** The build this is: its version, and its commit where the build was made from a checkout. */
+export const BUILD_LABEL =
+  typeof __MYCARLOS_VERSION__ === "string"
+    ? `${__MYCARLOS_VERSION__}${__MYCARLOS_COMMIT__ ? `, commit ${__MYCARLOS_COMMIT__}` : ""}`
+    : "";
 
 /** Where the complete source of this version of myCarlos is, for the AGPL's source offer. */
 export const SOURCE_ADDRESS = "https://github.com/carlos-emr/mycarlos";
@@ -47,6 +57,20 @@ const KIND_KEY = {
   bundled: "notices.kind.bundled",
 } as const;
 
+/** The libraries whose name, version or licence contains what was typed. */
+function filter(
+  components: ReadonlyArray<NoticeComponent>,
+  query: string,
+): ReadonlyArray<NoticeComponent> {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return components;
+  return components.filter((component) =>
+    `${component.name} ${component.version} ${component.license}`
+      .toLowerCase()
+      .includes(needle),
+  );
+}
+
 /** One library: a closed entry that shows its licence texts when opened. */
 function NoticeEntry({
   component,
@@ -58,6 +82,10 @@ function NoticeEntry({
   const { t } = useI18n();
   // The texts are built only once the entry has been opened: there are hundreds of entries.
   const [opened, setOpened] = useState(false);
+  // "MIT OR Apache-2.0" is used under one of them: say which, as the texts shown are its.
+  const applied = (component.applied ?? []).join(" and ");
+  const usedUnder = applied && applied !== component.license ? applied : null;
+  const address = component.repository ?? component.source ?? null;
   return (
     <li className="notice-entry">
       <details onToggle={(event) => setOpened(event.currentTarget.open)}>
@@ -68,19 +96,31 @@ function NoticeEntry({
           </span>
           <span className="notice-licence">{component.license}</span>
         </summary>
-        <p className="notice-kind">
-          {t(KIND_KEY[component.ecosystem])}
-          {component.source ? ` · ${component.source}` : ""}
-        </p>
+        <p className="notice-kind">{t(KIND_KEY[component.ecosystem])}</p>
+        {usedUnder && (
+          <p className="notice-kind">
+            {t("notices.usedUnder", { license: usedUnder })}
+          </p>
+        )}
+        {address && (
+          <p className="notice-kind">{t("notices.repository", { address })}</p>
+        )}
         {opened && component.texts.length === 0 && <p>{t("notices.noText")}</p>}
         {opened &&
           component.texts.map((file) => (
-            <section key={`${file.id}-${file.name}`} aria-label={file.name}>
-              <h4 className="notice-file">{file.name}</h4>
-              <pre className="notice-text" tabIndex={0}>
+            <div key={`${file.id}-${file.name}`}>
+              <p className="notice-file">
+                <strong>{file.name}</strong>
+              </p>
+              <pre
+                className="notice-text"
+                role="region"
+                aria-label={`${component.name} ${component.version}: ${file.name}`}
+                tabIndex={0}
+              >
                 {texts[file.id]}
               </pre>
-            </section>
+            </div>
           ))}
       </details>
     </li>
@@ -106,6 +146,12 @@ export function OpenSourceNotices({
   const [query, setQuery] = useState("");
   const [showOwn, setShowOwn] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  // The count is announced once the typing pauses, not at every keystroke.
+  const [settled, setSettled] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(query), 500);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -127,15 +173,7 @@ export function OpenSourceNotices({
 
   const components =
     state.status === "ready" ? state.data.notices.components : [];
-  const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return components;
-    return components.filter((component) =>
-      `${component.name} ${component.version} ${component.license}`
-        .toLowerCase()
-        .includes(needle),
-    );
-  }, [components, query]);
+  const matches = useMemo(() => filter(components, query), [components, query]);
 
   return (
     <main className="library-main purpose-screen open-source-notices">
@@ -156,7 +194,7 @@ export function OpenSourceNotices({
           <h2>{t("notices.own.title")}</h2>
           <p>{t("notices.own.body")}</p>
           <h3>{t("notices.source.title")}</h3>
-          <p>{t("notices.source.body")}</p>
+          <p>{t("notices.source.body", { version: BUILD_LABEL })}</p>
           <p>
             <code className="notice-address" id="notice-source-address">
               {SOURCE_ADDRESS}
@@ -185,7 +223,12 @@ export function OpenSourceNotices({
           <details onToggle={(event) => setShowOwn(event.currentTarget.open)}>
             <summary>{t("notices.own.show")}</summary>
             {showOwn && state.status === "ready" && (
-              <pre className="notice-text" tabIndex={0}>
+              <pre
+                className="notice-text"
+                role="region"
+                aria-label={t("notices.own.title")}
+                tabIndex={0}
+              >
                 {state.data.ownLicence}
               </pre>
             )}
@@ -215,9 +258,9 @@ export function OpenSourceNotices({
             />
           </label>
           <p className="status-line" role="status">
-            {query.trim()
+            {settled.trim()
               ? t("notices.count.filtered", {
-                  count: matches.length,
+                  count: filter(components, settled).length,
                   total: components.length,
                 })
               : t("notices.count.all", { total: components.length })}

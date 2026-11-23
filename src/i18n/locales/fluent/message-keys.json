@@ -1228,5 +1228,7 @@
   "notices.kind.bundled",
   "notices.copy",
   "notices.copied",
-  "notices.copyFailed"
+  "notices.copyFailed",
+  "notices.usedUnder",
+  "notices.repository"
 ]

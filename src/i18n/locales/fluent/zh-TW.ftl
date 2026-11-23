@@ -2337,7 +2337,7 @@ notices-own-show = 顯示完整授權文字
 
 notices-source-title = 取得原始碼
 
-notices-source-body = 此版本 myCarlos 的完整原始碼與建置說明可在下方位址取得。請在網頁瀏覽器中輸入該位址。若無法連線，請向提供 myCarlos 給您的人索取原始碼。
+notices-source-body = 這是此版本 myCarlos（{ $version }）的對應原始碼：完整原始碼與建置說明可在下方位址取得。請在網頁瀏覽器中輸入該位址。若無法連線，請向提供 myCarlos 給您的人索取原始碼。
 
 notices-list-title = 函式庫與工具
 
@@ -2366,3 +2366,7 @@ notices-copy = 複製位址
 notices-copied = 位址已複製。
 
 notices-copyFailed = 請選取整個位址並複製。
+
+notices-usedUnder = 依 { $license } 使用
+
+notices-repository = 原始碼：{ $address }

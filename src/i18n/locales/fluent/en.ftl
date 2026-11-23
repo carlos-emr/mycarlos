@@ -2555,7 +2555,7 @@ notices-own-show = Show the full licence text
 
 notices-source-title = Get the source code
 
-notices-source-body = The complete source code of this version of myCarlos, with the instructions to build it, is available at the address below. Type it into a web browser. If you cannot reach it, ask whoever gave you myCarlos for the source.
+notices-source-body = This is the Corresponding Source of this version of myCarlos ({ $version }): the complete source code, with the instructions to build it, is available at the address below. Type it into a web browser. If you cannot reach it, ask whoever gave you myCarlos for the source.
 
 notices-list-title = Libraries and tools
 
@@ -2584,3 +2584,7 @@ notices-copy = Copy the address
 notices-copied = Address copied.
 
 notices-copyFailed = Select the whole address and copy it.
+
+notices-usedUnder = Used under { $license }
+
+notices-repository = Source code: { $address }

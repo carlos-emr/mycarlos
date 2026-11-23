@@ -2590,7 +2590,7 @@ notices-own-show = Afficher le texte complet de la licence
 
 notices-source-title = Obtenir le code source
 
-notices-source-body = Le code source complet de cette version de myCarlos, avec les instructions pour le compiler, est disponible à l’adresse ci-dessous. Saisissez-la dans un navigateur web. Si vous ne pouvez pas y accéder, demandez le code source à la personne qui vous a remis myCarlos.
+notices-source-body = Voici le Code Source Correspondant de cette version de myCarlos ({ $version }) : le code source complet, avec les instructions pour le compiler, est disponible à l’adresse ci-dessous. Saisissez-la dans un navigateur web. Si vous ne pouvez pas y accéder, demandez le code source à la personne qui vous a remis myCarlos.
 
 notices-list-title = Bibliothèques et outils
 
@@ -2619,3 +2619,7 @@ notices-copy = Copier l’adresse
 notices-copied = Adresse copiée.
 
 notices-copyFailed = Sélectionnez toute l’adresse et copiez-la.
+
+notices-usedUnder = Utilisé sous { $license }
+
+notices-repository = Code source : { $address }

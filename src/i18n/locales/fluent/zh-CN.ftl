@@ -2337,7 +2337,7 @@ notices-own-show = 显示完整许可证文本
 
 notices-source-title = 获取源代码
 
-notices-source-body = 此版本 myCarlos 的完整源代码及构建说明可在下方地址获取。请在网页浏览器中输入该地址。如果无法访问，请向提供 myCarlos 给您的人索取源代码。
+notices-source-body = 这是此版本 myCarlos（{ $version }）的对应源代码：完整源代码及构建说明可在下方地址获取。请在网页浏览器中输入该地址。如果无法访问，请向提供 myCarlos 给您的人索取源代码。
 
 notices-list-title = 库和工具
 
@@ -2366,3 +2366,7 @@ notices-copy = 复制地址
 notices-copied = 地址已复制。
 
 notices-copyFailed = 请选中整个地址并复制。
+
+notices-usedUnder = 按 { $license } 使用
+
+notices-repository = 源代码：{ $address }

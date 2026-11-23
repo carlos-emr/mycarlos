@@ -458,3 +458,106 @@ test("a COPYRIGHT file counts as a licence file, and CDLA-Permissive-2.0 is allo
   });
   assert.deepEqual(result.problems, []);
 });
+
+test("a NOTICE file alone is not the licence: the licence text is added beside it", () => {
+  const directory = packageWith({ NOTICE: "FAKE notice text" });
+  const result = buildNotices({
+    inventories: [
+      {
+        ecosystem: "cargo",
+        sbom: { components: [component("noticed", "1.0.0", "Apache-2.0")] },
+      },
+    ],
+    directoryOf: () => directory,
+    standardTexts,
+  });
+  assert.deepEqual(result.problems, []);
+  const entry = result.document.components[0];
+  assert.deepEqual(
+    entry.texts.map((file) => file.name),
+    ["NOTICE", "Apache-2.0 (standard text; the package ships no licence file)"],
+  );
+  assert.equal(entry.standardText, true);
+  // With nothing to add the licence text from, it fails rather than ship a NOTICE alone.
+  const failed = buildNotices({
+    inventories: [
+      {
+        ecosystem: "cargo",
+        sbom: { components: [component("noticed", "1.0.0", "Apache-2.0")] },
+      },
+    ],
+    directoryOf: () => directory,
+  });
+  assert.match(failed.problems[0], /requires its text/);
+});
+
+test("an installed npm version that differs from the inventory's fails, naming both", () => {
+  const directory = packageWith({ LICENSE: "FAKE text" });
+  const inventories = [
+    {
+      ecosystem: "npm",
+      sbom: { components: [component("react", "19.2.8", "MIT")] },
+    },
+  ];
+  const mismatch = buildNotices({
+    inventories,
+    directoryOf: () => directory,
+    installedVersionOf: () => "19.2.7",
+  });
+  assert.match(
+    mismatch.problems[0],
+    /inventory says 19\.2\.8 but 19\.2\.7 is installed/,
+  );
+  const missing = buildNotices({
+    inventories,
+    directoryOf: () => directory,
+    installedVersionOf: () => null,
+  });
+  assert.match(missing.problems[0], /but nothing is installed/);
+  const same = buildNotices({
+    inventories,
+    directoryOf: () => directory,
+    installedVersionOf: () => "19.2.8",
+  });
+  assert.deepEqual(same.problems, []);
+});
+
+test("an entry carries the package's repository, cleaned, when it has one", () => {
+  const directory = packageWith({ LICENSE: "FAKE text" });
+  const result = buildNotices({
+    inventories: [
+      {
+        ecosystem: "npm",
+        sbom: {
+          components: [
+            component("a", "1.0.0", "MIT", {
+              externalReferences: [
+                { type: "vcs", url: "git+https://example.invalid/a.git" },
+              ],
+            }),
+            component("b", "1.0.0", "MIT"),
+            component("c", "1.0.0", "MIT", {
+              externalReferences: [{ type: "vcs", url: "ssh://private/c" }],
+            }),
+          ],
+        },
+      },
+      {
+        ecosystem: "cargo",
+        sbom: { components: [component("d", "1.0.0", "MPL-2.0")] },
+      },
+    ],
+    directoryOf: () => directory,
+    originOf: (ecosystem, c) => ({
+      holders: [],
+      repository: c.name === "d" ? "https://example.invalid/d" : null,
+    }),
+  });
+  const byName = Object.fromEntries(
+    result.document.components.map((entry) => [entry.name, entry]),
+  );
+  assert.equal(byName.a.repository, "https://example.invalid/a");
+  assert.equal(byName.b.repository, undefined);
+  assert.equal(byName.c.repository, undefined);
+  assert.equal(byName.d.repository, "https://example.invalid/d");
+});

@@ -12,7 +12,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildNotices, hashFile, serialize } from "./third-party-notices.mjs";
+import {
+  buildNotices,
+  hashFile,
+  hashGeneratorInputs,
+  serialize,
+} from "./third-party-notices.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -118,6 +123,17 @@ function main() {
         text: readFileSync(file, "utf8").replace(/\r\n/g, "\n").trim(),
       });
     }
+    if (component.standardHolder) {
+      const standard = standardTexts[component.license];
+      if (!standard)
+        throw new Error(
+          `${component.name}: no standard text for ${component.license}`,
+        );
+      texts.push({
+        name: `${component.license} (standard text; the code's own copyright notice names the holder)`,
+        text: standard.replaceAll("{holder}", component.standardHolder).trim(),
+      });
+    }
     return { ...component, texts };
   });
   const { problems, document } = buildNotices({
@@ -142,6 +158,15 @@ function main() {
     inputs: {
       packageLock: hashFile(path.join(root, "package-lock.json")),
       cargoLock: hashFile(path.join(root, "src-tauri/Cargo.lock")),
+      generator: hashGeneratorInputs(root),
+    },
+    installedVersionOf: (ecosystem, component) => {
+      if (ecosystem !== "npm") return undefined;
+      const name = component.group
+        ? `${component.group}/${component.name}`
+        : component.name;
+      const manifest = path.join(options.nodeModules, name, "package.json");
+      return existsSync(manifest) ? readJson(manifest).version : null;
     },
   });
   if (problems.length > 0) {

@@ -1230,6 +1230,8 @@ export const MESSAGE_KEYS = [
   "notices.copy",
   "notices.copied",
   "notices.copyFailed",
+  "notices.usedUnder",
+  "notices.repository",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2726,6 +2728,8 @@ const FLUENT_IDS_BY_KEY = {
   "notices.copy": "notices-copy",
   "notices.copied": "notices-copied",
   "notices.copyFailed": "notices-copyFailed",
+  "notices.usedUnder": "notices-usedUnder",
+  "notices.repository": "notices-repository",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4073,7 +4077,7 @@ export interface MessageArgsByKey {
   "notices.own.body": undefined;
   "notices.own.show": undefined;
   "notices.source.title": undefined;
-  "notices.source.body": undefined;
+  "notices.source.body": { version: FluentArgument };
   "notices.list.title": undefined;
   "notices.loading": undefined;
   "notices.failed": undefined;
@@ -4088,6 +4092,8 @@ export interface MessageArgsByKey {
   "notices.copy": undefined;
   "notices.copied": undefined;
   "notices.copyFailed": undefined;
+  "notices.usedUnder": { license: FluentArgument };
+  "notices.repository": { address: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

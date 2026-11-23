@@ -40,14 +40,39 @@ For an "A OR B" expression the first alternative whose licences are all allowed 
 
 ## Things that are not crates
 
-`scripts/notices/extra-components.json` lists what the SBOMs do not: **llama.cpp and ggml** (MIT, built
-from the source `llama-cpp-sys-2` vendors; the text is read from that package). The AI model a patient
-adds is not part of myCarlos; its own licence is shown with the model list. No font files are bundled
-by the app itself; the PDF reader's embedded fonts come in through the `hayro` crates and are covered
-by those crates' notices.
+`scripts/notices/extra-components.json` lists what the SBOMs do not, each with the text read from the
+package that carries it:
+
+- **llama.cpp and ggml** (MIT), built from the source `llama-cpp-sys-2` vendors.
+- What llama.cpp's **`common` library** compiles in: nlohmann/json (MIT), cpp-httplib (MIT),
+  subprocess.h (Unlicense), xxHash (BSD-2-Clause), rotate-bits (MIT), and the public-domain SHA-256
+  and SHA-1 code. `common` is on because `llama-cpp-sys-2`'s own default features enable it
+  (`cargo tree -e features -i llama-cpp-sys-2`); `llama-cpp-2` has its defaults off.
+- **The Foxit standard PDF fonts** (PDFium, BSD-3-Clause) and the **ICC colour profiles** (CC0)
+  embedded by `hayro-interpret`'s `embed-fonts` feature and `hayro-jpeg2000`.
+
+`npm run test:notices` fails if `llama-cpp-2` / `llama-cpp-sys-2` gain a feature that vendors more
+code (`mtmd`, `llguidance`, `curl`, `openmp`, ...) or lose `default-features = false` on
+`llama-cpp-2`: add that code's licences here first. The AI model a patient adds is not part of
+myCarlos; its own licence is shown with the model list.
+
+## How the texts are chosen
+
+- Licence and notice files at the top of the package (`LICENSE*`, `COPYING*`, `NOTICE*`,
+  `COPYRIGHT*`). A **NOTICE file alone is not the licence**: its text is kept and the licence text is
+  added beside it.
+- Otherwise a reviewed override (`scripts/notices/overrides.json`), then the licence's **standard text**
+  (`scripts/notices/standard-licences/`) with the copyright line made from the package's authors, or
+  "The X authors (repository)". Such an entry is marked "standard text; the package ships no licence
+  file". Of a dual licence the alternative needing no holder's name is shown, and the entry says
+  which licence it is "Used under".
+- npm texts are read from `node_modules` and must be the version the SBOM names: a different
+  installed version fails the build.
+- Every entry shows the package's source address (the MPL-2.0 ones need it).
 
 ## Staying current
 
-`scripts/third-party-notices-current.test.mjs` (`npm run test:notices`) fails when `package-lock.json`
-or `src-tauri/Cargo.lock` changed after the file was generated. `npm run notices:check` is the full
+`scripts/third-party-notices-current.test.mjs` (`npm run test:notices`) fails when `package-lock.json`,
+`src-tauri/Cargo.lock`, the generator, or anything under `scripts/notices/` changed after the file was
+generated. `npm run notices:check` is the full
 comparison against fresh SBOMs and is meant for the "Locked dependencies and SBOMs" CI job.

@@ -39,6 +39,7 @@ export const ALLOWED = new Map([
   ["OpenSSL", true],
   ["Apache-2.0 WITH LLVM-exception", true],
   ["CDLA-Permissive-2.0", true],
+  ["LicenseRef-PublicDomain", false],
 ]);
 
 /** Copyleft or otherwise unreviewed licences: named in the failure so Ben decides. */
@@ -173,9 +174,51 @@ export function licenceFiles(directory) {
   return found.filter((file) => file.text.length > 0);
 }
 
+/**
+ * One SHA-256 over what decides the generated file besides the lock files: the generator itself
+ * and everything under scripts/notices (the standard texts, the extra components, the overrides),
+ * so a change to any of them makes the committed file stale too.
+ */
+export function hashGeneratorInputs(root) {
+  const files = [
+    "scripts/third-party-notices.mjs",
+    "scripts/generate-third-party-notices.mjs",
+  ];
+  const walk = (directory) => {
+    for (const entry of readdirSync(path.join(root, directory), {
+      withFileTypes: true,
+    }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const relative = `${directory}/${entry.name}`;
+      if (entry.isDirectory()) walk(relative);
+      else files.push(relative);
+    }
+  };
+  walk("scripts/notices");
+  const hash = createHash("sha256");
+  for (const file of files) {
+    hash
+      .update(`${file}\0`)
+      .update(readFileSync(path.join(root, file)))
+      .update("\0");
+  }
+  return hash.digest("hex");
+}
+
 /** The SHA-256 of a file, as a hex string. */
 export function hashFile(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+/** `{repository: url}` for an entry: the package's own source address, cleaned for display. */
+function repositoryField(component, fallback) {
+  const vcs = (component.externalReferences ?? []).find(
+    (reference) => reference.type === "vcs",
+  )?.url;
+  const url = (vcs ?? fallback ?? "")
+    .replace(/^git\+/, "")
+    .replace(/\.git$/, "")
+    .replace(/^git:\/\//, "https://");
+  return /^https:\/\//.test(url) ? { repository: url } : {};
 }
 
 /** Licences whose standard text needs no copyright holder's name. */
@@ -235,6 +278,9 @@ const textId = (text) =>
  *   `{holder}` where its copyright line goes, for a package that ships no licence file
  * @param {(ecosystem:string, component:object) => {holders:string[], repository:string|null}} input.originOf
  *   who holds the copyright, from the package's own metadata
+ * @param {(ecosystem:string, component:object) => string|null|undefined} input.installedVersionOf
+ *   the version actually installed whose texts are read (undefined: not checked); a different one
+ *   than the inventory's fails, so a text is never taken from another version
  * @param {Record<string,string>} input.inputs hashes of the locked inputs the file was made from,
  *   so a test can tell when a lock file has moved on without it
  */
@@ -246,6 +292,7 @@ export function buildNotices({
   selfNames = [],
   standardTexts = {},
   originOf = () => ({ holders: [], repository: null }),
+  installedVersionOf = () => undefined,
   inputs = {},
 }) {
   const problems = [];
@@ -288,25 +335,40 @@ export function buildNotices({
           problems.push(`${label}: ${message}`);
         continue;
       }
+      const installed = installedVersionOf(ecosystem, component);
+      if (installed !== undefined && installed !== component.version) {
+        problems.push(
+          `${label}: the inventory says ${component.version} but ${installed ?? "nothing"} is installed, so its texts would be another version's (reinstall, then regenerate the inventory)`,
+        );
+        continue;
+      }
       const needsText = ids.some((id) => ALLOWED.get(id));
       let files = licenceFiles(directoryOf(ecosystem, component));
-      if (files.length === 0 && needsText) {
-        files =
-          overrides[`${name}@${component.version}`] ?? overrides[name] ?? [];
+      // A NOTICE file is not the licence: Apache-2.0 and the rest still need their own text.
+      const hasLicence = () =>
+        files.some((file) => !/^notice/i.test(file.name));
+      if (needsText && !hasLicence()) {
+        files = [
+          ...files,
+          ...(overrides[`${name}@${component.version}`] ??
+            overrides[name] ??
+            []),
+        ];
       }
       let standard = false;
-      if (files.length === 0 && needsText) {
+      if (needsText && !hasLicence()) {
         // Many crates publish no licence file. The licence's standard text is shown instead, with
         // the copyright line made from the package's own metadata, and said to be so.
-        files = standardFiles({
+        const filled = standardFiles({
           alternatives: resolveExpression(declared).alternatives,
           standardTexts,
           origin: originOf(ecosystem, component),
           name,
         });
-        standard = files.length > 0;
+        files = [...files, ...filled];
+        standard = filled.length > 0;
       }
-      if (needsText && files.length === 0) {
+      if (needsText && !hasLicence()) {
         problems.push(
           `${label}: licence ${ids.join(" + ")} requires its text, and the package has none (add a reviewed override)`,
         );
@@ -318,6 +380,10 @@ export function buildNotices({
         version: component.version,
         license: declared,
         applied: ids,
+        ...repositoryField(
+          component,
+          originOf(ecosystem, component).repository,
+        ),
         ...(standard ? { standardText: true } : {}),
         texts: files.map(intern),
       });
