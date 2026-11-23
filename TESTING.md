@@ -917,11 +917,49 @@ Use sample data only, such as the FAKE PDFs in `src-tauri/tests/fixtures/locked-
 4. Lock the vault, or let it lock, while a document is open: the reader closes with the library.
 5. With a screen reader, each page picture is named "Page N of M"; read the page with **Text on this
    page**. A scanned page may have no text. That is a limitation of this first version.
-6. On a phone, **Read** says documents cannot be shown on this device yet; use **Save a copy**.
+6. On an iPhone, **Read** says documents cannot be shown on this device yet; use **Save a copy**. On
+   Android, **Read** opens the native reader (see "Android PDF reader" below).
 
 The helper draws pages, has no vault keys, and is sandboxed (THREAT_MODEL IMP-02, D-04, #63). Where
 the sandbox cannot be set up, **Read** says documents cannot be shown safely on this system, and
 **Unlock…** says the document cannot be opened safely on this system; the document is unchanged.
+
+## Android PDF reader (#358)
+
+**Read** on Android opens a separate native window drawn with Android's `PdfRenderer`, not the app's
+web page and not the desktop helper. Use FAKE PDFs only (several pages, a scanned one, a large one,
+and a password-protected one).
+
+1. Unlock, open a document's details and choose **Read**. A full-screen reader opens with the
+   document name, **Close**, **Previous page**, **Next page**, **Zoom in**, **Zoom out** and
+   "Page N of M". Swipe sideways to turn a page, double-tap to zoom, pinch to change zoom, drag to
+   pan a page that is bigger than the screen.
+2. **Close** (or the back button) returns to the library. Lock the vault, let it lock, switch to
+   another app or press Home while reading: the reader closes and does not come back by itself.
+3. A password-protected PDF, a damaged PDF and one over 20 MB each show a message with **Close**;
+   nothing is left open. Check that no file for the document appears in the app's storage
+   (`adb shell run-as <package> ls -R cache files`) after reading.
+4. Set automatic lock to one minute. Reading (touching the reader) keeps the vault open; leaving it
+   alone lets the vault lock and the reader closes.
+5. **Known gap, said plainly:** a page is a picture. **TalkBack can say "Page N of M, picture of the
+   letter" and operate the buttons, but it cannot read the letter's text**, because `PdfRenderer`
+   gives pictures only and the desktop text extraction does not run on Android. The AI helper and
+   "Show in document" are computers-only, so Android shows the original only. A person who needs
+   the text must use **Save a copy** and a reader app of their choice. Record what TalkBack does on
+   your phone.
+5a. **memfd on Android 8 to 10 (API 26 to 29), for Ben's device test:** the reader makes its in-memory
+   file with the raw `memfd_create` system call. Some vendors' seccomp filters on those versions may
+   kill the call (a signal, SIGSYS) rather than return an error, which the app cannot catch. Open a
+   letter on the oldest phone available; a crash on open, not a "cannot show this document"
+   message, is this. Android 11 and later return an error that the app handles.
+6. Neither the app window nor this reader window sets `FLAG_SECURE`: screenshots and the recent-apps
+   picture are allowed everywhere, by the owner's decision of 20 Nov 2026 (the patient's choice).
+   Take a screenshot of an open letter on a test phone and expect it to work.
+
+Automatic checks: the Rust tests cover the bounded export, the cancel/activity gates and the sealed
+in-memory file (and that a refused memfd never falls back to a file); vitest covers the reader
+screen and the bridge; the Android build compiles the Kotlin. The `PdfRenderer` drawing itself, the
+gestures and TalkBack need a phone or the emulator test (`connectedDebugAndroidTest`).
 
 ## Preparing a document's text for an AI (#72, computers only)
 

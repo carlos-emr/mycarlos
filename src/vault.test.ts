@@ -5,11 +5,18 @@ const invoke = vi.hoisted(() => vi.fn());
 const convertFileSrc = vi.hoisted(() =>
   vi.fn((path: string, scheme: string) => `${scheme}://localhost/${path}`),
 );
-vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke,
+  convertFileSrc,
+  Channel: class {
+    onmessage: (value: unknown) => void = () => undefined;
+  },
+}));
 
 import { setLocaleOverride } from "./i18n";
 import { setDeviceLocale } from "./test/deviceLocale";
 import {
+  NATIVE_READER_ACTIVITY_EVENT,
   boxesWithControlCharacters,
   createVaultBridge,
   isCancelledError,
@@ -1051,6 +1058,101 @@ describe("localized native presentation contracts", () => {
       "Native.",
     );
   });
+});
+
+describe("the Android native PDF reader bridge (#358)", () => {
+  const labels = {
+    close: "Close",
+    previous: "Previous page",
+    next: "Next page",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    page: "Page {page} of {total}, picture of the letter",
+    pageStatus: "Page {page} of {total}",
+    pageFailed: "Page {page} of {total} cannot be shown.",
+  };
+
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("passes only a record ID and the reader's words, forwards activity and stops on close", async () => {
+    let resolve!: () => void;
+    invoke.mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
+    const listener = vi.fn();
+    window.addEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    try {
+      const opened = createVaultBridge().readAndroidPdf!("FAKE record", labels);
+      const [command, args] = invoke.mock.calls[0];
+      expect(command).toBe("vault_read_android_pdf");
+      // No document bytes, path or password: an ID and words.
+      expect(Object.keys(args.request).sort()).toEqual(["labels", "recordId"]);
+      expect(args.request.labels).toEqual(labels);
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+      resolve();
+      await opened;
+      args.activity.onmessage(null);
+      expect(listener).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(NATIVE_READER_ACTIVITY_EVENT, listener);
+    }
+  });
+
+  it("waits for an earlier reader cancellation before opening the native PDF", async () => {
+    let finish!: () => void;
+    invoke.mockImplementation((command) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    const bridge = createVaultBridge();
+    const cancelled = bridge.cancelView();
+    const opened = bridge.readAndroidPdf!("FAKE record", labels);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    finish();
+    await Promise.all([cancelled, opened]);
+    expect(invoke).toHaveBeenLastCalledWith(
+      "vault_read_android_pdf",
+      expect.objectContaining({
+        request: { recordId: "FAKE record", labels },
+      }),
+    );
+  });
+
+  it.each(["close", "lock"] as const)(
+    "discards a queued native open after %s",
+    async (reason) => {
+      let finish!: () => void;
+      invoke.mockImplementation((command) =>
+        command === "vault_view_cancel"
+          ? new Promise<void>((resolve) => {
+              finish = resolve;
+            })
+          : Promise.resolve(undefined),
+      );
+      const bridge = createVaultBridge();
+      const cancelled = bridge.cancelView();
+      const opened = bridge.readAndroidPdf!("FAKE record", labels);
+      const refused = expect(opened).rejects.toMatchObject({
+        code: "cancelled",
+      });
+      const closed = reason === "lock" ? bridge.lock() : bridge.cancelView();
+      finish();
+      await Promise.all([cancelled, refused, closed]);
+      expect(
+        invoke.mock.calls.some(
+          ([command]) => command === "vault_read_android_pdf",
+        ),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("video through the native vault (#359)", () => {
