@@ -40,6 +40,9 @@ export const AI_COMMANDS = {
   addCancel: "ai_model_add_cancel",
   // The copy running now, for a row that opens again while it runs (#275).
   addActive: "ai_model_add_active",
+  // The speed check on this computer (#305): nothing measured until it is run.
+  speed: "ai_model_speed",
+  speedCheck: "ai_speed_check",
   remove: "ai_model_remove",
   documentText: "vault_document_text",
   cancelText: "vault_document_text_cancel",
@@ -466,6 +469,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             return null;
           case c.addActive:
             return structuredClone(activeCopy);
+          case c.speed:
+            return null;
+          case c.speedCheck:
+            return null;
           case c.remove: {
             const index = Number(
               request.index ?? modelRows.find((row) => row.inUse)?.index ?? 0,

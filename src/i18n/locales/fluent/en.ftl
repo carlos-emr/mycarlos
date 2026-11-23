@@ -1989,6 +1989,17 @@ ai-failed = The AI helper could not finish. Try again.
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
 ai-error-memoryNumbers = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free and { $free } GB is free. Close some other programs, then try again.
 ai-error-memoryUnknown = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free, and this computer could not say how much is free. Close some other programs, then try again.
+ai-speed-title = Speed on this computer
+ai-speed-note = This runs the AI helper once on a short made-up text and uses the processor hard for about a minute or two. It sends nothing anywhere and uses nothing of yours. You can stop it at any time.
+ai-speed-button = Check this computer's speed
+ai-speed-working = Checking the speed…
+ai-speed-cancel = Stop the check
+ai-speed-result = Measured on this computer: the AI helper reads about { $read } words a second and writes about { $write }.
+ai-speed-cancelled = The check was stopped. Nothing was kept.
+ai-speed-none = Not checked yet.
+ai-speed-failed = The speed could not be measured. Try again.
+ai-speed-estimate = On this computer, this may take up to about { $minutes } min.
+ai-speed-estimateLong = On this computer, a document this long may not finish in the time the AI helper is given.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 

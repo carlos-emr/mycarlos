@@ -617,6 +617,8 @@ export interface VaultBridge {
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** What the speed check measured for the model in use on this computer (#305), or null. */
+  aiModelSpeed?(): Promise<unknown>;
   /** Calls `handler` with an answer's own time limit, in milliseconds, as
    * the model is asked it: the automatic lock waits that long at most for
    * it (D19). Returns the way to stop listening. */
@@ -1185,6 +1187,7 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    aiModelSpeed: () => invoke<unknown>("ai_model_speed"),
     onAiAnswerStarted: (handler) => {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",

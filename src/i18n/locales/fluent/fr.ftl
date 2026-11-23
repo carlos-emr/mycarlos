@@ -2027,6 +2027,17 @@ ai-failed = L’assistant IA n’a pas pu terminer. Réessayez.
 ai-error-memory = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Fermez d’autres programmes, puis réessayez.
 ai-error-memoryNumbers = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } Go de mémoire libre; il en reste { $free } Go. Fermez d’autres programmes, puis réessayez.
 ai-error-memoryUnknown = Il n’y a pas assez de mémoire libre pour l’assistant IA en ce moment. Il lui faut environ { $needed } Go de mémoire libre, et cet ordinateur n’a pas pu dire combien il en reste. Fermez d’autres programmes, puis réessayez.
+ai-speed-title = Vitesse sur cet ordinateur
+ai-speed-note = Ceci exécute l’assistant IA une fois sur un court texte inventé et sollicite beaucoup le processeur pendant une minute ou deux. Rien n’est envoyé nulle part et rien de vos données n’est utilisé. Vous pouvez l’arrêter à tout moment.
+ai-speed-button = Vérifier la vitesse de cet ordinateur
+ai-speed-working = Vérification de la vitesse…
+ai-speed-cancel = Arrêter la vérification
+ai-speed-result = Mesuré sur cet ordinateur : l’assistant IA lit environ { $read } mots par seconde et en écrit environ { $write }.
+ai-speed-cancelled = La vérification a été arrêtée. Rien n’a été conservé.
+ai-speed-none = Pas encore vérifiée.
+ai-speed-failed = La vitesse n’a pas pu être mesurée. Réessayez.
+ai-speed-estimate = Sur cet ordinateur, cela peut prendre jusqu’à environ { $minutes } min.
+ai-speed-estimateLong = Sur cet ordinateur, un document aussi long peut ne pas être terminé dans le temps accordé à l’assistant IA.
 
 ai-error-busy = Le modèle de l’assistant IA est en cours d’ajout ou de suppression. Réessayez quand ce sera terminé.
 

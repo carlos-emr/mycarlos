@@ -435,6 +435,117 @@ impl Store {
         self.dir.with_file_name(CHOICE_FILE)
     }
 
+    /// The measured speeds (#305 PR 4), beside the models folder as the cards are.
+    fn speeds_path(&self) -> PathBuf {
+        self.dir.with_file_name(crate::speed_check::SPEED_FILE)
+    }
+
+    /// The saved speeds that are in range; none for a missing, oversized, malformed or
+    /// non-regular file.
+    fn saved_speeds(&self) -> Vec<crate::speed_check::StoredSpeed> {
+        use std::io::Read as _;
+        if !is_regular_file(&self.speeds_path()) {
+            return Vec::new();
+        }
+        let Ok(file) = File::open(self.speeds_path()) else {
+            return Vec::new();
+        };
+        let mut bytes = Vec::new();
+        if file
+            .take(crate::speed_check::MAX_SPEED_FILE_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
+            return Vec::new();
+        }
+        crate::speed_check::parse_speed_file(&bytes)
+    }
+
+    /// What was measured for the model with this SHA-256 by this build of the helper on this many
+    /// threads, if anything was.
+    pub(crate) fn speed_for(
+        &self,
+        sha256: &str,
+        threads: u32,
+    ) -> Option<crate::speed_check::Speed> {
+        let build = crate::model_limits::helper_build();
+        self.saved_speeds()
+            .into_iter()
+            .find(|entry| {
+                entry.sha256 == sha256 && entry.helper_build == build && entry.threads == threads
+            })
+            .map(|entry| entry.speed)
+    }
+
+    /// Saves one measurement in place of an older one for the same model, build and threads. A
+    /// failure is reported so the screen can say the result was not kept.
+    pub(crate) fn save_speed(
+        &self,
+        sha256: &str,
+        threads: u32,
+        speed: crate::speed_check::Speed,
+        at_ms: u64,
+    ) -> bool {
+        let _one_writer = self.speeds_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let build = crate::model_limits::helper_build();
+        let mut entries = self.saved_speeds();
+        entries.retain(|entry| {
+            !(entry.sha256 == sha256 && entry.helper_build == build && entry.threads == threads)
+        });
+        entries.push(crate::speed_check::StoredSpeed {
+            sha256: sha256.to_owned(),
+            helper_build: build,
+            threads,
+            speed,
+            at_ms,
+        });
+        self.write_speeds(&entries)
+    }
+
+    /// The SHA-256 of the model in use, when there is one.
+    pub(crate) fn in_use_sha256(&self) -> Option<&'static str> {
+        self.in_use().map(|(_, model)| model.sha256)
+    }
+
+    fn forget_speeds(&self, sha256: &str) {
+        let _one_writer = self.speeds_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let before = self.saved_speeds();
+        let kept: Vec<_> = before
+            .iter()
+            .filter(|entry| entry.sha256 != sha256)
+            .cloned()
+            .collect();
+        if kept.len() != before.len() {
+            self.write_speeds(&kept);
+        }
+    }
+
+    fn write_speeds(&self, entries: &[crate::speed_check::StoredSpeed]) -> bool {
+        let Some(bytes) = crate::speed_check::speed_file_bytes(entries) else {
+            return false;
+        };
+        let path = self.speeds_path();
+        let part = path.with_extension("json.part");
+        if fs::symlink_metadata(&part).is_ok_and(|meta| !meta.is_file())
+            || fs::symlink_metadata(&path).is_ok_and(|meta| !meta.is_file())
+        {
+            return false;
+        }
+        let written = File::create(&part).and_then(|mut file| {
+            file.write_all(&bytes)?;
+            file.sync_all()
+        });
+        if written.is_ok() && fs::rename(&part, &path).is_ok() {
+            if let Some(parent) = path.parent() {
+                sync_dir(parent);
+            }
+            true
+        } else {
+            let _ = remove_model_file(&part);
+            false
+        }
+    }
+
     /// The checked model cards (#305), beside the models folder as the choice is: not where the
     /// sandboxed helper reads, and not in the vault.
     fn cards_path(&self) -> PathBuf {
@@ -746,6 +857,8 @@ pub(crate) struct Store {
     /// copy is written on a thread of its own): the one place a start, the settings and the
     /// reader's question all read a card from, so they never disagree.
     session_cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
+    /// One writer of the speed file at a time (as `cards_lock`).
+    speeds_lock: Mutex<()>,
 }
 
 /// The one place a file is removed here. The models folder holds a public
@@ -775,6 +888,7 @@ impl Store {
             cancel_add: AtomicBool::new(false),
             cards_lock: Mutex::new(()),
             session_cards: Mutex::new(Vec::new()),
+            speeds_lock: Mutex::new(()),
         }
     }
 
@@ -1136,6 +1250,7 @@ impl Store {
             }
         }
         self.forget_cards(model.sha256);
+        self.forget_speeds(model.sha256);
         let mut choice = self.choice();
         let before = choice.clone();
         choice.added_by_you.retain(|added| added != model.sha256);
@@ -2208,6 +2323,80 @@ mod tests {
             store.saved_cards().len(),
             crate::model_limits::MAX_STORED_CARDS
         );
+    }
+
+    #[test]
+    fn a_measured_speed_is_kept_per_model_build_and_threads_and_forgotten_with_the_model() {
+        let (temp, bytes, store) = setup(1 << 20);
+        store
+            .add(&source(&temp, &bytes), &good(), |_, _| {})
+            .unwrap();
+        let sha = store.catalog()[0].sha256;
+        let speed = crate::speed_check::Speed {
+            prompt_milli_tps: 9_000,
+            answer_milli_tps: 2_500,
+        };
+        assert!(store.speed_for(sha, 2).is_none());
+        assert!(store.save_speed(sha, 2, speed, 5));
+        assert_eq!(store.speed_for(sha, 2), Some(speed));
+        // Another thread count is another measurement; none is borrowed.
+        assert!(store.speed_for(sha, 3).is_none());
+        let faster = crate::speed_check::Speed {
+            prompt_milli_tps: 20_000,
+            ..speed
+        };
+        assert!(store.save_speed(sha, 2, faster, 6));
+        assert_eq!(store.speed_for(sha, 2), Some(faster));
+        assert_eq!(store.saved_speeds().len(), 1);
+        // Beside the models folder, never inside it.
+        assert!(store.speeds_path().is_file());
+        assert!(folder_names(&store).iter().all(|name| name == "fake.gguf"));
+        store.remove(None).unwrap();
+        assert!(store.speed_for(sha, 2).is_none());
+    }
+
+    #[test]
+    fn a_tampered_or_odd_speed_file_is_no_measurement_and_never_written_over() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        let sha = "ab".repeat(32);
+        for bad in [
+            b"garbage".to_vec(),
+            vec![b' '; crate::speed_check::MAX_SPEED_FILE_BYTES + 10],
+            br#"{"v":1,"entries":[],"extra":true}"#.to_vec(),
+        ] {
+            fs::write(store.speeds_path(), &bad).unwrap();
+            assert!(store.speed_for(&sha, 2).is_none());
+        }
+        // A rate out of range is dropped from an otherwise good file.
+        let mut value = serde_json::json!({"v": 1, "entries": [{
+            "sha256": sha,
+            "helperBuild": crate::model_limits::helper_build(),
+            "threads": 2,
+            "speed": {"promptMilliTps": 9, "answerMilliTps": 2500},
+            "atMs": 1
+        }]});
+        fs::write(store.speeds_path(), value.to_string()).unwrap();
+        assert!(store.speed_for(&sha, 2).is_none());
+        value["entries"][0]["speed"]["promptMilliTps"] = serde_json::json!(9_000);
+        fs::write(store.speeds_path(), value.to_string()).unwrap();
+        assert_eq!(
+            store.speed_for(&sha, 2).map(|s| s.prompt_milli_tps),
+            Some(9_000)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_where_the_speed_file_goes_is_left_alone() {
+        let (_temp, _bytes, store) = setup(1 << 20);
+        fs::create_dir(store.speeds_path()).unwrap();
+        let speed = crate::speed_check::Speed {
+            prompt_milli_tps: 9_000,
+            answer_milli_tps: 2_500,
+        };
+        assert!(!store.save_speed(&"ab".repeat(32), 2, speed, 1));
+        assert!(store.speeds_path().is_dir());
+        assert!(store.speed_for(&"ab".repeat(32), 2).is_none());
     }
 
     #[test]
