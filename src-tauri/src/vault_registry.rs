@@ -62,6 +62,30 @@ pub(crate) const NORMALISATION_VERSION: u32 = 1;
 /// attempts (this many, the real ones and decoys), so the timing of an unlock never says how many
 /// vaults share a name. A tampered file with more is cut to this many.
 pub(crate) const DUPLICATE_NAME_CAP: usize = 4;
+/// The work of one unlock attempt by name, from [`Registry::plan_for`]: the vaults to try the
+/// passphrase against, in registry order, and how many decoy derivations to add so the attempt does
+/// the same number whatever the name matched. `unlock_plan::run_plan` carries it out.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct UnlockPlan {
+    /// Vaults the name matched (never more than [`DUPLICATE_NAME_CAP`]).
+    pub(crate) real: Vec<SlotId>,
+    /// Derivations to run against a decoy.
+    pub(crate) decoys: usize,
+}
+
+impl UnlockPlan {
+    /// How many passphrase derivations the attempt makes: the same for every named attempt.
+    pub(crate) fn derivations(&self) -> usize {
+        self.real.len() + self.decoys
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Name hashes made on this thread, for the tests that count the work of an attempt.
+    pub(crate) static NAME_HASHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// The registry's lock file, beside it: every read-modify-write of the registry holds it.
 const LOCK_NAME: &str = "vaults.v1.lock";
 
@@ -326,6 +350,8 @@ impl Registry {
 
     /// One Argon2id hash of a normalised name under this device's salt and cost.
     fn hash_name(&self, normalised: &str) -> [u8; NAME_HASH_BYTES] {
+        #[cfg(test)]
+        NAME_HASHES.with(|count| count.set(count.get() + 1));
         let mut out = [0u8; NAME_HASH_BYTES];
         let argon = self
             .cost
@@ -458,6 +484,22 @@ impl Registry {
         // The cap holds for what this version wrote; a tampered file cannot widen it.
         found.truncate(DUPLICATE_NAME_CAP);
         found
+    }
+
+    /// What one unlock attempt with a typed name must do (#357, PR 4a). **A named attempt always
+    /// makes [`DUPLICATE_NAME_CAP`] derivations**: the vaults the name matched (0 to the cap), then
+    /// decoys up to the cap, so 0, 1 or 4 matches cost the same and no one learns from the time how
+    /// many vaults share a name, or whether it names any. An empty name is the default vault alone,
+    /// ONE derivation as today (a known default reveals nothing). Costs one name hash for a named
+    /// attempt, none for an empty one.
+    pub(crate) fn plan_for(&self, typed: &str) -> UnlockPlan {
+        let named = !normalise_name(typed).is_empty();
+        let real = self.slots_named(typed);
+        let total = if named { DUPLICATE_NAME_CAP } else { 1 };
+        UnlockPlan {
+            decoys: total.saturating_sub(real.len()),
+            real,
+        }
     }
 
     // ---- the file ---------------------------------------------------------------------------

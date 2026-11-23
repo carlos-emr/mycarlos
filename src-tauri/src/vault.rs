@@ -5426,6 +5426,96 @@ fn benchmark_kdf(still_open: &dyn Fn() -> bool) -> Result<KdfBenchmark, VaultErr
     })
 }
 
+/// What one passphrase derivation costs: the Argon2 settings of a vault header, ordered so that a
+/// dearer cost is greater (memory first, then passes, then lanes). An unlock by name runs decoy
+/// derivations at the dearest cost any real vault in the attempt has, never a cheaper one, so a
+/// decoy cannot be told from a real derivation by its time (#357, PR 4a).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct DeriveCost {
+    memory_kib: u32,
+    iterations: u32,
+    lanes: u32,
+}
+
+impl DeriveCost {
+    /// What every vault is written with today (`kdf_config_with_salt`): the least a decoy costs.
+    /// `valid_kdf_config` refuses any other settings in a header, so today this is also the most.
+    pub(crate) const DECOY: DeriveCost = DeriveCost {
+        memory_kib: ARGON_MEMORY_KIB,
+        iterations: ARGON_ITERATIONS,
+        lanes: ARGON_LANES,
+    };
+
+    /// The cost of a header's settings (used by the unlock command, PR 4b).
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn of(config: &KdfConfig) -> DeriveCost {
+        DeriveCost {
+            memory_kib: config.memory_kib,
+            iterations: config.iterations,
+            lanes: config.lanes,
+        }
+    }
+
+    /// The dearer of two costs.
+    pub(crate) fn dearer(self, other: DeriveCost) -> DeriveCost {
+        self.max(other)
+    }
+}
+
+/// One derivation that opens nothing, at `cost`, from the typed passphrase and a fixed salt: the
+/// work of a real derivation for an attempt whose name matched no vault (or fewer than the cap).
+/// The key is dropped (zeroized) at once. Takes the cost directly, not through
+/// `derive_passphrase_key`, which refuses any settings but today's.
+#[cfg_attr(not(test), allow(dead_code))] // called by the unlock command, PR 4b
+pub(crate) fn derive_decoy(passphrase: &str, cost: DeriveCost) -> Result<(), VaultError> {
+    let passphrase = normalize_passphrase(passphrase);
+    let params = Params::new(cost.memory_kib, cost.iterations, cost.lanes, Some(32))
+        .map_err(|_| VaultError::Corrupt)?;
+    let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut output = Zeroizing::new([0_u8; 32]);
+    argon
+        .hash_password_into(passphrase.as_bytes(), &DECOY_SALT, output.as_mut())
+        .map_err(|_| VaultError::Storage)?;
+    std::hint::black_box(&output);
+    Ok(())
+}
+
+/// The salt decoys derive with: fixed, and not any vault's.
+#[cfg_attr(not(test), allow(dead_code))] // used by `derive_decoy`
+const DECOY_SALT: [u8; 16] = *b"mycarlos-decoy-1";
+
+/// What the unlock-plan tests need from this file's private items.
+#[cfg(test)]
+pub(crate) mod test_costs {
+    use super::*;
+
+    /// A cost dearer than today's, which no header may carry yet.
+    pub(crate) fn dearer() -> DeriveCost {
+        DeriveCost {
+            memory_kib: ARGON_MEMORY_KIB * 2,
+            iterations: ARGON_ITERATIONS,
+            lanes: ARGON_LANES,
+        }
+    }
+
+    /// The cost a new vault's header is written with.
+    pub(crate) fn written_with() -> DeriveCost {
+        DeriveCost::of(&kdf_config_with_salt([0; 16]))
+    }
+
+    /// One decoy derivation at the smallest cost Argon2 accepts.
+    pub(crate) fn derive_cheap_decoy() -> Result<(), VaultError> {
+        derive_decoy(
+            "a FAKE passphrase",
+            DeriveCost {
+                memory_kib: 8,
+                iterations: 1,
+                lanes: 1,
+            },
+        )
+    }
+}
+
 fn derive_passphrase_key(passphrase: &str, config: &KdfConfig) -> Result<SecretKey, VaultError> {
     if !valid_kdf_config(config) {
         return Err(VaultError::Corrupt);

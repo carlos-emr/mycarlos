@@ -13,7 +13,7 @@ use crate::vault::{atomic_bytes, read_bounded_regular_file};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, MutexGuard, PoisonError},
 };
 
@@ -132,6 +132,39 @@ impl Counts {
             recovery_key: self.recovery_key.with(kept.recovery_key, now_ms),
             backup: self.backup.with(kept.backup, now_ms),
         }
+    }
+}
+
+/// Where the DEVICE's wrong-try counts are kept (#357): `attempts.json` directly in the app's local
+/// data folder, beside the vault registry, and not inside `vault-home`. With several vaults the wait
+/// is about the device, not one vault, and `vault-home` is the folder a vault backup tool may copy:
+/// restoring it must not reset (or restore an old) wait.
+pub fn counts_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("attempts.json")
+}
+
+/// Where the counts were kept before #357: inside Main's `vault-home`.
+fn legacy_counts_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("vault-home").join("attempts.json")
+}
+
+/// Brings the counts from the old place to the new one, once: copies a readable old file, never
+/// deletes it, and never replaces a file already at the new place (that one is newer). A file that is
+/// missing, not a plain file, too big or not counts is not copied, which only starts the count again
+/// (the counts are a gentle wait, not a secret). Failures are ignored for the same reason.
+pub fn migrate_counts(data_dir: &Path) {
+    let new = counts_path(data_dir);
+    if std::fs::symlink_metadata(&new).is_ok() {
+        return;
+    }
+    let Ok(data) = read_bounded_regular_file(&legacy_counts_path(data_dir), MAX_FILE_BYTES) else {
+        return;
+    };
+    let Ok(counts) = serde_json::from_slice::<Counts>(&data) else {
+        return;
+    };
+    if let Ok(bytes) = serde_json::to_vec(&counts) {
+        let _ = atomic_bytes(&new, &bytes);
     }
 }
 
@@ -452,6 +485,61 @@ mod tests {
         assert_eq!(throttle.wait(Attempt::Backup, 1_000), Some(5_000));
         throttle.succeeded(Attempt::Backup, 1_000);
         assert_eq!(throttle.wait(Attempt::Backup, 1_000), None);
+    }
+
+    #[test]
+    fn the_counts_move_beside_the_registry_once_and_the_old_file_stays() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path();
+        let old = data.join("vault-home").join("attempts.json");
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        let before = AttemptThrottle::new(Some(old.clone()));
+        for _ in 0..FREE_TRIES + 1 {
+            before.failed(Attempt::Unlock, 1_000);
+        }
+        migrate_counts(data);
+        // The device's counts are now beside the registry, with the same wrong tries.
+        assert_eq!(counts_path(data), data.join("attempts.json"));
+        assert_eq!(kept(&counts_path(data)).unlock.failures, 6);
+        let moved = AttemptThrottle::new(Some(counts_path(data)));
+        assert_eq!(moved.wait(Attempt::Unlock, 1_000), Some(10_000));
+        // The old file is not deleted (nothing is, by the app), and a second call changes nothing.
+        assert!(old.exists());
+        moved.failed(Attempt::Unlock, 2_000);
+        migrate_counts(data);
+        assert_eq!(kept(&counts_path(data)).unlock.failures, 7);
+    }
+
+    #[test]
+    fn an_old_file_that_is_not_counts_or_not_a_plain_file_is_not_moved_and_a_new_file_wins() {
+        let temp = tempfile::tempdir().unwrap();
+        let data = temp.path();
+        let old = data.join("vault-home").join("attempts.json");
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        // Not counts.
+        fs::write(&old, b"scribble").unwrap();
+        migrate_counts(data);
+        assert!(!counts_path(data).exists());
+        // Too big.
+        fs::write(&old, vec![b' '; MAX_FILE_BYTES + 1]).unwrap();
+        migrate_counts(data);
+        assert!(!counts_path(data).exists());
+        // A link in the old place.
+        #[cfg(unix)]
+        {
+            let target = data.join("elsewhere.json");
+            fs::write(&target, br#"{"unlock":{"failures":9}}"#).unwrap();
+            fs::remove_file(&old).unwrap();
+            std::os::unix::fs::symlink(&target, &old).unwrap();
+            migrate_counts(data);
+            assert!(!counts_path(data).exists());
+            fs::remove_file(&old).unwrap();
+        }
+        // A file already at the new place is newer and is left alone.
+        fs::write(&old, br#"{"unlock":{"failures":9}}"#).unwrap();
+        fs::write(counts_path(data), br#"{"unlock":{"failures":2}}"#).unwrap();
+        migrate_counts(data);
+        assert_eq!(kept(&counts_path(data)).unlock.failures, 2);
     }
 
     #[test]

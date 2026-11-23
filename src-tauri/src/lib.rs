@@ -66,6 +66,7 @@ mod signed_pdf_helper;
 mod text_recheck;
 mod throttle;
 mod unicode_cleaning_table;
+mod unlock_plan;
 mod vault;
 mod vault_registry;
 mod vault_slots;
@@ -5577,14 +5578,14 @@ pub fn run() {
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
             app.manage(StoreHandle::from_source(slots));
-            // Wrong tries at a secret, counted beside the vault in
-            // `attempts.json`, and read only when needed, not here.
-            app.manage(Arc::new(AttemptThrottle::new(Some(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("attempts.json"),
-            ))));
+            // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
+            // the vault registry and not inside Main's `vault-home`, and read only when needed,
+            // not here. The old file is copied over once and left where it was.
+            let data_dir = app.path().app_local_data_dir()?;
+            throttle::migrate_counts(&data_dir);
+            app.manage(Arc::new(AttemptThrottle::new(Some(throttle::counts_path(
+                &data_dir,
+            )))));
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
