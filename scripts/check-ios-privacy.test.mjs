@@ -235,7 +235,7 @@ const REVIEWED_WEBVIEW_STORAGE = {
   "mycarlos.unfinishedRecoveryKey.v1":
     "when a recovery key setup began (times and a flag; no key)",
   "mycarlos.oldBackupsGuide.v1":
-    "the step for older backups, and the NAME of the backup file the patient saved (the one entry that could carry a person's name if they put it in the file name): reviewed, kept, and said in the privacy notice",
+    "the step for older backups, a time and a size: NO file name (it can carry a person's name, and this storage is in iOS backups), pinned by src/native/oldBackups.test.ts",
 };
 
 test("the webview's own storage keys are the reviewed ones, and nothing else is used", async () => {

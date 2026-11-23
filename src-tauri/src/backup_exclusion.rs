@@ -180,7 +180,12 @@ mod tests {
     #[test]
     fn the_commands_that_open_a_vault_refuse_before_touching_it() {
         let lib = include_str!("lib.rs");
-        for command in ["vault_create", "vault_unlock", "vault_recover"] {
+        for command in [
+            "vault_create",
+            "vault_unlock",
+            "vault_recover",
+            "vault_restore",
+        ] {
             let start = lib
                 .find(&format!("async fn {command}(\n"))
                 .unwrap_or_else(|| panic!("{command} exists"));
@@ -194,6 +199,20 @@ mod tests {
                 "{command}: the guard comes before the store is touched"
             );
         }
+    }
+
+    /// A slot-creating command writes a new vault into the folder too. None exists yet (the
+    /// registry's `add_slot` is not a command), so this fails when one is added, as a reminder to
+    /// call `backup_exclusion::ensure()` first in it and to list it in the test above.
+    #[test]
+    fn no_command_creates_a_vault_slot_without_the_guard_yet() {
+        let lib = include_str!("lib.rs");
+        let production = lib.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            !production.contains(".add_slot("),
+            "a command now adds a vault slot: call backup_exclusion::ensure() first in it and add it \
+             to the_commands_that_open_a_vault_refuse_before_touching_it"
+        );
     }
 
     #[test]

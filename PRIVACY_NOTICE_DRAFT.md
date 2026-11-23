@@ -18,7 +18,7 @@ The app unlocks the vault using your passphrase or recovery key. Keep those secr
 
 Encryption protects stored contents, but it does not conceal everything. Someone with access to the vault files or a backup may still see that a vault exists, file sizes and dates, and some recovery and encryption settings. Information is readable while you use the unlocked app. Device security, screen access and the applications you share files with also matter.
 
-The device keeps some app preferences and recovery-workflow reminders outside the encrypted vault. These can include language, appearance, text size, and details of a backup you selected, such as its file name. On Windows builds where document notices are supported, the device also keeps notice settings and a limited record of notice outcomes outside the encrypted vault. That record uses hashed references to arrivals rather than document titles or contents. **[PUBLISHER TO CONFIRM THE FINAL RELEASE'S DEVICE STORAGE AND OPERATING SYSTEM BACKUP BEHAVIOR.]**
+The device keeps some app preferences and recovery-workflow reminders outside the encrypted vault. These can include language, appearance, text size, and a note that older backups still need attention (a time and a size, never a file name). On Windows builds where document notices are supported, the device also keeps notice settings and a limited record of notice outcomes outside the encrypted vault. That record uses hashed references to arrivals rather than document titles or contents. **[PUBLISHER TO CONFIRM THE FINAL RELEASE'S DEVICE STORAGE AND OPERATING SYSTEM BACKUP BEHAVIOR.]**
 
 ## Connections to a clinic portal
 

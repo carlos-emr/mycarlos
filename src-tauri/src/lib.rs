@@ -4383,6 +4383,8 @@ async fn vault_restore(
     request: RestoreRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    // A restore writes a vault into the data folder: the same refusal as creating one.
+    backup_exclusion::ensure().map_err(PublicError::from)?;
     let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
