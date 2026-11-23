@@ -7,7 +7,14 @@ import type { ModelStatus } from "../ai/types";
 import { AiSpeedCheck } from "./AiSpeedCheck";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+// `Channel` is imported (by way of the vault bridge) wherever this screen's modules load, so the
+// mock must export it: a module mock without it fails the whole file at import.
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: native.invoke,
+  Channel: class {
+    onmessage: (value: unknown) => void = () => undefined;
+  },
+}));
 
 // FAKE model and numbers only.
 const installed: ModelStatus = {
