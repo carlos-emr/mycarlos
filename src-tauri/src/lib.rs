@@ -5,6 +5,7 @@ mod ui_text_ids;
 use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
+mod backup_exclusion;
 mod camera_permission;
 mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -6654,6 +6655,17 @@ pub fn run() {
             // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
             // nothing is written, so this is what it was. Each slot has its own notification ledger
             // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            // iOS: the whole data folder stays out of iCloud and computer backups (#422, guideline
+            // 5.1.3(ii)); a failure is not fatal (the vault is ciphertext either way) but is not
+            // hidden from a debug run.
+            if let Err(error) =
+                backup_exclusion::keep_out_of_device_backups(&app.path().app_local_data_dir()?)
+            {
+                #[cfg(debug_assertions)]
+                eprintln!("could not exclude the data folder from backups: {error}");
+                #[cfg(not(debug_assertions))]
+                let _ = error;
+            }
             let slots = Arc::new(vault_slots::VaultSlots::open(
                 app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),

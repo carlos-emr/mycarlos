@@ -1,0 +1,190 @@
+#!/usr/bin/env node
+// Checks the iOS privacy and export-compliance files (#422).
+//
+//   node scripts/check-ios-privacy.mjs                 the repository's files
+//   node scripts/check-ios-privacy.mjs --app X.app     also a built app: the manifest sits at the
+//                                                      bundle root, is the repository's, and the
+//                                                      app's Info.plist carries the export key
+//
+// Apple refuses an upload whose code reaches a required-reason API with no declared reason
+// (ITMS-91053) and, with no `ITSAppUsesNonExemptEncryption`, asks the export questions again at
+// every upload. The built-app check exists because the manifest only counts at the root of the
+// app bundle, and a Tauri project file that did not pick it up would otherwise ship without it.
+import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+export const MANIFEST_PATH = "src-tauri/ios/PrivacyInfo.xcprivacy";
+export const INFO_PLIST_PATH = "src-tauri/Info.ios.plist";
+
+/** The categories the manifest must declare, each with the reasons Apple's list allows for it. */
+export const REQUIRED_APIS = {
+  NSPrivacyAccessedAPICategoryFileTimestamp: [
+    "C617.1",
+    "0A2A.1",
+    "3B52.1",
+    "DDA9.1",
+  ],
+  NSPrivacyAccessedAPICategoryDiskSpace: [
+    "E174.1",
+    "85F4.1",
+    "7D9E.1",
+    "B728.1",
+  ],
+  NSPrivacyAccessedAPICategorySystemBootTime: ["35F9.1", "8FFB.1", "3D61.1"],
+  NSPrivacyAccessedAPICategoryUserDefaults: [
+    "CA92.1",
+    "1C8F.1",
+    "C56D.1",
+    "AC6B.1",
+  ],
+};
+
+const stripComments = (text) => text.replace(/<!--[\s\S]*?-->/g, "");
+
+/** The value following `<key>name</key>` as a raw XML fragment, or null. */
+function valueOf(text, name) {
+  const found = new RegExp(
+    `<key>${name}</key>\\s*(<true/>|<false/>|<array/>|<array>[\\s\\S]*?</array>|<string>[^<]*</string>)`,
+  ).exec(text);
+  return found ? found[1] : null;
+}
+
+/** Problems with a PrivacyInfo.xcprivacy text (empty when it is as pinned). */
+export function checkManifest(source) {
+  const text = stripComments(source);
+  const problems = [];
+  if (!/<plist\b[^>]*>/.test(text) || !/<dict>/.test(text)) {
+    return ["the privacy manifest is not a property list"];
+  }
+  if (valueOf(text, "NSPrivacyTracking") !== "<false/>") {
+    problems.push("NSPrivacyTracking must be false");
+  }
+  if (valueOf(text, "NSPrivacyTrackingDomains") !== "<array/>") {
+    problems.push("NSPrivacyTrackingDomains must be empty");
+  }
+  if (valueOf(text, "NSPrivacyCollectedDataTypes") !== "<array/>") {
+    problems.push(
+      "NSPrivacyCollectedDataTypes must be empty while no data leaves the phone (change it with the Data safety answers)",
+    );
+  }
+  const declared = new Map();
+  for (const entry of text.matchAll(
+    /<key>NSPrivacyAccessedAPIType<\/key>\s*<string>([^<]*)<\/string>\s*<key>NSPrivacyAccessedAPITypeReasons<\/key>\s*<array>([\s\S]*?)<\/array>/g,
+  )) {
+    declared.set(
+      entry[1],
+      [...entry[2].matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1]),
+    );
+  }
+  for (const [category, allowed] of Object.entries(REQUIRED_APIS)) {
+    const reasons = declared.get(category);
+    if (!reasons || reasons.length === 0) {
+      problems.push(`${category} is not declared with a reason`);
+    } else {
+      for (const reason of reasons) {
+        if (!allowed.includes(reason)) {
+          problems.push(
+            `${category} reason ${reason} is not one Apple lists for it`,
+          );
+        }
+      }
+    }
+  }
+  for (const category of declared.keys()) {
+    if (!(category in REQUIRED_APIS)) {
+      problems.push(
+        `${category} is declared but not pinned here: add it to REQUIRED_APIS with Apple's reasons`,
+      );
+    }
+  }
+  return problems;
+}
+
+/** Problems with an Info.plist text that must carry the export-compliance key. */
+export function checkInfoPlist(source) {
+  const text = stripComments(source);
+  const value = valueOf(text, "ITSAppUsesNonExemptEncryption");
+  if (value === null) return ["ITSAppUsesNonExemptEncryption is missing"];
+  if (value !== "<true/>" && value !== "<false/>") {
+    return ["ITSAppUsesNonExemptEncryption must be true or false"];
+  }
+  return [];
+}
+
+async function read(path) {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** A plist as XML text: a binary plist (what Xcode writes) goes through macOS's `plutil`. */
+async function readPlist(path) {
+  let bytes;
+  try {
+    bytes = await readFile(path);
+  } catch {
+    return null;
+  }
+  if (!bytes.subarray(0, 6).equals(Buffer.from("bplist")))
+    return bytes.toString("utf8");
+  const converted = spawnSync("plutil", ["-convert", "xml1", "-o", "-", path], {
+    encoding: "utf8",
+  });
+  return converted.status === 0 ? converted.stdout : null;
+}
+
+export async function run(argv, root = ROOT) {
+  const problems = [];
+  const manifest = await read(join(root, MANIFEST_PATH));
+  if (manifest === null) problems.push(`${MANIFEST_PATH} not found`);
+  else problems.push(...checkManifest(manifest));
+  const info = await read(join(root, INFO_PLIST_PATH));
+  if (info === null) problems.push(`${INFO_PLIST_PATH} not found`);
+  else problems.push(...checkInfoPlist(info));
+  const at = argv.indexOf("--app");
+  if (at >= 0) {
+    const app = argv[at + 1];
+    if (!app) {
+      problems.push("pass the built .app folder after --app");
+    } else {
+      const built = await read(join(app, "PrivacyInfo.xcprivacy"));
+      if (built === null) {
+        problems.push(
+          `${app}: PrivacyInfo.xcprivacy is not at the bundle root`,
+        );
+      } else if (manifest !== null && built !== manifest) {
+        problems.push(
+          `${app}: PrivacyInfo.xcprivacy differs from ${MANIFEST_PATH}`,
+        );
+      }
+      const builtInfo = await readPlist(join(app, "Info.plist"));
+      if (builtInfo === null) {
+        problems.push(
+          `${app}: Info.plist not found, or binary and not convertible here (needs macOS plutil)`,
+        );
+      } else {
+        problems.push(
+          ...checkInfoPlist(builtInfo).map((problem) => `${app}: ${problem}`),
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  const problems = await run(process.argv.slice(2));
+  if (problems.length) {
+    for (const problem of problems) console.error(`iOS privacy: ${problem}`);
+    process.exit(1);
+  }
+  console.log("iOS privacy files are as pinned.");
+}
