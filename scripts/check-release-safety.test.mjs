@@ -20,8 +20,11 @@ import {
   checkIosInfoPlist,
   checkProvisioningProfile,
   checkTauriConfig,
+  elfDebugSections,
   iosFilesFromIpa,
 } from "./release-safety/checks.mjs";
+import { checkCargoConfig, parseToml } from "./release-safety/cargo.mjs";
+import { readZip } from "./release-safety/zip.mjs";
 import { EXPECTED_APP_ID, run } from "./check-release-safety.mjs";
 
 // ---- builders: made-up (FAKE) artifacts, so the decoders and checks are tested without a real build ----
@@ -61,6 +64,7 @@ function zip(entries) {
 
 /** Binary XML (AXML) for a flat list of elements `[name, { attr: "text" | true | false }]`. */
 function axml(elements) {
+  const ANDROID = "http://schemas.android.com/apk/res/android";
   const strings = [];
   const index = (text) => {
     let at = strings.indexOf(text);
@@ -81,13 +85,18 @@ function axml(elements) {
     body.writeUInt16LE(0x14, 24);
     body.writeUInt16LE(0x14, 26);
     body.writeUInt16LE(entries.length, 28);
-    entries.forEach(([key, value], i) => {
+    entries.forEach(([rawKey, value], i) => {
       const at = 36 + i * 20;
-      body.writeUInt32LE(0xffffffff, at);
+      const android = rawKey.startsWith("android:");
+      const key = android ? rawKey.slice(8) : rawKey;
+      body.writeUInt32LE(android ? index(ANDROID) : 0xffffffff, at);
       body.writeUInt32LE(index(key), at + 4);
       body.writeUInt32LE(0xffffffff, at + 8);
       body.writeUInt16LE(8, at + 12);
-      if (typeof value === "boolean") {
+      if (value && value.reference) {
+        body[at + 15] = 0x01;
+        body.writeUInt32LE(0x7f010001, at + 16);
+      } else if (typeof value === "boolean") {
         body[at + 15] = 0x12;
         body.writeUInt32LE(value ? 0xffffffff : 0, at + 16);
       } else {
@@ -151,9 +160,19 @@ const field = (number, payload) => {
 function protoNode([name, attrs, children = []]) {
   const element = Buffer.concat([
     field(3, name),
-    ...Object.entries(attrs).map(([key, value]) =>
-      field(4, Buffer.concat([field(2, key), field(3, String(value))])),
-    ),
+    ...Object.entries(attrs).map(([rawKey, value]) => {
+      const android = rawKey.startsWith("android:");
+      return field(
+        4,
+        Buffer.concat([
+          ...(android
+            ? [field(1, "http://schemas.android.com/apk/res/android")]
+            : []),
+          field(2, android ? rawKey.slice(8) : rawKey),
+          field(3, String(value)),
+        ]),
+      );
+    }),
     ...children.map((child) => field(5, protoNode(child))),
   ]);
   return field(1, element);
@@ -166,9 +185,34 @@ const elf = (...extra) =>
     ...extra.map((e) => Buffer.from(e)),
   ]);
 
+/** A little-endian ELF64 whose section header table names `sections` (after the null one). */
+function elfWithSections(sections) {
+  const names = Buffer.from(`\0${sections.join("\0")}\0.shstrtab\0`);
+  const header = Buffer.alloc(64);
+  header.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]);
+  const count = sections.length + 2;
+  const tableAt = 64 + names.length;
+  header.writeBigUInt64LE(BigInt(tableAt), 40);
+  header.writeUInt16LE(64, 58);
+  header.writeUInt16LE(count, 60);
+  header.writeUInt16LE(count - 1, 62);
+  const table = Buffer.alloc(count * 64);
+  let nameAt = 1;
+  [...sections, ".shstrtab"].forEach((name, i) => {
+    const at = (i + 1) * 64;
+    table.writeUInt32LE(nameAt, at);
+    if (i === sections.length) table.writeBigUInt64LE(64n, at + 24);
+    nameAt += name.length + 1;
+  });
+  return Buffer.concat([header, names, table]);
+}
+
 const GOOD_MANIFEST = [
   ["manifest", { package: EXPECTED_APP_ID }],
-  ["application", { allowBackup: false, debuggable: false }],
+  [
+    "application",
+    { "android:allowBackup": false, "android:debuggable": false },
+  ],
 ];
 const apk = (manifest = GOOD_MANIFEST, extra = []) =>
   zip([
@@ -181,20 +225,27 @@ const apk = (manifest = GOOD_MANIFEST, extra = []) =>
 
 test("plain, binary and protobuf manifests decode to the same elements", () => {
   const plain =
-    decodePlainXml(`<?xml version="1.0"?><manifest xmlns:android="x" package="${EXPECTED_APP_ID}">
+    decodePlainXml(`<?xml version="1.0"?><manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${EXPECTED_APP_ID}">
     <!-- <application android:debuggable="true"> --><application android:allowBackup="false" android:debuggable="false"/></manifest>`);
   const binary = decodeBinaryXml(axml(GOOD_MANIFEST));
   const proto = decodeProtoXml(
     protoNode([
       "manifest",
       { package: EXPECTED_APP_ID },
-      [["application", { allowBackup: "false", debuggable: "false" }]],
+      [
+        [
+          "application",
+          { "android:allowBackup": "false", "android:debuggable": "false" },
+        ],
+      ],
     ]),
   );
   const flat = (elements) =>
     elements
       .map((e) =>
-        [e.name, e.attrs.package ?? e.attrs.allowBackup ?? ""].join(":"),
+        [e.name, e.attrs.package ?? e.attrs["android:allowBackup"] ?? ""].join(
+          ":",
+        ),
       )
       .join("|");
   assert.equal(flat(plain), `manifest:${EXPECTED_APP_ID}|application:false`);
@@ -224,22 +275,28 @@ test("a good manifest passes, and each unsafe setting is its own finding", () =>
       EXPECTED_APP_ID,
     ).join("|");
   assert.match(
-    bad({ allowBackup: false, debuggable: true }),
+    bad({ "android:allowBackup": false, "android:debuggable": true }),
     /debuggable is true/,
   );
-  assert.match(bad({ allowBackup: false, testOnly: true }), /testOnly is true/);
   assert.match(
-    bad({ allowBackup: false, usesCleartextTraffic: true }),
-    /cleartext traffic is allowed/,
+    bad({ "android:allowBackup": false, "android:testOnly": true }),
+    /testOnly is true/,
   );
-  assert.match(bad({ allowBackup: true }), /allowBackup is not false/);
+  assert.match(
+    bad({ "android:allowBackup": false, "android:usesCleartextTraffic": true }),
+    /usesCleartextTraffic is true/,
+  );
+  assert.match(
+    bad({ "android:allowBackup": true }),
+    /allowBackup is not false/,
+  );
   assert.match(bad({}), /allowBackup is not false/);
   assert.match(
-    bad({ allowBackup: false }, `${EXPECTED_APP_ID}.debug`),
+    bad({ "android:allowBackup": false }, `${EXPECTED_APP_ID}.debug`),
     /applicationId is .*\.debug; it must be/,
   );
   assert.match(
-    bad({ allowBackup: false }, "com.example.other"),
+    bad({ "android:allowBackup": false }, "com.example.other"),
     /applicationId is com.example.other/,
   );
   assert.match(
@@ -252,7 +309,10 @@ test("an APK is checked end to end, and what cannot be read fails closed", () =>
   assert.deepEqual(checkAndroidArchive(apk(), "good.apk", EXPECTED_APP_ID), []);
   const debug = apk([
     ["manifest", { package: EXPECTED_APP_ID }],
-    ["application", { allowBackup: false, debuggable: true }],
+    [
+      "application",
+      { "android:allowBackup": false, "android:debuggable": true },
+    ],
   ]);
   assert.match(
     checkAndroidArchive(debug, "d.apk", EXPECTED_APP_ID).join(),
@@ -290,18 +350,18 @@ test("a network security config that permits cleartext is found, in an APK and i
       "res/xml/network_security_config.xml",
       axml([
         ["network-security-config", {}],
-        ["base-config", { cleartextTrafficPermitted: true }],
+        ["base-config", { "android:cleartextTrafficPermitted": true }],
       ]),
     ],
   ]);
   assert.match(
     checkAndroidArchive(permissive, "p.apk", EXPECTED_APP_ID).join(),
-    /base-config permits cleartext traffic/,
+    /base-config cleartextTrafficPermitted is true/,
   );
   const strict = apk(GOOD_MANIFEST, [
     [
       "res/xml/network_security_config.xml",
-      axml([["base-config", { cleartextTrafficPermitted: false }]]),
+      axml([["base-config", { "android:cleartextTrafficPermitted": false }]]),
     ],
   ]);
   assert.deepEqual(checkAndroidArchive(strict, "s.apk", EXPECTED_APP_ID), []);
@@ -311,18 +371,21 @@ test("a network security config that permits cleartext is found, in an APK and i
       protoNode([
         "manifest",
         { package: EXPECTED_APP_ID },
-        [["application", { allowBackup: "false" }]],
+        [["application", { "android:allowBackup": "false" }]],
       ]),
     ],
     [
       "base/res/xml/nsc.xml",
-      protoNode(["domain-config", { cleartextTrafficPermitted: "true" }]),
+      protoNode([
+        "domain-config",
+        { "android:cleartextTrafficPermitted": "true" },
+      ]),
     ],
     ["base/lib/arm64-v8a/libmycarlos.so", elf("release")],
   ]);
   assert.match(
     checkAndroidArchive(aab, "x.aab", EXPECTED_APP_ID).join(),
-    /domain-config permits cleartext/,
+    /domain-config cleartextTrafficPermitted is true/,
   );
 });
 
@@ -355,16 +418,34 @@ test("the stub, the cloud AI send, dev addresses and unstripped libraries are fo
     checkBinary(elf("http://localhost:1420"), "lib.so").join(),
     /dev server address/,
   );
+  // Symbols are read from the ELF section headers, not guessed from text in the file.
   assert.match(
-    checkBinary(elf(".debug_info"), "lib.so").join(),
-    /not stripped/,
+    checkBinary(elfWithSections([".text", ".symtab"]), "lib.so").join(),
+    /not stripped \(\.symtab/,
   );
-  assert.match(checkBinary(elf(".symtab"), "lib.so").join(), /not stripped/);
-  // Only an ELF file is judged for symbols.
+  assert.match(
+    checkBinary(
+      elfWithSections([".debug_info", ".debug_line"]),
+      "lib.so",
+    ).join(),
+    /not stripped \(\.debug_info/,
+  );
+  assert.deepEqual(
+    checkBinary(elfWithSections([".text", ".dynsym"]), "lib.so"),
+    [],
+  );
+  assert.deepEqual(
+    checkBinary(
+      elf(".symtab and .debug_info as plain text, no sections"),
+      "lib.so",
+    ),
+    [],
+  );
   assert.deepEqual(
     checkBinary(Buffer.from(".symtab and .debug_info text"), "notes.txt"),
     [],
   );
+  assert.deepEqual(elfDebugSections(Buffer.alloc(10)), []);
   const inApk = apk(GOOD_MANIFEST, [
     ["lib/x86_64/libextra.so", elf("FAKE stub")],
   ]);
@@ -619,7 +700,10 @@ test("run reads real files: an APK, an IPA, a frontend folder, a manifest and a 
       debugApk,
       apk([
         ["manifest", { package: EXPECTED_APP_ID }],
-        ["application", { allowBackup: false, debuggable: true }],
+        [
+          "application",
+          { "android:allowBackup": false, "android:debuggable": true },
+        ],
       ]),
     );
     assert.deepEqual(await run(["--android", goodApk]), []);
@@ -634,7 +718,7 @@ test("run reads real files: an APK, an IPA, a frontend folder, a manifest and a 
     );
     assert.match(
       (await run(["--android", manifestXml])).join(),
-      /cleartext traffic is allowed/,
+      /usesCleartextTraffic is true/,
     );
     const ipa = join(directory, "a.ipa");
     await writeFile(
@@ -708,7 +792,7 @@ test("run reads real files: an APK, an IPA, a frontend folder, a manifest and a 
     const found = (await run(["--source"], root)).join("\n");
     for (const expected of [
       /enables cloud-ai by default/,
-      /tauri's devtools feature/,
+      /dependency tauri .* enables the devtools feature/,
       /identifier is other.id/,
       /build-android-release.sh builds with the ai-helper-stub/,
       /mycarlos-ios-release.yml builds with the cloud-ai/,
@@ -727,5 +811,393 @@ test("with nothing to check it fails rather than passes", async () => {
   assert.match(
     (await run(["--android", "/nonexistent/file.apk"])).join(),
     /cannot be inspected/,
+  );
+});
+
+// ---- the review's false passes (#432), each with the probe that reproduced it ----
+
+const cargoWith = (body) => checkCargoToml(body);
+
+test("the Cargo default features are read from the [features] table wherever it is, and followed through the graph", () => {
+  // C.1: [features] after [dependencies] used to pass.
+  assert.match(
+    cargoWith(
+      '[dependencies]\nserde = "1"\n\n[features]\ndefault = ["ai-helper-stub"]\nai-helper-stub = []\n',
+    ).join(),
+    /enables ai-helper-stub by default/,
+  );
+  // C.2: through another feature, and through a dependency's feature.
+  assert.match(
+    cargoWith(
+      '[features]\ndefault = ["dev"]\ndev = ["ai-helper-stub"]\nai-helper-stub = []\n',
+    ).join(),
+    /enables ai-helper-stub by default \(through ai-helper-stub\)|enables ai-helper-stub by default/,
+  );
+  assert.match(
+    cargoWith('[features]\ndefault = ["tauri/devtools"]\n').join(),
+    /enables devtools by default \(through tauri\/devtools\)/,
+  );
+  assert.match(
+    cargoWith(
+      '[features]\ndefault = ["a"]\na = ["b"]\nb = ["c?/cloud-ai"]\n',
+    ).join(),
+    /cloud-ai by default/,
+  );
+  // C.3: the dependency as its own table, and per target.
+  assert.match(
+    cargoWith(
+      '[dependencies.tauri]\nversion = "2"\nfeatures = ["tray-icon", "devtools"]\n',
+    ).join(),
+    /dependency tauri \(dependencies\) enables the devtools feature/,
+  );
+  assert.match(
+    cargoWith(
+      '[target.\'cfg(windows)\'.dependencies]\ntauri = { version = "2", features = ["devtools"] }\n',
+    ).join(),
+    /dependency tauri \(target\.cfg\(windows\)\.dependencies\) enables the devtools feature/,
+  );
+  // Not a finding: a dev-dependency, and a feature that is only defined, not on by default.
+  assert.deepEqual(
+    cargoWith(
+      '[features]\ndefault = []\nai-helper-stub = []\n[dev-dependencies]\ntauri = { version = "2", features = ["devtools"] }\n',
+    ),
+    [],
+  );
+  assert.match(
+    cargoWith("[features\ndefault = []").join(),
+    /Cargo.toml cannot be read/,
+  );
+});
+
+test("the small TOML reader handles the shapes Cargo.toml uses", () => {
+  const parsed = parseToml(`# comment
+[package]
+name = "x" # trailing
+[features]
+default = [
+  "a", # one
+  "b",
+]
+a = []
+[dependencies]
+serde = "1"
+tauri = { version = "2", features = ["x", "y"], default-features = false }
+[dependencies.wry]
+version = '0.1'
+[[bin]]
+name = "one"
+[[bin]]
+name = "two"
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.6" }
+`);
+  assert.deepEqual(parsed.features.default, ["a", "b"]);
+  assert.deepEqual(parsed.dependencies.tauri.features, ["x", "y"]);
+  assert.equal(parsed.dependencies.wry.version, "0.1");
+  assert.deepEqual(
+    parsed.bin.map((b) => b.name),
+    ["one", "two"],
+  );
+  assert.equal(
+    parsed.target["cfg(windows)"].dependencies.windows.version,
+    "0.6",
+  );
+  assert.throws(() => parseToml("x = [1, 2"), /TOML/);
+  assert.throws(() => parseToml('x = "open'), /TOML/);
+});
+
+test("build commands are tokenised: every way to turn the stub on is found, and a test or lint is not", () => {
+  const found = (text) => checkBuildCommands(text, "c").join("|");
+  // C.4
+  assert.match(found("cargo build -Fai-helper-stub"), /ai-helper-stub feature/);
+  assert.match(
+    found('cargo build --features "tray-icon ai-helper-stub"'),
+    /ai-helper-stub feature/,
+  );
+  assert.match(
+    found("cargo build --features \\\n  ai-helper-stub"),
+    /ai-helper-stub feature/,
+  );
+  assert.match(
+    found("cargo build --features=a,ai-helper-stub"),
+    /ai-helper-stub feature/,
+  );
+  assert.match(
+    found("tauri build -- --features tray-icon,cloud-ai"),
+    /cloud-ai feature/,
+  );
+  assert.match(found("cargo build --all-features"), /--all-features/);
+  assert.match(found("cargo ndk build -F devtools"), /devtools feature/);
+  assert.match(
+    found("cargo build --cfg 'feature=\"ai-helper-stub\"'"),
+    /with --cfg/,
+  );
+  // Tests, lints and checks may use the stub (CI does).
+  assert.deepEqual(
+    found("cargo test --locked --features ai-helper-stub -- --test-threads=1"),
+    "",
+  );
+  assert.deepEqual(
+    found(
+      "cargo clippy --all-targets --features ai-helper-stub -- -D warnings",
+    ),
+    "",
+  );
+  assert.deepEqual(found("cargo check --all-features"), "");
+  // A folded YAML step is still one command; the next step is another.
+  const yaml =
+    "      - run: >-\n          cargo clippy --manifest-path a\n          --features ai-helper-stub\n      - run: cargo build --features ai-helper-stub\n";
+  assert.match(found(yaml), /ai-helper-stub feature/);
+  assert.equal(found(yaml).split("|").length, 1);
+  // The same through a cargo alias.
+  assert.match(
+    checkCargoConfig(
+      '[alias]\nship = "build --release --features cloud-ai"\nok = "test --features ai-helper-stub"\n',
+    ).join(),
+    /alias ship builds with the cloud-ai/,
+  );
+  assert.deepEqual(
+    checkCargoConfig('[alias]\nok = "test --features ai-helper-stub"\n'),
+    [],
+  );
+});
+
+test("tauri.conf.json build.features and its build commands are read", () => {
+  // C.5
+  assert.match(
+    checkTauriConfig(
+      JSON.stringify({
+        identifier: EXPECTED_APP_ID,
+        build: { features: ["ai-helper-stub"] },
+      }),
+      EXPECTED_APP_ID,
+    ).join(),
+    /build.features enables ai-helper-stub/,
+  );
+  assert.match(
+    checkTauriConfig(
+      JSON.stringify({
+        identifier: EXPECTED_APP_ID,
+        build: {
+          beforeBuildCommand:
+            "npm run build -- && cargo build --features devtools",
+        },
+      }),
+      EXPECTED_APP_ID,
+    ).join(),
+    /build.beforeBuildCommand builds with the devtools feature/,
+  );
+  assert.deepEqual(
+    checkTauriConfig(
+      JSON.stringify({
+        identifier: EXPECTED_APP_ID,
+        build: { features: [], beforeBuildCommand: "npm run build" },
+      }),
+      EXPECTED_APP_ID,
+    ),
+    [],
+  );
+  assert.match(
+    checkTauriConfig(
+      JSON.stringify({ identifier: EXPECTED_APP_ID, build: { features: "x" } }),
+      EXPECTED_APP_ID,
+    ).join(),
+    /not a list/,
+  );
+});
+
+test("every script, workflow and package script is read, whatever it is called, and none is skipped silently", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-release-sources-"));
+  try {
+    const empty = await run(["--source"], directory);
+    assert.match(empty.join("\n"), /src-tauri\/Cargo.toml not found/);
+    assert.match(empty.join("\n"), /package.json not found/);
+    assert.match(
+      empty.join("\n"),
+      /no package scripts, workflows or shell scripts were found|package.json not found/,
+    );
+    await mkdir(join(directory, "src-tauri"), { recursive: true });
+    await mkdir(join(directory, "scripts"));
+    await mkdir(join(directory, ".github/workflows"), { recursive: true });
+    await writeFile(
+      join(directory, "src-tauri/Cargo.toml"),
+      "[features]\ndefault = []\n",
+    );
+    await writeFile(
+      join(directory, "src-tauri/tauri.conf.json"),
+      JSON.stringify({ identifier: EXPECTED_APP_ID }),
+    );
+    await writeFile(
+      join(directory, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "build:ios": "tauri ios build -- --features ai-helper-stub",
+          "test:rust": "cargo test --features ai-helper-stub",
+        },
+      }),
+    );
+    await writeFile(
+      join(directory, "scripts/build-ios.sh"),
+      "cargo build --all-features\n",
+    );
+    await writeFile(
+      join(directory, ".github/workflows/ios-testflight.yml"),
+      "jobs:\n  a:\n    steps:\n      - run: cargo build -F cloud-ai\n",
+    );
+    const found = (await run(["--source"], directory)).join("\n");
+    assert.match(
+      found,
+      /package.json script build:ios builds with the ai-helper-stub/,
+    );
+    assert.doesNotMatch(found, /test:rust/);
+    assert.match(found, /scripts\/build-ios.sh builds with --all-features/);
+    assert.match(found, /ios-testflight.yml builds with the cloud-ai/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a reference, an entity or a tools override cannot hide a debug or cleartext setting", () => {
+  const verdict = (elements) =>
+    checkAndroidManifest(elements, EXPECTED_APP_ID).join("|");
+  const app = (attrs) => [
+    ["manifest", { package: EXPECTED_APP_ID }],
+    ["application", { "android:allowBackup": "false", ...attrs }],
+  ];
+  // C.8: a resource reference is unknown, so it is refused (plain XML, binary XML and protobuf XML).
+  const plain = decodePlainXml(
+    `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${EXPECTED_APP_ID}"><application android:allowBackup="false" android:debuggable="@bool/is_debug"/></manifest>`,
+  );
+  assert.match(
+    verdict(plain),
+    /debuggable is @bool\/is_debug \(not literally false/,
+  );
+  const binary = decodeBinaryXml(
+    axml([
+      ["manifest", { package: EXPECTED_APP_ID }],
+      [
+        "application",
+        {
+          "android:allowBackup": false,
+          "android:debuggable": { reference: true },
+        },
+      ],
+    ]),
+  );
+  assert.match(verdict(binary), /debuggable is @\d+ \(not literally false/);
+  const proto = decodeProtoXml(
+    protoNode([
+      "manifest",
+      { package: EXPECTED_APP_ID },
+      [
+        [
+          "application",
+          {
+            "android:allowBackup": "false",
+            "android:usesCleartextTraffic": "@bool/c",
+          },
+        ],
+      ],
+    ]),
+  );
+  assert.match(verdict(proto), /usesCleartextTraffic is @bool\/c/);
+  // An entity spelling of true is decoded, then refused.
+  const entity = decodePlainXml(
+    `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${EXPECTED_APP_ID}"><application android:allowBackup="false" android:debuggable="&#116;rue"/></manifest>`,
+  );
+  assert.match(verdict(entity), /debuggable is true/);
+  // tools:debuggable="false" after android:debuggable="true" no longer overwrites it.
+  const override = decodePlainXml(
+    `<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" package="${EXPECTED_APP_ID}"><application android:allowBackup="false" android:debuggable="true" tools:debuggable="false"/></manifest>`,
+  );
+  assert.match(verdict(override), /debuggable is true/);
+  // A ">" inside an attribute value keeps the element's attributes.
+  const gt = decodePlainXml(
+    `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${EXPECTED_APP_ID}"><application android:label="a > b" android:allowBackup="false" android:debuggable="true"/></manifest>`,
+  );
+  assert.match(verdict(gt), /debuggable is true/);
+  assert.deepEqual(verdict(decodeBinaryXml(axml(app({})))), "");
+  assert.match(
+    verdict(decodeBinaryXml(axml(app({ "android:testOnly": "1" })))),
+    /testOnly is 1 \(not literally false/,
+  );
+});
+
+test("hostile or damaged input is bounded: no hang, no unbounded inflate, no silent empty names", async () => {
+  // B: the plain XML scanner is linear; an unterminated tag with 100,000 spaces ends at once.
+  const started = Date.now();
+  assert.throws(
+    () => decodePlainXml(`<a${" ".repeat(100_000)}`),
+    /unterminated XML tag/,
+  );
+  assert.throws(
+    () => decodePlainXml(`<a ${'x="1" '.repeat(10)}`),
+    /unterminated XML tag/,
+  );
+  assert.ok(Date.now() - started < 1000, "no cubic backtracking");
+  assert.throws(() => decodePlainXml("<a>".repeat(400_000)), /larger than/);
+  assert.throws(() => decodePlainXml("<a b>"), /has no value/);
+  assert.throws(() => decodePlainXml("<a b=c>"), /not quoted/);
+  // The inflate bound: an entry that inflates past the limit is refused.
+  const { deflateRawSync } = await import("node:zlib");
+  const packed = deflateRawSync(Buffer.alloc(1 << 20));
+  const archive = (() => {
+    const name = Buffer.from("big.bin");
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(name.length, 26);
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(0x02014b50, 0);
+    header.writeUInt16LE(8, 10);
+    header.writeUInt32LE(packed.length, 20);
+    header.writeUInt16LE(name.length, 28);
+    const central = Buffer.concat([header, name]);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(1, 8);
+    end.writeUInt16LE(1, 10);
+    end.writeUInt32LE(central.length, 12);
+    end.writeUInt32LE(30 + name.length + packed.length, 16);
+    return Buffer.concat([local, name, packed, central, end]);
+  })();
+  assert.equal(readZip(archive).read("big.bin").length, 1 << 20);
+  assert.throws(
+    () => readZip(archive, { maxEntryBytes: 1 << 16 }).read("big.bin"),
+    /Cannot create a Buffer larger|maxOutputLength|larger than/,
+  );
+  assert.throws(
+    () =>
+      readZip(
+        Buffer.concat([
+          archive.subarray(0, 0),
+          Buffer.from(
+            "PK\u0003\u0004 not a zip at all and long enough to search through",
+          ),
+        ]),
+      ),
+    /not a zip/,
+  );
+  // A name or string index outside the string pool is an error, not "".
+  const good = axml(GOOD_MANIFEST);
+  const broken = Buffer.from(good);
+  // The first element chunk follows the string pool: point its name at a string that does not exist.
+  const poolSize = broken.readUInt32LE(8 + 4);
+  broken.writeUInt32LE(0x0000ffff, 8 + poolSize + 16 + 4);
+  assert.throws(() => decodeBinaryXml(broken), /outside the string pool/);
+  // Protobuf: a truncated field and a runaway varint are errors.
+  assert.throws(
+    () => decodeProtoXml(Buffer.from([0x0a, 0x7f, 0x01])),
+    /past the end/,
+  );
+  assert.throws(
+    () =>
+      decodeProtoXml(
+        Buffer.from([
+          0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+          0x01,
+        ]),
+      ),
+    /too long/,
   );
 });

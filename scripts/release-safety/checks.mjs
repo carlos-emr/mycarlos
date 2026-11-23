@@ -1,15 +1,15 @@
 // The checks of the release safety gate. Each takes what it inspects and returns problems as strings
 // (empty when it is fine). The gate fails closed: something it cannot read is a problem, not a pass.
-import { decodeAnyXml } from "./android-xml.mjs";
+import { androidAttr, decodeAnyXml } from "./android-xml.mjs";
+import { checkCommandText, FORBIDDEN_FEATURES } from "./cargo.mjs";
 import { readZip } from "./zip.mjs";
 
-/** Cargo features that must not be compiled into a store build. */
-export const FORBIDDEN_FEATURES = [
-  "ai-helper-stub",
-  "cloud-ai",
-  "cloud_ai",
-  "devtools",
-];
+export {
+  checkCargoConfig,
+  checkCargoManifest as checkCargoToml,
+  checkCommandText as checkBuildCommands,
+  FORBIDDEN_FEATURES,
+} from "./cargo.mjs";
 
 /**
  * Strings that exist in a built binary only when something a store build must not have is compiled
@@ -42,7 +42,13 @@ export const DEV_FRONTEND_PATTERNS = [
   ["a webpack hot client", /webpack-hot-middleware|webpack\/hot\/dev-server/],
 ];
 
-const isTrue = (value) => String(value).toLowerCase() === "true";
+/** A setting that must be absent or literally false: a reference or any other value is unknown, so refused. */
+const notFalse = (value) =>
+  value !== undefined && String(value).toLowerCase() !== "false";
+const say = (value) =>
+  String(value).toLowerCase() === "true"
+    ? "is true"
+    : `is ${value} (not literally false: a resource reference or another value is unknown, so it is refused)`;
 
 /** Problems in a list of decoded manifest elements. */
 export function checkAndroidManifest(elements, expectedId) {
@@ -58,19 +64,17 @@ export function checkAndroidManifest(elements, expectedId) {
       `applicationId is ${manifest.attrs.package ?? "missing"}; it must be ${expectedId}`,
     );
   }
-  if (isTrue(application.attrs.debuggable))
-    problems.push("android:debuggable is true (a debug build)");
-  if (isTrue(application.attrs.testOnly))
-    problems.push("android:testOnly is true (Play refuses it)");
-  if (isTrue(application.attrs.usesCleartextTraffic)) {
-    problems.push(
-      "android:usesCleartextTraffic is true (cleartext traffic is allowed)",
-    );
+  for (const [name, why] of [
+    ["debuggable", "a debug build"],
+    ["testOnly", "Play refuses it"],
+    ["usesCleartextTraffic", "cleartext traffic"],
+  ]) {
+    const value = androidAttr(application, name);
+    if (notFalse(value))
+      problems.push(`android:${name} ${say(value)} (${why})`);
   }
-  if (
-    !("allowBackup" in application.attrs) ||
-    isTrue(application.attrs.allowBackup)
-  ) {
+  const backup = androidAttr(application, "allowBackup");
+  if (backup === undefined || String(backup).toLowerCase() !== "false") {
     problems.push(
       "android:allowBackup is not false (the vault would go to Android backups)",
     );
@@ -83,8 +87,11 @@ export function checkAndroidXmlResources(resources) {
   const problems = [];
   for (const [name, elements] of resources) {
     for (const element of elements) {
-      if (isTrue(element.attrs.cleartextTrafficPermitted)) {
-        problems.push(`${name}: ${element.name} permits cleartext traffic`);
+      const value = androidAttr(element, "cleartextTrafficPermitted");
+      if (notFalse(value)) {
+        problems.push(
+          `${name}: ${element.name} cleartextTrafficPermitted ${say(value)}`,
+        );
       }
     }
   }
@@ -104,24 +111,70 @@ export function checkBinary(bytes, label, { allowedUrls = [] } = {}) {
     if (bytes.includes(marker.bytes))
       problems.push(`${label} contains ${marker.name}`);
   }
+  const allowed = new Set(allowedUrls.map(originOf));
   const text = bytes.toString("latin1");
   const seen = new Set();
   for (const found of text.matchAll(new RegExp(DEV_SERVER_URL.source, "g"))) {
-    if (allowedUrls.includes(found[0]) || seen.has(found[0])) continue;
+    if (allowed.has(originOf(found[0])) || seen.has(found[0])) continue;
     seen.add(found[0]);
     problems.push(`${label} contains a dev server address (${found[0]})`);
   }
-  // A native library that still has its symbol table or debug sections is a debug build (or an unstripped
-  // release): a real debug APK's library has both, a release build is stripped (Cargo `strip = true`).
-  if (bytes.length > 4 && bytes.readUInt32BE(0) === 0x7f454c46) {
-    for (const section of [".debug_info", ".symtab"]) {
-      if (bytes.includes(Buffer.from(section)))
-        problems.push(
-          `${label} is not stripped (${section} is present: a debug build)`,
-        );
-    }
+  for (const section of elfDebugSections(bytes)) {
+    problems.push(
+      `${label} is not stripped (${section} is present: a debug build)`,
+    );
   }
   return problems;
+}
+
+const originOf = (url) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * The debug and symbol sections of a little-endian ELF file, read from its section headers (a
+ * string constant that happens to say ".symtab" cannot trip this); none for another kind of file
+ * or one with no section table (a stripped one often has none worth reading).
+ */
+export function elfDebugSections(bytes) {
+  if (
+    bytes.length < 64 ||
+    bytes.readUInt32BE(0) !== 0x7f454c46 ||
+    bytes[5] !== 1
+  )
+    return [];
+  const is64 = bytes[4] === 2;
+  const shoff = is64
+    ? Number(bytes.readBigUInt64LE(40))
+    : bytes.readUInt32LE(32);
+  const entry = is64 ? bytes.readUInt16LE(58) : bytes.readUInt16LE(46);
+  const count = is64 ? bytes.readUInt16LE(60) : bytes.readUInt16LE(48);
+  const names = is64 ? bytes.readUInt16LE(62) : bytes.readUInt16LE(50);
+  if (
+    !shoff ||
+    !count ||
+    names >= count ||
+    shoff + count * entry > bytes.length
+  )
+    return [];
+  const header = (index) => shoff + index * entry;
+  const strOffset = is64
+    ? Number(bytes.readBigUInt64LE(header(names) + 24))
+    : bytes.readUInt32LE(header(names) + 16);
+  const found = new Set();
+  for (let i = 0; i < count; i++) {
+    const at = strOffset + bytes.readUInt32LE(header(i));
+    if (at >= bytes.length) continue;
+    const end = bytes.indexOf(0, at);
+    const name = bytes.toString("latin1", at, end < 0 ? bytes.length : end);
+    if (name === ".symtab" || name.startsWith(".debug_"))
+      found.add(name === ".symtab" ? ".symtab" : ".debug_info");
+  }
+  return [...found];
 }
 
 /** Problems in a whole APK or AAB. */
@@ -131,7 +184,7 @@ export function checkAndroidArchive(
   expectedId,
   options = {},
 ) {
-  const zip = readZip(archiveBytes);
+  const zip = readZip(archiveBytes, options);
   const problems = [];
   const names = zip.names();
   const manifestName = [
@@ -342,44 +395,7 @@ export function checkFrontendFile(text, label) {
 
 // ---- the source and build configuration ----
 
-/** The names in a Cargo.toml feature list `default = [ ... ]`. */
-function defaultFeatures(cargoToml) {
-  const found = /^\s*default\s*=\s*\[([\s\S]*?)\]/m.exec(
-    cargoToml.split(/^\[(?:dependencies|target)/m)[0],
-  );
-  return found ? [...found[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
-}
-
-/** Problems in Cargo.toml for a store build: forbidden default features, and tauri's `devtools` feature. */
-export function checkCargoToml(cargoToml) {
-  const problems = [];
-  for (const feature of defaultFeatures(cargoToml)) {
-    if (FORBIDDEN_FEATURES.includes(feature))
-      problems.push(`Cargo.toml enables ${feature} by default`);
-  }
-  for (const line of cargoToml.split("\n")) {
-    if (/^\s*tauri\s*=/.test(line) && /"devtools"/.test(line)) {
-      problems.push(
-        "Cargo.toml enables tauri's devtools feature (a devtools-enabled webview)",
-      );
-    }
-  }
-  return problems;
-}
-
-/** Problems in a build command or script's text: a forbidden feature passed to cargo or tauri. */
-export function checkBuildCommands(text, label) {
-  const problems = [];
-  for (const use of text.matchAll(/(?:--features|-F)[ =]+["']?([^\s"'\\]+)/g)) {
-    for (const feature of use[1].split(",")) {
-      if (FORBIDDEN_FEATURES.includes(feature))
-        problems.push(`${label} builds with the ${feature} feature`);
-    }
-  }
-  return problems;
-}
-
-/** Problems in tauri.conf.json (as text): the identifier. */
+/** Problems in tauri.conf.json (as text): the identifier, a debug suffix, build features and build commands. */
 export function checkTauriConfig(text, expectedId) {
   let config;
   try {
@@ -395,6 +411,20 @@ export function checkTauriConfig(text, expectedId) {
   }
   if (config.bundle?.android?.debugApplicationIdSuffix) {
     problems.push("tauri.conf.json sets a debugApplicationIdSuffix");
+  }
+  // `build.features` turns Cargo features on for every build, with no command line to show it.
+  const features = config.build?.features;
+  if (features !== undefined && !Array.isArray(features))
+    problems.push("tauri.conf.json build.features is not a list");
+  for (const feature of Array.isArray(features) ? features : []) {
+    if (FORBIDDEN_FEATURES.includes(feature))
+      problems.push(`tauri.conf.json build.features enables ${feature}`);
+  }
+  for (const key of ["beforeBuildCommand", "beforeBundleCommand"]) {
+    const command = config.build?.[key];
+    const text = typeof command === "string" ? command : command?.script;
+    if (typeof text === "string")
+      problems.push(...checkCommandText(text, `tauri.conf.json build.${key}`));
   }
   return problems;
 }

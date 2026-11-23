@@ -3,7 +3,10 @@
 // accepts for an APK, AAB or IPA of a few hundred MB.
 import { inflateRawSync } from "node:zlib";
 
-export function readZip(bytes) {
+/** The most one entry may inflate to (1 GiB). */
+export const MAX_ENTRY_BYTES = 1 << 30;
+
+export function readZip(bytes, { maxEntryBytes = MAX_ENTRY_BYTES } = {}) {
   let end = -1;
   for (
     let i = bytes.length - 22;
@@ -30,6 +33,9 @@ export function readZip(bytes) {
     const commentLength = bytes.readUInt16LE(at + 32);
     const local = bytes.readUInt32LE(at + 42);
     const name = bytes.toString("utf8", at + 46, at + 46 + nameLength);
+    if (local + 30 > bytes.length || bytes.readUInt32LE(local) !== 0x04034b50) {
+      throw new Error(`${name}: damaged zip local header`);
+    }
     const localName = bytes.readUInt16LE(local + 26);
     const localExtra = bytes.readUInt16LE(local + 28);
     entries.set(name, {
@@ -52,7 +58,10 @@ export function readZip(bytes) {
         entry.dataStart + entry.compressed,
       );
       if (entry.method === 0) return raw;
-      if (entry.method === 8) return inflateRawSync(raw);
+      if (entry.method === 8) {
+        // Bounded: an entry that inflates past this is refused, not allowed to fill memory.
+        return inflateRawSync(raw, { maxOutputLength: maxEntryBytes });
+      }
       throw new Error(`${name}: unsupported zip method ${entry.method}`);
     },
   };

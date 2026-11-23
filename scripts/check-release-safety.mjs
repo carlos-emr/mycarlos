@@ -26,6 +26,7 @@ import {
   checkAndroidArchive,
   checkAndroidManifest,
   checkBuildCommands,
+  checkCargoConfig,
   checkCargoToml,
   checkFrontendFile,
   checkIosApp,
@@ -63,39 +64,70 @@ async function* files(directory) {
   }
 }
 
+async function listFiles(directory, pattern) {
+  try {
+    return (await readdir(directory))
+      .filter((name) => pattern.test(name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
 async function checkSource(root, appId) {
   const problems = [];
-  const cargo = await maybe(join(root, "src-tauri/Cargo.toml"));
-  if (cargo === null) problems.push("src-tauri/Cargo.toml not found");
-  else problems.push(...checkCargoToml(cargo));
-  const tauri = await maybe(join(root, "src-tauri/tauri.conf.json"));
-  if (tauri === null) problems.push("src-tauri/tauri.conf.json not found");
-  else problems.push(...checkTauriConfig(tauri, appId));
-  // The commands a release is built with: the release script, the package scripts that name it, and
-  // any release workflow in the tree.
-  const commandFiles = ["scripts/build-android-release.sh", "package.json"];
-  const workflows = join(root, ".github/workflows");
-  try {
-    for (const entry of await readdir(workflows)) {
-      if (/release/i.test(entry))
-        commandFiles.push(`.github/workflows/${entry}`);
-    }
-  } catch {
-    // No workflows folder: nothing to read.
-  }
-  for (const name of commandFiles) {
+  const required = async (name, check) => {
     const text = await maybe(join(root, name));
-    if (text === null) continue;
-    if (name === "package.json") {
-      const scripts = JSON.parse(text).scripts ?? {};
-      for (const [script, command] of Object.entries(scripts)) {
-        if (/android:release|ios.*release|release/i.test(script))
-          problems.push(
-            ...checkBuildCommands(command, `package.json script ${script}`),
-          );
+    if (text === null) problems.push(`${name} not found`);
+    else problems.push(...check(text));
+  };
+  await required("src-tauri/Cargo.toml", checkCargoToml);
+  await required("src-tauri/tauri.conf.json", (text) =>
+    checkTauriConfig(text, appId),
+  );
+  const cargoConfig = await maybe(join(root, ".cargo/config.toml"));
+  const cargoConfigAlt = await maybe(
+    join(root, "src-tauri/.cargo/config.toml"),
+  );
+  for (const text of [cargoConfig, cargoConfigAlt])
+    if (text !== null) problems.push(...checkCargoConfig(text));
+  // Every command a build might run: all package scripts, every workflow and every shell script. A
+  // forbidden feature on a test, lint or check is fine (CI tests the stub); on anything else it is not.
+  let scanned = 0;
+  await required("package.json", (text) => {
+    const found = [];
+    try {
+      for (const [script, command] of Object.entries(
+        JSON.parse(text).scripts ?? {},
+      )) {
+        scanned++;
+        found.push(
+          ...checkBuildCommands(command, `package.json script ${script}`),
+        );
       }
-    } else problems.push(...checkBuildCommands(text, name));
+    } catch (error) {
+      found.push(`package.json cannot be read (${error.message})`);
+    }
+    return found;
+  });
+  for (const [folder, pattern] of [
+    [".github/workflows", /\.ya?ml$/],
+    ["scripts", /\.(sh|ps1)$/],
+  ]) {
+    for (const name of await listFiles(join(root, folder), pattern)) {
+      const text = await maybe(join(root, folder, name));
+      if (text === null) {
+        problems.push(`${folder}/${name} cannot be read`);
+        continue;
+      }
+      scanned++;
+      problems.push(...checkBuildCommands(text, `${folder}/${name}`));
+    }
   }
+  if (scanned === 0)
+    problems.push(
+      "no package scripts, workflows or shell scripts were found, so no build command was checked",
+    );
   return problems;
 }
 
