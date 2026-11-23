@@ -2813,11 +2813,13 @@ impl VaultStore {
             }
             let mut next = link.clone();
             next.approval_history.push(prior.clone());
-            next.approval = Some(crate::portal_approval::create(&link, now)?);
+            let version = http.contract_version(&link, &|| self.portal_link_ticket() != session);
+            next.approval = Some(crate::portal_approval::create(&link, now, version)?);
             link = self.save_approval_state(&link, next, session, true)?;
         } else if link.approval.is_none() {
             let mut next = link.clone();
-            next.approval = Some(crate::portal_approval::create(&link, now)?);
+            let version = http.contract_version(&link, &|| self.portal_link_ticket() != session);
+            next.approval = Some(crate::portal_approval::create(&link, now, version)?);
             link = self.save_approval_state(&link, next, session, false)?;
         } else {
             Self::approval_error(&link, false)?;
@@ -4304,7 +4306,8 @@ mod approval_recovery_tests {
         let linked = finish_connect_link(&store, session).unwrap();
         let link = saved(&store);
         assert_eq!(link.id, linked.id);
-        let attempt = portal_approval::create(&link, made_at).unwrap();
+        let attempt =
+            portal_approval::create(&link, made_at, portal_approval::CONTRACT_V1).unwrap();
         store
             .mutate_recorded(|m, _| {
                 m.portal_links[0].approval = Some(attempt.clone());
@@ -4411,11 +4414,16 @@ mod approval_recovery_tests {
         let (temp, store, link, old) = setup(true);
         let now = crate::now_ms() / 1000;
         let mut history: Vec<_> = (0..count)
-            .map(|i| portal_approval::create(&link, now - 900 - i as u64).unwrap())
+            .map(|i| {
+                portal_approval::create(&link, now - 900 - i as u64, portal_approval::CONTRACT_V1)
+                    .unwrap()
+            })
             .collect();
         history[count - 1] = old.clone();
         let mut current = link;
-        current.approval = Some(portal_approval::create(&current, now - 700).unwrap());
+        current.approval = Some(
+            portal_approval::create(&current, now - 700, portal_approval::CONTRACT_V1).unwrap(),
+        );
         current.approval_history = history;
         store
             .mutate_recorded(|m, _| {
@@ -5578,7 +5586,12 @@ mod approval_recovery_tests {
             // A second clinic's device, with a request in `state`.
             let (mut other, _, _, _) = signed_delivery();
             if let Some(state) = state {
-                let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+                let mut attempt = portal_approval::create(
+                    &other,
+                    crate::now_ms() / 1000,
+                    portal_approval::CONTRACT_V1,
+                )
+                .unwrap();
                 attempt.status = Some(state);
                 other.approval = Some(attempt);
             }
@@ -5628,7 +5641,9 @@ mod approval_recovery_tests {
         }
         // A request the clinic has picked up is still open.
         let (mut other, _, _, _) = signed_delivery();
-        let mut attempt = portal_approval::create(&other, crate::now_ms() / 1000).unwrap();
+        let mut attempt =
+            portal_approval::create(&other, crate::now_ms() / 1000, portal_approval::CONTRACT_V1)
+                .unwrap();
         attempt.status = Some(State::ChallengeReady);
         other.approval = Some(attempt);
         assert!(crate::portal_pickup::worth_asking(&other));
@@ -5658,7 +5673,9 @@ mod approval_recovery_tests {
         let (mut gone, _, _, _) = signed_delivery();
         // Same portal first: the request it signs names it.
         gone.portal_base = working.portal_base.clone();
-        let mut attempt = portal_approval::create(&gone, crate::now_ms() / 1000).unwrap();
+        let mut attempt =
+            portal_approval::create(&gone, crate::now_ms() / 1000, portal_approval::CONTRACT_V1)
+                .unwrap();
         attempt.status = Some(State::Pending);
         gone.approval = Some(attempt);
         let store = VaultStore::new(temp.path().join("vault"));
@@ -5810,7 +5827,9 @@ mod approval_recovery_tests {
             .unwrap();
         let mut link = approved.clone();
         link.approval_history.push(link.approval.take().unwrap());
-        let mut current = portal_approval::create(&link, crate::now_ms() / 1000).unwrap();
+        let mut current =
+            portal_approval::create(&link, crate::now_ms() / 1000, portal_approval::CONTRACT_V1)
+                .unwrap();
         current.status = Some(State::Refused);
         current.reason = Some(Reason::StaffRequired);
         link.approval = Some(current);
@@ -5904,8 +5923,14 @@ mod approval_recovery_tests {
                         .unwrap(),
                     AidFiling::Filed
                 ));
-                link.approval =
-                    Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+                link.approval = Some(
+                    portal_approval::create(
+                        &link,
+                        crate::now_ms() / 1000,
+                        portal_approval::CONTRACT_V1,
+                    )
+                    .unwrap(),
+                );
                 store
                     .mutate_recorded(|m, _| {
                         m.portal_links[0] = link.clone();
@@ -6030,7 +6055,10 @@ mod approval_recovery_tests {
                 session,
             )
             .unwrap();
-        link.approval = Some(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+        link.approval = Some(
+            portal_approval::create(&link, crate::now_ms() / 1000, portal_approval::CONTRACT_V1)
+                .unwrap(),
+        );
         store
             .mutate_recorded(|m, _| {
                 m.portal_links[0] = link.clone();
@@ -6219,7 +6247,8 @@ mod approval_recovery_tests {
                 .unwrap();
             assert_eq!(waiting_aids(&store).len(), 1);
         }
-        link.approval = Some(portal_approval::create(&link, now).unwrap());
+        link.approval =
+            Some(portal_approval::create(&link, now, portal_approval::CONTRACT_V1).unwrap());
         store
             .mutate_recorded(|m, _| {
                 m.portal_links[0] = link.clone();
@@ -7435,8 +7464,14 @@ mod approval_recovery_tests {
     fn with_archives(store: &VaultStore, count: usize) -> StoredLink {
         let mut link = saved(store);
         for _ in 0..count {
-            link.approval_history
-                .push(portal_approval::create(&link, crate::now_ms() / 1000).unwrap());
+            link.approval_history.push(
+                portal_approval::create(
+                    &link,
+                    crate::now_ms() / 1000,
+                    portal_approval::CONTRACT_V1,
+                )
+                .unwrap(),
+            );
         }
         store
             .mutate_recorded(|m, _| {

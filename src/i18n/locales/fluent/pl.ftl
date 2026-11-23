@@ -1634,6 +1634,14 @@ portal-approvalReplyInvalid = Nie udało się zweryfikować odpowiedzi portalu p
 
 portal-approvalStillOpen = Ta prośba o zatwierdzenie jest nadal otwarta w portalu przychodni. Proszę poczekać, aż się zakończy, przed rozpoczęciem nowej.
 
+portal-approvalStaffOpen =
+    { $count ->
+    [one] Ta prośba pozostaje otwarta jeszcze około { $count } godzinę. Personel przychodni może do tego czasu zatwierdzić to urządzenie, a myCarlos sprawdza ponownie przy każdym odblokowaniu.
+    [few] Ta prośba pozostaje otwarta jeszcze około { $count } godziny. Personel przychodni może do tego czasu zatwierdzić to urządzenie, a myCarlos sprawdza ponownie przy każdym odblokowaniu.
+    [many] Ta prośba pozostaje otwarta jeszcze około { $count } godzin. Personel przychodni może do tego czasu zatwierdzić to urządzenie, a myCarlos sprawdza ponownie przy każdym odblokowaniu.
+    *[other] Ta prośba pozostaje otwarta jeszcze około { $count } godziny. Personel przychodni może do tego czasu zatwierdzić to urządzenie, a myCarlos sprawdza ponownie przy każdym odblokowaniu.
+    }
+
 portal-approvalTimeLeft =
     { $count ->
     [one] Pozostały czas na tę prośbę: około { $count } minuty.

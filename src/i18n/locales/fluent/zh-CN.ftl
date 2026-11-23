@@ -1436,6 +1436,8 @@ portal-approvalReplyInvalid = 无法验证诊所门户网站对此请求的答�
 
 portal-approvalStillOpen = 此批准请求在诊所门户网站上仍未结束。请等它结束后再发起新的请求。
 
+portal-approvalStaffOpen = 此请求还会保持开放约 { $count } 小时。诊所工作人员可在此之前批准此设备，myCarlos 每次解锁时都会再次检查。
+
 portal-approvalTimeLeft = 此请求剩余时间：约 { $count } 分钟。
 
 portal-approvalTimeOver = 此请求的时间已用完。

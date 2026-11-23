@@ -1568,6 +1568,12 @@ portal-approvalReplyInvalid = The clinic portal's answer about this request coul
 
 portal-approvalStillOpen = This approval request is still open on the clinic portal. Wait until it ends before starting a new one.
 
+portal-approvalStaffOpen =
+    { $count ->
+    [one] This request stays open for about { $count } more hour. Clinic staff can approve this device until then, and myCarlos checks again each time you unlock.
+    *[other] This request stays open for about { $count } more hours. Clinic staff can approve this device until then, and myCarlos checks again each time you unlock.
+    }
+
 portal-approvalTimeLeft =
     { $count ->
     [one] Time left for this request: about { $count } minute.

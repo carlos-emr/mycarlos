@@ -1908,6 +1908,27 @@ describe("automatic approval status checks (#131)", () => {
     }
     act(() => setLocaleOverride(null));
   });
+
+  it("says how long a request that staff may answer later stays open, not a minute countdown (#144)", async () => {
+    checked(() => reply(pending, { expiresInMs: 23.5 * 3_600_000 }));
+    await pass(10_000);
+    // About 23.5 hours left: said in hours, rounded up, with where the answer is looked for.
+    expect(
+      screen.getByText(
+        "This request stays open for about 24 more hours. Clinic staff can approve this device until then, and myCarlos checks again each time you unlock.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Time left for this request/)).toBeNull();
+    for (const locale of LOCALES) {
+      act(() => setLocaleOverride(locale));
+      expect(
+        screen.getByText(
+          translate(locale, "portal.approvalStaffOpen", { count: 24 }),
+        ),
+      ).toBeVisible();
+    }
+    act(() => setLocaleOverride(null));
+  });
 });
 
 describe("the code a clinic emails (#141)", () => {

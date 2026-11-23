@@ -79,6 +79,48 @@ mod native {
         vault::VaultError,
     };
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
+    /// The device approval contract versions (mycarlos#144). v2 changes only how long a request
+    /// lives; fields, signatures and hash links are v1's.
+    pub(crate) const V1: u8 = 1;
+    pub(crate) const V2: u8 = 2;
+    /// The longest an intent may last, in seconds: v1 ten minutes, v2 a day.
+    fn intent_life(version: u8) -> u64 {
+        if version == V2 {
+            86_400
+        } else {
+            600
+        }
+    }
+    /// The longest a challenge of this kind may last: only a v2 `staff_first` challenge keeps
+    /// the day. A clinic code and an approval by another device stay at ten minutes.
+    fn challenge_life(version: u8, kind: &str) -> u64 {
+        if version == V2 && kind == "staff_first" {
+            86_400
+        } else {
+            600
+        }
+    }
+    /// A v2 request the portal has no challenge for is open this long (`min(exp, iat + 600)`):
+    /// a late answer cannot revive a request the device may already have replaced.
+    const UNANSWERED_OPEN: u64 = 600;
+    /// The version and the times of a saved intent. The intent is this device's own signed
+    /// text; `valid_saved` checks its signature and every field when the vault is read.
+    fn intent_terms(attempt: &Attempt) -> Option<(u8, u64, u64)> {
+        #[derive(Deserialize)]
+        struct Terms {
+            v: u8,
+            iat: u64,
+            exp: u64,
+        }
+        let (payload, _) = wire::split_compact(&attempt.intent, 8192).ok()?;
+        let terms: Terms = serde_json::from_slice(&payload).ok()?;
+        Some((terms.v, terms.iat, terms.exp))
+    }
+    /// Whether this request was made under contract v2: a build that only knows v1 cannot read it
+    /// (VAULT_FORMAT.md, the format that introduced it).
+    pub(crate) fn uses_contract_v2(attempt: &Attempt) -> bool {
+        intent_terms(attempt).is_some_and(|(version, _, _)| version == V2)
+    }
     #[derive(Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Intent {
@@ -159,11 +201,13 @@ mod native {
         accepted_version: String,
         kid: String,
     }
-    pub(crate) fn create(link: &StoredLink, now: u64) -> Result<Attempt, VaultError> {
+    /// A new request under contract `version` (`V1`, or `V2` when the portal lists it).
+    pub(crate) fn create(link: &StoredLink, now: u64, version: u8) -> Result<Attempt, VaultError> {
         let clinic = link.clinic.as_ref().ok_or(VaultError::Invalid)?;
-        if now > 9_007_199_254_740_000 {
+        if now > 9_007_199_254_740_000 - 86_400 || !matches!(version, V1 | V2) {
             return Err(VaultError::Invalid);
         }
+        let exp = now + intent_life(version);
         let (x, ed) = link.keys.public();
         let request_id = Uuid::new_v4();
         let intent = Intent {
@@ -172,7 +216,7 @@ mod native {
             candidate_ed25519_public_key: B64.encode(ed),
             candidate_x25519_public_key: B64.encode(x),
             clinic_id: clinic.clinic_id.clone(),
-            exp: now + 600,
+            exp,
             iat: now,
             iss: "mycarlos".into(),
             predecessor_device_key_id: None,
@@ -180,14 +224,14 @@ mod native {
             recipient_id: clinic.recipient_id.clone(),
             request_id,
             typ: "mycarlos-device-approval-intent".into(),
-            v: 1,
+            v: version,
         };
         Ok(Attempt {
             request_id,
             intent: link
                 .keys
                 .sign(&serde_json::to_vec(&intent).map_err(|_| VaultError::Storage)?),
-            expires_at: now + 600,
+            expires_at: exp,
             challenge: None,
             acceptance: None,
             status: Some(ApprovalState::Pending),
@@ -295,6 +339,40 @@ mod native {
             return Err(VaultError::Portal(LinkError::Network));
         }
         parse_status(link, attempt, &response.body)
+    }
+    /// The highest contract version this device may sign for this portal: v2 only when the portal
+    /// lists it (`GET /api/mycarlos/device-approval-versions`, answered `{"versions":[1,2]}`).
+    /// An older portal answers 404, and anything else that is not a clear answer (offline, a
+    /// refusal, a wait) means v1, which every portal takes: the request then lasts ten minutes,
+    /// as it always did.
+    pub(crate) fn contract_version(link: &StoredLink, cancelled: &dyn Fn() -> bool) -> u8 {
+        match crate::portal_client::api(
+            link,
+            "GET",
+            "/api/mycarlos/device-approval-versions",
+            Vec::new(),
+            None,
+            1024,
+            cancelled,
+        ) {
+            Ok(response) => read_versions(&response),
+            Err(_) => V1,
+        }
+    }
+    /// The version a versions reply allows: 2 when it lists 2, else 1.
+    pub(crate) fn read_versions(response: &crate::portal_client::ApiResponse) -> u8 {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Versions {
+            versions: Vec<u8>,
+        }
+        if response.status != 200 {
+            return V1;
+        }
+        match serde_json::from_slice::<Versions>(&response.body) {
+            Ok(listed) if listed.versions.contains(&V2) => V2,
+            _ => V1,
+        }
     }
     /// The portal asked to be asked less often: said as such, with the wait it
     /// gave, never as a network failure or a state of the request (#131).
@@ -460,11 +538,19 @@ mod native {
     /// intent's own expiry, or the saved, verified challenge's when it is
     /// earlier (the portal moves its expiry to the challenge's then).
     pub(crate) fn request_expires_at(link: &StoredLink, attempt: &Attempt) -> u64 {
-        attempt
+        let challenged = attempt
             .challenge
             .as_deref()
-            .and_then(|challenge| verify_challenge(link, attempt, challenge, false).ok())
-            .map_or(attempt.expires_at, |c| c.expires_at.min(attempt.expires_at))
+            .and_then(|challenge| verify_challenge(link, attempt, challenge, false).ok());
+        if let Some(c) = challenged {
+            return c.expires_at.min(attempt.expires_at);
+        }
+        // No challenge yet: a v1 request lasts its intent's ten minutes; a v2 request is open
+        // only ten minutes while unanswered, even though its intent may allow a day.
+        match intent_terms(attempt) {
+            Some((V2, iat, exp)) => exp.min(iat.saturating_add(UNANSWERED_OPEN)),
+            _ => attempt.expires_at,
+        }
     }
     /// The `approval_kind` of a challenge that asks the patient for the code
     /// their clinic emailed (clinic code v1).
@@ -529,7 +615,10 @@ mod native {
         .map_err(|_| bad())?;
         let c: Challenge = serde_json::from_slice(&payload).map_err(|_| bad())?;
         let (x, ed) = link.keys.public();
-        if c.v != 1
+        // The intent's own version and end: every object of a flow carries its intent's version.
+        let (version, _, intent_exp) = intent_terms(attempt).ok_or_else(bad)?;
+        if !matches!(version, V1 | V2)
+            || c.v != version
             || c.typ != "mycarlos-device-approval-challenge"
             || c.aud != "carlos-mycarlos-device-approval"
             || c.clinic_id != clinic.clinic_id
@@ -547,7 +636,12 @@ mod native {
             || c.predecessor_device_key_id.is_some()
             || c.predecessor_version.is_some()
             || c.expires_at <= c.issued_at
-            || c.expires_at - c.issued_at > 600
+            || c.expires_at - c.issued_at > challenge_life(version, &c.approval_kind)
+            // v2: exactly `min(issued_at + life, intent.exp)`, so a staff challenge cannot be cut
+            // to ten minutes and a code cannot be stretched (v1 keeps its looser rule).
+            || (version == V2
+                && c.expires_at
+                    != (c.issued_at + challenge_life(version, &c.approval_kind)).min(intent_exp))
             || c.expires_at > attempt.expires_at
             || !wire::key_id(&c.kid)
         {
@@ -572,7 +666,7 @@ mod native {
         })
         .map_err(|_| bad())?;
         let a: Acceptance = serde_json::from_slice(&payload).map_err(|_| bad())?;
-        if a.v != 1
+        if a.v != c.v
             || a.typ != "mycarlos-device-acceptance"
             || a.aud != "carlos-mycarlos-device-approval"
             || a.clinic_id != c.clinic_id
@@ -623,7 +717,7 @@ mod native {
             return false;
         };
         if key.verify(&payload, &signature).is_err()
-            || intent.v != 1
+            || !matches!(intent.v, V1 | V2)
             || intent.typ != "mycarlos-device-approval-intent"
             || intent.aud != "carlos-mycarlos-device-approval-intent"
             || intent.iss != "mycarlos"
@@ -636,7 +730,7 @@ mod native {
             || intent.public_portal_base_url != link.portal_base
             || intent.predecessor_device_key_id.is_some()
             || intent.exp <= intent.iat
-            || intent.exp - intent.iat > 600
+            || intent.exp - intent.iat > intent_life(intent.v)
             || intent.exp != attempt.expires_at
             || intent.exp > 9_007_199_254_740_991
         {
@@ -715,7 +809,7 @@ mod native {
                 !currently_approved(&trusted),
                 "historical evidence cannot grant current trust"
             );
-            let generated = create(&link, x["now"].as_u64().unwrap()).unwrap();
+            let generated = create(&link, x["now"].as_u64().unwrap(), V1).unwrap();
             let (bytes, sig) = wire::split_compact(&generated.intent, 8192).unwrap();
             let intent: Intent = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(intent.candidate_device_key_id, link.keys.device_key_id());
@@ -1116,11 +1210,204 @@ mod native {
                 assert!(refuse_rate_limited(&reply(status, Some(30))).is_ok());
             }
         }
+
+        // ----- Contract v2 (mycarlos#144) -----
+        fn v2_fixture() -> (serde_json::Value, crate::portal_link::StoredLink) {
+            let (_, link, _) = crate::portal_approval::first_fixture();
+            let x: serde_json::Value = serde_json::from_str(include_str!(
+                "../tests/fixtures/device-approval-contract-v2.json"
+            ))
+            .unwrap();
+            assert_eq!(
+                wire::sha256(include_bytes!(
+                    "../tests/fixtures/device-approval-contract-v2.json"
+                )),
+                "e3410fa532b39f7aca1f30cb3ccab0853b9e769de5b1b1e62abd30d59019331c"
+            );
+            assert_eq!(x["public_portal_base_url"], link.portal_base.as_str());
+            (x, link)
+        }
+        fn attempt_of(intent: &serde_json::Value) -> Attempt {
+            Attempt {
+                request_id: Uuid::parse_str(intent["claims"]["request_id"].as_str().unwrap())
+                    .unwrap(),
+                intent: intent["compact"].as_str().unwrap().into(),
+                expires_at: intent["claims"]["exp"].as_u64().unwrap(),
+                challenge: None,
+                acceptance: None,
+                status: Some(ApprovalState::Pending),
+                reason: None,
+            }
+        }
+        #[test]
+        fn should_match_all_shared_v2_vectors_for_the_flows_this_build_takes() {
+            let (x, link) = v2_fixture();
+            let (v1, _, v1_attempt) = crate::portal_approval::first_fixture();
+            let v1_challenge = v1["flows"]["first"]["challenge"]["compact"]
+                .as_str()
+                .unwrap();
+            let mut checked = 0;
+            for vector in x["signed_object_vectors"].as_array().unwrap() {
+                let id = vector["id"].as_str().unwrap();
+                let kind = vector["kind"].as_str().unwrap();
+                let compact = vector["compact"].as_str().unwrap();
+                // Approval by another device is not a flow this build offers.
+                if id.contains("accepted_device") || kind == "approval" {
+                    continue;
+                }
+                let valid = vector["valid"].as_bool().unwrap();
+                let flow = if id.contains("code") {
+                    "code"
+                } else {
+                    "staff_first"
+                };
+                let attempt = attempt_of(&x["flows"][flow]["intent"]);
+                let accepted = match kind {
+                    // An intent on its own: its version, its life and its signature.
+                    "intent" => {
+                        let (bytes, _) = wire::split_compact(compact, 8192).unwrap();
+                        let claims: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                        let alone = Attempt {
+                            request_id: Uuid::parse_str(claims["request_id"].as_str().unwrap())
+                                .unwrap(),
+                            intent: compact.into(),
+                            expires_at: claims["exp"].as_u64().unwrap(),
+                            ..attempt.clone()
+                        };
+                        valid_saved(&link, &alone)
+                    }
+                    "challenge" if id.starts_with("v1_") => {
+                        verify_challenge(&link, &v1_attempt, compact, true).is_ok()
+                    }
+                    "challenge" => verify_challenge(&link, &attempt, compact, true).is_ok(),
+                    "acceptance" => {
+                        let challenge = x["flows"][flow]["challenge"]["compact"].as_str().unwrap();
+                        verify_acceptance(&link, &attempt, challenge, compact, true).is_ok()
+                    }
+                    other => panic!("unknown vector kind {other}"),
+                };
+                assert_eq!(accepted, valid, "{id}");
+                checked += 1;
+            }
+            // Three flows' worth less the approval-by-device ones, and the limits.
+            assert!(checked >= 12, "{checked}");
+            // v1 is untouched: its own challenge still verifies under its own intent.
+            assert!(verify_challenge(&link, &v1_attempt, v1_challenge, true).is_ok());
+        }
+        #[test]
+        fn should_create_a_v1_or_v2_request_with_the_life_of_its_contract() {
+            let (_, link, _) = crate::portal_approval::first_fixture();
+            let one = create(&link, 1_792_454_400, V1).unwrap();
+            assert_eq!(one.expires_at, 1_792_454_400 + 600);
+            assert!(valid_saved(&link, &one));
+            assert!(!uses_contract_v2(&one));
+            let two = create(&link, 1_792_454_400, V2).unwrap();
+            assert_eq!(two.expires_at, 1_792_454_400 + 86_400);
+            assert!(valid_saved(&link, &two));
+            assert!(uses_contract_v2(&two));
+            let (bytes, _) = wire::split_compact(&two.intent, 8192).unwrap();
+            let intent: Intent = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!((intent.v, intent.exp - intent.iat), (2, 86_400));
+            // No other version exists, and a time that would overflow a safe integer is refused.
+            assert!(create(&link, 1_792_454_400, 3).is_err());
+            assert!(create(&link, 1_792_454_400, 0).is_err());
+            assert!(create(&link, 9_007_199_254_740_000, V2).is_err());
+        }
+        #[test]
+        fn should_judge_when_a_request_ends_by_its_contract() {
+            let (_, link, _) = crate::portal_approval::first_fixture();
+            let now = 1_792_454_400;
+            // v1: the intent's ten minutes.
+            let v1 = create(&link, now, V1).unwrap();
+            assert_eq!(request_expires_at(&link, &v1), now + 600);
+            // v2, unanswered: ten minutes, though the intent allows a day.
+            let v2 = create(&link, now, V2).unwrap();
+            assert_eq!(v2.expires_at, now + 86_400);
+            assert_eq!(request_expires_at(&link, &v2), now + 600);
+            assert!(!crate::portal_approval::request_ended(
+                &link,
+                &v2,
+                now + 599
+            ));
+            assert!(crate::portal_approval::request_ended(&link, &v2, now + 600));
+            // v2, with a staff challenge: exactly min(issued_at + a day, the intent's end), and
+            // open until it ends.
+            let staff = crate::portal_approval::signed_challenge(&link, &v2, now, now + 86_400);
+            let mut waiting = v2.clone();
+            waiting.challenge = Some(staff);
+            assert!(
+                verify_challenge(&link, &waiting, waiting.challenge.as_ref().unwrap(), true)
+                    .is_ok()
+            );
+            assert_eq!(request_expires_at(&link, &waiting), now + 86_400);
+            assert!(!crate::portal_approval::request_ended(
+                &link,
+                &waiting,
+                now + 86_399
+            ));
+            assert!(crate::portal_approval::request_ended(
+                &link,
+                &waiting,
+                now + 86_400
+            ));
+            // A staff challenge cut to ten minutes, or a code stretched to a day, is not a v2
+            // challenge at all: the request keeps its unanswered end.
+            for (ends, kind) in [(now + 600, "staff_first"), (now + 86_400, "code")] {
+                let mut odd = v2.clone();
+                odd.challenge = Some(crate::portal_approval::signed_challenge_as(
+                    &link, &v2, now, ends, kind,
+                ));
+                assert!(
+                    verify_challenge(&link, &odd, odd.challenge.as_ref().unwrap(), true).is_err(),
+                    "{kind} until {ends}"
+                );
+                assert_eq!(request_expires_at(&link, &odd), now + 600);
+            }
+            // A code challenge of ten minutes is right under v2.
+            let code =
+                crate::portal_approval::signed_challenge_as(&link, &v2, now, now + 600, "code");
+            assert!(verify_challenge(&link, &v2, &code, true).is_ok());
+            // The same ten-minute staff challenge is right under v1, as it always was, and is
+            // refused under v2 (where it must take the day).
+            let old = crate::portal_approval::signed_challenge(&link, &v1, now, now + 600);
+            assert!(verify_challenge(&link, &v1, &old, true).is_ok());
+            assert!(verify_challenge(&link, &v2, &old, true).is_err());
+        }
+        #[test]
+        fn should_sign_v2_only_when_the_portal_lists_it() {
+            let answer = |status: u16, body: &str| crate::portal_client::ApiResponse {
+                status,
+                body: zeroize::Zeroizing::new(body.as_bytes().to_vec()),
+                date: None,
+                retry_after: None,
+            };
+            assert_eq!(read_versions(&answer(200, r#"{"versions":[1,2]}"#)), V2);
+            assert_eq!(read_versions(&answer(200, r#"{"versions":[2,1]}"#)), V2);
+            assert_eq!(read_versions(&answer(200, r#"{"versions":[1]}"#)), V1);
+            assert_eq!(read_versions(&answer(200, r#"{"versions":[]}"#)), V1);
+            // An older portal answers 404; anything unclear is v1, which every portal takes.
+            for unclear in [
+                answer(404, r#"{"code":"not_found"}"#),
+                answer(403, r#"{"code":"device_removed"}"#),
+                answer(429, r#"{"code":"rate_limited"}"#),
+                answer(500, ""),
+                answer(200, ""),
+                answer(200, "not json"),
+                answer(200, r#"{"versions":"2"}"#),
+                answer(200, r#"{"versions":[2],"extra":true}"#),
+                answer(200, r#"{"versions":[300]}"#),
+            ] {
+                assert_eq!(read_versions(&unclear), V1, "{}", unclear.status);
+            }
+        }
     }
 }
 pub(crate) use native::request_expires_at;
 pub(crate) use native::{code_challenge_kid, send_code};
-pub(crate) use native::{create, device_removed, publish, refresh};
+pub(crate) use native::{contract_version, create, device_removed, publish, refresh};
+#[cfg(test)]
+pub(crate) use native::{read_versions, V2 as CONTRACT_V2};
+pub(crate) use native::{uses_contract_v2, V1 as CONTRACT_V1};
 
 /// How far a reply's `Date` may be from this device's clock and still be
 /// taken as the portal's clock (#131). The portal accepts this device's
@@ -1320,6 +1607,19 @@ pub(crate) fn signed_challenge(
     issued_at: u64,
     expires_at: u64,
 ) -> String {
+    signed_challenge_as(link, attempt, issued_at, expires_at, "staff_first")
+}
+
+/// `signed_challenge` of a given `approval_kind`, carrying the version of the request's intent
+/// (contract v1 or v2, mycarlos#144).
+#[cfg(test)]
+pub(crate) fn signed_challenge_as(
+    link: &crate::portal_link::StoredLink,
+    attempt: &Attempt,
+    issued_at: u64,
+    expires_at: u64,
+    kind: &str,
+) -> String {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
     let (x, _, _) = first_fixture();
     let clinic = link.clinic.as_ref().unwrap();
@@ -1336,6 +1636,8 @@ pub(crate) fn signed_challenge(
     claims["public_portal_base_url"] = link.portal_base.clone().into();
     claims["issued_at"] = issued_at.into();
     claims["expires_at"] = expires_at.into();
+    claims["approval_kind"] = kind.into();
+    claims["v"] = (if uses_contract_v2(attempt) { 2 } else { 1 }).into();
     sign_fixture_claims(&claims)
 }
 
@@ -1419,6 +1721,11 @@ pub(crate) trait ApprovalExchange {
     fn portal_time(&self) -> Option<u64> {
         None
     }
+    /// The contract version a new request is signed under for this portal (mycarlos#144): v1
+    /// unless the portal lists v2, so an exchange that knows nothing about versions keeps v1.
+    fn contract_version(&self, _link: &StoredLink, _cancelled: &dyn Fn() -> bool) -> u8 {
+        crate::portal_approval::CONTRACT_V1
+    }
 }
 #[derive(Default)]
 pub(crate) struct ApprovalHttp {
@@ -1446,6 +1753,9 @@ impl ApprovalExchange for ApprovalHttp {
     }
     fn portal_time(&self) -> Option<u64> {
         self.portal_time.get()
+    }
+    fn contract_version(&self, link: &StoredLink, cancelled: &dyn Fn() -> bool) -> u8 {
+        crate::portal_approval::contract_version(link, cancelled)
     }
     fn post(
         &self,

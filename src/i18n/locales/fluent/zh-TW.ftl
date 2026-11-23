@@ -1436,6 +1436,8 @@ portal-approvalReplyInvalid = 無法驗證診所入口網站對此請求的回�
 
 portal-approvalStillOpen = 此核准請求在診所入口網站上仍未結束。請等它結束後再提出新的請求。
 
+portal-approvalStaffOpen = 此請求還會保持開放約 { $count } 小時。診所人員可在此之前核准此裝置，myCarlos 每次解鎖時都會再次檢查。
+
 portal-approvalTimeLeft = 此請求剩餘時間：約 { $count } 分鐘。
 
 portal-approvalTimeOver = 此請求的時間已用完。

@@ -41,6 +41,10 @@ import {
 } from "./useApprovalPolling";
 import { RefusedDeliveries } from "./RefusedDeliveries";
 
+/** A request with more than this left is one staff may answer later in the day (contract v2):
+ * a request with a clinic code or one waiting to be answered lasts ten minutes. */
+const STAFF_REQUEST_MS = 60 * 60_000;
+
 interface Props {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -863,21 +867,27 @@ export function PortalDocuments({
         />
         {left !== null && (
           <p>
-            {left > 0
-              ? t("portal.approvalTimeLeft", {
-                  count: Math.ceil(left / 60_000),
+            {left > STAFF_REQUEST_MS
+              ? // A request staff may answer later in the day (contract v2, #144): no
+                // minute countdown, but how long it stays open and that unlocking checks.
+                t("portal.approvalStaffOpen", {
+                  count: Math.ceil(left / 3_600_000),
                 })
-              : // A new request may start by the portal's clock;
-                // otherwise "checking" only while checks run.
-                link.approvalCanRestart
-                ? t("portal.approvalTimeOverRestart", {
-                    button: t("portal.restartApproval"),
+              : left > 0
+                ? t("portal.approvalTimeLeft", {
+                    count: Math.ceil(left / 60_000),
                   })
-                : t(
-                    polling.checking?.has(link.id)
-                      ? "portal.approvalTimeUp"
-                      : "portal.approvalTimeOver",
-                  )}
+                : // A new request may start by the portal's clock;
+                  // otherwise "checking" only while checks run.
+                  link.approvalCanRestart
+                  ? t("portal.approvalTimeOverRestart", {
+                      button: t("portal.restartApproval"),
+                    })
+                  : t(
+                      polling.checking?.has(link.id)
+                        ? "portal.approvalTimeUp"
+                        : "portal.approvalTimeOver",
+                    )}
           </p>
         )}
         {polling.checking?.has(link.id) && <p>{t("portal.autoChecking")}</p>}
