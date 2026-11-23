@@ -44,8 +44,9 @@ pub(crate) const CHUNK: usize = 1024 * 1024;
 /// The longest file name kept, in bytes; a longer one is cut at a character boundary.
 pub(crate) const NAME_MAX: usize = 512;
 const META_NAME_AT: usize = 20;
-/// The longest file an item may hold: the PDF helper's own limit.
-pub(crate) const MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
+/// The longest file an item may hold: the PDF helper's own limit, so that an item the inbox takes is one
+/// the reader can open.
+pub(crate) const MAX_FILE_BYTES: u64 = crate::pdf_unlock::MAX_LOCKED_PDF_BYTES as u64;
 
 const HPKE_INFO: &[u8] = b"mycarlos/inbox/v1";
 const BODY_KEY_LABEL: &[u8] = b"mycarlos/inbox/body-key/v1";
@@ -117,6 +118,8 @@ pub(crate) struct KeyId(pub(crate) [u8; 16]);
 /// What the sealed trailer says about an item.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ItemMeta {
+    /// The name the sealer was given, bounded to `NAME_MAX` bytes. It comes from another app: the
+    /// importing stage cleans it again with the vault's own rename rules before it names a record.
     pub(crate) name: String,
     pub(crate) received_at: u64,
     pub(crate) source: Source,
@@ -152,7 +155,7 @@ impl InboxPublic {
     /// low-order point.
     pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, InboxError> {
         let bytes: [u8; 32] = bytes.try_into().map_err(|_| InboxError::BadPublicKey)?;
-        if bytes == [0_u8; 32] {
+        if bytes == [0_u8; 32] || !is_canonical_x25519(&bytes) {
             return Err(InboxError::BadPublicKey);
         }
         let key = Self { bytes };
@@ -183,6 +186,18 @@ impl InboxPublic {
         id.copy_from_slice(&digest.finalize()[..16]);
         KeyId(id)
     }
+}
+
+/// Whether `bytes` is the canonical encoding of an X25519 public key: the top bit clear and the value
+/// below 2^255 - 19 (a key made by a scalar multiplication always is; the others are encodings
+/// of a point another way, which no honest writer produces).
+fn is_canonical_x25519(bytes: &[u8; 32]) -> bool {
+    if bytes[31] & 0x80 != 0 {
+        return false;
+    }
+    let at_or_above_p =
+        bytes[31] == 0x7f && bytes[1..31].iter().all(|b| *b == 0xff) && bytes[0] >= 0xed;
+    !at_or_above_p
 }
 
 /// How the `inbox.pub` file compares with the key derived at unlock.
@@ -412,11 +427,47 @@ pub(crate) fn seal<R: Read, W: Write>(
     name: &str,
     received_at: u64,
     source: Source,
+    input: R,
+    output: W,
+    max_bytes: u64,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ItemMeta, InboxError> {
+    let name = bounded_name(name).to_owned();
+    let mut sealed = None;
+    seal_with_trailer(
+        public,
+        item_id,
+        input,
+        output,
+        max_bytes,
+        cancelled,
+        &mut |plaintext_size| {
+            let meta = ItemMeta {
+                name: name.clone(),
+                received_at,
+                source,
+                plaintext_size,
+            };
+            let plain = encode_meta(&meta);
+            sealed = Some(meta);
+            plain
+        },
+    )?;
+    sealed.ok_or(InboxError::Malformed)
+}
+
+/// `seal`, with the trailer's plaintext made by `make_trailer` from the size actually streamed. The
+/// one writer of the format: the tests give it trailers no real sealer would write, to hold
+/// `open_item`'s refusals to account.
+fn seal_with_trailer<R: Read, W: Write>(
+    public: &InboxPublic,
+    item_id: &ItemId,
     mut input: R,
     mut output: W,
     max_bytes: u64,
     cancelled: &dyn Fn() -> bool,
-) -> Result<ItemMeta, InboxError> {
+    make_trailer: &mut dyn FnMut(u64) -> Zeroizing<Vec<u8>>,
+) -> Result<(), InboxError> {
     let max_bytes = max_bytes.min(MAX_FILE_BYTES);
     let (enc, context) = hpke::setup_sender::<ChaCha20Poly1305, HkdfSha256, K, _>(
         &OpModeS::Base,
@@ -479,27 +530,20 @@ pub(crate) fn seal<R: Read, W: Write>(
         index += 1;
     }
 
-    let meta = ItemMeta {
-        name: bounded_name(name).to_owned(),
-        received_at,
-        source,
-        plaintext_size: total,
-    };
     let meta_cipher =
         XChaCha20Poly1305::new_from_slice(meta_key.as_ref()).map_err(|_| InboxError::Malformed)?;
     let trailer = meta_cipher
         .encrypt(
             XNonce::from_slice(&[0_u8; 24]),
             Payload {
-                msg: &encode_meta(&meta),
+                msg: &make_trailer(total),
                 aad: &trailer_aad(&header, body_len(total)),
             },
         )
         .map_err(|_| InboxError::Malformed)?;
-    debug_assert_eq!(trailer.len(), TRAILER_LEN);
     output.write_all(&trailer)?;
     output.flush()?;
-    Ok(meta)
+    Ok(())
 }
 
 /// An opened item: its meta, and a reader of the file's plaintext that checks every chunk as it
@@ -525,9 +569,11 @@ fn tampered() -> io::Error {
 }
 
 /// Opens an item with this vault's keys: the header, the trailer and every length are checked
-/// before any plaintext is given.
+/// before any plaintext is given. `expected` is the item id the file NAME gave: an item whose header
+/// says another id (a file renamed over another, a copy moved under a new name) is refused.
 pub(crate) fn open_item<F: Read + Seek>(
     keys: &InboxKeys,
+    expected: &ItemId,
     mut file: F,
 ) -> Result<OpenedItem<F>, InboxError> {
     let length = file.seek(SeekFrom::End(0))?;
@@ -541,6 +587,9 @@ pub(crate) fn open_item<F: Read + Seek>(
     let parsed = Header::parse(&header)?;
     if parsed.key_id != keys.public.key_id() {
         return Err(InboxError::WrongKey);
+    }
+    if parsed.item_id != *expected {
+        return Err(InboxError::Tampered);
     }
     let enc =
         <K as Kem>::EncappedKey::from_bytes(&parsed.enc).map_err(|_| InboxError::Malformed)?;
@@ -691,6 +740,13 @@ pub(crate) const CAPS: Caps = Caps {
     age_secs: 7 * 24 * 60 * 60,
 };
 
+/// The longest file a sealer may stream and `admit` accept: the caps' limit, never above the
+/// format's own. `seal`'s `max_bytes` is this value, so the check before sealing and the count
+/// while streaming cannot disagree.
+pub(crate) fn file_limit(caps: &Caps) -> u64 {
+    caps.file_bytes.min(MAX_FILE_BYTES)
+}
+
 /// What is in the folder: item files and, apart, part-sealed ones, whose bytes count too.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Usage {
@@ -730,7 +786,7 @@ pub(crate) fn admit(
     free_space: u64,
     caps: &Caps,
 ) -> Result<(), Refusal> {
-    if incoming > caps.file_bytes {
+    if incoming > file_limit(caps) {
         return Err(Refusal::FileTooLarge);
     }
     if usage.items >= caps.items {
@@ -746,9 +802,33 @@ pub(crate) fn admit(
     Ok(())
 }
 
+/// How far ahead of the clock a sealed `received_at` may be before the item is not believed (the
+/// clock may have been set back since, or differ between the app and the system share handler).
+pub(crate) const FUTURE_SLACK_SECS: u64 = 24 * 60 * 60;
+
 /// Past its age, counted from the time sealed into it.
 pub(crate) fn expired(received_at: u64, now: u64, caps: &Caps) -> bool {
     now.saturating_sub(received_at) >= caps.age_secs
+}
+
+/// What the sealed time says about an item at `now`.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Age {
+    Fresh,
+    Expired,
+    /// More than `FUTURE_SLACK_SECS` ahead of the clock: not a time this app wrote. Such an item is
+    /// treated as malformed (it would otherwise never expire).
+    FromTheFuture,
+}
+
+pub(crate) fn age_of(received_at: u64, now: u64, caps: &Caps) -> Age {
+    if received_at > now.saturating_add(FUTURE_SLACK_SECS) {
+        Age::FromTheFuture
+    } else if expired(received_at, now, caps) {
+        Age::Expired
+    } else {
+        Age::Fresh
+    }
 }
 
 /// Long past its age, by a file time: the locked sweep's test (no key, so no sealed time), twice
@@ -797,7 +877,19 @@ mod tests {
     }
 
     fn open_all(keys: &InboxKeys, sealed: &[u8]) -> Result<(ItemMeta, Vec<u8>), InboxError> {
-        let mut item = open_item(keys, Cursor::new(sealed.to_vec()))?;
+        // The id the file name would give: the header's own, unless there is no header to read.
+        let expected = peek_header(sealed)
+            .map(|(id, _)| id)
+            .unwrap_or(ItemId([0; 16]));
+        open_with_id(keys, &expected, sealed)
+    }
+
+    fn open_with_id(
+        keys: &InboxKeys,
+        expected: &ItemId,
+        sealed: &[u8],
+    ) -> Result<(ItemMeta, Vec<u8>), InboxError> {
+        let mut item = open_item(keys, expected, Cursor::new(sealed.to_vec()))?;
         let meta = item.meta.clone();
         let mut out = Vec::new();
         item.read_to_end(&mut out)
@@ -1292,5 +1384,238 @@ mod tests {
         assert!(!expired(2000, 1000, &caps));
         assert!(!long_expired(1000, 1199, &caps));
         assert!(long_expired(1000, 1200, &caps));
+    }
+
+    // ----- known answers (computed independently: RFC 5869 HKDF-SHA256, RFC 9180 DeriveKeyPair for
+    // DHKEM(X25519, HKDF-SHA256), RFC 7748 X25519, in plain Python) -----
+
+    #[test]
+    fn the_derived_key_and_ids_are_the_known_answers() {
+        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let keys = keys();
+        assert_eq!(
+            hex(&keys.public().to_bytes()),
+            "6f905ea21bdf957bbb44f8f8daeda29ea78b6424610ab85c431324f8c7390339"
+        );
+        assert_eq!(
+            hex(&keys.public().key_id().0),
+            "fc791c212298fa7fa52250bbd43f50f7"
+        );
+        assert_eq!(
+            keys.record_id(&ItemId([1; 16])).to_string(),
+            "e5fb5d03-4fd7-4e37-bf7e-1740045d80b8"
+        );
+        assert_eq!(
+            keys.record_id(&ItemId([2; 16])).to_string(),
+            "02b22196-c521-4c72-aec3-2790981f1ee5"
+        );
+    }
+
+    // ----- the opener's refusals of trailers no real sealer writes -----
+
+    /// An item whose trailer holds exactly `plain` (a valid seal otherwise), for `size` bytes of body.
+    fn item_with_trailer(keys: &InboxKeys, id: &ItemId, size: usize, plain: Vec<u8>) -> Vec<u8> {
+        let mut out = Vec::new();
+        seal_with_trailer(
+            keys.public(),
+            id,
+            Cursor::new(pdf(size)),
+            &mut out,
+            MAX_FILE_BYTES,
+            &|| false,
+            &mut |_| Zeroizing::new(plain.clone()),
+        )
+        .unwrap();
+        out
+    }
+
+    fn meta_bytes(f: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+        let mut plain = encode_meta(&ItemMeta {
+            name: "FAKE.pdf".into(),
+            received_at: 1_792_454_400,
+            source: Source::Shared,
+            plaintext_size: 2000,
+        })
+        .to_vec();
+        f(&mut plain);
+        plain
+    }
+
+    #[test]
+    fn a_trailer_no_sealer_would_write_is_refused() {
+        let keys = keys();
+        let id = ItemId([9; 16]);
+        // The right trailer for a 2 000-byte body opens.
+        let good = item_with_trailer(&keys, &id, 2000, meta_bytes(|_| {}));
+        assert!(open_with_id(&keys, &id, &good).is_ok());
+        let name_at = META_NAME_AT;
+        let refused: Vec<(&str, Vec<u8>, InboxError)> = vec![
+            (
+                "another version",
+                meta_bytes(|p| p[0] = 2),
+                InboxError::Malformed,
+            ),
+            (
+                "a name longer than the bound",
+                meta_bytes(|p| p[1..3].copy_from_slice(&((NAME_MAX + 1) as u16).to_be_bytes())),
+                InboxError::Malformed,
+            ),
+            (
+                "padding after the name that is not zero",
+                meta_bytes(|p| p[name_at + 100] = 1),
+                InboxError::Malformed,
+            ),
+            (
+                "a name that is not UTF-8",
+                meta_bytes(|p| {
+                    p[1..3].copy_from_slice(&2_u16.to_be_bytes());
+                    p[name_at] = 0xff;
+                    p[name_at + 1] = 0xfe;
+                    for byte in &mut p[name_at + 2..name_at + 8] {
+                        *byte = 0;
+                    }
+                }),
+                InboxError::Malformed,
+            ),
+            (
+                "an unknown source",
+                meta_bytes(|p| p[19] = 7),
+                InboxError::Malformed,
+            ),
+            (
+                "a size that is not the body's",
+                meta_bytes(|p| p[11..19].copy_from_slice(&1999_u64.to_be_bytes())),
+                InboxError::Tampered,
+            ),
+            (
+                "a size of zero",
+                meta_bytes(|p| p[11..19].copy_from_slice(&0_u64.to_be_bytes())),
+                InboxError::Tampered,
+            ),
+            (
+                "a size past the format's limit",
+                meta_bytes(|p| p[11..19].copy_from_slice(&(MAX_FILE_BYTES + 1).to_be_bytes())),
+                InboxError::Tampered,
+            ),
+            (
+                "a trailer that is not the fixed size",
+                meta_bytes(|p| p.truncate(META_PLAIN - 1)),
+                // The file's length no longer fits any body, so the trailer is read from the wrong place.
+                InboxError::Tampered,
+            ),
+        ];
+        for (what, plain, expected) in refused {
+            let item = item_with_trailer(&keys, &id, 2000, plain);
+            assert_eq!(
+                open_with_id(&keys, &id, &item).map(|_| ()),
+                Err(expected),
+                "{what}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_item_is_refused_under_another_names_id() {
+        let keys = keys();
+        let id = ItemId([3; 16]);
+        let sealed = seal_bytes(&keys, &id, "FAKE.pdf", &pdf(500));
+        assert!(open_with_id(&keys, &id, &sealed).is_ok());
+        assert_eq!(
+            open_with_id(&keys, &ItemId([4; 16]), &sealed).map(|_| ()),
+            Err(InboxError::Tampered)
+        );
+    }
+
+    #[test]
+    fn a_low_order_encapsulated_key_is_refused_and_each_seal_has_its_own() {
+        let keys = keys();
+        let id = ItemId([5; 16]);
+        let sealed = seal_bytes(&keys, &id, "FAKE.pdf", &pdf(500));
+        let again = seal_bytes(&keys, &id, "FAKE.pdf", &pdf(500));
+        assert_ne!(
+            sealed[48..80],
+            again[48..80],
+            "two seals shared an ephemeral key"
+        );
+        for point in [[0_u8; 32], {
+            let mut one = [0_u8; 32];
+            one[0] = 1;
+            one
+        }] {
+            let mut forged = sealed.clone();
+            forged[48..80].copy_from_slice(&point);
+            assert_eq!(
+                open_with_id(&keys, &id, &forged).map(|_| ()),
+                Err(InboxError::Tampered)
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_canonical_public_key_is_refused() {
+        let good = keys().public().to_bytes();
+        let mut high = good;
+        high[31] |= 0x80;
+        assert_eq!(
+            InboxPublic::from_bytes(&high),
+            Err(InboxError::BadPublicKey)
+        );
+        // 2^255 - 19 and above (the low-order list holds p, p + 1 already).
+        let mut at_p = [0xff_u8; 32];
+        at_p[0] = 0xed;
+        at_p[31] = 0x7f;
+        assert!(!is_canonical_x25519(&at_p));
+        at_p[0] = 0xec;
+        assert!(is_canonical_x25519(&at_p));
+        assert!(is_canonical_x25519(&good));
+    }
+
+    #[test]
+    fn a_time_far_ahead_of_the_clock_is_not_believed() {
+        let caps = Caps {
+            age_secs: 100,
+            ..CAPS
+        };
+        let now = 1_000_000;
+        assert_eq!(age_of(now, now, &caps), Age::Fresh);
+        assert_eq!(age_of(now - 99, now, &caps), Age::Fresh);
+        assert_eq!(age_of(now - 100, now, &caps), Age::Expired);
+        // A little ahead (clocks differ) is fine; past the slack it is not.
+        assert_eq!(age_of(now + FUTURE_SLACK_SECS, now, &caps), Age::Fresh);
+        assert_eq!(
+            age_of(now + FUTURE_SLACK_SECS + 1, now, &caps),
+            Age::FromTheFuture
+        );
+        assert_eq!(age_of(u64::MAX, now, &caps), Age::FromTheFuture);
+    }
+
+    #[test]
+    fn one_limit_feeds_the_admission_and_the_sealer() {
+        let tight = Caps {
+            file_bytes: 1000,
+            ..CAPS
+        };
+        assert_eq!(file_limit(&tight), 1000);
+        assert_eq!(file_limit(&CAPS), MAX_FILE_BYTES);
+        // Caps above the format's own limit are clamped to it.
+        let loose = Caps {
+            file_bytes: u64::MAX,
+            ..CAPS
+        };
+        assert_eq!(file_limit(&loose), MAX_FILE_BYTES);
+        assert_eq!(
+            admit(&Usage::default(), 1001, u64::MAX, &tight),
+            Err(Refusal::FileTooLarge)
+        );
+        assert_eq!(admit(&Usage::default(), 1000, u64::MAX, &tight), Ok(()));
+        assert_eq!(
+            admit(&Usage::default(), MAX_FILE_BYTES + 1, u64::MAX, &loose),
+            Err(Refusal::FileTooLarge)
+        );
+        // The same number as the PDF helper's.
+        assert_eq!(
+            MAX_FILE_BYTES,
+            crate::pdf_unlock::MAX_LOCKED_PDF_BYTES as u64
+        );
     }
 }
