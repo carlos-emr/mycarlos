@@ -1,6 +1,6 @@
 import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
@@ -479,6 +479,21 @@ export interface PassphraseRules {
   hardToGuess: boolean;
 }
 
+/** Genuine input in the separate native reader; no document data is carried. */
+export const NATIVE_READER_ACTIVITY_EVENT = "mycarlos-native-reader-activity";
+
+/** The words the Android native reader shows and speaks (#358). */
+export interface AndroidReaderLabels {
+  close: string;
+  previous: string;
+  next: string;
+  zoomIn: string;
+  zoomOut: string;
+  page: string;
+  pageStatus: string;
+  pageFailed: string;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
@@ -704,6 +719,11 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Android only (#358): the document is shown by the native PdfRenderer reader, from a sealed
+   * in-memory file, with no document bytes in this bridge. `labels` are the words it shows and
+   * speaks; "{page}" and "{total}" in `page` and `pageStatus` are filled in natively. Resolves
+   * when the native reader is dismissed; cancelView also stops it. */
+  readAndroidPdf?(recordId: string, labels: AndroidReaderLabels): Promise<void>;
   /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
    * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
    * nothing: `rects` is empty, with the reason, when the helper cannot tie
@@ -1305,6 +1325,22 @@ export function createVaultBridge(): VaultBridge {
       invoke<PageBoxes>("vault_page_boxes", {
         request: { recordId, page, ...span, password: password ?? null },
       }),
+    readAndroidPdf: async (recordId, labels) => {
+      const generation = viewGeneration;
+      if (pendingViewCancellation) {
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_android_pdf", {
+        request: { recordId, labels },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation

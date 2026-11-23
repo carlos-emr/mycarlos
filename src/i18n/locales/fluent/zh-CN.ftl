@@ -2162,6 +2162,27 @@ interface-received-confirmBody = 在您选择“导入”之前不会添加任�
 
 interface-received-import = 导入
 
+reader-android-opening = 正在打开文档…
+
+reader-android-failed = myCarlos 无法显示此文档。请保存一份副本，用其他应用阅读。
+
+reader-android-tooLarge = 此 PDF 超过 20 MB。请保存一份副本，用其他应用阅读。
+
+reader-android-unavailable = 此设备不允许 myCarlos 在这里打开文档。请保存一份副本，用其他应用阅读。
+
+reader-android-page = 第 { $page } 页，共 { $total } 页，信件的图片
+
+reader-android-pageStatus = 第 { $page } 页，共 { $total } 页
+reader-android-pageFailed = 无法显示第 { $page } 页，共 { $total } 页。
+
+reader-android-previous = 上一页
+
+reader-android-next = 下一页
+
+reader-android-zoomIn = 放大
+
+reader-android-zoomOut = 缩小
+
 interface-video-name = 视频，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 录制视频
 interface-RecordDialog-unavailable = 此设备上无法录制视频。

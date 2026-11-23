@@ -26,6 +26,7 @@ import {
   isLockedError,
   isMissingVaultError,
   isRecoveryModeError,
+  NATIVE_READER_ACTIVITY_EVENT,
   isRestoreUnfinished,
   vaultErrorMessage,
   vaultErrorNote,
@@ -92,6 +93,7 @@ const ACTIVITY_EVENTS = [
   "wheel",
   "keydown",
   "touchstart",
+  NATIVE_READER_ACTIVITY_EVENT,
   // Not "scroll": the page scrolls itself too (a focus move, content loading),
   // which would keep the vault open with nobody there. Scrolling by the
   // person comes as a wheel, touch, pointer or key event, and counts (#68).
@@ -2068,6 +2070,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         computer={DESKTOP_PLATFORMS.has(platform)}
+        androidPdfReader={platform === "android"}
         sizesIn1024s={platform === "windows"}
         cameraPlatform={CAMERA_PLATFORMS.has(platform) ? platform : null}
         cameraAsking={isPhone(platform) ? track : undefined}

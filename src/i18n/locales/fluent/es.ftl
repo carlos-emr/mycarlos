@@ -2364,6 +2364,27 @@ interface-received-confirmBody = No se añade nada hasta que elija Importar. Can
 
 interface-received-import = Importar
 
+reader-android-opening = Abriendo el documento…
+
+reader-android-failed = myCarlos no pudo mostrar este documento. Guarde una copia para leerlo en otra aplicación.
+
+reader-android-tooLarge = Este PDF pesa más de 20 MB. Guarde una copia para leerlo en otra aplicación.
+
+reader-android-unavailable = Este dispositivo no permite que myCarlos abra documentos aquí. Guarde una copia para leerlo en otra aplicación.
+
+reader-android-page = Página { $page } de { $total }, imagen de la carta
+
+reader-android-pageStatus = Página { $page } de { $total }
+reader-android-pageFailed = No se puede mostrar la página { $page } de { $total }.
+
+reader-android-previous = Página anterior
+
+reader-android-next = Página siguiente
+
+reader-android-zoomIn = Acercar
+
+reader-android-zoomOut = Alejar
+
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Grabar un video
 interface-RecordDialog-unavailable = La grabación de video no está disponible en este dispositivo.
