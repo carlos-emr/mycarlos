@@ -29,10 +29,10 @@ describe("the memory refusal's numbers (#305)", () => {
   });
 
   it("rounds the need up and the free amount down, to one decimal", () => {
-    expect(gigabytes(3_600_000_001, "up")).toBe("3.7 GB");
-    expect(gigabytes(3_600_000_000, "up")).toBe("3.6 GB");
-    expect(gigabytes(1_999_999_999, "down")).toBe("1.9 GB");
-    expect(gigabytes(2_000_000_000, "down")).toBe("2.0 GB");
-    expect(gigabytes(0, "down")).toBe("0.0 GB");
+    expect(gigabytes(3_600_000_001, "up")).toBe("3.7");
+    expect(gigabytes(3_600_000_000, "up")).toBe("3.6");
+    expect(gigabytes(1_999_999_999, "down")).toBe("1.9");
+    expect(gigabytes(2_000_000_000, "down")).toBe("2.0");
+    expect(gigabytes(0, "down")).toBe("0.0");
   });
 });

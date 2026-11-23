@@ -1251,8 +1251,23 @@ describe("the reader's AI helper", () => {
     await screen.findByRole("alert");
     act(() => setLocaleOverride("fr"));
     expect(screen.getByRole("alert")).toHaveHumanTextContent(
-      "Il lui faut environ 3,6 GB de libres et 2,0 GB sont libres.",
+      "Il lui faut environ 3,6 Go de mémoire libre; il en reste 2,0 Go.",
     );
+  });
+
+  it("keeps another refusal's own words even when it carries a stray memory field", async () => {
+    renderReader(
+      refusingModel("aiBusy", "ai.error.busy", {
+        memory: { neededBytes: 3_600_000_000, availableBytes: 1_000_000_000 },
+      }),
+    );
+    await firstPage();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Summary" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(OWN_WORDS[2][2]);
+    expect(alert.textContent).not.toContain("GB");
   });
 
   it("ignores numbers that are not numbers", async () => {

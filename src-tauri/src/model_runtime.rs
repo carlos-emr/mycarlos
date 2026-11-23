@@ -1422,6 +1422,30 @@ mod tests {
     const GIB: u64 = 1024 * 1024 * 1024;
 
     #[test]
+    fn a_budget_refusal_from_the_runner_keeps_its_numbers() {
+        assert_eq!(
+            from_runner(&RunnerError::Budget {
+                needed_bytes: 3 * GIB,
+                available_bytes: Some(GIB),
+            }),
+            AiError::Memory(Some(MemoryShortfall {
+                needed_bytes: 3 * GIB,
+                available_bytes: Some(GIB),
+            }))
+        );
+        assert_eq!(
+            from_runner(&RunnerError::Budget {
+                needed_bytes: 3 * GIB,
+                available_bytes: None,
+            }),
+            AiError::Memory(Some(MemoryShortfall {
+                needed_bytes: 3 * GIB,
+                available_bytes: None,
+            }))
+        );
+    }
+
+    #[test]
     fn no_model_no_memory_or_a_bad_model_refuse_before_anything_starts() {
         let request = || summary(vec![page(0, "FAKE text")], "en");
         let (none, _) = fake(None, Err(Unavailable::NotInstalled));

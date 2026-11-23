@@ -120,6 +120,11 @@ export function ReaderAiPanel({
   const [working, setWorking] = useState(false);
   // The last run's failure, said in the panel's alert; null when none.
   const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
+  // Only a refusal for memory carries numbers that matter; read once per render.
+  const failedMemory =
+    failed && hasVaultErrorCode(failed.failure, "aiMemory")
+      ? memoryShortfall(failed.failure)
+      : null;
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   // A document longer than the model reads at a time, waiting for the
@@ -644,9 +649,8 @@ export function ReaderAiPanel({
         )}
         {failed && (
           <p role="alert">
-            {hasVaultErrorCode(failed.failure, "aiMemory") &&
-            memoryShortfall(failed.failure)
-              ? memoryText(memoryShortfall(failed.failure))
+            {failedMemory
+              ? memoryText(failedMemory)
               : t(
                   Object.entries(OWN_WORDS).find(([code]) =>
                     hasVaultErrorCode(failed.failure, code),

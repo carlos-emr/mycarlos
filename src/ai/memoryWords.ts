@@ -25,15 +25,16 @@ export function memoryShortfall(
   };
 }
 
-/** "3.9 GB": decimal gigabytes (as the other messages say "about 4 GB"), one decimal, in the
- * language in use. `round` says which way: up for what is needed, down for what is free. */
+/** "3.9": decimal gigabytes, one decimal, in the language in use; the unit ("GB", "Go") is the
+ * message's own, as in the other messages. `round` says which way: up for what is needed, down
+ * for what is free. */
 export function gigabytes(bytes: number, round: "up" | "down"): string {
   const tenths = (bytes / 1e9) * 10;
   const rounded =
     (round === "up" ? Math.ceil(tenths) : Math.floor(tenths)) / 10;
   const locale = getLocale();
-  return `${new Intl.NumberFormat(locale, {
+  return new Intl.NumberFormat(locale, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
-  }).format(rounded)} GB`;
+  }).format(rounded);
 }
