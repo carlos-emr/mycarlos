@@ -11,7 +11,7 @@
 //! history head (this vault has another chain, and the anchor needs the device's private key).
 //! A receipt here proves that the source device acknowledged the delivery, nothing about this
 //! vault. Whoever wrote the package could have invented the keys, so a valid record is
-//! "checked on the original device", never "verified by the clinic": only a link of this
+//! only "what the file says", never "verified by the clinic" and never stated as fact: only a link of this
 //! vault to the same clinic, whose key list holds the signing key, reaches that
 //! (`verified_clinic`).
 use super::*;

@@ -241,6 +241,9 @@ export interface FakeVaultSetup {
   boxesAbsent?: string;
   /** People (by display name) who are hidden when the vault opens (#360). */
   hiddenPeople?: string[];
+  /** Documents (by name) that came in a handover file and stand on what the file says (#360):
+   * they carry `fileSaysCheckedAtMs` until `__fakeVault.verifyCarried` links their clinic. */
+  fileSays?: string[];
 }
 
 /** The id of the n-th extra person (`people` in the setup), counting from 1. */
@@ -292,6 +295,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        /** What a handover file says of this document's checking (#360). */
+        fileSaysCheckedAtMs?: number;
         clinicServiceDate?: string;
         readingAid?: {
           deliveryId: string;
@@ -632,6 +637,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               : {}),
           });
         }
+        for (const record of snapshot.records)
+          if ((setup.fileSays ?? []).includes(record.displayName))
+            record.fileSaysCheckedAtMs = Date.UTC(2026, 10, 14, 12);
         for (const profile of snapshot.profiles)
           if ((setup.hiddenPeople ?? []).includes(profile.displayName))
             profile.hidden = { atMs: Date.UTC(2026, 9, 2, 12) };
@@ -1923,6 +1931,16 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         },
         // A clinic document that arrived for a person while they were hidden: it is in
         // Shared with me, and a restore offers it back (#360).
+        // A link of this vault to the clinic now holds the signing key: the documents that stood
+        // on a file's say-so are verified (#360).
+        verifyCarried: (clinic: string) => {
+          for (const record of state.snapshot.records)
+            if (record.fileSaysCheckedAtMs !== undefined) {
+              delete record.fileSaysCheckedAtMs;
+              record.verifiedClinicName = clinic;
+            }
+          save();
+        },
         arriveWhileHidden: (profileId: string, name: string) => {
           const shared = sharedProfile();
           const id = makeUuid(900 + state.snapshot.records.length);
@@ -2045,6 +2063,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],
+      fileSays: setup.fileSays ?? [],
       received: setup.received ?? [],
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,

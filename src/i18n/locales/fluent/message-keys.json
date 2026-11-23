@@ -1168,5 +1168,7 @@
   "hiddenPeople.damagedToo",
   "interface.history.aboutHiddenPeople",
   "interface.history.how.personHidden",
-  "portal.arrivedForHiddenNoClinic"
+  "portal.arrivedForHiddenNoClinic",
+  "library.fileSaysChecked",
+  "handover.nowVerified"
 ]

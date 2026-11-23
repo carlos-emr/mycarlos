@@ -2567,3 +2567,11 @@ portal-arrivedForHiddenNoClinic =
         [one] A document arrived and is in Shared with me. The person it is for is hidden.
        *[other] { $count } documents arrived and are in Shared with me. The people they are for are hidden.
     }
+
+library-fileSaysChecked = The file this came in says it was checked on the device it came from, on { $date }. This vault has not checked it.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } document that came in a handover file is now verified with { $clinic }, whose key this vault holds.
+       *[other] { $count } documents that came in a handover file are now verified with { $clinic }, whose key this vault holds.
+    }

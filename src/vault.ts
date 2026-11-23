@@ -60,6 +60,10 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** When a handover file SAYS this document's delivery was checked, on the device it came
+   * from (#360). The file's claim, never fact: this vault has not checked it. Present only
+   * while no link of this vault to the same clinic holds the clinic's signing key. */
+  fileSaysCheckedAtMs?: number;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
   /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from

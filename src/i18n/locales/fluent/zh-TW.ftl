@@ -2348,3 +2348,7 @@ interface-history-aboutHiddenPeople = 有 { $count } 筆與已隱藏的人有關
 interface-history-how-personHidden = 該人被隱藏期間歸檔到「與我分享」
 
 portal-arrivedForHiddenNoClinic = 有 { $count } 份文件已送達，目前在「與我分享」中。對應的人已被隱藏。
+
+library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來源裝置上檢查過。此保險庫沒有檢查過。
+
+handover-nowVerified = 透過移交檔案到來的 { $count } 份文件現已透過 { $clinic } 驗證，此保險庫持有其金鑰。

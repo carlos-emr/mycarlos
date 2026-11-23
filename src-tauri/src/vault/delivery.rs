@@ -8573,20 +8573,20 @@ mod approval_recovery_tests {
     }
 
     /// The re-link upgrade (#360 PR 6, design section 7). A record that came in a handover
-    /// file stands at level 1 ("checked on the original device", with the time) until a link of
+    /// file stands at level 1 (what the file says, with its time; this vault has not checked it) until a link of
     /// this vault to the same clinic holds the signing key as an active key; then it is level 2
     /// ("verified with the clinic", with its aid and date), and unlinking returns it to level 1.
     /// Nothing about the file itself (its package, its person) ever authorises the step: only
     /// the clinic's id and a key of its that is active.
     #[test]
-    fn a_carried_record_moves_from_checked_on_the_original_device_to_verified_only_through_a_link_of_this_vault_to_that_clinic(
+    fn a_carried_record_moves_from_the_files_claim_to_verified_only_through_a_link_of_this_vault_to_that_clinic(
     ) {
         let (_temp, store, link, record_id) = with_aid();
         let level = |store: &VaultStore| {
             let snapshot = store.snapshot().unwrap();
             let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
             (
-                record.checked_on_original_device_ms,
+                record.file_says_checked_at_ms,
                 record.verified_clinic_name.clone(),
                 record.reading_aid.is_some(),
                 record.clinic_service_date.is_some(),
@@ -8623,6 +8623,19 @@ mod approval_recovery_tests {
         }
         let mut unfinished = link.clone();
         unfinished.clinic = None;
+        // The same clinic id with keys of other ids: whoever wrote the file could have named
+        // the clinic and invented its keys; a link of this vault that does not hold the
+        // signing key proves nothing for it.
+        let mut other_keys = link.clone();
+        for key in &mut other_keys.clinic.as_mut().unwrap().clinic_keys {
+            key.kid = format!("FAKE-other-{}", key.kid);
+        }
+        {
+            // (A link with keys of other ids is not a link this vault can hold, so the rule is
+            // asked directly.)
+            let record = carried.records.iter().find(|r| r.id == record_id).unwrap();
+            assert_eq!(verified_clinic(record, &[other_keys]), None);
+        }
         for not_yet in [other, revoked, unfinished] {
             store
                 .mutate_recorded(|m, _| {

@@ -1170,6 +1170,8 @@ export const MESSAGE_KEYS = [
   "interface.history.aboutHiddenPeople",
   "interface.history.how.personHidden",
   "portal.arrivedForHiddenNoClinic",
+  "library.fileSaysChecked",
+  "handover.nowVerified",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2543,6 +2545,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.aboutHiddenPeople": "interface-history-aboutHiddenPeople",
   "interface.history.how.personHidden": "interface-history-how-personHidden",
   "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
+  "library.fileSaysChecked": "library-fileSaysChecked",
+  "handover.nowVerified": "handover-nowVerified",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3834,6 +3838,8 @@ export interface MessageArgsByKey {
   "interface.history.aboutHiddenPeople": { count: FluentArgument };
   "interface.history.how.personHidden": undefined;
   "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
+  "library.fileSaysChecked": { date: FluentArgument };
+  "handover.nowVerified": { clinic: FluentArgument; count: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

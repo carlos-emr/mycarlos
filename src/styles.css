@@ -1543,6 +1543,18 @@ p {
   background: var(--teal-soft);
   color: var(--teal-dark);
 }
+/* What a handover file says of its own evidence (#360): plain, muted, no mark and no green. */
+.record-file-claim {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--muted, var(--ink));
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+/* A row or a tile is one line: the claim is in Details and the reader. */
+:is(.file-row, .file-tile) .record-file-claim {
+  display: none;
+}
 .record-source-name {
   min-width: 0;
   max-width: 100%;

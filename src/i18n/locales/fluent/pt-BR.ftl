@@ -2602,3 +2602,11 @@ portal-arrivedForHiddenNoClinic =
         [one] Chegou um documento e está em Compartilhados comigo. A pessoa a quem se destina está oculta.
        *[other] Chegaram { $count } documentos e estão em Compartilhados comigo. As pessoas a quem se destinam estão ocultas.
     }
+
+library-fileSaysChecked = O arquivo em que isto chegou diz que foi verificado no dispositivo de origem, em { $date }. Este cofre não o verificou.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } documento que chegou em um arquivo de entrega agora está verificado com { $clinic }, cuja chave este cofre tem.
+       *[other] { $count } documentos que chegaram em um arquivo de entrega agora estão verificados com { $clinic }, cuja chave este cofre tem.
+    }

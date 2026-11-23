@@ -900,14 +900,15 @@ pub struct VaultRecord {
     pub original_pdf_available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_clinic_name: Option<String>,
-    /// When the delivery of a document that came in a handover file was checked on the device
-    /// it came from (#360, section 7, level 1): the evidence stands up by itself, and is not
-    /// trust in the clinic from here. Present only while no link of this vault to the same
-    /// clinic holds the signing key; once one does, `verified_clinic_name` takes over and this
-    /// is absent. Never from a file's own say-so: it is the carried receipt's time, which the
-    /// vault checked against the carried device key.
+    /// When a handover file SAYS the delivery of this document was checked, on the device it
+    /// came from (#360, section 7, level 1). It is the file's claim and nothing more: whoever
+    /// holds the file's key can write evidence that stands up by itself (`valid_carried`
+    /// accepts it by design), so this vault has not checked it and the screens never state it
+    /// as fact. Present only while no link of this vault to the same clinic holds the clinic's
+    /// signing key as an active key; once one does, `verified_clinic_name` takes over and this
+    /// is absent. The time is the carried receipt's.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub checked_on_original_device_ms: Option<u64>,
+    pub file_says_checked_at_ms: Option<u64>,
     /// Exact service date from a clinic delivery; an empty string means the
     /// clinic did not record one. This is independent of the date added here.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2269,7 +2270,7 @@ impl VaultStore {
                             object_is_present(root, record)
                         },
                         hidden: record.hidden,
-                        checked_on_original_device_ms: record
+                        file_says_checked_at_ms: record
                             .carried
                             .as_ref()
                             .filter(|_| verified.is_none())

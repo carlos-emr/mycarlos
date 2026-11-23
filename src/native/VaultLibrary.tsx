@@ -437,6 +437,36 @@ export function VaultLibrary({
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
   // Handing a person's records over, or adding one from a file (#360).
   const [handover, setHandover] = useState<"export" | "import" | null>(null);
+  // Documents that came in a handover file stand on what the file says until a link of this
+  // vault to the same clinic holds its signing key (#360): say when that happens.
+  const claimedIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const claimed = new Set(
+      snapshot.records
+        .filter((record) => record.fileSaysCheckedAtMs !== undefined)
+        .map((record) => record.id),
+    );
+    const before = claimedIds.current;
+    claimedIds.current = claimed;
+    if (!before) return;
+    const perClinic = new Map<string, number>();
+    for (const record of snapshot.records)
+      if (before.has(record.id) && record.verifiedClinicName)
+        perClinic.set(
+          record.verifiedClinicName,
+          (perClinic.get(record.verifiedClinicName) ?? 0) + 1,
+        );
+    if (perClinic.size === 0) return;
+    setNoticeRef.current(
+      deferredText(() =>
+        [...perClinic]
+          .map(([clinic, count]) =>
+            translateNow("handover.nowVerified", { clinic, count }),
+          )
+          .join(" "),
+      ),
+    );
+  }, [snapshot.records]);
   // A hidden person whose records are being handed over: the dialog offers only them.
   const [handoverHidden, setHandoverHidden] = useState<PatientProfile | null>(
     null,

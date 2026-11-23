@@ -2661,3 +2661,12 @@ portal-arrivedForHiddenNoClinic =
         [few] Dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
        *[other] Dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
     }
+
+library-fileSaysChecked = Plik, w którym to dotarło, podaje, że sprawdzono to na urządzeniu źródłowym, { $date }. Ten sejf tego nie sprawdził.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } dokument, który dotarł w pliku przekazania, jest teraz zweryfikowany z { $clinic }, której klucz ma ten sejf.
+        [few] { $count } dokumenty, które dotarły w pliku przekazania, są teraz zweryfikowane z { $clinic }, której klucz ma ten sejf.
+       *[other] Dokumenty, które dotarły w pliku przekazania, są teraz zweryfikowane z { $clinic }, której klucz ma ten sejf: { $count }.
+    }

@@ -19,10 +19,24 @@ export function RecordSource({
   record,
   className = "",
 }: {
-  record: Pick<VaultRecord, "verifiedClinicName" | "sourceLabel">;
+  record: Pick<
+    VaultRecord,
+    "verifiedClinicName" | "sourceLabel" | "fileSaysCheckedAtMs"
+  >;
   className?: string;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  // What a handover file says of its own evidence (#360): plain words, no check mark and no
+  // "Verified", since anyone who holds the file's key can write it.
+  const claim =
+    !record.verifiedClinicName && record.fileSaysCheckedAtMs !== undefined
+      ? t("library.fileSaysChecked", {
+          date: new Date(record.fileSaysCheckedAtMs).toLocaleDateString(
+            locale,
+            { year: "numeric", month: "long", day: "numeric" },
+          ),
+        })
+      : "";
   const clinic = record.verifiedClinicName;
   const source = clinic
     ? t("library.source.clinic", { clinic })
@@ -37,6 +51,12 @@ export function RecordSource({
         {t(clinic ? "library.status.verified" : "library.status.unverified")}
       </span>{" "}
       <span className="record-source-name">{source}</span>
+      {claim && (
+        <>
+          {" "}
+          <span className="record-file-claim">{claim}</span>
+        </>
+      )}
     </span>
   );
 }
