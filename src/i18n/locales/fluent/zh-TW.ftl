@@ -2104,6 +2104,8 @@ native-tray-open = 開啟 myCarlos
 native-tray-quit = 結束 myCarlos
 native-tray-tooltip = myCarlos
 
+native-tray-waiting = 有一份新文件正在等待。請解鎖 myCarlos 查看。
+
 ai-summary-again = 重新產生摘要
 
 ai-keepFailed = myCarlos 無法將此回答與文件一起保存。此處仍會顯示該回答。

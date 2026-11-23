@@ -1076,6 +1076,7 @@
   "native.tray.open",
   "native.tray.quit",
   "native.tray.tooltip",
+  "native.tray.waiting",
   "personDetails.previousTitle",
   "personDetails.previousHelp",
   "personDetails.previousEntry",

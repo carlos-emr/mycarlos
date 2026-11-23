@@ -187,6 +187,8 @@ export async function fakeVault(
             case "vault_status":
               return status;
             // No background mode in these journeys.
+            case "tray_waiting_status":
+              return false;
             case "background_status":
               return {
                 supported: false,

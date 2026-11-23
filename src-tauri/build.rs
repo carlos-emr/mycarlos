@@ -101,6 +101,7 @@ fn main() {
             "background_set_keep_running",
             "background_set_start_at_login",
             "background_report_locale",
+            "tray_waiting_status",
             "ai_model_catalog",
             "ai_model_status",
             "ai_models",

@@ -271,6 +271,8 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
     Reflect.set(window, "__TAURI_INTERNALS__", {
       invoke: async (command: string) => {
         if (command === "vault_status") return current;
+        // The tray's waiting sentence is asked for at unlock (#230): none here.
+        if (command === "tray_waiting_status") return false;
         // No background mode in these journeys.
         if (command === "background_status")
           return {

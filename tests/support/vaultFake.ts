@@ -1061,6 +1061,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return answer("background_status", {});
           case "background_report_locale":
             return null;
+          case "tray_waiting_status":
+            return false;
           case "vault_notification_status":
             return {
               supported: false,

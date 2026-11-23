@@ -37,6 +37,8 @@ use zxcvbn::{zxcvbn, Score};
 
 mod ai_results;
 mod delivery;
+// Notice keys (#230): enrolled and wiped by the commands and the tray (tray_notices.rs).
+mod notice_keys;
 // The push hooks and the Preferences choice will call most of this (document_push.rs).
 #[cfg_attr(not(test), allow(dead_code))]
 mod remote_notices;
@@ -2207,6 +2209,11 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(link_id);
+        // The Portal removed this device: its notice key (#230) is finished with it, and no
+        // request is needed to say so.
+        if let Some(keys) = crate::notice_key::kept() {
+            let _ = keys.wipe_link(link_id);
+        }
     }
 
     fn link_portal_using(

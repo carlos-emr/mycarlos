@@ -2306,6 +2306,8 @@ native-tray-open = Ouvrir myCarlos
 native-tray-quit = Quitter myCarlos
 native-tray-tooltip = myCarlos
 
+native-tray-waiting = Un nouveau document est en attente. Déverrouillez myCarlos pour le voir.
+
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.

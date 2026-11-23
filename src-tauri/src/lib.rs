@@ -75,6 +75,8 @@ mod signed_pdf_helper;
 mod speed_check;
 mod text_recheck;
 mod throttle;
+mod tray_notices;
+mod tray_poller;
 mod unicode_cleaning_table;
 mod vault;
 mod vault_registry;
@@ -3115,19 +3117,25 @@ async fn background_status(
 #[tauri::command]
 async fn background_set_keep_running(
     app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<desktop_background::Status> {
     #[cfg(desktop)]
     {
         let background = background_state(&app)?;
-        tauri::async_runtime::spawn_blocking(move || background.set_keep_running(enabled))
-            .await
-            .map_err(|_| PublicError::from(VaultError::Storage))?
-            .map_err(|_| PublicError::from(VaultError::Storage))
+        let status =
+            tauri::async_runtime::spawn_blocking(move || background.set_keep_running(enabled))
+                .await
+                .map_err(|_| PublicError::from(VaultError::Storage))?
+                .map_err(|_| PublicError::from(VaultError::Storage))?;
+        // Tray notices need this switch (#230): the notice keys follow it.
+        tray_notices::set_keep_running(status.keep_running);
+        sync_notice_keys_soon(store.pin().arc());
+        Ok(status)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (app, enabled);
+        let _ = (app, store, enabled);
         Err(PublicError::from(VaultError::Storage))
     }
 }
@@ -3152,6 +3160,13 @@ async fn background_set_start_at_login(
     }
 }
 
+/// Whether a document is waiting, as the tray check last found it (#230): the unlock screen shows
+/// the one fixed sentence when it is. No document, clinic or person is part of the answer.
+#[tauri::command]
+async fn tray_waiting_status() -> CommandResult<bool> {
+    Ok(tray_poller::waiting_now())
+}
+
 /// The interface's language, so the tray icon's menu and tooltip are worded in it.
 #[tauri::command]
 async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> CommandResult<()> {
@@ -3174,6 +3189,18 @@ fn after_open(store: &Arc<VaultStore>) {
             notice_key::after_open(vault_id);
         }
         store.after_open();
+        // The notices switch is kept in the vault: read it now it is open, then bring the notice
+        // keys in line with the two switches (#230).
+        tray_notices::set_notices(store.notification_status(None).enabled);
+        let _ = store.sync_notice_keys();
+    });
+}
+
+/// After a switch changes, or a link is made, while the vault is open (#230): the keys follow.
+fn sync_notice_keys_soon(store: &Arc<VaultStore>) {
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = store.sync_notice_keys();
     });
 }
 
@@ -3379,14 +3406,19 @@ async fn vault_portal_link(
     // User input already touches the native deadline. HTTP completion is not
     // new activity and must not keep an unattended or newly unlocked vault open.
     tauri::async_runtime::spawn_blocking(move || {
-        store.link_portal(
+        let linked = store.link_portal(
             &request.portal_base,
             &request.code,
             &request.device_name,
             request.profile_id,
             now_ms(),
             session,
-        )
+        );
+        // A new link gets its notice key when tray notices are wanted (#230).
+        if linked.is_ok() {
+            let _ = store.sync_notice_keys();
+        }
+        linked
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3405,14 +3437,19 @@ async fn vault_portal_connect(
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
-        store.connect_portal(
+        let connected = store.connect_portal(
             &request.portal_base,
             &request.code,
             &request.device_name,
             request.profile_id,
             now_ms(),
             session,
-        )
+        );
+        // A new link gets its notice key when tray notices are wanted (#230).
+        if connected.is_ok() {
+            let _ = store.sync_notice_keys();
+        }
+        connected
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3629,10 +3666,16 @@ async fn vault_set_notifications(
 ) -> CommandResult<document_notification_runtime::Status> {
     let store = store.pin();
     let store = Arc::clone(store.arc());
-    tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
+    let status = tauri::async_runtime::spawn_blocking({
+        let store = Arc::clone(&store);
+        move || store.set_notifications(enabled)
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))??;
+    // Tray notices need this switch (#230): the notice keys follow it.
+    tray_notices::set_notices(status.enabled);
+    sync_notice_keys_soon(&store);
+    Ok(status)
 }
 
 #[tauri::command]
@@ -6593,14 +6636,26 @@ pub fn run() {
                 })?;
             // The background mode (M2): the tray icon, the quiet start and the lock on close.
             #[cfg(desktop)]
-            desktop_background::desktop::install(
-                app,
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("background-v1.json"),
-                close_lock(app.handle()),
-            );
+            {
+                let background = desktop_background::desktop::install(
+                    app,
+                    app.path()
+                        .app_local_data_dir()?
+                        .join("vault-home")
+                        .join("background-v1.json"),
+                    close_lock(app.handle()),
+                );
+                // Tray notices (#230) need this switch: the poller and the notice keys read it.
+                tray_notices::set_keep_running(background.status().keep_running);
+                // The check that runs while locked in the tray: it waits until the tray, a locked
+                // vault and a notice key are all there.
+                let poll_vaults = app.state::<StoreHandle>().inner().clone();
+                tray_poller::driver::start(
+                    app.handle().clone(),
+                    Arc::new(move || poll_vaults.arc().open_vault_id().is_none()),
+                    Arc::clone(&background),
+                );
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -6615,6 +6670,7 @@ pub fn run() {
             background_set_keep_running,
             background_set_start_at_login,
             background_report_locale,
+            tray_waiting_status,
             ai_model_catalog,
             ai_model_status,
             ai_models,
