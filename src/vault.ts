@@ -362,6 +362,9 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
+  /** Named by a program started with its path (Open with, a second launch): the patient is asked
+   * before it is added. A file shared from another app is added as it arrives. */
+  needsConfirm?: boolean;
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -699,7 +702,11 @@ export interface VaultBridge {
   listReceived(): Promise<ReceivedState>;
   /** Adds every waiting file to Shared with me; a file that is not a PDF is
    * forgotten and named. If anything else fails, they all keep waiting. */
-  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Adds the waiting files to Shared with me: exactly `ids` (the files the patient confirmed)
+   * when given, otherwise every waiting file. */
+  acceptReceived(ids?: string[]): Promise<ReceivedAcceptOutcome>;
+  /** Forgets the waiting files the patient cancelled; nothing was stored. */
+  discardReceived(ids: string[]): Promise<number>;
   /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
@@ -767,6 +774,20 @@ export interface VaultBridge {
   onAiAnswerStarted?(
     handler: (answer: { answerId: string; limitMs: number }) => void,
   ): () => void;
+  /** Calls `handler` when the vault locked natively without the screen
+   * asking: the window was closed to the tray or Quit was chosen
+   * (`"closed"`), or the native idle lock fell due (`"idle"`). The vault is
+   * already locked; the screen lets go of everything it shows at once, as
+   * its own lock does (#206). Computers only. Returns the way to stop
+   * listening. */
+  onVaultLocked?(
+    handler: (locked: { by: "closed" | "idle" }) => void,
+  ): () => void;
+  /** Whether the tray check found a document waiting while the vault was locked (#230): the
+   * unlock screen shows one fixed sentence when it did. Computers only. */
+  trayWaiting?(): Promise<boolean>;
+  /** The same, as it changes. Returns the way to stop listening. */
+  onTrayWaiting?(handler: (waiting: boolean) => void): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -1286,7 +1307,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, password },
       }),
     listReceived: () => invoke<ReceivedState>("received_list"),
-    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    acceptReceived: (ids) =>
+      ids
+        ? invoke<ReceivedAcceptOutcome>("received_accept", {
+            request: { ids },
+          })
+        : invoke<ReceivedAcceptOutcome>("received_accept"),
+    discardReceived: (ids) =>
+      invoke<number>("received_discard", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
@@ -1395,6 +1423,19 @@ export function createVaultBridge(): VaultBridge {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",
         (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    onVaultLocked: (handler) => {
+      const stop = listen<{ by: "closed" | "idle" }>("vault-locked", (event) =>
+        handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    trayWaiting: () => invoke<boolean>("tray_waiting_status"),
+    onTrayWaiting: (handler) => {
+      const stop = listen<boolean>("tray-waiting", (event) =>
+        handler(event.payload === true),
       );
       return () => void stop.then((unlisten) => unlisten());
     },

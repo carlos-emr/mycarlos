@@ -56,6 +56,8 @@ async function fakeNative(page: Page, locale: string, linked = true) {
           command === "plugin:window|set_theme"
         )
           return;
+        // The tray's waiting sentence is asked for at unlock (#230): none here.
+        if (command === "tray_waiting_status") return false;
         // Video (#359): nothing waiting to be finished, and no document
         // starts as an MP4 does.
         if (command === "vault_video_pending")

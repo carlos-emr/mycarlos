@@ -6,6 +6,7 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod desktop_background;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -74,6 +75,8 @@ mod signed_pdf_helper;
 mod speed_check;
 mod text_recheck;
 mod throttle;
+mod tray_notices;
+mod tray_poller;
 mod unicode_cleaning_table;
 mod vault;
 mod vault_registry;
@@ -2913,6 +2916,8 @@ async fn vault_create(
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     let created = run_blocking(store.arc(), move |store| {
         let result = store
@@ -2926,6 +2931,7 @@ async fn vault_create(
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
         forget_vault(throttle.inner()).await;
+        refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     }
     created
 }
@@ -2938,6 +2944,8 @@ async fn vault_unlock(
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     tried(
         throttle.inner(),
@@ -2954,8 +2962,221 @@ async fn vault_unlock(
         }),
     )
     .await?;
+    refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     after_open(store.arc());
     run_blocking(store.arc(), VaultStore::snapshot).await
+}
+
+/// The screen's word that the vault locked natively, without the screen asking: the window was
+/// closed to the tray, Quit was chosen in the tray, or the native idle lock fell due. The vault is
+/// already locked when it is sent; the screen then lets go of everything it shows (the library,
+/// an open letter, any summary or text read from it) exactly as its own lock does, and does not
+/// wait for a `visibilitychange` that a hidden window may never get (#206).
+const VAULT_LOCKED: &str = "vault-locked";
+
+/// What locked the vault, as the screen is told it: it says why on the unlock screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum LockedBy {
+    /// Closing the window to the tray, or Quit from the tray.
+    Closed,
+    /// The native idle lock.
+    Idle,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultLocked {
+    by: LockedBy,
+}
+
+/// Tells the screen that the vault locked natively. Sent after the lock, never instead of it:
+/// the native lock never waits for the screen.
+fn tell_screen_vault_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>, by: LockedBy) {
+    use tauri::Emitter;
+    let _ = app.emit(VAULT_LOCKED, VaultLocked { by });
+}
+
+/// Before a hidden window is shown again (from the tray, or by a second launch): if the vault is
+/// locked, the screen is told once more, so a page that did not run while hidden lets go before it
+/// is drawn. Never waits for the vault: while an unlock holds it, nothing is said (#206).
+pub(crate) fn tell_screen_if_locked<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(store) = app.try_state::<StoreHandle>() {
+        if store.arc().is_unlocked_now() == Some(false) {
+            tell_screen_vault_locked(app, LockedBy::Closed);
+        }
+    }
+}
+
+/// Whether a second launch brings the running window forward: always, except a start from the
+/// login entry (`--background`), which finds myCarlos already running and changes nothing.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn second_launch_shows_window<S: AsRef<str>>(args: &[S]) -> bool {
+    !args
+        .iter()
+        .any(|arg| arg.as_ref() == desktop_background::BACKGROUND_ARG)
+}
+
+/// The lock the background mode runs on close-to-tray and on Quit, as `run` gives it: from the
+/// app's own vault and picks. Tests take it from here too, so they test `run`'s wiring.
+#[cfg_attr(not(desktop), allow(dead_code))]
+fn close_lock<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Arc<dyn Fn() + Send + Sync> {
+    let vaults = app.state::<StoreHandle>().inner().clone();
+    let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+    let app = app.clone();
+    // The vault the screen is on when the window closes, not the one at start-up (#357).
+    Arc::new(move || lock_vault_for_close(&app, vaults.arc(), &picks))
+}
+
+/// One turn of the idle-lock thread, as `run` spawns it: lock if the vault is due, and if it
+/// locked, tell the screen (a hidden window's own idle timer may not run). Returns whether it locked.
+fn idle_step<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &VaultStore,
+    picks: &PendingPicks,
+    now: Instant,
+) -> bool {
+    let locked = lock_if_idle(store, picks, now);
+    if locked {
+        tell_screen_vault_locked(app, LockedBy::Idle);
+    }
+    locked
+}
+
+/// Closing the window to the tray, and Quit: everything lets go natively, then the screen is told.
+fn lock_vault_for_close<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &VaultStore,
+    picks: &PendingPicks,
+) {
+    lock_vault_now(store, picks);
+    tell_screen_vault_locked(app, LockedBy::Closed);
+}
+
+/// Everything that holds the vault's contents lets go: what `vault_lock` does, for the places that
+/// lock without a command (closing the window to the tray, Quit from the tray).
+fn lock_vault_now(store: &VaultStore, picks: &PendingPicks) {
+    stop_work_for_lock(picks);
+    store.lock();
+    // Again once locked: a request that came in meanwhile stops too.
+    stop_work_for_lock(picks);
+}
+
+/// An unlock, recovery or creation that completes after the window was closed to the tray (or
+/// while it is still hidden there) is closed again and refused (#206 review): the close found
+/// nothing to lock while the unlock was in flight, and the screen ignores a lock it is not yet
+/// ready for, so the vault would otherwise open in a window nobody can see.
+async fn refuse_unlock_closed_meanwhile(
+    store: &Arc<VaultStore>,
+    picks: &Arc<PendingPicks>,
+    started: u64,
+) -> CommandResult<()> {
+    if desktop_background::unlock_refused(started) {
+        // On the blocking pool: the lock waits for the vault's mutex.
+        let picks = Arc::clone(picks);
+        run_blocking(store, move |store| {
+            lock_vault_now(store, &picks);
+            Ok(())
+        })
+        .await?;
+        return Err(VaultError::Cancelled.into());
+    }
+    Ok(())
+}
+
+/// The Preferences "Running in the background" choices. On a phone there is no such mode.
+#[cfg(desktop)]
+fn background_state(
+    app: &tauri::AppHandle,
+) -> CommandResult<Arc<desktop_background::desktop::Background>> {
+    app.try_state::<Arc<desktop_background::desktop::Background>>()
+        .map(|state| Arc::clone(state.inner()))
+        .ok_or_else(|| PublicError::from(VaultError::Storage))
+}
+
+#[tauri::command]
+async fn background_status(
+    app: tauri::AppHandle,
+    locale: Option<UiLocale>,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        if let Some(locale) = locale {
+            background.report_locale(locale);
+        }
+        Ok(background.status())
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, locale);
+        Ok(desktop_background::Status::unsupported())
+    }
+}
+
+#[tauri::command]
+async fn background_set_keep_running(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    enabled: bool,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        let status =
+            tauri::async_runtime::spawn_blocking(move || background.set_keep_running(enabled))
+                .await
+                .map_err(|_| PublicError::from(VaultError::Storage))?
+                .map_err(|_| PublicError::from(VaultError::Storage))?;
+        // Tray notices need this switch (#230): the notice keys follow it.
+        tray_notices::set_keep_running(status.keep_running);
+        sync_notice_keys_soon(store.pin().arc());
+        Ok(status)
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, store, enabled);
+        Err(PublicError::from(VaultError::Storage))
+    }
+}
+
+#[tauri::command]
+async fn background_set_start_at_login(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> CommandResult<desktop_background::Status> {
+    #[cfg(desktop)]
+    {
+        let background = background_state(&app)?;
+        tauri::async_runtime::spawn_blocking(move || background.set_start_at_login(enabled))
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?
+            .map_err(|_| PublicError::from(VaultError::Storage))
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = (app, enabled);
+        Err(PublicError::from(VaultError::Storage))
+    }
+}
+
+/// Whether a document is waiting, as the tray check last found it (#230): the unlock screen shows
+/// the one fixed sentence when it is. No document, clinic or person is part of the answer.
+#[tauri::command]
+async fn tray_waiting_status() -> CommandResult<bool> {
+    Ok(tray_poller::waiting_now())
+}
+
+/// The interface's language, so the tray icon's menu and tooltip are worded in it.
+#[tauri::command]
+async fn background_report_locale(app: tauri::AppHandle, locale: UiLocale) -> CommandResult<()> {
+    #[cfg(desktop)]
+    {
+        background_state(&app)?.report_locale(locale);
+    }
+    #[cfg(not(desktop))]
+    let _ = (app, locale);
+    Ok(())
 }
 
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
@@ -2968,6 +3189,18 @@ fn after_open(store: &Arc<VaultStore>) {
             notice_key::after_open(vault_id);
         }
         store.after_open();
+        // The notices switch is kept in the vault: read it now it is open, then bring the notice
+        // keys in line with the two switches (#230).
+        tray_notices::set_notices(store.notification_status(None).enabled);
+        let _ = store.sync_notice_keys();
+    });
+}
+
+/// After a switch changes, or a link is made, while the vault is open (#230): the keys follow.
+fn sync_notice_keys_soon(store: &Arc<VaultStore>) {
+    let store = Arc::clone(store);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = store.sync_notice_keys();
     });
 }
 
@@ -3173,14 +3406,19 @@ async fn vault_portal_link(
     // User input already touches the native deadline. HTTP completion is not
     // new activity and must not keep an unattended or newly unlocked vault open.
     tauri::async_runtime::spawn_blocking(move || {
-        store.link_portal(
+        let linked = store.link_portal(
             &request.portal_base,
             &request.code,
             &request.device_name,
             request.profile_id,
             now_ms(),
             session,
-        )
+        );
+        // A new link gets its notice key when tray notices are wanted (#230).
+        if linked.is_ok() {
+            let _ = store.sync_notice_keys();
+        }
+        linked
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3199,14 +3437,19 @@ async fn vault_portal_connect(
     let session = store.portal_link_ticket();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
-        store.connect_portal(
+        let connected = store.connect_portal(
             &request.portal_base,
             &request.code,
             &request.device_name,
             request.profile_id,
             now_ms(),
             session,
-        )
+        );
+        // A new link gets its notice key when tray notices are wanted (#230).
+        if connected.is_ok() {
+            let _ = store.sync_notice_keys();
+        }
+        connected
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3423,10 +3666,16 @@ async fn vault_set_notifications(
 ) -> CommandResult<document_notification_runtime::Status> {
     let store = store.pin();
     let store = Arc::clone(store.arc());
-    tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
-        .await
-        .map_err(|_| PublicError::from(VaultError::Storage))?
-        .map_err(Into::into)
+    let status = tauri::async_runtime::spawn_blocking({
+        let store = Arc::clone(&store);
+        move || store.set_notifications(enabled)
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))??;
+    // Tray notices need this switch (#230): the notice keys follow it.
+    tray_notices::set_notices(status.enabled);
+    sync_notice_keys_soon(&store);
+    Ok(status)
 }
 
 #[tauri::command]
@@ -3737,6 +3986,8 @@ async fn vault_recover(
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
     let store = store.pin();
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     let passphrase_replaced = tried(
         throttle.inner(),
@@ -3752,6 +4003,7 @@ async fn vault_recover(
         }),
     )
     .await?;
+    refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     after_open(store.arc());
     Ok(RecoverResponse {
         passphrase_replaced,
@@ -4555,8 +4807,8 @@ fn sort_received_open(
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
-/// renderer asks at start, after an unlock, and whenever the window comes back to the front,
-/// which is how a share arrives. Names stay off the lock screen: the renderer shows a count
+/// renderer asks at start, after an unlock, when notified of an arrival, and whenever the
+/// window comes back to the front. Names stay off the lock screen: the renderer shows a count
 /// there.
 #[tauri::command]
 fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
@@ -4654,6 +4906,30 @@ fn accept_received_batch(
     }
 }
 
+/// The files the patient confirmed adding (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedAcceptRequest {
+    ids: Vec<Uuid>,
+}
+
+/// The files the patient said No to (#133).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReceivedDiscardRequest {
+    ids: Vec<Uuid>,
+}
+
+/// Forgets the waiting files the patient cancelled: nothing was stored, so nothing is left. A file
+/// that arrived since, or one an import has taken, is not touched.
+#[tauri::command]
+fn received_discard(
+    received: State<'_, Arc<ReceivedFiles>>,
+    request: ReceivedDiscardRequest,
+) -> usize {
+    received.forget(&request.ids)
+}
+
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
 /// file arrives while the vault is open. A file that is not a PDF, or that can no longer be
 /// opened (moved or deleted while the vault was locked), is not added and is forgotten, and named
@@ -4663,9 +4939,16 @@ async fn received_accept(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     received: State<'_, Arc<ReceivedFiles>>,
+    request: Option<ReceivedAcceptRequest>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
     let store = store.pin();
-    let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
+    // With `ids`, exactly the files the patient confirmed (a file that arrived since waits for its
+    // own question); without, every waiting file, as for files shared from another app.
+    let ids: Vec<Uuid> = match request {
+        Some(request) => request.ids,
+        // Never a file named by a path: those are added only after the patient confirms them.
+        None => received.ids_needing_no_question(),
+    };
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
             imported: Vec::new(),
@@ -6203,6 +6486,55 @@ fn navigation_guard<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
+// Fixed, payload-free notification: paths, names and even counts stay out of this channel.
+#[cfg(windows)]
+const RECEIVED_CHANGED_SCRIPT: &str =
+    "window.dispatchEvent(new Event('mycarlos-received-changed'));";
+
+#[cfg(windows)]
+fn notify_received(app: &tauri::AppHandle) {
+    let app = app.clone();
+    // Wry can execute UI dispatch inline on the window thread. Post UI work
+    // from an async worker instead; never wait for JavaScript or open files in that callback.
+    let _notification = tauri::async_runtime::spawn(async move {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.eval(RECEIVED_CHANGED_SCRIPT);
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        // Missing/destroying windows leave the queue intact. Mount/focus/unlock also refresh.
+    });
+}
+
+/// What a second launch on Windows says when it cannot hand what was opened to
+/// the myCarlos already running (#133): fixed text, never a path or file name,
+/// in the Windows display language when myCarlos has it, else English.
+/// `language` is a Windows LANGID: the primary language in the low 10 bits and
+/// the sublanguage above it, which tells Traditional from Simplified Chinese.
+#[cfg(any(windows, test))]
+fn handoff_failed_text(language: u16) -> (&'static str, &'static str) {
+    let text = match (language & 0x3ff, language >> 10) {
+        // LANG_FRENCH, LANG_SPANISH, LANG_POLISH, LANG_PORTUGUESE.
+        (0x0c, _) => "myCarlos est déjà ouvert, mais il n’a pas pu être joint. Rien n’a été ajouté. Fermez myCarlos, puis réessayez.",
+        (0x0a, _) => "myCarlos ya está abierto, pero no se pudo contactar con él. No se añadió nada. Cierre myCarlos y vuelva a intentarlo.",
+        (0x15, _) => "myCarlos jest już uruchomiony, ale nie udało się z nim połączyć. Nic nie zostało dodane. Proszę zamknąć myCarlos i spróbować ponownie.",
+        (0x16, _) => "O myCarlos já está aberto, mas não foi possível se comunicar com ele. Nada foi adicionado. Feche o myCarlos e tente novamente.",
+        // LANG_CHINESE: Traditional for Taiwan, Hong Kong, Macau and zh-Hant;
+        // Simplified for the rest (China, Singapore, zh-Hans).
+        (0x04, 0x01 | 0x03 | 0x05 | 0x1f) => "myCarlos 已開啟，但無法與其連線。未新增任何內容。請關閉 myCarlos，然後重試。",
+        (0x04, _) => "myCarlos 已打开，但无法与其连接。未添加任何内容。请关闭 myCarlos，然后重试。",
+        _ => "myCarlos is already open, but it couldn't be reached. Nothing was added. Close myCarlos, then try again.",
+    };
+    ("myCarlos", text)
+}
+
+/// The Windows display language, as a LANGID.
+#[cfg(windows)]
+fn windows_display_language() -> u16 {
+    unsafe { windows::Win32::Globalization::GetUserDefaultUILanguage() }
+}
+
 // Keep one generated context for every runtime. On macOS the macro also
 // embeds the application Info.plist, whose process-wide symbol must be unique.
 // Tests use this same production configuration and capability authority.
@@ -6212,7 +6544,33 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    // Queue before plugins or any webview exist. A callback during startup keeps its
+    // files in this same Arc, after initial argv and before ordinary vault setup.
+    let received = Arc::new(ReceivedFiles::default());
+    #[cfg(any(windows, target_os = "linux"))]
+    received.receive_command_line(std::env::args_os());
+    let builder = tauri::Builder::default().manage(Arc::clone(&received));
+    #[cfg(windows)]
+    let builder = {
+        let (title, text) = handoff_failed_text(windows_display_language());
+        builder.plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(move |app, args, _cwd| {
+                    // A start from the login entry (`--background`) that finds myCarlos already
+                    // running changes nothing on screen (#206); any files it carries are still taken.
+                    let shows = second_launch_shows_window(&args);
+                    received.receive_command_line(args.into_iter().map(std::ffi::OsString::from));
+                    if shows {
+                        notify_received(app);
+                        // From the tray: the window comes back as the tray's Open brings it, and a
+                        // screen that did not take the lock while hidden is told first (#206).
+                        desktop_background::desktop::show_main(app);
+                    }
+                })
+                .handoff_failed_message(title, text)
+                .build(),
+        )
+    };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
     builder
@@ -6363,14 +6721,8 @@ pub fn run() {
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
-            app.manage(Arc::new(ReceivedFiles::default()));
-            // "Open with" on Windows and a desktop entry on Linux pass files as arguments. A
-            // second launch while the app is open is not forwarded yet (#53).
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                let (offered, sources) = received::accept_command_line(std::env::args_os());
-                app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
-            }
+            // The startup receipt of files named on the command line, and a second launch's, belong
+            // to `run` (#133): the received files are managed there, before any plugin.
             let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             let idle_app = app.handle().clone();
@@ -6379,14 +6731,47 @@ pub fn run() {
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
                     // The vault the screen is on at this tick, not the one at start-up.
-                    if lock_if_idle(vaults.arc(), &picks, Instant::now()) {
+                    if idle_step(&idle_app, vaults.arc(), &picks, Instant::now()) {
                         cancel_native_pdf(&idle_app);
                     }
                 })?;
+            // The background mode (M2): the tray icon, the quiet start and the lock on close.
+            #[cfg(desktop)]
+            {
+                let background = desktop_background::desktop::install(
+                    app,
+                    app.path()
+                        .app_local_data_dir()?
+                        .join("vault-home")
+                        .join("background-v1.json"),
+                    close_lock(app.handle()),
+                );
+                // Tray notices (#230) need this switch: the poller and the notice keys read it.
+                tray_notices::set_keep_running(background.status().keep_running);
+                // The check that runs while locked in the tray: it waits until the tray, a locked
+                // vault and a notice key are all there.
+                let poll_vaults = app.state::<StoreHandle>().inner().clone();
+                tray_poller::driver::start(
+                    app.handle().clone(),
+                    Arc::new(move || poll_vaults.arc().open_vault_id().is_none()),
+                    Arc::clone(&background),
+                );
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            desktop_background::desktop::on_window_event(window, event);
+            #[cfg(not(desktop))]
+            let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
             runtime_info,
+            background_status,
+            background_set_keep_running,
+            background_set_start_at_login,
+            background_report_locale,
+            tray_waiting_status,
             ai_model_catalog,
             ai_model_status,
             ai_models,
@@ -6451,6 +6836,7 @@ pub fn run() {
             vault_import_picked,
             received_list,
             received_accept,
+            received_discard,
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
@@ -6499,6 +6885,17 @@ pub fn run() {
                     store.stop_document_collection();
                 }
             }
+            // macOS: a click on the Dock icon, or opening myCarlos again, while its window is
+            // hidden in the tray brings it back as the tray's Open does, the screen told first
+            // that the vault is locked (#206). macOS itself keeps one copy of an app running.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = &_event
+            {
+                desktop_background::desktop::show_main(_app);
+            }
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
                 receive_opened(_app, &urls);
@@ -6516,6 +6913,39 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    #[test]
+    fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
+        let (title, english) = handoff_failed_text(0x09);
+        assert_eq!(title, "myCarlos");
+        assert!(english.starts_with("myCarlos is already open, but it couldn't be reached."));
+        // A language myCarlos does not have (German) falls back to English.
+        assert_eq!(handoff_failed_text(0x07), (title, english));
+        for (language, start) in [
+            (0x0c, "myCarlos est déjà ouvert"),
+            (0x0a, "myCarlos ya está abierto"),
+            (0x15, "myCarlos jest już uruchomiony"),
+            (0x16, "O myCarlos já está aberto"),
+            // Full LANGIDs: the sublanguage picks the Chinese script.
+            (0x040c, "myCarlos est déjà ouvert"),
+            (0x0804, "myCarlos 已打开"),
+            (0x1004, "myCarlos 已打开"),
+            (0x0004, "myCarlos 已打开"),
+            (0x0404, "myCarlos 已開啟"),
+            (0x0c04, "myCarlos 已開啟"),
+            (0x1404, "myCarlos 已開啟"),
+            (0x7c04, "myCarlos 已開啟"),
+        ] {
+            let (title, text) = handoff_failed_text(language);
+            assert_eq!(title, "myCarlos");
+            assert!(text.starts_with(start), "{language:#x}");
+        }
+        // Fixed text only: never a path or a file name.
+        for language in [0x09, 0x0c, 0x0a, 0x15, 0x16, 0x0804, 0x0404] {
+            let text = handoff_failed_text(language).1;
+            assert!(!text.contains('\\') && !text.contains('/') && !text.contains(':'));
+        }
+    }
 
     #[test]
     fn does_not_return_a_page_for_a_cancelled_view_ticket() {
@@ -6943,7 +7373,10 @@ mod tests {
         for (command, clears) in [
             (
                 "async fn vault_create(",
-                "if created.is_ok() { forget_vault(throttle.inner()).await; }",
+                concat!(
+                    "if created.is_ok() { forget_vault(throttle.inner()).await; ",
+                    "refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?; }",
+                ),
             ),
             (
                 "async fn vault_reset(",
@@ -7732,6 +8165,135 @@ mod tests {
         ));
         // A locked vault has no deadline, so the timer does not lock it again.
         assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
+    }
+
+    /// Every `vault-locked` word a mock app's screen would hear, as its JSON payload.
+    fn screen_hears(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> std::sync::mpsc::Receiver<String> {
+        use tauri::Listener;
+        let (heard, hears) = std::sync::mpsc::channel();
+        app.listen_any(VAULT_LOCKED, move |event| {
+            let _ = heard.send(event.payload().to_owned());
+        });
+        hears
+    }
+
+    /// A mock app holding an unlocked FAKE vault and its picks, as the built app manages them.
+    fn app_with_unlocked_vault(
+        root: &std::path::Path,
+    ) -> (tauri::App<tauri::test::MockRuntime>, Arc<VaultStore>) {
+        let store = Arc::new(VaultStore::new(root.join("vault")));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+        let app = tauri::test::mock_builder()
+            .manage(StoreHandle::single(Arc::clone(&store)))
+            .manage(Arc::new(PendingPicks::default()))
+            .build(production_context())
+            .unwrap();
+        (app, store)
+    }
+
+    #[test]
+    fn a_second_launch_brings_the_window_forward_unless_it_is_the_login_start() {
+        assert!(second_launch_shows_window::<&str>(&[]));
+        assert!(second_launch_shows_window(&["C:\\myCarlos\\myCarlos.exe"]));
+        assert!(second_launch_shows_window(&[
+            "C:\\myCarlos\\myCarlos.exe",
+            "C:\\Users\\Jamie\\FAKE.pdf",
+        ]));
+        assert!(!second_launch_shows_window(&[
+            "C:\\myCarlos\\myCarlos.exe",
+            "--background",
+        ]));
+        // Only the exact login argument: a look-alike opens the window as always.
+        assert!(second_launch_shows_window(&[
+            "myCarlos.exe",
+            "--background-x"
+        ]));
+    }
+
+    #[test]
+    fn closing_to_the_tray_locks_the_vault_and_then_tells_the_screen_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let hears = screen_hears(&app);
+        let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+        let pick_id = picks.store_export(
+            picks.session(),
+            Uuid::new_v4(),
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+
+        // What the window's close (and Quit) runs: the `LockAll` that `run` gives the background
+        // mode, built the same way from the app's own vault and picks.
+        (close_lock(app.handle()))();
+
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        assert!(matches!(
+            picks.take_export(pick_id, Uuid::new_v4()),
+            Err(VaultError::NotFound)
+        ));
+        let said = hears
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the screen must be told the vault locked");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "closed" })
+        );
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+    }
+
+    #[test]
+    fn the_native_idle_lock_tells_the_screen_and_a_check_that_does_not_lock_says_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let hears = screen_hears(&app);
+        let picks = PendingPicks::default();
+        // The idle thread's own step, the one `run` spawns.
+        assert!(!idle_step(app.handle(), &store, &picks, Instant::now()));
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+        assert!(idle_step(
+            app.handle(),
+            &store,
+            &picks,
+            idle_past(Instant::now())
+        ));
+        assert!(matches!(store.status(), Ok(VaultStatus::Locked)));
+        let said = hears.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "idle" })
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn showing_the_window_again_tells_the_screen_only_while_the_vault_is_locked() {
+        let temp = tempfile::tempdir().unwrap();
+        let (app, store) = app_with_unlocked_vault(temp.path());
+        let main = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let hears = screen_hears(&app);
+        // `show_main` itself: what the tray's Open, a tray click and a second launch run.
+        let show = || desktop_background::desktop::show_main(app.handle());
+
+        // Open from the tray while unlocked and shown: nothing is said, nothing locks.
+        show();
+        assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
+        assert!(matches!(store.status(), Ok(VaultStatus::Unlocked)));
+
+        store.lock();
+        main.hide().unwrap();
+        show();
+        let said = hears.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&said).unwrap(),
+            serde_json::json!({ "by": "closed" })
+        );
+        // (While another call holds the session, `is_unlocked_now` is `None` and nothing is said:
+        // vault.rs `is_unlocked_now_never_waits_for_the_session`.)
     }
 
     #[test]
@@ -10497,8 +11059,8 @@ mod event_permission_ipc_tests {
 
     /// With the real generated capability authority (only the OS runtime is mocked), as the
     /// built app checks it: the main window may listen for every event the page listens to (the
-    /// model download's, and an AI answer's start for the idle lock) and stop listening, may not
-    /// emit, and no other window may listen.
+    /// model download's, an AI answer's start for the idle lock, the native lock) and stop
+    /// listening, may not emit, and no other window may listen.
     #[test]
     fn the_main_window_may_listen_for_events_and_may_not_emit() {
         let app = tauri::test::mock_builder()
@@ -10521,6 +11083,7 @@ mod event_permission_ipc_tests {
             "ai-model-add-ended",
             "ai-answer-started",
             "ai-answer-progress",
+            VAULT_LOCKED,
         ] {
             let id = tauri::test::get_ipc_response(&main, listen(event))
                 .unwrap_or_else(|refused| panic!("listen {event}: {refused}"))

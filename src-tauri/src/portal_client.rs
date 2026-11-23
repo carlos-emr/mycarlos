@@ -292,6 +292,113 @@ pub(crate) fn api(
         })
         .map_err(|_| LinkError::InvalidResponse)?;
         let assertion = link.keys.sign(&payload);
+        send_signed(
+            endpoint,
+            method,
+            "X-MyCarlos-Device-Assertion",
+            assertion,
+            body,
+            max,
+            cancelled,
+        )
+    }
+}
+
+/// The waiting key's request (#230): a locked myCarlos asks the Portal whether anything waits
+/// for its device, or gives its key up. Signed by the notice key alone (audience
+/// `carlos-patient-portal-waiting-check`, claims `aud iss kid jti iat exp request_hash`, no
+/// recipient), never by the device key, which is in the vault. Only the two waiting routes are
+/// reachable from here.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn waiting_api(
+    entry: &crate::notice_key::NoticeKeyEntry,
+    method: &str,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ApiResponse, LinkError> {
+    use crate::portal_link::frame;
+    use base64::Engine as _;
+    use ed25519_dalek::Signer;
+    use serde::Serialize;
+    use sha2::{Digest, Sha256};
+    if cancelled() {
+        return Err(LinkError::Cancelled);
+    }
+    if method != "POST" && method != "DELETE" {
+        return Err(LinkError::InvalidResponse);
+    }
+    let endpoint = tauri::Url::parse(&format!(
+        "{}{}",
+        entry.portal_origin,
+        crate::tray_notices::WAITING
+    ))
+    .map_err(|_| LinkError::InvalidPortal)?;
+    let body = serde_json::to_vec(&serde_json::json!({ "key_id": entry.key_id }))
+        .map_err(|_| LinkError::InvalidResponse)?;
+    let request_hash: String = Sha256::digest(frame(&[
+        method.as_bytes(),
+        endpoint.path().as_bytes(),
+        endpoint.query().unwrap_or("").as_bytes(),
+        &body,
+    ]))
+    .iter()
+    .map(|b| format!("{b:02x}"))
+    .collect();
+    #[derive(Serialize)]
+    struct Claims<'a> {
+        aud: &'a str,
+        exp: u64,
+        iat: u64,
+        iss: &'a str,
+        jti: uuid::Uuid,
+        kid: &'a str,
+        request_hash: String,
+    }
+    let now = crate::now_ms() / 1000;
+    let payload = serde_json::to_vec(&Claims {
+        aud: "carlos-patient-portal-waiting-check",
+        exp: now + 60,
+        iat: now,
+        iss: "mycarlos",
+        jti: uuid::Uuid::new_v4(),
+        kid: &entry.key_id,
+        request_hash,
+    })
+    .map_err(|_| LinkError::InvalidResponse)?;
+    let key = entry.signing_key().ok_or(LinkError::InvalidResponse)?;
+    let signature = key.sign(&payload);
+    let assertion = format!(
+        "{}.{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload),
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes())
+    );
+    send_signed(
+        endpoint,
+        method,
+        "X-MyCarlos-Waiting-Assertion",
+        assertion,
+        body,
+        MAX_WAITING_REPLY,
+        cancelled,
+    )
+}
+
+/// A waiting answer is 17 bytes; a refusal's body is a few more.
+#[cfg(not(target_os = "android"))]
+const MAX_WAITING_REPLY: usize = 512;
+
+/// Sends one signed request, with the pinned-TLS client, the size and time limits and the
+/// cancellation every Portal call has.
+#[cfg(not(target_os = "android"))]
+fn send_signed(
+    endpoint: tauri::Url,
+    method: &str,
+    header: &'static str,
+    assertion: String,
+    body: Vec<u8>,
+    max: usize,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ApiResponse, LinkError> {
+    {
         let client = client()?;
         let method = reqwest::Method::from_bytes(method.as_bytes())
             .map_err(|_| LinkError::InvalidResponse)?;
@@ -300,7 +407,7 @@ pub(crate) fn api(
                 .request(method, endpoint)
                 .timeout(request_timeout(max))
                 .header("Content-Type", "application/json")
-                .header("X-MyCarlos-Device-Assertion", assertion)
+                .header(header, assertion)
                 .body(body)
                 .send()
                 .await
