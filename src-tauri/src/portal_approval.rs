@@ -1526,7 +1526,7 @@ pub(crate) use native::request_expires_at;
 pub(crate) use native::{code_challenge_kid, send_code};
 pub(crate) use native::{contract_version, create, device_removed, publish, refresh};
 #[cfg(test)]
-pub(crate) use native::{read_versions, V2 as CONTRACT_V2};
+pub(crate) use native::V2 as CONTRACT_V2;
 pub(crate) use native::{stay_on_v1, uses_contract_v2, V1 as CONTRACT_V1};
 
 /// How far a reply's `Date` may be from this device's clock and still be
