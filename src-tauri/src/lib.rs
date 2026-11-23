@@ -4335,7 +4335,12 @@ struct NotedRead {
 impl std::io::Read for NotedRead {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let read = self.inner.read(buf);
-        if read.is_err() {
+        // An interrupted read is retried by the reader of the import and says nothing about the
+        // file, so it is not a failure.
+        if read
+            .as_ref()
+            .is_err_and(|error| error.kind() != std::io::ErrorKind::Interrupted)
+        {
             self.failed.store(true, Ordering::SeqCst);
         }
         read
@@ -8649,10 +8654,16 @@ mod photo_command_tests {
         data: std::io::Cursor<Vec<u8>>,
         fail_after_first: bool,
         read_once: bool,
+        /// The first read is interrupted (and succeeds when tried again).
+        interrupt_first: bool,
     }
 
     impl std::io::Read for Bytes {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.interrupt_first && !self.read_once {
+                self.read_once = true;
+                return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
+            }
             if self.fail_after_first && self.read_once {
                 return Err(std::io::Error::other("FAKE bad sector"));
             }
@@ -8701,6 +8712,7 @@ mod photo_command_tests {
                         ),
                         fail_after_first,
                         read_once: false,
+                        interrupt_first: false,
                     }),
                 })
             };
@@ -8735,6 +8747,76 @@ mod photo_command_tests {
             opened.iter().filter(|name| name.contains("gone")).count(),
             1
         );
+    }
+
+    /// A reader of a small PDF-looking file for the tests of the batch.
+    fn small_source(name: &str, fail_after_first: bool, interrupt_first: bool) -> ImportSource {
+        ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(Bytes {
+                data: std::io::Cursor::new(
+                    format!("%PDF-1.4 FAKE {name} {}", "y".repeat(4096)).into_bytes(),
+                ),
+                fail_after_first,
+                read_once: false,
+                interrupt_first,
+            }),
+        }
+    }
+
+    #[test]
+    fn two_files_that_fail_to_read_are_both_named_and_an_interrupted_read_is_not_a_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_interrupted.pdf"),
+            received_file("FAKE_bad_one.pdf"),
+            received_file("FAKE_good.pdf"),
+            received_file("FAKE_bad_two.pdf"),
+        ];
+        let outcome = accept_received_batch(&store, files, |file| {
+            Ok(small_source(
+                &file.name,
+                file.name.contains("bad"),
+                file.name.contains("interrupted"),
+            ))
+        })
+        .unwrap();
+        // The file whose read was interrupted once and then went on is added, not forgotten
+        // because another file failed later.
+        let names: Vec<_> = store
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .map(|record| record.display_name)
+            .collect();
+        assert_eq!(outcome.imported.len(), 2, "{names:?}");
+        assert!(names.contains(&"FAKE_interrupted.pdf".to_owned()));
+        assert!(names.contains(&"FAKE_good.pdf".to_owned()));
+        assert_eq!(outcome.unreadable, ["FAKE_bad_one.pdf", "FAKE_bad_two.pdf"]);
+    }
+
+    #[test]
+    fn a_read_that_failed_followed_by_a_vault_failure_fails_the_batch_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_bad.pdf"),
+            received_file("FAKE_good.pdf"),
+        ];
+        let opened = std::cell::Cell::new(0);
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.set(opened.get() + 1);
+            // The second attempt (after the bad file was named) finds the vault locked.
+            if opened.get() == 3 {
+                store.lock();
+            }
+            Ok(small_source(&file.name, file.name.contains("bad"), false))
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
     }
 
     #[test]
