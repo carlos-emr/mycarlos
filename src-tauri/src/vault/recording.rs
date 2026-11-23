@@ -1327,6 +1327,7 @@ impl VaultStore {
                 delivery: None,
                 reading_aid: None,
                 ai_results: Vec::new(),
+                carried: None,
             };
             let mut next = unlocked.manifest.clone();
             next.records.push(record.clone());

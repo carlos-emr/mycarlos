@@ -9720,7 +9720,7 @@ mod tests {
             ),
             (
                 "Arc<ReceivedFiles>",
-                "app.manage(Arc::new(ReceivedFiles::default()))",
+                "tauri::Builder::default().manage(Arc::clone(&received))",
             ),
         ];
         let library = include_str!("lib.rs");

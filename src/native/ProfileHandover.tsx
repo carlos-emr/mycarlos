@@ -462,6 +462,9 @@ export function ProfileExportDialog({
           {error && <p role="alert">{error}</p>}
           <p className="field-hint">{t("handover.export.provider")}</p>
           <footer className="dialog-actions">
+            {/* Cancel here closes without a confirmation, on purpose: the patient has already
+                said they wrote the key down, nothing has been saved yet, and the key step's own
+                Cancel is the one that asks (it is the only place a key could be lost). */}
             <button
               className="button"
               type="button"

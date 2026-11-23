@@ -161,6 +161,14 @@ impl VaultStore {
     /// costs an unlock per twelve tries. The generated key is not limited. A passphrase already
     /// checked is not counted again when the same export is saved (`check_export`,
     /// `export_profile`): it is the same try.
+    ///
+    /// **Holds the session mutex across the Argon2id derivation** (`is_vault_passphrase`): the vault
+    /// does nothing else, and cannot lock, while a typed passphrase is being compared, which is
+    /// the same as an unlock or a change of passphrase working on the vault. A derivation takes a
+    /// second or so and only one runs at a time (`start_kdf_work`), so the wait is bounded, and
+    /// `lock` cancels through `cancel_io` and then waits for the session lock, as for any
+    /// transfer. It is not released between the rules check and the derivation so that the
+    /// profile checked, the count spent and the vault compared are one consistent state.
     pub(crate) fn check_package_passphrase(
         &self,
         profile_id: Uuid,
@@ -1554,6 +1562,25 @@ mod tests {
             .store
             .check_package_passphrase(v.child, "tiger-lamp-orbit-quartz-mellow-7391")
             .is_ok());
+    }
+
+    /// A 27-letter phrase with an accented letter (a character that is one byte in Latin-1 and two
+    /// in UTF-8) is counted by letters, is not mistaken for a recovery key, and does not panic;
+    /// the same length of plain alphabet letters is one.
+    #[test]
+    fn a_27_letter_phrase_with_an_accent_is_no_recovery_key_and_is_counted_by_letters() {
+        let accented = "abcdefghjkmnpqrstvwxyz\u{e9}abcd"; // 27 letters, the 23rd is "é"
+        assert_eq!(accented.chars().count(), 27);
+        assert!(accented.len() > 27, "two bytes for the accent");
+        assert!(!looks_like_recovery_key(accented));
+        // Letters outside Latin-1 are no key symbol either, in any position.
+        assert!(!looks_like_recovery_key(
+            "abcdefghjkmnpqrstvwxyz\u{131}abcd"
+        ));
+        assert!(!looks_like_recovery_key("\u{c9}bcdefghjkmnpqrstvwxyzabcd"));
+        // The same length in the key alphabet is read as a key (any case, any punctuation).
+        assert!(looks_like_recovery_key("ABCDEFGHJKMNPQRSTVWXYZABCDE"));
+        assert!(looks_like_recovery_key("abcdefghjkmnpqrstvwxyzabcde"));
     }
 
     #[test]
