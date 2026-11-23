@@ -26,6 +26,10 @@ privacy, accessibility, or clinical review.
 - [x] Multiple patient profiles, nested folders, search, sorting, transactional bulk moves,
       drag-and-drop, keyboard folder movement, and folder/imported-document renaming. Renames
       persist in encrypted metadata without modifying document bytes or folder assignments.
+- [ ] A new vault starts with a set of default folders (#66). The mechanism is in: the set is
+      written in the same save that creates the vault, to new vaults only, as ordinary folders. The
+      set itself is a PLACEHOLDER (`src-tauri/src/default_folders.rs`) until Dr. Chen's designs
+      arrive, and its names are English until #46 gives the app its languages.
 - [x] Manual/background locking, immediate background visual concealment, and persisted
       one-to-fifteen-minute inactivity configuration with the approved five-minute default. A manual
       lock cancels streaming at the next I/O boundary; an automatic or background lock during an

@@ -6,6 +6,7 @@ use ui_text::UiLocale;
 use ui_text_ids::MessageId;
 #[cfg(any(target_os = "linux", windows))]
 mod camera_permission;
+mod default_folders;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -667,6 +668,10 @@ impl Drop for PassphraseRulesRequest {
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
+    /// The app's language when the vault is made, which names its starting
+    /// folders (#66). Not sent yet: the app has one language until #46.
+    #[serde(default)]
+    language: Option<String>,
 }
 
 // Wiped however the command ends.
@@ -2903,7 +2908,12 @@ async fn vault_create(
     let picks = Arc::clone(picks.inner());
     let created = run_blocking(store.arc(), move |store| {
         let result = store
-            .create(&request.passphrase, &request.initial_profile_name, now_ms())
+            .create_with_folders(
+                &request.passphrase,
+                &request.initial_profile_name,
+                default_folders::for_language(request.language.as_deref()),
+                now_ms(),
+            )
             .inspect(|_| picks.clear())
             .and_then(|_| store.snapshot());
         request.passphrase.zeroize();
