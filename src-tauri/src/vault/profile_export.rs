@@ -59,8 +59,8 @@ pub(crate) struct Written<W> {
 }
 
 /// Typed package passphrases checked in one unlocked session (#360). Ordinary use is one or
-/// two tries; a guess of the vault's own passphrase costs an unlock for every five.
-pub(crate) const PACKAGE_PASSPHRASE_TRIES: u32 = 5;
+/// two tries, a few more with typos; a guess of the vault's own passphrase costs an unlock for every twelve.
+pub(crate) const PACKAGE_PASSPHRASE_TRIES: u32 = 12;
 
 impl VaultStore {
     /// Writes `profile_id`'s documents to `sink` as a package under `secret`. Refused for the
@@ -158,7 +158,7 @@ impl VaultStore {
     /// at most `PACKAGE_PASSPHRASE_TRIES` typed passphrases are checked in one unlocked session
     /// (every one that reaches the comparison with the vault's own counts); then
     /// `PackagePassphraseTriesUsed` until the vault is locked and unlocked again, and guessing
-    /// costs an unlock per five tries. The generated key is not limited. A passphrase already
+    /// costs an unlock per twelve tries. The generated key is not limited. A passphrase already
     /// checked is not counted again when the same export is saved (`check_export`,
     /// `export_profile`): it is the same try.
     pub(crate) fn check_package_passphrase(
@@ -1481,10 +1481,10 @@ mod tests {
     }
 
     #[test]
-    fn typed_package_passphrases_are_checked_five_times_per_unlocked_session() {
+    fn typed_package_passphrases_are_checked_twelve_times_per_unlocked_session() {
         let v = vault();
         let typed = |n: u32| format!("tiger-lamp-orbit-quartz-mellow-{n}");
-        // Five typed passphrases (a refusal of the vault's own counts as one) are checked.
+        // Twelve typed passphrases (a refusal of the vault's own counts as one) are checked.
         for n in 0..PACKAGE_PASSPHRASE_TRIES - 1 {
             assert!(v
                 .store
@@ -1496,7 +1496,7 @@ mod tests {
             Err(VaultError::WeakPassphrase)
         ));
         // Then any typed passphrase is refused, a good one and the vault's own alike, with
-        // the same words: the sixth guess learns nothing.
+        // the same words: the thirteenth guess learns nothing.
         for text in [typed(1).as_str(), PASSWORD, "short"] {
             assert!(matches!(
                 v.store.check_package_passphrase(v.child, text),
