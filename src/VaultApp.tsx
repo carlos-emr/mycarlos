@@ -123,9 +123,6 @@ const TOUCH_THROTTLE_MS = 10_000;
 // The check after unlocking, refused because other clinic work held the
 // native side, asks once more this long after that work returned (#128).
 const BUSY_RETRY_MS = 2_000;
-// The library's import button, named in a notice as the library shows it:
-// in English until the library is translated.
-const IMPORT_BUTTON = "interface.VaultApp.chooseFilesToImport";
 
 /** Where focus goes when the check after unlocking disables the control
  * that had it (#128): that device's heading in the clinic view, else the
@@ -418,7 +415,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         setNotice(
           deferredText(() =>
             translateCurrent("notice.dropRefused", {
-              button: translateCurrent(IMPORT_BUTTON),
+              // The import button, named as the library shows it ("New").
+              button: translateCurrent("interface.VaultLibrary.new"),
             }),
           ),
         );

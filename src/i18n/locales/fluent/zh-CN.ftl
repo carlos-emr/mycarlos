@@ -583,7 +583,7 @@ library-folder-items = { $count } 个项目
 
 library-folder-label = { $name } 文件夹
 
-library-folder-open = 打开 { $name }
+library-folder-open = { $name }，打开文件夹
 
 library-folder-rename = 重命名文件夹 { $name }
 
@@ -784,7 +784,7 @@ notice-created = 已创建加密保险库。请设置恢复密钥，避免忘记
 
 notice-createdThenLocked = 保险库已创建，但在创建恢复密钥前就已锁定。请解锁后设置恢复密钥。
 
-notice-dropRefused = 若要导入 PDF，请解锁保险库并使用 { $button }。拖放功能会移动 myCarlos 中已有的文档。
+notice-dropRefused = 若要导入 PDF，请解锁保险库并使用「{ $button }」。拖放功能会移动 myCarlos 中已有的文档。
 
 notice-eraseCancelled = 没有变更任何内容：保险库未搁置。
 
@@ -1750,6 +1750,13 @@ ai-model-add = 添加模型文件…
 ai-model-accepted = { $name }，{ $size } MB。许可证：{ $licence }。
 
 ai-model-reads = 每次约可读 { $pages } 页（约 { $characters } 个英文字符）。表格和某些语言会更少。
+
+ai-model-readsEstimate = 在下次使用此模型之前，这只是估计值。
+ai-model-loadCheck = 正在检查此模型能否在此电脑上运行…
+ai-model-loadCheckCannotRun = 此电脑未能运行此模型。请稍后重试，或选择其他模型。
+ai-model-loadCheckMemory = 目前可用内存不足，无法试用此模型。请关闭其他程序后重试。
+ai-model-loadCheckReady = 此模型已在此电脑上启动。
+ai-model-loadCheckRetry = 重试
 
 ai-model-where = 在哪里获取文件
 

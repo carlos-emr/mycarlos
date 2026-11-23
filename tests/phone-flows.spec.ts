@@ -82,7 +82,7 @@ test("on a phone: unlock, the section tabs, details, hide, Hidden and Restore, b
   await page
     .getByRole("button", {
       name: new RegExp(
-        `^${escapeRegExp(en("interface.HiddenDocuments.hidden"))}\\s+1\\s+`,
+        `^${escapeRegExp(en("interface.HiddenDocuments.hidden"))}\\s+${escapeRegExp(en("sidebar.documents", { count: 1 }))}\\s+`,
       ),
     })
     .click();

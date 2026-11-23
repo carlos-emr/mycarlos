@@ -44,6 +44,7 @@ mod summary_progress;
 #[cfg_attr(mobile, allow(dead_code))]
 mod model_download;
 mod model_helper;
+mod model_limits;
 mod model_runtime;
 mod notice_key;
 #[cfg(windows)]
@@ -1761,7 +1762,21 @@ fn ai_model_catalog() -> Vec<local_model::Accepted> {
 /// why: not installed, this computer cannot run it, or the file is damaged.
 #[tauri::command]
 fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::ModelStatus {
-    models.status(&local_model::Here)
+    match models.status(&local_model::Here) {
+        // Once the helper has made this model's context, the reader's question reads from it,
+        // as the settings do (model limits).
+        local_model::ModelStatus::Installed {
+            model,
+            capacity: Some(capacity),
+        } => {
+            let card = model_runtime::app().runner().card_for(&model.sha256);
+            local_model::ModelStatus::Installed {
+                capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
+                model,
+            }
+        }
+        status => status,
+    }
 }
 
 /// Every model the app offers, and any other accepted one on this computer, with its state,
@@ -1769,6 +1784,29 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
 #[tauri::command]
 fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::ModelRow> {
     models.models()
+}
+
+/// Each model's limits, for the AI helper settings (model limits): how much of a document it
+/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
+/// helper has run a model in this session, its room follows the context the helper made, and
+/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// the model file: the helper's checked card does (`model_limits`).
+#[tauri::command]
+fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
+    let runner = model_runtime::app().runner();
+    models
+        .models()
+        .into_iter()
+        .map(|row| {
+            let card = runner.card_for(row.model.sha256);
+            model_limits::limits(
+                row.index,
+                &row.model,
+                card.as_ref(),
+                model_runtime::needed_bytes(row.model.size_bytes),
+            )
+        })
+        .collect()
 }
 
 /// Which catalog entry a model command is about (`ai_models`' `index`).
@@ -1793,6 +1831,39 @@ async fn ai_model_use(
     })
     .await
     .map_err(|_| local_model::ModelError::Storage)?
+}
+
+/// Loads the model in use once, right after the patient picks it or its download or file is
+/// added (D218), to say now whether it runs on this computer; it is stopped again at once.
+/// Only for the row in use and only while the vault is unlocked; otherwise, and while an answer
+/// is asked or written, nothing is loaded (`skipped`).
+#[tauri::command]
+async fn ai_model_check(
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    request: ModelIndexRequest,
+) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    use model_runtime::LoadCheck;
+    if !cfg!(desktop) {
+        return Ok(LoadCheck::Skipped);
+    }
+    let runtime = model_runtime::app();
+    // The claim first: a lock after this point ends the check rather than loading while locked.
+    let Some(claim) = runtime.load_check_claim() else {
+        return Ok(LoadCheck::Skipped);
+    };
+    let in_use = models
+        .models()
+        .iter()
+        .any(|row| row.index == request.index && row.in_use);
+    if !in_use || store.answer_origin().is_none() {
+        return Ok(LoadCheck::Skipped);
+    }
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || runtime.check_load(claim))
+            .await
+            .unwrap_or(LoadCheck::Skipped),
+    )
 }
 
 /// Why adding or removing a model was refused, as a word for the renderer.
@@ -5588,6 +5659,8 @@ pub fn run() {
             ai_model_catalog,
             ai_model_status,
             ai_models,
+            ai_model_limits,
+            ai_model_check,
             ai_model_use,
             ai_model_add_picked,
             ai_model_add_cancel,

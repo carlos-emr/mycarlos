@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -101,10 +102,12 @@ export function joinBirthDate({ year, month, day }: BirthDateParts): string {
 function BirthDateFields({
   value,
   unknown,
+  describedBy,
   onChange,
 }: {
   value: string;
   unknown: boolean;
+  describedBy?: string;
   onChange: (birthDate: string) => void;
 }) {
   const { locale, t } = useI18n();
@@ -129,7 +132,11 @@ function BirthDateFields({
     onChange(joinBirthDate(next));
   };
   return (
-    <fieldset className="native-birth-date" disabled={unknown}>
+    <fieldset
+      className="native-birth-date"
+      aria-describedby={describedBy}
+      disabled={unknown}
+    >
       <legend>{t("personDetails.birthDate")}</legend>
       <label className="native-birth-year">
         {t("personDetails.birthYear")}
@@ -202,6 +209,16 @@ export function PersonDetailsFields({
 }) {
   const { t } = useI18n();
   const problem = detailsProblem(details, birthDateUnknown);
+  const shown = showProblem ? problem : null;
+  // What is still missing, once shown, is read out only when it changes: a
+  // polite region kept on the page (not an alert on an empty form), and each
+  // field's description, so it is heard when the field is reached.
+  const problemId = useId();
+  const nameProblem =
+    shown === "personDetails.fullNameRequired" ||
+    shown === "personDetails.nameTooLong";
+  const nameDescribed = nameProblem ? problemId : undefined;
+  const dateDescribed = shown && !nameProblem ? problemId : undefined;
   return (
     <>
       <label>
@@ -209,6 +226,7 @@ export function PersonDetailsFields({
         <input
           autoComplete="off"
           maxLength={NAME_INPUT_MAX_LENGTH}
+          aria-describedby={nameDescribed}
           required
           value={details.fullName ?? ""}
           onChange={(e) => onChange({ ...details, fullName: e.target.value })}
@@ -217,11 +235,13 @@ export function PersonDetailsFields({
       <BirthDateFields
         value={details.birthDate ?? ""}
         unknown={birthDateUnknown}
+        describedBy={dateDescribed}
         onChange={(birthDate) => onChange({ ...details, birthDate })}
       />
       <label className="native-person-date-unknown">
         <input
           type="checkbox"
+          aria-describedby={dateDescribed}
           checked={birthDateUnknown}
           onChange={(e) => {
             onBirthDateUnknownChange(e.target.checked);
@@ -231,7 +251,9 @@ export function PersonDetailsFields({
         <span>{t("personDetails.birthDateUnknown")}</span>
       </label>
       <p>{t("personDetails.help")}</p>
-      {problem && showProblem && <p role="alert">{t(problem)}</p>}
+      <p id={problemId} aria-live="polite">
+        {shown ? t(shown) : ""}
+      </p>
     </>
   );
 }

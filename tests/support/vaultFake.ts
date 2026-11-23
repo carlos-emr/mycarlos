@@ -1018,7 +1018,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             return { state: "notInstalled" };
           case "ai_models":
           case "ai_model_catalog":
+          case "ai_model_limits":
             return [];
+          // No model in use to check (D218).
+          case "ai_model_check":
+            return "skipped";
           // No add or download running when the row opens (#275).
           case "ai_model_add_active":
             return null;
@@ -1882,7 +1886,7 @@ export async function fakeCalls(
     .map((call) => call.args);
 }
 
-/** The FAKE files the next "Choose files to import" picker chooses. */
+/** The FAKE files the next import picker (the library's "New") chooses. */
 export async function fakePickFiles(page: Page, names: string[]) {
   await page.evaluate(
     (names) =>
