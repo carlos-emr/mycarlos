@@ -125,3 +125,70 @@ test("a generated manifest is accepted only with the two PDF share filters and n
   );
   assert.deepEqual(manifestProblems("<manifest />"), ["no MainActivity found"]);
 });
+
+// What tauri-build 2.6 writes for this configuration, as one filter between its markers: both
+// actions together, DEFAULT and BROWSABLE, the MIME type and a path pattern for the extension.
+const generated = `<intent-filter>
+    <action android:name="android.intent.action.SEND" />
+    <action android:name="android.intent.action.SEND_MULTIPLE" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:mimeType="application/pdf" />
+    <data android:pathPattern=".*\\\\.pdf" />
+</intent-filter>`;
+
+test("the filter tauri-build really writes is accepted", () => {
+  const real = manifest(`<!-- tauri-file-associations-block -->${generated}`);
+  assert.deepEqual(manifestProblems(real), []);
+  // One filter holds both actions: it counts for each.
+  assert.equal(mainActivityFilters(real).length, 2);
+  // Without the DEFAULT category it would never be offered, and the check says so.
+  assert.match(
+    manifestProblems(
+      manifest(generated.replace(/<category[^>]*DEFAULT[^>]*>/, "")),
+    )[0],
+    /DEFAULT/,
+  );
+});
+
+test("VIEW filters for any type that could take a PDF are refused, on the activity or its alias", () => {
+  const view = (data) =>
+    `<intent-filter><action android:name="android.intent.action.VIEW" />${data}</intent-filter>`;
+  for (const data of [
+    '<data android:mimeType="application/*" />',
+    '<data android:mimeType="*/*" />',
+    '<data android:mimeType="application/pdf" />',
+    '<data android:scheme="file" />',
+  ]) {
+    assert.match(
+      manifestProblems(manifest(generated + view(data)))[0],
+      /VIEW/,
+      data,
+    );
+  }
+  // Another type's VIEW filter (a deep link, an image) is not ours to refuse.
+  assert.deepEqual(
+    manifestProblems(
+      manifest(generated + view('<data android:mimeType="image/png" />')),
+    ),
+    [],
+  );
+  // The same on an alias of MainActivity, which is MainActivity as far as Android is concerned.
+  const aliased = right.replace(
+    "</application>",
+    `<activity-alias android:name=".Share" android:targetActivity=".MainActivity">${view(
+      '<data android:mimeType="*/*" />',
+    )}</activity-alias></application>`,
+  );
+  assert.match(manifestProblems(aliased)[0], /VIEW/);
+  // An alias of another activity is not.
+  assert.deepEqual(
+    manifestProblems(
+      aliased.replace(
+        'targetActivity=".MainActivity"',
+        'targetActivity=".Other"',
+      ),
+    ),
+    [],
+  );
+});
