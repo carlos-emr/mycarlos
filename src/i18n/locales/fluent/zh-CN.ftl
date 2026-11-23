@@ -1827,6 +1827,19 @@ ai-explain-ready = 解释已生成。
 ai-failed = AI 助手未能完成。请重试。
 
 ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。
+ai-error-memoryNumbers = 目前可用内存不足，AI 助手无法运行。它需要约 { $needed } GB 可用内存，而现在只有 { $free } GB 可用。请关闭其他程序后重试。
+ai-error-memoryUnknown = 目前可用内存不足，AI 助手无法运行。它需要约 { $needed } GB 可用内存，而此电脑无法告知现有多少可用内存。请关闭其他程序后重试。
+ai-speed-title = 此电脑上的速度
+ai-speed-note = 这会在一小段虚构的文字上运行一次 AI 助手，并在一两分钟内较多占用处理器。不会向任何地方发送任何内容，也不会用到您的任何资料。您可以随时停止。
+ai-speed-button = 检查此电脑的速度
+ai-speed-working = 正在检查速度…
+ai-speed-cancel = 停止检查
+ai-speed-result = 在此电脑上测得：AI 助手每秒约读取 { $read } 个词，约写出 { $write } 个。
+ai-speed-cancelled = 检查已停止，未保存任何内容。
+ai-speed-none = 尚未检查。
+ai-speed-failed = 无法测出速度。请重试。
+ai-speed-estimate = 在此电脑上，这最多可能需要约 { $minutes } 分钟。
+ai-speed-estimateLong = 在此电脑上，这么长的文档可能无法在 AI 助手获得的时间内完成。
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
 

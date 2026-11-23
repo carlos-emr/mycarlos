@@ -2067,6 +2067,19 @@ ai-explain-ready = Wyjaśnienie jest gotowe.
 ai-failed = Asystent AI nie zdołał dokończyć. Można spróbować ponownie.
 
 ai-error-memory = Brakuje teraz wolnej pamięci dla asystenta AI. Można zamknąć inne programy i spróbować ponownie.
+ai-error-memoryNumbers = Brakuje teraz wolnej pamięci dla asystenta AI. Potrzebuje około { $needed } GB wolnej pamięci, a wolne jest { $free } GB. Można zamknąć inne programy i spróbować ponownie.
+ai-error-memoryUnknown = Brakuje teraz wolnej pamięci dla asystenta AI. Potrzebuje około { $needed } GB wolnej pamięci, a ten komputer nie potrafił podać, ile jest wolnej. Można zamknąć inne programy i spróbować ponownie.
+ai-speed-title = Szybkość na tym komputerze
+ai-speed-note = To uruchamia asystenta AI jeden raz na krótkim, zmyślonym tekście i mocno obciąża procesor przez minutę lub dwie. Nic nie jest nigdzie wysyłane i nie używa niczego z Twoich danych. Można to zatrzymać w każdej chwili.
+ai-speed-button = Sprawdź szybkość tego komputera
+ai-speed-working = Sprawdzanie szybkości…
+ai-speed-cancel = Zatrzymaj sprawdzanie
+ai-speed-result = Zmierzono na tym komputerze: asystent AI czyta około { $read } słów na sekundę i pisze około { $write }.
+ai-speed-cancelled = Sprawdzanie zatrzymano. Nic nie zapisano.
+ai-speed-none = Jeszcze nie sprawdzono.
+ai-speed-failed = Nie udało się zmierzyć szybkości. Spróbuj ponownie.
+ai-speed-estimate = Na tym komputerze może to potrwać do około { $minutes } min.
+ai-speed-estimateLong = Na tym komputerze tak długi dokument może nie zostać ukończony w czasie, jaki ma asystent AI.
 
 ai-error-busy = Model asystenta AI jest właśnie dodawany lub usuwany. Można spróbować ponownie, gdy to się skończy.
 

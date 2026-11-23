@@ -714,6 +714,9 @@ pub(crate) struct Runner {
     /// The checked cards of the models started in this session, by their SHA-256 (model
     /// limits): kept after the helper ends, for the settings.
     cards: Mutex<Vec<(String, crate::model_limits::ModelCard)>>,
+    /// Told each checked card as it is kept, to save it beside the models (#305 PR 2). A save
+    /// that fails changes nothing: the card then lives for this session only.
+    card_saver: Mutex<Option<CardSaver>>,
     /// The last card a helper sent, kept or not, and why not, its architecture cut to a short
     /// name: for support and the engine test, never for the settings.
     last_card: Mutex<
@@ -723,6 +726,9 @@ pub(crate) struct Runner {
         )>,
     >,
 }
+
+/// Saves a checked card (the model's SHA-256 and the card).
+pub(crate) type CardSaver = Box<dyn Fn(&str, &crate::model_limits::ModelCard) + Send + Sync>;
 
 /// What is told an answer's own time limit as the answer is asked: the idle lock's hold on
 /// the answer, and the renderer's (D19).
@@ -779,6 +785,7 @@ impl Runner {
             answer_watch: Mutex::new(None),
             threads_override: Mutex::new(None),
             cards: Mutex::new(Vec::new()),
+            card_saver: Mutex::new(None),
             last_card: Mutex::new(None),
         }
     }
@@ -796,8 +803,15 @@ impl Runner {
             .clone()
     }
 
+    /// Names who saves each card the helper makes (the models store).
+    pub(crate) fn set_card_saver(&self, saver: CardSaver) {
+        *self.card_saver.lock().unwrap_or_else(|e| e.into_inner()) = Some(saver);
+    }
+
     /// The checked card of the model with this SHA-256, when the helper has run it in this
-    /// session (model limits).
+    /// session (model limits). Readers go to the models store (`Store::stored_card`), which this
+    /// feeds; kept for the runner's own tests.
+    #[cfg(test)]
     pub(crate) fn card_for(&self, sha256: &str) -> Option<crate::model_limits::ModelCard> {
         let cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
         cards
@@ -809,6 +823,14 @@ impl Runner {
     /// Keeps a started model's card, in place of an older one for the same file. At most
     /// [`MAX_CARDS`] are kept: the oldest goes.
     fn remember_card(&self, sha256: &str, card: crate::model_limits::ModelCard) {
+        if let Some(save) = self
+            .card_saver
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            save(sha256, &card);
+        }
         let mut cards = self.cards.lock().unwrap_or_else(|e| e.into_inner());
         cards.retain(|(hash, _)| hash != sha256);
         if cards.len() >= MAX_CARDS {
@@ -1963,6 +1985,23 @@ mod tests {
         // The oldest went to make room.
         assert!(runner.card_for("a").is_none());
         assert_eq!(runner.card_for("other 0"), Some(card));
+    }
+
+    #[test]
+    fn each_card_a_runner_keeps_is_handed_to_the_saver_and_a_runner_without_one_still_works() {
+        let runner = Runner::new(idle_config());
+        let card: crate::model_limits::ModelCard =
+            serde_json::from_value(card_json(8_192)).unwrap();
+        // No saver: kept for the session, as before.
+        runner.remember_card("a", card.clone());
+        assert_eq!(runner.card_for("a"), Some(card.clone()));
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&saved);
+        runner.set_card_saver(Box::new(move |sha256, card| {
+            sink.lock().unwrap().push((sha256.to_owned(), card.clone()));
+        }));
+        runner.remember_card("b", card.clone());
+        assert_eq!(saved.lock().unwrap().as_slice(), [("b".to_owned(), card)]);
     }
 
     #[test]
