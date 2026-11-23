@@ -208,8 +208,33 @@ def ratcheted_floors(totals, current=None):
 
 
 def write_floor(path, floors):
-    document = {"schemaVersion": 1, **floors}
+    """Writes the floors, keeping whatever else the file already holds (other keys are not ours to drop)."""
+    document = {"schemaVersion": 1}
+    if Path(path).exists():
+        existing = json.loads(Path(path).read_text())
+        if isinstance(existing, dict):
+            document.update(existing)
+    document.update(floors)
+    document["schemaVersion"] = 1
     Path(path).write_text(json.dumps(document, indent=2) + "\n")
+
+
+def settle_floor(metadata, totals, floors):
+    """After a complete run: records the floors and, below one, marks the run `below-floor` and raises."""
+    metadata.update({"status": "passed", "totals": totals, "floors": floors})
+    problems = check_floors(totals, floors)
+    if problems:
+        # The run itself is complete and kept; only the gate fails.
+        metadata["status"] = "below-floor"
+        raise RuntimeError("; ".join(problems))
+
+
+def record_failure(metadata, error):
+    """Notes how a run ended badly. A run already marked `below-floor` keeps that status: it was
+    complete, and only the gate failed; the error text is kept either way."""
+    if metadata.get("status") != "below-floor":
+        metadata["status"] = "failed"
+    metadata["error"] = f"{type(error).__name__}: {error}"
 
 
 def report_totals(path):
@@ -334,18 +359,13 @@ def execute(args, pin, host, tools, versions):
         if before != metadata["source_after"]:
             raise RuntimeError("source inputs changed during coverage; report is not a stable-source measurement")
         floors = requested_floors(args)
-        metadata.update({"status": "passed", "totals": totals, "floors": floors})
         print((directory / "report/summary.txt").read_text(), flush=True)
         print("Measured: " + ", ".join(f"{metric} {percent(totals, metric):.2f}%" for metric in FLOOR_METRICS),
               flush=True)
-        problems = check_floors(totals, floors)
-        if problems:
-            # The run itself is complete and kept; only the gate fails.
-            metadata["status"] = "below-floor"
-            raise RuntimeError("; ".join(problems))
+        settle_floor(metadata, totals, floors)
         print(f"Coverage complete: {directory}", flush=True)
     except BaseException as error:
-        metadata.update({"status": "failed", "error": f"{type(error).__name__}: {error}"})
+        record_failure(metadata, error)
         raise
     finally:
         run.save()
@@ -387,7 +407,11 @@ def main():
             if args.check_report:
                 print("Measured: " + ", ".join(f"{metric} {percent(totals, metric):.2f}%"
                                                for metric in FLOOR_METRICS))
-                problems = check_floors(totals, requested_floors(args))
+                floors = requested_floors(args)
+                if not floors:
+                    # A report checked against nothing would pass whatever it holds.
+                    raise RuntimeError("--check-report needs --floor-file or --fail-under-lines/--fail-under-regions")
+                problems = check_floors(totals, floors)
                 if problems:
                     raise RuntimeError("; ".join(problems))
             else:

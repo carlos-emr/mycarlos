@@ -119,7 +119,8 @@ python3 scripts/coverage-rust.py --ratchet-report coverage/rust/<run>/report/cov
   --floor-file scripts/coverage-rust-floor.json
 ```
 
-`--ratchet-report` never lowers a floor, and `--check-report <coverage.json> --floor-file ...` checks
+`--ratchet-report` expects the report of a complete, passing run (`status: "passed"` in its `run.json`), never a
+partial one, and never lowers a floor, and `--check-report <coverage.json> --floor-file ...` checks
 an earlier report without building or testing. Both need no toolchain. `python3 -m unittest
 scripts/test_coverage_rust.py` tests the gate. Never lower the file to make a run pass: add tests, or
 say in the change why code left the denominator.

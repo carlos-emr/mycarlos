@@ -141,6 +141,45 @@ class FloorTests(unittest.TestCase):
         run_main("--ratchet-report", str(worse), "--floor-file", str(floor))
         self.assertEqual(coverage_rust.read_floor(floor), {"lines": 81, "regions": 90})
 
+    def test_check_report_with_no_floors_named_is_an_error_not_a_silent_pass(self):
+        measured = self.path / "measured.json"
+        report(measured, lines=(10, 100), regions=(10, 100))
+        status, _, err = run_main("--check-report", str(measured))
+        self.assertEqual(status, 1)
+        self.assertIn("--check-report needs --floor-file or --fail-under", err)
+
+    def test_a_run_below_its_floor_keeps_that_status_and_its_error_text(self):
+        metadata = {"status": "running"}
+        with self.assertRaises(RuntimeError) as raised:
+            coverage_rust.settle_floor(metadata, totals((70, 100), (90, 100)), {"lines": 80, "regions": 80})
+        self.assertEqual(metadata["status"], "below-floor")
+        self.assertEqual(metadata["floors"], {"lines": 80, "regions": 80})
+        # The handler main() runs for any exception must not turn it into a plain failure.
+        coverage_rust.record_failure(metadata, raised.exception)
+        self.assertEqual(metadata["status"], "below-floor")
+        self.assertIn("lines coverage 70.00% is below the floor of 80%", metadata["error"])
+        self.assertTrue(metadata["error"].startswith("RuntimeError: "))
+
+    def test_a_run_at_its_floor_is_passed_and_any_other_error_is_failed(self):
+        metadata = {"status": "running"}
+        coverage_rust.settle_floor(metadata, totals((80, 100), (80, 100)), {"lines": 80, "regions": 80})
+        self.assertEqual(metadata["status"], "passed")
+        coverage_rust.record_failure(metadata, OSError("disk full"))
+        self.assertEqual(metadata["status"], "failed")
+        self.assertEqual(metadata["error"], "OSError: disk full")
+
+    def test_the_ratchet_keeps_the_other_keys_of_the_floor_file(self):
+        floor = self.path / "floor.json"
+        floor.write_text(json.dumps({"schemaVersion": 1, "lines": 70, "regions": 60, "note": "kept", "extra": {"a": 1}}))
+        measured = self.path / "measured.json"
+        report(measured, lines=(8100, 10000), regions=(5000, 10000))
+        run_main("--ratchet-report", str(measured), "--floor-file", str(floor))
+        written = json.loads(floor.read_text())
+        self.assertEqual(written["lines"], 81)
+        self.assertEqual(written["regions"], 60)  # never lowered
+        self.assertEqual(written["note"], "kept")
+        self.assertEqual(written["extra"], {"a": 1})
+
     def test_ratchet_report_needs_a_floor_file(self):
         measured = self.path / "measured.json"
         report(measured, lines=(1, 1), regions=(1, 1))
