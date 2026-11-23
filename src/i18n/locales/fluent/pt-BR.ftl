@@ -1375,12 +1375,12 @@ unlock-title = Desbloqueie seu cofre
 
 unlock-waiting =
     { $count ->
-    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
-    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
-    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre e eles irão para “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    [one] { $count } arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+    [many] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
+    *[other] { $count } arquivos compartilhados estão aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-los a “{ $folder }”. Se o myCarlos fechar antes, eles não serão mantidos: compartilhe-os de novo.
     }
 
-unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre e ele irá para “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
+unlock-waiting-one = Um arquivo compartilhado está aguardando. Desbloqueie o cofre: o myCarlos perguntará primeiro antes de adicioná-lo a “{ $folder }”. Se o myCarlos fechar antes, ele não será mantido: compartilhe-o de novo.
 
 language-error-formatting = O myCarlos não conseguiu exibir esta mensagem corretamente. Escolha outro idioma ou reinicie o aplicativo e confira seus registros antes de tentar novamente.
 
@@ -2399,6 +2399,20 @@ noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, e
 noticesStep-done = Concluído
 noticesStep-notNow = Agora não
 
+background-title = Execução em segundo plano
+background-keepRunning = Manter o myCarlos em segundo plano depois que eu fechar a janela dele
+background-keepRunningHelp = Ao fechar a janela, o myCarlos pode continuar em segundo plano com um ícone na área de notificação (na barra de menus, no Mac). O cofre é bloqueado quando a janela fecha e continua bloqueado até você abrir o myCarlos e desbloqueá-lo. Escolha Sair no ícone para fechar o myCarlos por completo.
+background-startAtLogin = Iniciar o myCarlos quando eu entrar neste computador
+background-startAtLoginHelp = O myCarlos inicia quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano, com o cofre bloqueado. Com ela desativada, a janela dele abre.
+background-paused = Enquanto o cofre está bloqueado, o myCarlos não consegue verificar novos documentos da clínica. Desbloqueie-o para verificar.
+background-unavailable = Um ícone em segundo plano não está disponível neste computador. O myCarlos fecha por completo quando você fecha a janela dele.
+background-error = Não foi possível alterar esta configuração. Ela continua como estava.
+native-tray-open = Abrir o myCarlos
+native-tray-quit = Sair do myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Há um novo documento esperando. Desbloqueie o myCarlos para vê-lo.
+
 ai-summary-again = Resumir de novo
 
 ai-keepFailed = O myCarlos não conseguiu guardar esta resposta com o documento. Ela continua sendo mostrada aqui.
@@ -2448,6 +2462,35 @@ personDetails-previousEntry = Nome completo anterior { $number }
 personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
+
+interface-received-confirmTitleOne = Importar { $name } para Compartilhados comigo?
+
+interface-received-confirmTitleMany = Importar { $count } documentos para Compartilhados comigo?
+
+interface-received-confirmBody = Nada é adicionado até você escolher Importar. Cancelar não deixa nada.
+
+interface-received-import = Importar
+
+reader-android-opening = Abrindo o documento…
+
+reader-android-failed = O myCarlos não conseguiu mostrar este documento. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-tooLarge = Este PDF tem mais de 20 MB. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-unavailable = Este dispositivo não permite que o myCarlos abra documentos aqui. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-page = Página { $page } de { $total }, imagem da carta
+
+reader-android-pageStatus = Página { $page } de { $total }
+reader-android-pageFailed = Não foi possível mostrar a página { $page } de { $total }.
+
+reader-android-previous = Página anterior
+
+reader-android-next = Próxima página
+
+reader-android-zoomIn = Aumentar o zoom
+
+reader-android-zoomOut = Diminuir o zoom
 
 interface-video-name = Vídeo, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Gravar um vídeo

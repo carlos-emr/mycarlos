@@ -1,6 +1,6 @@
 import type { SummaryProgressEvent } from "./ai/summaryProgress";
 import { getLocale, t, hasMessageKey, UiError, type MessageKey } from "./i18n";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AiTool,
@@ -357,6 +357,9 @@ export interface ReceivedFile {
   name: string;
   /** The label the document will carry once added. */
   sourceLabel: string;
+  /** Named by a program started with its path (Open with, a second launch): the patient is asked
+   * before it is added. A file shared from another app is added as it arrives. */
+  needsConfirm?: boolean;
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -474,6 +477,21 @@ export interface PassphraseRules {
   longEnough: boolean;
   notAName: boolean;
   hardToGuess: boolean;
+}
+
+/** Genuine input in the separate native reader; no document data is carried. */
+export const NATIVE_READER_ACTIVITY_EVENT = "mycarlos-native-reader-activity";
+
+/** The words the Android native reader shows and speaks (#358). */
+export interface AndroidReaderLabels {
+  close: string;
+  previous: string;
+  next: string;
+  zoomIn: string;
+  zoomOut: string;
+  page: string;
+  pageStatus: string;
+  pageFailed: string;
 }
 
 export interface VaultBridge {
@@ -679,7 +697,11 @@ export interface VaultBridge {
   listReceived(): Promise<ReceivedState>;
   /** Adds every waiting file to Shared with me; a file that is not a PDF is
    * forgotten and named. If anything else fails, they all keep waiting. */
-  acceptReceived(): Promise<ReceivedAcceptOutcome>;
+  /** Adds the waiting files to Shared with me: exactly `ids` (the files the patient confirmed)
+   * when given, otherwise every waiting file. */
+  acceptReceived(ids?: string[]): Promise<ReceivedAcceptOutcome>;
+  /** Forgets the waiting files the patient cancelled; nothing was stored. */
+  discardReceived(ids: string[]): Promise<number>;
   /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
@@ -697,6 +719,11 @@ export interface VaultBridge {
   ): Promise<ViewedPage>;
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView(): Promise<void>;
+  /** Android only (#358): the document is shown by the native PdfRenderer reader, from a sealed
+   * in-memory file, with no document bytes in this bridge. `labels` are the words it shows and
+   * speaks; "{page}" and "{total}" in `page` and `pageStatus` are filled in natively. Resolves
+   * when the native reader is dismissed; cancelView also stops it. */
+  readAndroidPdf?(recordId: string, labels: AndroidReaderLabels): Promise<void>;
   /** Where the span `start..end` (UTF-16 units) of page `page`'s readable
    * text, which holds `quoted`, is drawn on the page picture (#292). Exact or
    * nothing: `rects` is empty, with the reason, when the helper cannot tie
@@ -742,6 +769,20 @@ export interface VaultBridge {
   onAiAnswerStarted?(
     handler: (answer: { answerId: string; limitMs: number }) => void,
   ): () => void;
+  /** Calls `handler` when the vault locked natively without the screen
+   * asking: the window was closed to the tray or Quit was chosen
+   * (`"closed"`), or the native idle lock fell due (`"idle"`). The vault is
+   * already locked; the screen lets go of everything it shows at once, as
+   * its own lock does (#206). Computers only. Returns the way to stop
+   * listening. */
+  onVaultLocked?(
+    handler: (locked: { by: "closed" | "idle" }) => void,
+  ): () => void;
+  /** Whether the tray check found a document waiting while the vault was locked (#230): the
+   * unlock screen shows one fixed sentence when it did. Computers only. */
+  trayWaiting?(): Promise<boolean>;
+  /** The same, as it changes. Returns the way to stop listening. */
+  onTrayWaiting?(handler: (waiting: boolean) => void): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -1276,7 +1317,14 @@ export function createVaultBridge(): VaultBridge {
         request: { recordId, password },
       }),
     listReceived: () => invoke<ReceivedState>("received_list"),
-    acceptReceived: () => invoke<ReceivedAcceptOutcome>("received_accept"),
+    acceptReceived: (ids) =>
+      ids
+        ? invoke<ReceivedAcceptOutcome>("received_accept", {
+            request: { ids },
+          })
+        : invoke<ReceivedAcceptOutcome>("received_accept"),
+    discardReceived: (ids) =>
+      invoke<number>("received_discard", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },
@@ -1297,6 +1345,22 @@ export function createVaultBridge(): VaultBridge {
       invoke<PageBoxes>("vault_page_boxes", {
         request: { recordId, page, ...span, password: password ?? null },
       }),
+    readAndroidPdf: async (recordId, labels) => {
+      const generation = viewGeneration;
+      if (pendingViewCancellation) {
+        await pendingViewCancellation.catch(() => undefined);
+      }
+      if (generation !== viewGeneration) throw { code: "cancelled" };
+      const activity = new Channel<void>();
+      activity.onmessage = () =>
+        window.dispatchEvent(new Event(NATIVE_READER_ACTIVITY_EVENT));
+      return invoke<void>("vault_read_android_pdf", {
+        request: { recordId, labels },
+        activity,
+      }).finally(() => {
+        activity.onmessage = () => undefined;
+      });
+    },
     cancelView: () => {
       viewGeneration += 1;
       // No newer page can start while this is pending, so one cancellation
@@ -1369,6 +1433,19 @@ export function createVaultBridge(): VaultBridge {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",
         (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    onVaultLocked: (handler) => {
+      const stop = listen<{ by: "closed" | "idle" }>("vault-locked", (event) =>
+        handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    trayWaiting: () => invoke<boolean>("tray_waiting_status"),
+    onTrayWaiting: (handler) => {
+      const stop = listen<boolean>("tray-waiting", (event) =>
+        handler(event.payload === true),
       );
       return () => void stop.then((unlisten) => unlisten());
     },

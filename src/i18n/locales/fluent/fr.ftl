@@ -1375,12 +1375,12 @@ unlock-title = Déverrouiller votre coffre-fort
 
 unlock-waiting =
     { $count ->
-    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
-    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
-    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort et ils iront dans « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+    [many] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
+    *[other] { $count } fichiers partagés sont en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de les ajouter à « { $folder } ». Si myCarlos se ferme avant, ils ne seront pas conservés : partagez-les de nouveau.
     }
 
-unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort et il ira dans « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
+unlock-waiting-one = Un fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.
 
 language-error-formatting = myCarlos n’a pas pu afficher ce message correctement. Choisissez une autre langue ou redémarrez l’application, puis vérifiez vos dossiers avant de réessayer.
 
@@ -2399,6 +2399,20 @@ noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, 
 noticesStep-done = Terminé
 noticesStep-notNow = Pas maintenant
 
+background-title = Exécution en arrière-plan
+background-keepRunning = Laisser myCarlos s’exécuter en arrière-plan après la fermeture de sa fenêtre
+background-keepRunningHelp = Lorsque vous fermez la fenêtre, myCarlos peut rester en arrière-plan avec une icône dans la zone de notification (la barre des menus sur un Mac). Votre coffre se verrouille à la fermeture de la fenêtre et reste verrouillé jusqu’à ce que vous ouvriez myCarlos et le déverrouilliez. Choisissez Quitter dans l’icône pour fermer complètement myCarlos.
+background-startAtLogin = Démarrer myCarlos à l’ouverture de ma session sur cet ordinateur
+background-startAtLoginHelp = myCarlos démarre lorsque vous ouvrez votre session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan, coffre verrouillé. S’il est désactivé, sa fenêtre s’ouvre.
+background-paused = Tant que votre coffre est verrouillé, myCarlos ne peut pas vérifier les nouveaux documents de la clinique. Déverrouillez-le pour vérifier.
+background-unavailable = Une icône d’arrière-plan n’est pas disponible sur cet ordinateur. myCarlos se ferme complètement lorsque vous fermez sa fenêtre.
+background-error = Ce réglage n’a pas pu être modifié. Il reste tel qu’il était.
+native-tray-open = Ouvrir myCarlos
+native-tray-quit = Quitter myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = Un nouveau document est en attente. Déverrouillez myCarlos pour le voir.
+
 ai-summary-again = Résumer à nouveau
 
 ai-keepFailed = myCarlos n’a pas pu conserver cette réponse avec le document. Elle reste affichée ici.
@@ -2448,6 +2462,35 @@ personDetails-previousEntry = Ancien nom complet { $number }
 personDetails-previousRemove = Retirer l’ancien nom complet { $number }
 personDetails-previousAdd = Ajouter un ancien nom complet
 personDetails-previousInvalid = Utilisez au plus 16 noms différents et non vides, de 120 caractères maximum chacun, sans caractères de contrôle.
+
+interface-received-confirmTitleOne = Importer { $name } dans Partagés avec moi ?
+
+interface-received-confirmTitleMany = Importer { $count } documents dans Partagés avec moi ?
+
+interface-received-confirmBody = Rien n’est ajouté tant que vous n’avez pas choisi Importer. Annuler ne laisse rien.
+
+interface-received-import = Importer
+
+reader-android-opening = Ouverture du document…
+
+reader-android-failed = myCarlos n’a pas pu afficher ce document. Enregistrez une copie pour la lire dans une autre application.
+
+reader-android-tooLarge = Ce PDF dépasse 20 Mo. Enregistrez une copie pour la lire dans une autre application.
+
+reader-android-unavailable = Cet appareil ne permet pas à myCarlos d’ouvrir des documents ici. Enregistrez une copie pour la lire dans une autre application.
+
+reader-android-page = Page { $page } sur { $total }, image de la lettre
+
+reader-android-pageStatus = Page { $page } sur { $total }
+reader-android-pageFailed = La page { $page } sur { $total } ne peut pas être affichée.
+
+reader-android-previous = Page précédente
+
+reader-android-next = Page suivante
+
+reader-android-zoomIn = Agrandir
+
+reader-android-zoomOut = Réduire
 
 interface-video-name = Vidéo, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Enregistrer une vidéo

@@ -317,8 +317,8 @@ model download (#219), only when the patient clicks it: the download site sees t
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
-**Tray notices (myCarlos integration planned in #230; Portal contract merged in carlos-portal#88).**
-With the tray, closing the window locks the vault. While unlocked at clinic-link time, the device
+**Tray notices (built in #230, after the tray #206; Portal contract merged in carlos-portal#88).**
+With the tray, closing the window locks the vault. While unlocked and tray notices are wanted (tray mode and notices both on: at link time, at unlock, or when a switch turns on), the device
 registers a separate waiting key's id, public key and algorithm with that portal, in a request
 signed by the link's device key. To still tell the patient that a clinic has sent something, the
 locked app may then ask each linked portal "is anything waiting?" with its waiting key. Each check's
@@ -481,6 +481,16 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
+
+### Reading a stored PDF on Android (#358)
+
+On Android the document is read in a separate native window. The letter is decrypted only into the
+app's memory and an anonymous in-memory file that no other app can open; nothing is written to the
+app's storage or to shared storage. Screenshots and the recent-apps picture are allowed, as everywhere
+else in the app (owner decision, 20 Nov 2026: the patient's choice). Android's backup is
+already off. The reader closes when the app goes to the background, when the vault locks, and when
+the person closes it. Pages are shown as pictures, so a screen reader cannot read the letter's text
+there; this is a stated gap, not a privacy trade.
 
 ## 11. The AI helper (#72)
 

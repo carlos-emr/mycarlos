@@ -1218,9 +1218,9 @@ unlock-submit = 解锁
 
 unlock-title = 解锁保险库
 
-unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，它们会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它们加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
-unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，它会移至「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
+unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
 language-error-formatting = myCarlos 无法正确显示此消息。请选择其他语言或重新启动应用，并在重试前检查您的记录。
 
@@ -2146,6 +2146,20 @@ noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变
 noticesStep-done = 完成
 noticesStep-notNow = 暂不
 
+background-title = 后台运行
+background-keepRunning = 关闭窗口后让 myCarlos 继续在后台运行
+background-keepRunningHelp = 关闭窗口后，myCarlos 可以在后台继续运行，并在通知区域（Mac 上为菜单栏）显示一个图标。保险库会在窗口关闭时锁定，并保持锁定，直到您打开 myCarlos 并解锁。从图标中选择“退出”可完全关闭 myCarlos。
+background-startAtLogin = 登录此电脑时启动 myCarlos
+background-startAtLoginHelp = 您登录此电脑时，myCarlos 会启动。上面的选项开启时，它会在后台静默启动，保险库保持锁定；关闭时，它的窗口会打开。
+background-paused = 保险库锁定期间，myCarlos 无法检查诊所的新文档。解锁后即可检查。
+background-unavailable = 此电脑不支持后台图标。关闭窗口时，myCarlos 会完全关闭。
+background-error = 无法更改此设置，它保持原样。
+native-tray-open = 打开 myCarlos
+native-tray-quit = 退出 myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = 有一份新文档在等待。请解锁 myCarlos 查看。
+
 ai-summary-again = 重新生成摘要
 
 ai-keepFailed = myCarlos 无法将此回答与文档一起保存。此处仍会显示该回答。
@@ -2195,6 +2209,35 @@ personDetails-previousEntry = 曾用全名 { $number }
 personDetails-previousRemove = 移除曾用全名 { $number }
 personDetails-previousAdd = 添加曾用全名
 personDetails-previousInvalid = 最多输入16个不同的非空姓名，每个不超过120个字符，且不含控制字符。
+
+interface-received-confirmTitleOne = 要将 { $name } 导入“与我分享”吗？
+
+interface-received-confirmTitleMany = 要将 { $count } 份文档导入“与我分享”吗？
+
+interface-received-confirmBody = 在您选择“导入”之前不会添加任何内容。取消不会留下任何内容。
+
+interface-received-import = 导入
+
+reader-android-opening = 正在打开文档…
+
+reader-android-failed = myCarlos 无法显示此文档。请保存一份副本，用其他应用阅读。
+
+reader-android-tooLarge = 此 PDF 超过 20 MB。请保存一份副本，用其他应用阅读。
+
+reader-android-unavailable = 此设备不允许 myCarlos 在这里打开文档。请保存一份副本，用其他应用阅读。
+
+reader-android-page = 第 { $page } 页，共 { $total } 页，信件的图片
+
+reader-android-pageStatus = 第 { $page } 页，共 { $total } 页
+reader-android-pageFailed = 无法显示第 { $page } 页，共 { $total } 页。
+
+reader-android-previous = 上一页
+
+reader-android-next = 下一页
+
+reader-android-zoomIn = 放大
+
+reader-android-zoomOut = 缩小
 
 interface-video-name = 视频，{ $date }，{ $time }.mp4
 interface-RecordDialog-recordAVideo = 录制视频

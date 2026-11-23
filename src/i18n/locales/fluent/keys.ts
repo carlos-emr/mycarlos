@@ -1093,12 +1093,35 @@ export const MESSAGE_KEYS = [
   "personDetails.notNow",
   "personDetails.notSaved",
   "ai.summaryTooLarge",
+  "background.title",
+  "background.keepRunning",
+  "background.keepRunningHelp",
+  "background.startAtLogin",
+  "background.startAtLoginHelp",
+  "background.paused",
+  "background.unavailable",
+  "background.error",
+  "native.tray.open",
+  "native.tray.quit",
+  "native.tray.tooltip",
+  "native.tray.waiting",
   "personDetails.previousTitle",
   "personDetails.previousHelp",
   "personDetails.previousEntry",
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "reader.android.failed",
+  "reader.android.next",
+  "reader.android.opening",
+  "reader.android.page",
+  "reader.android.pageStatus",
+  "reader.android.pageFailed",
+  "reader.android.previous",
+  "reader.android.tooLarge",
+  "reader.android.unavailable",
+  "reader.android.zoomIn",
+  "reader.android.zoomOut",
   "interface.video.name",
   "interface.RecordDialog.recordAVideo",
   "interface.RecordDialog.unavailable",
@@ -1174,6 +1197,10 @@ export const MESSAGE_KEYS = [
   "interface.hidden.videoLeftOut",
   "portal.deviceLine",
   "portal.deviceLineLinked",
+  "interface.received.confirmTitleOne",
+  "interface.received.confirmTitleMany",
+  "interface.received.confirmBody",
+  "interface.received.import",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2491,12 +2518,35 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.notNow": "personDetails-notNow",
   "personDetails.notSaved": "personDetails-notSaved",
   "ai.summaryTooLarge": "ai-summaryTooLarge",
+  "background.title": "background-title",
+  "background.keepRunning": "background-keepRunning",
+  "background.keepRunningHelp": "background-keepRunningHelp",
+  "background.startAtLogin": "background-startAtLogin",
+  "background.startAtLoginHelp": "background-startAtLoginHelp",
+  "background.paused": "background-paused",
+  "background.unavailable": "background-unavailable",
+  "background.error": "background-error",
+  "native.tray.open": "native-tray-open",
+  "native.tray.quit": "native-tray-quit",
+  "native.tray.tooltip": "native-tray-tooltip",
+  "native.tray.waiting": "native-tray-waiting",
   "personDetails.previousTitle": "personDetails-previousTitle",
   "personDetails.previousHelp": "personDetails-previousHelp",
   "personDetails.previousEntry": "personDetails-previousEntry",
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "reader.android.failed": "reader-android-failed",
+  "reader.android.next": "reader-android-next",
+  "reader.android.opening": "reader-android-opening",
+  "reader.android.page": "reader-android-page",
+  "reader.android.pageStatus": "reader-android-pageStatus",
+  "reader.android.pageFailed": "reader-android-pageFailed",
+  "reader.android.previous": "reader-android-previous",
+  "reader.android.tooLarge": "reader-android-tooLarge",
+  "reader.android.unavailable": "reader-android-unavailable",
+  "reader.android.zoomIn": "reader-android-zoomIn",
+  "reader.android.zoomOut": "reader-android-zoomOut",
   "interface.video.name": "interface-video-name",
   "interface.RecordDialog.recordAVideo": "interface-RecordDialog-recordAVideo",
   "interface.RecordDialog.unavailable": "interface-RecordDialog-unavailable",
@@ -2610,6 +2660,10 @@ const FLUENT_IDS_BY_KEY = {
   "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
   "portal.deviceLine": "portal-deviceLine",
   "portal.deviceLineLinked": "portal-deviceLineLinked",
+  "interface.received.confirmTitleOne": "interface-received-confirmTitleOne",
+  "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
+  "interface.received.confirmBody": "interface-received-confirmBody",
+  "interface.received.import": "interface-received-import",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3832,12 +3886,35 @@ export interface MessageArgsByKey {
   "personDetails.notNow": undefined;
   "personDetails.notSaved": undefined;
   "ai.summaryTooLarge": undefined;
+  "background.title": undefined;
+  "background.keepRunning": undefined;
+  "background.keepRunningHelp": undefined;
+  "background.startAtLogin": undefined;
+  "background.startAtLoginHelp": undefined;
+  "background.paused": undefined;
+  "background.unavailable": undefined;
+  "background.error": undefined;
+  "native.tray.open": undefined;
+  "native.tray.quit": undefined;
+  "native.tray.tooltip": undefined;
+  "native.tray.waiting": undefined;
   "personDetails.previousTitle": undefined;
   "personDetails.previousHelp": undefined;
   "personDetails.previousEntry": { number: FluentArgument };
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "reader.android.failed": undefined;
+  "reader.android.next": undefined;
+  "reader.android.opening": undefined;
+  "reader.android.page": { page: FluentArgument; total: FluentArgument };
+  "reader.android.pageStatus": { page: FluentArgument; total: FluentArgument };
+  "reader.android.pageFailed": { page: FluentArgument; total: FluentArgument };
+  "reader.android.previous": undefined;
+  "reader.android.tooLarge": undefined;
+  "reader.android.unavailable": undefined;
+  "reader.android.zoomIn": undefined;
+  "reader.android.zoomOut": undefined;
   "interface.video.name": { date: FluentArgument; time: FluentArgument };
   "interface.RecordDialog.recordAVideo": undefined;
   "interface.RecordDialog.unavailable": undefined;
@@ -3916,6 +3993,10 @@ export interface MessageArgsByKey {
   "interface.hidden.videoLeftOut": undefined;
   "portal.deviceLine": { device: FluentArgument };
   "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
+  "interface.received.confirmTitleOne": { name: FluentArgument };
+  "interface.received.confirmTitleMany": { count: FluentArgument };
+  "interface.received.confirmBody": undefined;
+  "interface.received.import": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

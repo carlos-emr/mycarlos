@@ -14,6 +14,7 @@ import type { BackupSize, PendingRecording, PersonDetails } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
+import { sharedAddedText } from "./receivedNotice";
 import {
   useCallback,
   useEffect,
@@ -53,6 +54,7 @@ import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { RecordDetails } from "./RecordDetails";
+import { AndroidDocumentReader } from "./AndroidDocumentReader";
 import { DocumentReader } from "./DocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
 import type { ModelStatus } from "../ai/types";
@@ -155,6 +157,7 @@ export function VaultLibrary({
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
+  androidPdfReader = false,
   cameraAsking,
   holdMedia,
   sharedNew = 0,
@@ -211,6 +214,8 @@ export function VaultLibrary({
   /** The platform the camera dialog runs on (a computer, or since D97 a
    * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** Android alone has a native PdfRenderer reader for stored PDFs (#358). */
+  androidPdfReader?: boolean;
   /** On a phone: holds the lock on a hidden app while the system asks
    * whether myCarlos may use the camera (see CameraDialog). */
   cameraAsking?: <T>(question: Promise<T>) => Promise<T>;
@@ -1130,11 +1135,7 @@ export function VaultLibrary({
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
     if (added > 0)
-      setSharedAnnouncement(
-        deferredText(() =>
-          translateNow("interface.notice.sharedAdded", { count: added }),
-        ),
-      );
+      setSharedAnnouncement(deferredText(() => sharedAddedText(added)));
     sharedSeen.current = sharedNew;
   }, [sharedNew]);
   // Seen as soon as Shared with me is open.
@@ -3210,10 +3211,30 @@ export function VaultLibrary({
               onClose={() => setAnonymizeRecordId(null)}
             />
           )}
-          {readerRecord && (
+          {readerRecord &&
+            androidPdfReader &&
+            bridge.readAndroidPdf &&
+            !readerShowsAid && (
+              <AndroidDocumentReader
+                record={readerRecord}
+                read={(id, labels) =>
+                  bridge.readAndroidPdf!(id, labels).catch((error: unknown) => {
+                    if (mountedRef.current && isLockedError(error))
+                      void lockAndConceal();
+                    throw error;
+                  })
+                }
+                cancel={() => bridge.cancelView()}
+                onClose={() => setReaderRecordId(null)}
+              />
+            )}
+          {readerRecord && (!androidPdfReader || readerShowsAid) && (
             <DocumentReader
               record={readerRecord}
               startWithAid={readerShowsAid}
+              onOpenOriginal={
+                androidPdfReader ? () => setReaderShowsAid(false) : undefined
+              }
               viewPage={(page, width, password) =>
                 bridge
                   .viewPage(readerRecord.id, page, width, password)

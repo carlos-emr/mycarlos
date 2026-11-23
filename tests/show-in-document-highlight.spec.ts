@@ -493,7 +493,9 @@ test("phone: the reader has no Summary, so no quote to show; the page reads as b
   await fakeVaultWith(page, {
     start: "unlocked",
     drawnPages: PAGES,
-    platform: "android",
+    // iOS, not Android: an Android phone reads a PDF in the native reader (#358), which draws
+    // no page picture for this page-side check; the check is the phone's reader without a Summary.
+    platform: "ios",
   });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
