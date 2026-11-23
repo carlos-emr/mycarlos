@@ -1448,11 +1448,14 @@ impl VaultStore {
     pub fn added_with_camera(&self, record_id: Uuid) -> Result<bool, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        // A hidden person's record is not there to ask about (#360).
         let record = unlocked
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         if !object_required(record)
             && object_presence_name(&self.root, &record.object_name) != ObjectPresence::Present
