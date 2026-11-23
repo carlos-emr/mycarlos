@@ -69,6 +69,10 @@ pub(super) struct StoredAiResult {
     /// read again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) superseded: bool,
+    /// The answer came in a handover file (#360), not from this computer's model: the screens
+    /// say "from an imported file". Format 14 only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(super) imported: bool,
 }
 
 impl StoredAiResult {
@@ -114,6 +118,9 @@ pub struct AiResultInfo {
     pub model_sha256: String,
     pub created_at_ms: u64,
     pub size: u64,
+    /// From a handover file, not this computer's model (#360).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub imported: bool,
 }
 
 impl From<&StoredAiResult> for AiResultInfo {
@@ -127,6 +134,7 @@ impl From<&StoredAiResult> for AiResultInfo {
             model_sha256: stored.model_sha256.clone(),
             created_at_ms: stored.created_at_ms,
             size: stored.plaintext_size,
+            imported: stored.imported,
         }
     }
 }
@@ -285,6 +293,9 @@ pub(super) fn validate<'a>(
         .count();
     let shown = record.ai_results.len() - hidden;
     if format_version < MANIFEST_FORMAT_AI_RESULTS
+        // Provenance is a format 14 field: an older build would drop it.
+        || (format_version < MANIFEST_FORMAT_PROFILE_HANDOVER
+            && record.ai_results.iter().any(|result| result.imported))
         || shown > MAX_SHOWN_AI_RESULTS_PER_RECORD
         || hidden > MAX_HIDDEN_AI_RESULTS_PER_RECORD
         // Format 10 had one cap for every answer, hidden ones included.
@@ -404,6 +415,7 @@ impl VaultStore {
             plaintext_size: encrypted.plaintext_size,
             wrapped_object_key: wrap_secret(&keys.object_wrap, &object_key, id.as_bytes())?,
             superseded: false,
+            imported: false,
         };
         let info = AiResultInfo::from(&stored);
 

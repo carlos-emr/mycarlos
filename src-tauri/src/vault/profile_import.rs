@@ -30,6 +30,8 @@ use std::io::Seek;
 const MAX_IMPORT_FOLDER_DEPTH: usize = 31;
 /// Free space kept beyond a package's documents, so that an import never takes the last of it.
 const IMPORT_SPACE_RESERVE: u64 = 256 * 1024 * 1024;
+/// What a file costs beyond its bytes: a filesystem block, its directory entry and the staging copy.
+const IMPORT_PER_FILE_OVERHEAD: u64 = 16 * 1024;
 
 /// How a package was taken to be one this vault already has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,20 +164,30 @@ impl VaultStore {
         let plan = plan_import(&package, options, &unlocked.manifest, now_ms)?;
         // Space for the documents, before any is written (best effort: where the platform
         // cannot say, a full disk is still a clean failure below).
+        // Each object also takes a block or more of its own on the disk, whatever its size.
         let needed = package
             .total_plaintext_bytes()
             .saturating_add(package.total_plaintext_bytes() / 512)
+            .saturating_add(package.objects().len() as u64 * IMPORT_PER_FILE_OVERHEAD)
             .saturating_add(IMPORT_SPACE_RESERVE);
         if crate::local_model::free_disk(&self.root).is_some_and(|free| free < needed) {
             return Err(VaultError::NoSpace);
         }
 
+        // The manifest this import would make, with stand-ins for what staging produces, checked
+        // as a manifest read from disk is: a package this vault cannot hold (a folder too deep, a
+        // name it refuses, too many of anything) is refused before one byte is written.
+        {
+            let keys = derive_keys(unlocked.manifest.vault_id, &unlocked.master_key)?;
+            trial_manifest(&plan, &package, &unlocked.manifest, &keys, now_ms)?;
+        }
         let job_id = Uuid::new_v4();
         let stage = self.root.join("staging").join(job_id.to_string());
         create_private_dir_all(&stage)?;
         let vault_id = unlocked.manifest.vault_id;
         let keys = derive_keys(vault_id, &unlocked.master_key)?;
         let mut published: Vec<String> = Vec::new();
+        let mut commit_attempted = false;
         let result = (|| {
             // 1. Stage every object, re-encrypted, and read the whole package.
             let StagedPackage {
@@ -234,6 +246,7 @@ impl VaultStore {
                 .iter()
                 .find(|profile| profile.id == summary.profile_id)
                 .map(|profile| profile.display_name.clone());
+            commit_attempted = true;
             let redundant = commit_with_history(
                 &self.root,
                 &unlocked.master_key,
@@ -244,7 +257,12 @@ impl VaultStore {
             unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
             Ok(summary)
         })();
-        if result.is_err() {
+        if result.is_err() && commit_attempted {
+            // The commit's outcome is not known (its first write may have landed): the objects
+            // are kept, as a manifest that names them may be the newest, and the session is
+            // read-only until the next unlock settles which it is, as for a clinic delivery.
+            unlocked.recovery = Some(RecoveryReason::WriteFailed);
+        } else if result.is_err() {
             let objects = self.root.join("objects");
             for name in &published {
                 let _ = remove_owned_file(objects.join(name), Removable::UncommittedObject);
@@ -284,6 +302,7 @@ impl VaultStore {
             let ids = &plan.records[index];
             // The document the patient sees.
             let display = stage_object(&mut reader, &still_open, &to, ids.record_id)?;
+            let display_sha256 = display.sha256;
             let mut done = StagedRecord {
                 object_name: display.object_name.clone(),
                 plaintext_size: display.plaintext_size,
@@ -298,6 +317,12 @@ impl VaultStore {
             // A signed document's second copy.
             if let Some(original_id) = ids.original_id {
                 let original = stage_object(&mut reader, &still_open, &to, original_id)?;
+                // The vault copies a document's original from its display, so the two are the
+                // same bytes. A package whose are not is a crafted one (a genuine signed original
+                // beside a forged document, to be shown as the clinic's): refused whole.
+                if original.sha256 != display_sha256 {
+                    return Err(VaultError::Invalid);
+                }
                 done.original_pdf = Some(StoredOriginalPdf {
                     id: original_id,
                     object_name: original.object_name.clone(),
@@ -313,16 +338,16 @@ impl VaultStore {
             // vault judges an answer it is asked to keep, and dropped if it does not pass.
             for (answer_index, answer) in record.ai_answers.iter().enumerate() {
                 let answer_id = ids.answer_ids[answer_index];
+                let decided = plan.answers[index][answer_index];
+                let (true, Some(tool)) = (decided.keep, decided.tool) else {
+                    // Not taken: read to its end and thrown away (it is still authenticated
+                    // and counted in the package's digests), never staged.
+                    skip_object(&mut reader, &still_open)?;
+                    dropped_answers += 1;
+                    continue;
+                };
                 let content =
                     read_small_object(&mut reader, &still_open, ai_results::MAX_AI_RESULT_BYTES)?;
-                let tool = match answer.tool.as_str() {
-                    "summary" => ai_results::AiTool::Summary,
-                    "explain" => ai_results::AiTool::Explain,
-                    _ => {
-                        dropped_answers += 1;
-                        continue;
-                    }
-                };
                 let input = ai_results::AiResultInput {
                     tool,
                     lang: answer.lang.clone(),
@@ -357,7 +382,7 @@ impl VaultStore {
                 let mut key = Zeroizing::new([0_u8; 32]);
                 OsRng.fill_bytes(key.as_mut());
                 let encrypted = encrypt_object_from(
-                    &mut io::Cursor::new(content),
+                    &mut io::Cursor::new(&content[..]),
                     &path,
                     ObjectContext {
                         vault_id,
@@ -378,7 +403,8 @@ impl VaultStore {
                     object_name: object_name.clone(),
                     plaintext_size: encrypted.plaintext_size,
                     wrapped_object_key: wrap_secret(&keys.object_wrap, &key, answer_id.as_bytes())?,
-                    superseded: answer.superseded,
+                    superseded: decided.superseded,
+                    imported: true,
                 });
                 staged.push(Staged { object_name });
             }
@@ -475,9 +501,9 @@ fn read_small_object<R: Read>(
     reader: &mut PackageReader<R>,
     still_open: &dyn Fn() -> bool,
     limit: u64,
-) -> Result<Option<Vec<u8>>, VaultError> {
+) -> Result<Option<Zeroizing<Vec<u8>>>, VaultError> {
     let mut stream = reader.object_stream(still_open)?;
-    let mut content = Vec::new();
+    let mut content = Zeroizing::new(Vec::new());
     let copied = (&mut stream).take(limit + 1).read_to_end(&mut content);
     if let Some(failure) = stream.take_failure() {
         return Err(VaultError::from(failure));
@@ -495,6 +521,21 @@ fn read_small_object<R: Read>(
     Ok((!too_long).then_some(content))
 }
 
+/// The next object, read to its end and thrown away: authenticated and counted, never kept.
+fn skip_object<R: Read>(
+    reader: &mut PackageReader<R>,
+    still_open: &dyn Fn() -> bool,
+) -> Result<(), VaultError> {
+    let mut stream = reader.object_stream(still_open)?;
+    let copied = io::copy(&mut stream, &mut io::sink());
+    if let Some(failure) = stream.take_failure() {
+        return Err(VaultError::from(failure));
+    }
+    copied?;
+    stream.finish()?;
+    Ok(())
+}
+
 /// What staging one document produced, to become a `StoredRecord`.
 struct StagedRecord {
     object_name: String,
@@ -503,6 +544,66 @@ struct StagedRecord {
     wrapped_object_key: WrappedSecret,
     original_pdf: Option<StoredOriginalPdf>,
     ai_results: Vec<StoredAiResult>,
+}
+
+/// What becomes of one AI answer of the package.
+#[derive(Clone, Copy)]
+struct AnswerPlan {
+    /// Taken: within the caps a document keeps, a tool this vault knows. An answer that is not
+    /// is read and thrown away without ever being staged, so that nothing is published that no
+    /// manifest names.
+    keep: bool,
+    superseded: bool,
+    tool: Option<ai_results::AiTool>,
+}
+
+/// Decides each answer of one record from its metadata alone: the newest answer to a question
+/// is the shown one and older answers to it are kept hidden (never deleted: D3); no more than
+/// the shown and the hidden caps a document keeps are taken, newest first.
+fn plan_answers(answers: &[crate::vault::profile_package::PackageAiAnswer]) -> Vec<AnswerPlan> {
+    let mut order: Vec<usize> = (0..answers.len()).collect();
+    order.sort_by_key(|&i| (std::cmp::Reverse(answers[i].created_at_ms), i));
+    let mut plan = vec![
+        AnswerPlan {
+            keep: false,
+            superseded: false,
+            tool: None,
+        };
+        answers.len()
+    ];
+    let (mut shown, mut hidden) = (0_usize, 0_usize);
+    let mut seen: HashSet<(String, String, Option<String>)> = HashSet::new();
+    for i in order {
+        let answer = &answers[i];
+        let tool = match answer.tool.as_str() {
+            "summary" => Some(ai_results::AiTool::Summary),
+            "explain" => Some(ai_results::AiTool::Explain),
+            _ => None,
+        };
+        let question = (
+            answer.tool.clone(),
+            answer.lang.clone(),
+            answer.term.clone(),
+        );
+        let superseded = answer.superseded || seen.contains(&question);
+        if !superseded {
+            seen.insert(question);
+        }
+        let keep = tool.is_some()
+            && if superseded {
+                hidden += 1;
+                hidden <= ai_results::MAX_HIDDEN_AI_RESULTS_PER_RECORD
+            } else {
+                shown += 1;
+                shown <= ai_results::MAX_SHOWN_AI_RESULTS_PER_RECORD
+            };
+        plan[i] = AnswerPlan {
+            keep,
+            superseded,
+            tool,
+        };
+    }
+    plan
 }
 
 /// The ids this vault gives a record of the package and what it holds.
@@ -515,6 +616,9 @@ struct RecordIds {
 /// Everything about the import that is decided before a byte is written: the new ids, the
 /// name, the details, the folders as this vault will have them.
 struct Plan {
+    /// For each record, what becomes of each of its AI answers (decided from the manifest alone,
+    /// before any is staged).
+    answers: Vec<Vec<AnswerPlan>>,
     profile_id: Uuid,
     display_name: String,
     details: (Option<String>, Option<String>, Option<Vec<String>>),
@@ -607,7 +711,13 @@ fn plan_import(
         })
         .collect();
     let _ = manifest;
+    let answers = package
+        .records
+        .iter()
+        .map(|record| plan_answers(&record.ai_answers))
+        .collect();
     Ok(Plan {
+        answers,
         profile_id,
         display_name: name,
         details,
@@ -674,29 +784,8 @@ impl Plan {
         let mut new_records = Vec::new();
         for ((source, ids), done) in package.records.iter().zip(&self.records).zip(staged) {
             let carried = self.carried_for(source, ids, &done, &mut held, &mut summary);
-            let mut ai_results = done.ai_results;
-            // The caps a record keeps: more than the vault holds are not taken, newest first.
-            ai_results.sort_by_key(|result| std::cmp::Reverse(result.created_at_ms));
-            let mut shown = 0;
-            let mut hidden_count = 0;
-            let mut seen_questions: Vec<(ai_results::AiTool, String, Option<String>)> = Vec::new();
-            ai_results.retain_mut(|result| {
-                let question = (result.tool, result.lang.clone(), result.term.clone());
-                if !result.superseded && seen_questions.contains(&question) {
-                    // One shown answer per question: the older one is kept, hidden.
-                    result.superseded = true;
-                }
-                if !result.superseded {
-                    seen_questions.push(question);
-                }
-                if result.superseded {
-                    hidden_count += 1;
-                    hidden_count <= ai_results::MAX_HIDDEN_AI_RESULTS_PER_RECORD
-                } else {
-                    shown += 1;
-                    shown <= ai_results::MAX_SHOWN_AI_RESULTS_PER_RECORD
-                }
-            });
+            // The caps and the one shown answer per question were decided before staging.
+            let ai_results = done.ai_results;
             summary.ai_answers += ai_results.len();
             summary.documents += 1;
             let hidden = source.hidden_at_ms.map(|at_ms| Hidden {
@@ -732,7 +821,9 @@ impl Plan {
                 carried,
             });
         }
-        let excerpt = self.excerpt(package).filter(|_| package_id.is_some());
+        let excerpt = self
+            .excerpt(package, now_ms)
+            .filter(|_| package_id.is_some());
         summary.history_entries = excerpt.as_ref().map_or(0, Vec::len);
         let (full_name, birth_date, previous_full_names) = self.details.clone();
         next.profiles.push(PatientProfile {
@@ -800,7 +891,7 @@ impl Plan {
     /// (the package names it by the package's own id, which maps to the one made here), at
     /// most `MAX_IMPORTED_HISTORY`, each one this vault's own rules accept. An entry that names
     /// no document of the package is dropped, never kept pointing at nothing.
-    fn excerpt(&self, package: &PackageManifest) -> Option<Vec<ImportedHistoryEntry>> {
+    fn excerpt(&self, package: &PackageManifest, now_ms: u64) -> Option<Vec<ImportedHistoryEntry>> {
         let history = package.history.as_ref()?;
         let mapped: HashMap<Uuid, Uuid> = package
             .records
@@ -813,9 +904,10 @@ impl Plan {
             .take(MAX_HISTORY_ENTRIES)
             .filter_map(|value| serde_json::from_value::<ImportedHistoryEntry>(value.clone()).ok())
             .filter_map(|mut entry| {
-                if let Some(id) = entry.record_id {
-                    entry.record_id = Some(*mapped.get(&id)?);
-                }
+                // Only entries about a document that came: one about no document says nothing
+                // of this person's, and one naming a document that is not here points at nothing.
+                entry.record_id = Some(*mapped.get(&entry.record_id?)?);
+                entry.at_ms = entry.at_ms.min(now_ms);
                 entry.valid().then_some(entry)
             })
             .collect();
@@ -824,6 +916,91 @@ impl Plan {
         }
         (!kept.is_empty()).then_some(kept)
     }
+}
+
+/// The manifest an import would make from the plan, with stand-ins for what staging produces
+/// (an object name, a key, a fingerprint, a hash), validated. Nothing is written.
+fn trial_manifest(
+    plan: &Plan,
+    package: &PackageManifest,
+    current: &Manifest,
+    keys: &DerivedKeys,
+    now_ms: u64,
+) -> Result<(), VaultError> {
+    let wrapped = || wrap_secret(&keys.object_wrap, &[0_u8; 32], b"trial");
+    let mut staged = Vec::new();
+    for (index, (source, ids)) in package.records.iter().zip(&plan.records).enumerate() {
+        let mut record = StagedRecord {
+            object_name: format!("{}.mcobj", Uuid::new_v4()),
+            plaintext_size: 1,
+            fingerprint: BASE64.encode([0_u8; 32]),
+            wrapped_object_key: wrapped()?,
+            original_pdf: None,
+            ai_results: Vec::new(),
+        };
+        if let Some(original_id) = ids.original_id {
+            record.original_pdf = Some(StoredOriginalPdf {
+                id: original_id,
+                object_name: format!("{}.mcobj", Uuid::new_v4()),
+                plaintext_size: 1,
+                sha256: "0".repeat(64),
+                wrapped_object_key: wrapped()?,
+            });
+        }
+        for answer_index in 0..source.ai_answers.len() {
+            let decided = plan.answers[index][answer_index];
+            let (true, Some(tool)) = (decided.keep, decided.tool) else {
+                continue;
+            };
+            let answer = &source.ai_answers[answer_index];
+            // As staging will judge them: an answer whose own fields are not a valid answer's
+            // is dropped there, so it is no part of the manifest the import will make.
+            if !ai_results::valid_fields(
+                tool,
+                &answer.lang,
+                answer.term.as_deref(),
+                &answer.model_name,
+                &answer.model_sha256,
+            ) {
+                continue;
+            }
+            record.ai_results.push(StoredAiResult {
+                id: ids.answer_ids[answer_index],
+                tool,
+                lang: answer.lang.clone(),
+                term: answer.term.clone(),
+                model_name: answer.model_name.clone(),
+                model_sha256: answer.model_sha256.clone(),
+                created_at_ms: answer.created_at_ms.min(now_ms),
+                object_name: format!("{}.mcobj", Uuid::new_v4()),
+                plaintext_size: 1,
+                wrapped_object_key: wrapped()?,
+                superseded: decided.superseded,
+                imported: true,
+            });
+        }
+        staged.push(record);
+    }
+    let (next, _) = plan.assemble(
+        package,
+        staged,
+        current,
+        Facts {
+            package_id: Some(Uuid::new_v4()),
+            dropped_answers: 0,
+            receipt_code: String::new(),
+            now_ms,
+        },
+    )?;
+    validate_manifest_structure(&next, current.vault_id).map_err(|_| VaultError::Invalid)?;
+    if serde_json::to_vec(&next)
+        .map_err(|_| VaultError::Storage)?
+        .len()
+        > MAX_MANIFEST_BYTES.saturating_sub(40)
+    {
+        return Err(VaultError::Invalid);
+    }
+    Ok(())
 }
 
 /// A record as an import will make it, for judging evidence before the manifest is assembled.
@@ -1107,6 +1284,34 @@ mod tests {
             .unwrap_or_default();
         names.sort();
         names
+    }
+
+    /// Object files in `objects/` that no part of the manifest names: what a killed process
+    /// leaves, until the next unlock puts it aside.
+    fn unreferenced_objects(store: &VaultStore) -> Vec<String> {
+        let guard = store.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        let mut named: HashSet<String> = manifest
+            .records
+            .iter()
+            .flat_map(|record| {
+                record
+                    .objects()
+                    .map(|o| o.object_name.to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        named.extend(
+            manifest
+                .history
+                .segments
+                .iter()
+                .map(|s| s.object_name.clone()),
+        );
+        object_files(store)
+            .into_iter()
+            .filter(|name| !named.contains(name))
+            .collect()
     }
 
     fn staging_is_empty(store: &VaultStore) -> bool {
@@ -1710,5 +1915,378 @@ mod tests {
             Err(VaultError::Locked)
         ));
         assert_eq!(object_files(&target), files_before);
+    }
+
+    // --- A process killed part way (the recovery matrix's abrupt-termination harness) --------
+
+    fn run_import_child(root: &Path, package: &Path, key_text: &str, boundary: &str) {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "vault::profile_import::tests::import_termination_child",
+            ])
+            .env("MYCARLOS_TEST_ROOT", root)
+            .env("MYCARLOS_TEST_PACKAGE", package)
+            .env("MYCARLOS_TEST_KEY", key_text)
+            .env("MYCARLOS_TEST_TERMINATE_AT", boundary)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(
+            status.code(),
+            Some(TEST_TERMINATION_EXIT_CODE),
+            "{boundary}"
+        );
+    }
+
+    #[test]
+    #[ignore = "invoked as an abrupt-termination subprocess by the import matrix"]
+    fn import_termination_child() {
+        let Ok(root) = std::env::var("MYCARLOS_TEST_ROOT") else {
+            return;
+        };
+        let package = std::env::var("MYCARLOS_TEST_PACKAGE").unwrap();
+        let key_text = std::env::var("MYCARLOS_TEST_KEY").unwrap();
+        let store = VaultStore::new(PathBuf::from(root));
+        // The unlock's own history commit must not be where the boundary is reached.
+        ENV_BOUNDARIES_HELD.store(true, Ordering::Release);
+        let unlocked = store.unlock(TARGET_PASSWORD);
+        ENV_BOUNDARIES_HELD.store(false, Ordering::Release);
+        unlocked.unwrap();
+        let key = crate::vault::profile_package::parse_package_key(&key_text).unwrap();
+        let file = fs::File::open(package).unwrap();
+        let _ = store.import_profile_package(
+            std::io::BufReader::new(file),
+            PackageSecret::Key(&key),
+            &options(),
+            200,
+        );
+        panic!("configured termination boundary was not reached");
+    }
+
+    #[test]
+    fn a_process_killed_while_importing_leaves_the_vault_as_it_was_or_fully_imported() {
+        let source = source_vault();
+        let (key, text) = generate_package_key();
+        let (bytes, _) = export_bytes(&source, &key);
+        let files = tempfile::tempdir().unwrap();
+        let package = files.path().join("handover.mycarlosprofile");
+        fs::write(&package, &bytes).unwrap();
+        let mut wanted = Vec::new();
+        for id in &source.records {
+            let mut out = Vec::new();
+            source.store.export(*id, &mut out).unwrap();
+            wanted.push(out);
+        }
+
+        // Killed before the one commit: the vault is as it was, opens, holds none of the
+        // person, and taking the same file afterwards makes the whole person.
+        for boundary in [
+            "package-import.after-staging",
+            "package-import.after-object-publication",
+            "package-import.after-object-rename",
+        ] {
+            let (_temp, target) = target_vault();
+            let files_before = object_files(&target);
+            let root = target.root.clone();
+            target.lock();
+            run_import_child(&root, &package, &text, boundary);
+            target.unlock(TARGET_PASSWORD).unwrap();
+            let snapshot = target.snapshot().unwrap();
+            assert_eq!(snapshot.profiles.len(), 1, "{boundary}");
+            assert!(
+                snapshot.records.is_empty() && snapshot.folders.is_empty(),
+                "{boundary}"
+            );
+            assert!(target
+                .history_entries()
+                .unwrap()
+                .iter()
+                .all(|e| e.event != HistoryEvent::ProfileImported));
+            // What the killed run published is no part of the vault: orphans are put aside
+            // at unlock, so the vault holds what it held, and nothing is half taken.
+            assert!(unreferenced_objects(&target).is_empty(), "{boundary}");
+            assert_eq!(
+                object_files(&target).len(),
+                files_before.len(),
+                "{boundary}"
+            );
+            let done = imported(take(&target, &bytes, &key, &options()));
+            assert_eq!(done.documents, 3, "{boundary}");
+        }
+
+        // Killed after the commit's first write (and after its second): the person is whole.
+        for boundary in ["manifest.after-first-write", "manifest.after-second-write"] {
+            let (_temp, target) = target_vault();
+            let root = target.root.clone();
+            target.lock();
+            run_import_child(&root, &package, &text, boundary);
+            target.unlock(TARGET_PASSWORD).unwrap();
+            let snapshot = target.snapshot().unwrap();
+            assert_eq!(snapshot.profiles.len(), 2, "{boundary}");
+            let person = snapshot
+                .profiles
+                .iter()
+                .find(|p| p.display_name == "FAKE Child")
+                .unwrap();
+            let mine: Vec<_> = snapshot
+                .records
+                .iter()
+                .filter(|r| r.profile_id == person.id)
+                .collect();
+            assert_eq!(mine.len(), 3, "{boundary}");
+            let mut contents = Vec::new();
+            for record in &mine {
+                let mut out = Vec::new();
+                target.export(record.id, &mut out).unwrap();
+                contents.push(out);
+            }
+            assert_eq!(contents, wanted, "{boundary}");
+            // Every document and answer reads back, and the same file is recognised.
+            assert!(target.verify_for_backup().is_ok(), "{boundary}");
+            let again = take(&target, &bytes, &key, &options()).unwrap();
+            assert!(matches!(again, ImportResult::AlreadyHere(_)), "{boundary}");
+        }
+    }
+
+    // --- The #409 review ------------------------------------------------------------------
+
+    /// An explanation as the reader keeps it, for the fake model.
+    fn explain_bytes(term: &str) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "tool": "explain",
+            "term": term,
+            "context": "FAKE context",
+            "text": "FAKE explanation.",
+            "model": {"name": "FAKE model", "sha256": "00".repeat(32)},
+            "lang": "en",
+            "createdAt": 1,
+        }))
+        .unwrap()
+    }
+
+    fn explain_answer(term: &str, superseded: bool, content: &[u8], at: u64) -> PackageAiAnswer {
+        PackageAiAnswer {
+            object: PackageObject {
+                id: Uuid::new_v4(),
+                size: content.len() as u64,
+            },
+            tool: "explain".to_owned(),
+            lang: "en".to_owned(),
+            term: Some(term.to_owned()),
+            model_name: "FAKE model".to_owned(),
+            model_sha256: "00".repeat(32),
+            created_at_ms: at,
+            superseded,
+        }
+    }
+
+    #[test]
+    fn a_genuine_original_beside_a_forged_document_is_refused_whole() {
+        let (key, _) = generate_package_key();
+        let (_temp, target) = target_vault();
+        let genuine = pdf(b"FAKE-GENUINE-SIGNED", 300);
+        let forged = pdf(b"FAKE-FORGED-DISPLAY", 300);
+        let mut record = plain("FAKE Letter.pdf", forged.len());
+        record.original_pdf = Some(PackageObject {
+            id: Uuid::new_v4(),
+            size: genuine.len() as u64,
+        });
+        let generation_before = generation(&target);
+        let files_before = object_files(&target);
+        let bytes = crafted(
+            hand_made(vec![record.clone()], Vec::new()),
+            &[forged.clone(), genuine.clone()],
+            &key,
+        );
+        assert!(matches!(
+            take(&target, &bytes, &key, &options()),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(generation(&target), generation_before);
+        assert_eq!(object_files(&target), files_before);
+        assert!(staging_is_empty(&target));
+        // The same document twice (the vault always copies the original from the display) is
+        // what a package of this app holds, and comes.
+        let mut honest = plain("FAKE Letter.pdf", genuine.len());
+        honest.original_pdf = Some(PackageObject {
+            id: Uuid::new_v4(),
+            size: genuine.len() as u64,
+        });
+        let bytes = crafted(
+            hand_made(vec![honest], Vec::new()),
+            &[genuine.clone(), genuine],
+            &key,
+        );
+        assert_eq!(
+            imported(take(&target, &bytes, &key, &options())).documents,
+            1
+        );
+    }
+
+    #[test]
+    fn answers_beyond_the_caps_are_never_staged_and_every_published_object_is_named() {
+        let (key, _) = generate_package_key();
+        let (_temp, target) = target_vault();
+        let mut record = plain("FAKE Letter.pdf", 4);
+        let mut contents = vec![vec![1_u8, 2, 3, 4]];
+        let mut answers = Vec::new();
+        // 40 shown (a question each) and 120 older ones, hidden: more than a document keeps.
+        for n in 0..40 {
+            let term = format!("FAKE term {n}");
+            let content = explain_bytes(&term);
+            answers.push(explain_answer(&term, false, &content, 1_000 + n));
+            contents.push(content);
+        }
+        for n in 0..120 {
+            let term = format!("FAKE term {}", n % 40);
+            let content = explain_bytes(&term);
+            answers.push(explain_answer(&term, true, &content, n));
+            contents.push(content);
+        }
+        record.ai_answers = answers;
+        let bytes = crafted(hand_made(vec![record], Vec::new()), &contents, &key);
+        let done = imported(take(&target, &bytes, &key, &options()));
+        assert_eq!(done.ai_answers, 32 + 96);
+        assert_eq!(done.ai_answers_dropped, 160 - 128);
+        // Nothing published that the manifest does not name; nothing left staged.
+        assert!(unreferenced_objects(&target).is_empty());
+        assert!(staging_is_empty(&target));
+        let guard = target.session();
+        let manifest = &guard.as_ref().unwrap().manifest;
+        let record = manifest.records.last().unwrap();
+        assert_eq!(
+            record.ai_results.iter().filter(|a| !a.superseded).count(),
+            32
+        );
+        assert_eq!(
+            record.ai_results.iter().filter(|a| a.superseded).count(),
+            96
+        );
+        // Every one of them says it came in a file.
+        assert!(record.ai_results.iter().all(|a| a.imported));
+    }
+
+    #[test]
+    fn imported_answers_say_so_and_the_flag_is_a_format_14_field() {
+        let source = source_vault();
+        let (key, _) = generate_package_key();
+        let (bytes, _) = export_bytes(&source, &key);
+        let (_temp, target) = target_vault();
+        let done = imported(take(&target, &bytes, &key, &options()));
+        let record = target
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .find(|r| {
+                r.profile_id == done.profile_id && !target.ai_results(r.id).unwrap().is_empty()
+            })
+            .unwrap();
+        let info = target.ai_results(record.id).unwrap();
+        assert!(info.iter().all(|a| a.imported));
+        // This computer's own answers are not marked.
+        let own = source.store.ai_results(source.records[0]).unwrap();
+        assert!(own.iter().all(|a| !a.imported));
+        assert!(!serde_json::to_string(&own).unwrap().contains("imported"));
+        assert!(serde_json::to_string(&info)
+            .unwrap()
+            .contains("\"imported\":true"));
+        // Below format 14 a manifest holding one is refused: an older build would drop it.
+        let mut manifest = target.session().as_ref().unwrap().manifest.clone();
+        manifest.format_version = MANIFEST_FORMAT_PREVIOUS_FULL_NAMES;
+        for profile in &mut manifest.profiles {
+            profile.imported_from = None;
+            profile.imported_history = None;
+        }
+        assert!(validate_manifest_structure(&manifest, manifest.vault_id).is_err());
+        manifest
+            .records
+            .iter_mut()
+            .for_each(|r| r.ai_results.iter_mut().for_each(|a| a.imported = false));
+        assert!(validate_manifest_structure(&manifest, manifest.vault_id).is_ok());
+    }
+
+    #[test]
+    fn the_old_history_keeps_only_entries_about_a_document_that_came_and_never_a_future_time() {
+        let (key, _) = generate_package_key();
+        let (_temp, target) = target_vault();
+        let record = plain("FAKE Letter.pdf", 4);
+        let id = record.id;
+        let mut manifest = hand_made(vec![record], Vec::new());
+        let entry = |record_id: Option<Uuid>, at: u64| {
+            let mut value = serde_json::json!({
+                "atMs": at,
+                "event": "imported",
+                "hash": "a".repeat(64),
+                "prev": "b".repeat(64),
+            });
+            if let Some(record_id) = record_id {
+                value["recordId"] = serde_json::json!(record_id);
+            }
+            value
+        };
+        manifest.history = Some(vec![
+            entry(Some(id), u64::MAX / 2),
+            entry(None, 5),
+            entry(Some(Uuid::new_v4()), 6),
+        ]);
+        let bytes = crafted(manifest, &[vec![1, 2, 3, 4]], &key);
+        let done = imported(take(&target, &bytes, &key, &options()));
+        assert_eq!(done.history_entries, 1);
+        let guard = target.session();
+        let profile = guard
+            .as_ref()
+            .unwrap()
+            .manifest
+            .profiles
+            .iter()
+            .find(|p| p.id == done.profile_id)
+            .unwrap();
+        let kept = profile.imported_history.as_ref().unwrap();
+        assert_eq!(kept.len(), 1);
+        // Clamped to the time of the import (200 in these tests), never a time to come.
+        assert_eq!(kept[0].at_ms, 200);
+    }
+
+    #[test]
+    fn a_commit_that_may_have_landed_keeps_its_objects_and_the_vault_settles_it_at_unlock() {
+        let source = source_vault();
+        let (key, _) = generate_package_key();
+        let (bytes, _) = export_bytes(&source, &key);
+        let (_temp, target) = target_vault();
+        {
+            let _fail = FailsAt::new("manifest.before-first-write");
+            assert!(take(&target, &bytes, &key, &options()).is_err());
+        }
+        // Read-only until it is settled, and the objects are not removed from under a commit
+        // that might be the newest.
+        assert!(target.snapshot().unwrap().recovery.is_some());
+        assert!(!unreferenced_objects(&target).is_empty());
+        target.lock();
+        target.unlock(TARGET_PASSWORD).unwrap();
+        assert!(target.snapshot().unwrap().recovery.is_none());
+        assert!(unreferenced_objects(&target).is_empty());
+        assert_eq!(target.snapshot().unwrap().profiles.len(), 1);
+        imported(take(&target, &bytes, &key, &options()));
+    }
+
+    #[test]
+    fn a_package_this_vault_cannot_hold_is_refused_before_a_byte_is_staged() {
+        let (key, _) = generate_package_key();
+        let (_temp, target) = target_vault();
+        // A name the vault refuses for a person.
+        let mut manifest = hand_made(vec![plain("FAKE A.pdf", 3)], Vec::new());
+        manifest.profile.display_name = "Shared with me".to_owned();
+        let bytes = crafted(manifest, &[vec![1, 2, 3]], &key);
+        let files_before = object_files(&target);
+        assert!(matches!(
+            take(&target, &bytes, &key, &options()),
+            Err(VaultError::Invalid | VaultError::NotFound)
+        ));
+        assert_eq!(object_files(&target), files_before);
+        assert!(staging_is_empty(&target));
     }
 }

@@ -4298,11 +4298,14 @@ async fn vault_profile_import(
     picks: State<'_, Arc<PendingPicks>>,
     request: ProfileImportRequest,
 ) -> CommandResult<ProfileImportOutcome> {
+    // The secret is read first: a key that is mistyped is told so with the pick still there to
+    // try again, and the pick is spent only by a try that goes ahead. The patient may have been
+    // a while at the preview, so it keeps as long as the preparation of an export does.
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
     let source = picks
         .profile_imports
-        .take(request.pick_id, picks.session())
+        .take_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
         .ok_or(VaultError::NotFound)?;
-    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
     let options = vault::ImportOptions {
         display_name: request.display_name,
         allow_duplicate: request.allow_duplicate,

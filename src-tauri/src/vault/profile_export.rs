@@ -280,6 +280,7 @@ impl VaultStore {
         );
         let report = outcome?;
         written.map_err(io::Error::from)?;
+        terminate_at_test_boundary("export.after-rename");
         self.record_profile_exported(profile_id, &destination.to_string_lossy());
         Ok(report)
     }
@@ -314,12 +315,15 @@ impl VaultStore {
                 .flush()?;
             (report, digests)
         };
+        terminate_at_test_boundary("export.before-sync");
         fail_at_test_boundary("export.before-sync")?;
         file.sync_all()?;
+        terminate_at_test_boundary("export.before-verify");
         fail_at_test_boundary("export.before-verify")?;
         file.seek(io::SeekFrom::Start(0))?;
         let still_open = || !self.cancel_io.load(Ordering::Acquire);
         verify_written(BufReader::new(&mut *file), secret, &digests, &still_open)?;
+        terminate_at_test_boundary("export.before-rename");
         fail_at_test_boundary("export.before-rename")?;
         // A vault locked while the file was read back must not leave a file renamed into place
         // that the history will not note: the rename is refused. (A lock after this check can
@@ -1453,5 +1457,146 @@ mod tests {
         );
         assert!(matches!(result, Err(VaultError::Invalid)));
         assert!(!home.join("handover.mycarlosprofile").exists());
+    }
+
+    // --- A process killed part way (the recovery matrix's abrupt-termination harness) --------
+
+    /// Runs an export in a child process that is killed at `boundary`.
+    fn run_export_child(root: &Path, destination: &Path, key_text: &str, boundary: &str) {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "vault::profile_export::tests::export_termination_child",
+            ])
+            .env("MYCARLOS_TEST_ROOT", root)
+            .env("MYCARLOS_TEST_EXPORT_TO", destination)
+            .env("MYCARLOS_TEST_KEY", key_text)
+            .env("MYCARLOS_TEST_TERMINATE_AT", boundary)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(
+            status.code(),
+            Some(TEST_TERMINATION_EXIT_CODE),
+            "{boundary}"
+        );
+    }
+
+    #[test]
+    #[ignore = "invoked as an abrupt-termination subprocess by the export matrix"]
+    fn export_termination_child() {
+        let Ok(root) = std::env::var("MYCARLOS_TEST_ROOT") else {
+            return;
+        };
+        let destination = std::env::var("MYCARLOS_TEST_EXPORT_TO").unwrap();
+        let key_text = std::env::var("MYCARLOS_TEST_KEY").unwrap();
+        let store = VaultStore::new(PathBuf::from(root));
+        // The unlock's own history commit must not be where the boundary is reached.
+        ENV_BOUNDARIES_HELD.store(true, Ordering::Release);
+        let unlocked = store.unlock(PASSWORD);
+        ENV_BOUNDARIES_HELD.store(false, Ordering::Release);
+        unlocked.unwrap();
+        let child = store
+            .snapshot()
+            .unwrap()
+            .profiles
+            .iter()
+            .find(|p| p.display_name == "FAKE Child")
+            .unwrap()
+            .id;
+        let key = crate::vault::profile_package::parse_package_key(&key_text).unwrap();
+        let _ = store.export_profile_atomic(
+            child,
+            WITH_HISTORY,
+            PackageSecret::Key(&key),
+            Path::new(&destination),
+            100,
+        );
+        panic!("configured termination boundary was not reached");
+    }
+
+    #[test]
+    fn a_process_killed_while_exporting_leaves_the_destination_as_it_was_or_a_complete_verified_file(
+    ) {
+        let v = vault();
+        let (key, text) = generate_package_key();
+        let out = tempfile::tempdir().unwrap();
+        let destination = out.path().join("handover.mycarlosprofile");
+        let root = v.store.root.clone();
+        let history = v.store.history_entries().unwrap().len();
+        let still_nothing_readable = |folder: &Path| {
+            // Whatever a killed export left beside the destination holds no readable document.
+            // (The atomic write keeps its temporary file in a folder of its own beside it.)
+            let mut pending = vec![folder.to_path_buf()];
+            while let Some(directory) = pending.pop() {
+                for entry in fs::read_dir(directory).unwrap() {
+                    let path = entry.unwrap().path();
+                    if path.is_dir() {
+                        pending.push(path);
+                        continue;
+                    }
+                    let bytes = fs::read(path).unwrap();
+                    assert!(!contains(&bytes, CHILD_MARKER) && !contains(&bytes, PARENT_MARKER));
+                }
+            }
+        };
+
+        // Before the file is in place: the earlier file is untouched and no vault state changed.
+        for boundary in [
+            "export.before-sync",
+            "export.before-verify",
+            "export.before-rename",
+        ] {
+            fs::write(&destination, b"EARLIER FILE").unwrap();
+            v.store.lock();
+            run_export_child(&root, &destination, &text, boundary);
+            v.store.unlock(PASSWORD).unwrap();
+            assert_eq!(
+                fs::read(&destination).unwrap(),
+                b"EARLIER FILE",
+                "{boundary}"
+            );
+            still_nothing_readable(out.path());
+            // Only the unlocks' own entries: no export was noted.
+            assert!(v
+                .store
+                .history_entries()
+                .unwrap()
+                .iter()
+                .all(|e| e.event != HistoryEvent::ProfileExported));
+        }
+        let _ = history;
+
+        // After the rename and before the history entry: the file is complete and reads back
+        // with the key; the export just was not noted, and a second export works and is.
+        v.store.lock();
+        run_export_child(&root, &destination, &text, "export.after-rename");
+        v.store.unlock(PASSWORD).unwrap();
+        let bytes = fs::read(&destination).unwrap();
+        let (manifest, _) = read(&bytes, &key);
+        assert_eq!(manifest.records.len(), 3);
+        assert!(v
+            .store
+            .history_entries()
+            .unwrap()
+            .iter()
+            .all(|e| e.event != HistoryEvent::ProfileExported));
+        v.store
+            .export_profile_atomic(
+                v.child,
+                WITH_HISTORY,
+                PackageSecret::Key(&key),
+                &destination,
+                100,
+            )
+            .unwrap();
+        assert!(v
+            .store
+            .history_entries()
+            .unwrap()
+            .iter()
+            .any(|e| e.event == HistoryEvent::ProfileExported));
     }
 }

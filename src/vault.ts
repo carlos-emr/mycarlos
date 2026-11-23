@@ -466,6 +466,8 @@ export interface AiResultInfo {
   modelSha256: string;
   createdAtMs: number;
   size: number;
+  /** From a handover file, not this computer's model (#360): the screens say so. */
+  imported?: boolean;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
