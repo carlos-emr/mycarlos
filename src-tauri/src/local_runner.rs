@@ -571,6 +571,11 @@ pub(crate) struct Summary {
     /// K20: the safety checks' fallbacks (`safety`), for measuring; never shown.
     #[allow(dead_code)]
     pub(crate) fallbacks: Vec<crate::safety::Fallback>,
+    /// The unsourced absence-shaped sentences left out before the post-steps (`safety::
+    /// is_absence_sentence`), for measuring: `index` is the place the model wrote it, `before` its
+    /// words, `after` empty; never shown.
+    #[allow(dead_code)]
+    pub(crate) dropped: Vec<crate::safety::Fallback>,
     /// How the helper made this answer, when it said (counts and times only): the measured
     /// speed the next estimate starts from (`summary_progress`).
     pub(crate) stats: Option<crate::model_helper::Stats>,
@@ -1203,18 +1208,47 @@ impl Runner {
             .map(|page| page.text.as_str())
             .collect::<Vec<_>>()
             .join(PAGE_SEPARATOR);
-        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
-        let mut sentences: Vec<Sentence> = sentences
-            .into_iter()
-            .take(request.max_sentences)
-            .enumerate()
-            .map(|(index, mut sentence)| {
-                if !quote_in(&text, &sentence.quote) || quote_is_heading(&text, &sentence.quote) {
-                    unlocated_quotes.record(index, std::mem::take(&mut sentence.quote));
-                }
-                sentence
+        let incoming: Vec<Sentence> = sentences.into_iter().take(request.max_sentences).collect();
+        let found: Vec<bool> = incoming
+            .iter()
+            .map(|sentence| {
+                quote_in(&text, &sentence.quote) && !quote_is_heading(&text, &sentence.quote)
             })
             .collect();
+        // A sentence that only says what the document does NOT say ("The document does not give
+        // instructions for taking medicine.") has no true quote, and the model was told to leave
+        // out a sentence it has no quote for. When its quote is not in the pages read either, it
+        // is dropped here (English summaries only, never the last one left, and never a sentence
+        // whose quote IS found): it would otherwise reach the screen as "No source found", and
+        // may be wrong (the letter may list the very thing). The model's answer is not touched.
+        let absent: Vec<bool> = incoming
+            .iter()
+            .zip(&found)
+            .map(|(sentence, &found)| {
+                request.lang == "en" && !found && crate::safety::is_absence_sentence(&sentence.text)
+            })
+            .collect();
+        let drop_absent = absent.iter().any(|&a| a) && absent.iter().any(|&a| !a);
+        let mut dropped = Vec::new();
+        let mut unlocated_quotes = crate::quote_provenance::UnlocatedQuotes::default();
+        let mut sentences: Vec<Sentence> = Vec::new();
+        for (index, ((mut sentence, found), absent)) in
+            incoming.into_iter().zip(found).zip(absent).enumerate()
+        {
+            if drop_absent && absent {
+                dropped.push(crate::safety::Fallback {
+                    check: "absence",
+                    index,
+                    before: Some(sentence.text),
+                    after: String::new(),
+                });
+                continue;
+            }
+            if !found {
+                unlocated_quotes.record(sentences.len(), std::mem::take(&mut sentence.quote));
+            }
+            sentences.push(sentence);
+        }
         // K17 (evaluation only): a sentence that words a line the letter writes to another doctor
         // as the patient's own says who the line is for (`addressee`). English summaries only,
         // sentences with a found quote only; nothing is dropped, and the words of each rewrite go
@@ -1360,6 +1394,7 @@ impl Runner {
             rewrites,
             explained,
             fallbacks,
+            dropped,
             stats,
         })
     }
@@ -3286,6 +3321,84 @@ mod tests {
                 .iter()
                 .all(|sentence| sentence.quote.is_empty() && !sentence.text.is_empty()));
             assert!(runner.is_running());
+        }
+
+        #[test]
+        fn given_an_absence_sentence_with_a_quote_not_in_the_pages_when_summarized_then_it_is_dropped(
+        ) {
+            let plain = Runner::new(config(&[], GIB));
+            plain.start(&Fixed(Some(8 * GIB))).unwrap();
+            let before = plain.summarize(plain.ticket(), &request()).unwrap();
+
+            let runner = Runner::new(config(&["--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+
+            // The same sentences as without the absence sentence, in the same order.
+            let words = |s: &Summary| {
+                s.sentences
+                    .iter()
+                    .map(|x| x.text.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(words(&summary), words(&before));
+            assert_eq!(summary.unlocated, 0);
+            assert_eq!(summary.dropped.len(), 1);
+            let dropped = &summary.dropped[0];
+            assert_eq!(dropped.check, "absence");
+            assert_eq!(dropped.index, before.sentences.len());
+            assert_eq!(
+                dropped.before.as_deref(),
+                Some("The document does not give instructions for taking medicine.")
+            );
+            assert_eq!(dropped.after, "");
+            // The step runs after the model: its own figures (the answer hash among them) come
+            // back as the helper reported them.
+            assert_eq!(summary.stats, before.stats);
+        }
+
+        #[test]
+        fn given_unfound_quotes_and_an_absence_sentence_when_summarized_then_only_the_absence_sentence_goes(
+        ) {
+            let runner = Runner::new(config(&["--unlocated", "--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert_eq!(summary.dropped.len(), 1);
+            assert_eq!(summary.unlocated, 3);
+            assert_eq!(summary.sentences.len(), 3);
+            assert!(summary.sentences.iter().all(|s| s.quote.is_empty()));
+            assert!(summary
+                .sentences
+                .iter()
+                .all(|s| !s.text.contains("does not give instructions")));
+        }
+
+        #[test]
+        fn given_a_negative_finding_with_an_unfound_quote_when_summarized_then_it_is_kept() {
+            // "does not show any sign of ..." is a real result the model misquoted, not an absence of saying.
+            let runner = Runner::new(config(&["--negative-finding"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let summary = runner.summarize(runner.ticket(), &request()).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert_eq!(summary.unlocated, 1);
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not show any sign") && s.quote.is_empty()));
+        }
+
+        #[test]
+        fn given_an_absence_sentence_in_another_language_when_summarized_then_it_is_kept() {
+            let runner = Runner::new(config(&["--absence"], GIB));
+            runner.start(&Fixed(Some(8 * GIB))).unwrap();
+            let mut french = request();
+            french.lang = "fr".to_owned();
+            let summary = runner.summarize(runner.ticket(), &french).unwrap();
+            assert!(summary.dropped.is_empty());
+            assert!(summary
+                .sentences
+                .iter()
+                .any(|s| s.text.contains("does not give instructions") && s.quote.is_empty()));
         }
 
         #[test]

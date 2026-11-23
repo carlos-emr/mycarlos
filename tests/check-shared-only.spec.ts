@@ -111,7 +111,7 @@ for (const view of ["ordinary", "shared"] as const) {
         .getByRole("button", { name: "Security", exact: true })
         .click();
       await expect(
-        page.getByRole("heading", { name: "Clinic documents", exact: true }),
+        page.getByRole("heading", { name: "Connected clinics", exact: true }),
       ).toBeVisible();
       await expect(check).toHaveCount(0);
       await sectionNavigation

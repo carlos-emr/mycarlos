@@ -56,7 +56,7 @@ comfort-continue = Continuar
 
 comfort-intro = Escolha o que for melhor para você antes de configurar. Cada escolha vale na hora.
 
-comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } em { $preferences } e { $autoLock } em { $security }.
+comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } e { $appearance } em { $preferences }, e { $autoLock } em { $security }.
 
 comfort-sample = É assim que o texto aparece no myCarlos. Pressione − ou + até ficar fácil de ler.
 
@@ -1204,8 +1204,6 @@ security-backup-title = Cópia de segurança criptografada
 
 security-copies-body = As exportações e capturas de tela ficam fora da proteção do cofre. Ocultar um documento no myCarlos não apaga essas cópias nem o prontuário médico original da clínica.
 
-security-copies-title = Cópias legíveis e capturas de tela
-
 security-devBuild-body = Use apenas arquivos fictícios.
 
 security-devBuild-title = Versão de desenvolvimento.
@@ -1332,31 +1330,31 @@ sidebar-settings = Configurações
 
 sidebar-storage = Cofre local criptografado
 
-textSize-announce = Tamanho do texto { $percent }
+textSize-announce = Zoom do aplicativo { $percent }
 
-textSize-between = { $typed }% fica entre dois tamanhos, então o tamanho é { $size }.
+textSize-between = { $typed }% fica entre dois níveis de zoom, então o zoom é { $size }.
 
-textSize-box = Tamanho do texto em porcentagem
+textSize-box = Zoom do aplicativo em porcentagem
 
 textSize-followsDevice = Aqui, o tamanho do texto segue o seu dispositivo: o ajuste de tamanho do texto dele ou o zoom do navegador.
 
-textSize-help = Aumenta ou diminui tudo no myCarlos, de { $min }% a { $max }%. O myCarlos lembra o tamanho neste dispositivo. Você também pode manter a tecla { $modifier } pressionada e pressionar mais, menos ou 0.
+textSize-help = Aumenta ou diminui o texto, os botões e outros itens no myCarlos, de { $min }% a { $max }%. O myCarlos lembra a sua configuração neste dispositivo. Use { $modifier } com + ou − para aumentar ou diminuir, ou { $modifier } com 0 para voltar a 100%.
 
 textSize-key-command = Comando
 
-textSize-larger = Texto maior
+textSize-larger = Aumentar zoom
 
-textSize-largest = O maior tamanho é { $max }%.
+textSize-largest = O maior zoom é { $max }%.
 
 textSize-notNumber = Digite um número de { $min } a { $max }.
 
-textSize-reset = Voltar ao tamanho normal
+textSize-reset = Voltar a 100%
 
-textSize-smaller = Texto menor
+textSize-smaller = Diminuir zoom
 
-textSize-smallest = O menor tamanho é { $min }%.
+textSize-smallest = O menor zoom é { $min }%.
 
-textSize-title = Tamanho do texto
+textSize-title = Zoom do aplicativo
 
 unlock-autoLock =
     { $count ->
@@ -1468,7 +1466,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Clínicas conectadas.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1501,6 +1499,10 @@ portal-defaultDeviceName = myCarlos no { $platform }
 portal-deviceCode = Código do dispositivo
 
 portal-deviceName = Nome deste dispositivo
+
+portal-deviceLine = Dispositivo: { $device }
+
+portal-deviceLineLinked = Dispositivo: { $device }, vinculado em { $date }
 
 portal-deviceDetailsShow = Mostrar os detalhes do dispositivo
 
@@ -1564,7 +1566,7 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-title = Documentos da clínica
+portal-title = Clínicas conectadas
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
 
@@ -1580,13 +1582,13 @@ rename-title-profile = Renomear a pasta da pessoa
 
 portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
 
-portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Clínicas conectadas.
 
 portal-connecting = Conectando e solicitando a aprovação da clínica…
 
 portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
 
-portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Clínicas conectadas, indica o que fazer em seguida.
 
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 
@@ -2203,6 +2205,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = outra forma { $n }
 
 interface-AnonymizePreview-pasteTitle = Recolocar os dados
 
@@ -2267,7 +2270,7 @@ notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois q
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
 notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
-notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Clínicas conectadas e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
 noticesStep-title = Avisos da sua clínica
 noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.
@@ -2332,3 +2335,62 @@ interface-received-confirmTitleMany = Importar { $count } documentos para Compar
 interface-received-confirmBody = Nada é adicionado até você escolher Importar. Cancelar não deixa nada.
 
 interface-received-import = Importar
+
+interface-video-name = Vídeo, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Gravar um vídeo
+interface-RecordDialog-unavailable = A gravação de vídeo não está disponível neste dispositivo.
+interface-RecordDialog-why = Por quê?
+interface-RecordDialog-startingTheCameraAndMicrophone = Iniciando a câmera e o microfone…
+interface-RecordDialog-theVideoIsRecordedWithSound = O vídeo é gravado com som. Pessoas por perto podem ser ouvidas. Só você pode abri-lo.
+interface-RecordDialog-yourPhoneAsksOnce = Seu celular pergunta uma vez se o myCarlos pode usar a câmera e o microfone. Eles ficam ligados só enquanto você grava. Desligam quando você para, fecha esta janela ou o myCarlos bloqueia.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = A câmera e o microfone ficam ligados só enquanto você grava. Desligam quando você para, fecha esta janela ou o myCarlos bloqueia.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = A câmera e o microfone estão ligados, mas nada é gravado até você escolher Iniciar gravação.
+interface-RecordDialog-pictureQuality = Qualidade da imagem
+interface-RecordDialog-standard = Padrão (720p)
+interface-RecordDialog-high = Alta (1080p)
+interface-RecordDialog-aboutStandardPerHour = Cerca de 1,1 GB por hora
+interface-RecordDialog-aboutHighPerHour = Cerca de 2,5 a 4 GB por hora
+interface-RecordDialog-useTheCameraAndMicrophone = Usar a câmera e o microfone
+interface-RecordDialog-startRecording = Iniciar gravação
+interface-RecordDialog-recording = Gravando
+interface-RecordDialog-paused = Em pausa
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = Em pausa. A câmera e o microfone continuam ligados.
+interface-RecordDialog-recorded = Gravado: { $time }
+interface-RecordDialog-recordingAt = Gravando em { $height }p
+interface-RecordDialog-pauseRecording = Pausar gravação
+interface-RecordDialog-resumeRecording = Retomar gravação
+interface-RecordDialog-stopAndSave = Parar e salvar
+interface-RecordDialog-stopAndSaveTheVideo = Parar e salvar o vídeo?
+interface-RecordDialog-keepRecording = Continuar gravando
+interface-RecordDialog-savingTheVideo = Salvando o vídeo…
+interface-RecordDialog-recordingPaused = Gravação em pausa.
+interface-RecordDialog-recordingResumed = Gravação retomada.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = Este dispositivo não consegue gravar vídeo em um formato que o myCarlos possa salvar.
+interface-RecordDialog-videoNeedsBoth = Um vídeo precisa da câmera e do microfone.
+interface-RecordDialog-nothingWasRecorded = Nada foi gravado, então nenhum vídeo foi salvo.
+interface-RecordDialog-videoSaved = Vídeo salvo: { $name }
+interface-RecordDialog-videoSavedStopped = A gravação parou porque o dispositivo informou um problema. O que foi gravado foi salvo: { $name }
+interface-RecordDialog-videoSavedHidden = A gravação parou porque o myCarlos foi ocultado. O que foi gravado foi salvo: { $name }
+interface-RecordDialog-videoSavedSlow = A gravação parou porque o vídeo não pôde ser salvo com rapidez suficiente. O que foi gravado foi salvo: { $name }
+interface-VideoViewer-video = Vídeo
+interface-VideoViewer-player = Player de vídeo: { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = Não foi possível reproduzir este vídeo.
+interface-VideoViewer-keys = A barra de espaço reproduz ou pausa. As setas para a esquerda e para a direita avançam ou voltam { $seconds } segundos. As setas para cima e para baixo mudam o volume. M silencia.
+interface-VideoViewer-playVideo = Reproduzir vídeo
+interface-VideoHelp-title = Por que não consigo gravar vídeo aqui?
+interface-VideoHelp-engine = Gravar vídeo exige que o mecanismo web integrado deste dispositivo grave vídeo MP4 com som. O mecanismo deste dispositivo não oferece isso.
+interface-VideoHelp-systems = No Windows, as edições N e KN deixam de fora os recursos de mídia até você adicionar o Media Feature Pack da Microsoft. No Linux, o myCarlos precisa dos plug-ins do GStreamer dos pacotes gstreamer1.0-plugins-bad e gstreamer1.0-plugins-ugly. Celulares com Android 7 ou anterior e iPhones com iOS anterior ao 14.5 não conseguem gravar vídeo MP4 no app.
+interface-VideoHelp-restWorks = Fotos e documentos funcionam como sempre. Uma atualização mais nova do sistema pode incluir a gravação de vídeo.
+interface-RecordingRecovery-closed = O myCarlos fechou enquanto você gravava. Manter o vídeo que foi salvo?
+interface-RecordingRecovery-closedPaused = O myCarlos fechou enquanto uma gravação estava em pausa. Manter o vídeo que foi salvo?
+interface-RecordingRecovery-name = Gravação: { $name }
+interface-RecordingRecovery-askLater = Perguntar depois
+interface-RecordingRecovery-delete = Excluir
+interface-RecordingRecovery-keep = Manter o vídeo
+interface-RecordingRecovery-kept = Vídeo mantido: { $name }
+interface-RecordingRecovery-nothingToKeep = Nada completo havia sido salvo, então não havia vídeo para manter.
+interface-RecordingRecovery-deleted = A gravação inacabada foi excluída.
+interface-RecordingRecovery-deleteSure = Excluir esta gravação? Isso não pode ser desfeito.
+interface-RecordingRecovery-savedLocked = O myCarlos bloqueou enquanto você gravava. O vídeo foi salvo: { $name }
+interface-RecordingRecovery-savedLockedPaused = O myCarlos bloqueou enquanto uma gravação estava em pausa. O vídeo foi salvo: { $name }
+interface-RecordDialog-videoSavedFailed = A gravação parou porque uma parte não pôde ser salva. O que foi salvo antes disso foi mantido: { $name }

@@ -526,7 +526,6 @@ export const MESSAGE_KEYS = [
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -964,6 +963,7 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.footerNote",
   "interface.AnonymizePreview.note.daysAfter",
   "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.note.otherForm",
   "interface.AnonymizePreview.pasteTitle",
   "interface.AnonymizePreview.pasteHelp",
   "interface.AnonymizePreview.pasteLabel",
@@ -1064,6 +1064,66 @@ export const MESSAGE_KEYS = [
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "interface.video.name",
+  "interface.RecordDialog.recordAVideo",
+  "interface.RecordDialog.unavailable",
+  "interface.RecordDialog.why",
+  "interface.RecordDialog.startingTheCameraAndMicrophone",
+  "interface.RecordDialog.theVideoIsRecordedWithSound",
+  "interface.RecordDialog.yourPhoneAsksOnce",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOn",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
+  "interface.RecordDialog.pictureQuality",
+  "interface.RecordDialog.standard",
+  "interface.RecordDialog.high",
+  "interface.RecordDialog.aboutStandardPerHour",
+  "interface.RecordDialog.aboutHighPerHour",
+  "interface.RecordDialog.useTheCameraAndMicrophone",
+  "interface.RecordDialog.startRecording",
+  "interface.RecordDialog.recording",
+  "interface.RecordDialog.paused",
+  "interface.RecordDialog.pausedCameraAndMicrophoneStillOn",
+  "interface.RecordDialog.recorded",
+  "interface.RecordDialog.recordingAt",
+  "interface.RecordDialog.pauseRecording",
+  "interface.RecordDialog.resumeRecording",
+  "interface.RecordDialog.stopAndSave",
+  "interface.RecordDialog.stopAndSaveTheVideo",
+  "interface.RecordDialog.keepRecording",
+  "interface.RecordDialog.savingTheVideo",
+  "interface.RecordDialog.recordingPaused",
+  "interface.RecordDialog.recordingResumed",
+  "interface.RecordDialog.thisDeviceCannotRecordMp4",
+  "interface.RecordDialog.videoNeedsBoth",
+  "interface.RecordDialog.nothingWasRecorded",
+  "interface.RecordDialog.videoSaved",
+  "interface.RecordDialog.videoSavedStopped",
+  "interface.RecordDialog.videoSavedHidden",
+  "interface.RecordDialog.videoSavedSlow",
+  "interface.VideoViewer.video",
+  "interface.VideoViewer.player",
+  "interface.VideoViewer.thisVideoCouldNotBePlayed",
+  "interface.VideoViewer.keys",
+  "interface.VideoViewer.playVideo",
+  "interface.VideoHelp.title",
+  "interface.VideoHelp.engine",
+  "interface.VideoHelp.systems",
+  "interface.VideoHelp.restWorks",
+  "interface.RecordingRecovery.closed",
+  "interface.RecordingRecovery.closedPaused",
+  "interface.RecordingRecovery.name",
+  "interface.RecordingRecovery.askLater",
+  "interface.RecordingRecovery.delete",
+  "interface.RecordingRecovery.keep",
+  "interface.RecordingRecovery.kept",
+  "interface.RecordingRecovery.nothingToKeep",
+  "interface.RecordingRecovery.deleted",
+  "interface.RecordingRecovery.deleteSure",
+  "interface.RecordingRecovery.savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed",
+  "portal.deviceLine",
+  "portal.deviceLineLinked",
   "interface.received.confirmTitleOne",
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
@@ -1703,7 +1763,6 @@ const FLUENT_IDS_BY_KEY = {
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
-  "security.copies.title": "security-copies-title",
   "security.devBuild.body": "security-devBuild-body",
   "security.devBuild.title": "security-devBuild-title",
   "security.encryption.body": "security-encryption-body",
@@ -2222,6 +2281,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-note-daysAfter",
   "interface.AnonymizePreview.note.ageOver90":
     "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.note.otherForm":
+    "interface-AnonymizePreview-note-otherForm",
   "interface.AnonymizePreview.pasteTitle":
     "interface-AnonymizePreview-pasteTitle",
   "interface.AnonymizePreview.pasteHelp":
@@ -2331,6 +2392,98 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "interface.video.name": "interface-video-name",
+  "interface.RecordDialog.recordAVideo": "interface-RecordDialog-recordAVideo",
+  "interface.RecordDialog.unavailable": "interface-RecordDialog-unavailable",
+  "interface.RecordDialog.why": "interface-RecordDialog-why",
+  "interface.RecordDialog.startingTheCameraAndMicrophone":
+    "interface-RecordDialog-startingTheCameraAndMicrophone",
+  "interface.RecordDialog.theVideoIsRecordedWithSound":
+    "interface-RecordDialog-theVideoIsRecordedWithSound",
+  "interface.RecordDialog.yourPhoneAsksOnce":
+    "interface-RecordDialog-yourPhoneAsksOnce",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOn":
+    "interface-RecordDialog-theCameraAndMicrophoneAreOn",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow":
+    "interface-RecordDialog-theCameraAndMicrophoneAreOnNow",
+  "interface.RecordDialog.pictureQuality":
+    "interface-RecordDialog-pictureQuality",
+  "interface.RecordDialog.standard": "interface-RecordDialog-standard",
+  "interface.RecordDialog.high": "interface-RecordDialog-high",
+  "interface.RecordDialog.aboutStandardPerHour":
+    "interface-RecordDialog-aboutStandardPerHour",
+  "interface.RecordDialog.aboutHighPerHour":
+    "interface-RecordDialog-aboutHighPerHour",
+  "interface.RecordDialog.useTheCameraAndMicrophone":
+    "interface-RecordDialog-useTheCameraAndMicrophone",
+  "interface.RecordDialog.startRecording":
+    "interface-RecordDialog-startRecording",
+  "interface.RecordDialog.recording": "interface-RecordDialog-recording",
+  "interface.RecordDialog.paused": "interface-RecordDialog-paused",
+  "interface.RecordDialog.pausedCameraAndMicrophoneStillOn":
+    "interface-RecordDialog-pausedCameraAndMicrophoneStillOn",
+  "interface.RecordDialog.recorded": "interface-RecordDialog-recorded",
+  "interface.RecordDialog.recordingAt": "interface-RecordDialog-recordingAt",
+  "interface.RecordDialog.pauseRecording":
+    "interface-RecordDialog-pauseRecording",
+  "interface.RecordDialog.resumeRecording":
+    "interface-RecordDialog-resumeRecording",
+  "interface.RecordDialog.stopAndSave": "interface-RecordDialog-stopAndSave",
+  "interface.RecordDialog.stopAndSaveTheVideo":
+    "interface-RecordDialog-stopAndSaveTheVideo",
+  "interface.RecordDialog.keepRecording":
+    "interface-RecordDialog-keepRecording",
+  "interface.RecordDialog.savingTheVideo":
+    "interface-RecordDialog-savingTheVideo",
+  "interface.RecordDialog.recordingPaused":
+    "interface-RecordDialog-recordingPaused",
+  "interface.RecordDialog.recordingResumed":
+    "interface-RecordDialog-recordingResumed",
+  "interface.RecordDialog.thisDeviceCannotRecordMp4":
+    "interface-RecordDialog-thisDeviceCannotRecordMp4",
+  "interface.RecordDialog.videoNeedsBoth":
+    "interface-RecordDialog-videoNeedsBoth",
+  "interface.RecordDialog.nothingWasRecorded":
+    "interface-RecordDialog-nothingWasRecorded",
+  "interface.RecordDialog.videoSaved": "interface-RecordDialog-videoSaved",
+  "interface.RecordDialog.videoSavedStopped":
+    "interface-RecordDialog-videoSavedStopped",
+  "interface.RecordDialog.videoSavedHidden":
+    "interface-RecordDialog-videoSavedHidden",
+  "interface.RecordDialog.videoSavedSlow":
+    "interface-RecordDialog-videoSavedSlow",
+  "interface.VideoViewer.video": "interface-VideoViewer-video",
+  "interface.VideoViewer.player": "interface-VideoViewer-player",
+  "interface.VideoViewer.thisVideoCouldNotBePlayed":
+    "interface-VideoViewer-thisVideoCouldNotBePlayed",
+  "interface.VideoViewer.keys": "interface-VideoViewer-keys",
+  "interface.VideoViewer.playVideo": "interface-VideoViewer-playVideo",
+  "interface.VideoHelp.title": "interface-VideoHelp-title",
+  "interface.VideoHelp.engine": "interface-VideoHelp-engine",
+  "interface.VideoHelp.systems": "interface-VideoHelp-systems",
+  "interface.VideoHelp.restWorks": "interface-VideoHelp-restWorks",
+  "interface.RecordingRecovery.closed": "interface-RecordingRecovery-closed",
+  "interface.RecordingRecovery.closedPaused":
+    "interface-RecordingRecovery-closedPaused",
+  "interface.RecordingRecovery.name": "interface-RecordingRecovery-name",
+  "interface.RecordingRecovery.askLater":
+    "interface-RecordingRecovery-askLater",
+  "interface.RecordingRecovery.delete": "interface-RecordingRecovery-delete",
+  "interface.RecordingRecovery.keep": "interface-RecordingRecovery-keep",
+  "interface.RecordingRecovery.kept": "interface-RecordingRecovery-kept",
+  "interface.RecordingRecovery.nothingToKeep":
+    "interface-RecordingRecovery-nothingToKeep",
+  "interface.RecordingRecovery.deleted": "interface-RecordingRecovery-deleted",
+  "interface.RecordingRecovery.deleteSure":
+    "interface-RecordingRecovery-deleteSure",
+  "interface.RecordingRecovery.savedLocked":
+    "interface-RecordingRecovery-savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused":
+    "interface-RecordingRecovery-savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed":
+    "interface-RecordDialog-videoSavedFailed",
+  "portal.deviceLine": "portal-deviceLine",
+  "portal.deviceLineLinked": "portal-deviceLineLinked",
   "interface.received.confirmTitleOne": "interface-received-confirmTitleOne",
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
@@ -2377,6 +2530,7 @@ export interface MessageArgsByKey {
   "comfort.continue": undefined;
   "comfort.intro": undefined;
   "comfort.later": {
+    appearance: FluentArgument;
     autoLock: FluentArgument;
     preferences: FluentArgument;
     security: FluentArgument;
@@ -2932,7 +3086,6 @@ export interface MessageArgsByKey {
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
-  "security.copies.title": undefined;
   "security.devBuild.body": undefined;
   "security.devBuild.title": undefined;
   "security.encryption.body": undefined;
@@ -3405,6 +3558,7 @@ export interface MessageArgsByKey {
     number: FluentArgument;
   };
   "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.note.otherForm": { n: FluentArgument };
   "interface.AnonymizePreview.pasteTitle": undefined;
   "interface.AnonymizePreview.pasteHelp": undefined;
   "interface.AnonymizePreview.pasteLabel": undefined;
@@ -3517,6 +3671,66 @@ export interface MessageArgsByKey {
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "interface.video.name": { date: FluentArgument; time: FluentArgument };
+  "interface.RecordDialog.recordAVideo": undefined;
+  "interface.RecordDialog.unavailable": undefined;
+  "interface.RecordDialog.why": undefined;
+  "interface.RecordDialog.startingTheCameraAndMicrophone": undefined;
+  "interface.RecordDialog.theVideoIsRecordedWithSound": undefined;
+  "interface.RecordDialog.yourPhoneAsksOnce": undefined;
+  "interface.RecordDialog.theCameraAndMicrophoneAreOn": undefined;
+  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow": undefined;
+  "interface.RecordDialog.pictureQuality": undefined;
+  "interface.RecordDialog.standard": undefined;
+  "interface.RecordDialog.high": undefined;
+  "interface.RecordDialog.aboutStandardPerHour": undefined;
+  "interface.RecordDialog.aboutHighPerHour": undefined;
+  "interface.RecordDialog.useTheCameraAndMicrophone": undefined;
+  "interface.RecordDialog.startRecording": undefined;
+  "interface.RecordDialog.recording": undefined;
+  "interface.RecordDialog.paused": undefined;
+  "interface.RecordDialog.pausedCameraAndMicrophoneStillOn": undefined;
+  "interface.RecordDialog.recorded": { time: FluentArgument };
+  "interface.RecordDialog.recordingAt": { height: FluentArgument };
+  "interface.RecordDialog.pauseRecording": undefined;
+  "interface.RecordDialog.resumeRecording": undefined;
+  "interface.RecordDialog.stopAndSave": undefined;
+  "interface.RecordDialog.stopAndSaveTheVideo": undefined;
+  "interface.RecordDialog.keepRecording": undefined;
+  "interface.RecordDialog.savingTheVideo": undefined;
+  "interface.RecordDialog.recordingPaused": undefined;
+  "interface.RecordDialog.recordingResumed": undefined;
+  "interface.RecordDialog.thisDeviceCannotRecordMp4": undefined;
+  "interface.RecordDialog.videoNeedsBoth": undefined;
+  "interface.RecordDialog.nothingWasRecorded": undefined;
+  "interface.RecordDialog.videoSaved": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedStopped": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedHidden": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedSlow": { name: FluentArgument };
+  "interface.VideoViewer.video": undefined;
+  "interface.VideoViewer.player": { name: FluentArgument };
+  "interface.VideoViewer.thisVideoCouldNotBePlayed": undefined;
+  "interface.VideoViewer.keys": { seconds: FluentArgument };
+  "interface.VideoViewer.playVideo": undefined;
+  "interface.VideoHelp.title": undefined;
+  "interface.VideoHelp.engine": undefined;
+  "interface.VideoHelp.systems": undefined;
+  "interface.VideoHelp.restWorks": undefined;
+  "interface.RecordingRecovery.closed": undefined;
+  "interface.RecordingRecovery.closedPaused": undefined;
+  "interface.RecordingRecovery.name": { name: FluentArgument };
+  "interface.RecordingRecovery.askLater": undefined;
+  "interface.RecordingRecovery.delete": undefined;
+  "interface.RecordingRecovery.keep": undefined;
+  "interface.RecordingRecovery.kept": { name: FluentArgument };
+  "interface.RecordingRecovery.nothingToKeep": undefined;
+  "interface.RecordingRecovery.deleted": undefined;
+  "interface.RecordingRecovery.deleteSure": undefined;
+  "interface.RecordingRecovery.savedLocked": { name: FluentArgument };
+  "interface.RecordingRecovery.savedLockedPaused": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedFailed": { name: FluentArgument };
+  "portal.deviceLine": { device: FluentArgument };
+  "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
   "interface.received.confirmTitleOne": { name: FluentArgument };
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;

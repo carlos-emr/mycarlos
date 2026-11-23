@@ -6,6 +6,7 @@ import {
   useI18n,
   type Locale,
 } from "../i18n";
+import { ChoiceCheck } from "./ChoiceCheck";
 
 // Autonyms remain recognizable after an accidental language change. Most
 // Mandarin speakers write Simplified Chinese: the English word lets someone
@@ -26,19 +27,32 @@ export function languageName(locale: Locale): string {
   return LANGUAGES.find(([code]) => code === locale)?.[1] ?? locale;
 }
 
-export function LanguageSetting({ compact = false }: { compact?: boolean }) {
+/** `showTitle` (compact only) is for a screen that has no heading of its own;
+ * the language dialog's title already says it, so it passes false and the
+ * list does not repeat it. The group stays named for a screen reader. */
+export function LanguageSetting({
+  compact = false,
+  showTitle = true,
+}: {
+  compact?: boolean;
+  showTitle?: boolean;
+}) {
   const state = useSyncExternalStore(subscribeLocale, getLanguagePreference);
   const { t } = useI18n();
   const id = useId();
   return (
     <section
       className={
-        compact ? "language-compact" : "setting-row native-setting-form"
+        compact
+          ? "language-compact"
+          : "setting-row native-setting-form choice-row"
       }
     >
       <div>
         {compact ? (
-          <span className="language-title">{t("language.title")}</span>
+          showTitle && (
+            <span className="language-title">{t("language.title")}</span>
+          )
         ) : (
           <h2>{t("language.title")}</h2>
         )}
@@ -47,7 +61,7 @@ export function LanguageSetting({ compact = false }: { compact?: boolean }) {
         </p>
       </div>
       <fieldset
-        className={`appearance-choice language-choice${compact ? " language-choices-compact" : ""}`}
+        className={`appearance-choice choice-grid language-choice${compact ? " language-choices-compact" : ""}`}
         aria-describedby={`${id}-help${state.error ? ` ${id}-error` : ""}`}
       >
         <legend className="sr-only">{t("language.title")}</legend>
@@ -59,7 +73,10 @@ export function LanguageSetting({ compact = false }: { compact?: boolean }) {
             checked={state.choice === null}
             onChange={() => rememberLocale(null)}
           />
-          <span>{t("language.system")}</span>
+          <span>
+            <ChoiceCheck />
+            <span>{t("language.system")}</span>
+          </span>
         </label>
         {LANGUAGES.map(([locale, label, hint]) => (
           <label className="appearance-option" key={locale}>
@@ -71,13 +88,18 @@ export function LanguageSetting({ compact = false }: { compact?: boolean }) {
               onChange={() => rememberLocale(locale)}
             />
             <span>
-              <span lang={locale}>{label}</span>
-              {hint && (
-                <>
-                  {" "}
-                  <span lang="en">({hint})</span>
-                </>
-              )}
+              <ChoiceCheck />
+              <span>
+                <span lang={locale}>{label}</span>
+                {hint && (
+                  <>
+                    {" "}
+                    <span lang="en" className="choice-hint">
+                      ({hint})
+                    </span>
+                  </>
+                )}
+              </span>
             </span>
           </label>
         ))}

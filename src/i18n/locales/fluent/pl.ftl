@@ -56,7 +56,7 @@ comfort-continue = Dalej
 
 comfort-intro = Przed konfiguracją proszę wybrać to, co najbardziej odpowiada. Każdy wybór działa od razu.
 
-comfort-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”: „{ $textSize }” w części „{ $preferences }”, a „{ $autoLock }” w części „{ $security }”.
+comfort-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”: „{ $textSize }” i „{ $appearance }” w części „{ $preferences }”, a „{ $autoLock }” w części „{ $security }”.
 
 comfort-sample = Tak wygląda tekst w myCarlos. Proszę naciskać − lub +, aż będzie łatwy do przeczytania.
 
@@ -1232,8 +1232,6 @@ security-backup-title = Zaszyfrowana kopia zapasowa
 
 security-copies-body = Wyeksportowane pliki i zrzuty ekranu nie są objęte ochroną sejfu. Ukrycie dokumentu w myCarlos nie usuwa tych kopii ani źródłowej dokumentacji medycznej w przychodni.
 
-security-copies-title = Czytelne kopie i zrzuty ekranu
-
 security-devBuild-body = Proszę używać wyłącznie fikcyjnych plików.
 
 security-devBuild-title = Wersja rozwojowa.
@@ -1362,31 +1360,31 @@ sidebar-settings = Ustawienia
 
 sidebar-storage = Lokalny zaszyfrowany sejf
 
-textSize-announce = Rozmiar tekstu { $percent }
+textSize-announce = Powiększenie aplikacji { $percent }
 
-textSize-between = { $typed }% wypada między rozmiarami, więc ustawiono { $size }.
+textSize-between = { $typed }% wypada między poziomami powiększenia, więc ustawiono { $size }.
 
-textSize-box = Rozmiar tekstu w procentach
+textSize-box = Powiększenie aplikacji w procentach
 
 textSize-followsDevice = Tutaj rozmiar tekstu zależy od urządzenia: od jego ustawienia rozmiaru tekstu lub od powiększenia w przeglądarce.
 
-textSize-help = Powiększa lub pomniejsza wszystko w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje rozmiar na tym urządzeniu. Można też przytrzymać klawisz { $modifier } i nacisnąć plus, minus lub 0.
+textSize-help = Powiększa lub pomniejsza tekst, przyciski i inne elementy w myCarlos, od { $min }% do { $max }%. myCarlos zapamiętuje to ustawienie na tym urządzeniu. Użyj { $modifier } z + lub −, aby powiększać lub pomniejszać, albo { $modifier } z 0, aby wrócić do 100%.
 
 textSize-key-command = Command
 
-textSize-larger = Większy tekst
+textSize-larger = Powiększ
 
-textSize-largest = Największy rozmiar to { $max }%.
+textSize-largest = Największe powiększenie to { $max }%.
 
 textSize-notNumber = Proszę wpisać liczbę od { $min } do { $max }.
 
-textSize-reset = Przywróć normalny rozmiar
+textSize-reset = Wróć do 100%
 
-textSize-smaller = Mniejszy tekst
+textSize-smaller = Pomniejsz
 
-textSize-smallest = Najmniejszy rozmiar to { $min }%.
+textSize-smallest = Najmniejsze powiększenie to { $min }%.
 
-textSize-title = Rozmiar tekstu
+textSize-title = Powiększenie aplikacji
 
 unlock-autoLock =
     { $count ->
@@ -1500,7 +1498,7 @@ portal-approvalCancelled = Ta prośba o zatwierdzenie została anulowana. Prosz�
 
 portal-approvalContact = Zatwierdzenie przez przychodnię wymaga sprawdzenia. Proszę skontaktować się z przychodnią, aby ustalić dalsze kroki.
 
-portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Dokumenty z przychodni.
+portal-approvalExpired = Ta prośba o zatwierdzenie wygasła. Aby poprosić ponownie dla tego urządzenia, przejdź na stronę Bezpieczeństwo, do sekcji Połączone przychodnie.
 
 portal-approvalMissing = Nie znaleziono zapisanej prośby o zatwierdzenie w portalu. Proszę wysłać ponownie zapisaną prośbę.
 
@@ -1533,6 +1531,10 @@ portal-defaultDeviceName = myCarlos na { $platform }
 portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
+
+portal-deviceLine = Urządzenie: { $device }
+
+portal-deviceLineLinked = Urządzenie: { $device }, połączono { $date }
 
 portal-deviceDetailsShow = Pokaż szczegóły urządzenia
 
@@ -1598,7 +1600,7 @@ portal-serviceDate = Data świadczenia: { $date }
 
 portal-serviceDateLabel = Data świadczenia
 
-portal-title = Dokumenty z przychodni
+portal-title = Połączone przychodnie
 
 rename-help-profile = Zmienia to tylko wyświetlaną nazwę folderu. Foldery i dokumenty osoby pozostają na swoim miejscu.
 
@@ -1614,13 +1616,13 @@ rename-title-profile = Zmień nazwę folderu osoby
 
 portal-connectConsent = Ta czynność łączy to urządzenie i wysyła prośbę o zatwierdzenie. Przychodnia musi zatwierdzić urządzenie, zanim będzie ono mogło odbierać dokumenty.
 
-portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni.
+portal-connected = Urządzenie zostało połączone. Stan jego zatwierdzenia znajdziesz na stronie Bezpieczeństwo, w sekcji Połączone przychodnie.
 
 portal-connecting = Łączenie i wysyłanie prośby o zatwierdzenie przez przychodnię…
 
 portal-errorBusy = Trwa inna operacja związana z przychodnią. Proszę poczekać, aż się zakończy, i spróbować ponownie.
 
-portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Dokumenty z przychodni, wskazuje, co zrobić dalej.
+portal-linkedApprovalIssue = Urządzenie zostało połączone. Stan jego zatwierdzenia na stronie Bezpieczeństwo, w sekcji Połączone przychodnie, wskazuje, co zrobić dalej.
 
 portal-retryApproval = Ponów zapisaną prośbę o zatwierdzenie
 
@@ -2249,6 +2251,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = wariant { $n }
 
 interface-AnonymizePreview-pasteTitle = Przywróć dane
 
@@ -2313,7 +2316,7 @@ notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
 notifications-autoNeedsNotices = Aby to włączyć, najpierw należy zezwolić na powiadomienia o nowych dokumentach.
 notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
-notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Dokumenty z przychodni” i wybrać „Sprawdź nowe dokumenty”.
+notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Połączone przychodnie” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
 noticesStep-title = Powiadomienia z przychodni
 noticesStep-intro = Przychodnia jest połączona. myCarlos może powiadamiać o nowych dokumentach. Nic nie zostanie włączone bez zaznaczenia.
@@ -2378,3 +2381,62 @@ interface-received-confirmTitleMany = Zaimportować dokumenty ({ $count }) do Ud
 interface-received-confirmBody = Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Anulowanie nie zostawia niczego.
 
 interface-received-import = Importuj
+
+interface-video-name = Film, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Nagraj film
+interface-RecordDialog-unavailable = Nagrywanie filmów nie jest dostępne na tym urządzeniu.
+interface-RecordDialog-why = Dlaczego?
+interface-RecordDialog-startingTheCameraAndMicrophone = Uruchamianie aparatu i mikrofonu…
+interface-RecordDialog-theVideoIsRecordedWithSound = Film jest nagrywany z dźwiękiem. Mogą być słyszalne osoby w pobliżu. Tylko Ty możesz go otworzyć.
+interface-RecordDialog-yourPhoneAsksOnce = Telefon raz zapyta, czy myCarlos może używać aparatu i mikrofonu. Są włączone tylko podczas nagrywania. Wyłączą się, gdy zatrzymasz nagrywanie, zamkniesz to okno lub myCarlos się zablokuje.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = Aparat i mikrofon są włączone tylko podczas nagrywania. Wyłączą się, gdy zatrzymasz nagrywanie, zamkniesz to okno lub myCarlos się zablokuje.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = Aparat i mikrofon są włączone, ale nic nie jest nagrywane, dopóki nie wybierzesz Rozpocznij nagrywanie.
+interface-RecordDialog-pictureQuality = Jakość obrazu
+interface-RecordDialog-standard = Standardowa (720p)
+interface-RecordDialog-high = Wysoka (1080p)
+interface-RecordDialog-aboutStandardPerHour = Około 1,1 GB na godzinę
+interface-RecordDialog-aboutHighPerHour = Około 2,5–4 GB na godzinę
+interface-RecordDialog-useTheCameraAndMicrophone = Użyj aparatu i mikrofonu
+interface-RecordDialog-startRecording = Rozpocznij nagrywanie
+interface-RecordDialog-recording = Nagrywanie
+interface-RecordDialog-paused = Wstrzymano
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = Wstrzymano. Aparat i mikrofon nadal są włączone.
+interface-RecordDialog-recorded = Nagrano: { $time }
+interface-RecordDialog-recordingAt = Nagrywanie w { $height }p
+interface-RecordDialog-pauseRecording = Wstrzymaj nagrywanie
+interface-RecordDialog-resumeRecording = Wznów nagrywanie
+interface-RecordDialog-stopAndSave = Zatrzymaj i zapisz
+interface-RecordDialog-stopAndSaveTheVideo = Zatrzymać i zapisać film?
+interface-RecordDialog-keepRecording = Nagrywaj dalej
+interface-RecordDialog-savingTheVideo = Zapisywanie filmu…
+interface-RecordDialog-recordingPaused = Nagrywanie wstrzymane.
+interface-RecordDialog-recordingResumed = Nagrywanie wznowione.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = To urządzenie nie może nagrywać filmów w formacie, który myCarlos potrafi zapisać.
+interface-RecordDialog-videoNeedsBoth = Film wymaga aparatu i mikrofonu.
+interface-RecordDialog-nothingWasRecorded = Nic nie nagrano, więc nie zapisano żadnego filmu.
+interface-RecordDialog-videoSaved = Zapisano film: { $name }
+interface-RecordDialog-videoSavedStopped = Nagrywanie zatrzymano, ponieważ urządzenie zgłosiło problem. To, co nagrano, zostało zapisane: { $name }
+interface-RecordDialog-videoSavedHidden = Nagrywanie zatrzymano, ponieważ myCarlos został ukryty. To, co nagrano, zostało zapisane: { $name }
+interface-RecordDialog-videoSavedSlow = Nagrywanie zatrzymano, ponieważ film nie mógł być zapisywany dostatecznie szybko. To, co nagrano, zostało zapisane: { $name }
+interface-VideoViewer-video = Film
+interface-VideoViewer-player = Odtwarzacz filmu: { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = Nie można odtworzyć tego filmu.
+interface-VideoViewer-keys = Spacja odtwarza lub wstrzymuje. Strzałki w lewo i w prawo przewijają o { $seconds } s. Strzałki w górę i w dół zmieniają głośność. M wycisza.
+interface-VideoViewer-playVideo = Odtwórz film
+interface-VideoHelp-title = Dlaczego nie mogę tu nagrać filmu?
+interface-VideoHelp-engine = Nagrywanie filmu wymaga, aby wbudowany silnik internetowy urządzenia potrafił nagrywać wideo MP4 z dźwiękiem. Silnik tego urządzenia tego nie umożliwia.
+interface-VideoHelp-systems = W systemie Windows wersje N i KN nie zawierają funkcji multimedialnych, dopóki nie doda się Media Feature Pack firmy Microsoft. W systemie Linux myCarlos potrzebuje wtyczek GStreamer z pakietów gstreamer1.0-plugins-bad i gstreamer1.0-plugins-ugly. Telefony z Androidem 7 lub starszym oraz iPhone’y z systemem iOS starszym niż 14.5 nie mogą nagrywać wideo MP4 w aplikacji.
+interface-VideoHelp-restWorks = Zdjęcia i dokumenty działają jak zwykle. Nowsza aktualizacja systemu może dodać nagrywanie filmów.
+interface-RecordingRecovery-closed = myCarlos został zamknięty podczas nagrywania. Zachować zapisany film?
+interface-RecordingRecovery-closedPaused = myCarlos został zamknięty, gdy nagrywanie było wstrzymane. Zachować zapisany film?
+interface-RecordingRecovery-name = Nagranie: { $name }
+interface-RecordingRecovery-askLater = Zapytaj mnie później
+interface-RecordingRecovery-delete = Usuń
+interface-RecordingRecovery-keep = Zachowaj film
+interface-RecordingRecovery-kept = Zachowano film: { $name }
+interface-RecordingRecovery-nothingToKeep = Nie zapisano niczego kompletnego, więc nie było filmu do zachowania.
+interface-RecordingRecovery-deleted = Nieukończone nagranie zostało usunięte.
+interface-RecordingRecovery-deleteSure = Usunąć to nagranie? Nie można tego cofnąć.
+interface-RecordingRecovery-savedLocked = myCarlos został zablokowany podczas nagrywania. Film został zapisany: { $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos został zablokowany, gdy nagrywanie było wstrzymane. Film został zapisany: { $name }
+interface-RecordDialog-videoSavedFailed = Nagrywanie zatrzymano, ponieważ nie udało się zapisać jego części. To, co zapisano wcześniej, zostało zachowane: { $name }

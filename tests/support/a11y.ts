@@ -24,7 +24,7 @@ export type FakePortal = "off" | "none" | "awaiting" | "approved";
 export interface FakeVaultOptions {
   /** The vault has a recovery key; without one, unlocking may offer one. */
   recoveryKey?: boolean;
-  /** Clinic documents in Security; "off" by default, as on a build without it. */
+  /** Connected clinics in Security; "off" by default, as on a build without it. */
   portal?: FakePortal;
   /** A third document, hidden by the patient, so Hidden has something to list. */
   hiddenDocument?: boolean;
@@ -336,6 +336,12 @@ export async function fakeVault(
                 available: true,
               });
               return { imported: ["scan"], skippedDuplicates: [] };
+            // Video (#359): nothing is waiting to be finished, and no
+            // document starts as an MP4 does.
+            case "vault_video_pending":
+              return { recordings: [], unreadable: 0 };
+            case "vault_is_video":
+              return false;
             case "vault_touch":
             case "vault_set_auto_lock":
             case "plugin:window|set_theme":

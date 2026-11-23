@@ -56,7 +56,7 @@ comfort-continue = 繼續
 
 comfort-intro = 請在設定前選擇適合您的項目。每項設定會立即生效。
 
-comfort-later = 您隨時可以在 { $settings } 中變更這些設定：在 { $preferences } 中調整 { $textSize }，並在 { $security } 中調整 { $autoLock }。
+comfort-later = 您隨時可以在 { $settings } 中變更這些設定：在 { $preferences } 中調整 { $textSize } 和 { $appearance }，並在 { $security } 中調整 { $autoLock }。
 
 comfort-sample = 這是 myCarlos 中的文字外觀。請按 − 或 +，調整到容易閱讀的大小。
 
@@ -1064,8 +1064,6 @@ security-backup-title = 加密備份
 
 security-copies-body = 匯出檔案和螢幕截圖不受保險庫保護。在 myCarlos 中隱藏文件不會刪除這些副本或診所的原始病歷。
 
-security-copies-title = 可讀副本和螢幕截圖
-
 security-devBuild-body = 僅使用合成檔案。
 
 security-devBuild-title = 開發版本。
@@ -1182,31 +1180,31 @@ sidebar-settings = 設定
 
 sidebar-storage = 加密的本機保險庫
 
-textSize-announce = 文字大小 { $percent }
+textSize-announce = 應用程式縮放 { $percent }
 
-textSize-between = { $typed }% 介於尺寸之間，因此調整為 { $size }。
+textSize-between = { $typed }% 介於縮放等級之間，因此調整為 { $size }。
 
-textSize-box = 文字大小百分比
+textSize-box = 應用程式縮放百分比
 
 textSize-followsDevice = 此處的文字大小會依照裝置設定或瀏覽器縮放比例調整。
 
-textSize-help = 調整 myCarlos 中所有內容的大小，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。您也可以按住 { $modifier }，再按加號、減號或 0。
+textSize-help = 放大或縮小 myCarlos 中的文字、按鈕和其他項目，範圍為 { $min }% 到 { $max }%。myCarlos 會記住這台裝置上的設定。按 { $modifier } 加 + 或 − 可縮放，按 { $modifier } 加 0 可恢復為 100%。
 
 textSize-key-command = Command
 
-textSize-larger = 放大文字
+textSize-larger = 放大
 
-textSize-largest = 最大尺寸為 { $max }%。
+textSize-largest = 最大縮放為 { $max }%。
 
 textSize-notNumber = 請輸入 { $min } 到 { $max } 之間的數字。
 
-textSize-reset = 恢復正常大小
+textSize-reset = 恢復為 100%
 
-textSize-smaller = 縮小文字
+textSize-smaller = 縮小
 
-textSize-smallest = 最小尺寸為 { $min }%。
+textSize-smallest = 最小縮放為 { $min }%。
 
-textSize-title = 文字大小
+textSize-title = 應用程式縮放
 
 unlock-autoLock = 閒置 { $count } 分鐘後，以及 myCarlos 隱藏時（例如縮到最小或移至背景），保險庫就會鎖定。
 
@@ -1308,7 +1306,7 @@ portal-approvalCancelled = 此核准請求已取消。請先檢查最新狀態�
 
 portal-approvalContact = 需要確認診所的核准狀態。請聯絡診所了解後續步驟。
 
-portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「診所文件」。
+portal-approvalExpired = 此核准請求已過期。若要為此裝置再次申請，請前往「安全性」中的「已連線的診所」。
 
 portal-approvalMissing = 入口網站上找不到您已儲存的核准請求。請重新傳送已儲存的請求。
 
@@ -1341,6 +1339,10 @@ portal-defaultDeviceName = { $platform } 上的 myCarlos
 portal-deviceCode = 裝置代碼
 
 portal-deviceName = 此裝置的名稱
+
+portal-deviceLine = 裝置：{ $device }
+
+portal-deviceLineLinked = 裝置：{ $device }，連結於 { $date }
 
 portal-deviceDetailsShow = 顯示裝置詳細資料
 
@@ -1400,7 +1402,7 @@ portal-serviceDate = 服務日期：{ $date }
 
 portal-serviceDateLabel = 服務日期
 
-portal-title = 診所文件
+portal-title = 已連線的診所
 
 rename-help-profile = 這只會變更顯示的資料夾名稱。此人的資料夾和文件仍會留在原處。
 
@@ -1416,13 +1418,13 @@ rename-title-profile = 重新命名此人的資料夾
 
 portal-connectConsent = 此操作會連線此裝置並傳送核准請求。診所必須先核准此裝置，裝置才能接收文件。
 
-portal-connected = 裝置已連結。可在「安全性」的「診所文件」下查看其核准狀態。
+portal-connected = 裝置已連結。可在「安全性」的「已連線的診所」下查看其核准狀態。
 
 portal-connecting = 正在連線並申請診所核准…
 
 portal-errorBusy = 另一項診所作業正在進行。請等其完成後重試。
 
-portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「診所文件」下的核准狀態，了解下一步操作。
+portal-linkedApprovalIssue = 裝置已連結。請查看「安全性」的「已連線的診所」下的核准狀態，了解下一步操作。
 
 portal-retryApproval = 重試已儲存的核准請求
 
@@ -2001,6 +2003,7 @@ interface-AnonymizePreview-placeholder-manual = 已移除
 interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之後 { $days } 天
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = 其他寫法 { $n }
 
 interface-AnonymizePreview-pasteTitle = 放回資訊
 
@@ -2065,7 +2068,7 @@ notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoNeedsNotices = 請先允許文件送達通知，才能開啟此選項。
 notifications-autoHelp = 經您同意，myCarlos 會在此應用程式開啟且保險庫解鎖時檢查已儲存並獲核准的診所連結，每次嘗試至少間隔兩分鐘。即使 Windows 封鎖通知，檢查仍可繼續。鎖定保險庫或關閉應用程式會停止後續檢查。
-notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「診所文件」並選擇「檢查新文件」。
+notifications-autoPaused = 需要手動檢查一次才能繼續自動檢查。請開啟「已連線的診所」並選擇「檢查新文件」。
 notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢查新文件」。
 noticesStep-title = 來自診所的通知
 noticesStep-intro = 您的診所已連結。myCarlos 可以在新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
@@ -2130,3 +2133,62 @@ interface-received-confirmTitleMany = 要將 { $count } 份文件匯入「與我
 interface-received-confirmBody = 在您選擇「匯入」之前不會新增任何內容。取消不會留下任何內容。
 
 interface-received-import = 匯入
+
+interface-video-name = 影片，{ $date }，{ $time }.mp4
+interface-RecordDialog-recordAVideo = 錄製影片
+interface-RecordDialog-unavailable = 此裝置無法錄製影片。
+interface-RecordDialog-why = 為什麼？
+interface-RecordDialog-startingTheCameraAndMicrophone = 正在啟動相機和麥克風…
+interface-RecordDialog-theVideoIsRecordedWithSound = 影片會連同聲音一起錄製，附近的人聲也可能被錄入。只有您可以開啟它。
+interface-RecordDialog-yourPhoneAsksOnce = 手機會詢問一次 myCarlos 是否可以使用相機和麥克風。它們只在錄製時開啟，停止錄製、關閉此視窗或 myCarlos 鎖定時會關閉。
+interface-RecordDialog-theCameraAndMicrophoneAreOn = 相機和麥克風只在錄製時開啟，停止錄製、關閉此視窗或 myCarlos 鎖定時會關閉。
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = 相機和麥克風已開啟，但在您選擇「開始錄製」之前不會錄製任何內容。
+interface-RecordDialog-pictureQuality = 畫質
+interface-RecordDialog-standard = 標準（720p）
+interface-RecordDialog-high = 高（1080p）
+interface-RecordDialog-aboutStandardPerHour = 每小時約 1.1 GB
+interface-RecordDialog-aboutHighPerHour = 每小時約 2.5 至 4 GB
+interface-RecordDialog-useTheCameraAndMicrophone = 使用相機和麥克風
+interface-RecordDialog-startRecording = 開始錄製
+interface-RecordDialog-recording = 正在錄製
+interface-RecordDialog-paused = 已暫停
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = 已暫停。相機和麥克風仍處於開啟狀態。
+interface-RecordDialog-recorded = 已錄製 { $time }
+interface-RecordDialog-recordingAt = 正在以 { $height }p 錄製
+interface-RecordDialog-pauseRecording = 暫停錄製
+interface-RecordDialog-resumeRecording = 繼續錄製
+interface-RecordDialog-stopAndSave = 停止並儲存
+interface-RecordDialog-stopAndSaveTheVideo = 停止並儲存影片？
+interface-RecordDialog-keepRecording = 繼續錄製
+interface-RecordDialog-savingTheVideo = 正在儲存影片…
+interface-RecordDialog-recordingPaused = 錄製已暫停。
+interface-RecordDialog-recordingResumed = 錄製已繼續。
+interface-RecordDialog-thisDeviceCannotRecordMp4 = 此裝置無法以 myCarlos 能儲存的格式錄製影片。
+interface-RecordDialog-videoNeedsBoth = 影片需要同時使用相機和麥克風。
+interface-RecordDialog-nothingWasRecorded = 沒有錄到任何內容，因此未儲存影片。
+interface-RecordDialog-videoSaved = 影片已儲存：{ $name }
+interface-RecordDialog-videoSavedStopped = 錄製已停止，因為裝置回報了問題。已錄製的內容已儲存：{ $name }
+interface-RecordDialog-videoSavedHidden = 錄製已停止，因為 myCarlos 被隱藏。已錄製的內容已儲存：{ $name }
+interface-RecordDialog-videoSavedSlow = 錄製已停止，因為影片無法足夠快地儲存。已錄製的內容已儲存：{ $name }
+interface-VideoViewer-video = 影片
+interface-VideoViewer-player = 影片播放器：{ $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = 無法播放此影片。
+interface-VideoViewer-keys = 空白鍵播放或暫停。左右方向鍵快退或快進 { $seconds } 秒。上下方向鍵調整音量。M 鍵靜音。
+interface-VideoViewer-playVideo = 播放影片
+interface-VideoHelp-title = 為什麼我無法在此錄製影片？
+interface-VideoHelp-engine = 錄製影片需要此裝置內建的網頁引擎能夠錄製含聲音的 MP4 影片，而此裝置的引擎不支援。
+interface-VideoHelp-systems = 在 Windows 上，N 和 KN 版本在加入 Microsoft 媒體功能套件之前不含媒體功能。在 Linux 上，myCarlos 需要套件 gstreamer1.0-plugins-bad 和 gstreamer1.0-plugins-ugly 中的 GStreamer 外掛程式。Android 7 或更早版本的手機，以及 iOS 14.5 之前的 iPhone，無法在應用程式中錄製 MP4 影片。
+interface-VideoHelp-restWorks = 相片和文件照常使用。較新的系統更新可能會加入影片錄製功能。
+interface-RecordingRecovery-closed = myCarlos 在您錄製時關閉了。要保留已儲存的影片嗎？
+interface-RecordingRecovery-closedPaused = myCarlos 在錄製暫停時關閉了。要保留已儲存的影片嗎？
+interface-RecordingRecovery-name = 錄製：{ $name }
+interface-RecordingRecovery-askLater = 稍後再問
+interface-RecordingRecovery-delete = 刪除
+interface-RecordingRecovery-keep = 保留影片
+interface-RecordingRecovery-kept = 已保留影片：{ $name }
+interface-RecordingRecovery-nothingToKeep = 沒有儲存任何完整的內容，因此沒有可保留的影片。
+interface-RecordingRecovery-deleted = 未完成的錄製已刪除。
+interface-RecordingRecovery-deleteSure = 要刪除此錄製嗎？此操作無法復原。
+interface-RecordingRecovery-savedLocked = myCarlos 在您錄製時鎖定了。影片已儲存：{ $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos 在錄製暫停時鎖定了。影片已儲存：{ $name }
+interface-RecordDialog-videoSavedFailed = 錄製已停止，因為其中一部分無法儲存。先前已儲存的內容已保留：{ $name }
