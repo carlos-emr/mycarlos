@@ -603,6 +603,38 @@ describe("each bridge method invokes its native command with its arguments", () 
     expect(invoke).toHaveBeenCalledTimes(1);
   });
 
+  // Methods with a test of their own below (or in vaultProgressListen.test.ts), because they do more
+  // than send one command: a new bridge method that is in neither place fails the next test.
+  const testedBelow = new Set([
+    "platform",
+    "videoAppend",
+    "videoOpen",
+    "savePhoto",
+    "viewPage",
+    "cancelView",
+    "readAndroidPdf",
+    "aiSummarize",
+    "onAiAnswerStarted",
+    "onVaultLocked",
+    "onTrayWaiting",
+  ]);
+
+  it("has a row for every bridge method, or names the test that covers it", () => {
+    const rowed = new Set(table.map(([label]) => label.split(" ")[0]));
+    const methods = Object.entries(createVaultBridge())
+      .filter(([, value]) => typeof value === "function")
+      .map(([name]) => name);
+    expect(methods.length).toBeGreaterThan(85);
+    const bare = methods.filter(
+      (name) => !rowed.has(name) && !testedBelow.has(name),
+    );
+    expect(bare).toEqual([]);
+    // And no row or exception names a method the bridge no longer has.
+    const have = new Set(methods);
+    expect([...rowed].filter((name) => !have.has(name))).toEqual([]);
+    expect([...testedBelow].filter((name) => !have.has(name))).toEqual([]);
+  });
+
   it("reports the platform the native side names", async () => {
     invoke.mockResolvedValue({ platform: "android" });
     await expect(full().platform()).resolves.toBe("android");
@@ -824,13 +856,11 @@ describe("native events the screen listens for", () => {
         seen,
       );
       expect(listen.mock.calls[0][0]).toBe(name);
-      await Promise.resolve();
+      await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
       handler({ payload });
       expect(seen).toHaveBeenCalledWith(payload);
       stop();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(unlisten).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(unlisten).toHaveBeenCalledOnce());
     },
   );
 
@@ -845,7 +875,7 @@ describe("native events the screen listens for", () => {
     const seen = vi.fn();
     full().onTrayWaiting(seen);
     expect(listen.mock.calls[0][0]).toBe("tray-waiting");
-    await Promise.resolve();
+    await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
     handler({ payload: true });
     handler({ payload: "yes" });
     handler({ payload: false });
@@ -871,7 +901,7 @@ describe("small helpers", () => {
 });
 
 describe("the commands the renderer invokes are the ones the native side registers", () => {
-  // Every `invoke("name")` in the renderer's source, tests excluded.
+  // The renderer's source, tests excluded.
   const sources = import.meta.glob(
     ["./**/*.{ts,tsx}", "!./**/*.test.{ts,tsx}", "!./test/**"],
     {
@@ -880,24 +910,48 @@ describe("the commands the renderer invokes are the ones the native side registe
       eager: true,
     },
   ) as Record<string, string>;
+  // `invoke("name"` and `invoke<T>("name"`: the command is written out.
+  const literalSite = /\binvoke(?:<[^>(]*>)?\(\s*"([a-z_0-9]+)"/g;
+  // `invoke(command, ...)`: the command is a variable, named at the call to its caller.
+  const variableSite = /\binvoke(?:<[^>(]*>)?\(\s*([^"\s])/g;
   const used = new Map<string, Set<string>>();
+  const variableSites = new Map<string, number>();
   for (const [file, text] of Object.entries(sources)) {
-    for (const found of text.matchAll(
-      /\binvoke(?:<[^>(]*>)?\(\s*"([a-z_0-9]+)"/g,
-    )) {
+    for (const found of text.matchAll(literalSite)) {
       if (!used.has(found[1])) used.set(found[1], new Set());
       used.get(found[1])!.add(file);
     }
+    for (const _ of text.matchAll(variableSite))
+      variableSites.set(file, (variableSites.get(file) ?? 0) + 1);
   }
-  // The names in build.rs's command list.
+  // The names in build.rs's command list, and only that list (`AppManifest::new().commands(&[...])`):
+  // the other quoted strings in the file are not commands.
+  const list =
+    /AppManifest::new\(\)\s*\.commands\(\s*&\[([\s\S]*?)\]\s*\)/.exec(
+      buildScript,
+    );
   const registered = new Set(
-    [...buildScript.matchAll(/"([a-z][a-z_0-9]+)"/g)].map((found) => found[1]),
+    [...(list?.[1] ?? "").matchAll(/"([a-z][a-z_0-9]+)"/g)].map(
+      (found) => found[1],
+    ),
   );
+  // The screens that pass the command as a variable. Their callers write the names as strings next
+  // to a request of that kind, and those are checked too; a new file with a variable site fails the
+  // exact pin below, so it must be added here and have its names checked.
+  const VARIABLE_SITES: Record<string, number> = {
+    "./native/AiModelSetting.tsx": 3,
+    "./native/BackgroundSetting.tsx": 1,
+    "./native/NotificationSetting.tsx": 1,
+  };
 
-  it("finds the renderer's commands (a guard against the scan going quiet)", () => {
-    expect(used.size).toBeGreaterThan(60);
+  it("finds the renderer's commands and build.rs's list (a guard against the scan going quiet)", () => {
+    expect(list).not.toBeNull();
+    expect(used.size).toBeGreaterThan(90);
+    expect(registered.size).toBeGreaterThan(100);
     expect(used.has("vault_unlock")).toBe(true);
     expect(registered.has("vault_unlock")).toBe(true);
+    // Strings in build.rs that are not commands are not read as registered.
+    expect(registered.has("android")).toBe(false);
   });
 
   it("registers every command the renderer invokes", () => {
@@ -905,5 +959,18 @@ describe("the commands the renderer invokes are the ones the native side registe
       .filter(([name]) => !registered.has(name))
       .map(([name, files]) => `${name} (${[...files].join(", ")})`);
     expect(missing).toEqual([]);
+  });
+
+  it("knows every place that invokes a command held in a variable, and registers the names it is given", () => {
+    expect(Object.fromEntries(variableSites)).toEqual(VARIABLE_SITES);
+    // Their callers write the command as a snake_case string; each one must be registered.
+    const names = new Set<string>();
+    for (const file of Object.keys(VARIABLE_SITES)) {
+      for (const found of sources[file].matchAll(/"([a-z]+(?:_[a-z0-9]+)+)"/g))
+        names.add(found[1]);
+    }
+    const unknown = [...names].filter((name) => !registered.has(name));
+    expect(unknown).toEqual([]);
+    expect(names.size).toBeGreaterThan(6);
   });
 });
