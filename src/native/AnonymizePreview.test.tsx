@@ -70,6 +70,7 @@ function renderPreview({
       _pickId: string,
       _ticket: string,
       _text: string,
+      _kept?: { start: number; end: number }[],
     ): Promise<TextSaveOutcome> => ({
       saved: true,
       hits: [],
@@ -80,7 +81,11 @@ function renderPreview({
   // The native copy: the same file a save writes, here "FAKE header line", a blank line, the
   // text and a newline, or a refusal.
   copyText = vi.fn(
-    async (_ticket: string, text: string): Promise<TextCopyOutcome> => ({
+    async (
+      _ticket: string,
+      text: string,
+      _kept?: { start: number; end: number }[],
+    ): Promise<TextCopyOutcome> => ({
       approved: `FAKE header line\n\n${text}\n`,
       hits: [],
     }),
@@ -313,7 +318,12 @@ describe("the anonymize preview (#72 part B)", () => {
     // Native code finds something inside a date placeholder: the whole
     // placeholder goes.
     const saveText = vi.fn(
-      async (_pickId: string, _ticket: string, text: string) => {
+      async (
+        _pickId: string,
+        _ticket: string,
+        text: string,
+        _kept?: { start: number; end: number }[],
+      ) => {
         const at = text.indexOf("[DATE 1]");
         return at >= 0
           ? { saved: false, hits: [{ start: at + 1, end: at + 3 }] }
@@ -632,10 +642,16 @@ describe("the anonymize preview (#72 part B)", () => {
     });
     // The check finds "Ward" (offsets in the shown text) still standing.
     const { copyText } = renderPreview({
-      copyText: vi.fn(async (_ticket: string, text: string) => {
-        const at = text.indexOf("ward");
-        return { approved: null, hits: [{ start: at, end: at + 4 }] };
-      }),
+      copyText: vi.fn(
+        async (
+          _ticket: string,
+          text: string,
+          _kept?: { start: number; end: number }[],
+        ) => {
+          const at = text.indexOf("ward");
+          return { approved: null, hits: [{ start: at, end: at + 4 }] };
+        },
+      ),
     });
     await screen.findByRole("region", {
       name: humanText("The text that will be saved"),
