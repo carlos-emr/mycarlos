@@ -17,6 +17,9 @@ mod document_notification_windows;
 pub mod document_notifications;
 // The platform push hooks (one per platform, each with its own device test) and the Preferences
 // choice will call this; until then only the reconcile after opening the vault uses it.
+// Its tests need the Linux memfd and /proc, so they run on the Linux host only.
+#[cfg(any(target_os = "android", all(test, target_os = "linux")))]
+mod android_pdf;
 #[cfg_attr(not(test), allow(dead_code))]
 mod document_push;
 mod history;
@@ -539,6 +542,10 @@ impl From<VaultError> for PublicText {
             VaultError::PdfTooLarge => Self {
                 code: "pdf_too_large",
                 message_key: "native.error.30",
+            },
+            VaultError::PdfMobileTooLarge => Self {
+                code: "pdf_mobile_too_large",
+                message_key: "reader.android.tooLarge",
             },
             VaultError::PdfViewFailed => Self {
                 code: "pdf_view_failed",
@@ -2966,19 +2973,23 @@ fn after_open(store: &Arc<VaultStore>) {
 
 #[tauri::command]
 async fn vault_lock(
+    app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
     let store = store.pin();
     stop_work_for_lock(&picks);
     let picks = Arc::clone(picks.inner());
-    run_blocking(store.arc(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         stop_work_for_lock(&picks);
         Ok(())
     })
-    .await
+    .await;
+    // Again once locked: a reader still being opened stops too.
+    cancel_native_pdf(&app);
+    result
 }
 
 /// What stops with a lock, whichever way the vault locks (the command, the idle deadline, and a
@@ -4705,8 +4716,174 @@ async fn vault_view_page(
 
 /// Stops any page being drawn: the reader closed.
 #[tauri::command]
-fn vault_view_cancel() {
+fn vault_view_cancel(app: tauri::AppHandle) {
     pdf_view::cancel_views();
+    cancel_native_pdf(&app);
+}
+
+/// Cancels both the Android native reader and an older open still waiting to reach it.
+fn cancel_native_pdf(_app: &tauri::AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        let generation = android_pdf::GATE.next();
+        let app = _app.clone();
+        tauri::async_runtime::spawn(async move {
+            tauri_plugin_android_pdf::close(&app, generation).await;
+        });
+    }
+}
+
+/// The words the Android reader shows and speaks, from the page's own translations: the plugin has
+/// none of its own. Short, with no control characters.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AndroidPdfLabels {
+    close: String,
+    previous: String,
+    next: String,
+    zoom_in: String,
+    zoom_out: String,
+    /// "Page {page} of {total}, picture of the letter": the placeholders are filled in natively.
+    page: String,
+    /// "Page {page} of {total}".
+    page_status: String,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl AndroidPdfLabels {
+    fn valid(&self) -> bool {
+        [
+            &self.close,
+            &self.previous,
+            &self.next,
+            &self.zoom_in,
+            &self.zoom_out,
+            &self.page,
+            &self.page_status,
+        ]
+        .into_iter()
+        .all(|label| {
+            !label.is_empty() && label.len() <= 160 && !label.chars().any(char::is_control)
+        })
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AndroidPdfRequest {
+    record_id: Uuid,
+    labels: AndroidPdfLabels,
+}
+
+/// Android uses a separate, bridge-free native PdfRenderer view, never the app webview. The bytes
+/// go from the vault into a sealed in-memory file and nowhere else (`android_pdf.rs`).
+#[tauri::command]
+async fn vault_read_android_pdf(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    request: AndroidPdfRequest,
+    activity: tauri::ipc::Channel<()>,
+) -> CommandResult<()> {
+    #[cfg(target_os = "android")]
+    {
+        let store = store.pin();
+        if !request.labels.valid() {
+            return Err(VaultError::Invalid.into());
+        }
+        let generation = android_pdf::GATE.next();
+        // The plugin's lifecycle epoch changes on backgrounding even when no reader is visible
+        // yet, so returning to the app cannot revive an export that was already under way.
+        let epoch = tauri_plugin_android_pdf::begin(&app)
+            .await
+            .ok_or_else(|| PublicError::from(VaultError::Cancelled))?;
+        let (document, title) = run_blocking(store.arc(), move |store| {
+            if !android_pdf::GATE.current(generation) {
+                return Err(VaultError::Cancelled);
+            }
+            android_pdf::prepare(store, request.record_id)
+        })
+        .await?;
+        if !android_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        // The descriptor stays ours until the reader has closed: the plugin duplicates it.
+        let memfd = match android_pdf::sealed_memfd(&android_pdf::Linux, &document) {
+            Ok(fd) => fd,
+            // The system refuses a memfd: no file is made instead. A recoverable message.
+            Err(_) => return Err(VaultError::PdfViewUnavailable.into()),
+        };
+        drop(document);
+        let activity_store = Arc::clone(store.arc());
+        let activity_app = app.clone();
+        let renderer_activity = activity;
+        #[derive(Deserialize)]
+        struct ReaderInput {
+            event: String,
+        }
+        let reader_activity = android_pdf::ActivityGate::new(generation);
+        let activity = tauri::ipc::Channel::<()>::new(move |message| {
+            let Ok(input) = message.deserialize::<ReaderInput>() else {
+                return Ok(());
+            };
+            if reader_activity.accepts(&android_pdf::GATE, &input.event) {
+                if activity_store.idle().touch_before_deadline(Instant::now()) {
+                    let _ = renderer_activity.send(());
+                } else {
+                    cancel_native_pdf(&activity_app);
+                }
+            }
+            Ok(())
+        });
+        use std::os::fd::AsRawFd;
+        let shown = tauri_plugin_android_pdf::open(
+            &app,
+            tauri_plugin_android_pdf::Document {
+                generation,
+                epoch,
+                fd: memfd.as_raw_fd(),
+                size: memfd_size(&memfd),
+                title: &title,
+                labels: tauri_plugin_android_pdf::Labels {
+                    close: &request.labels.close,
+                    previous: &request.labels.previous,
+                    next: &request.labels.next,
+                    zoom_in: &request.labels.zoom_in,
+                    zoom_out: &request.labels.zoom_out,
+                    page: &request.labels.page,
+                    page_status: &request.labels.page_status,
+                },
+                activity,
+            },
+        )
+        .await;
+        drop(memfd);
+        if !android_pdf::GATE.current(generation) {
+            return Err(VaultError::Cancelled.into());
+        }
+        if !shown {
+            return Err(VaultError::PdfViewFailed.into());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, store, request.record_id, request.labels, activity);
+        Err(VaultError::PdfViewUnavailable.into())
+    }
+}
+
+#[cfg(target_os = "android")]
+fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
+    use std::os::fd::AsRawFd;
+    // SAFETY: fstat on a descriptor this function borrows for the call.
+    let mut stat: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::fstat(fd.as_raw_fd(), &mut stat) } == 0 {
+        stat.st_size as u64
+    } else {
+        0
+    }
 }
 
 /// Where a quoted span of a page's text is on the page picture (#292).
@@ -5934,7 +6111,10 @@ fn production_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(navigation_guard())
@@ -6092,12 +6272,15 @@ pub fn run() {
             }
             let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
+            let idle_app = app.handle().clone();
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
                     // The vault the screen is on at this tick, not the one at start-up.
-                    lock_if_idle(vaults.arc(), &picks, Instant::now());
+                    if lock_if_idle(vaults.arc(), &picks, Instant::now()) {
+                        cancel_native_pdf(&idle_app);
+                    }
                 })?;
             Ok(())
         })
@@ -6170,6 +6353,7 @@ pub fn run() {
             vault_move_to_person,
             vault_view_page,
             vault_view_cancel,
+            vault_read_android_pdf,
             vault_page_boxes,
             vault_document_text,
             vault_document_text_cancel,

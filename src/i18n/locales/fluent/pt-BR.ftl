@@ -2344,6 +2344,27 @@ personDetails-previousRemove = Remover nome completo anterior { $number }
 personDetails-previousAdd = Adicionar nome completo anterior
 personDetails-previousInvalid = Use até 16 nomes diferentes e não vazios, com até 120 caracteres cada, sem caracteres de controle.
 
+reader-android-opening = Abrindo o documento…
+
+reader-android-failed = O myCarlos não conseguiu mostrar este documento. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-tooLarge = Este PDF tem mais de 20 MB. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-unavailable = Este dispositivo não permite que o myCarlos abra documentos aqui. Salve uma cópia para lê-lo em outro aplicativo.
+
+reader-android-page = Página { $page } de { $total }, imagem da carta
+
+reader-android-pageStatus = Página { $page } de { $total }
+reader-android-pageFailed = Não foi possível mostrar a página { $page } de { $total }.
+
+reader-android-previous = Página anterior
+
+reader-android-next = Próxima página
+
+reader-android-zoomIn = Aumentar o zoom
+
+reader-android-zoomOut = Diminuir o zoom
+
 interface-video-name = Vídeo, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Gravar um vídeo
 interface-RecordDialog-unavailable = A gravação de vídeo não está disponível neste dispositivo.

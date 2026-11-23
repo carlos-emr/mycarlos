@@ -364,6 +364,9 @@ pub enum VaultError {
     PdfUnlockNoSandbox,
     #[error("the locked document is too large to open")]
     PdfTooLarge,
+    #[error("the document is too large for the phone reader")]
+    #[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+    PdfMobileTooLarge,
     #[error("the document could not be shown")]
     PdfViewFailed,
     #[error("documents cannot be shown on this device yet")]

@@ -2309,6 +2309,27 @@ personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
 
+reader-android-opening = Opening document…
+
+reader-android-failed = myCarlos could not show this document. Save a copy to read it in another app.
+
+reader-android-tooLarge = This PDF is larger than 20 MB. Save a copy to read it in another app.
+
+reader-android-unavailable = This device does not let myCarlos open documents here. Save a copy to read it in another app.
+
+reader-android-page = Page { $page } of { $total }, picture of the letter
+
+reader-android-pageStatus = Page { $page } of { $total }
+reader-android-pageFailed = Page { $page } of { $total } cannot be shown.
+
+reader-android-previous = Previous page
+
+reader-android-next = Next page
+
+reader-android-zoomIn = Zoom in
+
+reader-android-zoomOut = Zoom out
+
 interface-video-name = Video, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Record a video
 interface-RecordDialog-unavailable = Video recording isn't available on this device.

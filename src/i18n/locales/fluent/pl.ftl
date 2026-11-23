@@ -2390,6 +2390,27 @@ personDetails-previousRemove = Usuń poprzednie pełne imię i nazwisko { $numbe
 personDetails-previousAdd = Dodaj poprzednie pełne imię i nazwisko
 personDetails-previousInvalid = Wpisz najwyżej 16 różnych, niepustych pozycji, każdą do 120 znaków, bez znaków sterujących.
 
+reader-android-opening = Otwieranie dokumentu…
+
+reader-android-failed = myCarlos nie mógł wyświetlić tego dokumentu. Zapisz kopię, aby przeczytać ją w innej aplikacji.
+
+reader-android-tooLarge = Ten plik PDF ma ponad 20 MB. Zapisz kopię, aby przeczytać ją w innej aplikacji.
+
+reader-android-unavailable = To urządzenie nie pozwala myCarlos otwierać tu dokumentów. Zapisz kopię, aby przeczytać ją w innej aplikacji.
+
+reader-android-page = Strona { $page } z { $total }, obraz listu
+
+reader-android-pageStatus = Strona { $page } z { $total }
+reader-android-pageFailed = Nie można wyświetlić strony { $page } z { $total }.
+
+reader-android-previous = Poprzednia strona
+
+reader-android-next = Następna strona
+
+reader-android-zoomIn = Powiększ
+
+reader-android-zoomOut = Pomniejsz
+
 interface-video-name = Film, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Nagraj film
 interface-RecordDialog-unavailable = Nagrywanie filmów nie jest dostępne na tym urządzeniu.
