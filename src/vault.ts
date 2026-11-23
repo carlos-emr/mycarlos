@@ -769,6 +769,15 @@ export interface VaultBridge {
   onAiAnswerStarted?(
     handler: (answer: { answerId: string; limitMs: number }) => void,
   ): () => void;
+  /** Calls `handler` when the vault locked natively without the screen
+   * asking: the window was closed to the tray or Quit was chosen
+   * (`"closed"`), or the native idle lock fell due (`"idle"`). The vault is
+   * already locked; the screen lets go of everything it shows at once, as
+   * its own lock does (#206). Computers only. Returns the way to stop
+   * listening. */
+  onVaultLocked?(
+    handler: (locked: { by: "closed" | "idle" }) => void,
+  ): () => void;
   /** The whole text of a stored PDF for the AI helper's preview (#72):
    * every page's readable text, read once by the PDF helper on this device.
    * Computers only. `password` is the document's own, when it is locked
@@ -1404,6 +1413,12 @@ export function createVaultBridge(): VaultBridge {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",
         (event) => handler(event.payload),
+      );
+      return () => void stop.then((unlisten) => unlisten());
+    },
+    onVaultLocked: (handler) => {
+      const stop = listen<{ by: "closed" | "idle" }>("vault-locked", (event) =>
+        handler(event.payload),
       );
       return () => void stop.then((unlisten) => unlisten());
     },

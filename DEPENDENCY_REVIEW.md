@@ -303,6 +303,21 @@ executable to sign and sandbox, and a downloaded binary to pin (RUNTIME-PLAN, op
 The lockfile grows from 628 to 644 packages, all MIT, Apache-2.0, BSD-3-Clause or ISC, which
 are compatible with AGPL-3.0-or-later.
 
+## Added for keeping myCarlos running in the background (#206)
+
+**The tray icon.** Tauri's `tray-icon` feature brings `tray-icon` 0.24.2 (MIT OR Apache-2.0)
+and, on Linux only, `libappindicator` and `libappindicator-sys` 0.9.0 (Apache-2.0 OR MIT), which
+load the desktop's AppIndicator library at run time. Menus already came with Tauri (`muda`).
+
+**One myCarlos per user, Windows only: #133's transport, not its own.** This draft adds no dependency
+for it. A second launch (the Start menu, or "Open with") is handed to the running myCarlos by the
+reviewed, vendored and patched `tauri-plugin-single-instance` of #133 (same user, same executable,
+bounded framing; see that draft's `vendor/README.md`), which must merge first. This draft only puts
+its own rule in that callback: a start from the login entry (`--background`) that finds myCarlos
+already running changes nothing on screen, and any other second launch brings the running window
+forward (still locked if it was locked). macOS keeps one copy of an app by itself; Linux is not
+covered. The lockfile follows #133.
+
 ## Native remediation
 
 ### Mobile live reload restored

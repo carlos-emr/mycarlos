@@ -2294,6 +2294,18 @@ noticesStep-later = Puede cambiarlos cuando quiera en { $settings }, en { $prefe
 noticesStep-done = Listo
 noticesStep-notNow = Ahora no
 
+background-title = Ejecución en segundo plano
+background-keepRunning = Mantener myCarlos en segundo plano al cerrar su ventana
+background-keepRunningHelp = Al cerrar la ventana, myCarlos puede seguir en segundo plano con un icono en el área de notificaciones (en la barra de menús, en un Mac). La bóveda se bloquea al cerrar la ventana y permanece bloqueada hasta que abra myCarlos y la desbloquee. Elija Salir en el icono para cerrar myCarlos por completo.
+background-startAtLogin = Iniciar myCarlos al iniciar sesión en este equipo
+background-startAtLoginHelp = myCarlos se inicia cuando inicia sesión en este equipo. Con la opción anterior activada, se inicia discretamente en segundo plano y con la bóveda bloqueada. Con ella desactivada, se abre su ventana.
+background-paused = Mientras la bóveda está bloqueada, myCarlos no puede buscar documentos nuevos de la clínica. Desbloquéela para buscar.
+background-unavailable = Un icono en segundo plano no está disponible en este equipo. myCarlos se cierra por completo al cerrar su ventana.
+background-error = No se pudo cambiar este ajuste. Sigue como estaba.
+native-tray-open = Abrir myCarlos
+native-tray-quit = Salir de myCarlos
+native-tray-tooltip = myCarlos
+
 ai-summary-again = Resumir de nuevo
 
 ai-keepFailed = myCarlos no pudo guardar esta respuesta con el documento. Se sigue mostrando aquí.
