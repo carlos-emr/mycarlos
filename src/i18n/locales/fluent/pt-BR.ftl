@@ -56,7 +56,7 @@ comfort-continue = Continuar
 
 comfort-intro = Escolha o que for melhor para você antes de configurar. Cada escolha vale na hora.
 
-comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } em { $preferences } e { $autoLock } em { $security }.
+comfort-later = Você pode mudar isso a qualquer momento em { $settings }: { $textSize } e { $appearance } em { $preferences }, e { $autoLock } em { $security }.
 
 comfort-sample = É assim que o texto aparece no myCarlos. Pressione − ou + até ficar fácil de ler.
 
@@ -1204,8 +1204,6 @@ security-backup-title = Cópia de segurança criptografada
 
 security-copies-body = As exportações e capturas de tela ficam fora da proteção do cofre. Ocultar um documento no myCarlos não apaga essas cópias nem o prontuário médico original da clínica.
 
-security-copies-title = Cópias legíveis e capturas de tela
-
 security-devBuild-body = Use apenas arquivos fictícios.
 
 security-devBuild-title = Versão de desenvolvimento.
@@ -1332,31 +1330,31 @@ sidebar-settings = Configurações
 
 sidebar-storage = Cofre local criptografado
 
-textSize-announce = Tamanho do texto { $percent }
+textSize-announce = Zoom do aplicativo { $percent }
 
-textSize-between = { $typed }% fica entre dois tamanhos, então o tamanho é { $size }.
+textSize-between = { $typed }% fica entre dois níveis de zoom, então o zoom é { $size }.
 
-textSize-box = Tamanho do texto em porcentagem
+textSize-box = Zoom do aplicativo em porcentagem
 
 textSize-followsDevice = Aqui, o tamanho do texto segue o seu dispositivo: o ajuste de tamanho do texto dele ou o zoom do navegador.
 
-textSize-help = Aumenta ou diminui tudo no myCarlos, de { $min }% a { $max }%. O myCarlos lembra o tamanho neste dispositivo. Você também pode manter a tecla { $modifier } pressionada e pressionar mais, menos ou 0.
+textSize-help = Aumenta ou diminui o texto, os botões e outros itens no myCarlos, de { $min }% a { $max }%. O myCarlos lembra a sua configuração neste dispositivo. Use { $modifier } com + ou − para aumentar ou diminuir, ou { $modifier } com 0 para voltar a 100%.
 
 textSize-key-command = Comando
 
-textSize-larger = Texto maior
+textSize-larger = Aumentar zoom
 
-textSize-largest = O maior tamanho é { $max }%.
+textSize-largest = O maior zoom é { $max }%.
 
 textSize-notNumber = Digite um número de { $min } a { $max }.
 
-textSize-reset = Voltar ao tamanho normal
+textSize-reset = Voltar a 100%
 
-textSize-smaller = Texto menor
+textSize-smaller = Diminuir zoom
 
-textSize-smallest = O menor tamanho é { $min }%.
+textSize-smallest = O menor zoom é { $min }%.
 
-textSize-title = Tamanho do texto
+textSize-title = Zoom do aplicativo
 
 unlock-autoLock =
     { $count ->
@@ -1468,7 +1466,7 @@ portal-approvalCancelled = Esta solicitação de aprovação foi cancelada. Veri
 
 portal-approvalContact = A aprovação da clínica precisa ser verificada. Entre em contato com a clínica para saber os próximos passos.
 
-portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Documentos da clínica.
+portal-approvalExpired = Esta solicitação de aprovação expirou. Para pedir de novo para este dispositivo, acesse a página Segurança, seção Clínicas conectadas.
 
 portal-approvalMissing = Sua solicitação de aprovação salva não foi encontrada no portal. Envie novamente a solicitação salva.
 
@@ -1501,6 +1499,10 @@ portal-defaultDeviceName = myCarlos no { $platform }
 portal-deviceCode = Código do dispositivo
 
 portal-deviceName = Nome deste dispositivo
+
+portal-deviceLine = Dispositivo: { $device }
+
+portal-deviceLineLinked = Dispositivo: { $device }, vinculado em { $date }
 
 portal-deviceDetailsShow = Mostrar os detalhes do dispositivo
 
@@ -1564,7 +1566,7 @@ portal-serviceDate = Data do atendimento: { $date }
 
 portal-serviceDateLabel = Data do atendimento
 
-portal-title = Documentos da clínica
+portal-title = Clínicas conectadas
 
 rename-help-profile = Isso altera apenas o nome exibido da pasta. As pastas e os documentos da pessoa continuam onde estão.
 
@@ -1580,13 +1582,13 @@ rename-title-profile = Renomear a pasta da pessoa
 
 portal-connectConsent = Esta ação vincula este dispositivo e envia uma solicitação de aprovação. Sua clínica precisa aprovar o dispositivo antes que ele possa receber documentos.
 
-portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Documentos da clínica.
+portal-connected = Dispositivo vinculado. O status de aprovação do dispositivo aparece na página Segurança, seção Clínicas conectadas.
 
 portal-connecting = Conectando e solicitando a aprovação da clínica…
 
 portal-errorBusy = Há outra operação com a clínica em andamento. Aguarde a conclusão e tente novamente.
 
-portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Documentos da clínica, indica o que fazer em seguida.
+portal-linkedApprovalIssue = Dispositivo vinculado. O status da aprovação, na página Segurança, seção Clínicas conectadas, indica o que fazer em seguida.
 
 portal-retryApproval = Tentar novamente a solicitação de aprovação salva
 
@@ -2025,6 +2027,19 @@ ai-explain-ready = A explicação está pronta.
 ai-failed = O assistente de IA não conseguiu terminar. Tente de novo.
 
 ai-error-memory = Não há memória livre suficiente para o assistente de IA agora. Feche outros programas e tente de novo.
+ai-error-memoryNumbers = Não há memória livre suficiente para o assistente de IA agora. Ele precisa de cerca de { $needed } GB de memória livre; agora há { $free } GB. Feche outros programas e tente de novo.
+ai-error-memoryUnknown = Não há memória livre suficiente para o assistente de IA agora. Ele precisa de cerca de { $needed } GB de memória livre, e este computador não soube dizer quanta há livre. Feche outros programas e tente de novo.
+ai-speed-title = Velocidade neste computador
+ai-speed-note = Isto executa o assistente de IA uma vez sobre um texto inventado e curto, e exige bastante do processador por um ou dois minutos. Não envia nada a lugar nenhum nem usa nada seu. Você pode interromper a qualquer momento.
+ai-speed-button = Verificar a velocidade deste computador
+ai-speed-working = Verificando a velocidade…
+ai-speed-cancel = Interromper a verificação
+ai-speed-result = Medido neste computador: o assistente de IA lê cerca de { $read } palavras por segundo e escreve cerca de { $write }.
+ai-speed-cancelled = A verificação foi interrompida. Nada foi guardado.
+ai-speed-none = Ainda não verificada.
+ai-speed-failed = Não foi possível medir a velocidade. Tente de novo.
+ai-speed-estimate = Neste computador, isto pode levar até cerca de { $minutes } min.
+ai-speed-estimateLong = Neste computador, um documento tão longo pode não terminar no tempo dado ao assistente de IA.
 
 ai-error-busy = O modelo do assistente de IA está sendo adicionado ou removido. Tente de novo quando isso terminar.
 
@@ -2190,6 +2205,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = outra forma { $n }
 
 interface-AnonymizePreview-pasteTitle = Recolocar os dados
 
@@ -2254,7 +2270,7 @@ notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois q
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
 notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
 notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
-notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Documentos da clínica e escolha Verificar novos documentos.
+notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Clínicas conectadas e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
 noticesStep-title = Avisos da sua clínica
 noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.

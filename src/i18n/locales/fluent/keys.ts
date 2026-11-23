@@ -526,7 +526,6 @@ export const MESSAGE_KEYS = [
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -859,6 +858,19 @@ export const MESSAGE_KEYS = [
   "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
+  "ai.speed.title",
+  "ai.speed.note",
+  "ai.speed.button",
+  "ai.speed.working",
+  "ai.speed.cancel",
+  "ai.speed.result",
+  "ai.speed.cancelled",
+  "ai.speed.none",
+  "ai.speed.failed",
+  "ai.speed.estimate",
+  "ai.speed.estimateLong",
+  "ai.error.memoryNumbers",
+  "ai.error.memoryUnknown",
   "ai.error.busy",
   "ai.error.storage",
   "ai.summary.pagesMissing",
@@ -951,6 +963,7 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.footerNote",
   "interface.AnonymizePreview.note.daysAfter",
   "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.note.otherForm",
   "interface.AnonymizePreview.pasteTitle",
   "interface.AnonymizePreview.pasteHelp",
   "interface.AnonymizePreview.pasteLabel",
@@ -1124,6 +1137,8 @@ export const MESSAGE_KEYS = [
   "restore.leftOut",
   "security.backup.sizeCalculating",
   "interface.hidden.videoLeftOut",
+  "portal.deviceLine",
+  "portal.deviceLineLinked",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1759,7 +1774,6 @@ const FLUENT_IDS_BY_KEY = {
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
-  "security.copies.title": "security-copies-title",
   "security.devBuild.body": "security-devBuild-body",
   "security.devBuild.title": "security-devBuild-title",
   "security.encryption.body": "security-encryption-body",
@@ -2123,6 +2137,19 @@ const FLUENT_IDS_BY_KEY = {
   "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
+  "ai.speed.title": "ai-speed-title",
+  "ai.speed.note": "ai-speed-note",
+  "ai.speed.button": "ai-speed-button",
+  "ai.speed.working": "ai-speed-working",
+  "ai.speed.cancel": "ai-speed-cancel",
+  "ai.speed.result": "ai-speed-result",
+  "ai.speed.cancelled": "ai-speed-cancelled",
+  "ai.speed.none": "ai-speed-none",
+  "ai.speed.failed": "ai-speed-failed",
+  "ai.speed.estimate": "ai-speed-estimate",
+  "ai.speed.estimateLong": "ai-speed-estimateLong",
+  "ai.error.memoryNumbers": "ai-error-memoryNumbers",
+  "ai.error.memoryUnknown": "ai-error-memoryUnknown",
   "ai.error.busy": "ai-error-busy",
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
@@ -2265,6 +2292,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-note-daysAfter",
   "interface.AnonymizePreview.note.ageOver90":
     "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.note.otherForm":
+    "interface-AnonymizePreview-note-otherForm",
   "interface.AnonymizePreview.pasteTitle":
     "interface-AnonymizePreview-pasteTitle",
   "interface.AnonymizePreview.pasteHelp":
@@ -2485,6 +2514,8 @@ const FLUENT_IDS_BY_KEY = {
   "restore.leftOut": "restore-leftOut",
   "security.backup.sizeCalculating": "security-backup-sizeCalculating",
   "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
+  "portal.deviceLine": "portal-deviceLine",
+  "portal.deviceLineLinked": "portal-deviceLineLinked",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2527,6 +2558,7 @@ export interface MessageArgsByKey {
   "comfort.continue": undefined;
   "comfort.intro": undefined;
   "comfort.later": {
+    appearance: FluentArgument;
     autoLock: FluentArgument;
     preferences: FluentArgument;
     security: FluentArgument;
@@ -3082,7 +3114,6 @@ export interface MessageArgsByKey {
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
-  "security.copies.title": undefined;
   "security.devBuild.body": undefined;
   "security.devBuild.title": undefined;
   "security.encryption.body": undefined;
@@ -3446,6 +3477,19 @@ export interface MessageArgsByKey {
   "ai.explain.ready": undefined;
   "ai.failed": undefined;
   "ai.error.memory": undefined;
+  "ai.speed.title": undefined;
+  "ai.speed.note": undefined;
+  "ai.speed.button": undefined;
+  "ai.speed.working": undefined;
+  "ai.speed.cancel": undefined;
+  "ai.speed.result": { read: FluentArgument; write: FluentArgument };
+  "ai.speed.cancelled": undefined;
+  "ai.speed.none": undefined;
+  "ai.speed.failed": undefined;
+  "ai.speed.estimate": { minutes: FluentArgument };
+  "ai.speed.estimateLong": undefined;
+  "ai.error.memoryNumbers": { free: FluentArgument; needed: FluentArgument };
+  "ai.error.memoryUnknown": { needed: FluentArgument };
   "ai.error.busy": undefined;
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
@@ -3542,6 +3586,7 @@ export interface MessageArgsByKey {
     number: FluentArgument;
   };
   "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.note.otherForm": { n: FluentArgument };
   "interface.AnonymizePreview.pasteTitle": undefined;
   "interface.AnonymizePreview.pasteHelp": undefined;
   "interface.AnonymizePreview.pasteLabel": undefined;
@@ -3730,6 +3775,8 @@ export interface MessageArgsByKey {
   "restore.leftOut": undefined;
   "security.backup.sizeCalculating": undefined;
   "interface.hidden.videoLeftOut": undefined;
+  "portal.deviceLine": { device: FluentArgument };
+  "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

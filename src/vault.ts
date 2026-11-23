@@ -178,6 +178,9 @@ export interface PortalLinkSummary {
   id: string;
   portalBase: string;
   deviceName: string;
+  /** When the link was started, in milliseconds: the card shows the day, so that two cards for
+   * the same address differ (#160). Always sent by the app; optional only for older fixtures. */
+  linkedAtMs?: number;
   profileId: string | null;
   clinicName: string | null;
   fingerprints: string[];
@@ -731,6 +734,8 @@ export interface VaultBridge {
   ): Promise<ModelExplanation>;
   /** Stops the model's answer in flight, if any. */
   aiCancel(): Promise<void>;
+  /** What the speed check measured for the model in use on this computer (#305), or null. */
+  aiModelSpeed?(): Promise<unknown>;
   /** Calls `handler` with an answer's own time limit, in milliseconds, as
    * the model is asked it: the automatic lock waits that long at most for
    * it (D19). Returns the way to stop listening. */
@@ -818,6 +823,9 @@ export interface PublicError {
   /** How long to wait before the next try: after several wrong ones, or
    * when the clinic portal asked myCarlos to wait. */
   retryAfterMs?: number;
+  /** For an AI refusal for lack of memory (`aiMemory`, #305): what a start needs and what is
+   * free now, in bytes (no `availableBytes` when this computer could not say). */
+  memory?: { neededBytes: number; availableBytes?: number };
 }
 
 /** A box the patient typed in, named in the language in use ("the folder
@@ -1341,6 +1349,7 @@ export function createVaultBridge(): VaultBridge {
         request: { term, context, lang, ...(recordId ? { recordId } : {}) },
       }),
     aiCancel: () => invoke<void>("ai_cancel"),
+    aiModelSpeed: () => invoke<unknown>("ai_model_speed"),
     onAiAnswerStarted: (handler) => {
       const stop = listen<{ answerId: string; limitMs: number }>(
         "ai-answer-started",

@@ -24,7 +24,7 @@ export type FakePortal = "off" | "none" | "awaiting" | "approved";
 export interface FakeVaultOptions {
   /** The vault has a recovery key; without one, unlocking may offer one. */
   recoveryKey?: boolean;
-  /** Clinic documents in Security; "off" by default, as on a build without it. */
+  /** Connected clinics in Security; "off" by default, as on a build without it. */
   portal?: FakePortal;
   /** A third document, hidden by the patient, so Hidden has something to list. */
   hiddenDocument?: boolean;
@@ -180,6 +180,9 @@ export async function fakeVault(
               return "skipped";
             // No add or download running when the row opens (#275).
             case "ai_model_add_active":
+              return null;
+            // Nothing measured yet (the speed check, #305).
+            case "ai_model_speed":
               return null;
             case "vault_status":
               return status;

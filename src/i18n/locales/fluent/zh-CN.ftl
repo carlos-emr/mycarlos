@@ -56,7 +56,7 @@ comfort-continue = 继续
 
 comfort-intro = 请在设置前选择适合您的项目。每项设置会立即生效。
 
-comfort-later = 您随时可以在 { $settings } 中变更这些设置：在 { $preferences } 中调整 { $textSize }，并在 { $security } 中调整 { $autoLock }。
+comfort-later = 您随时可以在 { $settings } 中变更这些设置：在 { $preferences } 中调整 { $textSize } 和 { $appearance }，并在 { $security } 中调整 { $autoLock }。
 
 comfort-sample = 这是 myCarlos 中的文本外观。请按 − 或 +，调整到容易阅读的大小。
 
@@ -1064,8 +1064,6 @@ security-backup-title = 加密备份
 
 security-copies-body = 导出文件和屏幕截屏不受保险库保护。在 myCarlos 中隐藏文档不会删除这些副本或诊所的原始病历。
 
-security-copies-title = 可读副本和屏幕截屏
-
 security-devBuild-body = 仅使用合成文件。
 
 security-devBuild-title = 开发版本。
@@ -1182,31 +1180,31 @@ sidebar-settings = 设置
 
 sidebar-storage = 加密的本机保险库
 
-textSize-announce = 文本大小 { $percent }
+textSize-announce = 应用缩放 { $percent }
 
-textSize-between = { $typed }% 介于尺寸之间，因此调整为 { $size }。
+textSize-between = { $typed }% 介于缩放级别之间，因此调整为 { $size }。
 
-textSize-box = 文本大小百分比
+textSize-box = 应用缩放百分比
 
 textSize-followsDevice = 此处的文本大小会依照设备设置或浏览器缩放比例调整。
 
-textSize-help = 调整 myCarlos 中所有内容的大小，范围为 { $min }% 到 { $max }%。myCarlos 会记住这台设备上的设置。您也可以按住 { $modifier }，再按加号、减号或 0。
+textSize-help = 放大或缩小 myCarlos 中的文字、按钮和其他项目，范围为 { $min }% 到 { $max }%。myCarlos 会记住这台设备上的设置。按 { $modifier } 加 + 或 − 可缩放，按 { $modifier } 加 0 可恢复为 100%。
 
 textSize-key-command = Command
 
-textSize-larger = 放大文本
+textSize-larger = 放大
 
-textSize-largest = 最大尺寸为 { $max }%。
+textSize-largest = 最大缩放为 { $max }%。
 
 textSize-notNumber = 请输入 { $min } 到 { $max } 之间的数字。
 
-textSize-reset = 恢复正常大小
+textSize-reset = 恢复为 100%
 
-textSize-smaller = 缩小文本
+textSize-smaller = 缩小
 
-textSize-smallest = 最小尺寸为 { $min }%。
+textSize-smallest = 最小缩放为 { $min }%。
 
-textSize-title = 文本大小
+textSize-title = 应用缩放
 
 unlock-autoLock = 闲置 { $count } 分钟后，以及 myCarlos 隐藏时（例如缩到最小或移至背景），保险库就会锁定。
 
@@ -1308,7 +1306,7 @@ portal-approvalCancelled = 此批准请求已取消。请先检查最新状态�
 
 portal-approvalContact = 需要核实诊所的批准状态。请联系诊所了解后续步骤。
 
-portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「诊所文档」。
+portal-approvalExpired = 此批准请求已过期。若要为此设备再次申请，请前往「安全」中的「已连接的诊所」。
 
 portal-approvalMissing = 门户网站上找不到您已保存的批准请求。请重新发送已保存的请求。
 
@@ -1341,6 +1339,10 @@ portal-defaultDeviceName = { $platform } 上的 myCarlos
 portal-deviceCode = 设备代码
 
 portal-deviceName = 此设备的名称
+
+portal-deviceLine = 设备：{ $device }
+
+portal-deviceLineLinked = 设备：{ $device }，关联于 { $date }
 
 portal-deviceDetailsShow = 显示设备详情
 
@@ -1400,7 +1402,7 @@ portal-serviceDate = 服务日期：{ $date }
 
 portal-serviceDateLabel = 服务日期
 
-portal-title = 诊所文档
+portal-title = 已连接的诊所
 
 rename-help-profile = 这只会变更显示的文件夹名称。此人的文件夹和文档仍会留在原处。
 
@@ -1416,13 +1418,13 @@ rename-title-profile = 重命名此人的文件夹
 
 portal-connectConsent = 此操作会连接此设备并发送批准请求。诊所必须先批准此设备，设备才能接收文档。
 
-portal-connected = 设备已关联。可在「安全」的「诊所文档」下查看其批准状态。
+portal-connected = 设备已关联。可在「安全」的「已连接的诊所」下查看其批准状态。
 
 portal-connecting = 正在连接并申请诊所批准…
 
 portal-errorBusy = 另一项诊所操作正在进行。请等其完成后重试。
 
-portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「诊所文档」下的批准状态，了解下一步操作。
+portal-linkedApprovalIssue = 设备已关联。请查看「安全」的「已连接的诊所」下的批准状态，了解下一步操作。
 
 portal-retryApproval = 重试已保存的批准请求
 
@@ -1827,6 +1829,19 @@ ai-explain-ready = 解释已生成。
 ai-failed = AI 助手未能完成。请重试。
 
 ai-error-memory = 目前可用内存不足，AI 助手无法运行。请关闭其他程序后重试。
+ai-error-memoryNumbers = 目前可用内存不足，AI 助手无法运行。它需要约 { $needed } GB 可用内存，而现在只有 { $free } GB 可用。请关闭其他程序后重试。
+ai-error-memoryUnknown = 目前可用内存不足，AI 助手无法运行。它需要约 { $needed } GB 可用内存，而此电脑无法告知现有多少可用内存。请关闭其他程序后重试。
+ai-speed-title = 此电脑上的速度
+ai-speed-note = 这会在一小段虚构的文字上运行一次 AI 助手，并在一两分钟内较多占用处理器。不会向任何地方发送任何内容，也不会用到您的任何资料。您可以随时停止。
+ai-speed-button = 检查此电脑的速度
+ai-speed-working = 正在检查速度…
+ai-speed-cancel = 停止检查
+ai-speed-result = 在此电脑上测得：AI 助手每秒约读取 { $read } 个词，约写出 { $write } 个。
+ai-speed-cancelled = 检查已停止，未保存任何内容。
+ai-speed-none = 尚未检查。
+ai-speed-failed = 无法测出速度。请重试。
+ai-speed-estimate = 在此电脑上，这最多可能需要约 { $minutes } 分钟。
+ai-speed-estimateLong = 在此电脑上，这么长的文档可能无法在 AI 助手获得的时间内完成。
 
 ai-error-busy = 正在添加或移除 AI 助手的模型。请在完成后重试。
 
@@ -1988,6 +2003,7 @@ interface-AnonymizePreview-placeholder-manual = 已移除
 interface-AnonymizePreview-note-daysAfter = { $label } { $number } 之后 { $days } 天
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = 其他写法 { $n }
 
 interface-AnonymizePreview-pasteTitle = 放回信息
 
@@ -2052,7 +2068,7 @@ notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoNeedsNotices = 请先允许文档到达通知，才能开启此选项。
 notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
-notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“诊所文档”并选择“检查新文档”。
+notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“已连接的诊所”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
 noticesStep-title = 来自诊所的通知
 noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。

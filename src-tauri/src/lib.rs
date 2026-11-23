@@ -68,10 +68,14 @@ mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
 mod signed_pdf;
 mod signed_pdf_helper;
+mod speed_check;
 mod text_recheck;
 mod throttle;
 mod unicode_cleaning_table;
 mod vault;
+mod vault_registry;
+mod vault_slots;
+mod vault_source;
 #[cfg(windows)]
 mod windows_navigation;
 
@@ -126,6 +130,7 @@ use std::{
 };
 use tauri::{Manager, State, Url};
 use tauri_plugin_dialog::DialogExt;
+use vault_source::StoreHandle;
 // The plugin's message dialog is the confirmation off macOS (macOS has its own AppKit sheet).
 #[cfg(any(test, not(target_os = "macos")))]
 use tauri_plugin_dialog::MessageDialogResult;
@@ -160,6 +165,8 @@ struct PublicError {
     note_key: Option<&'static str>,
     /// How long to wait before the next try, after wrong ones.
     retry_after_ms: Option<u64>,
+    /// For an AI refusal for lack of memory: what the start needs and what is free (#305).
+    memory: Option<model_runtime::MemoryShortfall>,
 }
 
 // Keep the established IPC fields and omission rules; only user-facing text is formatted.
@@ -179,6 +186,8 @@ impl Serialize for PublicError {
             note_key: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             retry_after_ms: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            memory: Option<model_runtime::MemoryShortfall>,
         }
         let text = |key| {
             UiLocale::En
@@ -193,6 +202,7 @@ impl Serialize for PublicError {
             note: self.note_key.map(text),
             note_key: self.note_key,
             retry_after_ms: self.retry_after_ms,
+            memory: self.memory,
         }
         .serialize(serializer)
     }
@@ -206,6 +216,7 @@ impl From<ui_text::UiTextError> for PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -267,6 +278,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: Some(left_ms),
+            memory: None,
         }
     }
 
@@ -277,6 +289,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -306,6 +319,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 
@@ -316,6 +330,7 @@ impl PublicError {
             record_id: None,
             note_key: None,
             retry_after_ms: None,
+            memory: None,
         }
     }
 }
@@ -629,6 +644,7 @@ impl From<VaultError> for PublicError {
             record_id,
             note_key: None,
             retry_after_ms,
+            memory: None,
         }
     }
 }
@@ -1816,7 +1832,9 @@ fn ai_model_status(models: State<'_, Arc<local_model::Store>>) -> local_model::M
             model,
             capacity: Some(capacity),
         } => {
-            let card = model_runtime::app().runner().card_for(&model.sha256);
+            // The one place cards are read from (this run's, else the saved one), as the start
+            // and the settings read them.
+            let card = models.stored_card(&model.sha256);
             local_model::ModelStatus::Installed {
                 capacity: Some(model_limits::confirmed_capacity(capacity, card.as_ref())),
                 model,
@@ -1834,18 +1852,18 @@ fn ai_models(models: State<'_, Arc<local_model::Store>>) -> Vec<local_model::Mod
 }
 
 /// Each model's limits, for the AI helper settings (model limits): how much of a document it
-/// reads at a time, the file's size, and the free memory a start needs by today's rule. Once the
-/// helper has run a model in this session, its room follows the context the helper made, and
-/// the file's own claims (trained context, parameters) are given as such. Nothing here reads
+/// reads at a time, the file's size, and the free memory a start needs (today's rule, or the card's
+/// formula when that is more). Once the helper has run a model (in this run of the app or an
+/// earlier one of this build, whose card is saved), its room follows the context the helper made,
+/// and the file's own claims (trained context, parameters) are given as such. Nothing here reads
 /// the model file: the helper's checked card does (`model_limits`).
 #[tauri::command]
 fn ai_model_limits(models: State<'_, Arc<local_model::Store>>) -> Vec<model_limits::ModelLimits> {
-    let runner = model_runtime::app().runner();
     models
         .models()
         .into_iter()
         .map(|row| {
-            let card = runner.card_for(row.model.sha256);
+            let card = models.stored_card(row.model.sha256);
             model_limits::limits(
                 row.index,
                 &row.model,
@@ -1886,10 +1904,11 @@ async fn ai_model_use(
 /// is asked or written, nothing is loaded (`skipped`).
 #[tauri::command]
 async fn ai_model_check(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     request: ModelIndexRequest,
 ) -> Result<model_runtime::LoadCheck, ModelFailure> {
+    let store = store.pin();
     use model_runtime::LoadCheck;
     if !cfg!(desktop) {
         return Ok(LoadCheck::Skipped);
@@ -2078,11 +2097,12 @@ impl ModelAddOutcome {
 #[tauri::command]
 async fn ai_model_add_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     active: State<'_, Arc<ModelAddActive>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<ModelAddOutcome> {
+    let store = store.pin();
     use tauri::Emitter;
     let filter = locale
         .unwrap_or_default()
@@ -2160,11 +2180,12 @@ async fn ai_model_add_picked(
 #[tauri::command]
 async fn ai_model_download(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     models: State<'_, Arc<local_model::Store>>,
     active: State<'_, Arc<ModelAddActive>>,
     request: Option<ModelIndexRequest>,
 ) -> CommandResult<ModelAddOutcome> {
+    let store = store.pin();
     let index = request.map_or(0, |request| request.index);
     use tauri::Emitter;
     let _open = ActivityHold::new(store.idle());
@@ -2249,11 +2270,12 @@ async fn ai_model_remove(
 #[tauri::command]
 async fn ai_summarize(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     mut request: model_runtime::SummarizeRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::SummaryResult>> {
+    let store = store.pin();
     // Capture the actual unlocked session before validation can yield.
     let origin = store
         .answer_origin()
@@ -2283,7 +2305,7 @@ async fn ai_summarize(
     let lang = request.lang.clone();
     let mut report = report_progress(app.clone(), answer_id);
     let result = run_ai(
-        store.inner(),
+        store.arc(),
         origin,
         announce_answer(app, answer_id),
         move |runtime, ticket, watch| runtime.summarize_for(ticket, request, watch, &mut report),
@@ -2329,16 +2351,102 @@ async fn ai_summarize(
     })
 }
 
+/// The speed check (#305 PR 4): how fast the AI helper reads and writes on this computer, from one
+/// short fixed FAKE request, started only by the patient. It takes the same single answer slot and
+/// the unlocked session's hold as any answer (so it cannot run while locked or beside another
+/// answer), a lock or `ai_cancel` stops it, and its threads are the app's own (never more than the
+/// computer's CPUs). The result is kept per model, build and thread count.
+#[tauri::command]
+async fn ai_speed_check(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<VaultStore>>,
+    models: State<'_, Arc<local_model::Store>>,
+    answer_id: Uuid,
+) -> CommandResult<speed_check::Speed> {
+    let origin = store
+        .answer_origin()
+        .ok_or_else(|| ai_error(model_runtime::AiError::Cancelled))?;
+    let sha256 = models
+        .in_use_sha256()
+        .ok_or_else(|| ai_error(model_runtime::AiError::NotInstalled))?;
+    let stats = run_ai(
+        store.inner(),
+        origin,
+        announce_answer(app, answer_id),
+        move |runtime, ticket, watch| runtime.speed_check_for(ticket, watch),
+    )
+    .await?;
+    let Some(speed) = speed_check::measure(&stats) else {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    };
+    // Kept only under the thread count it was read on: a check whose helper ran on another count
+    // than the app's own now (it changed since the helper started) is no measurement for this key.
+    if !speed_check::read_on(&stats, speed_threads()) {
+        return Err(PublicError {
+            code: "aiSpeedUnmeasured",
+            message_key: "ai.speed.failed",
+            record_id: None,
+            note_key: None,
+            retry_after_ms: None,
+            memory: None,
+        });
+    }
+    if !keep_speed(&models, sha256, speed, now_ms()) {
+        return Err(ai_error(model_runtime::AiError::Storage));
+    }
+    Ok(speed)
+}
+
+/// The thread count a speed is kept and found under: the app's own (`model_runtime::threads`),
+/// which is the count the helper reads a prompt on (`Stats::batch_threads`), never the answer's
+/// own count (a fixed few, at most 3). One key for the check that saves it and the question that
+/// reads it.
+fn speed_threads() -> u32 {
+    model_runtime::threads()
+}
+
+fn keep_speed(
+    models: &local_model::Store,
+    sha256: &str,
+    speed: speed_check::Speed,
+    at_ms: u64,
+) -> bool {
+    models.save_speed(sha256, speed_threads(), speed, at_ms)
+}
+
+fn recorded_speed(models: &local_model::Store) -> Option<speed_check::Speed> {
+    recorded_speed_for(models, models.in_use_sha256()?)
+}
+
+fn recorded_speed_for(models: &local_model::Store, sha256: &str) -> Option<speed_check::Speed> {
+    models.speed_for(sha256, speed_threads())
+}
+
+/// What was measured for the model in use on this computer, for the reader's "about N minutes"
+/// and the settings: nothing until the patient has run the check.
+#[tauri::command]
+fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_check::Speed> {
+    recorded_speed(&models)
+}
+
 /// What a term means in its sentence, from the model on this computer (#72). With the
 /// document, which must be a readable PDF, the answer is also kept for that document's save.
 #[tauri::command]
 async fn ai_explain(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: model_runtime::ExplainRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
+    let store = store.pin();
     // Capture the actual unlocked session before validation can yield.
     let origin = store
         .answer_origin()
@@ -2348,7 +2456,7 @@ async fn ai_explain(
     if let Some(record_id) = kept_for {
         // Validation may outlive its originating session. It must not count
         // as unowned activity in whichever session is open when it returns.
-        let store = Arc::clone(store.inner());
+        let store = Arc::clone(store.arc());
         tauri::async_runtime::spawn_blocking(move || readable_pdf(&store, record_id))
             .await
             .map_err(|_| PublicError::from(VaultError::Storage))??;
@@ -2359,7 +2467,7 @@ async fn ai_explain(
         request.lang.clone(),
     );
     let result = run_ai(
-        store.inner(),
+        store.arc(),
         origin,
         announce_answer(app, answer_id),
         move |runtime, ticket, watch| runtime.explain_for(ticket, request, watch),
@@ -2621,7 +2729,7 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
     use model_runtime::AiError;
     let message_key = match error {
         AiError::NotInstalled | AiError::Damaged => "ai.notInstalled.title",
-        AiError::Memory => "ai.error.memory",
+        AiError::Memory(_) => "ai.error.memory",
         AiError::Busy => "ai.error.busy",
         AiError::Storage => "ai.error.storage",
         AiError::SummaryTooLarge => "ai.summaryTooLarge",
@@ -2633,6 +2741,11 @@ fn ai_error(error: model_runtime::AiError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        // How much a refusal for memory needed and how much was free (#305).
+        memory: match error {
+            AiError::Memory(shortfall) => shortfall,
+            _ => None,
+        },
     }
 }
 
@@ -2736,8 +2849,9 @@ impl From<history::HistoryEntry> for AuditHistoryEntry {
 /// Admission shares the vault's KDF guard, so a speed test cannot overlap
 /// another passphrase operation. Locking remains available throughout.
 #[tauri::command]
-async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<SpeedTestReport> {
-    let store = Arc::clone(store.inner());
+async fn kdf_benchmark(store: State<'_, StoreHandle>) -> CommandResult<SpeedTestReport> {
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     let measured = tauri::async_runtime::spawn_blocking(move || store.benchmark_kdf())
         .await
         .map_err(|_| PublicError {
@@ -2746,6 +2860,7 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
             note_key: None,
             record_id: None,
             retry_after_ms: None,
+            memory: None,
         })??;
     let RuntimeInfo {
         platform,
@@ -2762,8 +2877,9 @@ async fn kdf_benchmark(store: State<'_, Arc<VaultStore>>) -> CommandResult<Speed
 }
 
 #[tauri::command]
-async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultStatus> {
-    run_blocking(store.inner(), VaultStore::status).await
+async fn vault_status(store: State<'_, StoreHandle>) -> CommandResult<VaultStatus> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::status).await
 }
 
 /// First setup's passphrase checklist (#69): three answers, only while no
@@ -2771,10 +2887,11 @@ async fn vault_status(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultS
 /// returns; nothing is kept, logged, or echoed in an error.
 #[tauri::command]
 async fn vault_passphrase_rules(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PassphraseRulesRequest,
 ) -> CommandResult<PassphraseRules> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.new_passphrase_rules(&request.passphrase, &request.initial_profile_name)
     })
     .await
@@ -2782,13 +2899,14 @@ async fn vault_passphrase_rules(
 
 #[tauri::command]
 async fn vault_create(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: CreateVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     let picks = Arc::clone(picks.inner());
-    let created = run_blocking(store.inner(), move |store| {
+    let created = run_blocking(store.arc(), move |store| {
         let result = store
             .create(&request.passphrase, &request.initial_profile_name, now_ms())
             .inspect(|_| picks.clear())
@@ -2806,16 +2924,17 @@ async fn vault_create(
 
 #[tauri::command]
 async fn vault_unlock(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
     let picks = Arc::clone(picks.inner());
     tried(
         throttle.inner(),
         Attempt::Unlock,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = store
                 .unlock(&request.passphrase)
                 // A pick can read the session after a lock clears it but pass its
@@ -2827,8 +2946,8 @@ async fn vault_unlock(
         }),
     )
     .await?;
-    after_open(store.inner());
-    run_blocking(store.inner(), VaultStore::snapshot).await
+    after_open(store.arc());
+    run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
 /// After the vault opens: remote-notice work owed from before (a revocation, a check a push
@@ -2846,24 +2965,30 @@ fn after_open(store: &Arc<VaultStore>) {
 
 #[tauri::command]
 async fn vault_lock(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
 ) -> CommandResult<()> {
-    picks.clear();
-    // A page still being drawn, a text being read, and the AI model with
-    // its answer, stop with the lock.
-    pdf_view::cancel_views();
-    pdf_view::cancel_text_reads();
-    local_runner::on_lock();
-    run_blocking(store.inner(), |store| {
+    let store = store.pin();
+    stop_work_for_lock(&picks);
+    let picks = Arc::clone(picks.inner());
+    run_blocking(store.arc(), move |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
-        pdf_view::cancel_views();
-        pdf_view::cancel_text_reads();
-        local_runner::on_lock();
+        stop_work_for_lock(&picks);
         Ok(())
     })
     .await
+}
+
+/// What stops with a lock, whichever way the vault locks (the command, the idle deadline, and a
+/// switch to another vault): the picks a native dialog was about to hand over, a page still being
+/// drawn, a text being read, and the AI model with its answer. One list, so a lock path cannot
+/// forget one of them (#357).
+fn stop_work_for_lock(picks: &PendingPicks) {
+    picks.clear();
+    pdf_view::cancel_views();
+    pdf_view::cancel_text_reads();
+    local_runner::on_lock();
 }
 
 /// How often the native timer checks the idle deadline.
@@ -2882,10 +3007,7 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
-        pdf_view::cancel_views();
-        pdf_view::cancel_text_reads();
-        local_runner::on_lock();
-        picks.clear();
+        stop_work_for_lock(picks);
     }
     locked
 }
@@ -2918,7 +3040,8 @@ impl Drop for ActivityHold<'_> {
 /// The renderer reports user input, which the native idle deadline cannot see,
 /// at most every 10 seconds.
 #[tauri::command]
-fn vault_touch(store: State<'_, Arc<VaultStore>>) {
+fn vault_touch(store: State<'_, StoreHandle>) {
+    let store = store.pin();
     store.idle().touch(Instant::now());
 }
 
@@ -2932,7 +3055,8 @@ struct AutoLockRequest {
 /// native deadline uses the same delay (clamped to 1-15 minutes). The renderer
 /// restarts its own deadline then, so this counts as activity too.
 #[tauri::command]
-fn vault_set_auto_lock(store: State<'_, Arc<VaultStore>>, request: AutoLockRequest) {
+fn vault_set_auto_lock(store: State<'_, StoreHandle>, request: AutoLockRequest) {
+    let store = store.pin();
     store
         .idle()
         .set_delay_minutes(request.minutes, Instant::now());
@@ -2968,8 +3092,9 @@ where
 }
 
 #[tauri::command]
-async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<VaultSnapshot> {
-    run_blocking(store.inner(), VaultStore::snapshot).await
+async fn vault_snapshot(store: State<'_, StoreHandle>) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::snapshot).await
 }
 
 /// The audit history for Security, as far as it checks out (Ben's D129 and D146, mycarlos#120).
@@ -2981,8 +3106,9 @@ async fn vault_snapshot(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vaul
 /// `everyEventShown` says the shown entries are still every event the manifest pins (only
 /// pieces without events are damaged), so the screen says so and marks no gap (#120 C1).
 #[tauri::command]
-async fn vault_history(store: State<'_, Arc<VaultStore>>) -> CommandResult<AuditHistory> {
-    audit_history_result(run_blocking(store.inner(), VaultStore::history_view).await)
+async fn vault_history(store: State<'_, StoreHandle>) -> CommandResult<AuditHistory> {
+    let store = store.pin();
+    audit_history_result(run_blocking(store.arc(), VaultStore::history_view).await)
 }
 
 /// What Security receives for a history read: the view, or `history_unverified` when the read
@@ -2997,6 +3123,7 @@ fn audit_history_result(result: CommandResult<vault::HistoryView>) -> CommandRes
                 record_id: None,
                 note_key: None,
                 retry_after_ms: None,
+                memory: None,
             })
         }
         Err(error) => Err(error),
@@ -3020,16 +3147,17 @@ impl Drop for PortalLinkRequest {
 
 #[tauri::command]
 async fn vault_portal_link(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PortalLinkRequest,
 ) -> CommandResult<portal_link::LinkSummary> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
     // Capture before queuing work: an old IPC request must not begin linking
     // in a session opened while it waited for a blocking worker.
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     // User input already touches the native deadline. HTTP completion is not
     // new activity and must not keep an unattended or newly unlocked vault open.
     tauri::async_runtime::spawn_blocking(move || {
@@ -3049,14 +3177,15 @@ async fn vault_portal_link(
 
 #[tauri::command]
 async fn vault_portal_connect(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PortalLinkRequest,
 ) -> CommandResult<PortalConnectResult> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
         store.connect_portal(
             &request.portal_base,
@@ -3128,6 +3257,7 @@ fn approval_check_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms,
+        memory: None,
     }
 }
 
@@ -3137,16 +3267,17 @@ fn approval_check_issue(error: VaultError) -> PublicError {
 /// runs, never keeps an unattended vault open.
 #[tauri::command]
 async fn vault_refresh_device_approval(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<DeviceApprovalCheck> {
+    let store = store.pin();
     if !portal_client::available() {
         return Err(VaultError::Portal(portal_link::LinkError::Unavailable).into());
     }
     // Captured before queuing: a check queued in an older session must not
     // read or save anything in a newer one.
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.refresh_device_approval(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3178,6 +3309,7 @@ fn approval_code_issue(error: VaultError) -> PublicError {
         record_id: None,
         note_key: None,
         retry_after_ms: None,
+        memory: None,
     }
 }
 
@@ -3187,12 +3319,13 @@ fn approval_code_issue(error: VaultError) -> PublicError {
 /// wiped here once used.
 #[tauri::command]
 async fn vault_submit_approval_code(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
     mut code: String,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || {
         let result = store.submit_approval_code(link_id, &code, session);
         code.zeroize();
@@ -3205,11 +3338,12 @@ async fn vault_submit_approval_code(
 
 #[tauri::command]
 async fn vault_request_device_approval(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.request_staff_approval(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3218,11 +3352,12 @@ async fn vault_request_device_approval(
 
 #[tauri::command]
 async fn vault_restart_device_approval(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.restart_staff_approval(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3233,10 +3368,11 @@ async fn vault_restart_device_approval(
 /// check downloads and checks its documents again.
 #[tauri::command]
 async fn vault_forget_refused_deliveries(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3245,10 +3381,11 @@ async fn vault_forget_refused_deliveries(
 
 #[tauri::command]
 async fn vault_check_documents(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
 ) -> CommandResult<portal_pickup::CheckResult> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.check_documents(session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3257,10 +3394,11 @@ async fn vault_check_documents(
 
 #[tauri::command]
 async fn vault_notification_status(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     locale: Option<UiLocale>,
 ) -> CommandResult<document_notification_runtime::Status> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))
@@ -3268,10 +3406,11 @@ async fn vault_notification_status(
 
 #[tauri::command]
 async fn vault_set_notifications(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<document_notification_runtime::Status> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.set_notifications(enabled))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3281,9 +3420,10 @@ async fn vault_set_notifications(
 #[tauri::command]
 async fn vault_set_automatic_document_checks(
     enabled: bool,
-    store: tauri::State<'_, Arc<VaultStore>>,
+    store: tauri::State<'_, StoreHandle>,
 ) -> CommandResult<document_notification_runtime::Status> {
-    let store = Arc::clone(store.inner());
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.set_automatic_checks(enabled))
         .await
         .map_err(|_| VaultError::Storage)?
@@ -3292,16 +3432,17 @@ async fn vault_set_automatic_document_checks(
 
 #[tauri::command]
 async fn vault_change_passphrase(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: ChangePassphraseRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The current passphrase is checked as at unlock, and counted with it:
     // a vault left open must not let the passphrase be guessed without end.
     tried(
         throttle.inner(),
         Attempt::Unlock,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result =
                 store.change_passphrase(&request.current_passphrase, &request.new_passphrase);
             request.current_passphrase.zeroize();
@@ -3327,15 +3468,16 @@ impl Serialize for ShownRecoveryKey {
 /// authorizes it, as it does a passphrase change.
 #[tauri::command]
 async fn vault_recovery_key_begin(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: PassphraseRequest,
 ) -> CommandResult<ShownRecoveryKey> {
+    let store = store.pin();
     // As for a passphrase change: the passphrase is counted with unlock's.
     tried(
         throttle.inner(),
         Attempt::Unlock,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = store
                 .begin_recovery_key(&request.passphrase)
                 .map(ShownRecoveryKey);
@@ -3449,17 +3591,18 @@ impl Drop for ConfirmRecoveryKeyRequest {
 #[tauri::command]
 async fn vault_recovery_key_confirm(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: ConfirmRecoveryKeyRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<VaultSnapshot>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     let title = locale.text(MessageId::NativeRecoveryTitle)?;
     let warning = locale.text(MessageId::NativeRecoveryWarning)?;
     let keep = locale.text(MessageId::NativeRecoveryKeep)?;
     let replace = locale.text(MessageId::NativeRecoveryReplace)?;
     let cancel = locale.text(MessageId::NativeCancel)?;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         confirm_recovery_key_asking(store, &request.groups(), now_ms, || {
             confirmed_natively(&app, &title, warning, &keep, &replace, &cancel)
         })
@@ -3507,8 +3650,9 @@ fn confirm_recovery_key_asking(
 /// The short label of the recovery key being set up, for the kit the page
 /// prints. Not secret.
 #[tauri::command]
-async fn vault_recovery_key_label(store: State<'_, Arc<VaultStore>>) -> CommandResult<String> {
-    run_blocking(store.inner(), VaultStore::pending_recovery_key_label).await
+async fn vault_recovery_key_label(store: State<'_, StoreHandle>) -> CommandResult<String> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::pending_recovery_key_label).await
 }
 
 /// Saves the kit for the recovery key being set up to a file the patient
@@ -3516,12 +3660,13 @@ async fn vault_recovery_key_label(store: State<'_, Arc<VaultStore>>) -> CommandR
 #[tauri::command]
 async fn vault_recovery_kit_save(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Nothing is asked for unless a key is waiting to be confirmed.
-    let name = run_blocking(store.inner(), |store| store.recovery_kit_name(now_ms())).await?;
+    let name = run_blocking(store.arc(), |store| store.recovery_kit_name(now_ms())).await?;
     // Held until the kit is written, so that the automatic lock cannot fall
     // between the picker closing and the write.
     let _open = ActivityHold::new(store.idle());
@@ -3539,7 +3684,7 @@ async fn vault_recovery_kit_save(
         return Ok(false);
     };
     if let Ok(path) = destination.clone().into_path() {
-        return run_blocking(store.inner(), move |store| {
+        return run_blocking(store.arc(), move |store| {
             store
                 .save_recovery_kit_in(&path, now_ms(), locale)
                 .map(|()| true)
@@ -3547,7 +3692,7 @@ async fn vault_recovery_kit_save(
         .await;
     }
     // Android content providers return a URI rather than a path.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         use std::io::Write as _;
         let kit = store.recovery_kit_in(now_ms(), locale)?;
         let mut options = OpenOptions::new();
@@ -3563,8 +3708,9 @@ async fn vault_recovery_kit_save(
 }
 
 #[tauri::command]
-async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> CommandResult<()> {
-    run_blocking(store.inner(), |store| {
+async fn vault_recovery_key_cancel(store: State<'_, StoreHandle>) -> CommandResult<()> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| {
         store.cancel_recovery_key();
         Ok(())
     })
@@ -3573,16 +3719,17 @@ async fn vault_recovery_key_cancel(store: State<'_, Arc<VaultStore>>) -> Command
 
 #[tauri::command]
 async fn vault_recover(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RecoverRequest,
 ) -> CommandResult<RecoverResponse> {
+    let store = store.pin();
     let picks = Arc::clone(picks.inner());
     let passphrase_replaced = tried(
         throttle.inner(),
         Attempt::RecoveryKey,
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = store
                 .recover(&request.recovery_key, &request.new_passphrase)
                 // As for unlock: a pick from the session that ended stays there.
@@ -3593,10 +3740,10 @@ async fn vault_recover(
         }),
     )
     .await?;
-    after_open(store.inner());
+    after_open(store.arc());
     Ok(RecoverResponse {
         passphrase_replaced,
-        snapshot: run_blocking(store.inner(), VaultStore::snapshot).await?,
+        snapshot: run_blocking(store.arc(), VaultStore::snapshot).await?,
     })
 }
 
@@ -3709,10 +3856,11 @@ where
 #[tauri::command]
 async fn vault_backup_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: BackupPickRequest,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let session = picks.session();
     // Named by the patient's own date where the renderer gives one that
     // reads as a date, else by the UTC date.
@@ -3722,12 +3870,12 @@ async fn vault_backup_pick(
         .filter(|date| is_plain_date(date))
         .map_or_else(|| vault::utc_date_text(now_ms()), str::to_owned);
     // Nothing is asked for unless there is a writable vault to back up.
-    run_blocking(store.inner(), |store| match store.snapshot()?.recovery {
+    run_blocking(store.arc(), |store| match store.snapshot()?.recovery {
         None => Ok(()),
         Some(_) => Err(VaultError::RecoveryMode),
     })
     .await?;
-    let name = run_blocking(store.inner(), move |store| store.backup_file_name(&date)).await?;
+    let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog().file().set_file_name(name).blocking_save_file()
@@ -3740,26 +3888,29 @@ async fn vault_backup_pick(
 /// How big a backup would be, and how much of it is video, asked before the
 /// patient chooses where to save it.
 #[tauri::command]
-async fn vault_backup_size(store: State<'_, Arc<VaultStore>>) -> CommandResult<vault::BackupSize> {
-    run_blocking(store.inner(), |store| store.backup_size()).await
+async fn vault_backup_size(store: State<'_, StoreHandle>) -> CommandResult<vault::BackupSize> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.backup_size()).await
 }
 
 /// The records a backup was made without the file of, for the Hidden list to say
 /// why a video's file is missing: those whose latest history event is "hidden,
 /// left out of the backup".
 #[tauri::command]
-async fn vault_left_out_records(store: State<'_, Arc<VaultStore>>) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), |store| store.left_out_records()).await
+async fn vault_left_out_records(store: State<'_, StoreHandle>) -> CommandResult<Vec<Uuid>> {
+    let store = store.pin();
+    run_blocking(store.arc(), |store| store.left_out_records()).await
 }
 
 #[tauri::command]
 async fn vault_backup_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: BackupWriteRequest,
 ) -> CommandResult<SavedBackup> {
     let leave_videos_out = request.leave_videos_out;
+    let store = store.pin();
     let destination = picks
         .backups
         .take(request.pick_id, picks.session())
@@ -3772,7 +3923,7 @@ async fn vault_backup_picked(
             .map(|name| name.to_string_lossy().into_owned());
         // Written beside the destination and renamed over it only once
         // complete: a failure leaves nothing there.
-        return run_blocking(store.inner(), move |store| {
+        return run_blocking(store.arc(), move |store| {
             store.backup_atomic_with(&path, now_ms(), leave_videos_out)?;
             Ok(SavedBackup {
                 name,
@@ -3791,7 +3942,7 @@ async fn vault_backup_picked(
     let opened = Arc::clone(&emptied);
     let bytes = Arc::new(AtomicU64::new(0));
     let counted = Arc::clone(&bytes);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         // Opening the document empties it, and it may be an earlier backup:
         // find a document that cannot be backed up before that.
         let plan = store.plan_backup(leave_videos_out)?;
@@ -3835,13 +3986,14 @@ async fn vault_backup_picked(
 #[tauri::command]
 async fn vault_restore_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     let session = picks.session();
-    run_blocking(store.inner(), |store| match store.status()? {
+    run_blocking(store.arc(), |store| match store.status()? {
         VaultStatus::Unlocked => Err(VaultError::Invalid),
         _ => Ok(()),
     })
@@ -3887,17 +4039,18 @@ fn open_restore_source(
 #[tauri::command]
 async fn vault_restore_inspect(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     mut request: RestoreRequest,
 ) -> CommandResult<RestorePreview> {
+    let store = store.pin();
     let source = picks
         .restores
         .peek_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
     tried(throttle.inner(), Attempt::Backup, async move {
-        run_blocking(store.inner(), move |store| {
+        run_blocking(store.arc(), move |store| {
             let result = request.credential().and_then(|credential| {
                 store.inspect_backup(open_restore_source(&app, source)?, credential)
             });
@@ -3946,12 +4099,13 @@ fn restore_warning_in(
 #[tauri::command]
 async fn vault_restore(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     request: RestoreRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     // Checked before the dialog, and taken only after it, so that a cancelled
     // dialog leaves the pick for another try.
@@ -3965,7 +4119,7 @@ async fn vault_restore(
         tried(
             throttle.inner(),
             Attempt::Backup,
-            run_blocking(store.inner(), move |store| {
+            run_blocking(store.arc(), move |store| {
                 store.inspect_backup(open_restore_source(&app, source)?, request.credential()?)
             }),
         )
@@ -3995,7 +4149,7 @@ async fn vault_restore(
         .restores
         .take_within(request.pick_id, picks.session(), RESTORE_PICK_TTL)
         .ok_or(VaultError::NotFound)?;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         // The file is opened again here. Another backup in its place by now,
         // or a vault that appeared or changed since, is not what the dialog
         // described, and is refused.
@@ -4014,10 +4168,11 @@ async fn vault_restore(
 
 #[tauri::command]
 async fn vault_create_profile(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: NameRequest,
 ) -> CommandResult<Uuid> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.create_profile_with_details(
             &request.display_name,
             request.details,
@@ -4032,13 +4187,14 @@ async fn vault_create_profile(
 
 #[tauri::command]
 async fn vault_update_profile_details(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ProfileDetailsRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // The AI helper's re-check reads these details: an open preview ends.
     picks.clear_texts();
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.update_profile_details(
             request.profile_id,
             request.details,
@@ -4051,12 +4207,13 @@ async fn vault_update_profile_details(
 
 #[tauri::command]
 async fn vault_rename_profile(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: RenameProfileRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     picks.clear_texts();
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.rename_profile(request.profile_id, &request.display_name, now_ms())
     })
     .await
@@ -4066,15 +4223,16 @@ async fn vault_rename_profile(
 /// locked documents and uncertain text return no identity, never a trust claim.
 #[tauri::command]
 async fn vault_shared_identity(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     record_id: Uuid,
 ) -> CommandResult<Option<document_identity::FoundIdentity>> {
+    let store = store.pin();
     // Phones cannot run this helper. Return before decrypting any document.
     if !cfg!(desktop) {
         return Ok(None);
     }
     let ticket = pdf_view::ViewTicket::identity();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     let result = tauri::async_runtime::spawn_blocking(move || {
         let snapshot = store.snapshot()?;
         let record = snapshot
@@ -4117,10 +4275,11 @@ async fn vault_shared_identity(
 
 #[tauri::command]
 async fn vault_create_folder(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: FolderRequest,
 ) -> CommandResult<Uuid> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.create_folder(
             request.profile_id,
             request.parent_id,
@@ -4133,10 +4292,11 @@ async fn vault_create_folder(
 
 #[tauri::command]
 async fn vault_update_folder(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: UpdateFolderRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.update_folder(request.folder_id, request.parent_id, &request.name)
     })
     .await
@@ -4144,10 +4304,11 @@ async fn vault_update_folder(
 
 #[tauri::command]
 async fn vault_rename_record(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RenameRecordRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         rename_document(store, request.record_id, &request.name)
     })
     .await
@@ -4155,10 +4316,11 @@ async fn vault_rename_record(
 
 #[tauri::command]
 async fn vault_assign_folders(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AssignFoldersRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.assign_folders(request.record_id, request.folder_ids)
     })
     .await
@@ -4166,10 +4328,11 @@ async fn vault_assign_folders(
 
 #[tauri::command]
 async fn vault_assign_folders_batch(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AssignFoldersBatchRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.assign_folders_batch(request.record_ids, request.folder_ids)
     })
     .await
@@ -4180,17 +4343,18 @@ async fn vault_assign_folders_batch(
 #[tauri::command]
 async fn vault_import_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ImportRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let session = picks.session();
     // Refuse before the picker opens; `import` still re-checks under its own lock.
     let profile_id = request.profile_id;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.ensure_import_allowed(profile_id)
     })
     .await?;
@@ -4214,10 +4378,11 @@ async fn vault_import_pick(
 #[tauri::command]
 async fn vault_import_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: PickedImportRequest,
 ) -> CommandResult<vault::ImportOutcome> {
+    let store = store.pin();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
     let picked_for = ImportRequest {
         profile_id: request.profile_id,
@@ -4226,7 +4391,7 @@ async fn vault_import_picked(
     let paths = picks.take_import(request.pick_id, &picked_for)?;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         let mut sources = Vec::with_capacity(paths.len());
         {
             // A provider may download a whole document before the open returns,
@@ -4365,9 +4530,10 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
 #[tauri::command]
 async fn received_accept(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     received: State<'_, Arc<ReceivedFiles>>,
 ) -> CommandResult<ReceivedAcceptOutcome> {
+    let store = store.pin();
     let ids: Vec<Uuid> = received.list().into_iter().map(|file| file.id).collect();
     if ids.is_empty() {
         return Ok(ReceivedAcceptOutcome {
@@ -4380,7 +4546,7 @@ async fn received_accept(
         .take(&ids)
         .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     let files = taken.clone();
-    let result = run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         let shared = store.shared_profile()?;
         let mut sources = Vec::with_capacity(files.len());
         let mut not_pdf = Vec::new();
@@ -4476,9 +4642,10 @@ impl ViewedPage {
 /// the PDF helper, which draws the page away from the vault keys (`pdf_view`).
 #[tauri::command]
 async fn vault_view_page(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
+    let store = store.pin();
     use pdf_unlock::Refusal;
     if request
         .password
@@ -4493,7 +4660,7 @@ async fn vault_view_page(
     drop(request);
     // Taken now: a newer page request, a lock or the reader closing stops this one.
     let ticket = pdf_view::ViewTicket::new();
-    let result = run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         let size = store
             .snapshot()?
             .records
@@ -4612,9 +4779,10 @@ impl PageBoxesAnswer {
 /// a page request does not.
 #[tauri::command]
 async fn vault_page_boxes(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     mut request: PageBoxesRequest,
 ) -> CommandResult<PageBoxesAnswer> {
+    let store = store.pin();
     if request
         .password
         .as_ref()
@@ -4630,7 +4798,7 @@ async fn vault_page_boxes(
     let password = zeroize::Zeroizing::new(request.password.take().unwrap_or_default());
     drop(request);
     let ticket = pdf_view::ViewTicket::boxes();
-    let result = run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         let size = store
             .snapshot()?
             .records
@@ -4718,10 +4886,11 @@ const PAGE_CUT_MARGIN: usize = 3;
 /// the preview ticket the save needs.
 #[tauri::command]
 async fn vault_document_text(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     mut request: DocumentTextRequest,
 ) -> CommandResult<DocumentText> {
+    let store = store.pin();
     use pdf_unlock::Refusal;
     if !cfg!(desktop) {
         return Err(VaultError::PdfViewUnavailable.into());
@@ -4740,7 +4909,7 @@ async fn vault_document_text(
     drop(request);
     let ticket = pdf_view::ViewTicket::text_for(read_id);
     let session = picks.session();
-    let result = run_blocking(store.inner(), move |store| {
+    let result = run_blocking(store.arc(), move |store| {
         let snapshot = store.snapshot()?;
         let record = snapshot
             .records
@@ -4905,10 +5074,11 @@ fn vault_document_text_cancel(request: TextReadCancelRequest) {
 /// patient, provider and clinic from the document's delivery manifest.
 #[tauri::command]
 async fn vault_record_known_details(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<vault::KnownIdentifiers> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.known_identifiers(request.record_id)
     })
     .await
@@ -4927,11 +5097,12 @@ struct TextExportPickRequest {
 #[tauri::command]
 async fn vault_export_text_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: TextExportPickRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let record_id = request.record_id;
     picks.peek_text(request.ticket, record_id)?;
     let session = picks.session();
@@ -4978,11 +5149,12 @@ struct TextSaveOutcome {
 /// the ticket.
 #[tauri::command]
 async fn vault_export_text_picked(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: TextExportPickedRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<TextSaveOutcome> {
+    let store = store.pin();
     // Refused before anything else looks at the text.
     if request.text.len() > MAX_EXPORT_TEXT_BYTES {
         return Err(VaultError::Invalid.into());
@@ -4993,10 +5165,7 @@ async fn vault_export_text_picked(
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
     }
-    let known = run_blocking(store.inner(), move |store| {
-        store.known_identifiers(record_id)
-    })
-    .await?;
+    let known = run_blocking(store.arc(), move |store| store.known_identifiers(record_id)).await?;
     let hits = text_recheck::identifier_hits(&request.text, &known.names, &known.birth_dates);
     if !hits.is_empty() {
         return Ok(TextSaveOutcome { saved: false, hits });
@@ -5023,7 +5192,7 @@ async fn vault_export_text_picked(
         // Only computers read a document's text, and they pick paths.
         return Err(VaultError::Invalid.into());
     };
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.export_text_atomic(record_id, &destination_path, content.as_bytes())
     })
     .await?;
@@ -5040,11 +5209,12 @@ async fn vault_export_text_picked(
 /// person already has stays where it is and is named in the outcome.
 #[tauri::command]
 async fn vault_move_to_person(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: MoveToPersonRequest,
 ) -> CommandResult<vault::MoveOutcome> {
+    let store = store.pin();
     vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.move_to_profile(request.record_ids, request.profile_id, request.folder_ids)
     })
     .await
@@ -5077,14 +5247,15 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
 #[tauri::command]
 async fn vault_export_pick(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: ExportRequest,
 ) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
     let record_id = request.record_id;
     let session = picks.session();
     let suggested_name =
-        run_blocking(store.inner(), move |store| store.export_name(record_id)).await?;
+        run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
@@ -5100,15 +5271,16 @@ async fn vault_export_pick(
 #[tauri::command]
 async fn vault_export_picked(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: PickedExportRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let record_id = request.record_id;
     let destination = picks.take_export(request.pick_id, record_id)?;
 
     if let Ok(destination_path) = destination.clone().into_path() {
-        return run_blocking(store.inner(), move |store| {
+        return run_blocking(store.arc(), move |store| {
             store.export_atomic(record_id, &destination_path)
         })
         .await;
@@ -5117,7 +5289,7 @@ async fn vault_export_picked(
     // Android content providers can return a content URI rather than a filesystem path, so an
     // atomic rename is unavailable. Authenticate the complete object before opening/truncating
     // the selected URI; the second pass streams the verified plaintext to the provider.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.export(record_id, std::io::sink())
     })
     .await?;
@@ -5125,7 +5297,7 @@ async fn vault_export_picked(
     // Opening the provider's document can block too, so it shares the blocking
     // task with the write. Only a failure after the open, which truncates the
     // destination, can leave a partial copy; a failed open changed nothing.
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         let opening = Opening::new(store.idle());
@@ -5148,10 +5320,11 @@ async fn vault_export_picked(
 /// Hides the documents shown as damaged (#71: they used to be removed).
 #[tauri::command]
 async fn vault_hide_unavailable_records(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.hide_unavailable_records(&request.confirmed, now_ms())
     })
     .await
@@ -5165,32 +5338,32 @@ async fn vault_hide_unavailable_records(
 /// target and the JPEG (see `photo_request`).
 #[tauri::command]
 async fn vault_save_photo(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: tauri::ipc::Request<'_>,
 ) -> CommandResult<vault::ImportOutcome> {
+    let store = store.pin();
     // The IPC layer's own copy is freed when the call ends, but not
     // overwritten (THREAT_MODEL.md); these are.
     let (target, photo) = photo_request(request.body())?;
-    run_blocking(store.inner(), move |store| save_photo(store, target, photo)).await
+    run_blocking(store.arc(), move |store| save_photo(store, target, photo)).await
 }
 
 #[tauri::command]
 async fn vault_is_photo(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<bool> {
-    run_blocking(store.inner(), move |store| {
-        is_photo(store, request.record_id)
-    })
-    .await
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| is_photo(store, request.record_id)).await
 }
 
 #[tauri::command]
 async fn vault_view_photo(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<String> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         view_photo(store, request.record_id)
     })
     .await
@@ -5343,10 +5516,9 @@ async fn vault_video_stop(
 /// How much room there is to record: asked before the camera and microphone are
 /// turned on, and again on every resume.
 #[tauri::command]
-async fn vault_video_space(
-    store: State<'_, Arc<VaultStore>>,
-) -> CommandResult<vault::RecordingSpace> {
-    run_blocking(store.inner(), VaultStore::recording_space).await
+async fn vault_video_space(store: State<'_, StoreHandle>) -> CommandResult<vault::RecordingSpace> {
+    let store = store.pin();
+    run_blocking(store.arc(), VaultStore::recording_space).await
 }
 
 /// The recordings a crash or a lock left unfinished, for the question at unlock.
@@ -5447,10 +5619,11 @@ async fn vault_video_close(
 
 #[tauri::command]
 async fn vault_is_locked_pdf(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: PhotoRequest,
 ) -> CommandResult<bool> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         is_locked_pdf(store, request.record_id)
     })
     .await
@@ -5474,13 +5647,14 @@ impl Drop for UnlockPdfRequest {
 /// `unlock_pdf`. The password is used once and wiped.
 #[tauri::command]
 async fn vault_unlock_pdf(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     mut request: UnlockPdfRequest,
 ) -> CommandResult<UnlockedPdf> {
+    let store = store.pin();
     let record_id = request.record_id;
     let password = zeroize::Zeroizing::new(std::mem::take(&mut request.password));
     drop(request);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         // The helper's time counts as activity: the vault does not lock under it.
         let _opening = Opening::new(store.idle());
         unlock_pdf(store, record_id, &password, pdf_unlock::unlock_in_helper)
@@ -5491,13 +5665,14 @@ async fn vault_unlock_pdf(
 /// Hides a document (#71). There is no command that deletes one.
 #[tauri::command]
 async fn vault_hide_record(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
+    let store = store.pin();
     // A hidden document's text can no longer be saved (#72, AI-02).
     picks.forget_texts_for(request.record_id);
-    run_blocking(store.inner(), move |store| {
+    run_blocking(store.arc(), move |store| {
         store.hide_record(request.record_id, now_ms())
     })
     .await
@@ -5506,10 +5681,11 @@ async fn vault_hide_record(
 /// Keeps the AI helper's answer with its document, encrypted (#72 part D).
 #[tauri::command]
 async fn vault_ai_result_save(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     request: SaveAiResultRequest,
 ) -> CommandResult<vault::AiResultInfo> {
+    let store = store.pin();
     // The answer is the runtime's own, kept when it was given (#212): page code
     // only names it and adds a summary's source places.
     let answer = picks
@@ -5530,7 +5706,7 @@ async fn vault_ai_result_save(
             .map(|model| (model.name.as_str(), model.sha256.as_str())),
     )?;
     let record_id = request.record_id;
-    let saved = run_blocking(store.inner(), move |store| {
+    let saved = run_blocking(store.arc(), move |store| {
         store.save_ai_result(record_id, input, content.as_bytes(), now_ms())
     })
     .await?;
@@ -5541,10 +5717,11 @@ async fn vault_ai_result_save(
 /// The AI helper's answers kept with a document, newest first (#72).
 #[tauri::command]
 async fn vault_ai_results(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<Vec<vault::AiResultInfo>> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.ai_results(request.record_id)
     })
     .await
@@ -5553,10 +5730,11 @@ async fn vault_ai_results(
 /// One kept answer's text (#72).
 #[tauri::command]
 async fn vault_ai_result_read(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: AiResultRequest,
 ) -> CommandResult<String> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         let bytes = store.read_ai_result(request.record_id, request.result_id)?;
         String::from_utf8(bytes).map_err(|_| vault::VaultError::Corrupt)
     })
@@ -5566,10 +5744,11 @@ async fn vault_ai_result_read(
 /// Puts a hidden document back (#71).
 #[tauri::command]
 async fn vault_unhide_record(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     request: RecordIdRequest,
 ) -> CommandResult<()> {
-    run_blocking(store.inner(), move |store| {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
         store.unhide_record(request.record_id)
     })
     .await
@@ -5613,12 +5792,13 @@ fn set_aside_vault_warning_in(
 #[tauri::command]
 async fn vault_reset(
     app: tauri::AppHandle,
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
     throttle: State<'_, Arc<AttemptThrottle>>,
     request: ResetRequest,
     locale: Option<UiLocale>,
 ) -> CommandResult<bool> {
+    let store = store.pin();
     let locale = locale.unwrap_or_default();
     if !locale.reset_phrase_matches(&request.confirmation)? {
         return Err(PublicError::from(VaultError::Invalid));
@@ -5641,7 +5821,7 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
-    run_blocking(store.inner(), VaultStore::reset).await?;
+    run_blocking(store.arc(), VaultStore::reset).await?;
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
@@ -5828,22 +6008,19 @@ pub fn run() {
             // would lock its own copy of the lock file. Earlier evaluation builds
             // kept the vault at `<data>/vault-v1`; that is left untouched and
             // never read.
-            let store = Arc::new(VaultStore::new(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("vault-v1"),
-            ));
-            store.configure_notifications(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("document-notifications-v1.json"),
+            // The device's vaults (#357): Main at `vault-home/vault-v1` as it has always been, plus
+            // any the registry lists. A device with no `vaults.v1` has the Main vault alone and
+            // nothing is written, so this is what it was. Each slot has its own notification ledger
+            // beside it (Main's is still `vault-home/document-notifications-v1.json`).
+            let slots = Arc::new(vault_slots::VaultSlots::open(
+                app.path().app_local_data_dir()?,
                 app.config().identifier.clone(),
-            );
+            ));
+            // One worker for the app, ticking whichever vault the screen is on.
             #[cfg(windows)]
-            store.start_document_collection()?;
-            app.manage(store);
+            slots.start_document_collection()?;
+            // Commands ask the handle for "the" vault.
+            app.manage(StoreHandle::from_source(slots));
             // Wrong tries at a secret, counted beside the vault in
             // `attempts.json`, and read only when needed, not here.
             app.manage(Arc::new(AttemptThrottle::new(Some(
@@ -5877,6 +6054,23 @@ pub fn run() {
                 Box::new(local_model::RuntimeSource(Arc::clone(&models))),
                 Box::new(local_model::SystemMemory),
             );
+            // Each checked card the helper makes is saved beside the models (#305), so the
+            // settings know a model's confirmed context after a restart.
+            {
+                let saver = Arc::clone(&models);
+                // Readable at once; written on a thread of its own, so a start does not wait for
+                // the disk.
+                model_runtime::app()
+                    .runner()
+                    .set_card_saver(Box::new(move |sha256, card| {
+                        saver.remember_card(sha256, card);
+                        let (saver, sha256, card) =
+                            (Arc::clone(&saver), sha256.to_owned(), card.clone());
+                        let _ = std::thread::Builder::new()
+                            .name("model-card-save".into())
+                            .spawn(move || saver.save_card(&sha256, &card));
+                    }));
+            }
             app.manage(models);
             app.manage(Arc::new(ModelAddActive::default()));
             app.manage(Arc::new(PendingPicks::default()));
@@ -5888,13 +6082,14 @@ pub fn run() {
                 let (offered, sources) = received::accept_command_line(std::env::args_os());
                 app.state::<Arc<ReceivedFiles>>().receive(offered, sources);
             }
-            let store = Arc::clone(app.state::<Arc<VaultStore>>().inner());
+            let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
-                    lock_if_idle(&store, &picks, Instant::now());
+                    // The vault the screen is on at this tick, not the one at start-up.
+                    lock_if_idle(vaults.arc(), &picks, Instant::now());
                 })?;
             Ok(())
         })
@@ -5912,6 +6107,8 @@ pub fn run() {
             ai_model_download,
             ai_model_remove,
             ai_summarize,
+            ai_speed_check,
+            ai_model_speed,
             ai_explain,
             ai_cancel,
             kdf_benchmark,
@@ -6004,7 +6201,10 @@ pub fn run() {
                 _event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
-                _app.state::<Arc<VaultStore>>().stop_document_collection();
+                // Every store the device has made, not only the current one.
+                for store in _app.state::<StoreHandle>().all() {
+                    store.stop_document_collection();
+                }
             }
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = _event {
@@ -6483,7 +6683,7 @@ mod tests {
             let body = &body[..body.find("\n}\n").unwrap()];
             let tried = &body[body.find("tried(").unwrap()..body.find(".await?;").unwrap()];
             assert!(!tried.contains("snapshot"), "{command}");
-            assert!(body.contains("run_blocking(store.inner(), VaultStore::snapshot)"));
+            assert!(body.contains("run_blocking(store.arc(), VaultStore::snapshot)"));
         }
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
@@ -6727,6 +6927,36 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_for_memory_carries_what_was_needed_and_what_was_free() {
+        use model_runtime::{AiError, MemoryShortfall};
+        let refusal = ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_641_000_000,
+            available_bytes: Some(1_950_000_000),
+        })));
+        assert_eq!(refusal.code, "aiMemory");
+        let sent = serde_json::to_value(&refusal).unwrap();
+        assert_eq!(sent["code"], "aiMemory");
+        assert_eq!(sent["messageKey"], "ai.error.memory");
+        assert_eq!(sent["memory"]["neededBytes"], 3_641_000_000u64);
+        assert_eq!(sent["memory"]["availableBytes"], 1_950_000_000u64);
+        // A computer that could not say what is free sends only the need.
+        let unknown = serde_json::to_value(ai_error(AiError::Memory(Some(MemoryShortfall {
+            needed_bytes: 3_000_000_000,
+            available_bytes: None,
+        }))))
+        .unwrap();
+        assert_eq!(unknown["memory"]["neededBytes"], 3_000_000_000u64);
+        assert!(unknown["memory"].get("availableBytes").is_none());
+        // Every other refusal, and a memory refusal with no numbers, sends none.
+        for error in [AiError::Memory(None), AiError::Busy, AiError::Failed] {
+            assert!(serde_json::to_value(ai_error(error))
+                .unwrap()
+                .get("memory")
+                .is_none());
+        }
+    }
+
+    #[test]
     fn ai_errors_carry_their_code_and_words_the_catalogue_has() {
         use model_runtime::AiError;
         for (error, code, words) in [
@@ -6736,7 +6966,7 @@ mod tests {
                 "isn't on this device",
             ),
             (AiError::Damaged, "aiDamaged", "isn't on this device"),
-            (AiError::Memory, "aiMemory", "enough free memory"),
+            (AiError::Memory(None), "aiMemory", "enough free memory"),
             (AiError::Busy, "aiBusy", "being added or removed"),
             (AiError::Storage, "aiStorage", "could not be read"),
             (
@@ -6849,8 +7079,9 @@ mod tests {
         // platform it is the same directory.
         let library = include_str!("lib.rs");
         let startup = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        // The app builds its vaults from the local data folder, handed to `VaultSlots::open`.
         let setup = startup
-            .split_once("let store = Arc::new(VaultStore::new(")
+            .split_once("vault_slots::VaultSlots::open(")
             .unwrap()
             .1;
         let root = setup.split_once("));").unwrap().0;
@@ -6859,11 +7090,16 @@ mod tests {
         // Earlier evaluation builds kept the vault itself at `<data>/vault-v1`,
         // and on macOS and Linux local and roaming data are one directory. A
         // home of that name would hold an old vault's files loose beside the new
-        // one, where nothing cleans them up.
-        let home = root.split(".join(\"").nth(1).unwrap();
-        let home = &home[..home.find('"').unwrap()];
-        assert_ne!(home, "vault-v1");
-        assert_eq!(home, "vault-home");
+        // one, where nothing cleans them up. The Main slot is `vault-home/vault-v1`.
+        let data = std::path::Path::new("/FAKE/data");
+        assert_eq!(
+            vault_registry::slot_store_root(data, vault_registry::SlotId::Main),
+            data.join("vault-home").join("vault-v1")
+        );
+        assert_eq!(
+            vault_registry::slot_home(data, vault_registry::SlotId::Main),
+            data.join("vault-home")
+        );
     }
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
@@ -7205,6 +7441,28 @@ mod tests {
         assert!(!lock_if_idle(&store, &picks, idle_past(Instant::now())));
     }
 
+    #[test]
+    fn stop_work_for_lock_stops_what_every_lock_path_stops() {
+        // One list for "Lock now", the idle deadline and a switch to another vault (#357): the picks a
+        // native dialog was about to hand over, and a page view in flight.
+        let picks = PendingPicks::default();
+        let record_id = Uuid::new_v4();
+        let path = || tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into());
+        let pick_id = picks.store_export(picks.session(), record_id, path());
+        let ticket = pdf_view::ViewTicket::new();
+        assert!(ticket.is_current());
+
+        stop_work_for_lock(&picks);
+
+        assert!(matches!(
+            picks.take_export(pick_id, record_id),
+            Err(VaultError::NotFound)
+        ));
+        assert!(!ticket.is_current());
+        // Nothing to stop is not an error, and it may be called again after the vault has locked.
+        stop_work_for_lock(&picks);
+    }
+
     /// When the default delay and the margin after `from` run out, exactly.
     fn due_at(from: Instant) -> Instant {
         from + Duration::from_secs(15 * 60) + idle::MARGIN
@@ -7465,7 +7723,7 @@ mod tests {
         // and a failure, as an answer stopped at its limit ends.
         for ending in [
             Ok(()),
-            Err(AiError::Memory),
+            Err(AiError::Memory(None)),
             Err(AiError::Cancelled),
             Err(AiError::Failed),
         ] {
@@ -7894,6 +8152,27 @@ mod tests {
         }
     }
 
+    /// The speed check saves under the key the reader's question looks it up by (a mismatch once
+    /// made a result that was never found again on a computer with five or more cores).
+    #[test]
+    fn a_measured_speed_is_found_again_by_the_question_that_reads_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = local_model::Store::new(temp.path().join("models"), local_model::CATALOG);
+        let sha = local_model::CATALOG[0].sha256;
+        assert_eq!(recorded_speed_for(&store, sha), None);
+        let speed = speed_check::Speed {
+            prompt_milli_tps: 9_000,
+            answer_milli_tps: 2_500,
+        };
+        // `ai_speed_check` saves through `keep_speed`; `ai_model_speed` reads through
+        // `recorded_speed_for`: the same key, whatever the cores.
+        assert!(keep_speed(&store, sha, speed, 1));
+        assert_eq!(recorded_speed_for(&store, sha), Some(speed));
+        assert_eq!(speed_threads(), model_runtime::threads());
+        // Another model's speed is not this one's.
+        assert_eq!(recorded_speed_for(&store, &"cd".repeat(32)), None);
+    }
+
     #[test]
     fn a_model_add_report_clears_only_the_run_it_reported() {
         let active = Arc::new(ModelAddActive::default());
@@ -8154,7 +8433,7 @@ mod historical_identifier_export_tests {
             tauri_plugin_fs::FilePath::Path(destination.clone()),
         );
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .manage(picks)
             .build(production_context())
             .unwrap();
@@ -8276,7 +8555,7 @@ mod historical_identifier_export_tests {
             tauri_plugin_fs::FilePath::Path(destination.clone()),
         );
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .manage(picks)
             .build(production_context())
             .unwrap();
@@ -9764,7 +10043,7 @@ mod audit_history_ipc_tests {
         let root = temp.path().join("FAKE-vault");
         let store = Arc::new(VaultStore::new(root.clone()));
         let app = tauri::test::mock_builder()
-            .manage(Arc::clone(&store))
+            .manage(StoreHandle::single(Arc::clone(&store)))
             .invoke_handler(tauri::generate_handler![vault_history])
             .build(production_context())
             .unwrap();

@@ -313,6 +313,11 @@ pub(crate) mod active {
         pub(crate) fn load_for_test(path: PathBuf, backend: Box<dyn Backend>) -> Self {
             Self::load(path, backend)
         }
+        /// Where this runtime keeps its ledger, for the tests that check each vault has its own.
+        #[cfg(test)]
+        pub(crate) fn ledger_path(&self) -> &std::path::Path {
+            &self.path
+        }
         #[cfg(test)]
         fn with_notice(mut self, notice: fn(Option<UiLocale>) -> Option<String>) -> Self {
             self.notice = notice;

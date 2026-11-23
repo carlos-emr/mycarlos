@@ -109,6 +109,8 @@ fn main() {
             "ai_model_download",
             "ai_model_remove",
             "ai_summarize",
+            "ai_speed_check",
+            "ai_model_speed",
             "ai_explain",
             "ai_cancel",
             "kdf_benchmark",

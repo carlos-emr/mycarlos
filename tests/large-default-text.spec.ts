@@ -116,3 +116,57 @@ test("unlocking and restoring fit their window at 200% default text, with full-s
   );
   expect(squeezed, "tick boxes or radio buttons squeezed").toEqual([]);
 });
+
+// #84: the setup's Create button stays reachable at every window the app can have, not only the
+// two the projects use: 320 px is the narrowest phone, 1100 px a small laptop window. "Reachable"
+// is what a patient needs: after scrolling it into view the button is what the pointer hits at its
+// centre (a window that hides what overflows it would leave something else, or nothing, there),
+// and the page does not scroll sideways.
+for (const [width, height] of [
+  [320, 568],
+  [360, 640],
+  [480, 800],
+  [768, 600],
+  [1100, 500],
+  [1100, 800],
+] as const) {
+  test(`the setup's Create button is reachable at ${width}x${height} with 200% default text`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await openAt200(page, "absent");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Set up myCarlos on this device" }),
+    ).toBeVisible();
+    const create = page.getByRole("button", { name: "Create vault" });
+    await create.scrollIntoViewIfNeeded();
+    await expect(create).toBeInViewport();
+    // Polled: the page may still be settling (a scroll, a late layout) under load.
+    await expect
+      .poll(
+        () =>
+          create.evaluate((button) => {
+            const box = button.getBoundingClientRect();
+            const top = document.elementFromPoint(
+              box.left + box.width / 2,
+              box.top + box.height / 2,
+            );
+            return top === button || button.contains(top);
+          }),
+        { message: "the Create button is what the pointer hits" },
+      )
+      .toBe(true);
+    expect(
+      await cutOffAtTheSides(page),
+      "cut off at the window's side",
+    ).toEqual([]);
+    expect(await scrollsSideways(page), "scrolls sideways").toBe(false);
+    // The two boxes and the restore choice are reachable the same way.
+    for (const name of [/^Passphrase/, /^Confirm/]) {
+      const box = page.getByLabel(name).first();
+      await box.scrollIntoViewIfNeeded();
+      await expect(box).toBeInViewport();
+    }
+  });
+}
