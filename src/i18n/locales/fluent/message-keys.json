@@ -1120,5 +1120,7 @@
   "interface.RecordingRecovery.deleteSure",
   "interface.RecordingRecovery.savedLocked",
   "interface.RecordingRecovery.savedLockedPaused",
-  "interface.RecordDialog.videoSavedFailed"
+  "interface.RecordDialog.videoSavedFailed",
+  "portal.deviceLine",
+  "portal.deviceLineLinked"
 ]

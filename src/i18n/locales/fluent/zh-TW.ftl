@@ -1340,6 +1340,10 @@ portal-deviceCode = 裝置代碼
 
 portal-deviceName = 此裝置的名稱
 
+portal-deviceLine = 裝置：{ $device }
+
+portal-deviceLineLinked = 裝置：{ $device }，連結於 { $date }
+
 portal-deviceDetailsShow = 顯示裝置詳細資料
 
 portal-deviceDetailsHide = 隱藏裝置詳細資料

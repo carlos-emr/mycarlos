@@ -886,6 +886,8 @@ pub enum MessageId {
     PortalDeviceCode,
     PortalDeviceDetailsHide,
     PortalDeviceDetailsShow,
+    PortalDeviceLine,
+    PortalDeviceLineLinked,
     PortalDeviceName,
     PortalDeviceRemoved,
     PortalEarlierHide,
@@ -2012,6 +2014,8 @@ impl MessageId {
         Self::PortalDeviceCode,
         Self::PortalDeviceDetailsHide,
         Self::PortalDeviceDetailsShow,
+        Self::PortalDeviceLine,
+        Self::PortalDeviceLineLinked,
         Self::PortalDeviceName,
         Self::PortalDeviceRemoved,
         Self::PortalEarlierHide,
@@ -3460,6 +3464,8 @@ impl MessageId {
             Self::PortalDeviceCode => "portal-deviceCode",
             Self::PortalDeviceDetailsHide => "portal-deviceDetailsHide",
             Self::PortalDeviceDetailsShow => "portal-deviceDetailsShow",
+            Self::PortalDeviceLine => "portal-deviceLine",
+            Self::PortalDeviceLineLinked => "portal-deviceLineLinked",
             Self::PortalDeviceName => "portal-deviceName",
             Self::PortalDeviceRemoved => "portal-deviceRemoved",
             Self::PortalEarlierHide => "portal-earlierHide",
@@ -5270,6 +5276,8 @@ impl MessageId {
             "interface.RecordDialog.videoSavedFailed" => {
                 Some(Self::InterfaceRecordDialogVideoSavedFailed)
             }
+            "portal.deviceLine" => Some(Self::PortalDeviceLine),
+            "portal.deviceLineLinked" => Some(Self::PortalDeviceLineLinked),
             _ => None,
         }
     }

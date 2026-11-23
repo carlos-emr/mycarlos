@@ -1468,6 +1468,10 @@ portal-deviceCode = Device code
 
 portal-deviceName = Name for this device
 
+portal-deviceLine = Device: { $device }
+
+portal-deviceLineLinked = Device: { $device }, linked { $date }
+
 portal-deviceDetailsShow = Show device details
 
 portal-deviceDetailsHide = Hide device details

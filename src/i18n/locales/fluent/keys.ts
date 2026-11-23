@@ -1122,6 +1122,8 @@ export const MESSAGE_KEYS = [
   "interface.RecordingRecovery.savedLocked",
   "interface.RecordingRecovery.savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed",
+  "portal.deviceLine",
+  "portal.deviceLineLinked",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2476,6 +2478,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordingRecovery-savedLockedPaused",
   "interface.RecordDialog.videoSavedFailed":
     "interface-RecordDialog-videoSavedFailed",
+  "portal.deviceLine": "portal-deviceLine",
+  "portal.deviceLineLinked": "portal-deviceLineLinked",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3717,6 +3721,8 @@ export interface MessageArgsByKey {
   "interface.RecordingRecovery.savedLocked": { name: FluentArgument };
   "interface.RecordingRecovery.savedLockedPaused": { name: FluentArgument };
   "interface.RecordDialog.videoSavedFailed": { name: FluentArgument };
+  "portal.deviceLine": { device: FluentArgument };
+  "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

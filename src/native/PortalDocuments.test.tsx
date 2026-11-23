@@ -392,6 +392,49 @@ describe("native clinic document controls", () => {
     expect(screen.queryByText(incomplete)).not.toBeInTheDocument();
   });
 
+  it("tells two cards for the same address apart by device name and the day linked (#160)", async () => {
+    const day = (iso: string) => new Date(iso).getTime();
+    const second: PortalLinkSummary = {
+      ...link,
+      id: "second-link",
+      deviceName: "FAKE reception desktop",
+      deviceKeyId: "FAKE_second",
+      linkedAtMs: day("2026-11-12T12:00:00Z"),
+    };
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [
+          { ...link, linkedAtMs: day("2026-10-03T12:00:00Z") },
+          second,
+        ],
+      },
+    });
+    const cards = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((heading) => heading.closest(".portal-link") as HTMLElement);
+    expect(cards).toHaveLength(2);
+    const lines = cards.map(
+      (card) => card.querySelector(".portal-device-line")!.textContent,
+    );
+    // Same clinic, same address; the lines differ, and each names its device and day.
+    expect(lines[0]).not.toBe(lines[1]);
+    expect(lines[0]).toContain("myCarlos on Windows");
+    expect(lines[0]).toMatch(/Oct\w* 3, 2026/);
+    expect(lines[1]).toContain("FAKE reception desktop");
+    expect(lines[1]).toMatch(/Nov\w* 12, 2026/);
+  });
+
+  it("shows only the device name when the link's day is not known", () => {
+    fixture({ snapshot: { ...snapshot, portalLinks: [link] } });
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).toContain("myCarlos on Windows");
+    expect(
+      document.querySelector(".portal-device-line")!.textContent,
+    ).not.toMatch(/linked/);
+  });
+
   it("lists a device a check found removed with the earlier attempts, for the session", async () => {
     const approved: PortalLinkSummary = {
       ...link,

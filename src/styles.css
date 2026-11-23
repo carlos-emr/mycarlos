@@ -4416,7 +4416,8 @@ button:disabled,
 .portal-earlier-toggle {
   margin-block: 0.25rem 1rem;
 }
-.portal-address {
+.portal-address,
+.portal-device-line {
   overflow-wrap: anywhere;
 }
 .portal-documents .native-inline-form {
