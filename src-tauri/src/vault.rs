@@ -20901,3 +20901,5 @@ mod tests {
 
 #[cfg(test)]
 mod automatic_collection_tests;
+#[cfg(test)]
+mod collection_cycle_tests;
