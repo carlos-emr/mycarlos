@@ -1228,3 +1228,46 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     setLocaleOverride("en");
   });
 });
+
+describe("the Hand records over button takes the focus back once (#360)", () => {
+  afterEach(cleanup);
+  const button = () =>
+    screen.getByRole("button", { name: humanText("Hand records over…") });
+
+  it("does so when a hide from the handover dialog ends, and not again when Security is entered afresh", () => {
+    const props = settingsProps({
+      people: FAKE_PEOPLE,
+      onHandOver: vi.fn(),
+      focusHandover: 0,
+    });
+    const view = render(<SecuritySettings {...props} />);
+    expect(button()).not.toHaveFocus();
+    // The dialog hid the person it handed over: the count moves, and the button takes the focus.
+    view.rerender(<SecuritySettings {...props} focusHandover={1} />);
+    expect(button()).toHaveFocus();
+    // The person goes to another part of the library and comes back to Security: the count is
+    // still 1 and was already acted on, so the focus stays where it opens.
+    view.unmount();
+    render(<SecuritySettings {...props} focusHandover={1} />);
+    expect(button()).not.toHaveFocus();
+  });
+
+  it("waits while the library is busy, then takes the focus once", () => {
+    const props = settingsProps({
+      people: FAKE_PEOPLE,
+      onHandOver: vi.fn(),
+    });
+    const view = render(<SecuritySettings {...props} focusHandover={0} />);
+    // The hide is still being carried out: the button is disabled, so nothing yet.
+    view.rerender(<SecuritySettings {...props} focusHandover={1} busy />);
+    expect(button()).not.toHaveFocus();
+    view.rerender(
+      <SecuritySettings {...props} focusHandover={1} busy={false} />,
+    );
+    expect(button()).toHaveFocus();
+    // And the next hide takes it again.
+    button().blur();
+    view.rerender(<SecuritySettings {...props} focusHandover={2} />);
+    expect(button()).toHaveFocus();
+  });
+});

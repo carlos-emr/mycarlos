@@ -1,5 +1,5 @@
 import { humanText, visibleText } from "../test/humanText";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -865,5 +865,235 @@ describe("the anonymize preview (#72 part B)", () => {
       "Pages that could not be read, left out: 4",
     ])
       expect(screen.getByText(humanText(note))).toBeInTheDocument();
+  });
+
+  // Gap tests (24 Nov): the paths of the preview that had no test.
+  const region = () => shownText();
+  /** The text node inside the shown text that holds `words`, and where they start in it. */
+  const find = (words: string) => {
+    const walker = document.createTreeWalker(region(), NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = node.textContent?.indexOf(words) ?? -1;
+      if (at >= 0) return { node, at };
+    }
+    throw new Error(`"${words}" is not in the shown text`);
+  };
+  const select = (words: string, from = 0, to = words.length) => {
+    const { node, at } = find(words);
+    window.getSelection()!.setBaseAndExtent(node, at + from, node, at + to);
+  };
+  // A plain click on the button: the pointer events of a user click would move the selection.
+  const pressRemoveSelected = () =>
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Remove the selected text"),
+      }),
+    );
+
+  it("removes the selected text as one step, and asks for a selection first when there is none, or it lies in a placeholder or outside the text", async () => {
+    renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    const selectFirst = humanText("Select some of the text first.");
+    // Nothing selected.
+    window.getSelection()!.removeAllRanges();
+    pressRemoveSelected();
+    expect(await screen.findByText(selectFirst)).toBeInTheDocument();
+    // A selection in the page's own text, not in the shown text.
+    const summary = document.querySelector(".native-anonymize-summary")!;
+    window
+      .getSelection()!
+      .setBaseAndExtent(summary.firstChild!, 0, summary.firstChild!, 3);
+    pressRemoveSelected();
+    expect(shownString()).toContain("for chest pain.");
+    // A selection bounded by the text's own element, which has no offset of its own.
+    window.getSelection()!.setBaseAndExtent(region(), 0, region(), 1);
+    pressRemoveSelected();
+    expect(shownString()).toContain("for chest pain.");
+    // Inside a placeholder already: nothing more to remove there.
+    select("[NAME 1]", 1, 4);
+    pressRemoveSelected();
+    expect(shownString()).toContain("Patient: [NAME 1]");
+    expect(shownString()).not.toContain("[REMOVED");
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
+      "Select some of the text first.",
+    );
+    // A real selection: removed as one step, the selection is cleared and undo puts it back.
+    select("chest pain");
+    pressRemoveSelected();
+    expect(shownString()).toContain("for [REMOVED 1].");
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
+      "Removed in 1 places.",
+    );
+    expect(window.getSelection()!.rangeCount).toBe(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Undo the last removal") }),
+    );
+    expect(shownString()).toContain("for chest pain.");
+  });
+
+  it("says when the typed phrase is nowhere in the text, or only inside placeholders, and does nothing for an empty one", async () => {
+    const user = userEvent.setup();
+    renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    const before = shownString();
+    const box = screen.getByLabelText(
+      humanText("Word or phrase to remove everywhere"),
+    );
+    const remove = screen.getByRole("button", {
+      name: humanText("Remove everywhere"),
+    });
+    // Empty: the button is off, and a submit from the keyboard does nothing either.
+    expect(remove).toBeDisabled();
+    fireEvent.submit(remove.closest("form")!);
+    expect(screen.queryByRole("status")).toBeNull();
+    await user.type(box, "zebra");
+    await user.click(remove);
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
+      "That text was not found.",
+    );
+    // The phrase stays for the patient to correct, and nothing was removed.
+    expect(box).toHaveValue("zebra");
+    expect(shownString()).toBe(before);
+    // The word stands only inside a placeholder ("[NAME 1]"): not removed again.
+    await user.clear(box);
+    await user.type(box, "name 1");
+    await user.click(remove);
+    expect(screen.getByRole("status")).toHaveHumanTextContent(
+      "That text was not found.",
+    );
+    expect(shownString()).toBe(before);
+  });
+
+  it("says the text could not be read, with the reason, when reading fails for any other cause", async () => {
+    renderPreview({
+      readText: vi.fn(async () => {
+        throw refusal("FAKE_readFailed");
+      }),
+    });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveHumanTextContent(
+      /The document's text could not be read\./,
+    );
+    expect(
+      screen.queryByRole("region", {
+        name: humanText("The text that will be saved"),
+      }),
+    ).toBeNull();
+    expect(screen.queryByLabelText(humanText("Document password"))).toBeNull();
+  });
+
+  it("does not read again for an empty document password", async () => {
+    const readText = vi.fn(
+      async (_password?: string): Promise<DocumentText> => {
+        throw refusal("pdfLocked");
+      },
+    );
+    renderPreview({ readText });
+    const box = await screen.findByLabelText(humanText("Document password"));
+    expect(box).toHaveValue("");
+    fireEvent.submit(box.closest("form")!);
+    expect(readText).toHaveBeenCalledTimes(1);
+    expect(readText).toHaveBeenCalledWith(undefined);
+  });
+
+  it("shows why a copy or a save failed, keeps the text, and lets the patient try again", async () => {
+    const user = userEvent.setup();
+    const { copyText, saveText } = renderPreview({
+      copyText: vi.fn(async () => {
+        throw refusal("FAKE_copyFailed");
+      }),
+      saveText: vi.fn(async () => {
+        throw refusal("FAKE_saveFailed");
+      }),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    const before = shownString();
+    const copy = screen.getByRole("button", { name: humanText("Copy text") });
+    await user.click(copy);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(copyText).toHaveBeenCalledTimes(1);
+    // Neither action is stuck "busy", and the text is as it was.
+    expect(copy).toBeEnabled();
+    expect(shownString()).toBe(before);
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: humanText("Save the text…"),
+      }),
+    );
+    await vi.waitFor(() => expect(saveText).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByText(humanText("The text was saved."))).toBeNull();
+    expect(
+      screen.getByRole("button", { name: humanText("Save the text…") }),
+    ).toBeEnabled();
+    expect(copy).toBeEnabled();
+    expect(shownString()).toBe(before);
+  });
+
+  it("takes out every place the native check names, last place first, and skips one outside the text", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async (_value: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderPreview({
+      copyText: vi.fn(
+        async (
+          _ticket: string,
+          text: string,
+          _kept?: { start: number; end: number }[],
+        ) => ({
+          approved: null,
+          hits: [
+            { start: text.indexOf("ward"), end: text.indexOf("ward") + 4 },
+            {
+              start: text.indexOf("Ramipril"),
+              end: text.indexOf("Ramipril") + 8,
+            },
+            { start: text.length + 10, end: text.length + 20 },
+          ],
+        }),
+      ),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    expect(writeText).not.toHaveBeenCalled();
+    // The last place goes first, so it is numbered first.
+    expect(shownString()).toContain("Admitted to the [REMOVED 2] on day 3.");
+    expect(shownString()).toContain("[REMOVED 1] 5 mg.");
+    expect(shownString()).not.toContain("Ramipril");
+    // The count in the notice is the count the check gave, whatever could be removed.
+    expect(await screen.findByRole("status")).toHaveHumanTextContent(
+      /in 3 places/,
+    );
+  });
+
+  it("says nothing has been removed yet when the text holds nothing to take out", async () => {
+    const plainPages = [
+      { index: 0, text: "Follow up in May. Continue ramipril 5 mg daily." },
+    ];
+    renderPreview({
+      text: documentText({ pages: plainPages, ...joinPages(plainPages) }),
+    });
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    expect(
+      document.querySelector(".native-anonymize-summary"),
+    ).toHaveHumanTextContent("Nothing has been removed yet.");
   });
 });
