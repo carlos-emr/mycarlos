@@ -573,7 +573,7 @@ describe("the evaluation preview's remaining controls", () => {
     const user = userEvent.setup();
     render(<App bridge={bridge()} />);
     await user.click(screen.getByRole("button", { name: "Grid view" }));
-    const grid = document.querySelector<HTMLElement>(".file-grid")!;
+    const grid = screen.getByLabelText(/visible library items/);
     // A folder is a tile with no record actions.
     expect(within(grid).getByText("Heart & blood pressure")).toBeVisible();
     expect(
@@ -594,7 +594,10 @@ describe("the evaluation preview's remaining controls", () => {
       "aria-pressed",
       "true",
     );
-    expect(document.querySelector(".file-grid")).toBeNull();
+    expect(screen.getByRole("button", { name: "Grid view" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("opens a document from its name in the list, and Escape closes the preview", async () => {
@@ -618,7 +621,7 @@ describe("the evaluation preview's remaining controls", () => {
     expect(screen.getByText("No matching records")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Grid view" }));
     expect(screen.getByText("No matching records")).toBeVisible();
-    expect(document.querySelector(".file-grid")).toHaveAccessibleName(
+    expect(screen.getByLabelText(/visible library items/)).toHaveAccessibleName(
       "0 visible library items",
     );
   });
