@@ -6339,7 +6339,9 @@ async fn vault_unlock_named(
 /// guess, so it is not counted on the device-wide counter, but it is refused while a wait is running:
 /// a screen the device has locked out must not be a way to make vaults. Adding never clears the
 /// counter (the counts are about the device). Not granted to the renderer until the screen for
-/// several vaults exists (PR 5).
+/// several vaults exists (PR 5). A refusal after the vault was made (the window was closed to the
+/// tray meanwhile, or the old vault began something while the new one was made) leaves the new vault
+/// registered and locked: the screen must say it was already added, not offer to add it again.
 #[tauri::command]
 async fn vault_add_vault(
     store: State<'_, StoreHandle>,
@@ -6349,6 +6351,10 @@ async fn vault_add_vault(
     mut request: AddVaultRequest,
 ) -> CommandResult<VaultSnapshot> {
     let store = store.pin();
+    // As `vault_create` and `vault_unlock`: an add that finishes after the window was closed to the
+    // tray is closed again and refused (#206), or the new vault would open in a window nobody sees.
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
     let picks = Arc::clone(picks.inner());
     let received = Arc::clone(received.inner());
     let now = now_ms();
@@ -6375,6 +6381,8 @@ async fn vault_add_vault(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
     .map_err(PublicError::from)?;
+    // The vault is made and stays registered; it is locked again and the screen is told no.
+    refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
     after_open(&opened);
     run_blocking(&opened, VaultStore::snapshot).await
 }
@@ -7589,6 +7597,30 @@ mod tests {
         assert!(restore.ends_with(
             "forget_vault(throttle.inner(), store.arc(), store.all()).await;\n    Ok(true)"
         ));
+    }
+
+    /// Every command that opens a vault the owner cannot yet see closes it again if the window was
+    /// closed to the tray while it worked (#206): `started` is taken before any work and the refusal
+    /// comes after it and before the screen is given the vault. (`vault_unlock_named` is the same
+    /// gap and is listed in the PR that fixes it.)
+    #[test]
+    fn adding_a_vault_is_refused_when_the_window_was_closed_to_the_tray_meanwhile() {
+        let source = include_str!("lib.rs");
+        let body = source.split("async fn vault_add_vault(").nth(1).unwrap();
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let code = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let started = code.find("desktop_background::close_locks()").unwrap();
+        let work = code.find("spawn_blocking").unwrap();
+        let refused = code
+            .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
+            .unwrap();
+        let shown = code.find("after_open(&opened)").unwrap();
+        assert!(started < work && work < refused && refused < shown);
     }
 
     #[test]
