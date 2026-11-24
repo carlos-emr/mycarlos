@@ -264,19 +264,22 @@ describe("choosing the camera and the microphone", () => {
     ).toBeNull();
   });
 
-  it("falls back to the system default and says so when a remembered device is gone", async () => {
+  it("gives way only the remembered device that is gone, and says so", async () => {
     window.localStorage.setItem(
       KEY,
       JSON.stringify({ camera: "cam-gone", microphone: "mic-b" }),
     );
     open();
     await ready();
-    // The first request named the missing camera and was refused; the second asked for no device.
-    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    // Both remembered, one gone: all together, then the camera alone (refused), then the
+    // microphone alone with the default camera (opens).
+    expect(getUserMedia).toHaveBeenCalledTimes(3);
     expect(exact(getUserMedia.mock.calls[0]![0].video)).toBe("cam-gone");
-    const second = getUserMedia.mock.calls[1]![0];
-    expect(exact(second.video)).toBeUndefined();
-    expect(second.audio).toBe(true);
+    expect(exact(getUserMedia.mock.calls[1]![0].video)).toBe("cam-gone");
+    const last = getUserMedia.mock.calls[2]![0];
+    expect(exact(last.video)).toBeUndefined();
+    // The microphone the patient chose is kept.
+    expect(exact(last.audio)).toBe("mic-b");
     expect(
       screen.getByText(
         humanText(
@@ -285,15 +288,76 @@ describe("choosing the camera and the microphone", () => {
       ),
     ).toBeVisible();
     expect(cameraList().value).toBe("cam-a");
-    expect(microphoneList().value).toBe("mic-a");
+    expect(microphoneList().value).toBe("mic-b");
+    // The remembered choice is not overwritten by the fallback, so the camera is used again when
+    // it is plugged back in.
+    expect(readDeviceChoice()).toEqual({
+      camera: "cam-gone",
+      microphone: "mic-b",
+    });
     // Nothing else was lost: the preview works, and a choice made now is remembered.
     fireEvent.change(cameraList(), { target: { value: "cam-b" } });
-    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(4));
     await waitFor(() =>
       expect(
         screen.queryByText(/is not connected, so the system's default/),
       ).toBeNull(),
     );
+    expect(readDeviceChoice()).toEqual({
+      camera: "cam-b",
+      microphone: "mic-b",
+    });
+  });
+
+  it("falls back to the default for both when both remembered devices are gone", async () => {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ camera: "cam-gone", microphone: "mic-gone" }),
+    );
+    open();
+    await ready();
+    const last = getUserMedia.mock.calls.at(-1)![0];
+    expect(exact(last.video)).toBeUndefined();
+    expect(last.audio).toBe(true);
+    expect(cameraList().value).toBe("cam-a");
+    expect(microphoneList().value).toBe("mic-a");
+  });
+
+  it("says a remembered device is gone even when the devices cannot be listed", async () => {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ camera: "cam-gone", microphone: null }),
+    );
+    enumerate.mockImplementation(async () => {
+      throw new Error("FAKE enumerateDevices refused");
+    });
+    open();
+    await ready();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(
+      screen.getByText(
+        humanText(
+          "The camera or microphone you used last is not connected, so the system's default is in use.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("remembers a device only once its stream has opened", async () => {
+    open();
+    await ready();
+    getUserMedia.mockImplementationOnce(async () => {
+      throw Object.assign(new Error("FAKE camera is busy"), {
+        name: "NotReadableError",
+      });
+    });
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    await screen.findByRole("button", { name: /Try again/ });
+    // The busy camera was not saved, so "Try again" does not ask for it for ever.
+    expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
+    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
+    await screen.findByRole("button", { name: "Start recording" });
+    expect(exact(getUserMedia.mock.calls.at(-1)![0].video)).toBeUndefined();
   });
 
   it("follows a camera or microphone being plugged in or unplugged", async () => {

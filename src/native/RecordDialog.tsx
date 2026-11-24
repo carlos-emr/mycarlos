@@ -232,8 +232,29 @@ export function RecordDialog({
         } catch (error) {
           if (!(wanted.camera || wanted.microphone) || !deviceIsGone(error))
             throw error;
+          // Only the device that is gone gives way: the request cannot say which one it was, so
+          // each remembered device is tried alone with the system's default for the other, and
+          // the defaults for both only if that fails too.
+          const tries: DeviceChoice[] = [];
+          if (wanted.camera && wanted.microphone)
+            tries.push(
+              { camera: wanted.camera, microphone: null },
+              { camera: null, microphone: wanted.microphone },
+            );
+          tries.push(NO_CHOICE);
+          let opened: MediaStream | null = null;
+          for (const [index, chosen] of tries.entries()) {
+            try {
+              opened = await open(chosen);
+              break;
+            } catch (again) {
+              if (index === tries.length - 1 || !deviceIsGone(again))
+                throw again;
+            }
+          }
+          if (!opened) throw error;
+          stream = opened;
           gone = true;
-          stream = await open(NO_CHOICE);
         }
         if (attempt !== attemptRef.current) {
           for (const track of stream.getTracks()) track.stop();
@@ -258,8 +279,17 @@ export function RecordDialog({
         const connected = await listDevices(navigator.mediaDevices);
         if (attempt !== attemptRef.current) return;
         setDevices(connected);
-        setUsing(devicesInUse(stream));
+        const used = devicesInUse(stream);
+        setUsing(used);
         setFellBack(gone);
+        // A choice made from the lists is remembered only now that its stream is open: a device
+        // that is busy or refuses must not become the one asked for every time ("Try again"
+        // would retry it for ever).
+        if (choice)
+          rememberDeviceChoice({
+            camera: used.camera ?? choice.camera,
+            microphone: used.microphone ?? choice.microphone,
+          });
         setStage("ready");
       } catch (error) {
         if (attempt !== attemptRef.current) return;
@@ -729,7 +759,6 @@ export function RecordDialog({
   const switchDevice = (kind: "camera" | "microphone", id: string) => {
     if (stage !== "ready" || using[kind] === id) return;
     const next = { ...using, [kind]: id };
-    rememberDeviceChoice(next);
     refocusRef.current = kind;
     restartedRef.current = false;
     setTesting(false);
@@ -793,6 +822,11 @@ export function RecordDialog({
             muted
             playsInline
           />
+          {fellBack && (stage === "ready" || recordingNow) && (
+            <p role="status">
+              {translateNow("interface.RecordDialog.deviceFellBack")}
+            </p>
+          )}
           {(stage === "ready" || recordingNow) &&
             (devices.cameras.length > 0 || devices.microphones.length > 0) && (
               <fieldset className="record-devices appearance-choice">
@@ -817,11 +851,6 @@ export function RecordDialog({
                   disabled={stage !== "ready"}
                   onChange={switchDevice}
                 />
-                {fellBack && (
-                  <p role="status">
-                    {translateNow("interface.RecordDialog.deviceFellBack")}
-                  </p>
-                )}
                 {stage === "ready" && typeof AudioContext !== "undefined" && (
                   <div className="record-mic-test">
                     <button
