@@ -91,6 +91,26 @@ wrapped; if myCarlos ever adopts one, change the scheme deliberately here and in
 `scripts/android-version-code.mjs` before the first upload, because a version code can never go down.
 Symbol and mapping upload (native debug symbols, R8 mapping) is for later: it needs the Play Console app.
 
+## Google Play and the direct APK download (decided by Ben, 24 Nov 2026)
+
+Android goes to **both** Google Play and a direct APK download, signed so that one can update the other:
+**Play App Signing is used, and the direct download is the universal APK that Play Console generates for
+each release** (taken from the release's app bundle explorer in Play Console), signed by the same Google-held
+app-signing key as the copies Play installs. This script's `.aab` stays signed with the **upload key** only.
+What follows from it:
+
+- **Never publish an APK built and signed here as the direct download.** It carries the upload key's
+  signature, a different one, so it can neither update a Play install nor be updated by Play; the only way
+  across is uninstall and reinstall, which **deletes the vault on that phone** (device backup is off).
+- The same `versionCode` (this scheme) is on the Play copy and on the Console's universal APK, so both
+  channels rise together; Play needs it to go up on every upload.
+- Each release's direct download is a manual step: upload the `.aab`, then download the universal APK from
+  Play Console and publish that file (with its checksum) on the download page.
+- It needs the Play Console app and Play App Signing enrolment first (still to do, below). Ben chose this
+  over giving Play our own app-signing key (which would let CI sign the direct APK itself) and over two
+  package ids; if that is ever revisited, the choice of app-signing key is made when the app is created in
+  Play Console and cannot be changed afterwards.
+
 **Not done here** (Ben or later): the upload keystore itself, the Play Console app and Play App Signing
 enrolment, the product name (the app is still named "myCarlos Evaluation"), and a workflow that runs
 this script with the secrets (a `.github` change).
