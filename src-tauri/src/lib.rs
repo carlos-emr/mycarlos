@@ -67,6 +67,7 @@ mod portal_client;
 mod portal_delivery;
 mod portal_link;
 mod portal_pickup;
+mod process_flags;
 mod reading_aid;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
