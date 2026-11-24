@@ -359,30 +359,115 @@ pub(crate) fn windows_run_value(exe: &Path) -> String {
     format!("\"{}\" {BACKGROUND_ARG}", exe.display())
 }
 
-/// Arguments to reg.exe that set or remove the current user's `Run` value.
-#[cfg_attr(not(windows), allow(dead_code))] // run on Windows only; tested everywhere
-pub(crate) fn windows_reg_args(enabled: bool, exe: &Path) -> Vec<String> {
-    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run".to_owned();
-    if enabled {
-        vec![
-            "add".into(),
-            key,
-            "/v".into(),
-            LOGIN_NAME.into(),
-            "/t".into(),
-            "REG_SZ".into(),
-            "/d".into(),
-            windows_run_value(exe),
-            "/f".into(),
-        ]
-    } else {
-        vec![
-            "delete".into(),
-            key,
-            "/v".into(),
-            LOGIN_NAME.into(),
-            "/f".into(),
-        ]
+/// The key under HKEY_CURRENT_USER whose `Run` values start programs at sign-in.
+#[cfg_attr(not(windows), allow(dead_code))] // used on Windows; the test pins it everywhere
+pub(crate) const WINDOWS_RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Setting and removing the sign-in `Run` value through the registry API. It used to start
+/// `reg.exe`, which flashed a console window each time the choice changed; nothing is started now.
+#[cfg(windows)]
+mod login_registry {
+    use super::{Error, LOGIN_NAME, WINDOWS_RUN_SUBKEY};
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+    use windows::Win32::System::Registry::{
+        RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+    };
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// The value now, or `None` when there is none.
+    pub(super) fn read() -> Result<Option<String>, Error> {
+        let (key, name) = (wide(WINDOWS_RUN_SUBKEY), wide(LOGIN_NAME));
+        let mut bytes = 0u32;
+        // SAFETY: both strings are NUL-terminated and outlive the call; `bytes` is a valid out-pointer.
+        let probe = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                RRF_RT_REG_SZ,
+                None,
+                None,
+                Some(&mut bytes),
+            )
+        };
+        if probe == ERROR_FILE_NOT_FOUND {
+            return Ok(None);
+        }
+        if probe != ERROR_SUCCESS {
+            return Err(Error::LoginItem);
+        }
+        let mut buffer = vec![0u16; bytes as usize / 2 + 1];
+        let mut size = (buffer.len() * 2) as u32;
+        // SAFETY: `buffer` holds `size` bytes and the strings are as above.
+        let got = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buffer.as_mut_ptr().cast()),
+                Some(&mut size),
+            )
+        };
+        if got != ERROR_SUCCESS {
+            return Err(Error::LoginItem);
+        }
+        let units = (size as usize / 2).min(buffer.len());
+        let text = &buffer[..units];
+        let end = text
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(text.len());
+        Ok(Some(String::from_utf16_lossy(&text[..end])))
+    }
+
+    /// Writes the value, then reads it back: anything but exactly `value` is a failure.
+    pub(super) fn set(value: &str) -> Result<(), Error> {
+        let (key, name, data) = (wide(WINDOWS_RUN_SUBKEY), wide(LOGIN_NAME), wide(value));
+        // SAFETY: the strings are NUL-terminated; `data` holds `data.len() * 2` readable bytes.
+        let status = unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                REG_SZ.0,
+                Some(data.as_ptr().cast()),
+                (data.len() * 2) as u32,
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(Error::LoginItem);
+        }
+        match read()? {
+            Some(now) if now == value => Ok(()),
+            _ => Err(Error::LoginItem),
+        }
+    }
+
+    /// Removes the value; one that is not there is as good as removed. Reads back that it is gone.
+    pub(super) fn remove() -> Result<(), Error> {
+        let (key, name) = (wide(WINDOWS_RUN_SUBKEY), wide(LOGIN_NAME));
+        // SAFETY: the strings are NUL-terminated and outlive the call.
+        let status = unsafe {
+            RegDeleteKeyValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+            )
+        };
+        // Any other failure (access denied, say) means it may still be there, and is reported.
+        if status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND {
+            return Err(Error::LoginItem);
+        }
+        match read()? {
+            None => Ok(()),
+            Some(_) => Err(Error::LoginItem),
+        }
     }
 }
 
@@ -463,20 +548,10 @@ pub(crate) fn set_login_item(enabled: bool, exe: &Path) -> Result<(), Error> {
     }
     #[cfg(windows)]
     {
-        let system = std::env::var_os("SystemRoot").ok_or(Error::LoginItem)?;
-        let reg = Path::new(&system).join("System32").join("reg.exe");
-        let status = std::process::Command::new(reg)
-            .args(windows_reg_args(enabled, exe))
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map_err(|_| Error::LoginItem)?;
-        // Deleting a value that is not there fails with 1; the entry is gone either way. Any other
-        // failure (access denied, say) means it may still be there, and is reported.
-        if status.success() || (!enabled && status.code() == Some(1)) {
-            Ok(())
+        if enabled {
+            login_registry::set(&windows_run_value(exe))
         } else {
-            Err(Error::LoginItem)
+            login_registry::remove()
         }
     }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1221,27 +1296,12 @@ mod tests {
             windows_run_value(Path::new(r"C:\Program Files\myCarlos\myCarlos.exe")),
             r#""C:\Program Files\myCarlos\myCarlos.exe" --background"#
         );
-        let add = windows_reg_args(true, Path::new(r"C:\a\b.exe"));
+        // The value goes into the registry's Run key under this name (no process is started to do it).
         assert_eq!(
-            add[..3],
-            [
-                "add",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "/v"
-            ]
+            WINDOWS_RUN_SUBKEY,
+            r"Software\Microsoft\Windows\CurrentVersion\Run"
         );
-        assert_eq!(add[3], "myCarlos");
-        assert_eq!(add[7], r#""C:\a\b.exe" --background"#);
-        assert_eq!(
-            windows_reg_args(false, Path::new(r"C:\a\b.exe")),
-            [
-                "delete",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "/v",
-                "myCarlos",
-                "/f"
-            ]
-        );
+        assert_eq!(LOGIN_NAME, "myCarlos");
     }
 
     #[test]

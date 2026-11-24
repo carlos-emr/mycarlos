@@ -253,6 +253,13 @@ impl ReceivedFiles {
         notice.refused_shares += usize::from(refused);
     }
 
+    /// Forgets the files waiting to be imported (not those an import has taken, which it finishes
+    /// or puts back). Called when the screen moves to another vault (#357): what the operating
+    /// system offered the app while one vault was open must not follow the owner into another.
+    pub(crate) fn clear(&self) {
+        self.waiting().files.clear();
+    }
+
     /// The notice since the last call, cleared.
     pub(crate) fn take_notice(&self) -> ReceiveNotice {
         std::mem::take(&mut *self.notice())

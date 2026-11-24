@@ -8,6 +8,37 @@ export const SKIP_SECONDS = 5;
 export const BIG_SKIP_SECONDS = 10;
 const VOLUME_STEP = 0.1;
 
+type Action =
+  | "playPause"
+  | "back"
+  | "forward"
+  | "backBig"
+  | "forwardBig"
+  | "volumeUp"
+  | "volumeDown"
+  | "mute"
+  | "start"
+  | "end";
+
+/** The keys and what they do (the buttons under the video do the same, and say the key). */
+const ACTION_OF_KEY: Record<string, Action | undefined> = {
+  " ": "playPause",
+  k: "playPause",
+  K: "playPause",
+  ArrowLeft: "back",
+  ArrowRight: "forward",
+  j: "backBig",
+  J: "backBig",
+  l: "forwardBig",
+  L: "forwardBig",
+  ArrowUp: "volumeUp",
+  ArrowDown: "volumeDown",
+  m: "mute",
+  M: "mute",
+  Home: "start",
+  End: "end",
+};
+
 /** A stored video, played from the vault's own address (#359). `url` is the
  * `mycarlos-video` address a token makes. It never plays by itself, never
  * repeats, and is torn down (its address dropped, so nothing more is asked of
@@ -27,11 +58,14 @@ export function VideoViewer({
 }) {
   const { t } = useI18n();
   const [failed, setFailed] = useState(false);
+  const [muted, setMuted] = useState(false);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playingRef = useRef(false);
-  useModalFocus(true, dialogRef, onClose, closeRef);
+  // The player takes the first focus (its Space, arrow and J/L keys work at once, and its own
+  // controls are one Tab away); Escape and the Close button still close the viewer.
+  useModalFocus(true, dialogRef, onClose, videoRef);
 
   // The latest callback and address, read through refs: the library hands in a
   // new function on every render, and a teardown that depended on it would run
@@ -67,11 +101,11 @@ export function VideoViewer({
     };
   }, []);
 
-  const key = (event: KeyboardEvent<HTMLElement>) => {
+  /** What a key or its button does to the video: the same function for both, so that they cannot
+   * drift apart. */
+  const act = (action: Action) => {
     const video = videoRef.current;
-    if (!video || event.altKey || event.ctrlKey || event.metaKey) return;
-    // Buttons keep their own keys (Space and Enter press them).
-    if ((event.target as HTMLElement).closest("button")) return;
+    if (!video) return;
     const skip = (seconds: number) => {
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
       video.currentTime = Math.min(
@@ -79,49 +113,126 @@ export function VideoViewer({
         end,
       );
     };
-    switch (event.key) {
-      case " ":
-      case "k":
-      case "K":
+    switch (action) {
+      case "playPause":
         if (video.paused) void video.play().catch(() => undefined);
         else video.pause();
         break;
-      case "ArrowLeft":
+      case "back":
         skip(-SKIP_SECONDS);
         break;
-      case "ArrowRight":
+      case "forward":
         skip(SKIP_SECONDS);
         break;
-      case "j":
-      case "J":
+      case "backBig":
         skip(-BIG_SKIP_SECONDS);
         break;
-      case "l":
-      case "L":
+      case "forwardBig":
         skip(BIG_SKIP_SECONDS);
         break;
-      case "ArrowUp":
+      case "volumeUp":
         video.volume = Math.min(1, video.volume + VOLUME_STEP);
         break;
-      case "ArrowDown":
+      case "volumeDown":
         video.volume = Math.max(0, video.volume - VOLUME_STEP);
         break;
-      case "m":
-      case "M":
+      case "mute":
         video.muted = !video.muted;
         break;
-      case "Home":
+      case "start":
         video.currentTime = 0;
         break;
-      case "End":
+      case "end":
         if (Number.isFinite(video.duration)) video.currentTime = video.duration;
         break;
-      default:
-        return;
     }
+  };
+
+  // The shortcuts work wherever the focus is inside the player (the video, the play button or any
+  // control), because this runs on the dialog, not on the video; nowhere else, and never while the
+  // focus is in a text field (WCAG 2.1.4: they are single keys, scoped to the focused player).
+  const key = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("input, textarea, select, [contenteditable]")) return;
+    // A focused button keeps Space and Enter for its own action (one press, one action).
+    if (
+      (event.key === " " || event.key === "Enter") &&
+      target.closest("button")
+    )
+      return;
+    const action = ACTION_OF_KEY[event.key];
+    if (!action) return;
+    act(action);
     event.preventDefault();
     event.stopPropagation();
   };
+
+  // Once playing, the keys must have somewhere to land: if the click on Play took the focus out of
+  // the player (some web views do, for their own controls), it goes back to the video.
+  const keepFocusInPlayer = () => {
+    const dialog = dialogRef.current;
+    const video = videoRef.current;
+    if (dialog && video && !dialog.contains(document.activeElement))
+      video.focus({ preventScroll: true });
+  };
+
+  const controls: { action: Action; label: string; shortcut: string }[] = [
+    {
+      action: "playPause",
+      label: t("interface.VideoViewer.playPause"),
+      shortcut: "k Space",
+    },
+    {
+      action: "back",
+      label: t("interface.VideoViewer.back", { seconds: SKIP_SECONDS }),
+      shortcut: "ArrowLeft",
+    },
+    {
+      action: "forward",
+      label: t("interface.VideoViewer.forward", { seconds: SKIP_SECONDS }),
+      shortcut: "ArrowRight",
+    },
+    {
+      action: "backBig",
+      label: t("interface.VideoViewer.backBig", { seconds: BIG_SKIP_SECONDS }),
+      shortcut: "j",
+    },
+    {
+      action: "forwardBig",
+      label: t("interface.VideoViewer.forwardBig", {
+        seconds: BIG_SKIP_SECONDS,
+      }),
+      shortcut: "l",
+    },
+    {
+      action: "volumeUp",
+      label: t("interface.VideoViewer.volumeUp"),
+      shortcut: "ArrowUp",
+    },
+    {
+      action: "volumeDown",
+      label: t("interface.VideoViewer.volumeDown"),
+      shortcut: "ArrowDown",
+    },
+    {
+      action: "mute",
+      label: t(
+        muted ? "interface.VideoViewer.unmute" : "interface.VideoViewer.mute",
+      ),
+      shortcut: "m",
+    },
+    {
+      action: "start",
+      label: t("interface.VideoViewer.start"),
+      shortcut: "Home",
+    },
+    {
+      action: "end",
+      label: t("interface.VideoViewer.end"),
+      shortcut: "End",
+    },
+  ];
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -153,6 +264,9 @@ export function VideoViewer({
             preload="metadata"
             playsInline
             aria-label={t("interface.VideoViewer.player", { name })}
+            onClick={keepFocusInPlayer}
+            onPlay={keepFocusInPlayer}
+            onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
             onPlaying={() => say(true)}
             onPause={() => say(false)}
             onEnded={() => say(false)}
@@ -171,9 +285,24 @@ export function VideoViewer({
             {t("interface.VideoViewer.thisVideoCouldNotBePlayed")}
           </p>
         ) : (
-          <p className="native-dialog-status">
-            {t("interface.VideoViewer.keys", { seconds: SKIP_SECONDS })}
-          </p>
+          // The keys, as buttons that say their key: each does what its key does.
+          <div
+            className="video-controls"
+            role="group"
+            aria-label={t("interface.VideoViewer.controls")}
+          >
+            {controls.map(({ action, label, shortcut }) => (
+              <button
+                key={action}
+                className="button"
+                type="button"
+                aria-keyshortcuts={shortcut}
+                onClick={() => act(action)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         )}
         <footer className="dialog-actions">
           <button
