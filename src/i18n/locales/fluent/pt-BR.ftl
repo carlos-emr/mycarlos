@@ -1900,6 +1900,8 @@ ai-label-settingsBody = As respostas da IA podem conter erros, e cada uma inform
 
 ai-label-settingsShowFull = Mostrar o aviso completo novamente
 
+ai-label-settingsFullBack = O aviso completo voltou a ser mostrado em cada resposta da IA.
+
 ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrada nas respostas da IA para as quais você a escolheu.
 
 ai-result-meta = { $tool } · { $model } · { $date }

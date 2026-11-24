@@ -1900,6 +1900,8 @@ ai-label-settingsBody = Les réponses de l’IA peuvent contenir des erreurs, et
 
 ai-label-settingsShowFull = Afficher de nouveau l’avertissement complet
 
+ai-label-settingsFullBack = L’avertissement complet est de nouveau affiché sur chaque réponse de l’IA.
+
 ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affichée sur les réponses de l’IA pour lesquelles vous l’avez choisie.
 
 ai-result-meta = { $tool } · { $model } · { $date }

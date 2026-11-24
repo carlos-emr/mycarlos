@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -21,6 +21,7 @@ afterEach(() => {
 
 const BODY =
   "AI answers can be wrong. Each one says so. If you choose “Don't show this again” on an answer, later answers show a short “AI draft” label instead of the full sentence.";
+const FULL_BACK = "The full warning is back on every AI answer.";
 const SHORT_SHOWN =
   "A short “AI draft” tag is shown on the AI answers you chose it for.";
 
@@ -55,6 +56,7 @@ describe("Settings → AI helper: the warning on AI answers (#351)", () => {
     );
     expect(aiLabelIsShort("summary", MODEL)).toBe(false);
     expect(screen.queryByText(SHORT_SHOWN)).toBeNull();
+    expect(screen.getByText(FULL_BACK)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Show the full warning again" }),
     ).toBeNull();
@@ -76,6 +78,12 @@ describe("Settings → AI helper: the warning on AI answers (#351)", () => {
         screen.getByRole("button", { name: "Show the full warning again" }),
       );
     expect(screen.getByRole("status")).toBe(status);
-    expect(status).toBeEmptyDOMElement();
+    // The restore is said once, in the same element, by a visually hidden sentence.
+    const said = within(status).getByText(FULL_BACK);
+    expect(said).toHaveClass("sr-only");
+    // A short label chosen again takes the element back with its own words.
+    rememberShortAiLabel("summary", MODEL);
+    expect(await screen.findByText(SHORT_SHOWN)).toBe(status);
+    expect(screen.queryByText(FULL_BACK)).toBeNull();
   });
 });

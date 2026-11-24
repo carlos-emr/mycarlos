@@ -1712,6 +1712,8 @@ ai-label-settingsBody = AI 回答可能有误，每条回答都会这样说明�
 
 ai-label-settingsShowFull = 再次显示完整提示
 
+ai-label-settingsFullBack = 完整警告已恢复显示在每条 AI 回答上。
+
 ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的“AI 草稿”标签。
 
 ai-result-meta = { $tool } · { $model } · { $date }

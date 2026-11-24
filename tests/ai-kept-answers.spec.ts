@@ -290,5 +290,9 @@ test("Don't show this again leaves an AI draft label with a button that shows th
   await expectNoAxeViolations(page, "the AI helper's settings");
   await back.click();
   await expect(back).toHaveCount(0);
+  // Said once to a screen reader (visually hidden) after the button and its sentence went.
+  await expect(
+    page.getByText(en("ai.label.settingsFullBack"), { exact: true }),
+  ).toBeAttached();
   await expectOnlyFakedCommands(page);
 });

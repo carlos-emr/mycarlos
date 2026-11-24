@@ -1940,6 +1940,8 @@ ai-label-settingsBody = Odpowiedzi AI mogą zawierać błędy, a każda o tym in
 
 ai-label-settingsShowFull = Pokaż ponownie pełne ostrzeżenie
 
+ai-label-settingsFullBack = Pełne ostrzeżenie jest znów pokazywane przy każdej odpowiedzi AI.
+
 ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana przy odpowiedziach AI, dla których ją wybrano.
 
 ai-result-meta = { $tool } · { $model } · { $date }

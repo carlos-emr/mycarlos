@@ -1864,6 +1864,8 @@ ai-label-settingsBody = AI answers can be wrong. Each one says so. If you choose
 
 ai-label-settingsShowFull = Show the full warning again
 
+ai-label-settingsFullBack = The full warning is back on every AI answer.
+
 ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
 
 ai-result-meta = { $tool } · { $model } · { $date }
