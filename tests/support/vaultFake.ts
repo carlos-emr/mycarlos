@@ -253,6 +253,9 @@ export interface FakeVaultSetup {
   /** Documents (by name) that came in a handover file and stand on what the file says (#360):
    * they carry `fileSaysCheckedAtMs` until `__fakeVault.verifyCarried` links their clinic. */
   fileSays?: string[];
+  /** This many more documents (FAKE Document 001.pdf ...) in the patient's own place, to check
+   * a long list (the library's list scrolls inside its own region). */
+  manyDocuments?: number;
 }
 
 /** The id of the n-th extra person (`people` in the setup), counting from 1. */
@@ -579,6 +582,19 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             available: true,
           });
           photoUrls[id] = makeJpegUrl();
+        }
+        for (let index = 1; index <= (setup.manyDocuments ?? 0); index++) {
+          records.push({
+            id: makeUuid(2000 + index),
+            profileId: setup.ids.profile,
+            folderIds: [],
+            displayName: `FAKE Document ${String(index).padStart(3, "0")}.pdf`,
+            sourceLabel: "Manual import — unverified",
+            mediaType: "application/pdf",
+            plaintextSize: 2048,
+            importedAtMs: Date.UTC(2026, 9, 6, 12) + index * 60_000,
+            available: true,
+          });
         }
         for (const record of records) {
           if (setup.missingFiles.includes(record.displayName))
@@ -2147,6 +2163,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],
       fileSays: setup.fileSays ?? [],
+      manyDocuments: setup.manyDocuments ?? 0,
       received: setup.received ?? [],
       identities: setup.identities ?? {},
       damagedHistory: setup.damagedHistory ?? false,

@@ -2494,421 +2494,435 @@ export function VaultLibrary({
                   )}
                 </div>
 
-                {inShared && (
-                  <p className="purpose-note native-shared-intro">
-                    <Icon name="info" />
-                    <span>
-                      {computer
-                        ? translateNow(
-                            "interface.VaultLibrary.filesYouOpenWithMyCarlosArriveHere",
-                          )
-                        : translateNow(
-                            "interface.VaultLibrary.filesYouShareToMyCarlosFromAnother",
-                          )}{" "}
-                      {people.length > 1
-                        ? translateNow(
-                            "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
-                          )
-                        : translateNow(
-                            "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou",
-                          )}
-                    </span>
-                  </p>
-                )}
-
-                {showFolderForm && !inShared && (
-                  <form className="native-inline-form" onSubmit={submitFolder}>
-                    <label>
-                      {translateNow("rename.label.folder")}
-                      <input
-                        autoFocus
-                        required
-                        maxLength={NAME_INPUT_MAX_LENGTH}
-                        value={folderName}
-                        onChange={(event) => setFolderName(event.target.value)}
-                      />
-                    </label>
-                    {nameTooLong(folderName) && (
-                      <p role="alert">
-                        {translateNow("create.profile.tooLong")}
-                      </p>
-                    )}
-                    <button
-                      className="button primary"
-                      disabled={
-                        busy ||
-                        readOnly ||
-                        !folderName.trim() ||
-                        nameTooLong(folderName)
-                      }
-                    >
-                      {translateNow("interface.VaultLibrary.create")}
-                    </button>
-                    <button
-                      className="button"
-                      type="button"
-                      onClick={() => setShowFolderForm(false)}
-                    >
-                      {translateNow("common.cancel")}
-                    </button>
-                  </form>
-                )}
-
-                {folders.length > 0 && !inShared && (
-                  <details className="native-folder-move">
-                    <summary>
-                      {translateNow(
-                        "interface.VaultLibrary.moveAFolderWithTheKeyboard",
-                      )}
-                    </summary>
-                    <div>
-                      <label>
-                        {translateNow("interface.RecordDetails.folder")}
-                        <select
-                          value={folderToMoveId}
-                          onChange={(event) => {
-                            setFolderToMoveId(event.target.value);
-                            // The destination list excludes the chosen folder.
-                            setFolderDestinationId("");
-                          }}
-                        >
-                          <option value="">
-                            {translateNow(
-                              "interface.VaultLibrary.chooseAFolder",
+                {/* On a wide window everything below the head scrolls in this region: the notices,
+                    the search (it sticks to the top of the region) and the list, while the
+                    title bar, the sidebar, the path and the head with its actions stay in view
+                    (styles.css, "fits the window"). A phone's page scrolls as a whole. */}
+                <div className="library-list-scroll">
+                  {inShared && (
+                    <p className="purpose-note native-shared-intro">
+                      <Icon name="info" />
+                      <span>
+                        {computer
+                          ? translateNow(
+                              "interface.VaultLibrary.filesYouOpenWithMyCarlosArriveHere",
+                            )
+                          : translateNow(
+                              "interface.VaultLibrary.filesYouShareToMyCarlosFromAnother",
+                            )}{" "}
+                        {people.length > 1
+                          ? translateNow(
+                              "interface.VaultLibrary.theyAreInNoOnesRecordsUntil",
+                            )
+                          : translateNow(
+                              "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou",
                             )}
-                          </option>
-                          {folders.map((folder) => (
-                            <option value={folder.id} key={folder.id}>
-                              {folder.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      </span>
+                    </p>
+                  )}
+
+                  {showFolderForm && !inShared && (
+                    <form
+                      className="native-inline-form"
+                      onSubmit={submitFolder}
+                    >
                       <label>
-                        {translateNow("interface.VaultLibrary.destination")}
-                        <select
-                          value={folderDestinationId}
+                        {translateNow("rename.label.folder")}
+                        <input
+                          autoFocus
+                          required
+                          maxLength={NAME_INPUT_MAX_LENGTH}
+                          value={folderName}
                           onChange={(event) =>
-                            setFolderDestinationId(event.target.value)
+                            setFolderName(event.target.value)
                           }
-                        >
-                          <option value="">
-                            {translateNow("sidebar.myRecords")}
-                          </option>
-                          {folderDestinations.map((folder) => (
-                            <option value={folder.id} key={folder.id}>
-                              {folder.name}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
+                      {nameTooLong(folderName) && (
+                        <p role="alert">
+                          {translateNow("create.profile.tooLong")}
+                        </p>
+                      )}
+                      <button
+                        className="button primary"
+                        disabled={
+                          busy ||
+                          readOnly ||
+                          !folderName.trim() ||
+                          nameTooLong(folderName)
+                        }
+                      >
+                        {translateNow("interface.VaultLibrary.create")}
+                      </button>
                       <button
                         className="button"
                         type="button"
-                        disabled={busy || readOnly || !folderToMoveId}
-                        onClick={() => void moveFolder()}
+                        onClick={() => setShowFolderForm(false)}
                       >
-                        {translateNow("interface.VaultLibrary.moveFolder")}
+                        {translateNow("common.cancel")}
+                      </button>
+                    </form>
+                  )}
+
+                  {folders.length > 0 && !inShared && (
+                    <details className="native-folder-move">
+                      <summary>
+                        {translateNow(
+                          "interface.VaultLibrary.moveAFolderWithTheKeyboard",
+                        )}
+                      </summary>
+                      <div>
+                        <label>
+                          {translateNow("interface.RecordDetails.folder")}
+                          <select
+                            value={folderToMoveId}
+                            onChange={(event) => {
+                              setFolderToMoveId(event.target.value);
+                              // The destination list excludes the chosen folder.
+                              setFolderDestinationId("");
+                            }}
+                          >
+                            <option value="">
+                              {translateNow(
+                                "interface.VaultLibrary.chooseAFolder",
+                              )}
+                            </option>
+                            {folders.map((folder) => (
+                              <option value={folder.id} key={folder.id}>
+                                {folder.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          {translateNow("interface.VaultLibrary.destination")}
+                          <select
+                            value={folderDestinationId}
+                            onChange={(event) =>
+                              setFolderDestinationId(event.target.value)
+                            }
+                          >
+                            <option value="">
+                              {translateNow("sidebar.myRecords")}
+                            </option>
+                            {folderDestinations.map((folder) => (
+                              <option value={folder.id} key={folder.id}>
+                                {folder.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          className="button"
+                          type="button"
+                          disabled={busy || readOnly || !folderToMoveId}
+                          onClick={() => void moveFolder()}
+                        >
+                          {translateNow("interface.VaultLibrary.moveFolder")}
+                        </button>
+                      </div>
+                    </details>
+                  )}
+
+                  {snapshot.recovery === "lostObjects" && (
+                    <div className="purpose-note warning" role="alert">
+                      <Icon name="info" />
+                      <span>
+                        <strong>
+                          {translateNow(
+                            "interface.VaultLibrary.changesArePaused",
+                          )}
+                        </strong>{" "}
+                        {translateNow(
+                          "interface.VaultLibrary.someEncryptedFilesAreMissingFromThis",
+                        )}
+                      </span>
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setConfirmHideDamaged(true)}
+                      >
+                        {translateNow(
+                          "interface.VaultLibrary.hideDamagedDocuments",
+                        )}
                       </button>
                     </div>
-                  </details>
-                )}
-
-                {snapshot.recovery === "lostObjects" && (
-                  <div className="purpose-note warning" role="alert">
-                    <Icon name="info" />
-                    <span>
-                      <strong>
-                        {translateNow(
-                          "interface.VaultLibrary.changesArePaused",
-                        )}
-                      </strong>{" "}
-                      {translateNow(
-                        "interface.VaultLibrary.someEncryptedFilesAreMissingFromThis",
-                      )}
-                    </span>
-                    <button
-                      className="button"
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setConfirmHideDamaged(true)}
-                    >
-                      {translateNow(
-                        "interface.VaultLibrary.hideDamagedDocuments",
-                      )}
-                    </button>
-                  </div>
-                )}
-                {snapshot.recovery === "unreadableSlot" && (
-                  <div className="purpose-note warning" role="alert">
-                    <Icon name="info" />
-                    <span>
-                      <strong>
-                        {translateNow(
-                          "interface.VaultLibrary.changesArePaused",
-                        )}
-                      </strong>{" "}
-                      {translateNow(
-                        "interface.VaultLibrary.someOfTheVaultsFilesCouldNot",
-                      )}
-                    </span>
-                  </div>
-                )}
-                {snapshot.recovery === "writeFailed" && (
-                  <div className="purpose-note warning" role="alert">
-                    <Icon name="info" />
-                    <span>
-                      <strong>
-                        {translateNow(
-                          "interface.VaultLibrary.changesArePaused",
-                        )}
-                      </strong>{" "}
-                      {translateNow(
-                        "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo",
-                      )}
-                    </span>
-                  </div>
-                )}
-                {!readOnly && !snapshot.recoveryKeySetAtMs && (
-                  <div className="purpose-note warning">
-                    <Icon name="info" />
-                    <span>
-                      <strong>
-                        {translateNow(
-                          "interface.VaultLibrary.noRecoveryKeyYet",
-                        )}
-                      </strong>{" "}
-                      {translateNow(
-                        "interface.VaultLibrary.ifYouForgetYourPassphraseWithoutOne",
-                      )}
-                    </span>
-                    <button
-                      className="button"
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setRecoverySetup({ required: false })}
-                    >
-                      {translateNow("security.recoveryKey.setUp")}
-                    </button>
-                  </div>
-                )}
-
-                {/* Check for new documents sits to the right of the search box when the row
-                    has room; otherwise it goes under the box (#84 large text). */}
-                <div className="library-search-row">
-                  <label className="search">
-                    <Icon name="search" />
-                    <span className="sr-only">{searchLabel}</span>
-                    <input
-                      type="search"
-                      value={query}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setQuery(value);
-                        setSearchRequest(
-                          value.trim() || query.trim()
-                            ? { query: value, location: searchLocation }
-                            : null,
-                        );
-                      }}
-                      placeholder={searchLabel}
-                    />
-                  </label>
-                  {inShared && (
-                    <PortalDocuments
-                      compact
-                      bridge={bridge}
-                      snapshot={snapshot}
-                      busy={busy || portalBusy}
-                      working={portalBusy}
-                      readOnly={readOnly}
-                      run={runPortal}
-                      waits={approvalWaits}
-                      refresh={refresh}
-                      setNotice={setPortalNotice}
-                    />
                   )}
-                </div>
-                <div className="viewbar">
-                  <span className="native-location-chip">
-                    {currentFolder
-                      ? translateNow("interface.VaultLibrary.insideFolder")
-                      : translateNow("interface.VaultLibrary.topLevel")}
-                  </span>
-                  <span className="native-drag-hint">
-                    {translateNow(
-                      "interface.VaultLibrary.holdAndDragADocumentOrFolder",
+                  {snapshot.recovery === "unreadableSlot" && (
+                    <div className="purpose-note warning" role="alert">
+                      <Icon name="info" />
+                      <span>
+                        <strong>
+                          {translateNow(
+                            "interface.VaultLibrary.changesArePaused",
+                          )}
+                        </strong>{" "}
+                        {translateNow(
+                          "interface.VaultLibrary.someOfTheVaultsFilesCouldNot",
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {snapshot.recovery === "writeFailed" && (
+                    <div className="purpose-note warning" role="alert">
+                      <Icon name="info" />
+                      <span>
+                        <strong>
+                          {translateNow(
+                            "interface.VaultLibrary.changesArePaused",
+                          )}
+                        </strong>{" "}
+                        {translateNow(
+                          "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo",
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {!readOnly && !snapshot.recoveryKeySetAtMs && (
+                    <div className="purpose-note warning">
+                      <Icon name="info" />
+                      <span>
+                        <strong>
+                          {translateNow(
+                            "interface.VaultLibrary.noRecoveryKeyYet",
+                          )}
+                        </strong>{" "}
+                        {translateNow(
+                          "interface.VaultLibrary.ifYouForgetYourPassphraseWithoutOne",
+                        )}
+                      </span>
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setRecoverySetup({ required: false })}
+                      >
+                        {translateNow("security.recoveryKey.setUp")}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Check for new documents sits to the right of the search box when the row
+                    has room; otherwise it goes under the box (#84 large text). */}
+                  <div className="library-search-row">
+                    <label className="search">
+                      <Icon name="search" />
+                      <span className="sr-only">{searchLabel}</span>
+                      <input
+                        type="search"
+                        value={query}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setQuery(value);
+                          setSearchRequest(
+                            value.trim() || query.trim()
+                              ? { query: value, location: searchLocation }
+                              : null,
+                          );
+                        }}
+                        placeholder={searchLabel}
+                      />
+                    </label>
+                    {inShared && (
+                      <PortalDocuments
+                        compact
+                        bridge={bridge}
+                        snapshot={snapshot}
+                        busy={busy || portalBusy}
+                        working={portalBusy}
+                        readOnly={readOnly}
+                        run={runPortal}
+                        waits={approvalWaits}
+                        refresh={refresh}
+                        setNotice={setPortalNotice}
+                      />
                     )}
-                  </span>
-                  <div className="view-controls">
-                    {/* Both choices in view, with words (#67), each its own
+                  </div>
+                  <div className="viewbar">
+                    <span className="native-location-chip">
+                      {currentFolder
+                        ? translateNow("interface.VaultLibrary.insideFolder")
+                        : translateNow("interface.VaultLibrary.topLevel")}
+                    </span>
+                    <span className="native-drag-hint">
+                      {translateNow(
+                        "interface.VaultLibrary.holdAndDragADocumentOrFolder",
+                      )}
+                    </span>
+                    <div className="view-controls">
+                      {/* Both choices in view, with words (#67), each its own
                         Tab stop under a label that stays in view and names
                         the group (#121). */}
-                    <div
-                      className="native-sort-choice"
-                      role="group"
-                      aria-labelledby={sortLabelId}
-                    >
-                      <span className="native-sort-label" id={sortLabelId}>
-                        {translateNow("interface.VaultLibrary.sortBy")}
-                      </span>
-                      <span className="segment native-sort-segment">
-                        {SORT_CHOICES.map(([value, label]) => (
-                          <button
-                            className={sort === value ? "selected" : ""}
-                            type="button"
-                            key={value}
-                            aria-pressed={sort === value}
-                            onClick={() => setSort(value)}
-                          >
-                            {translateNow(label)}
-                          </button>
-                        ))}
-                      </span>
-                    </div>
-                    <span
-                      className="segment native-view-segment"
-                      aria-label={translateNow(
-                        "interface.VaultLibrary.chooseRecordView",
-                      )}
-                    >
-                      <button
-                        className={view === "list" ? "selected" : ""}
-                        type="button"
-                        aria-label={translateNow(
-                          "interface.VaultLibrary.listView",
-                        )}
-                        aria-pressed={view === "list"}
-                        onClick={() => setView("list")}
+                      <div
+                        className="native-sort-choice"
+                        role="group"
+                        aria-labelledby={sortLabelId}
                       >
-                        <Icon name="list" />
-                        {translateNow("interface.VaultLibrary.list")}
-                      </button>
-                      <button
-                        className={view === "grid" ? "selected" : ""}
-                        type="button"
-                        aria-label={translateNow(
-                          "interface.VaultLibrary.gridView",
-                        )}
-                        aria-pressed={view === "grid"}
-                        onClick={() => setView("grid")}
-                      >
-                        <Icon name="grid" />
-                        {translateNow("interface.VaultLibrary.grid")}
-                      </button>
-                    </span>
-                  </div>
-                </div>
-
-                {selectedIds.length > 0 && (
-                  <div className="bulkbar" role="status">
-                    <strong>
-                      {translateNow("interface.count.selected", {
-                        count: selectedIds.length,
-                      })}
-                    </strong>
-                    <span>
-                      {translateNow(
-                        "interface.VaultLibrary.moveTheSelectedDocuments",
-                      )}
-                    </span>
-                    <div className="bulk-actions native-move-actions">
-                      {inShared ? (
-                        <MoveTargetSelect
-                          label={translateNow(
-                            "interface.VaultLibrary.moveSelectedTo",
-                          )}
-                          targets={moveTargets}
-                          value={sharedTarget || `${profile?.id ?? ""}|`}
-                          onChange={setSharedTarget}
-                        />
-                      ) : (
-                        <select
-                          aria-label={translateNow(
-                            "interface.VaultLibrary.moveSelectedTo",
-                          )}
-                          value={moveFolderId}
-                          onChange={(event) =>
-                            setMoveFolderId(event.target.value)
-                          }
-                        >
-                          <option value="">
-                            {translateNow("sidebar.myRecords")}
-                          </option>
-                          {folders.map((folder) => (
-                            <option value={folder.id} key={folder.id}>
-                              {folder.name}
-                            </option>
+                        <span className="native-sort-label" id={sortLabelId}>
+                          {translateNow("interface.VaultLibrary.sortBy")}
+                        </span>
+                        <span className="segment native-sort-segment">
+                          {SORT_CHOICES.map(([value, label]) => (
+                            <button
+                              className={sort === value ? "selected" : ""}
+                              type="button"
+                              key={value}
+                              aria-pressed={sort === value}
+                              onClick={() => setSort(value)}
+                            >
+                              {translateNow(label)}
+                            </button>
                           ))}
-                        </select>
-                      )}
-                      <button
-                        type="button"
-                        disabled={busy || readOnly}
-                        onClick={() => {
-                          if (!inShared) return void moveSelected();
-                          const { profileId: to, folderId } = parseMoveTarget(
-                            sharedTarget || `${profile?.id ?? ""}|`,
-                          );
-                          moveToPerson(selectedIds, to, folderId);
-                        }}
+                        </span>
+                      </div>
+                      <span
+                        className="segment native-view-segment"
+                        aria-label={translateNow(
+                          "interface.VaultLibrary.chooseRecordView",
+                        )}
                       >
-                        {translateNow("interface.RecordDetails.move")}
-                      </button>
-                      <button type="button" onClick={() => setSelectedIds([])}>
-                        {translateNow("interface.VaultLibrary.clear")}
-                      </button>
+                        <button
+                          className={view === "list" ? "selected" : ""}
+                          type="button"
+                          aria-label={translateNow(
+                            "interface.VaultLibrary.listView",
+                          )}
+                          aria-pressed={view === "list"}
+                          onClick={() => setView("list")}
+                        >
+                          <Icon name="list" />
+                          {translateNow("interface.VaultLibrary.list")}
+                        </button>
+                        <button
+                          className={view === "grid" ? "selected" : ""}
+                          type="button"
+                          aria-label={translateNow(
+                            "interface.VaultLibrary.gridView",
+                          )}
+                          aria-pressed={view === "grid"}
+                          onClick={() => setView("grid")}
+                        >
+                          <Icon name="grid" />
+                          {translateNow("interface.VaultLibrary.grid")}
+                        </button>
+                      </span>
                     </div>
                   </div>
-                )}
-                <p className="status-line" role="status" aria-live="polite">
-                  {notice}
-                </p>
 
-                <LibraryItems
-                  view={view}
-                  suggestionFor={renderSuggestion}
-                  folders={visibleFolders}
-                  records={visibleRecords}
-                  selectedIds={selectedIds}
-                  disabled={busy || readOnly}
-                  searching={Boolean(query)}
-                  folderLocation={
-                    normalizedQuery
-                      ? (folder) =>
-                          folderPath(
-                            folderById,
-                            folder.parentId,
-                            rootLocationTitle,
+                  {selectedIds.length > 0 && (
+                    <div className="bulkbar" role="status">
+                      <strong>
+                        {translateNow("interface.count.selected", {
+                          count: selectedIds.length,
+                        })}
+                      </strong>
+                      <span>
+                        {translateNow(
+                          "interface.VaultLibrary.moveTheSelectedDocuments",
+                        )}
+                      </span>
+                      <div className="bulk-actions native-move-actions">
+                        {inShared ? (
+                          <MoveTargetSelect
+                            label={translateNow(
+                              "interface.VaultLibrary.moveSelectedTo",
+                            )}
+                            targets={moveTargets}
+                            value={sharedTarget || `${profile?.id ?? ""}|`}
+                            onChange={setSharedTarget}
+                          />
+                        ) : (
+                          <select
+                            aria-label={translateNow(
+                              "interface.VaultLibrary.moveSelectedTo",
+                            )}
+                            value={moveFolderId}
+                            onChange={(event) =>
+                              setMoveFolderId(event.target.value)
+                            }
+                          >
+                            <option value="">
+                              {translateNow("sidebar.myRecords")}
+                            </option>
+                            {folders.map((folder) => (
+                              <option value={folder.id} key={folder.id}>
+                                {folder.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          type="button"
+                          disabled={busy || readOnly}
+                          onClick={() => {
+                            if (!inShared) return void moveSelected();
+                            const { profileId: to, folderId } = parseMoveTarget(
+                              sharedTarget || `${profile?.id ?? ""}|`,
+                            );
+                            moveToPerson(selectedIds, to, folderId);
+                          }}
+                        >
+                          {translateNow("interface.RecordDetails.move")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedIds([])}
+                        >
+                          {translateNow("interface.VaultLibrary.clear")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <p className="status-line" role="status" aria-live="polite">
+                    {notice}
+                  </p>
+
+                  <LibraryItems
+                    view={view}
+                    suggestionFor={renderSuggestion}
+                    folders={visibleFolders}
+                    records={visibleRecords}
+                    selectedIds={selectedIds}
+                    disabled={busy || readOnly}
+                    searching={Boolean(query)}
+                    folderLocation={
+                      normalizedQuery
+                        ? (folder) =>
+                            folderPath(
+                              folderById,
+                              folder.parentId,
+                              rootLocationTitle,
+                            )
+                        : undefined
+                    }
+                    recordLocation={
+                      normalizedQuery
+                        ? (record) =>
+                            recordPath(folderById, record, rootLocationTitle)
+                        : undefined
+                    }
+                    unavailableLabel={
+                      snapshot.recovery === "unreadableSlot"
+                        ? translateNow("interface.VaultLibrary.fileUnavailable")
+                        : translateNow(
+                            "interface.VaultLibrary.damagedFileMissing",
                           )
-                      : undefined
-                  }
-                  recordLocation={
-                    normalizedQuery
-                      ? (record) =>
-                          recordPath(folderById, record, rootLocationTitle)
-                      : undefined
-                  }
-                  unavailableLabel={
-                    snapshot.recovery === "unreadableSlot"
-                      ? translateNow("interface.VaultLibrary.fileUnavailable")
-                      : translateNow(
-                          "interface.VaultLibrary.damagedFileMissing",
-                        )
-                  }
-                  drag={drag}
-                  recordDragItem={recordDragItem}
-                  folderCount={folderCount}
-                  onOpenFolder={(folderId) => openPerson(profileId, folderId)}
-                  onOpenRecord={(recordId) => {
-                    // The details dialog repeats the notice. One left over from
-                    // an earlier operation would read as being about this record.
-                    setNotice("");
-                    setActiveRecordId(recordId);
-                  }}
-                  onRenameFolder={renameFolder}
-                  onToggleSelected={toggleSelected}
-                />
+                    }
+                    drag={drag}
+                    recordDragItem={recordDragItem}
+                    folderCount={folderCount}
+                    onOpenFolder={(folderId) => openPerson(profileId, folderId)}
+                    onOpenRecord={(recordId) => {
+                      // The details dialog repeats the notice. One left over from
+                      // an earlier operation would read as being about this record.
+                      setNotice("");
+                      setActiveRecordId(recordId);
+                    }}
+                    onRenameFolder={renameFolder}
+                    onToggleSelected={toggleSelected}
+                  />
+                </div>
               </main>
             )}
 
