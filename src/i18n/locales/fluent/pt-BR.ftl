@@ -2864,6 +2864,40 @@ portal-arrivedForHiddenNoClinic =
        *[other] Chegaram { $count } documentos e estão em Compartilhados comigo. As pessoas a quem se destinam estão ocultas.
     }
 
+fileUnder-button = Arquivar em…
+
+fileUnder-title = Arquivar { $document } em uma pessoa
+
+fileUnder-fromClinic = Da clínica
+
+fileUnder-words = { $name }, nascimento { $date }
+
+fileUnder-clinicWords = Da clínica: { $name }, nascimento { $date }.
+
+fileUnder-rule = O myCarlos arquiva sozinho um documento de uma clínica apenas quando exatamente uma pessoa tem esta data de nascimento e este nome completo (ou um nome completo anterior). Nada é escolhido no seu lugar.
+
+fileUnder-person = Pessoa
+
+fileUnder-what-both = o nome completo “{ $name }” e a data de nascimento { $date }
+
+fileUnder-what-name = o nome completo “{ $name }”
+
+fileUnder-what-date = a data de nascimento { $date }
+
+fileUnder-saveDetails = Salvar também { $what } como dados de { $person }, para que os próximos documentos desta clínica sejam arquivados em { $person } sozinhos.
+
+fileUnder-confirm = Arquivar em { $person }
+
+fileUnder-choose = Escolha uma pessoa
+
+fileUnder-differs = Os dados da clínica diferem dos desta pessoa, então nenhum é oferecido para ser salvo. Confira se é a pessoa certa.
+
+fileUnder-saveDetailsOnly = Salvar também { $what } como dados de { $person }.
+
+fileUnder-notOnItsOwn = Os próximos documentos desta clínica podem continuar esperando em Compartilhados comigo: o vínculo desta clínica é de outra pessoa, ou outra pessoa já tem o mesmo nome e data de nascimento.
+
+handover-import-previousNames = Nomes anteriores no arquivo: { $names }. Esses nomes também serão usados para arquivar novos documentos de clínicas nesta pessoa.
+
 library-fileSaysChecked = O arquivo em que isto chegou diz que foi conferido no dispositivo de origem, em { $date }. Este cofre não o conferiu.
 
 handover-nowVerified =

@@ -922,6 +922,12 @@ pub struct VaultRecord {
     pub original_pdf_available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_clinic_name: Option<String>,
+    /// The patient name and birth date the clinic wrote on a clinic document waiting in Shared
+    /// with me (#340), so that the patient sees why it did not file itself. Absent for any other
+    /// document, and absent when they are a hidden person's: Shared with me must not show who
+    /// is hidden.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clinic_patient: Option<ClinicPatient>,
     /// When a handover file SAYS the delivery of this document was checked, on the device it
     /// came from (#360, section 7, level 1). It is the file's claim and nothing more: whoever
     /// holds the file's key can write evidence that stands up by itself (`valid_carried`
@@ -993,6 +999,22 @@ pub(crate) const HOW_PERSON_HIDDEN: &str = "personHidden";
 pub struct ArrivedWhileHidden {
     pub record_id: Uuid,
     pub display_name: String,
+}
+
+/// The clinic's own words for the patient of a document (#340): as the signed delivery says them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClinicPatient {
+    pub name: String,
+    pub birth_date: String,
+    /// The person the delivery's clinic link is tied to, if it is tied to one (it then files
+    /// only under that person). Opaque; may be a hidden person's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_person: Option<Uuid>,
+    /// Everyone, hidden people included (by opaque id), who matches these words today: more than
+    /// one leaves the document in Shared with me, so filing under one of them does not make the
+    /// next documents file themselves.
+    pub matching_people: Vec<Uuid>,
 }
 
 /// A hidden person as Security's Hidden people list shows them (#360).
@@ -2385,6 +2407,51 @@ impl VaultStore {
                             object_is_present(root, record)
                         },
                         hidden: record.hidden,
+                        clinic_patient: record
+                            .delivery
+                            .as_ref()
+                            .filter(|_| {
+                                record.profile_id == shared_profile_id(unlocked.manifest.vault_id)
+                            })
+                            .map(|custody| &custody.manifest.patient)
+                            .filter(|patient| {
+                                // Not a hidden person's words: Shared with me must not show who
+                                // is hidden (#360).
+                                !unlocked.manifest.profiles.iter().any(|profile| {
+                                    profile.hidden.is_some()
+                                        && delivery::matches_patient(
+                                            profile,
+                                            &patient.name,
+                                            &patient.birth_date,
+                                        )
+                                })
+                            })
+                            .map(|patient| ClinicPatient {
+                                name: patient.name.clone(),
+                                birth_date: patient.birth_date.clone(),
+                                link_person: record.delivery.as_ref().and_then(|custody| {
+                                    unlocked
+                                        .manifest
+                                        .portal_links
+                                        .iter()
+                                        .find(|link| link.id == custody.link_id)
+                                        .and_then(|link| link.profile_id)
+                                }),
+                                matching_people: unlocked
+                                    .manifest
+                                    .profiles
+                                    .iter()
+                                    .filter(|profile| {
+                                        profile.id != shared_profile_id(unlocked.manifest.vault_id)
+                                            && delivery::matches_patient(
+                                                profile,
+                                                &patient.name,
+                                                &patient.birth_date,
+                                            )
+                                    })
+                                    .map(|profile| profile.id)
+                                    .collect(),
+                            }),
                         file_says_checked_at_ms: record
                             .carried
                             .as_ref()
@@ -21652,5 +21719,9 @@ mod tests {
 
 #[cfg(test)]
 mod automatic_collection_tests;
+
 #[cfg(test)]
 mod collection_cycle_tests;
+
+#[cfg(test)]
+mod restore_verify_tests;

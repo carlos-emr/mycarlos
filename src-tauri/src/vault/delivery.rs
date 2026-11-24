@@ -61,6 +61,31 @@ impl VaultStore {
     }
 }
 
+/// Whether a delivery's patient is this person, by the one rule filing uses (#340): the
+/// clinic's birth date equals theirs, and the clinic's name equals their full name **or one of
+/// their previous full names** (#297: a changed name). Exact string equality on both, never
+/// fuzzy: a document is filed under a person only when this holds for exactly one person, or
+/// the patient chooses.
+pub(super) fn matches_patient(profile: &PatientProfile, name: &str, birth_date: &str) -> bool {
+    profile.birth_date.as_deref() == Some(birth_date)
+        && (profile
+            .full_name
+            .as_deref()
+            .is_some_and(|full| same_name(full, name))
+            || profile
+                .previous_full_names
+                .as_ref()
+                .is_some_and(|names| names.iter().any(|previous| same_name(previous, name))))
+}
+
+/// Two names are the same when their trimmed Unicode NFC forms are equal (an accent typed as one
+/// character or as two is one name), so that look-alike duplicates are two matches, which
+/// leave the document in Shared with me, never a silent pick between them. Case and spelling are
+/// never folded.
+fn same_name(a: &str, b: &str) -> bool {
+    a.trim().nfc().eq(b.trim().nfc())
+}
+
 pub(super) fn valid_custody(record: &StoredRecord, links: &[StoredLink]) -> bool {
     let Some(c) = &record.delivery else {
         return true;
@@ -1521,11 +1546,7 @@ impl VaultStore {
             .manifest
             .profiles
             .iter()
-            .filter(|p| {
-                p.id != shared
-                    && p.full_name.as_deref() == Some(person.name.as_str())
-                    && p.birth_date.as_deref() == Some(person.birth_date.as_str())
-            })
+            .filter(|p| p.id != shared && matches_patient(p, &person.name, &person.birth_date))
             .filter(|p| link.profile_id.is_none_or(|id| p.id == id))
             .map(|p| p.id)
             .collect::<Vec<_>>();
@@ -5598,6 +5619,184 @@ mod approval_recovery_tests {
         store.create_profile("FAKE Third Person", 7).unwrap();
         store.hide_profile(person, 300).unwrap();
         assert!(store.restore_profile(person).unwrap().is_empty());
+    }
+
+    /// Filing under a person (#340 phase 1): the clinic's birth date and the clinic's name must
+    /// equal the person's, the name being their full name or a previous full name (#297), and
+    /// exactly one person must match; anything else waits in Shared with me, showing the
+    /// clinic's own name and birth date (never a hidden person's).
+    #[test]
+    fn should_file_a_delivery_by_full_name_or_a_previous_one_and_show_the_clinics_words_when_it_waits(
+    ) {
+        // Each case is a vault with its people, one delivery filed, and where it went.
+        type Make<'a> = &'a dyn Fn(&str, &str, &str, Option<Vec<String>>) -> Uuid;
+        let run = |people: &dyn Fn(Make<'_>, &str, &str)| {
+            let (_temp, store, _, _) = setup(false);
+            let (link, outer, opened, checked) = signed_delivery();
+            let clinic_name = opened.manifest.patient.name.clone();
+            let clinic_birth = opened.manifest.patient.birth_date.clone();
+            let today = utc_date_text(crate::now_ms());
+            let make = |display: &str, full: &str, birth: &str, previous: Option<Vec<String>>| {
+                let id = store.create_profile(display, 5).unwrap();
+                store
+                    .update_profile_details(
+                        id,
+                        ProfileDetails {
+                            full_name: (!full.is_empty()).then(|| full.to_owned()),
+                            birth_date: (!birth.is_empty()).then(|| birth.to_owned()),
+                            previous_full_names: previous,
+                        },
+                        &today,
+                        crate::now_ms(),
+                    )
+                    .unwrap();
+                id
+            };
+            people(&make, &clinic_name, &clinic_birth);
+            add_link(&store, &link);
+            let (id, _) = store
+                .commit_delivery(
+                    &outer,
+                    opened,
+                    &link,
+                    &checked,
+                    200,
+                    store.portal_link_ticket(),
+                )
+                .unwrap();
+            let shared = store.shared_profile().unwrap();
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot.records.iter().find(|r| r.id == id).unwrap();
+            (
+                record.profile_id,
+                shared,
+                record.clinic_patient.clone(),
+                clinic_name,
+                clinic_birth,
+            )
+        };
+        // The full name, as before.
+        let (to, shared, words, ..) = run(&|make, name, birth| {
+            make("FAKE Exact", name, birth, None);
+        });
+        assert_ne!(to, shared);
+        assert_eq!(words, None, "a filed document needs no explanation");
+        // A previous full name counts, with the same birth date.
+        let (to, shared, ..) = run(&|make, name, birth| {
+            make(
+                "FAKE Married",
+                "FAKE Current Name",
+                birth,
+                Some(vec![name.to_owned()]),
+            );
+            make("FAKE Other", "FAKE Somebody", birth, None);
+        });
+        assert_ne!(to, shared);
+        // A previous name with another birth date does not.
+        let (to, shared, words, name, birth) = run(&|make, name, _| {
+            make(
+                "FAKE Married",
+                "FAKE Current Name",
+                "1990-01-01",
+                Some(vec![name.to_owned()]),
+            );
+        });
+        assert_eq!(to, shared);
+        // ... and the document says what the clinic wrote, so the patient sees why.
+        let words = words.unwrap();
+        assert_eq!(
+            (words.name.as_str(), words.birth_date.as_str()),
+            (name.as_str(), birth.as_str())
+        );
+        // Nobody matches today, and the link is tied to no one.
+        assert_eq!((words.link_person, words.matching_people.len()), (None, 0));
+        // Two people who match (a current and a previous name) are ambiguous: nothing is chosen.
+        let (to, shared, words, ..) = run(&|make, name, birth| {
+            make("FAKE Exact", name, birth, None);
+            make(
+                "FAKE Married",
+                "FAKE Current Name",
+                birth,
+                Some(vec![name.to_owned()]),
+            );
+        });
+        assert_eq!(to, shared);
+        // Both are named (by opaque id), so the screen can say why filing would not be on its own.
+        assert_eq!(words.unwrap().matching_people.len(), 2);
+        // A name with stray spaces around it is the same name: two such people are two matches,
+        // which leave the document in Shared with me instead of being picked between silently.
+        let (to, shared, ..) = run(&|make, name, birth| {
+            make("FAKE Exact", name, birth, None);
+            make("FAKE Padded", &format!("  {name} "), birth, None);
+        });
+        assert_eq!(to, shared);
+        // ... and one such person alone files it.
+        let (to, shared, ..) = run(&|make, name, birth| {
+            make("FAKE Padded", &format!("{name}  "), birth, None);
+        });
+        assert_ne!(to, shared);
+        // A name that is nearly the clinic's is not a match: never fuzzy.
+        let (to, shared, ..) = run(&|make, name, birth| {
+            make("FAKE Near", &format!("{name} Jr"), birth, None);
+            make("FAKE Cased", &name.to_uppercase(), birth, None);
+        });
+        assert_eq!(to, shared);
+    }
+
+    /// Names are compared trimmed and in Unicode NFC, never folded: an accent typed as one
+    /// character or as two is one name; another case or spelling is another name.
+    #[test]
+    fn should_compare_names_trimmed_and_in_nfc_and_never_fold_them() {
+        assert!(same_name("Zo\u{e9} Example", "Zoe\u{0301} Example"));
+        assert!(same_name("  Zo\u{e9} Example ", "Zoe\u{0301} Example"));
+        assert!(!same_name("Zoe Example", "Zo\u{e9} Example"));
+        assert!(!same_name("ZO\u{c9} EXAMPLE", "Zo\u{e9} Example"));
+        assert!(!same_name("Zo\u{e9}  Example", "Zo\u{e9} Example"));
+    }
+
+    /// A hidden person is never filed into, and the clinic's words for them (their name) are not
+    /// shown in Shared with me: that would show who is hidden (#360, #340).
+    #[test]
+    fn should_not_show_the_clinics_words_for_a_hidden_person_and_never_file_into_them() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, outer, opened, checked) = signed_delivery();
+        let today = utc_date_text(crate::now_ms());
+        let person = store.snapshot().unwrap().profiles[0].id;
+        store
+            .update_profile_details(
+                person,
+                ProfileDetails {
+                    full_name: None,
+                    birth_date: Some(opened.manifest.patient.birth_date.clone()),
+                    previous_full_names: Some(vec![opened.manifest.patient.name.clone()]),
+                },
+                &today,
+                crate::now_ms(),
+            )
+            .unwrap();
+        store.create_profile("FAKE Other Person", 6).unwrap();
+        add_link(&store, &link);
+        store.hide_profile(person, 100).unwrap();
+        let (id, _) = store
+            .commit_delivery(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                200,
+                store.portal_link_ticket(),
+            )
+            .unwrap();
+        let shared = store.shared_profile().unwrap();
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(record.profile_id, shared);
+        assert_eq!(record.clinic_patient, None);
+        // Once they are restored, the document is a plain one waiting in Shared with me.
+        store.restore_profile(person).unwrap();
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == id).unwrap();
+        assert!(record.clinic_patient.is_some());
     }
 
     /// Each unlock checks for new documents once (#128). A delivery its

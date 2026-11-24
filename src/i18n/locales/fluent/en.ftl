@@ -2829,6 +2829,40 @@ portal-arrivedForHiddenNoClinic =
        *[other] { $count } documents arrived and are in Shared with me. The people they are for are hidden.
     }
 
+fileUnder-button = File under…
+
+fileUnder-title = File { $document } under a person
+
+fileUnder-fromClinic = From the clinic
+
+fileUnder-words = { $name }, born { $date }
+
+fileUnder-clinicWords = From the clinic: { $name }, born { $date }.
+
+fileUnder-rule = myCarlos files a clinic document on its own only when exactly one person has this birth date and this full name (or a previous full name). Nothing is chosen for you.
+
+fileUnder-person = Person
+
+fileUnder-what-both = the full name “{ $name }” and the birth date { $date }
+
+fileUnder-what-name = the full name “{ $name }”
+
+fileUnder-what-date = the birth date { $date }
+
+fileUnder-saveDetails = Also save { $what } as the details of { $person }, so that the next documents from this clinic are filed under { $person } on their own.
+
+fileUnder-confirm = File under { $person }
+
+fileUnder-choose = Choose a person
+
+fileUnder-differs = The clinic's details differ from this person's, so none are offered to be saved. Check that this is the right person.
+
+fileUnder-saveDetailsOnly = Also save { $what } as the details of { $person }.
+
+fileUnder-notOnItsOwn = The next documents from this clinic may still wait in Shared with me: this clinic's link is tied to another person, or another person already has the same name and birth date.
+
+handover-import-previousNames = Previous names in the file: { $names }. These names will also be used to file new clinic documents under this person.
+
 library-fileSaysChecked = The file this came in says it was checked on the device it came from, on { $date }. This vault has not checked it.
 
 handover-nowVerified =

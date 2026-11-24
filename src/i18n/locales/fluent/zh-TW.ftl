@@ -2559,6 +2559,40 @@ interface-history-how-personHidden = 該人被隱藏期間歸檔到「與我分�
 
 portal-arrivedForHiddenNoClinic = 有 { $count } 份文件已送達，目前在「與我分享」中。對應的人已被隱藏。
 
+fileUnder-button = 歸檔到…
+
+fileUnder-title = 把 { $document } 歸檔到某人
+
+fileUnder-fromClinic = 來自診所
+
+fileUnder-words = { $name }，出生日期 { $date }
+
+fileUnder-clinicWords = 來自診所：{ $name }，出生日期 { $date }。
+
+fileUnder-rule = 只有當恰好一個人擁有此出生日期和此全名（或曾用全名）時，myCarlos 才會自行歸檔診所文件。不會替您做任何選擇。
+
+fileUnder-person = 人員
+
+fileUnder-what-both = 全名「{ $name }」和出生日期 { $date }
+
+fileUnder-what-name = 全名「{ $name }」
+
+fileUnder-what-date = 出生日期 { $date }
+
+fileUnder-saveDetails = 同時將 { $what } 儲存為 { $person } 的資料，這樣此診所之後的文件會自動歸檔到 { $person }。
+
+fileUnder-confirm = 歸檔到 { $person }
+
+fileUnder-choose = 請選擇一個人
+
+fileUnder-differs = 診所的資料與此人的資料不同，因此不會提供儲存。請確認這是否是正確的人。
+
+fileUnder-saveDetailsOnly = 同時將 { $what } 儲存為 { $person } 的資料。
+
+fileUnder-notOnItsOwn = 此診所之後的文件仍可能留在「與我分享」中：此診所的連結綁定了另一個人，或另一個人已有相同的姓名和出生日期。
+
+handover-import-previousNames = 檔案中的曾用名：{ $names }。這些名字也將用於把診所的新文件歸檔到此人名下。
+
 library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來源裝置上檢查過。此保險庫沒有檢查過。
 
 handover-nowVerified = 透過移交檔案到來的 { $count } 份文件現已透過 { $clinic } 驗證，此保險庫持有其金鑰。
