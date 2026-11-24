@@ -6,6 +6,7 @@ import {
   render,
   screen,
 } from "@testing-library/react";
+import type { CSSProperties, ReactNode } from "react";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VaultBridge, VaultSnapshot } from "../vault";
@@ -163,7 +164,11 @@ function clipped() {
       );
       continue;
     }
-    const box = control.getBoundingClientRect();
+    // What has to be on screen: the control itself, or, once it sits in a box that scrolls (the
+    // library's list, #472), that box: the control is reached by scrolling it, so it is the
+    // scrolling box that must not be cut off by what holds it. A scroller's own clipping of its
+    // content is therefore not "cut off"; a hidden box around a scroller still is.
+    let box = control.getBoundingClientRect();
     // A fixed dialog is not clipped by the boxes it sits in.
     for (
       let inner: HTMLElement = control, outer = control.parentElement;
@@ -173,6 +178,8 @@ function clipped() {
       const style = getComputedStyle(outer);
       const hides = (overflow: string) =>
         overflow === "hidden" || overflow === "clip";
+      const scrolls = (overflow: string) =>
+        overflow === "auto" || overflow === "scroll";
       const edge = outer.getBoundingClientRect();
       if (
         (hides(style.overflowX) &&
@@ -185,6 +192,10 @@ function clipped() {
         );
         break;
       }
+      // From here on, it is the scrolling box that must show. Only up and down: a list that
+      // scrolls sideways to reach a control is a reflow failure, not an excuse.
+      if (scrolls(style.overflowY))
+        box = new DOMRect(box.left, edge.top, box.width, edge.height);
     }
   }
   return found;
@@ -381,6 +392,55 @@ describe("targets and text sizes in the app (#67)", () => {
       </button>,
     );
     expect(clipped()).toEqual([]);
+  });
+
+  // What the cut-off check accepts (#472): a control reachable by scrolling a region that scrolls
+  // UP AND DOWN, as long as that region is itself shown. Anything cut by a box that does not
+  // scroll, sideways, or by a box around the scroller, still fails.
+  describe("what counts as cut off", () => {
+    const box = (style: CSSProperties, children: ReactNode) => (
+      <div style={{ width: 200, height: 100, ...style }}>{children}</div>
+    );
+    const tall = (
+      <div style={{ height: 400 }}>
+        <button type="button" style={{ marginTop: 300 }}>
+          Far down
+        </button>
+      </div>
+    );
+
+    it("fails a control that a box which does not scroll hides", () => {
+      render(box({ overflow: "hidden" }, tall));
+      expect(clipped()).toEqual([expect.stringContaining("Far down")]);
+    });
+
+    it("accepts a control that is scrolled to inside a vertical scroller that is shown", () => {
+      render(box({ overflowY: "auto" }, tall));
+      expect(clipped()).toEqual([]);
+    });
+
+    it("still fails a scroller that a box around it cuts off", () => {
+      render(
+        <div style={{ width: 200, height: 40, overflow: "hidden" }}>
+          {box({ overflowY: "auto" }, tall)}
+        </div>,
+      );
+      expect(clipped()).not.toEqual([]);
+    });
+
+    it("still fails a control cut at the side, even inside a scroller", () => {
+      render(
+        <div style={{ width: 120, overflow: "hidden" }}>
+          {box(
+            { overflowY: "auto", width: 400 },
+            <button type="button" style={{ marginLeft: 300 }}>
+              Out at the side
+            </button>,
+          )}
+        </div>,
+      );
+      expect(clipped()).toEqual([expect.stringContaining("Out at the side")]);
+    });
   });
 
   it("shows body text at 16px", () => {

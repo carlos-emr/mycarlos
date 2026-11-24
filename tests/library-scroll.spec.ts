@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoAxeViolations } from "./support/a11y";
+import { translate } from "./support/fluent";
 import { fakeVaultWith, sidebar } from "./support/vaultFake";
+
+const en = (
+  key: Parameters<typeof translate>[1],
+  params?: Parameters<typeof translate>[2],
+) => translate("en", key, params);
 
 // The library fits the window (Ben, 24 Nov): on a wide, tall window the page does not scroll, the
 // title bar, sidebar, head and search stay put, and only the list of documents scrolls, in its own
@@ -217,4 +223,41 @@ test("with 160% text the list region keeps 14rem and the main area scrolls inste
   });
   await expect(page.locator(".record-open").last()).toBeInViewport();
   await expectNoAxeViolations(page, "library at 160% text, main area scrolls");
+});
+
+test("Security, Preferences and Hidden scroll inside the window, as the page did", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "a phone's page scrolls as a whole",
+  );
+  await openLibrary(page, 1280, 800);
+  for (const name of [en("security.title"), en("sidebar.preferences")]) {
+    await sidebar(page).getByRole("button", { name, exact: true }).click();
+    await page.waitForTimeout(300);
+    const state = await page.evaluate(() => {
+      const main = document.querySelector(".app-body > main")!;
+      const room = (e: Element) => e.scrollHeight - e.clientHeight;
+      const bottom = main.getBoundingClientRect().bottom;
+      const window_ = document
+        .querySelector(".app-window")!
+        .getBoundingClientRect();
+      return {
+        overflowY: getComputedStyle(main).overflowY,
+        mainRoom: room(main),
+        pageRoom: room(document.scrollingElement!),
+        withinWindow: bottom <= window_.bottom + 1,
+      };
+    });
+    expect(state.overflowY, name).toBe("auto");
+    // The page itself has nothing to scroll; the page's own content scrolls inside the window.
+    expect(state.pageRoom, name).toBeLessThanOrEqual(1);
+    expect(state.withinWindow, name).toBe(true);
+    expect(state.mainRoom, name).toBeGreaterThan(0);
+    // And its last control can be reached.
+    const last = page.locator(".app-body > main button:visible").last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
+  }
 });

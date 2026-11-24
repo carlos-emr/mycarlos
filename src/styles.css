@@ -5083,6 +5083,9 @@ button:disabled,
   .native-vault-page .app-body > * {
     min-height: 0;
     overflow-y: auto;
+    /* Fill the row, whatever the section asked (.purpose-screen starts at the top and would
+       grow past the window, with nothing to scroll it). */
+    align-self: stretch;
   }
   .native-vault-page .library-main {
     display: flex;
