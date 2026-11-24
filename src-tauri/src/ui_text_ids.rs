@@ -660,7 +660,9 @@ pub enum MessageId {
     InterfaceReaderWhere,
     InterfaceReaderZoom,
     InterfaceReceiveDropped,
+    InterfaceReceiveNotKept,
     InterfaceReceiveRefused,
+    InterfaceReceiveSealed,
     InterfaceReceivedConfirmBody,
     InterfaceReceivedConfirmTitleMany,
     InterfaceReceivedConfirmTitleOne,
@@ -1869,7 +1871,9 @@ impl MessageId {
         Self::InterfaceReaderWhere,
         Self::InterfaceReaderZoom,
         Self::InterfaceReceiveDropped,
+        Self::InterfaceReceiveNotKept,
         Self::InterfaceReceiveRefused,
+        Self::InterfaceReceiveSealed,
         Self::InterfaceReceivedConfirmBody,
         Self::InterfaceReceivedConfirmTitleMany,
         Self::InterfaceReceivedConfirmTitleOne,
@@ -3444,7 +3448,9 @@ impl MessageId {
             Self::InterfaceReaderWhere => "interface-reader-where",
             Self::InterfaceReaderZoom => "interface-reader-zoom",
             Self::InterfaceReceiveDropped => "interface-receive-dropped",
+            Self::InterfaceReceiveNotKept => "interface-receive-notKept",
             Self::InterfaceReceiveRefused => "interface-receive-refused",
+            Self::InterfaceReceiveSealed => "interface-receive-sealed",
             Self::InterfaceReceivedConfirmBody => "interface-received-confirmBody",
             Self::InterfaceReceivedConfirmTitleMany => "interface-received-confirmTitleMany",
             Self::InterfaceReceivedConfirmTitleOne => "interface-received-confirmTitleOne",
@@ -4458,6 +4464,8 @@ impl MessageId {
             "interface.reader.zoom" => Some(Self::InterfaceReaderZoom),
             "interface.receive.dropped" => Some(Self::InterfaceReceiveDropped),
             "interface.receive.refused" => Some(Self::InterfaceReceiveRefused),
+            "interface.receive.sealed" => Some(Self::InterfaceReceiveSealed),
+            "interface.receive.notKept" => Some(Self::InterfaceReceiveNotKept),
             "interface.recordPresentation.imaging" => {
                 Some(Self::InterfaceRecordPresentationImaging)
             }

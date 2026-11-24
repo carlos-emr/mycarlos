@@ -376,11 +376,25 @@ interface-receive-dropped =
     *[other] { $count } itens compartilhados não foram recebidos: o myCarlos aceita apenas arquivos PDF.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] Não foi possível guardar um arquivo compartilhado. Compartilhe-o novamente.
+    [many] Não foi possível guardar { $count } arquivos compartilhados. Compartilhe-os novamente.
+    *[other] Não foi possível guardar { $count } arquivos compartilhados. Compartilhe-os novamente.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] Um compartilhamento não foi recebido: no máximo 100 arquivos compartilhados podem aguardar de uma vez. Desbloqueie para que os arquivos pendentes entrem em Compartilhados comigo e depois compartilhe de novo.
     [many] { $count } de compartilhamentos não foram recebidos: no máximo 100 arquivos compartilhados podem aguardar de uma vez. Desbloqueie para que os arquivos pendentes entrem em Compartilhados comigo e depois compartilhe de novo.
     *[other] { $count } compartilhamentos não foram recebidos: no máximo 100 arquivos compartilhados podem aguardar de uma vez. Desbloqueie para que os arquivos pendentes entrem em Compartilhados comigo e depois compartilhe de novo.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] Um arquivo compartilhado foi guardado, criptografado, por até 7 dias. Desbloqueie o myCarlos para adicioná-lo.
+    [many] { $count } arquivos compartilhados foram guardados, criptografados, por até 7 dias. Desbloqueie o myCarlos para adicioná-los.
+    *[other] { $count } arquivos compartilhados foram guardados, criptografados, por até 7 dias. Desbloqueie o myCarlos para adicioná-los.
     }
 
 interface-RecordDetails-closeDocumentDetails = Fechar os detalhes do documento

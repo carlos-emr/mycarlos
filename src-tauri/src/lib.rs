@@ -53,6 +53,8 @@ mod model_limits;
 mod model_runtime;
 mod video_scheme;
 // The recording core (#359) and, in the next step, the playback address use it.
+mod inbox_folder;
+mod inbox_receipt;
 #[allow(dead_code)]
 mod mp4_stream;
 mod notice_key;
@@ -4695,6 +4697,25 @@ fn open_received_source(
     })
 }
 
+/// A received source opened to be sealed into the inbox, with its length when the system gave one.
+/// The length is only a hint for refusing early: the size limit is enforced on what is read.
+fn open_sealing_source(
+    app: &tauri::AppHandle,
+    source: &ReceivedSource,
+) -> Option<(Box<dyn std::io::Read + Send>, Option<u64>)> {
+    let declared = match source {
+        ReceivedSource::Path(path) => std::fs::symlink_metadata(path).ok().map(|m| m.len()),
+        ReceivedSource::ContentUri(_) => None,
+    };
+    let file = received::ReceivedFile {
+        source: source.clone(),
+        name: String::new(),
+    };
+    open_received_reader(app, &file)
+        .ok()
+        .map(|reader| (reader, declared))
+}
+
 fn open_received_reader(
     app: &tauri::AppHandle,
     file: &received::ReceivedFile,
@@ -5799,7 +5820,10 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
         .iter()
         .filter_map(|url| received::accept_opened_url(url, platform))
         .collect();
-    received.receive(urls.len(), sources);
+    // Sealing a share into the inbox streams whole files to disk: never on the event loop.
+    let offered = urls.len();
+    let received = received.inner().clone();
+    std::thread::spawn(move || received.receive(offered, sources));
 }
 
 /// Opens the save picker with the record's name. Returns the id of the chosen
@@ -6678,6 +6702,23 @@ pub fn run() {
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
+            // A file shared while the vault is locked is sealed into the inbox beside it (#49),
+            // once an unlock has made that inbox a key; until then it is held in memory as before.
+            {
+                let unlocked_app = app.handle().clone();
+                let open_app = app.handle().clone();
+                app.state::<Arc<ReceivedFiles>>().set_sealer(Arc::new(
+                    inbox_receipt::LockedSealer::new(
+                        app.path().app_local_data_dir()?,
+                        Box::new(move || {
+                            unlocked_app
+                                .try_state::<StoreHandle>()
+                                .and_then(|store| store.arc().is_unlocked_now())
+                        }),
+                        Box::new(move |source| open_sealing_source(&open_app, source)),
+                    ),
+                ));
+            }
             // Models live in `models/` beside `vault-home`, never inside it,
             // so a backup of the vault folder never holds one. A half-copied
             // file from an earlier run is removed now.

@@ -8098,7 +8098,7 @@ pub(crate) fn atomic_bytes(path: &Path, data: &[u8]) -> Result<(), VaultError> {
 /// every removal goes through `remove_owned_file` or `remove_owned_dir_all`
 /// and names one of these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Removable {
+pub(crate) enum Removable {
     /// A vault being created, which failed or which a killed process left.
     CreateStage,
     /// Ciphertext an import or a history append wrote that no manifest has
@@ -8123,11 +8123,15 @@ enum Removable {
     /// recording's object that recovery found nothing complete in (#359).
     #[allow(dead_code)] // constructed by the recording core, which has no caller yet
     Recording,
+    /// A file in the sealed inbox (#49), which is not a vault's: a share sealed while the vault was
+    /// locked, not yet added to it. Removed when expired, declined, left half-sealed by a crash, or
+    /// after the manifest commit that added its document.
+    InboxItem,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.
 #[allow(clippy::disallowed_methods)]
-fn remove_owned_file(path: impl AsRef<Path>, kind: Removable) -> io::Result<()> {
+pub(crate) fn remove_owned_file(path: impl AsRef<Path>, kind: Removable) -> io::Result<()> {
     let _ = kind;
     fs::remove_file(path)
 }

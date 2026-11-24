@@ -368,6 +368,11 @@ export interface ReceiveNotice {
   dropped: number;
   /** Shares refused whole: too many files would have been waiting. */
   refusedShares: number;
+  /** Files sealed into the inbox while the vault was locked (#49): kept encrypted for up to 7
+   * days and offered for adding when the vault is unlocked. */
+  sealed?: number;
+  /** Files the inbox could not keep: it is full, the disk is, or the file could not be read. */
+  notKept?: number;
 }
 
 export interface ReceivedState {

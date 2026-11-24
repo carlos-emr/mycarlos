@@ -376,11 +376,25 @@ interface-receive-dropped =
     [many] No se recibieron { $count } elementos compartidos: myCarlos solo acepta archivos PDF.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] No se pudo guardar un archivo compartido. Compártalo de nuevo.
+    *[other] No se pudieron guardar { $count } archivos compartidos. Compártalos de nuevo.
+    [many] No se pudieron guardar { $count } archivos compartidos. Compártalos de nuevo.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] No se recibió un envío de archivos: no puede haber más de 100 archivos compartidos en espera a la vez. Desbloquee la bóveda para que los archivos en espera pasen a Compartido conmigo y después vuelva a compartirlos.
     *[other] No se recibieron { $count } envíos de archivos: no puede haber más de 100 archivos compartidos en espera a la vez. Desbloquee la bóveda para que los archivos en espera pasen a Compartido conmigo y después vuelva a compartirlos.
     [many] No se recibieron { $count } envíos de archivos: no puede haber más de 100 archivos compartidos en espera a la vez. Desbloquee la bóveda para que los archivos en espera pasen a Compartido conmigo y después vuelva a compartirlos.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] Se guardó un archivo compartido, cifrado, durante un máximo de 7 días. Desbloquee myCarlos para añadirlo.
+    *[other] Se guardaron { $count } archivos compartidos, cifrados, durante un máximo de 7 días. Desbloquee myCarlos para añadirlos.
+    [many] Se guardaron { $count } archivos compartidos, cifrados, durante un máximo de 7 días. Desbloquee myCarlos para añadirlos.
     }
 
 interface-RecordDetails-closeDocumentDetails = Cerrar los detalles del documento

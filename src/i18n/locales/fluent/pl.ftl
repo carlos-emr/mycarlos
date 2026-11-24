@@ -390,12 +390,28 @@ interface-receive-dropped =
     *[other] Nie odebrano { $count } udostępnionego elementu: myCarlos przyjmuje tylko pliki PDF.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] Nie udało się zachować jednego udostępnionego pliku. Udostępnij go ponownie.
+    [few] Nie udało się zachować { $count } udostępnionych plików. Udostępnij je ponownie.
+    [many] Nie udało się zachować { $count } udostępnionych plików. Udostępnij je ponownie.
+    *[other] Nie udało się zachować { $count } udostępnionych plików. Udostępnij je ponownie.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] Nie odebrano udostępnienia: jednocześnie może oczekiwać najwyżej 100 udostępnionych plików. Proszę odblokować sejf, aby oczekujące pliki trafiły do sekcji Udostępnione mi, a następnie udostępnić ponownie.
     [few] Nie odebrano { $count } udostępnień: jednocześnie może oczekiwać najwyżej 100 udostępnionych plików. Proszę odblokować sejf, aby oczekujące pliki trafiły do sekcji Udostępnione mi, a następnie udostępnić ponownie.
     [many] Nie odebrano { $count } udostępnień: jednocześnie może oczekiwać najwyżej 100 udostępnionych plików. Proszę odblokować sejf, aby oczekujące pliki trafiły do sekcji Udostępnione mi, a następnie udostępnić ponownie.
     *[other] Nie odebrano { $count } udostępnienia: jednocześnie może oczekiwać najwyżej 100 udostępnionych plików. Proszę odblokować sejf, aby oczekujące pliki trafiły do sekcji Udostępnione mi, a następnie udostępnić ponownie.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] Jeden udostępniony plik jest przechowywany w postaci zaszyfrowanej przez maksymalnie 7 dni. Odblokuj myCarlos, aby go dodać.
+    [few] { $count } udostępnione pliki są przechowywane w postaci zaszyfrowanej przez maksymalnie 7 dni. Odblokuj myCarlos, aby je dodać.
+    [many] { $count } udostępnionych plików jest przechowywanych w postaci zaszyfrowanej przez maksymalnie 7 dni. Odblokuj myCarlos, aby je dodać.
+    *[other] { $count } udostępnionych plików jest przechowywanych w postaci zaszyfrowanej przez maksymalnie 7 dni. Odblokuj myCarlos, aby je dodać.
     }
 
 interface-RecordDetails-closeDocumentDetails = Zamknij szczegóły dokumentu

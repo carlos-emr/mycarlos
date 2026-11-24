@@ -254,6 +254,8 @@
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
+  "interface.receive.sealed",
+  "interface.receive.notKept",
   "interface.recordPresentation.imaging",
   "interface.recordPresentation.prescription",
   "interface.recordPresentation.testResult",

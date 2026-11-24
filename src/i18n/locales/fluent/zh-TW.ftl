@@ -505,7 +505,11 @@ interface-reader-zoom = { $percent }%
 
 interface-receive-dropped = 有 { $count } 個分享項目未接收：myCarlos 只接受 PDF 檔案。
 
+interface-receive-notKept = 有 { $count } 個分享檔案無法保存。請重新分享。
+
 interface-receive-refused = 有 { $count } 個分享項目未接收：等待中的分享檔案一次最多只能有 100 個。請解鎖，讓等候中的檔案進入「與我分享」，然後重新分享。
+
+interface-receive-sealed = 有 { $count } 個分享檔案已加密保存，最長 7 天。請解鎖 myCarlos 以新增。
 
 interface-recordPresentation-imaging = 影像檢查
 

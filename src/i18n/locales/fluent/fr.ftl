@@ -376,11 +376,25 @@ interface-receive-dropped =
     [many] { $count } éléments partagés n’ont pas été reçus : myCarlos n’accepte que les fichiers PDF.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] Un fichier partagé n’a pas pu être conservé. Partagez-le de nouveau.
+    *[other] { $count } fichiers partagés n’ont pas pu être conservés. Partagez-les de nouveau.
+    [many] { $count } fichiers partagés n’ont pas pu être conservés. Partagez-les de nouveau.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] Un partage n’a pas été reçu : pas plus de 100 fichiers partagés peuvent être en attente à la fois. Déverrouillez le coffre-fort pour que les fichiers en attente arrivent dans Partagés avec moi, puis partagez-les de nouveau.
     *[other] { $count } partages n’ont pas été reçus : pas plus de 100 fichiers partagés peuvent être en attente à la fois. Déverrouillez le coffre-fort pour que les fichiers en attente arrivent dans Partagés avec moi, puis partagez-les de nouveau.
     [many] { $count } partages n’ont pas été reçus : pas plus de 100 fichiers partagés peuvent être en attente à la fois. Déverrouillez le coffre-fort pour que les fichiers en attente arrivent dans Partagés avec moi, puis partagez-les de nouveau.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] Un fichier partagé est conservé, chiffré, pendant 7 jours au plus. Déverrouillez myCarlos pour l’ajouter.
+    *[other] { $count } fichiers partagés sont conservés, chiffrés, pendant 7 jours au plus. Déverrouillez myCarlos pour les ajouter.
+    [many] { $count } fichiers partagés sont conservés, chiffrés, pendant 7 jours au plus. Déverrouillez myCarlos pour les ajouter.
     }
 
 interface-RecordDetails-closeDocumentDetails = Fermer les détails du document

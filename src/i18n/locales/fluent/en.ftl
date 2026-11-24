@@ -362,10 +362,22 @@ interface-receive-dropped =
     *[other] { $count } shared items were not received: myCarlos accepts PDF files only.
     }
 
+interface-receive-notKept =
+    { $count ->
+    [one] One shared file could not be kept. Share it again.
+    *[other] { $count } shared files could not be kept. Share them again.
+    }
+
 interface-receive-refused =
     { $count ->
     [one] A share was not received: no more than 100 shared files can wait at once. Unlock, so the waiting files go into Shared with me, then share again.
     *[other] { $count } shares were not received: no more than 100 shared files can wait at once. Unlock, so the waiting files go into Shared with me, then share again.
+    }
+
+interface-receive-sealed =
+    { $count ->
+    [one] One shared file is kept, encrypted, for up to 7 days. Unlock myCarlos to add it.
+    *[other] { $count } shared files are kept, encrypted, for up to 7 days. Unlock myCarlos to add them.
     }
 
 interface-RecordDetails-closeDocumentDetails = Close document details

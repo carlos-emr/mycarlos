@@ -25,4 +25,29 @@ describe("what the patient is told about shared files", () => {
       ),
     );
   });
+  it("tells a patient that files shared while locked are kept encrypted, and that some could not be", () => {
+    expect(
+      humanValue(
+        receiveNoticeText({
+          dropped: 0,
+          refusedShares: 0,
+          sealed: 2,
+          notKept: 1,
+        }),
+      ),
+    ).toBe(
+      humanValue(
+        "2 shared files are kept, encrypted, for up to 7 days. Unlock myCarlos to add them. One shared file could not be kept. Share it again.",
+      ),
+    );
+    expect(
+      humanValue(
+        receiveNoticeText({ dropped: 0, refusedShares: 0, sealed: 1 }),
+      ),
+    ).toBe(
+      humanValue(
+        "One shared file is kept, encrypted, for up to 7 days. Unlock myCarlos to add it.",
+      ),
+    );
+  });
 });

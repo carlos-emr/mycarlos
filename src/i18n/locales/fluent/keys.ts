@@ -255,6 +255,8 @@ export const MESSAGE_KEYS = [
   "interface.reader.zoom",
   "interface.receive.dropped",
   "interface.receive.refused",
+  "interface.receive.sealed",
+  "interface.receive.notKept",
   "interface.recordPresentation.imaging",
   "interface.recordPresentation.prescription",
   "interface.recordPresentation.testResult",
@@ -1564,6 +1566,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.reader.zoom": "interface-reader-zoom",
   "interface.receive.dropped": "interface-receive-dropped",
   "interface.receive.refused": "interface-receive-refused",
+  "interface.receive.sealed": "interface-receive-sealed",
+  "interface.receive.notKept": "interface-receive-notKept",
   "interface.recordPresentation.imaging":
     "interface-recordPresentation-imaging",
   "interface.recordPresentation.prescription":
@@ -2972,6 +2976,8 @@ export interface MessageArgsByKey {
   "interface.reader.zoom": { percent: FluentArgument };
   "interface.receive.dropped": { count: FluentArgument };
   "interface.receive.refused": { count: FluentArgument };
+  "interface.receive.sealed": { count: FluentArgument };
+  "interface.receive.notKept": { count: FluentArgument };
   "interface.recordPresentation.imaging": undefined;
   "interface.recordPresentation.prescription": undefined;
   "interface.recordPresentation.testResult": undefined;
