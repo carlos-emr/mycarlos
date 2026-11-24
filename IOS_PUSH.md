@@ -10,7 +10,8 @@ An **alert push** with no content: a localization key (the phone looks the sente
 `Localizable.strings`, in its language) and one opaque code `n` that only says "check". It is never a silent
 push (iOS throttles those and does not deliver them to a force-quit app). `apns-priority 10` with
 `apns-push-type alert`, an expiry, and one `apns-collapse-id` per destination so a pile of arrivals shows one
-notice. Tapping it opens the app on the unlock screen; no code of ours runs when the push arrives.
+notice. Tapping it opens the app on the unlock screen; no code of ours runs when the push arrives (unless a
+notification service extension is added later).
 
 ## Sandbox and production
 Apple runs two push services. A token belongs to one, and a push sent to the other is refused.
@@ -47,14 +48,21 @@ Without the entitlement `registerForRemoteNotifications` fails and the app repor
   with it can send alert text to any token they know, and revoking it breaks every clinic at once). A relay
   run by the publisher would let the publisher see tokens and push timing, which the privacy notice says it
   does not; that needs counsel (**decision, open**).
-- **Rotation or loss:** make a new key in the same account, set the new path and key id on the portal, restart
-  it, then revoke the old key in the Apple account. A push in flight on the old key may fail once (403) and is
-  retried.
+- **Rotation or loss:** in this order, so nothing fails: create the new key in the same account and **leave the
+  old one active**; set the new path and key id on the portal and restart it; check that a push is accepted;
+  only then revoke the old key in the Apple account. The portal treats every 4xx answer from Apple except 410
+  as permanent and does not retry, so a push signed with a key Apple has already revoked is lost, not retried.
+  The portal's own steps are in its `docs/apns-key-operations.md`.
+
+## What the portal still lacks: HTTP/2
+APNs accepts HTTP/2 only. **The portal has no HTTP/2 client today and refuses to start with push turned on until
+one is added** (a candidate is `httpx[http2]`; adding it is Ben's dependency decision). This also blocks the
+real-phone test below, so it comes before any delivery to a phone.
 
 ## What Apple and the portal see, and the label
 See the new row in `PRIVACY_NOTICE_DRAFT.md`: Apple sees the push token and the app, the time of each push, the
 portal's internet address, and the fixed key and opaque code while the push waits; the portal also holds the
-token (deleted on opt-out, unlink, device removal, or an Apple 410). The App Privacy label keeps the device
+token, **stored encrypted at rest** (deleted on opt-out, unlink, device removal, or an Apple 410). The App Privacy label keeps the device
 identifier already declared (App Functionality, linked to the user, not tracking); counsel confirms the token
 needs no further entry.
 
