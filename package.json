@@ -17,6 +17,7 @@
     "sbom:frontend": "cyclonedx-npm --package-lock-only --output-reproducible --output-format JSON --output-file sbom-frontend.cdx.json",
     "test": "vitest run",
     "test:coverage:frontend": "vitest run --config vitest.coverage.config.ts",
+    "test:coverage-floor": "node --test scripts/coverage-floor.test.mjs",
     "test:dev-data": "node --test scripts/generate-fake-dev-data.test.mjs",
     "test:android-security": "node --test scripts/configure-android-security.test.mjs",
     "check:release-safety": "node scripts/check-release-safety.mjs",
