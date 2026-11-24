@@ -15779,6 +15779,10 @@ describe("the automatic lock and the native deadline, when a video plays or the 
     // The native deadline is told, sparingly (and its refusal is not a failure here).
     const touches = vi.mocked(bridge.touch).mock.calls.length;
     expect(touches).toBeGreaterThan(0);
+    // "Sparingly" is the rule: over these 150 s a call every second would be 150, so the bound
+    // only says the app does not tell native code on every tick or every playback event. It is a
+    // ceiling on the rate, not the interval's value: raise it if the interval is made shorter on
+    // purpose, and keep it far below one call a second.
     expect(touches).toBeLessThan(20);
     // Paused: the hold is let go, and the usual delay runs from here.
     await act(async () => {
