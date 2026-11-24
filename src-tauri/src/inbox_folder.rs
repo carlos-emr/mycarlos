@@ -92,8 +92,10 @@ pub(crate) struct InboxFolder {
 struct Entry {
     name: String,
     bytes: u64,
-    /// The file's own time, in Unix seconds: the only clock a locked app can read.
-    modified: u64,
+    /// The file's own time, in Unix seconds: the only clock a locked app can read. `None` where
+    /// the system gave none or one before 1970: an unknown age is never an old one (#49), so the
+    /// locked sweep keeps such an item.
+    modified: Option<u64>,
 }
 
 impl InboxFolder {
@@ -173,17 +175,19 @@ impl InboxFolder {
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
         builder.create(&self.dir)?;
-        #[cfg(unix)]
-        fs::set_permissions(
-            &self.dir,
-            std::os::unix::fs::PermissionsExt::from_mode(0o700),
-        )?;
+        // Look before changing anything: `set_permissions` follows a link, so a link planted
+        // here must be refused before its target is touched.
         if !fs::symlink_metadata(&self.dir)?.file_type().is_dir() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "the inbox folder is not a folder",
             ));
         }
+        #[cfg(unix)]
+        fs::set_permissions(
+            &self.dir,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )?;
         Ok(())
     }
 
@@ -232,7 +236,9 @@ impl InboxFolder {
                 .modified()
                 .ok()
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |since| since.as_secs());
+                .map(|since| since.as_secs())
+                // A zero is what a restore or copy tool writes when it has no time to give.
+                .filter(|secs| *secs > 0);
             entries.push(Entry {
                 name,
                 bytes: metadata.len(),
@@ -302,13 +308,16 @@ impl InboxFolder {
         }
         // The size of what was read may be more than was declared: count it now, and give the
         // room back if the folder went over.
-        let after = usage_of(
-            self.entries()
-                .map_err(|_| SealFailure::Storage)?
-                .iter()
-                .map(|entry| (entry.name.as_str(), entry.bytes)),
-        );
-        if after.bytes > self.caps.total_bytes {
+        // The item is sealed and safe by now: a folder that cannot be listed again is not a
+        // failure to report, or the patient shares the file a second time.
+        let after = self.entries().map(|entries| {
+            usage_of(
+                entries
+                    .iter()
+                    .map(|entry| (entry.name.as_str(), entry.bytes)),
+            )
+        });
+        if after.is_ok_and(|after| after.bytes > self.caps.total_bytes) {
             let _ = remove_item(&item);
             return Err(SealFailure::Refused(Refusal::InboxFull));
         }
@@ -392,7 +401,9 @@ impl InboxFolder {
                 swept.parts += 1;
                 true
             } else {
-                let old = long_expired(entry.modified, now, &self.caps);
+                let old = entry
+                    .modified
+                    .is_some_and(|modified| long_expired(modified, now, &self.caps));
                 swept.items += usize::from(old);
                 old
             };
@@ -815,6 +826,57 @@ mod tests {
             .sweep_locked(real_now + 2 * CAPS.age_secs + 60)
             .unwrap();
         assert_eq!(swept, Swept { parts: 0, items: 1 });
+    }
+
+    #[test]
+    fn a_file_time_that_is_unknown_keeps_the_item_through_a_locked_sweep() {
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let zeroed = seal(&folder, &keys, pdf(200)).unwrap();
+        let before_1970 = seal(&folder, &keys, pdf(200)).unwrap();
+        let set = |id: &ItemId, time: std::time::SystemTime| {
+            let file = OpenOptions::new()
+                .write(true)
+                .open(folder.dir().join(item_file_name(id)))
+                .unwrap();
+            file.set_modified(time)
+        };
+        set(&zeroed.item_id, UNIX_EPOCH).unwrap();
+        // Some systems cannot hold a time before 1970: there that item just keeps a normal time,
+        // which the sweep below is far past too, so only the zeroed one is checked then.
+        let pre_epoch = set(
+            &before_1970.item_id,
+            UNIX_EPOCH - std::time::Duration::from_secs(86_400),
+        )
+        .is_ok();
+        // Far past twice the age by any clock: a time of 0 would make both look ancient.
+        let swept = folder.sweep_locked(NOW + 10 * CAPS.age_secs).unwrap();
+        assert_eq!(swept.parts, 0);
+        assert!(pre_epoch && swept.items == 0 || !pre_epoch && swept.items <= 1);
+        assert!(folder.dir().join(item_file_name(&zeroed.item_id)).exists());
+        if pre_epoch {
+            assert!(folder
+                .dir()
+                .join(item_file_name(&before_1970.item_id))
+                .exists());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_where_the_folder_should_be_is_refused_before_its_target_is_touched() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let target = temp.path().join("elsewhere");
+        fs::create_dir_all(&target).unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::create_dir_all(folder.dir().parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&target, folder.dir()).unwrap();
+        assert_eq!(seal(&folder, &keys, pdf(200)), Err(SealFailure::Storage));
+        let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "the link's target keeps its own mode");
+        assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
     }
 
     #[test]
