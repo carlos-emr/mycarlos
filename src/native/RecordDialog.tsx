@@ -19,6 +19,21 @@ import {
   type CameraFailure,
 } from "./photo";
 import {
+  NO_CHOICE,
+  NO_DEVICES,
+  cameraConstraints,
+  deviceIsGone,
+  devicesInUse,
+  listDevices,
+  microphoneConstraints,
+  openLevelReader,
+  readDeviceChoice,
+  rememberDeviceChoice,
+  type DeviceChoice,
+  type DeviceInfo,
+  type DeviceLists,
+} from "./mediaDevices";
+import {
   MAX_UNSENT_BYTES,
   QUALITIES,
   isNoSpace,
@@ -124,6 +139,16 @@ export function RecordDialog({
   const [room, setRoom] = useState<RecordingProgress | null>(null);
   // A pause or a resume is on its way: the toggle waits for it.
   const [changing, setChanging] = useState(false);
+  // The cameras and microphones connected (named once they have been allowed), the ones the open
+  // stream really uses, whether the remembered ones were missing, and the microphone test.
+  const [devices, setDevices] = useState<DeviceLists>(NO_DEVICES);
+  const [using, setUsing] = useState<DeviceChoice>(NO_CHOICE);
+  const [fellBack, setFellBack] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [level, setLevel] = useState(0);
+  const refocusRef = useRef<"camera" | "microphone" | null>(null);
+  const restartedRef = useRef(false);
+  const previousStageRef = useRef<Stage | null>(null);
   const [status, setStatus] = useTextState();
   const [, setTick] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -161,64 +186,90 @@ export function RecordDialog({
     if (videoRef.current) videoRef.current.srcObject = null;
   }, []);
 
-  const start = useCallback(async () => {
-    stopCamera();
-    const attempt = attemptRef.current;
-    setFailure(null);
-    setProblem(null);
-    setNeedsRoom(false);
-    setStage("starting");
-    setStatus(
-      deferredText(() =>
-        translateNow("interface.RecordDialog.startingTheCameraAndMicrophone"),
-      ),
-    );
-    try {
-      // Room first: with too little, neither the camera nor the microphone is
-      // turned on.
-      const space = await bridge.videoSpace?.();
-      if (attempt !== attemptRef.current) return;
-      if (space && !space.canRecord) {
-        setNeedsRoom(true);
+  const start = useCallback(
+    async (choice?: DeviceChoice) => {
+      stopCamera();
+      const attempt = attemptRef.current;
+      setFailure(null);
+      setProblem(null);
+      setNeedsRoom(false);
+      setStage("starting");
+      setStatus(
+        deferredText(() =>
+          translateNow("interface.RecordDialog.startingTheCameraAndMicrophone"),
+        ),
+      );
+      try {
+        // Room first: with too little, neither the camera nor the microphone is
+        // turned on.
+        const space = await bridge.videoSpace?.();
+        if (attempt !== attemptRef.current) return;
+        if (space && !space.canRecord) {
+          setNeedsRoom(true);
+          setStage("failed");
+          setStatus("");
+          return;
+        }
+        if (!navigator.mediaDevices?.getUserMedia)
+          throw new DOMException("No camera interface", "NotFoundError");
+        // The devices chosen last, if any are remembered; if one of them is gone, the system's
+        // defaults are used instead, and the dialog says so.
+        const wanted = choice ?? readDeviceChoice();
+        const open = (chosen: DeviceChoice) =>
+          whileAsking(
+            navigator.mediaDevices.getUserMedia({
+              video: cameraConstraints(
+                videoConstraints("standard", phone),
+                chosen.camera,
+              ),
+              audio: microphoneConstraints(chosen.microphone),
+            }),
+          );
+        let stream: MediaStream;
+        let gone = false;
+        try {
+          stream = await open(wanted);
+        } catch (error) {
+          if (!(wanted.camera || wanted.microphone) || !deviceIsGone(error))
+            throw error;
+          gone = true;
+          stream = await open(NO_CHOICE);
+        }
+        if (attempt !== attemptRef.current) {
+          for (const track of stream.getTracks()) track.stop();
+          return;
+        }
+        streamRef.current = stream;
+        for (const track of stream.getTracks())
+          track.addEventListener("ended", () => {
+            if (streamRef.current !== stream) return;
+            // A track that ends while recording ends the recording, keeping what
+            // there is; before it, the dialog says the camera stopped.
+            if (recorderRef.current) void finishRef.current("stopped");
+            else {
+              stopCamera();
+              setFailure("stopped");
+              setStage("failed");
+              setStatus("");
+            }
+          });
+        setHighOk(highQualityAvailable(stream.getVideoTracks()[0]));
+        // Names come only now that the devices have been allowed.
+        const connected = await listDevices(navigator.mediaDevices);
+        if (attempt !== attemptRef.current) return;
+        setDevices(connected);
+        setUsing(devicesInUse(stream));
+        setFellBack(gone);
+        setStage("ready");
+      } catch (error) {
+        if (attempt !== attemptRef.current) return;
+        setFailure(cameraFailure(error));
         setStage("failed");
         setStatus("");
-        return;
       }
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw new DOMException("No camera interface", "NotFoundError");
-      const stream = await whileAsking(
-        navigator.mediaDevices.getUserMedia({
-          video: videoConstraints("standard", phone),
-          audio: true,
-        }),
-      );
-      if (attempt !== attemptRef.current) {
-        for (const track of stream.getTracks()) track.stop();
-        return;
-      }
-      streamRef.current = stream;
-      for (const track of stream.getTracks())
-        track.addEventListener("ended", () => {
-          if (streamRef.current !== stream) return;
-          // A track that ends while recording ends the recording, keeping what
-          // there is; before it, the dialog says the camera stopped.
-          if (recorderRef.current) void finishRef.current("stopped");
-          else {
-            stopCamera();
-            setFailure("stopped");
-            setStage("failed");
-            setStatus("");
-          }
-        });
-      setHighOk(highQualityAvailable(stream.getVideoTracks()[0]));
-      setStage("ready");
-    } catch (error) {
-      if (attempt !== attemptRef.current) return;
-      setFailure(cameraFailure(error));
-      setStage("failed");
-      setStatus("");
-    }
-  }, [bridge, phone, stopCamera, whileAsking]);
+    },
+    [bridge, phone, stopCamera, whileAsking],
+  );
 
   // The preview, once there is a stream and a place for it.
   useEffect(() => {
@@ -613,13 +664,77 @@ export function RecordDialog({
   useModalFocus(true, dialogRef, close, firstRef);
 
   useEffect(() => {
-    if (stage === "ready") startRef.current?.focus();
+    const was = previousStageRef.current;
+    previousStageRef.current = stage;
+    if (stage === "starting") restartedRef.current = true;
+    if (stage === "ready" && refocusRef.current && restartedRef.current) {
+      // A device was just switched from its list and the preview has restarted on it: the
+      // focus returns to that list, not to Start.
+      document.getElementById(`record-device-${refocusRef.current}`)?.focus();
+      refocusRef.current = null;
+      restartedRef.current = false;
+    } else if (stage === "ready" && !refocusRef.current && was !== "ready")
+      startRef.current?.focus();
     if (stage === "failed") retryRef.current?.focus();
     if (stage === "recording" || stage === "paused") stopRef.current?.focus();
   }, [stage]);
   useEffect(() => {
     if (confirmStop) keepRef.current?.focus();
   }, [confirmStop]);
+
+  // Plugging or unplugging a camera or microphone updates the lists at once. A device that was
+  // in use and goes ends its track, which the dialog already handles; a recording keeps the
+  // devices it started with whatever happens to the lists.
+  useEffect(() => {
+    const media = navigator.mediaDevices;
+    if (
+      !media?.addEventListener ||
+      stage === "explain" ||
+      stage === "failed" ||
+      stage === "stopping"
+    )
+      return;
+    let live = true;
+    const refresh = () =>
+      void listDevices(media).then((connected) => {
+        if (live) setDevices(connected);
+      });
+    media.addEventListener("devicechange", refresh);
+    return () => {
+      live = false;
+      media.removeEventListener("devicechange", refresh);
+    };
+  }, [stage]);
+
+  // The microphone test: a level meter on the microphone already open, only while the preview
+  // is up and nothing is being recorded. Nothing is recorded, kept or sent.
+  useEffect(() => {
+    if (!testing) return;
+    const stream = streamRef.current;
+    const reader = stage === "ready" && stream ? openLevelReader(stream) : null;
+    if (!reader) {
+      setTesting(false);
+      return;
+    }
+    const timer = window.setInterval(() => setLevel(reader.read()), 100);
+    return () => {
+      window.clearInterval(timer);
+      reader.close();
+      setLevel(0);
+    };
+  }, [testing, stage, using]);
+
+  // Switching restarts the preview on the other device (never while recording or starting a
+  // recording: a recording keeps the camera and microphone it began with).
+  const switchDevice = (kind: "camera" | "microphone", id: string) => {
+    if (stage !== "ready" || using[kind] === id) return;
+    const next = { ...using, [kind]: id };
+    rememberDeviceChoice(next);
+    refocusRef.current = kind;
+    restartedRef.current = false;
+    setTesting(false);
+    void start(next);
+  };
 
   const pausedNow = stage === "paused";
   const recordingNow = stage === "recording" || pausedNow;
@@ -678,6 +793,63 @@ export function RecordDialog({
             muted
             playsInline
           />
+          {(stage === "ready" || recordingNow) &&
+            (devices.cameras.length > 0 || devices.microphones.length > 0) && (
+              <fieldset className="record-devices appearance-choice">
+                <legend>
+                  {translateNow("interface.RecordDialog.cameraAndMicrophone")}
+                </legend>
+                <DevicePick
+                  kind="camera"
+                  label={translateNow("interface.RecordDialog.camera")}
+                  unnamed="interface.RecordDialog.unnamedCamera"
+                  devices={devices.cameras}
+                  current={using.camera}
+                  disabled={stage !== "ready"}
+                  onChange={switchDevice}
+                />
+                <DevicePick
+                  kind="microphone"
+                  label={translateNow("interface.RecordDialog.microphone")}
+                  unnamed="interface.RecordDialog.unnamedMicrophone"
+                  devices={devices.microphones}
+                  current={using.microphone}
+                  disabled={stage !== "ready"}
+                  onChange={switchDevice}
+                />
+                {fellBack && (
+                  <p role="status">
+                    {translateNow("interface.RecordDialog.deviceFellBack")}
+                  </p>
+                )}
+                {stage === "ready" && typeof AudioContext !== "undefined" && (
+                  <div className="record-mic-test">
+                    <button
+                      className="button"
+                      type="button"
+                      aria-pressed={testing}
+                      onClick={() => setTesting((on) => !on)}
+                    >
+                      {translateNow(
+                        testing
+                          ? "interface.RecordDialog.stopTestingMicrophone"
+                          : "interface.RecordDialog.testMicrophone",
+                      )}
+                    </button>
+                    {testing && (
+                      <meter
+                        min={0}
+                        max={1}
+                        value={level}
+                        aria-label={translateNow(
+                          "interface.RecordDialog.microphoneLevel",
+                        )}
+                      />
+                    )}
+                  </div>
+                )}
+              </fieldset>
+            )}
           {stage === "ready" && (
             <fieldset className="record-quality appearance-choice">
               <legend>
@@ -923,5 +1095,57 @@ export function RecordDialog({
         </footer>
       </section>
     </div>
+  );
+}
+
+/** One of the two device lists. With more than one device it is a list to choose from (the one in
+ * use is selected); with one, plain text, so the patient still sees which one is in use. */
+function DevicePick({
+  kind,
+  label,
+  unnamed,
+  devices,
+  current,
+  disabled,
+  onChange,
+}: {
+  kind: "camera" | "microphone";
+  label: string;
+  unnamed:
+    | "interface.RecordDialog.unnamedCamera"
+    | "interface.RecordDialog.unnamedMicrophone";
+  devices: DeviceInfo[];
+  current: string | null;
+  disabled: boolean;
+  onChange: (kind: "camera" | "microphone", id: string) => void;
+}) {
+  if (devices.length === 0) return null;
+  const nameOf = (device: DeviceInfo, index: number) =>
+    device.label || translateNow(unnamed, { number: index + 1 });
+  const selected =
+    devices.find((device) => device.id === current) ?? devices[0];
+  if (devices.length === 1)
+    return (
+      <p className="record-device">
+        <span>{label}: </span>
+        <strong>{nameOf(devices[0], 0)}</strong>
+      </p>
+    );
+  return (
+    <label className="record-device">
+      <span>{label}</span>
+      <select
+        id={`record-device-${kind}`}
+        value={selected.id}
+        disabled={disabled}
+        onChange={(event) => onChange(kind, event.currentTarget.value)}
+      >
+        {devices.map((device, index) => (
+          <option key={device.id} value={device.id}>
+            {nameOf(device, index)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
