@@ -248,12 +248,14 @@ export function checkAndroidArchive(
   );
   const resources = new Map();
   for (const name of names) {
-    if (/(?:^|\/)res\/xml\/[^/]+\.xml$/.test(name)) {
+    // Every compiled XML under res/, at any depth: resource path shortening moves
+    // res/xml/network_security_config.xml to a name like res/Ab.xml, so the folder says nothing.
+    if (/(?:^|\/)res\/(?:.+\/)?[^/]+\.xml$/.test(name)) {
       try {
         resources.set(`${label}!${name}`, decodeAnyXml(zip.read(name)));
       } catch {
         problems.push(
-          `${label}!${name}: cannot be read, so its cleartext setting is unknown`,
+          `${label}!${name}: cannot be read, so its cleartext and trust settings are unknown`,
         );
       }
     }
@@ -280,6 +282,32 @@ export function checkAndroidArchive(
       problems.push(
         `${label}!${name}: ${reason} is in the resources (a store build trusts only the system's authorities)`,
       );
+  }
+  // The test certificates, wherever they are: assets, a library, a dex file, a resource under any
+  // name. Each is searched for as its DER bytes and as its base64 text.
+  const forbidden = (options.forbiddenCertificates ?? []).flatMap((der) => [
+    { label: "DER", bytes: der },
+    { label: "base64", bytes: Buffer.from(der.toString("base64")) },
+  ]);
+  for (const name of names) {
+    if (forbidden.length === 0) break;
+    let data;
+    try {
+      data = zip.read(name);
+    } catch {
+      problems.push(
+        `${label}!${name}: cannot be read, so it was not searched for the test certificates`,
+      );
+      continue;
+    }
+    for (const { label: form, bytes } of forbidden) {
+      if (data.includes(bytes)) {
+        problems.push(
+          `${label}!${name}: holds a test certificate (${form}); a store build trusts only the system's authorities`,
+        );
+        break;
+      }
+    }
   }
   let libraries = 0;
   for (const name of names) {

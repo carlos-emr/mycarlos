@@ -142,7 +142,27 @@ async function embeddedUrls(root) {
   }
 }
 
-async function checkAndroid(path, appId, options) {
+/** The repository's FAKE test certificates (DER), which no store build may carry anywhere. */
+async function testCertificates(root) {
+  const directory = join(root, "src-tauri/tests/fixtures/portal-test-pki");
+  const names = (await readdir(directory)).filter((name) =>
+    /\.der\.b64$/.test(name),
+  );
+  const found = [];
+  for (const name of names.sort()) {
+    const der = Buffer.from(
+      (await readFile(join(directory, name), "utf8")).trim(),
+      "base64",
+    );
+    if (der.length < 64 || der[0] !== 0x30)
+      throw new Error(`${name} is not a DER certificate`);
+    found.push(der);
+  }
+  if (found.length === 0) throw new Error("no test certificates found");
+  return found;
+}
+
+async function checkAndroid(path, appId, options, root) {
   const bytes = await readFile(path);
   if (path.endsWith(".xml")) {
     return checkAndroidManifest(
@@ -150,7 +170,19 @@ async function checkAndroid(path, appId, options) {
       appId,
     ).map((problem) => `${path}: ${problem}`);
   }
-  return checkAndroidArchive(bytes, path, appId, options);
+  let forbiddenCertificates;
+  try {
+    forbiddenCertificates = await testCertificates(root);
+  } catch (error) {
+    return [
+      `${path}: the test certificates cannot be read (${error.message}), so the build could not be searched for them`,
+      ...checkAndroidArchive(bytes, path, appId, options),
+    ];
+  }
+  return checkAndroidArchive(bytes, path, appId, {
+    ...options,
+    forbiddenCertificates,
+  });
 }
 
 async function checkIos(path, appId, options) {
@@ -212,7 +244,7 @@ export async function run(argv, root = ROOT) {
         continue;
       }
       if (flag === "--android")
-        await attempt(target, () => checkAndroid(target, appId, options));
+        await attempt(target, () => checkAndroid(target, appId, options, root));
       if (flag === "--ios")
         await attempt(target, () => checkIos(target, appId, options));
       if (flag === "--dist") await attempt(target, () => checkDist(target));

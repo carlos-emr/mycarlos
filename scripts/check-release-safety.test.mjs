@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -516,6 +516,114 @@ test("a certificate file among the resources is found, by name or by its PEM mar
   );
   // An ordinary resource is not a certificate.
   assert.equal(withFile("res/raw/sound", Buffer.from("not a certificate")), "");
+});
+
+test("a shortened resource path does not hide a network security config", () => {
+  // `res/Ab.xml`, `res/xml/..`, `base/res/Zz.xml`: the folder says nothing once paths are shortened.
+  for (const name of ["res/Ab.xml", "res/xml/x.xml", "base/res/Zz.xml"]) {
+    const found = checkAndroidArchive(
+      apk(GOOD_MANIFEST, [
+        [
+          name,
+          axml([
+            ["network-security-config", {}],
+            ["base-config", { "android:cleartextTrafficPermitted": true }],
+            ["debug-overrides", {}],
+            ["certificates", { src: "user" }],
+          ]),
+        ],
+      ]),
+      "s.apk",
+      EXPECTED_APP_ID,
+    ).join("\n");
+    assert.match(found, /cleartextTrafficPermitted is true/, name);
+    assert.match(found, /debug-overrides is present/, name);
+    assert.match(found, /certificates src is "user"/, name);
+  }
+});
+
+test("the test certificates are found anywhere in a build, as DER or as base64", () => {
+  const der = Buffer.concat([
+    Buffer.from([0x30, 0x82, 1, 0]),
+    Buffer.alloc(80, 7),
+  ]);
+  const options = { forbiddenCertificates: [der] };
+  const found = (entries) =>
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, entries),
+      "t.apk",
+      EXPECTED_APP_ID,
+      options,
+    ).join("\n");
+  // As a file under any name, in an asset, and in the middle of other data.
+  assert.match(
+    found([["res/Qx", der]]),
+    /res\/Qx: holds a test certificate \(DER\)/,
+  );
+  assert.match(
+    found([
+      [
+        "assets/ca-bundle",
+        Buffer.concat([Buffer.from("xx"), der, Buffer.from("yy")]),
+      ],
+    ]),
+    /assets\/ca-bundle: holds a test certificate \(DER\)/,
+  );
+  assert.match(
+    found([
+      [
+        "classes.dex",
+        Buffer.concat([
+          Buffer.from("dex"),
+          Buffer.from(der.toString("base64")),
+        ]),
+      ],
+    ]),
+    /classes.dex: holds a test certificate \(base64\)/,
+  );
+  // In a library too (the apk helper adds its own).
+  assert.match(
+    found([
+      ["lib/arm64-v8a/libother.so", Buffer.concat([elf("release"), der])],
+    ]),
+    /libother.so: holds a test certificate/,
+  );
+  // And a build without it is clean.
+  assert.equal(found([["assets/readme", Buffer.from("nothing")]]), "");
+  // Not asking for the search finds nothing (the bytes are only a problem when they are the test ones).
+  assert.deepEqual(
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, [["res/Qx", der]]),
+      "t.apk",
+      EXPECTED_APP_ID,
+    ),
+    [],
+  );
+});
+
+test("the repository's test certificates are searched for in a real run of the gate", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-release-safety-"));
+  try {
+    const fixture = await readFile(
+      new URL(
+        "../src-tauri/tests/fixtures/portal-test-pki/ca.der.b64",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const der = Buffer.from(fixture.trim(), "base64");
+    const leaky = join(directory, "leaky.apk");
+    await writeFile(leaky, apk(GOOD_MANIFEST, [["assets/x", der]]));
+    assert.match(
+      (await run(["--android", leaky])).join(),
+      /holds a test certificate/,
+    );
+    const clean = join(directory, "clean.apk");
+    await writeFile(clean, apk());
+    assert.deepEqual(await run(["--android", clean]), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("the stub, the cloud AI send, dev addresses and unstripped libraries are found in native code", () => {
