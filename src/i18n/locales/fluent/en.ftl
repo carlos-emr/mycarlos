@@ -2838,7 +2838,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+notifications-autoSummary = myCarlos collects new clinic documents on its own only while it is open and unlocked. While it is locked in the background, it can only tell you that something is waiting.
 
 background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
 

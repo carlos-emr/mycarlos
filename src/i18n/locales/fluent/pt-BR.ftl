@@ -2873,7 +2873,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = As verificações automáticas só acontecem enquanto o myCarlos está aberto e desbloqueado.
+notifications-autoSummary = O myCarlos só busca sozinho os novos documentos da clínica enquanto está aberto e desbloqueado. Enquanto está bloqueado em segundo plano, ele só pode avisar que há algo esperando.
 
 background-keepRunningSummary = O myCarlos pode continuar em segundo plano depois que você fecha a janela. Seu cofre é bloqueado quando a janela fecha.
 

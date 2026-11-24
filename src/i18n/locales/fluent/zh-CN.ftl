@@ -2564,7 +2564,7 @@ library-fileSaysChecked = 随之而来的文件称，它已于 { $date } 在来�
 handover-nowVerified = 通过移交文件到来的 { $count } 份文档现已通过 { $clinic } 验证，此保险库持有其密钥。
 
 
-notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
+notifications-autoSummary = myCarlos 仅在打开且已解锁时才会自行收取诊所的新文档。在后台处于锁定状态时，它只能告诉您有内容在等待。
 
 background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
 

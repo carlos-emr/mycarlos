@@ -2873,7 +2873,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Les vérifications automatiques n’ont lieu que lorsque myCarlos est ouvert et déverrouillé.
+notifications-autoSummary = myCarlos ne récupère de lui-même les nouveaux documents de la clinique que lorsqu’il est ouvert et déverrouillé. Lorsqu’il est verrouillé en arrière-plan, il peut seulement vous signaler que quelque chose vous attend.
 
 background-keepRunningSummary = myCarlos peut rester en arrière-plan après la fermeture de sa fenêtre. Votre coffre se verrouille à la fermeture de la fenêtre.
 

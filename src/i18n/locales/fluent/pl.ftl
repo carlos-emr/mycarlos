@@ -2967,7 +2967,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
+notifications-autoSummary = myCarlos sam pobiera nowe dokumenty z kliniki tylko wtedy, gdy jest otwarty i odblokowany. Gdy jest zablokowany i działa w tle, może jedynie powiadomić, że coś czeka.
 
 background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
 
