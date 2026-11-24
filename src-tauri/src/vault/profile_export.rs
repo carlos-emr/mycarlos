@@ -59,8 +59,8 @@ pub(crate) struct Written<W> {
 }
 
 /// Typed package passphrases checked in one unlocked session (#360). Ordinary use is one or
-/// two tries; a guess of the vault's own passphrase costs an unlock for every five.
-pub(crate) const PACKAGE_PASSPHRASE_TRIES: u32 = 5;
+/// two tries, a few more with typos; a guess of the vault's own passphrase costs an unlock for every twelve.
+pub(crate) const PACKAGE_PASSPHRASE_TRIES: u32 = 12;
 
 impl VaultStore {
     /// Writes `profile_id`'s documents to `sink` as a package under `secret`. Refused for the
@@ -158,9 +158,17 @@ impl VaultStore {
     /// at most `PACKAGE_PASSPHRASE_TRIES` typed passphrases are checked in one unlocked session
     /// (every one that reaches the comparison with the vault's own counts); then
     /// `PackagePassphraseTriesUsed` until the vault is locked and unlocked again, and guessing
-    /// costs an unlock per five tries. The generated key is not limited. A passphrase already
+    /// costs an unlock per twelve tries. The generated key is not limited. A passphrase already
     /// checked is not counted again when the same export is saved (`check_export`,
     /// `export_profile`): it is the same try.
+    ///
+    /// **Holds the session mutex across the Argon2id derivation** (`is_vault_passphrase`): the vault
+    /// does nothing else, and cannot lock, while a typed passphrase is being compared, which is
+    /// the same as an unlock or a change of passphrase working on the vault. A derivation takes a
+    /// second or so and only one runs at a time (`start_kdf_work`), so the wait is bounded, and
+    /// `lock` cancels through `cancel_io` and then waits for the session lock, as for any
+    /// transfer. It is not released between the rules check and the derivation so that the
+    /// profile checked, the count spent and the vault compared are one consistent state.
     pub(crate) fn check_package_passphrase(
         &self,
         profile_id: Uuid,
@@ -1489,10 +1497,10 @@ mod tests {
     }
 
     #[test]
-    fn typed_package_passphrases_are_checked_five_times_per_unlocked_session() {
+    fn typed_package_passphrases_are_checked_twelve_times_per_unlocked_session() {
         let v = vault();
         let typed = |n: u32| format!("tiger-lamp-orbit-quartz-mellow-{n}");
-        // Five typed passphrases (a refusal of the vault's own counts as one) are checked.
+        // Twelve typed passphrases (a refusal of the vault's own counts as one) are checked.
         for n in 0..PACKAGE_PASSPHRASE_TRIES - 1 {
             assert!(v
                 .store
@@ -1504,7 +1512,7 @@ mod tests {
             Err(VaultError::WeakPassphrase)
         ));
         // Then any typed passphrase is refused, a good one and the vault's own alike, with
-        // the same words: the sixth guess learns nothing.
+        // the same words: the thirteenth guess learns nothing.
         for text in [typed(1).as_str(), PASSWORD, "short"] {
             assert!(matches!(
                 v.store.check_package_passphrase(v.child, text),
@@ -1554,6 +1562,25 @@ mod tests {
             .store
             .check_package_passphrase(v.child, "tiger-lamp-orbit-quartz-mellow-7391")
             .is_ok());
+    }
+
+    /// A 27-letter phrase with an accented letter (a character that is one byte in Latin-1 and two
+    /// in UTF-8) is counted by letters, is not mistaken for a recovery key, and does not panic;
+    /// the same length of plain alphabet letters is one.
+    #[test]
+    fn a_27_letter_phrase_with_an_accent_is_no_recovery_key_and_is_counted_by_letters() {
+        let accented = "abcdefghjkmnpqrstvwxyz\u{e9}abcd"; // 27 letters, the 23rd is "é"
+        assert_eq!(accented.chars().count(), 27);
+        assert!(accented.len() > 27, "two bytes for the accent");
+        assert!(!looks_like_recovery_key(accented));
+        // Letters outside Latin-1 are no key symbol either, in any position.
+        assert!(!looks_like_recovery_key(
+            "abcdefghjkmnpqrstvwxyz\u{131}abcd"
+        ));
+        assert!(!looks_like_recovery_key("\u{c9}bcdefghjkmnpqrstvwxyzabcd"));
+        // The same length in the key alphabet is read as a key (any case, any punctuation).
+        assert!(looks_like_recovery_key("ABCDEFGHJKMNPQRSTVWXYZABCDE"));
+        assert!(looks_like_recovery_key("abcdefghjkmnpqrstvwxyzabcde"));
     }
 
     #[test]

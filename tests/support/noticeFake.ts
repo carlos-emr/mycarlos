@@ -20,6 +20,7 @@ export const NOTICE_COMMANDS = {
   status: "vault_notification_status",
   setNotices: "vault_set_notifications",
   setChecks: "vault_set_automatic_document_checks",
+  testNotice: "vault_send_test_notice",
 } as const;
 
 /** Installs the fake over the vault fake already on `page`. */
@@ -38,12 +39,15 @@ export async function fakeNoticesWith(
       let status = structuredClone(start);
       const calls: { command: string; args: unknown }[] = [];
       let failNext = false;
+      // What the next "Show a test notice" comes to (native `TestNotice`).
+      let testResult = "shown";
       internals.invoke = async (command: string, ...rest: unknown[]) => {
         const ours = Object.values(commands) as string[];
         if (!ours.includes(command)) return inner(command, ...rest);
         const args = (rest[0] ?? {}) as { enabled?: boolean; locale?: string };
         calls.push({ command, args: structuredClone(args) });
         if (command === commands.status) return structuredClone(status);
+        if (command === commands.testNotice) return testResult;
         if (failNext) {
           failNext = false;
           // As native does on a failed save: the switches are off.
@@ -75,6 +79,9 @@ export async function fakeNoticesWith(
         calls: () => structuredClone(calls),
         failNext: () => {
           failNext = true;
+        },
+        testResult: (value: string) => {
+          testResult = value;
         },
       });
     },
@@ -111,5 +118,18 @@ export async function failNextNoticeSave(page: Page) {
     (
       Reflect.get(window, "__fakeNotices") as { failNext: () => void }
     ).failNext(),
+  );
+}
+
+/** What the next "Show a test notice" comes to: shown, blocked, tooSoon, failed, notAllowed. */
+export async function setTestNoticeResult(page: Page, result: string) {
+  await page.evaluate(
+    (value) =>
+      (
+        Reflect.get(window, "__fakeNotices") as {
+          testResult: (value: string) => void;
+        }
+      ).testResult(value),
+    result,
   );
 }

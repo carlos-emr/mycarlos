@@ -154,7 +154,7 @@ type DocumentReaderProps = {
   /** Stops a page still being drawn when superseded or when the reader closes. */
   cancelView?: () => void;
   /** Where a quoted span of a page's text is on its picture (#292), exactly
-   * or not at all. Without it, Show in document marks the text only. */
+   * or not at all. Without it, Show me in the document marks the text only. */
   pageBoxes?: (
     page: number,
     span: { start: number; end: number; quoted: string },
@@ -166,6 +166,8 @@ type DocumentReaderProps = {
   /** Opens on the clinic's reading aid, under its notice, when the record has one. The original is
    * always one tap away, and the notice comes first every time the aid is shown. */
   startWithAid?: boolean;
+  /** A platform-native original reader, when the reading aid remains in the app. */
+  onOpenOriginal?: () => void;
 };
 
 /** Reads a stored document inside myCarlos, one page at a time. Each page is
@@ -186,6 +188,7 @@ function ReadingDocument({
   onClose,
   ai,
   startWithAid = false,
+  onOpenOriginal,
 }: DocumentReaderProps) {
   useI18n();
   const aid = record.readingAid;
@@ -238,6 +241,8 @@ function ReadingDocument({
   // text (a term to explain), and a summary sentence's place being shown.
   const [aiTool, setAiTool] = useState<AiTool | null>(null);
   const [textOpen, setTextOpen] = useState(false);
+  // The page picture whose image has loaded (its `data:` URL), for `markQuiet`.
+  const [loadedImage, setLoadedImage] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<SourceSpan | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
   const summaryButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -530,7 +535,7 @@ function ReadingDocument({
           end: Math.max(0, Math.min(shownText.length, highlight.end - lead)),
         }
       : null;
-  // Each "Show in document" brings the words into view and focus, even
+  // Each "Show me in the document" brings the words into view and focus, even
   // the same words again: the highlight is a new object each time. Only the
   // text box scrolls to them: the focus stays on the marked words, the
   // version a screen reader reads, and the picture keeps its own scroll.
@@ -574,6 +579,24 @@ function ReadingDocument({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placeKey, quoted, password]);
   const boxes = placed && placed.key === placeKey ? placed.boxes : null;
+  // While the picture shows the quote (its boxes are drawn), the marked words in the text stay for
+  // assistive technology and the keys (the focus, the reading, Tab) but are not drawn a second
+  // time: a sighted reader sees the picture's highlight only. Where the words could not be placed
+  // on the picture, the text mark is the highlight and is drawn.
+  // Only once the picture has actually loaded: a broken or unfinished image must never leave the
+  // quote unmarked everywhere. While a new quote's boxes are on their way the previous quiet state
+  // is kept (no flash of the text highlight beside the picture); if nothing could be placed the
+  // text mark is drawn.
+  const pictureLoaded = Boolean(current && loadedImage === shown.image);
+  const wasQuiet = useRef(false);
+  const boxesPending = Boolean(
+    marked && placeKey && pageBoxes && boxes === null,
+  );
+  const markQuiet =
+    pictureLoaded &&
+    Boolean(marked) &&
+    (boxes ? boxes.length > 0 : boxesPending && wasQuiet.current);
+  wasQuiet.current = markQuiet;
   // The picture scrolls itself to the first box, on each press as well.
   useEffect(() => {
     const area = pageRef.current;
@@ -654,6 +677,10 @@ function ReadingDocument({
             aid={aid}
             reviewedAtMs={aid.reviewedAtMs}
             onOpenOriginal={() => {
+              if (onOpenOriginal) {
+                onOpenOriginal();
+                return;
+              }
               initialAid.current = false;
               setView("original");
             }}
@@ -803,7 +830,11 @@ function ReadingDocument({
                       total: shown.pageCount,
                     })}
                     style={{ width: `${cssWidth}px` }}
-                    onLoad={() => pageDrawn(shown.page)}
+                    onLoad={() => {
+                      setLoadedImage(shown.image);
+                      pageDrawn(shown.page);
+                    }}
+                    onError={() => setLoadedImage(null)}
                   />
                   {/* The quoted words on the picture: for seeing only. The
                   marked text below is what a screen reader reads (#292). */}
@@ -840,7 +871,9 @@ function ReadingDocument({
                 there, and the box stays open for the next page. */}
             {shown && !asking && !error && (
               <details
-                className="native-reader-text"
+                className={`native-reader-text${
+                  markQuiet ? " native-reader-text-mark-quiet" : ""
+                }`}
                 open={textOpen}
                 onToggle={(event) => setTextOpen(event.currentTarget.open)}
               >

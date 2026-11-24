@@ -56,7 +56,7 @@ comfort-continue = Continue
 
 comfort-intro = Choose what suits you before you set up. Each choice works at once.
 
-comfort-later = You can change these any time in { $settings }: { $textSize } under { $preferences }, and { $autoLock } under { $security }.
+comfort-later = You can change these any time in { $settings }: { $textSize } and { $appearance } under { $preferences }, and { $autoLock } under { $security }.
 
 comfort-sample = This is how text looks in myCarlos. Press − or + until it is easy to read.
 
@@ -289,6 +289,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } moved to { $where }.
 
 interface-notice-notPdf = { $name } is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.
+interface-notice-receivedNotOpened = { $name } could not be opened or read, so myCarlos did not add it. Share it again if you still need it.
 
 interface-notice-pdfUnlocked = An unlocked copy was added. The locked original is now called { $name }.
 
@@ -1176,8 +1177,6 @@ security-backup-title = Encrypted backup
 
 security-copies-body = Exports and screenshots leave vault protection. Hiding a document in myCarlos does not erase those copies or the clinic's source medical record.
 
-security-copies-title = Readable copies and screenshots
-
 security-devBuild-body = Use synthetic files only.
 
 security-devBuild-title = Development build.
@@ -1302,31 +1301,31 @@ sidebar-settings = Settings
 
 sidebar-storage = Encrypted local vault
 
-textSize-announce = Text size { $percent }
+textSize-announce = App zoom { $percent }
 
-textSize-between = { $typed }% is between sizes, so it is { $size }.
+textSize-between = { $typed }% is between zoom levels, so it is { $size }.
 
-textSize-box = Text size in percent
+textSize-box = App zoom in percent
 
 textSize-followsDevice = Here, text size follows your device: its own text size setting, or the browser's zoom.
 
-textSize-help = Makes everything in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers the size on this device. You can also hold { $modifier } and press plus, minus or 0.
+textSize-help = Make text, buttons, and other items in myCarlos larger or smaller, from { $min }% to { $max }%. myCarlos remembers your setting on this device. Use { $modifier } with + or − to zoom, or { $modifier } with 0 to reset to 100%.
 
 textSize-key-command = Command
 
-textSize-larger = Larger text
+textSize-larger = Zoom in
 
-textSize-largest = The largest size is { $max }%.
+textSize-largest = The largest zoom is { $max }%.
 
 textSize-notNumber = Type a number from { $min } to { $max }.
 
-textSize-reset = Back to normal size
+textSize-reset = Back to 100%
 
-textSize-smaller = Smaller text
+textSize-smaller = Zoom out
 
-textSize-smallest = The smallest size is { $min }%.
+textSize-smallest = The smallest zoom is { $min }%.
 
-textSize-title = Text size
+textSize-title = App zoom
 
 unlock-autoLock =
     { $count ->
@@ -1346,11 +1345,11 @@ unlock-title = Unlock your vault
 
 unlock-waiting =
     { $count ->
-    [one] { $count } shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
-    *[other] { $count } shared files are waiting. Unlock and they go into { $folder }. If myCarlos closes first, they are not kept: share them again.
+    [one] { $count } shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.
+    *[other] { $count } shared files are waiting. Unlock and myCarlos asks first before adding them to { $folder }. If myCarlos closes first, they are not kept: share them again.
     }
 
-unlock-waiting-one = One shared file is waiting. Unlock and it goes into { $folder }. If myCarlos closes first, it is not kept: share it again.
+unlock-waiting-one = One shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.
 
 language-error-formatting = myCarlos could not display this message correctly. Choose another language or restart the app, then check your records before trying again.
 
@@ -1436,7 +1435,7 @@ portal-approvalCancelled = This approval request was cancelled. Check for update
 
 portal-approvalContact = Clinic approval needs to be checked. Contact your clinic for next steps.
 
-portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Clinic documents.
+portal-approvalExpired = This approval request expired. To ask again for this device, go to Security, under Connected clinics.
 
 portal-approvalMissing = Your saved approval request was not found on the portal. Send the saved request again.
 
@@ -1469,6 +1468,10 @@ portal-defaultDeviceName = myCarlos on { $platform }
 portal-deviceCode = Device code
 
 portal-deviceName = Name for this device
+
+portal-deviceLine = Device: { $device }
+
+portal-deviceLineLinked = Device: { $device }, linked { $date }
 
 portal-deviceDetailsShow = Show device details
 
@@ -1532,7 +1535,7 @@ portal-serviceDate = Service date: { $date }
 
 portal-serviceDateLabel = Service date
 
-portal-title = Clinic documents
+portal-title = Connected clinics
 
 rename-help-profile = This changes only the displayed folder name. The person's folders and documents stay where they are.
 
@@ -1548,13 +1551,13 @@ rename-title-profile = Rename person's folder
 
 portal-connectConsent = This connects this device and sends an approval request. Your clinic must approve the device before it can receive documents.
 
-portal-connected = Device linked. Its approval status is shown in Security, under Clinic documents.
+portal-connected = Device linked. Its approval status is shown in Security, under Connected clinics.
 
 portal-connecting = Connecting and requesting clinic approval…
 
 portal-errorBusy = Another clinic operation is running. Wait for it to finish, then try again.
 
-portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Clinic documents, says what to do next.
+portal-linkedApprovalIssue = Device linked. Its approval status in Security, under Connected clinics, says what to do next.
 
 portal-retryApproval = Retry saved approval request
 
@@ -1849,9 +1852,25 @@ ai-notInstalled-openPreferences = Open AI helper settings
 
 aiHelper-resultLabel = Written by AI and may be wrong. Check with your doctor.
 
+aiHelper-resultLabelShort = AI draft
+
+aiHelper-resultLabelHide = Don't show this again
+
+aiHelper-resultLabelInfo = What “AI draft” means
+
+ai-label-settingsTitle = Warning on AI answers
+
+ai-label-settingsBody = Each AI answer says it was written by AI and may be wrong. After “Don't show this again”, a short “AI draft” tag stands in for the full sentence. The tag is never removed. The choice is kept on this device, and starts over if the model or the tool changes.
+
+ai-label-settingsShowFull = Show the full warning again
+
+ai-label-settingsFullShown = The full warning is shown on every AI answer.
+
+ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
+
 ai-result-meta = { $tool } · { $model } · { $date }
 
-ai-summary-showInDocument = Show in document
+ai-summary-showInDocument = Show me in the document
 
 ai-summary-folded = The summary is folded so the page has room.
 
@@ -1995,6 +2014,19 @@ ai-explain-ready = The explanation is ready.
 ai-failed = The AI helper could not finish. Try again.
 
 ai-error-memory = There isn't enough free memory for the AI helper right now. Close some other programs, then try again.
+ai-error-memoryNumbers = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free and { $free } GB is free. Close some other programs, then try again.
+ai-error-memoryUnknown = There isn't enough free memory for the AI helper right now. It needs about { $needed } GB free, and this computer could not say how much is free. Close some other programs, then try again.
+ai-speed-title = Speed on this computer
+ai-speed-note = This runs the AI helper once on a short made-up text and uses the processor hard for about a minute or two. It sends nothing anywhere and uses nothing of yours. You can stop it at any time.
+ai-speed-button = Check this computer's speed
+ai-speed-working = Checking the speed…
+ai-speed-cancel = Stop the check
+ai-speed-result = Measured on this computer: the AI helper reads about { $read } words a second and writes about { $write }.
+ai-speed-cancelled = The check was stopped. Nothing was kept.
+ai-speed-none = Not checked yet.
+ai-speed-failed = The speed could not be measured. Try again.
+ai-speed-estimate = On this computer, this may take up to about { $minutes } min.
+ai-speed-estimateLong = On this computer, a document this long may not finish in the time the AI helper is given.
 
 ai-error-busy = The AI helper's model is being added or removed. Try again when that is done.
 
@@ -2163,6 +2195,7 @@ interface-AnonymizePreview-note-daysAfter = { $days ->
 }
 
 interface-AnonymizePreview-note-ageOver90 = 90+
+interface-AnonymizePreview-note-otherForm = other form { $n }
 
 interface-AnonymizePreview-pasteTitle = Put the details back
 
@@ -2183,6 +2216,115 @@ interface-AnonymizePreview-pasteFlaggedSr = (check against the original)
 interface-AnonymizePreview-possibleNames = Words that may be names
 
 interface-AnonymizePreview-removeWord = Remove “{ $word }”
+interface-AnonymizePreview-eponymTitle = These may be medical terms
+interface-AnonymizePreview-eponymOne = This may be a medical term: { $phrase }
+interface-AnonymizePreview-eponymKeep = Keep
+interface-AnonymizePreview-eponymKeepAll = Keep all “{ $phrase }”
+
+interface-AnonymizePreview-removedSummary = Removed: { $list }.
+
+interface-AnonymizePreview-removedSummaryNone = Nothing has been removed yet.
+
+interface-AnonymizePreview-removedCount-name = { $count ->
+    [one] { $count } name
+   *[other] { $count } names
+}
+
+interface-AnonymizePreview-removedCount-doctor = { $count ->
+    [one] { $count } doctor
+   *[other] { $count } doctors
+}
+
+interface-AnonymizePreview-removedCount-clinic = { $count ->
+    [one] { $count } clinic
+   *[other] { $count } clinics
+}
+
+interface-AnonymizePreview-removedCount-healthCard = { $count ->
+    [one] { $count } health card number
+   *[other] { $count } health card numbers
+}
+
+interface-AnonymizePreview-removedCount-recordNumber = { $count ->
+    [one] { $count } record number
+   *[other] { $count } record numbers
+}
+
+interface-AnonymizePreview-removedCount-sin = { $count ->
+    [one] { $count } social insurance number
+   *[other] { $count } social insurance numbers
+}
+
+interface-AnonymizePreview-removedCount-dateOfBirth = { $count ->
+    [one] { $count } date of birth
+   *[other] { $count } dates of birth
+}
+
+interface-AnonymizePreview-removedCount-age = { $count ->
+    [one] { $count } age
+   *[other] { $count } ages
+}
+
+interface-AnonymizePreview-removedCount-address = { $count ->
+    [one] { $count } address
+   *[other] { $count } addresses
+}
+
+interface-AnonymizePreview-removedCount-postalCode = { $count ->
+    [one] { $count } postal code
+   *[other] { $count } postal codes
+}
+
+interface-AnonymizePreview-removedCount-phone = { $count ->
+    [one] { $count } phone number
+   *[other] { $count } phone numbers
+}
+
+interface-AnonymizePreview-removedCount-email = { $count ->
+    [one] { $count } email address
+   *[other] { $count } email addresses
+}
+
+interface-AnonymizePreview-removedCount-web = { $count ->
+    [one] { $count } web address
+   *[other] { $count } web addresses
+}
+
+interface-AnonymizePreview-removedCount-unclearDate = { $count ->
+    [one] { $count } unclear date
+   *[other] { $count } unclear dates
+}
+
+interface-AnonymizePreview-removedCount-manual = { $count ->
+    [one] { $count } removed by you
+   *[other] { $count } removed by you
+}
+
+interface-AnonymizePreview-removedCount-date = { $count ->
+    [one] { $count } date replaced
+   *[other] { $count } dates replaced
+}
+
+interface-AnonymizePreview-toCheck = { $count ->
+    [one] { $count } word to check
+   *[other] { $count } words to check
+}
+
+interface-AnonymizePreview-toCheckHelp = Highlighted: words that start with a capital letter inside a sentence, and numbers with three or more digits. They may identify someone. This does not find everything. It misses names written in capitals, names at the start of a line, names in scripts without capital letters (such as Chinese, Korean or Arabic), and names that are also months, drugs or medical terms (such as “June” or “Bell”). Select a highlighted word, then choose Remove, and read all of the text yourself.
+
+interface-AnonymizePreview-checkPicked = “{ $word }” may identify someone.
+
+interface-AnonymizePreview-savedFileNote = The saved file is not protected by myCarlos. It has no names, but it holds the medical details. Delete it when you are done.
+
+interface-AnonymizePreview-pasteWhereNote = Where you paste this decides what is kept: a chat service may keep it or learn from it, depending on your account settings.
+
+interface-AnonymizePreview-copy = Copy text
+
+interface-AnonymizePreview-copied = The text was copied.
+
+interface-AnonymizePreview-copyFailed = The text could not be copied.
+
+interface-AnonymizePreview-copyWarning = Copied text can stay on this device: Windows clipboard history, and clipboard sync between devices, may keep a copy.
 
 interface-AnonymizePreview-removeSelected = Remove the selected text
 
@@ -2227,13 +2369,27 @@ notifications-helpAutomatic = Windows can show a generic notice after a clinic d
 notifications-autoAllow = Check for clinic documents automatically while unlocked
 notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
 notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
-notifications-autoPaused = Automatic checks need a manual check to continue. Open Clinic documents and choose Check for new documents.
+notifications-autoPaused = Automatic checks need a manual check to continue. Open Connected clinics and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
 noticesStep-title = Notices from your clinic
 noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.
 noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
 noticesStep-done = Done
 noticesStep-notNow = Not now
+
+background-title = Running in the background
+background-keepRunning = Keep myCarlos running in the background after I close its window
+background-keepRunningHelp = When you close the window, myCarlos can stay in the background with an icon in the notification area (the menu bar on a Mac). Your vault locks as the window closes and stays locked until you open myCarlos and unlock it. Choose Quit from the icon to close myCarlos completely.
+background-startAtLogin = Start myCarlos when I sign in to this computer
+background-startAtLoginHelp = myCarlos starts when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked. With it off, its window opens.
+background-paused = While your vault is locked, myCarlos cannot check for new clinic documents. Unlock it to check.
+background-unavailable = A background icon is not available on this computer. myCarlos closes completely when you close its window.
+background-error = This setting could not be changed. It stays as it was.
+native-tray-open = Open myCarlos
+native-tray-quit = Quit myCarlos
+native-tray-tooltip = myCarlos
+
+native-tray-waiting = A new document is waiting. Unlock myCarlos to see it.
 
 ai-summary-again = Summarize again
 
@@ -2284,6 +2440,109 @@ personDetails-previousEntry = Previous full name { $number }
 personDetails-previousRemove = Remove previous full name { $number }
 personDetails-previousAdd = Add previous full name
 personDetails-previousInvalid = Use at most 16 different, nonempty names, each at most 120 characters, without control characters.
+
+interface-received-confirmTitleOne = Import { $name } into Shared with me?
+
+interface-received-confirmTitleMany = Import { $count } documents into Shared with me?
+
+interface-received-confirmBody = Nothing is added until you choose Import. Cancel leaves nothing behind.
+
+interface-received-import = Import
+
+reader-android-opening = Opening document…
+
+reader-android-failed = myCarlos could not show this document. Save a copy to read it in another app.
+
+reader-android-tooLarge = This PDF is larger than 20 MB. Save a copy to read it in another app.
+
+reader-android-unavailable = This device does not let myCarlos open documents here. Save a copy to read it in another app.
+
+reader-android-page = Page { $page } of { $total }, picture of the letter
+
+reader-android-pageStatus = Page { $page } of { $total }
+reader-android-pageFailed = Page { $page } of { $total } cannot be shown.
+
+reader-android-previous = Previous page
+
+reader-android-next = Next page
+
+reader-android-zoomIn = Zoom in
+
+reader-android-zoomOut = Zoom out
+
+interface-video-name = Video, { $date }, { $time }.mp4
+interface-RecordDialog-recordAVideo = Record a video
+interface-RecordDialog-unavailable = Video recording isn't available on this device.
+interface-RecordDialog-why = Why?
+interface-RecordDialog-startingTheCameraAndMicrophone = Starting the camera and microphone…
+interface-RecordDialog-theVideoIsRecordedWithSound = The video is recorded with sound. People near you may be heard. Only you can open it.
+interface-RecordDialog-yourPhoneAsksOnce = Your phone asks once whether myCarlos may use the camera and the microphone. They are on only while you record. They turn off when you stop, close this window, or myCarlos locks.
+interface-RecordDialog-theCameraAndMicrophoneAreOn = The camera and microphone are on only while you record. They turn off when you stop, close this window, or myCarlos locks.
+interface-RecordDialog-theCameraAndMicrophoneAreOnNow = The camera and microphone are on, but nothing is recorded until you choose Start recording.
+interface-RecordDialog-pictureQuality = Picture quality
+interface-RecordDialog-standard = Standard (720p)
+interface-RecordDialog-high = High (1080p)
+interface-RecordDialog-aboutStandardPerHour = About 1.1 GB an hour
+interface-RecordDialog-aboutHighPerHour = About 2.5 to 4 GB an hour
+interface-RecordDialog-useTheCameraAndMicrophone = Use the camera and microphone
+interface-RecordDialog-startRecording = Start recording
+interface-RecordDialog-recording = Recording
+interface-RecordDialog-paused = Paused
+interface-RecordDialog-pausedCameraAndMicrophoneStillOn = Paused. Camera and microphone are still on.
+interface-RecordDialog-recorded = Recorded { $time }
+interface-RecordDialog-recordingAt = Recording at { $height }p
+interface-RecordDialog-pauseRecording = Pause recording
+interface-RecordDialog-resumeRecording = Resume recording
+interface-RecordDialog-stopAndSave = Stop and save
+interface-RecordDialog-stopAndSaveTheVideo = Stop and save the video?
+interface-RecordDialog-keepRecording = Keep recording
+interface-RecordDialog-savingTheVideo = Saving the video…
+interface-RecordDialog-recordingPaused = Recording paused.
+interface-RecordDialog-recordingResumed = Recording resumed.
+interface-RecordDialog-thisDeviceCannotRecordMp4 = This device can't record video in a form myCarlos can save.
+interface-RecordDialog-videoNeedsBoth = A video needs both the camera and the microphone.
+interface-RecordDialog-nothingWasRecorded = Nothing was recorded, so no video was saved.
+interface-RecordDialog-videoSaved = Video saved: { $name }
+interface-RecordDialog-videoSavedStopped = Recording stopped because the device reported a problem. What was recorded was saved: { $name }
+interface-RecordDialog-videoSavedHidden = Recording stopped because myCarlos was hidden. What was recorded was saved: { $name }
+interface-RecordDialog-videoSavedSlow = Recording stopped because the video could not be saved fast enough. What was recorded was saved: { $name }
+interface-VideoViewer-video = Video
+interface-VideoViewer-player = Video player: { $name }
+interface-VideoViewer-thisVideoCouldNotBePlayed = This video could not be played.
+interface-VideoViewer-keys = Space plays or pauses. Left and right arrows skip { $seconds } seconds. Up and down change the volume. M mutes.
+interface-VideoViewer-playVideo = Play video
+interface-VideoHelp-title = Why can't I record video here?
+interface-VideoHelp-engine = Recording a video needs this device's built-in web engine to record MP4 video with sound. This device's engine does not offer that.
+interface-VideoHelp-systems = On Windows, the N and KN editions leave out the media features until you add Microsoft's Media Feature Pack. On Linux, myCarlos needs the GStreamer plug-ins in the packages gstreamer1.0-plugins-bad and gstreamer1.0-plugins-ugly. Phones with Android 7 or older, and iPhones with iOS before 14.5, cannot record MP4 video in the app.
+interface-VideoHelp-restWorks = Photos and documents work as usual. A newer system update may add video recording.
+interface-RecordingRecovery-closed = myCarlos closed while you were recording. Keep the video that was saved?
+interface-RecordingRecovery-closedPaused = myCarlos closed while a recording was paused. Keep the video that was saved?
+interface-RecordingRecovery-name = Recording: { $name }
+interface-RecordingRecovery-askLater = Ask me later
+interface-RecordingRecovery-delete = Delete it
+interface-RecordingRecovery-keep = Keep the video
+interface-RecordingRecovery-kept = Video kept: { $name }
+interface-RecordingRecovery-nothingToKeep = Nothing complete had been saved, so there was no video to keep.
+interface-RecordingRecovery-deleted = The unfinished recording was deleted.
+interface-RecordingRecovery-deleteSure = Delete this recording? It can't be undone.
+interface-RecordingRecovery-savedLocked = myCarlos locked while you were recording. The video was saved: { $name }
+interface-RecordingRecovery-savedLockedPaused = myCarlos locked while a recording was paused. The video was saved: { $name }
+interface-RecordDialog-videoSavedFailed = Recording stopped because part of it could not be saved. What was saved before that is kept: { $name }
+interface-RecordDialog-notEnoughRoom = There is not enough room to record a video. About 1 GB must be free. Free up some space on this device, then choose Try again.
+interface-RecordDialog-lowOnRoom = Running low on room. The recording is saved when there is no more room.
+interface-RecordDialog-lowOnRoomMinutes = Running low on room: about { $minutes } minutes of recording left. The recording is saved when there is no more room.
+interface-RecordDialog-videoSavedNoRoom = Saved. There was no more room: { $name }
+interface-RecordDialog-videoKeptUnfinished = There was no more room, so the video could not be finished. It is kept as an unfinished recording: free up some space, and myCarlos will finish it the next time you unlock.
+interface-RecordingRecovery-finishedWithRoom = There is room again, so your unfinished video was finished: { $name }
+interface-RecordingRecovery-stillNoRoom = There is still not enough room to finish your unfinished video: { $name }. Free up some space; it is kept.
+security-backup-size = About { $size }.
+security-backup-sizeWithVideos = About { $size }, of which videos { $videos }.
+security-backup-sizeNoVideos = About { $size }, without videos.
+security-backup-leaveVideosOut = Leave videos out
+security-backup-leaveVideosOutHelp = The backup will not contain your videos. If you restore it, the videos are not brought back.
+restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
+security-backup-sizeCalculating = Working out how big the backup will be…
+interface-hidden-videoLeftOut = Video left out of the backup
 
 handover-section-title = Hand a person's records over
 
@@ -2358,6 +2617,8 @@ handover-export-done =
     }
 
 handover-export-doneApart = Keep the file and the key apart. This file does not change your vault.
+
+handover-export-hideOffer = Hide { $name } in this vault
 
 handover-export-leftOut =
     { $count ->
@@ -2601,3 +2862,33 @@ fileUnder-saveDetailsOnly = Also save { $what } as the details of { $person }.
 fileUnder-notOnItsOwn = The next documents from this clinic may still wait in Shared with me: this clinic's link is tied to another person, or another person already has the same name and birth date.
 
 handover-import-previousNames = Previous names in the file: { $names }. These names will also be used to file new clinic documents under this person.
+
+library-fileSaysChecked = The file this came in says it was checked on the device it came from, on { $date }. This vault has not checked it.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } document that came in a handover file is now verified with { $clinic }, whose key this vault holds.
+       *[other] { $count } documents that came in a handover file are now verified with { $clinic }, whose key this vault holds.
+    }
+
+
+notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+
+background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
+
+background-startAtLoginSummary = myCarlos can start when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked.
+
+preferences-moreAutomatic = More about automatic checks
+
+preferences-moreBackground = More about running in the background
+
+native-notice-test = This is a test notice from myCarlos.
+
+notifications-testButton = Show a test notice
+
+notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+
+notifications-testWait = Wait a few seconds, then try again.
+
+notifications-testFailed = The test notice could not be shown.
+notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.

@@ -23,7 +23,7 @@ const PASSWORD: &str = "meadow-planet-copper-window-743";
 
 /// Accepted fixture proofs must make the real reconciliation short-circuit;
 /// a test cannot substitute an `approved: true` answer for native verification.
-struct NoApprovalRequests;
+pub(super) struct NoApprovalRequests;
 impl ApprovalExchange for NoApprovalRequests {
     fn get(
         &self,
@@ -185,7 +185,7 @@ impl crate::document_notification_runtime::active::Backend for Notices {
     }
 }
 
-fn store_with(links: &[StoredLink]) -> (tempfile::TempDir, VaultStore, ResumeCache) {
+pub(super) fn store_with(links: &[StoredLink]) -> (tempfile::TempDir, VaultStore, ResumeCache) {
     let temp = tempfile::tempdir().unwrap();
     let store = VaultStore::new(temp.path().join("vault"));
     store.create(PASSWORD, "FAKE automatic fixture", 1).unwrap();
@@ -213,11 +213,11 @@ fn store_with(links: &[StoredLink]) -> (tempfile::TempDir, VaultStore, ResumeCac
     (temp, store, cache)
 }
 
-fn delivery_id(index: usize) -> String {
+pub(super) fn delivery_id(index: usize) -> String {
     format!("00000000-0000-4000-8000-{index:012x}")
 }
 
-fn outer(link: &StoredLink, index: usize) -> Outer {
+pub(super) fn outer(link: &StoredLink, index: usize) -> Outer {
     let now = crate::now_ms() / 1000;
     let value = Outer {
         v: 1,
@@ -239,7 +239,7 @@ fn outer(link: &StoredLink, index: usize) -> Outer {
     value
 }
 
-fn page(link: &StoredLink, ids: &[usize], next: Option<&str>) -> ApiResponse {
+pub(super) fn page(link: &StoredLink, ids: &[usize], next: Option<&str>) -> ApiResponse {
     ApiResponse {
         status: 200,
         body: zeroize::Zeroizing::new(

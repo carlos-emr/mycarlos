@@ -109,10 +109,30 @@ encrypted into the vault, and is never saved anywhere else. It carries no place,
 details: the app makes the JPEG itself, and the vault removes any such details again before
 encrypting it. Its name gives the date and time it was taken, and it is labelled like any added
 document ("Manual import — unverified"). The camera is turned on only after the patient chooses to
-use it, never records sound, and turns off as soon as the photo is taken or the camera window
-closes. On a phone, the phone itself asks once whether myCarlos may use the camera; the app says
+use it, never records sound for a photo, and turns off as soon as the photo is taken or the camera
+window closes. On a phone, the phone itself asks once whether myCarlos may use the camera; the app says
 so before it asks, and never opens the phone's own camera app, so no photo reaches the phone's
 Photos or Gallery app.
+
+A **video recorded in myCarlos** (#359) is recorded **with sound**. The camera and the microphone
+are turned on only after the patient taps Record video and then chooses to use them, and are asked
+for together. On a phone and on a Mac the system asks whether myCarlos may use them, and on Apple
+phones and computers its prompt reads: "myCarlos uses the microphone to record sound with your
+videos. Videos stay locked in myCarlos." On Windows the system's own microphone setting decides
+(Windows raises the camera and the microphone as two requests, and shows no prompt of its own for a
+desktop app), and on Linux nothing asks beyond the app's own check, which allows the camera and
+microphone for myCarlos's own pages only. Before anything is turned on the dialog says that people
+nearby may be heard. A video is encrypted into the vault as it is recorded, a piece at a time, and
+never saved anywhere else; it is sent from myCarlos only if the patient chooses to send it. Both
+are turned off at Stop, when the recording window closes, when the vault locks and when the app is
+hidden, and a badge shows that recording (or a pause) is on for as long as it is. A pause keeps
+the camera and microphone on, and says so. About 1 GB of free room is needed to start, the dialog
+warns when room runs low, and a recording is saved, or kept to be finished when there is room, and never lost, when the room runs out. If myCarlos
+closes or locks during a recording, what was saved is kept: after a lock it is saved and the
+patient is told at the next unlock, and after a crash the patient is asked whether to keep it.
+Playing a video shows it in the app's own player, from the vault, and nothing is left behind. The
+app makes no transcript and no other copy of the sound. It cannot ask the people who are heard:
+that is the patient's to do.
 
 A few things are **readable without the passphrase** to anyone who can get at the vault's folder
 or a backup file:
@@ -297,8 +317,8 @@ model download (#219), only when the patient clicks it: the download site sees t
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
-**Tray notices (myCarlos integration planned in #230; Portal contract merged in carlos-portal#88).**
-With the tray, closing the window locks the vault. While unlocked at clinic-link time, the device
+**Tray notices (built in #230, after the tray #206; Portal contract merged in carlos-portal#88).**
+With the tray, closing the window locks the vault. While unlocked and tray notices are wanted (tray mode and notices both on: at link time, at unlock, or when a switch turns on), the device
 registers a separate waiting key's id, public key and algorithm with that portal, in a request
 signed by the link's device key. To still tell the patient that a clinic has sent something, the
 locked app may then ask each linked portal "is anything waiting?" with its waiting key. Each check's
@@ -461,6 +481,16 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
+
+### Reading a stored PDF on Android (#358)
+
+On Android the document is read in a separate native window. The letter is decrypted only into the
+app's memory and an anonymous in-memory file that no other app can open; nothing is written to the
+app's storage or to shared storage. Screenshots and the recent-apps picture are allowed, as everywhere
+else in the app (owner decision, 20 Nov 2026: the patient's choice). Android's backup is
+already off. The reader closes when the app goes to the background, when the vault locks, and when
+the person closes it. Pages are shown as pictures, so a screen reader cannot read the letter's text
+there; this is a stated gap, not a privacy trade.
 
 ## 11. The AI helper (#72)
 

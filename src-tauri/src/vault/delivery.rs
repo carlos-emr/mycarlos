@@ -397,11 +397,22 @@ impl VaultStore {
         &self,
         session: u64,
     ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
+        self.check_documents_using(session, Instant::now, || {
+            std::thread::sleep(Duration::from_millis(20))
+        })
+    }
+
+    /// `check_documents` with its clock and its wait between tries given, so a test can drive the
+    /// shared-admission wait (up to 10 s, then `DocumentCheckBusy`) without sleeping.
+    pub(super) fn check_documents_using(
+        &self,
+        session: u64,
+        now: impl Fn() -> Instant,
+        pause: impl FnMut(),
+    ) -> Result<crate::portal_pickup::CheckResult, VaultError> {
         let _running = self
             .collection
-            .manual_acquire(&self.portal_check_running, Instant::now, || {
-                std::thread::sleep(Duration::from_millis(20))
-            })
+            .manual_acquire(&self.portal_check_running, now, pause)
             .ok_or(VaultError::DocumentCheckBusy)?;
         let result = crate::portal_pickup::check(self, session);
         if result.as_ref().is_ok_and(|r| r.issues.is_empty()) {
@@ -3623,6 +3634,41 @@ mod approval_recovery_tests {
     }
 
     #[test]
+    fn a_document_check_waits_for_other_portal_work_then_refuses_and_leaves_it_running() {
+        let (_temp, store) = new_connect_store();
+        let session = store.portal_link_ticket();
+        let running = store.start_portal_work().unwrap();
+        // The wait is the shared guard's: ten tries a second apart, then busy. The clock moves
+        // only when the check pauses, so no real time passes.
+        let clock = std::cell::Cell::new(Instant::now());
+        let pauses = std::cell::Cell::new(0u32);
+        let error = store
+            .check_documents_using(
+                session,
+                || clock.get(),
+                || {
+                    pauses.set(pauses.get() + 1);
+                    clock.set(clock.get() + Duration::from_secs(1));
+                },
+            )
+            .err()
+            .unwrap();
+        assert!(matches!(error, VaultError::DocumentCheckBusy));
+        assert_eq!(pauses.get(), 10);
+        // The refusal took nothing from the work that was running, and local records still read.
+        assert!(
+            store.start_portal_work().is_err(),
+            "the other work still holds the guard"
+        );
+        assert!(store.snapshot().unwrap().portal_links.is_empty());
+        drop(running);
+        assert!(
+            store.start_portal_work().is_ok(),
+            "the guard is free once that work ends"
+        );
+    }
+
+    #[test]
     fn connect_recovery_mode_and_stale_tickets_never_link_or_request_approval() {
         for recovery in [false, true] {
             let (_temp, store) = new_connect_store();
@@ -5487,7 +5533,9 @@ mod approval_recovery_tests {
                 opened,
                 &link,
                 &checked,
-                crate::now_ms(),
+                // The fixture's own clock: a carried check must be dated within the delivery's
+                // life (`checked_within`).
+                now * 1000,
                 store.portal_link_ticket(),
             )
             .unwrap();
@@ -7129,7 +7177,7 @@ mod approval_recovery_tests {
                 opened,
                 other,
                 &checked,
-                crate::now_ms(),
+                now * 1000,
                 store.portal_link_ticket(),
             )
             .unwrap();
@@ -8803,6 +8851,100 @@ mod approval_recovery_tests {
         assert_eq!(shown(&store), filed);
     }
 
+    /// The re-link upgrade (#360 PR 6, design section 7). A record that came in a handover
+    /// file stands at level 1 (what the file says, with its time; this vault has not checked it) until a link of
+    /// this vault to the same clinic holds the signing key as an active key; then it is level 2
+    /// ("verified with the clinic", with its aid and date), and unlinking returns it to level 1.
+    /// Nothing about the file itself (its package, its person) ever authorises the step: only
+    /// the clinic's id and a key of its that is active.
+    #[test]
+    fn a_carried_record_moves_from_the_files_claim_to_verified_only_through_a_link_of_this_vault_to_that_clinic(
+    ) {
+        let (_temp, store, link, record_id) = with_aid();
+        let level = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+            (
+                record.file_says_checked_at_ms,
+                record.verified_clinic_name.clone(),
+                record.reading_aid.is_some(),
+                record.clinic_service_date.is_some(),
+            )
+        };
+        let clinic_name = link.clinic.as_ref().unwrap().clinic_name.clone();
+        let carried = carried_manifest(&store, &link, record_id);
+        let checked_at = carried
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .and_then(|r| r.carried.as_ref())
+            .map(|c| c.delivery.checked_at_ms)
+            .unwrap();
+        // Filed here: a delivery of this vault's own, so level 2 and no level 1.
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        store
+            .mutate_recorded(|m, _| {
+                *m = carried.clone();
+                m.format_version = VAULT_FORMAT;
+                Ok(())
+            })
+            .unwrap();
+        // Carried, with no link: level 1, with the time the source device checked it, and no
+        // aid or date: those wait for the clinic's key.
+        assert_eq!(level(&store), (Some(checked_at), None, false, false));
+        // Linked to another clinic, or to the same clinic with the key revoked, or to a link
+        // not yet set up: still level 1.
+        let mut other = link.clone();
+        other.clinic.as_mut().unwrap().clinic_id = "FAKE-other-clinic".into();
+        let mut revoked = link.clone();
+        for key in &mut revoked.clinic.as_mut().unwrap().clinic_keys {
+            key.status = KeyStatus::Revoked;
+        }
+        let mut unfinished = link.clone();
+        unfinished.clinic = None;
+        // The same clinic id with keys of other ids: whoever wrote the file could have named
+        // the clinic and invented its keys; a link of this vault that does not hold the
+        // signing key proves nothing for it.
+        let mut other_keys = link.clone();
+        for key in &mut other_keys.clinic.as_mut().unwrap().clinic_keys {
+            key.kid = format!("FAKE-other-{}", key.kid);
+        }
+        {
+            // (A link with keys of other ids is not a link this vault can hold, so the rule is
+            // asked directly.)
+            let record = carried.records.iter().find(|r| r.id == record_id).unwrap();
+            assert_eq!(verified_clinic(record, &[other_keys]), None);
+        }
+        for not_yet in [other, revoked, unfinished] {
+            store
+                .mutate_recorded(|m, _| {
+                    m.portal_links = vec![not_yet.clone()];
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(level(&store), (Some(checked_at), None, false, false));
+        }
+        // Linked to the same clinic, holding the signing key as an active key: level 2, with
+        // what the clinic signed, and level 1 is gone.
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links = vec![link.clone()];
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        let store = restart(store);
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        // Disconnecting the link takes the trust with it: the evidence is still there.
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.clear();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(level(&store), (Some(checked_at), None, false, false));
+    }
+
     #[test]
     fn a_carried_record_never_owes_a_receipt_and_never_has_one_sent() {
         let (_temp, store, link, record_id) = vault_with_readable_pair_original();
@@ -9092,6 +9234,634 @@ mod approval_recovery_tests {
                 format!("\"{}\"", event.1)
             );
         }
+    }
+
+    // ---- filing a delivery, and what keeps it honest (the gaps of check_and_file_delivery,
+    //      commit_delivery_controlled and valid_custody) ----
+    //
+    // The signed-PDF step of `check_and_file_delivery` (`signed_pdf_helper::verify`) needs the real
+    // built helper executable: a unit-test binary does not dispatch its requests. The checks AFTER
+    // it (the verdict's kid, patient, clinic, recipient and document comparisons, and the commit it
+    // ends in) are therefore only reached by the ignored helper tests, and are not claimed here. What
+    // is tested directly: every refusal and cancellation BEFORE the helper, the filing itself
+    // (`commit_delivery_controlled`, with the same inputs the production path gives it), and the
+    // custody the vault re-checks every time it reads its manifest (`valid_custody`).
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A vault holding the checked-in FAKE delivery's link, and that delivery's pieces.
+    fn filing_setup() -> (
+        tempfile::TempDir,
+        VaultStore,
+        StoredLink,
+        wire::Outer,
+        Vec<u8>,
+    ) {
+        let (temp, store, _, _) = setup(false);
+        let (link, outer, sealed, _) = fixture_package();
+        add_link(&store, &link);
+        (temp, store, link, outer, sealed)
+    }
+
+    fn file_count(dir: &std::path::Path) -> usize {
+        fs::read_dir(dir)
+            .map(|entries| entries.count())
+            .unwrap_or(0)
+    }
+
+    fn filed_events(store: &VaultStore) -> usize {
+        crate::vault::history_events_for_test(store)
+            .iter()
+            .filter(|e| e.event == HistoryEvent::DeliveryFiled)
+            .count()
+    }
+
+    /// What a failed or cancelled filing must leave: no record, no history, no object kept, no stage.
+    struct Baseline {
+        objects: usize,
+        history: usize,
+    }
+
+    fn baseline(store: &VaultStore) -> Baseline {
+        Baseline {
+            objects: file_count(&store.root.join("objects")),
+            history: crate::vault::history_events_for_test(store).len(),
+        }
+    }
+
+    fn assert_nothing_filed(store: &VaultStore, before: &Baseline, what: &str) {
+        assert!(store.snapshot().unwrap().records.is_empty(), "{what}");
+        assert_eq!(filed_events(store), 0, "{what}");
+        assert_eq!(
+            file_count(&store.root.join("objects")),
+            before.objects,
+            "{what}: an object was left behind"
+        );
+        assert_eq!(
+            crate::vault::history_events_for_test(store).len(),
+            before.history,
+            "{what}: a history entry was left"
+        );
+        assert_eq!(
+            file_count(&store.root.join("staging")),
+            0,
+            "{what}: a stage was left"
+        );
+    }
+
+    struct FailAt;
+    impl FailAt {
+        fn boundary(name: &'static [&'static str]) -> FailAt {
+            FAIL_AT_TEST_BOUNDARY.set(name);
+            FailAt
+        }
+    }
+    impl Drop for FailAt {
+        fn drop(&mut self) {
+            FAIL_AT_TEST_BOUNDARY.set(&[]);
+        }
+    }
+
+    // ---- check_and_file_delivery: what it refuses and when it stops, before the helper ----
+
+    #[test]
+    fn should_refuse_a_delivery_that_its_own_checks_reject_and_remember_only_what_is_the_clinics_fault(
+    ) {
+        let (_temp, store, link, outer, sealed) = filing_setup();
+        let session = store.portal_link_ticket();
+        let run = |outer: &wire::Outer, sealed: &[u8]| {
+            store.check_and_file_delivery(outer, sealed, &link, session, &|| false)
+        };
+        // Bytes that do not match the listing: maybe a damaged download, never held against the clinic.
+        let mut damaged = sealed.clone();
+        damaged[0] ^= 1;
+        assert!(matches!(
+            run(&outer, &damaged),
+            Err(Received::Refused { definite: false })
+        ));
+        // A copy for another account or another device, and one of a kind this build does not open
+        // as an original, fail their checks for good.
+        let mut other_account = outer.clone();
+        other_account.recipient_id = "A".repeat(24);
+        assert!(matches!(
+            run(&other_account, &sealed),
+            Err(Received::Refused { definite: true })
+        ));
+        let mut other_device = outer.clone();
+        other_device.device_key_id = "A".repeat(43);
+        assert!(matches!(
+            run(&other_device, &sealed),
+            Err(Received::Refused { definite: true })
+        ));
+        let mut aid = outer.clone();
+        aid.kind = Some("reading-aid/1".into());
+        assert!(matches!(
+            run(&aid, &sealed),
+            Err(Received::Refused { definite: true })
+        ));
+        // The checked-in delivery expired on 26 Oct 2026 (its reference clock is earlier): an
+        // expired copy is the clinic's, a definite refusal, and nothing is filed.
+        assert!(matches!(
+            run(&outer, &sealed),
+            Err(Received::Refused { definite: true })
+        ));
+        assert!(store.snapshot().unwrap().records.is_empty());
+    }
+
+    #[test]
+    fn should_stop_at_each_check_when_cancelled_and_never_when_the_session_ended_meanwhile() {
+        let (_temp, store, link, outer, sealed) = filing_setup();
+        let session = store.portal_link_ticket();
+        // The n-th question "has it been stopped?" is the first to say yes: before anything, after
+        // the other links were read, and after the package was opened (here refused as expired).
+        for stopped_at in 0..=2 {
+            let asked = AtomicUsize::new(0);
+            let result = store.check_and_file_delivery(&outer, &sealed, &link, session, &|| {
+                asked.fetch_add(1, Ordering::SeqCst) >= stopped_at
+            });
+            assert!(
+                matches!(result, Err(Received::Failed(VaultError::Cancelled))),
+                "stopped at question {stopped_at}"
+            );
+        }
+        // A session that ended (a lock and an unlock) cancels, whatever the package says.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        let result = store.check_and_file_delivery(&outer, &sealed, &link, session, &|| false);
+        assert!(matches!(
+            result,
+            Err(Received::Failed(VaultError::Cancelled))
+        ));
+        assert!(store.snapshot().unwrap().records.is_empty());
+    }
+
+    #[test]
+    fn should_say_a_filing_refusal_is_the_documents_own_and_any_other_failure_is_not() {
+        assert!(matches!(
+            Received::from(VaultError::PickupRefused),
+            Received::Refused { definite: true }
+        ));
+        for error in [
+            VaultError::Cancelled,
+            VaultError::Locked,
+            VaultError::RecoveryMode,
+            VaultError::Storage,
+            VaultError::Invalid,
+        ] {
+            assert!(matches!(Received::from(error), Received::Failed(_)));
+        }
+    }
+
+    // ---- commit_delivery_controlled: filing, and what stops it ----
+
+    #[test]
+    fn should_file_a_verified_delivery_once_with_its_receipt_and_history() {
+        let (_temp, store, link, outer, _) = filing_setup();
+        let (_, _, opened, checked) = signed_delivery();
+        let session = store.portal_link_ticket();
+        let (id, added) = store
+            .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+            .unwrap();
+        assert!(added);
+        let snapshot = store.snapshot().unwrap();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(snapshot.records[0].id, id);
+        assert_eq!(filed_events(&store), 1);
+        // One receipt is owed to the portal, and it is the vault's own, not the portal's.
+        let pending = store.pending_receipts(&link, session).unwrap();
+        assert_eq!(pending.len(), 1);
+        // Listed again (the confirmation did not reach the portal): the same record, nothing new.
+        let (_, _, again, _) = signed_delivery();
+        assert_eq!(
+            store
+                .commit_delivery(&outer, again, &link, &checked, crate::now_ms(), session)
+                .unwrap(),
+            (id, false)
+        );
+        assert_eq!(filed_events(&store), 1);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        // The same delivery id with other bytes is refused: it is not the one already filed.
+        let (_, _, other, _) = signed_delivery();
+        let mut changed = outer.clone();
+        changed.ciphertext_sha256 = "0".repeat(64);
+        assert!(matches!(
+            store.commit_delivery(&changed, other, &link, &checked, crate::now_ms(), session),
+            Err(VaultError::PickupRefused)
+        ));
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+
+    #[test]
+    fn should_refuse_to_file_when_stopped_locked_read_only_or_for_a_link_the_vault_lacks() {
+        // Stopped before anything, and with a session that has moved on.
+        let (_temp, store, link, outer, _) = filing_setup();
+        let before = baseline(&store);
+        let (_, _, opened, checked) = signed_delivery();
+        let session = store.portal_link_ticket();
+        assert!(matches!(
+            store.commit_delivery_controlled(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                crate::now_ms(),
+                session,
+                &|| true
+            ),
+            Err(VaultError::Cancelled)
+        ));
+        let (_, _, opened, checked) = signed_delivery();
+        assert!(matches!(
+            store.commit_delivery(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                crate::now_ms(),
+                session.wrapping_add(1)
+            ),
+            Err(VaultError::Cancelled)
+        ));
+        assert_nothing_filed(&store, &before, "stopped or stale");
+        // A link the vault does not hold: not this device's to file for.
+        let (_, _, opened, checked) = signed_delivery();
+        let mut stranger = link.clone();
+        stranger.id = Uuid::new_v4();
+        assert!(matches!(
+            store.commit_delivery(
+                &outer,
+                opened,
+                &stranger,
+                &checked,
+                crate::now_ms(),
+                session
+            ),
+            Err(VaultError::Invalid)
+        ));
+        assert_nothing_filed(&store, &before, "unknown link");
+        // A vault left read-only by a failed write files nothing.
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+        let (_, _, opened, checked) = signed_delivery();
+        assert!(matches!(
+            store.commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session),
+            Err(VaultError::RecoveryMode)
+        ));
+        // A locked vault likewise.
+        store.lock();
+        let (_, _, opened, checked) = signed_delivery();
+        assert!(matches!(
+            store.commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session),
+            Err(VaultError::Locked)
+        ));
+    }
+
+    #[test]
+    fn should_leave_nothing_when_filing_is_stopped_at_any_point() {
+        // Each run on its own vault, stopped at the n-th question "should it stop?". Whenever the
+        // answer cuts the filing short, nothing of it is left; when n is past the last question it
+        // files normally. At least four distinct stopping points must exist.
+        let mut stopped_points = 0;
+        for stopped_at in 0..16 {
+            let (_temp, store, link, outer, _) = filing_setup();
+            let before = baseline(&store);
+            let (_, _, opened, checked) = signed_delivery();
+            let session = store.portal_link_ticket();
+            let asked = AtomicUsize::new(0);
+            let result = store.commit_delivery_controlled(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                crate::now_ms(),
+                session,
+                &|| asked.fetch_add(1, Ordering::SeqCst) >= stopped_at,
+            );
+            match result {
+                Err(VaultError::Cancelled) => {
+                    stopped_points += 1;
+                    assert_nothing_filed(
+                        &store,
+                        &before,
+                        &format!("stopped at question {stopped_at}"),
+                    );
+                }
+                Ok((_, true)) => {
+                    assert_eq!(store.snapshot().unwrap().records.len(), 1);
+                    assert_eq!(filed_events(&store), 1);
+                }
+                other => panic!("stopped at {stopped_at}: {other:?}"),
+            }
+        }
+        assert!(stopped_points >= 4, "only {stopped_points} stopping points");
+    }
+
+    #[test]
+    fn should_refuse_a_delivery_whose_original_does_not_match_its_manifest_and_leave_nothing() {
+        for (what, edit) in [
+            (
+                "hash",
+                Box::new(|o: &mut wire::Opened| o.manifest.document.sha256 = "0".repeat(64))
+                    as Box<dyn Fn(&mut wire::Opened)>,
+            ),
+            (
+                "size",
+                Box::new(|o: &mut wire::Opened| o.manifest.document.size += 1),
+            ),
+        ] {
+            let (_temp, store, link, outer, _) = filing_setup();
+            let before = baseline(&store);
+            let (_, _, mut opened, checked) = signed_delivery();
+            edit(&mut opened);
+            let session = store.portal_link_ticket();
+            let result =
+                store.commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session);
+            assert!(matches!(result, Err(VaultError::PickupRefused)), "{what}");
+            // The document's own refusal is a definite one for the caller.
+            assert!(matches!(
+                Received::from(VaultError::PickupRefused),
+                Received::Refused { definite: true }
+            ));
+            assert_nothing_filed(&store, &before, what);
+        }
+    }
+
+    #[test]
+    fn should_recover_from_a_failure_between_the_steps_of_filing() {
+        // Before the custody commit: the objects and history written so far are removed, nothing is
+        // filed, and the same delivery files cleanly afterwards.
+        let boundaries: [&'static [&'static str]; 2] = [
+            &["delivery.after-object-publication"],
+            &["delivery.before-custody-commit"],
+        ];
+        for boundary in boundaries {
+            let (_temp, store, link, outer, _) = filing_setup();
+            let before = baseline(&store);
+            let session = store.portal_link_ticket();
+            {
+                let _fail = FailAt::boundary(boundary);
+                let (_, _, opened, checked) = signed_delivery();
+                assert!(store
+                    .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+                    .is_err());
+            }
+            assert_nothing_filed(&store, &before, boundary[0]);
+            let (_, _, opened, checked) = signed_delivery();
+            let (_, added) = store
+                .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+                .unwrap();
+            assert!(added, "{}", boundary[0]);
+            assert_eq!(filed_events(&store), 1);
+        }
+        // The second copy of the manifest not written: the first is the filing. The vault is
+        // read-only until restart, nothing is deleted, and after the restart the record is there and
+        // the same delivery is the one already filed.
+        let (_temp, store, link, outer, _) = filing_setup();
+        let session = store.portal_link_ticket();
+        {
+            let _fail = FailAt::boundary(&["manifest.after-first-write"]);
+            let (_, _, opened, checked) = signed_delivery();
+            assert!(matches!(
+                store.commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session),
+                Err(VaultError::RecoveryMode)
+            ));
+        }
+        let store = restart(store);
+        let session = store.portal_link_ticket();
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+        assert_eq!(filed_events(&store), 1);
+        assert_eq!(store.pending_receipts(&link, session).unwrap().len(), 1);
+        let (_, _, opened, checked) = signed_delivery();
+        let (_, added) = store
+            .commit_delivery(&outer, opened, &link, &checked, crate::now_ms(), session)
+            .unwrap();
+        assert!(!added, "the delivery is already filed");
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+
+    #[test]
+    fn should_file_into_the_one_person_the_manifest_names_and_otherwise_into_shared_with_me() {
+        let named = |store: &VaultStore| {
+            let (_, _, opened, _) = signed_delivery();
+            let patient = opened.manifest.patient.clone();
+            let first = store.snapshot().unwrap().profiles[0].id;
+            store
+                .mutate_recorded(|m, _| {
+                    m.profiles[0].full_name = Some(patient.name.clone());
+                    m.profiles[0].birth_date = Some(patient.birth_date.clone());
+                    Ok(())
+                })
+                .unwrap();
+            first
+        };
+        let file = |store: &VaultStore, link: &StoredLink, outer: &wire::Outer| {
+            let (_, _, opened, checked) = signed_delivery();
+            let session = store.portal_link_ticket();
+            let (id, _) = store
+                .commit_delivery(outer, opened, link, &checked, crate::now_ms(), session)
+                .unwrap();
+            store
+                .snapshot()
+                .unwrap()
+                .records
+                .into_iter()
+                .find(|r| r.id == id)
+                .unwrap()
+                .profile_id
+        };
+        // One person matches by name and birth date: the document goes to them.
+        let (_temp, store, link, outer, _) = filing_setup();
+        let person = named(&store);
+        // `named` changed the manifest, not the link, so the link is still the stored one.
+        assert_eq!(file(&store, &link, &outer), person);
+        // Two people with the same name and birth date: not guessed, it goes to Shared with me.
+        let (_temp, store, link, outer, _) = filing_setup();
+        let first = named(&store);
+        let (_, _, opened, _) = signed_delivery();
+        let patient = opened.manifest.patient.clone();
+        store
+            .mutate_recorded(|m, _| {
+                let mut twin = m.profiles[0].clone();
+                twin.id = Uuid::new_v4();
+                twin.display_name = "FAKE Twin".into();
+                twin.full_name = Some(patient.name.clone());
+                twin.birth_date = Some(patient.birth_date.clone());
+                m.profiles.push(twin);
+                Ok(())
+            })
+            .unwrap();
+        let shared = shared_profile_id(store.open_vault_id().unwrap());
+        let went = file(&store, &link, &outer);
+        assert_eq!(went, shared);
+        assert_ne!(went, first);
+        // A link made for one person files only for them: a match among the others is not used.
+        let (temp, store, _, _) = setup(false);
+        let (mut link, outer, _, _) = fixture_package();
+        let first = store.snapshot().unwrap().profiles[0].id;
+        link.profile_id = Some(first);
+        add_link(&store, &link);
+        let (_, _, opened, _) = signed_delivery();
+        let patient = opened.manifest.patient.clone();
+        store
+            .mutate_recorded(|m, _| {
+                let mut other = m.profiles[0].clone();
+                other.id = Uuid::new_v4();
+                other.display_name = "FAKE Other".into();
+                other.full_name = Some(patient.name.clone());
+                other.birth_date = Some(patient.birth_date.clone());
+                m.profiles.push(other);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            file(&store, &link, &outer),
+            shared_profile_id(store.open_vault_id().unwrap())
+        );
+        drop(temp);
+    }
+
+    // ---- valid_custody: what the vault re-checks every time it reads its manifest ----
+
+    #[test]
+    fn should_keep_only_custody_whose_every_part_agrees_with_the_link_the_original_and_the_receipt()
+    {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _) = add_signed_pending_delivery(&store);
+        let (record, links) = {
+            let guard = store.session();
+            let manifest = &guard.as_ref().unwrap().manifest;
+            (manifest.records[0].clone(), manifest.portal_links.clone())
+        };
+        assert!(valid_custody(&record, &links));
+        // A record without delivery custody has nothing to check.
+        let mut plain = record.clone();
+        plain.delivery = None;
+        assert!(valid_custody(&plain, &[]));
+        let other = "B".repeat(43);
+        // Re-signs the receipt with the device's own key after `edit`, so that only the edited
+        // claim is wrong.
+        let resign = |record: &mut StoredRecord, edit: &dyn Fn(&mut Receipt)| {
+            let custody = record.delivery.as_mut().unwrap();
+            let (payload, _) = wire::split_compact(&custody.receipt, 4096).unwrap();
+            let mut claims: Receipt = serde_json::from_slice(&payload).unwrap();
+            edit(&mut claims);
+            custody.receipt = link.keys.sign(&serde_json::to_vec(&claims).unwrap());
+        };
+        type Edit<'a> = Box<dyn Fn(&mut StoredRecord, &mut Vec<StoredLink>) + 'a>;
+        fn case<'a>(
+            what: &'a str,
+            edit: impl Fn(&mut StoredRecord, &mut Vec<StoredLink>) + 'a,
+        ) -> (&'a str, Edit<'a>) {
+            (what, Box::new(edit))
+        }
+        fn custody(r: &mut StoredRecord) -> &mut Custody {
+            r.delivery.as_mut().unwrap()
+        }
+        let cases: Vec<(&str, Edit)> = vec![
+            case("no link", |_, l| l.clear()),
+            case("link not complete", |_, l| {
+                l.iter_mut().for_each(|l| l.clinic = None)
+            }),
+            case("no original", |r, _| r.original_pdf = None),
+            case("another recipient", |r, _| {
+                custody(r).outer.recipient_id = "A".repeat(24)
+            }),
+            case("another device", |r, _| {
+                custody(r).outer.device_key_id = other.clone()
+            }),
+            case("another clinic", |r, _| {
+                custody(r).manifest.clinic_id = "FAKE other".into()
+            }),
+            case("manifest for another delivery", |r, _| {
+                custody(r).manifest.delivery_id = Uuid::new_v4().to_string()
+            }),
+            case("manifest for another recipient", |r, _| {
+                custody(r).manifest.recipient_id = "A".repeat(24)
+            }),
+            case("manifest for another device", |r, _| {
+                custody(r).manifest.device_key_id = other.clone()
+            }),
+            case("another original hash", |r, _| {
+                custody(r).manifest.document.sha256 = "0".repeat(64)
+            }),
+            case("another original size", |r, _| {
+                custody(r).manifest.document.size += 1
+            }),
+            case("service date that is not one", |r, _| {
+                custody(r).manifest.document.service_date = "soon".into()
+            }),
+            case("no pdf document id", |r, _| {
+                custody(r).pdf_document_id.clear()
+            }),
+            case("pdf document id too long", |r, _| {
+                custody(r).pdf_document_id = "x".repeat(129)
+            }),
+            case("pdf version 0", |r, _| custody(r).pdf_version = 0),
+            case("manifest not its compact form", |r, _| {
+                custody(r).manifest_compact = "garbage".into()
+            }),
+            case("manifest changed after it was signed", |r, _| {
+                custody(r).manifest.clinic_name = "FAKE Other Clinic".into()
+            }),
+            case("history anchor unreadable", |r, _| {
+                custody(r).anchor_head = "garbage".into()
+            }),
+            case("stale chain: another history head", |r, _| {
+                let c = custody(r);
+                let mut head = c.anchor_head.clone().into_bytes();
+                let last = head.len() - 1;
+                head[last] = if head[last] == b'0' { b'1' } else { b'0' };
+                c.anchor_head = String::from_utf8(head).unwrap();
+            }),
+            case("receipt unreadable", |r, _| {
+                custody(r).receipt = "garbage".into()
+            }),
+            case("receipt signed by another device", |r, _| {
+                let (_, stranger, _) = portal_approval::first_fixture();
+                let c = custody(r);
+                let (payload, _) = wire::split_compact(&c.receipt, 4096).unwrap();
+                c.receipt = stranger.keys.sign(&payload);
+            }),
+            case("receipt with a signature that is not one", |r, _| {
+                let c = custody(r);
+                let cut = c.receipt.rfind('.').unwrap();
+                c.receipt = format!("{}.AAAA", &c.receipt[..cut]);
+            }),
+        ];
+        for (what, edit) in &cases {
+            let (mut r, mut l) = (record.clone(), links.clone());
+            edit(&mut r, &mut l);
+            assert!(!valid_custody(&r, &l), "{what} was accepted");
+        }
+        // Each claim of the receipt, signed correctly by the device but wrong.
+        type ClaimEdit<'a> = Box<dyn Fn(&mut Receipt) + 'a>;
+        fn claim<'a>(what: &'a str, edit: impl Fn(&mut Receipt) + 'a) -> (&'a str, ClaimEdit<'a>) {
+            (what, Box::new(edit))
+        }
+        let claims = vec![
+            claim("audience", |c| c.aud = "someone-else".into()),
+            claim("type", |c| c.typ = "mycarlos-other".into()),
+            claim("delivery", |c| c.delivery_id = Uuid::new_v4().to_string()),
+            claim("device", |c| c.device_key_id = "B".repeat(43)),
+            claim("recipient", |c| c.recipient_id = "A".repeat(24)),
+            claim("ciphertext hash", |c| c.ciphertext_sha256 = "0".repeat(64)),
+            claim("original hash", |c| c.document_sha256 = "0".repeat(64)),
+            claim("history anchor", |c| c.vault_head_link = "C".repeat(43)),
+            claim("not a random id", |c| c.jti = Uuid::nil()),
+            claim("pickup time", |c| c.picked_up_at += 1),
+        ];
+        for (what, edit) in &claims {
+            let mut r = record.clone();
+            resign(&mut r, edit.as_ref());
+            assert!(
+                !valid_custody(&r, &links),
+                "a receipt with the wrong {what} was accepted"
+            );
+        }
+        // The edit helper itself changes nothing when the edit does: still accepted.
+        let mut unchanged = record.clone();
+        resign(&mut unchanged, &|_| {});
+        // A fresh signature over the same claims is still the device's own (the jti stays v4).
+        assert!(valid_custody(&unchanged, &links));
     }
 }
 
