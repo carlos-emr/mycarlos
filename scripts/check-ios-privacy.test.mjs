@@ -234,6 +234,8 @@ const REVIEWED_WEBVIEW_STORAGE = {
     "when the recovery-key offer was last made (a time)",
   "mycarlos.unfinishedRecoveryKey.v1":
     "when a recovery key setup began (times and a flag; no key)",
+  "mycarlos.unfinishedHandover.v1":
+    "a flag, \"1\", that a handover key was shown and not used (#360): no key, no person, no name; one per vault",
   "mycarlos.oldBackupsGuide.v1":
     "the step for older backups, a time and a size: NO file name (it can carry a person's name, and this storage is in iOS backups), pinned by src/native/oldBackups.test.ts",
 };
