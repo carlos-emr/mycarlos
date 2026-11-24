@@ -10,6 +10,7 @@ export function ConfirmDialog({
   title,
   confirmLabel,
   danger = false,
+  cancelLabel,
   onConfirm,
   onCancel,
   details,
@@ -17,6 +18,8 @@ export function ConfirmDialog({
 }: {
   title: string;
   confirmLabel: string;
+  /** What Cancel says, when another word fits the question better. */
+  cancelLabel?: string;
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -59,7 +62,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
           >
-            {t("common.cancel")}
+            {cancelLabel ?? t("common.cancel")}
           </button>
           <button
             className={danger ? "button danger" : "button primary"}

@@ -313,6 +313,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = Przeniesiono { $name } do { $where }.
 
 interface-notice-notPdf = { $name } nie jest dokumentem PDF, więc myCarlos go nie dodał. Na razie do myCarlos można udostępniać tylko dokumenty PDF.
+interface-notice-receivedNotOpened = Nie udało się otworzyć ani odczytać pliku { $name }, więc myCarlos go nie dodał. Jeśli nadal jest potrzebny, proszę udostępnić go ponownie.
 
 interface-notice-pdfUnlocked = Dodano odblokowaną kopię. Zabezpieczony oryginał nosi teraz nazwę { $name }.
 
@@ -1739,6 +1740,14 @@ interface-history-event-profileCreated = Dodano profil pacjenta
 
 interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
 
+interface-history-event-profileExported = Wyeksportowano profil pacjenta
+
+interface-history-event-profileHidden = Ukryto profil pacjenta
+
+interface-history-event-profileRestored = Przywrócono profil pacjenta
+
+interface-history-event-profileImported = Dodano profil pacjenta z pliku przekazania
+
 interface-history-event-readingAidFiled = Zapisano pomoc w czytaniu
 
 interface-history-event-recoveryKeySet = Ustawiono klucz odzyskiwania
@@ -2461,6 +2470,7 @@ notifications-help = Gdy po ręcznym sprawdzeniu zostanie zapisany dokument z pr
 notifications-allow = Zezwalaj na powiadomienia o nowych dokumentach
 notifications-blocked = System Windows blokuje powiadomienia. Proszę sprawdzić ustawienia powiadomień.
 notifications-unknown = Nie można sprawdzić uprawnień do powiadomień w systemie Windows.
+notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
 notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wyłączone w tej sesji.
 notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
@@ -2607,7 +2617,18 @@ interface-RecordDialog-videoSavedSlow = Nagrywanie zatrzymano, ponieważ film ni
 interface-VideoViewer-video = Film
 interface-VideoViewer-player = Odtwarzacz filmu: { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = Nie można odtworzyć tego filmu.
-interface-VideoViewer-keys = Spacja odtwarza lub wstrzymuje. Strzałki w lewo i w prawo przewijają o { $seconds } s. Strzałki w górę i w dół zmieniają głośność. M wycisza.
+interface-VideoViewer-controls = Sterowanie odtwarzaczem
+interface-VideoViewer-playPause = Odtwórz/Wstrzymaj (k)
+interface-VideoViewer-back = Cofnij o { $seconds } s (←)
+interface-VideoViewer-forward = Do przodu o { $seconds } s (→)
+interface-VideoViewer-backBig = Cofnij o { $seconds } s (j)
+interface-VideoViewer-forwardBig = Do przodu o { $seconds } s (l)
+interface-VideoViewer-volumeUp = Głośniej (↑)
+interface-VideoViewer-volumeDown = Ciszej (↓)
+interface-VideoViewer-mute = Wycisz (m)
+interface-VideoViewer-unmute = Włącz dźwięk (m)
+interface-VideoViewer-start = Na początek (Home)
+interface-VideoViewer-end = Na koniec (End)
 interface-VideoViewer-playVideo = Odtwórz film
 interface-VideoHelp-title = Dlaczego nie mogę tu nagrać filmu?
 interface-VideoHelp-engine = Nagrywanie filmu wymaga, aby wbudowany silnik internetowy urządzenia potrafił nagrywać wideo MP4 z dźwiękiem. Silnik tego urządzenia tego nie umożliwia.
@@ -2641,3 +2662,366 @@ security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich
 restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
+
+handover-section-title = Przekazanie dokumentów osoby
+
+handover-section-body = Skopiuj dokumenty jednej osoby do pliku dla innego urządzenia, na przykład aby dać dziecku jego własne dokumenty. Plik ma własny klucz i nie zmienia Twojego sejfu. Możesz też dodać osobę z pliku, który ktoś Ci przekazał.
+
+handover-export-button = Przekaż dokumenty…
+
+handover-import-button = Dodaj osobę z pliku…
+
+handover-close = Zamknij
+
+handover-export-title = Przekazanie dokumentów osoby
+
+handover-export-about = Tworzy plik z dokumentami jednej osoby, z własnym kluczem, który może odczytać inne urządzenie. Nic w Twoim sejfie się nie zmienia.
+
+handover-export-caution = Kopiowane są dokumenty zdrowotne. List może wymieniać inne osoby, na przykład rodzica lub opiekuna, a każdy dokument jest kopiowany w całości i bez zmian. Upewnij się, że osoba, która otworzy plik, jest właściwa i może go odczytać.
+
+handover-export-person = Czyje dokumenty
+
+handover-export-history = Dołącz historię tych dokumentów (kiedy dodano, zmieniono nazwę lub przeniesiono)
+
+handover-export-keyKind-legend = Jak zablokowany jest plik
+
+handover-export-keyKind-generated = Klucz tworzony przez myCarlos (zalecane)
+
+handover-export-keyKind-passphrase = Hasło, które wybiorę
+
+handover-export-passphrase = Hasło do pliku
+
+handover-export-passphraseHint = Co najmniej 15 znaków i trudne do odgadnięcia. Nie może to być hasło Twojego sejfu ani klucz odzyskiwania.
+
+handover-export-continue = Dalej
+
+handover-export-preparing = Przygotowywanie…
+
+handover-export-keyTitle = Zapisz klucz do tego pliku
+
+handover-export-keyBody = Każdy, kto ma plik i ten klucz, może odczytać te dokumenty. Przekaż klucz osobie oddzielnie od pliku. myCarlos go nie przechowuje: jeśli zostanie zgubiony, utwórz plik ponownie.
+
+handover-export-keyLabel = Klucz do pliku
+
+handover-export-keyGroup = Grupa { $number }: { $characters }
+
+handover-export-copy = Kopiuj klucz
+
+handover-export-copied = Klucz skopiowany. Jeśli w międzyczasie nic innego nie zostanie skopiowane, zostanie usunięty ze schowka po minucie.
+
+handover-export-copyFailed = Nie udało się skopiować klucza. Zapisz go zamiast tego.
+
+handover-export-keySaved = Zapisałem(-am) klucz lub schowałem(-am) go w bezpiecznym miejscu
+
+handover-export-saveTitle = Zapisz plik
+
+handover-export-summary = Plik będzie zawierał dokumenty osoby { $name }:
+
+handover-export-apart = Przechowuj plik i klucz oddzielnie.
+
+handover-export-provider = Na niektórych telefonach, jeśli zapis się nie powiedzie, wybrane miejsce może pozostać puste lub niekompletne. W takim razie usuń ten plik i spróbuj ponownie.
+
+handover-export-chooseWhere = Wybierz miejsce zapisu…
+
+handover-export-saving = Zapisywanie i sprawdzanie pliku…
+
+handover-export-noLocation = Nie wybrano miejsca. Nic nie zapisano.
+
+handover-export-doneTitle = Plik zapisany
+
+handover-export-done =
+    { $count ->
+        [one] Zapisano jeden dokument osoby { $name }. Plik został odczytany ponownie w celu sprawdzenia.
+        [few] Zapisano { $count } dokumenty osoby { $name }. Plik został odczytany ponownie w celu sprawdzenia.
+       *[other] Zapisano dokumenty osoby { $name }: { $count }. Plik został odczytany ponownie w celu sprawdzenia.
+    }
+
+handover-export-doneApart = Przechowuj plik i klucz oddzielnie. Ten plik nie zmienia Twojego sejfu.
+
+handover-export-hideOffer = Ukryj osobę: { $name } w tym sejfie
+
+handover-export-leftOut =
+    { $count ->
+        [one] Pominięto jeden dokument, bo jego pliku nie można odczytać.
+        [few] Pominięto { $count } dokumenty, bo ich plików nie można odczytać.
+       *[other] Pominięto dokumentów: { $count }, bo ich plików nie można odczytać.
+    }
+
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] Nie udało się dołączyć podpisu kliniki dla jednego dokumentu (sam dokument jest w pliku).
+        [few] Nie udało się dołączyć podpisu kliniki dla { $count } dokumentów (same dokumenty są w pliku).
+       *[other] Nie udało się dołączyć podpisu kliniki dla dokumentów: { $count } (same dokumenty są w pliku).
+    }
+
+handover-count-documents = Dokumenty: { $count }
+
+handover-count-hidden = Ukryte przez Ciebie: { $count }
+
+handover-count-folders = Foldery: { $count }
+
+handover-count-answers = Odpowiedzi asystenta AI: { $count }
+
+handover-count-evidence = Dokumenty z podpisanym przekazaniem przez klinikę: { $count }
+
+handover-count-size = Rozmiar: { $size }
+
+handover-import-title = Dodaj osobę z pliku
+
+handover-import-about = Wybierz plik, który ktoś Ci przekazał, i przygotuj klucz lub hasło, które Ci podano. Osoba zostanie dodana jako nowa; nic z tego, co już tu jest, się nie zmieni.
+
+handover-import-choose = Wybierz plik…
+
+handover-import-noFile = Nie wybrano pliku. Nic się nie zmieniło.
+
+handover-import-keyTitle = Otwórz plik
+
+handover-import-key = Klucz
+
+handover-import-passphrase = Hasło
+
+handover-import-keyHint = Siedem grup po cztery litery i cyfry. Wielkość liter, spacje i myślniki nie mają znaczenia.
+
+handover-import-passphraseHint = Hasło, które wybrała dla pliku osoba, która go utworzyła.
+
+handover-import-open = Otwórz plik
+
+handover-import-opening = Otwieranie…
+
+handover-import-error-typo = Ten klucz wygląda niepoprawnie. Porównaj go z tym, który otrzymałeś(-aś).
+
+handover-import-error-recovery = To jest klucz odzyskiwania, a nie klucz do tego pliku. Poproś o klucz utworzony dla pliku.
+
+handover-import-error-wrong = To nie otwiera tego pliku.
+
+handover-import-error-newer = Ten plik utworzyła nowsza wersja myCarlos. Zaktualizuj myCarlos i spróbuj ponownie.
+
+handover-import-error-damaged = Ten plik jest niekompletny, został zmieniony lub nie można go tu dodać. Poproś o nową kopię.
+
+handover-import-previewTitle = Co mówi plik
+
+handover-import-says = Plik podaje, że zawiera dokumenty osoby { $name }.
+
+handover-import-birth = Data urodzenia: { $date }, tak jak zapisała osoba tworząca plik.
+
+handover-import-madeOn = Utworzony: { $date }.
+
+handover-import-evidenceNote = Niektóre dokumenty mają podpisane przekazanie przez klinikę. Dopóki nie połączysz tego urządzenia z tą kliniką, myCarlos może powiedzieć tylko, że sprawdzono je na urządzeniu, które utworzyło plik, a nie że klinika za nie ręczy.
+
+handover-import-duplicate-legend = Być może masz już tę osobę
+
+handover-import-duplicate-package = Ten plik został już tu dodany.
+
+handover-import-duplicate-content =
+    { $count ->
+        [one] Jeden z dokumentów w tym pliku ma dokładnie taką samą zawartość jak dokument, który masz już przy innej osobie tutaj.
+        [few] { $count } dokumenty w tym pliku mają dokładnie taką samą zawartość jak dokumenty, które masz już przy innej osobie tutaj.
+       *[other] { $count } dokumentów w tym pliku ma dokładnie taką samą zawartość jak dokumenty, które masz już przy innej osobie tutaj.
+    }
+
+handover-import-duplicate-anyway = Dodaj mimo to jako kolejną osobę
+
+handover-import-nameLabel = Jak nazwać tę osobę tutaj
+
+handover-import-add = Dodaj tę osobę
+
+handover-import-adding = Dodawanie i sprawdzanie dokumentów…
+
+handover-import-doneTitle = Gotowe
+
+handover-import-done =
+    { $count ->
+        [one] Dodano jeden dokument osoby { $name }.
+        [few] Dodano { $count } dokumenty osoby { $name }.
+       *[other] Dodano dokumenty osoby { $name }: { $count }.
+    }
+
+handover-import-doneAnswers =
+    { $count ->
+        [one] Razem z nimi przyszła jedna odpowiedź asystenta AI, oznaczona jako z zaimportowanego pliku.
+        [few] Razem z nimi przyszły { $count } odpowiedzi asystenta AI, oznaczone jako z zaimportowanego pliku.
+       *[other] Razem z nimi przyszło odpowiedzi asystenta AI: { $count }, oznaczonych jako z zaimportowanego pliku.
+    }
+
+handover-import-doneEvidence = Dokumenty kliniki pokazują tylko to, co dało się tu sprawdzić. Aby sprawdzić je kluczem kliniki na tym urządzeniu, połącz to urządzenie z kliniką.
+
+handover-import-doneDropped =
+    { $count ->
+        [one] Jeden element pliku pominięto, bo nie spełniał zasad tego sejfu.
+        [few] Pominięto { $count } elementy pliku, bo nie spełniały zasad tego sejfu.
+       *[other] Pominięto elementy pliku: { $count }, bo nie spełniały zasad tego sejfu.
+    }
+
+handover-import-receipt = Kod potwierdzenia:
+
+handover-import-receiptNote = Możesz podać ten kod osobie, która utworzyła plik. Pokazuje on, że ktoś, kto miał plik i jego klucz, otworzył cały plik i przeczytał go do końca. Nie dowodzi, że dokumenty zostały gdziekolwiek dodane, ani że Twoja kopia jest nadal bezpieczna.
+
+handover-import-nothingNew = Nic nie dodano: ten sejf ma już tę osobę.
+
+handover-importedAnswer = Z zaimportowanego pliku
+
+handover-export-leavingWarning = Pozostań w myCarlos, dopóki widoczny jest ten klucz. Przełączenie na inną aplikację blokuje Twój sejf, a ten klucz przestaje działać: musiałbyś(-abyś) zacząć od nowa i dostać nowy.
+
+handover-export-leave-title = Wyjść bez zapisywania pliku?
+
+handover-export-leave-body = Nie zapisano żadnego pliku. Klucz na tym ekranie przestanie działać, więc nikomu go nie przekazuj. Aby przekazać dokumenty, zacznij od nowa, a dostaniesz nowy klucz.
+
+handover-export-leave-confirm = Wyjdź
+
+
+handover-export-error-weak = Tego hasła nie można użyć. Może być zbyt łatwe do odgadnięcia, zawierać imię osoby albo zbyt przypominać hasło Twojego sejfu lub klucz odzyskiwania. Wybierz inne.
+
+handover-unfinished = Przekazanie nie zostało zakończone. Żaden skopiowany ani zapisany klucz niczego nie otwiera. Aby przekazać dokumenty, zacznij od nowa i uzyskaj nowy klucz.
+
+native-error-49 = W tej odblokowanej sesji wypróbowano już maksymalną liczbę haseł dla pliku. Zablokuj myCarlos i odblokuj go ponownie, aby próbować dalej, albo pozwól, by myCarlos utworzył klucz dla pliku.
+
+native-error-50 = W bibliotece musi zostać co najmniej jedna osoba, więc ostatniej nie można ukryć. Najpierw dodaj inną osobę.
+
+hiddenPeople-title = Ukryte osoby
+
+hiddenPeople-body = Ukryte osoby nie są widoczne w bibliotece, wyszukiwaniu ani u asystenta AI. Nic nie jest usuwane: zostają w tym sejfie i w kopiach zapasowych. Każdy, kto zna Twoje hasło, może je przywrócić.
+
+hiddenPeople-list = Ukryte osoby
+
+hiddenPeople-since = ukryta { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } dokument
+        [few] { $count } dokumenty
+       *[other] { $count } dokumentów
+    }
+
+hiddenPeople-restore = Przywróć
+
+hiddenPeople-restoreFor = Przywróć: { $name }
+
+hiddenPeople-handOver = Przekaż…
+
+hiddenPeople-handOverFor = Przekaż dokumenty osoby { $name }
+
+hiddenPeople-hide = Ukryj
+
+hiddenPeople-hideFor = Ukryj: { $name }
+
+hiddenPeople-lastPerson = W bibliotece musi zostać co najmniej jedna osoba.
+
+hiddenPeople-confirm-title = Ukryć osobę { $name }?
+
+hiddenPeople-confirm-body = To ukrywa osobę { $name } i wszystkie jej dokumenty w myCarlos. Nic nie jest usuwane. Zostają w tym sejfie i w kopiach zapasowych, a w każdej chwili możesz je przywrócić w sekcji Ukryte osoby. Ukrycie nie powstrzyma nikogo, kto zna Twoje hasło, przed ich przywróceniem.
+
+hiddenPeople-confirm-hide = Ukryj: { $name }
+
+hiddenPeople-hidden = Osoba { $name } jest teraz ukryta.
+
+hiddenPeople-restored = Osoba { $name } wróciła do biblioteki.
+
+hiddenPeople-arrived-title = Przenieść nowe dokumenty do osoby { $name }?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] Gdy osoba { $name } była ukryta, dotarł dla niej { $count } dokument, który jest w Udostępnione mi. Przenieść go do osoby { $name }?
+        [few] Gdy osoba { $name } była ukryta, dotarły dla niej { $count } dokumenty, które są w Udostępnione mi. Przenieść je do osoby { $name }?
+       *[other] Gdy osoba { $name } była ukryta, dotarło dla niej { $count } dokumentów, które są w Udostępnione mi. Przenieść je do osoby { $name }?
+    }
+
+hiddenPeople-arrived-move = Przenieś do: { $name }
+
+hiddenPeople-arrived-leave = Zostaw w Udostępnione mi
+
+hiddenPeople-arrived-list = Dokumenty, które dotarły
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] Z { $clinic } dotarł dokument i jest w Udostępnione mi. Osoba, której dotyczy, jest ukryta.
+        [few] Z { $clinic } dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+       *[other] Z { $clinic } dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+    }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] To ukrywa także { $count } uszkodzony dokument ukrytej osoby. Nie ma go na liście, aby nie pokazywać, kto jest ukryty.
+        [few] To ukrywa także { $count } uszkodzone dokumenty ukrytych osób. Nie ma ich na liście, aby nie pokazywać, kto jest ukryty.
+       *[other] To ukrywa także uszkodzone dokumenty ukrytych osób: { $count }. Nie ma ich na liście, aby nie pokazywać, kto jest ukryty.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } wpis o ukrytej osobie nie jest pokazany. Jest zachowany i pojawi się ponownie po przywróceniu osoby.
+        [few] { $count } wpisy o ukrytych osobach nie są pokazane. Są zachowane i pojawią się ponownie po przywróceniu osób.
+       *[other] Niepokazane wpisy o ukrytych osobach: { $count }. Są zachowane i pojawią się ponownie po przywróceniu osób.
+    }
+
+interface-history-how-personHidden = Zapisany w Udostępnione mi, gdy osoba była ukryta
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] Dotarł dokument i jest w Udostępnione mi. Osoba, której dotyczy, jest ukryta.
+        [few] Dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+       *[other] Dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
+    }
+
+fileUnder-button = Przypisz do…
+
+fileUnder-title = Przypisz dokument { $document } do osoby
+
+fileUnder-fromClinic = Od kliniki
+
+fileUnder-words = { $name }, data urodzenia { $date }
+
+fileUnder-clinicWords = Od kliniki: { $name }, data urodzenia { $date }.
+
+fileUnder-rule = myCarlos sam przypisuje dokument z kliniki tylko wtedy, gdy dokładnie jedna osoba ma tę datę urodzenia i to pełne imię i nazwisko (lub dawne). Nic nie jest wybierane za Ciebie.
+
+fileUnder-person = Osoba
+
+fileUnder-what-both = pełne imię i nazwisko „{ $name }” oraz datę urodzenia { $date }
+
+fileUnder-what-name = pełne imię i nazwisko „{ $name }”
+
+fileUnder-what-date = datę urodzenia { $date }
+
+fileUnder-saveDetails = Zapisz także { $what } jako dane osoby { $person }, aby kolejne dokumenty z tej kliniki trafiały do osoby { $person } samodzielnie.
+
+fileUnder-confirm = Przypisz do: { $person }
+
+fileUnder-choose = Wybierz osobę
+
+fileUnder-differs = Dane kliniki różnią się od danych tej osoby, więc nie proponujemy zapisywania żadnych. Sprawdź, czy to właściwa osoba.
+
+fileUnder-saveDetailsOnly = Zapisz także { $what } jako dane osoby { $person }.
+
+fileUnder-notOnItsOwn = Kolejne dokumenty z tej kliniki mogą nadal czekać w Udostępnione mi: łącze tej kliniki jest przypisane do innej osoby albo inna osoba ma już to samo imię i nazwisko oraz datę urodzenia.
+
+handover-import-previousNames = Dawne imiona i nazwiska w pliku: { $names }. Będą one także używane do przypisywania nowych dokumentów z klinik do tej osoby.
+
+library-fileSaysChecked = Plik, w którym to dotarło, podaje, że sprawdzono to na urządzeniu źródłowym, { $date }. Ten sejf tego nie sprawdził.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } dokument, który dotarł w pliku przekazania, jest teraz zweryfikowany z { $clinic }, której klucz ma ten sejf.
+        [few] { $count } dokumenty, które dotarły w pliku przekazania, są teraz zweryfikowane z { $clinic }, której klucz ma ten sejf.
+       *[other] Dokumenty, które dotarły w pliku przekazania, są teraz zweryfikowane z { $clinic }, której klucz ma ten sejf: { $count }.
+    }
+
+
+notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
+
+background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
+
+background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu do tego komputera. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem.
+
+preferences-moreAutomatic = Więcej o automatycznym sprawdzaniu
+
+preferences-moreBackground = Więcej o działaniu w tle
+
+native-notice-test = To jest testowe powiadomienie z myCarlos.
+
+notifications-testButton = Pokaż powiadomienie testowe
+
+notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+
+notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
+
+notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
+notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.

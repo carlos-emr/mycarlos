@@ -510,3 +510,184 @@ describe("myCarlos Tauri evaluation", () => {
     expect(screen.queryByText(/private\/example/)).not.toBeInTheDocument();
   });
 });
+
+describe("the evaluation preview's remaining controls", () => {
+  const FILTERED = ["Test results", "Letters", "Imaging"] as const;
+
+  it.each(FILTERED)(
+    "filters the library by %s from the side list, and shows it as chosen",
+    async (kind) => {
+      const user = userEvent.setup();
+      render(<App bridge={bridge()} />);
+      // The side list's button, not the filter chip of the same name above the records.
+      const chips = screen.getByLabelText("Filter records");
+      const side = (name: string) =>
+        screen
+          .getAllByRole("button", { name: new RegExp(`^${name}`) })
+          .find((button) => !chips.contains(button))!;
+      const before = listedDocumentTitles();
+      await user.click(side(kind));
+      expect(side(kind)).toHaveClass("selected");
+      // Only what that kind holds is listed, and it is fewer than everything.
+      const shown = listedDocumentTitles();
+      expect(shown.length).toBeGreaterThan(0);
+      expect(shown.length).toBeLessThan(before.length);
+      for (const other of FILTERED.filter((name) => name !== kind))
+        expect(side(other)).not.toHaveClass("selected");
+    },
+  );
+
+  it("applies Star and Trash to several selected documents at once, and Clear drops the selection", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+    const first = "Prescription — ramipril 5mg";
+    const second = "Chest X-ray report";
+    const select = (title: string) =>
+      user.click(screen.getByRole("button", { name: `Select ${title}` }));
+
+    await select(first);
+    await select(second);
+    expect(screen.getByText("2 selected")).toBeVisible();
+    // Selecting the second again takes it out.
+    await select(second);
+    expect(screen.getByText("1 selected")).toBeVisible();
+    await select(second);
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByText("2 selected")).not.toBeInTheDocument();
+
+    await select(first);
+    await select(second);
+    await user.click(screen.getByRole("button", { name: "Star" }));
+    expect(screen.getByText("2 documents added to Starred.")).toBeVisible();
+    expect(screen.queryByText("2 selected")).not.toBeInTheDocument();
+
+    await select(first);
+    await select(second);
+    await user.click(screen.getByRole("button", { name: "Trash" }));
+    expect(screen.getByText("2 documents were moved to Trash.")).toBeVisible();
+    expect(screen.queryByText(first)).not.toBeInTheDocument();
+    expect(screen.queryByText(second)).not.toBeInTheDocument();
+  });
+
+  it("shows folders and documents as tiles in the grid, opens one, and closes it with a press outside", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+    await user.click(screen.getByRole("button", { name: "Grid view" }));
+    const grid = screen.getByLabelText(/visible library items/);
+    // A folder is a tile with no record actions.
+    expect(within(grid).getByText("Heart & blood pressure")).toBeVisible();
+    expect(
+      within(grid).queryByRole("button", { name: /Heart & blood pressure/ }),
+    ).toBeNull();
+    // A document tile opens its preview; a press on the backdrop closes it.
+    await user.click(
+      within(grid).getByRole("button", { name: /Prescription — ramipril 5mg/ }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeVisible();
+    const backdrop = dialog.parentElement!;
+    await user.pointer({ keys: "[MouseLeft]", target: backdrop });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Back to the list.
+    await user.click(screen.getByRole("button", { name: "List view" }));
+    expect(screen.getByRole("button", { name: "List view" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Grid view" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("opens a document from its name in the list, and Escape closes the preview", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+    await user.click(
+      screen.getByRole("button", { name: "Prescription — ramipril 5mg" }),
+    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("says no records match, in the list and in the grid", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search your records" }),
+      "no such record",
+    );
+    expect(screen.getByText("No matching records")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Grid view" }));
+    expect(screen.getByText("No matching records")).toBeVisible();
+    expect(screen.getByLabelText(/visible library items/)).toHaveAccessibleName(
+      "0 visible library items",
+    );
+  });
+
+  it("shows a file that arrives with no size as just a PDF", async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={bridge({
+          selectPdf: vi.fn().mockResolvedValue({ name: "no-size.pdf" }),
+        })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "New document — choose a sample PDF",
+      }),
+    );
+    expect(await screen.findByText("PDF · session only")).toBeVisible();
+  });
+
+  it("flips the backup, biometric and Health Connect demos both ways, and says what a passphrase change would be", async () => {
+    const user = userEvent.setup();
+    render(<App bridge={bridge()} />);
+    await user.click(screen.getByRole("button", { name: "Security & backup" }));
+    for (const name of ["Backup to a folder demo", "Biometric unlock demo"]) {
+      const toggle = screen.getByRole("button", { name });
+      const before = toggle.getAttribute("aria-pressed");
+      await user.click(toggle);
+      expect(toggle.getAttribute("aria-pressed")).not.toBe(before);
+      await user.click(toggle);
+      expect(toggle.getAttribute("aria-pressed")).toBe(before);
+    }
+    await user.click(screen.getByRole("button", { name: "Show purpose" }));
+    expect(
+      screen.getByText(
+        "Passphrase change is demonstrated visually; no security material was created or changed.",
+      ),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Health data" }));
+    const connect = screen.getAllByRole("button", { name: "Connect demo" });
+    await user.click(connect[connect.length - 1]);
+    expect(screen.getByText("Demo connected")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Disconnect demo" }));
+    expect(
+      screen.queryByRole("button", { name: "Disconnect demo" }),
+    ).toBeNull();
+  });
+
+  it("names the bridge as the browser preview when there is no native runtime", async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={bridge({
+          getRuntimeInfo: vi.fn().mockResolvedValue({
+            platform: "test-os",
+            architecture: "test-arch",
+            appVersion: "0.1.0",
+            message: "Hello from the browser",
+            native: false,
+          }),
+        })}
+      />,
+    );
+    await user.click(screen.getByText("Evaluation details"));
+    expect(await screen.findByText("Browser preview")).toBeVisible();
+  });
+});
