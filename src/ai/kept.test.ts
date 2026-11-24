@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { keptSources, keptSummary, parseKeptSummary } from "./kept";
+import {
+  keptSources,
+  keptSummary,
+  keptSummaryInfo,
+  parseKeptSummary,
+} from "./kept";
 import type { ExplainResult, SummaryResult } from "./types";
 
 const summary: SummaryResult = {
@@ -149,5 +154,31 @@ describe("answers kept with the document", () => {
     expect(await keptSummary(kept, "en")).toBeNull();
     kept.read.mockResolvedValueOnce("damaged");
     expect(await keptSummary(kept, "fr")).toBeNull();
+  });
+
+  it("says whether the kept summary came in an imported file (#360)", async () => {
+    const info = (imported?: boolean) => ({
+      id: "s1",
+      tool: "summary" as const,
+      lang: "fr",
+      modelName: "FAKE model",
+      modelSha256: "ab".repeat(32),
+      createdAtMs: 1,
+      size: 10,
+      ...(imported === undefined ? {} : { imported }),
+    });
+    const kept = (listed: ReturnType<typeof info>) => ({
+      list: vi.fn().mockResolvedValue([listed]),
+      read: vi.fn().mockResolvedValue(JSON.stringify(summary)),
+      save: vi.fn(),
+      recordId: "FAKE-record",
+    });
+    expect((await keptSummaryInfo(kept(info(true)), "fr"))?.imported).toBe(
+      true,
+    );
+    expect((await keptSummaryInfo(kept(info()), "fr"))?.imported).toBe(false);
+    expect((await keptSummaryInfo(kept(info(false)), "fr"))?.imported).toBe(
+      false,
+    );
   });
 });
