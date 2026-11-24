@@ -18633,6 +18633,8 @@ mod tests {
             // Previous full names, format 13: the last before the profile
             // handover (14, #360).
             MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
+            // Hiding a person, format 15: the last before link removal (16, #160).
+            MANIFEST_FORMAT_HIDDEN_PROFILES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

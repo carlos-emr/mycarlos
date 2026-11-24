@@ -1295,7 +1295,7 @@ Rule for any code that removes a clinic link: **it must forget that link's remem
 refusals in the same write; a refusal whose link is gone makes the vault read as
 damaged.** The check that enforces it is the "for a saved link" test in
 `validate_manifest_structure` (a refusal whose `linkId` is in no `portalLinks` entry
-is `Corrupt`). The one code path that unlinks is `remove_portal_link` (format 14, below), which forgets them in the same commit.
+is `Corrupt`). The one code path that unlinks is `remove_portal_link` (format 16, below), which forgets them in the same commit.
 
 A format 1–11 vault opens with no refusals and is upgraded at its next writable
 unlock to the newest format this build writes (a build with only this change writes

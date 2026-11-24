@@ -8396,7 +8396,7 @@ mod approval_recovery_tests {
             store.session().as_ref().unwrap().manifest.format_version,
             VAULT_FORMAT
         );
-        // Format 12 is no longer the newest (previous full names are 13, link removal 14).
+        // Format 12 is no longer the newest (previous full names are 13, link removal 16).
         const { assert!(VAULT_FORMAT >= MANIFEST_FORMAT_REFUSED) };
         assert!(refused_saved(&store).is_empty());
         let refused = undecryptable(&base, 7);
