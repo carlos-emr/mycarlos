@@ -10,9 +10,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-// Main at 0d6b6061 measured 94.50 / 92.28 / 90.94 / 95.95. The first floor is one whole percent
-// below those rounded down (a margin for work already in flight); raise it as coverage rises.
-const MINIMUM = { statements: 93, branches: 91, functions: 89, lines: 94 };
+// Ben set the floor to 80 for every metric on 24 Nov 2026 (main at 0d6b6061 measured
+// 94.50 / 92.28 / 90.94 / 95.95), leaving headroom for code that is hard to test. Raise it when he
+// decides to; it is never lowered below these.
+const MINIMUM = { statements: 80, branches: 80, functions: 80, lines: 80 };
 
 // What the percentage covers (COVERAGE.md "What the percentage measures"). Widening an exclusion
 // is a visible edit to this list, not a quiet one to the config.

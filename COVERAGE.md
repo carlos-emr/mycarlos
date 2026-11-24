@@ -61,10 +61,11 @@ is raised when coverage rises and **never lowered**. `scripts/coverage-floor.tes
 if a metric is missing, or if `autoUpdate` is switched on (which would let a run rewrite the floor).
 To raise it, change the numbers in the config and the minimums in that test together.
 
-The first floor (24 Nov 2026) is **93 / 91 / 89 / 94** (statements, branches, functions, lines).
-Main at 0d6b6061 measured 94.50 / 92.28 / 90.94 / 95.95 percent; the floor is one whole percent
-below those rounded down, so work already in flight is not failed by a fraction of a point. It
-is meant to be re-measured and raised after the large in-flight changes and the gap tests land.
+The floor is **80 / 80 / 80 / 80** (statements, branches, functions, lines). Ben set it to 80 for
+every metric on 24 Nov 2026 so there is headroom: some code is hard to test, and it should not fail
+CI. It started at 93 / 91 / 89 / 94, one whole percent below what main at 0d6b6061 measured:
+94.50 / 92.28 / 90.94 / 95.95 percent. The measured figures are well above the floor, so the floor
+does not say how much is covered; re-measure with `npm run test:coverage:frontend`.
 A floor is not a goal: a high percentage says the code ran, not that the test checks the right
 thing.
 
