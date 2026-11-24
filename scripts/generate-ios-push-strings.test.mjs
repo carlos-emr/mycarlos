@@ -156,6 +156,59 @@ test("quotes, backslashes and new lines survive the file and come back", () => {
   assert.equal(parseStrings(text).get("K"), value);
 });
 
+test("a literal percent sign is written as two, so it can never be a live placeholder", () =>
+  scratch(
+    ({ ftl, out, scratchManifest }) => {
+      const written = fs.readFileSync(lproj(out, "en"), "utf8");
+      assert.match(written, /"THING" = "100%% done, 5%%@ left";/);
+      // Read back, it is the text the Fluent message says.
+      assert.equal(parseStrings(written).get("THING"), "100%% done, 5%%@ left");
+      // The check treats `%%` as text: a file with it is current, one with a bare % is refused.
+      assert.deepEqual(problems(scratchManifest, ftl, out), []);
+      fs.writeFileSync(lproj(out, "en"), '"THING" = "100% done, 5%@ left";\n');
+      assert.match(
+        problems(scratchManifest, ftl, out).join("\n"),
+        /en\.lproj.*placeholders/,
+      );
+    },
+    { message: "m = 100% done, 5%@ left" },
+  ));
+
+test("a variable used twice is refused when the files are generated", () =>
+  scratch(
+    ({ ftl, scratchManifest }) => {
+      assert.throws(
+        () => expectedFiles(scratchManifest, ftl),
+        /placeholder \$name is used more than once/,
+      );
+    },
+    {
+      message: "m = { $name } and again { $name }",
+      variables: ["name"],
+      generate: false,
+    },
+  ));
+
+test("control characters are refused, and the tab and the line break are not", () => {
+  for (const bad of [
+    "a\u0000b",
+    "a b",
+    "a b",
+    "a\u0085b",
+    "a\u007fb",
+    "a\u001bb",
+  ])
+    assert.throws(
+      () => renderFile([{ key: "K", value: bad }]),
+      /control characters/,
+      JSON.stringify(bad),
+    );
+  assert.match(
+    renderFile([{ key: "K", value: "a\tb\nc" }]),
+    /"K" = "a\tb\\nc";/,
+  );
+});
+
 test("the key list itself is checked: no repeats, no lower-case keys", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "FAKE-ios-manifest-"));
   try {

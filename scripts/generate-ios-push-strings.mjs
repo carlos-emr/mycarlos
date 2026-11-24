@@ -26,9 +26,11 @@ export function readManifest(file = defaultManifest) {
 /** The plain text of a Fluent pattern; each variable becomes its positional `%N$@`. */
 export function renderValue(pattern, variables, where) {
   let out = "";
+  const used = new Set();
   for (const element of pattern.elements) {
     if (element.type === "TextElement") {
-      out += element.value;
+      // iOS formats the string, so a literal percent sign is written as two.
+      out += element.value.replaceAll("%", "%%");
     } else if (
       element.type === "Placeable" &&
       element.expression.type === "VariableReference"
@@ -38,6 +40,12 @@ export function renderValue(pattern, variables, where) {
         throw new Error(
           `${where}: placeholder $${element.expression.id.name} is not listed in strings.json`,
         );
+      // A variable used twice would need its placeholder twice; no push sentence does, so refuse it.
+      if (used.has(index))
+        throw new Error(
+          `${where}: placeholder $${element.expression.id.name} is used more than once`,
+        );
+      used.add(index);
       out += `%${index + 1}$@`;
     } else {
       throw new Error(
@@ -48,7 +56,16 @@ export function renderValue(pattern, variables, where) {
   return out;
 }
 
+// Control characters (NUL, the line and paragraph separators and the rest of C0 and C1, except
+// the tab and the line break) have no place in a push sentence.
+const CONTROL = new RegExp(
+  "[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u2028\\u2029]",
+  "u",
+);
+
 function escapeValue(value) {
+  if (CONTROL.test(value))
+    throw new Error("a push sentence may not contain control characters");
   return value
     .replaceAll("\\", "\\\\")
     .replaceAll('"', '\\"')
@@ -131,13 +148,16 @@ export function problems(manifest, catalogueDirectory, resources) {
     for (const [key, entry] of wanted) {
       const value = pairs.get(key);
       if (value === undefined) continue;
-      const placeholders = [...value.matchAll(/%(\d+)\$@/g)].map((m) =>
+      // `%%` is a literal percent sign, not a placeholder; anything else after a `%` that is not
+      // `%N$@` is a stray format specifier.
+      const bare = value.replaceAll("%%", "");
+      const placeholders = [...bare.matchAll(/%(\d+)\$@/g)].map((m) =>
         Number(m[1]),
       );
       const want = entry.variables.map((_name, index) => index + 1);
       if (
         JSON.stringify([...placeholders].sort()) !== JSON.stringify(want) ||
-        /%(?!\d+\$@)/.test(value)
+        /%(?!\d+\$@)/.test(bare)
       )
         found.push(
           `${relative}: ${key} has placeholders [${placeholders}], strings.json lists ${entry.variables.length}`,
