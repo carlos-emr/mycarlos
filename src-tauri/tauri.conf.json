@@ -17,6 +17,7 @@
         "title": "myCarlos Evaluation — sample data only",
         "width": 1100,
         "height": 760,
+        "maximized": true,
         "minWidth": 360,
         "minHeight": 620,
         "resizable": true,

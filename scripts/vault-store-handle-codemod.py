@@ -19,6 +19,10 @@ changed and exits 0 when there is nothing to do, so it is safe to run twice. It 
 app's setup, its idle thread, its shutdown hook or the test apps: those are the manual part of the PR,
 and a command added with the old type through `app.state::<Arc<VaultStore>>()` is reported, not fixed.
 
+Two tests guard the result: `no_source_file_takes_or_manages_the_store_directly` (vault_source.rs) finds
+the old type in any spelling, and `every_state_a_command_asks_for_is_managed_by_the_setup` (lib.rs)
+checks every `State<..>` a command asks for is a type the app's `.setup` manages.
+
 Usage (from the repository root):
   python3 scripts/vault-store-handle-codemod.py [--check]   then   cargo fmt   (in src-tauri)
   --check  change nothing; exit 1 when a rewrite is still needed.
