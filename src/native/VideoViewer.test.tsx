@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -237,16 +237,205 @@ describe("VideoViewer", () => {
     expect(onPlaying).toHaveBeenLastCalledWith(false);
   });
 
-  it("explains its keys and has no accessibility violations", async () => {
+  it("names every key on a button, and has no accessibility violations", async () => {
     open();
+    const group = screen.getByRole("group", { name: "Player controls" });
+    const labels = within(group)
+      .getAllByRole("button")
+      .map((button) => visibleText(button.textContent ?? ""));
+    expect(labels).toEqual([
+      "Play/Pause (k)",
+      "Back 5 s (←)",
+      "Forward 5 s (→)",
+      "Back 10 s (j)",
+      "Forward 10 s (l)",
+      "Volume up (↑)",
+      "Volume down (↓)",
+      "Mute (m)",
+      "To the start (Home)",
+      "To the end (End)",
+    ]);
+    // Each button announces its key too, as its own shortcut.
     expect(
-      screen.getByText(
-        humanText(
-          /Space plays or pauses\. Left and right arrows skip 5 seconds/,
-        ),
-      ),
-    ).toBeVisible();
+      within(group)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-keyshortcuts")),
+    ).toEqual([
+      "k Space",
+      "ArrowLeft",
+      "ArrowRight",
+      "j",
+      "l",
+      "ArrowUp",
+      "ArrowDown",
+      "m",
+      "Home",
+      "End",
+    ]);
     expect(await axe.run(document.body, AXE)).toHaveProperty("violations", []);
+  });
+
+  it("works with the focus on any control of the player, not only on the video", () => {
+    const { video, time } = open();
+    const playButton = screen.getByRole("button", { name: "Play/Pause (k)" });
+    playButton.focus();
+    for (const [name, expected] of [
+      ["ArrowRight", 30 + SKIP_SECONDS],
+      ["ArrowLeft", 30],
+      ["l", 30 + BIG_SKIP_SECONDS],
+      ["j", 30],
+    ] as const) {
+      fireEvent.keyDown(playButton, { key: name });
+      expect(time()).toBe(expected);
+    }
+    fireEvent.keyDown(playButton, { key: "k" });
+    expect(play).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Close" }), {
+      key: "m",
+    });
+    expect(video.muted).toBe(true);
+    // A key handled here is not also handled by the button it came from.
+    const clicked = vi.fn();
+    playButton.addEventListener("click", clicked);
+    fireEvent.keyDown(playButton, { key: "k" });
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it("leaves Space and Enter on a focused button to that button alone: one press, one action", () => {
+    const { video } = open();
+    const playButton = screen.getByRole("button", { name: "Play/Pause (k)" });
+    for (const key of [" ", "Enter"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      playButton.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(play).not.toHaveBeenCalled();
+    // The button's own action, once.
+    fireEvent.click(playButton);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(video.paused).toBe(true);
+  });
+
+  it("never acts on a key typed in a text field, or outside the player", () => {
+    const { video, time } = open();
+    const field = document.createElement("input");
+    screen.getByRole("dialog").appendChild(field);
+    field.focus();
+    for (const key of [" ", "k", "m", "ArrowRight", "j", "Home"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      field.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(play).not.toHaveBeenCalled();
+    expect(video.muted).toBe(false);
+    expect(time()).toBe(30);
+    // Single-key shortcuts belong to the focused player and nothing wider (WCAG 2.1.4).
+    fireEvent.keyDown(document.body, { key: "k" });
+    fireEvent.keyDown(document.body, { key: "m" });
+    expect(play).not.toHaveBeenCalled();
+    expect(video.muted).toBe(false);
+  });
+
+  it("has a button for each key that does what the key does", () => {
+    const { video, time } = open();
+    const press = (name: string) =>
+      fireEvent.click(screen.getByRole("button", { name: humanText(name) }));
+    press("Play/Pause (k)");
+    expect(play).toHaveBeenCalledTimes(1);
+    Object.defineProperty(video, "paused", {
+      configurable: true,
+      value: false,
+    });
+    press("Play/Pause (k)");
+    expect(pause).toHaveBeenCalledTimes(1);
+    press("Forward 5 s (→)");
+    expect(time()).toBe(30 + SKIP_SECONDS);
+    press("Back 5 s (←)");
+    expect(time()).toBe(30);
+    press("Forward 10 s (l)");
+    expect(time()).toBe(30 + BIG_SKIP_SECONDS);
+    press("Back 10 s (j)");
+    expect(time()).toBe(30);
+    press("To the end (End)");
+    expect(time()).toBe(100);
+    press("To the start (Home)");
+    expect(time()).toBe(0);
+    video.volume = 0.5;
+    press("Volume up (↑)");
+    expect(video.volume).toBeCloseTo(0.6);
+    press("Volume down (↓)");
+    press("Volume down (↓)");
+    expect(video.volume).toBeCloseTo(0.4);
+    press("Mute (m)");
+    expect(video.muted).toBe(true);
+    // The button says what it will do next.
+    fireEvent(video, new Event("volumechange"));
+    press("Unmute (m)");
+    expect(video.muted).toBe(false);
+  });
+
+  it("says Unmute or Mute from the video's real state, not from counting its own presses", () => {
+    const { video } = open();
+    const mute = () =>
+      screen.getByRole("button", { name: humanText("Mute (m)") });
+    expect(mute()).toBeVisible();
+    // Muted by something other than the button (the browser's own control, say).
+    video.muted = true;
+    fireEvent(video, new Event("volumechange"));
+    expect(
+      screen.getByRole("button", { name: humanText("Unmute (m)") }),
+    ).toBeVisible();
+    // A volume change that leaves it muted does not flip the label back.
+    fireEvent(video, new Event("volumechange"));
+    expect(
+      screen.getByRole("button", { name: humanText("Unmute (m)") }),
+    ).toBeVisible();
+    video.muted = false;
+    fireEvent(video, new Event("volumechange"));
+    expect(mute()).toBeVisible();
+  });
+
+  it("stops the page from also acting on a key the player handled (a phone's dialog scrolls)", () => {
+    const { video } = open();
+    for (const key of [" ", "k", "ArrowLeft", "m"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      video.dispatchEvent(event);
+      expect(event.defaultPrevented, key).toBe(true);
+    }
+    // A key it does not handle is left alone.
+    const other = new KeyboardEvent("keydown", {
+      key: "x",
+      bubbles: true,
+      cancelable: true,
+    });
+    video.dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(false);
+  });
+
+  it("keeps the focus in the player after Play, even where the click took it away", () => {
+    const { video } = open();
+    const playButton = screen.getByRole("button", { name: "Play/Pause (k)" });
+    // The focus is on the play button: it stays there.
+    playButton.focus();
+    fireEvent.play(video);
+    expect(playButton).toHaveFocus();
+    // The focus went to the page behind it: it comes back into the player.
+    (document.activeElement as HTMLElement).blur();
+    expect(document.body).toHaveFocus();
+    fireEvent.play(video);
+    expect(video).toHaveFocus();
   });
 
   it("is in the patient's language", () => {
@@ -254,5 +443,10 @@ describe("VideoViewer", () => {
     open();
     expect(screen.getByRole("button", { name: "Cerrar" })).toBeVisible();
     expect(screen.getByText("Video")).toBeVisible();
+    // The buttons say their keys in the patient's language too.
+    expect(screen.getByRole("button", { name: "Silenciar (m)" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: humanText("Retroceder 5 s (←)") }),
+    ).toBeVisible();
   });
 });

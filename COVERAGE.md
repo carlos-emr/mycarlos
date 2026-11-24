@@ -52,6 +52,23 @@ counts. A test pass count or a count of files imported is not a coverage
 percentage. Do not combine this report with Rust or Portal percentages into a
 single project percentage.
 
+## The floor
+
+`vitest.coverage.config.ts` sets `coverage.thresholds`: a run of `npm run test:coverage:frontend`
+that falls below any of statements, branches, functions or lines fails. The floor is a ratchet: it
+is raised when coverage rises and **never lowered**. `scripts/coverage-floor.test.mjs`
+(`npm run test:coverage-floor`) fails if a threshold is lowered below the minimums written in it,
+if a metric is missing, or if `autoUpdate` is switched on (which would let a run rewrite the floor).
+To raise it, change the numbers in the config and the minimums in that test together.
+
+The floor is **80 / 80 / 80 / 80** (statements, branches, functions, lines). Ben set it to 80 for
+every metric on 24 Nov 2026 so there is headroom: some code is hard to test, and it should not fail
+CI. It started at 93 / 91 / 89 / 94, one whole percent below what main at 0d6b6061 measured:
+94.50 / 92.28 / 90.94 / 95.95 percent. The measured figures are well above the floor, so the floor
+does not say how much is covered; re-measure with `npm run test:coverage:frontend`.
+A floor is not a goal: a high percentage says the code ran, not that the test checks the right
+thing.
+
 ## Reports and reproducibility
 
 The local, ignored `coverage/frontend/` directory contains:
