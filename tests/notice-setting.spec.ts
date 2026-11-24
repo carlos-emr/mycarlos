@@ -115,6 +115,7 @@ test("where no notice can be shown, only the automatic check is offered", async 
 for (const [permission, key] of [
   ["blocked", "notifications.blocked"],
   ["unknown", "notifications.unknown"],
+  ["not_yet_asked", "notifications.notYetAsked"],
 ] as const) {
   test(`a ${permission} Windows permission is said, and read with each box`, async ({
     page,

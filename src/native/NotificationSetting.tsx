@@ -13,7 +13,12 @@ type NoticeStatus = {
   /** This computer can show a notice (Windows today): the notice switch is an add-on offered
    * only then. The automatic checks do not depend on it. */
   noticesSupported?: boolean;
-  permission: "unavailable" | "unknown" | "allowed" | "blocked";
+  permission:
+    | "unavailable"
+    | "unknown"
+    | "not_yet_asked"
+    | "allowed"
+    | "blocked";
 };
 
 /** What a press of "Show a test notice" came to (native `TestNotice`). */
@@ -128,6 +133,7 @@ export function NotificationSetting({
   const permissionIds = [
     status.permission === "blocked" ? `${id}-blocked` : "",
     status.permission === "unknown" ? `${id}-unknown` : "",
+    status.permission === "not_yet_asked" ? `${id}-notYetAsked` : "",
   ].filter(Boolean);
   const Heading = headingLevel === 3 ? "h3" : "h2";
   const notices = status.noticesSupported === true;
@@ -219,6 +225,9 @@ export function NotificationSetting({
             )}
             {status.permission === "unknown" && (
               <p id={`${id}-unknown`}>{t("notifications.unknown")}</p>
+            )}
+            {status.permission === "not_yet_asked" && (
+              <p id={`${id}-notYetAsked`}>{t("notifications.notYetAsked")}</p>
             )}
           </>
         )}

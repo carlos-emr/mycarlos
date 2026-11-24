@@ -5743,6 +5743,38 @@ mod approval_recovery_tests {
         assert_eq!(to, shared);
     }
 
+    /// A clinic link tied to a hidden person files only under them, so the document waits in
+    /// Shared with me; the screen is told that the link is tied to a hidden person, never which
+    /// one (#360), and nobody listed is named as the link's person.
+    #[test]
+    fn should_say_a_link_is_tied_to_a_hidden_person_without_naming_them() {
+        let (_temp, store, _, _) = setup(false);
+        let (mut link, outer, opened, checked) = signed_delivery();
+        let person = store.create_profile("FAKE Linked Person", 5).unwrap();
+        link.profile_id = Some(person);
+        add_link(&store, &link);
+        store.create_profile("FAKE Visible Person", 6).unwrap();
+        store.hide_profile(person, 7).unwrap();
+        let (id, _) = store
+            .commit_delivery(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                200,
+                store.portal_link_ticket(),
+            )
+            .unwrap();
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(record.profile_id, store.shared_profile().unwrap());
+        let words = record.clinic_patient.clone().unwrap();
+        assert!(words.linked_to_hidden);
+        assert_eq!(words.link_person, None);
+        let json = serde_json::to_string(&words).unwrap();
+        assert!(!json.contains(&person.to_string()));
+    }
+
     /// Names are compared trimmed and in Unicode NFC, never folded: an accent typed as one
     /// character or as two is one name; another case or spelling is another name.
     #[test]
