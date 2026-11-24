@@ -75,36 +75,91 @@ mod tests {
             + text[start..]
                 .find("]\n")
                 .map_or(text.len() - start, |at| at + 1);
+        // Further attributes and comment lines between the attribute and the item are skipped
+        // (vault.rs has a `//` note between `#[cfg(test)]` and `mod tests {`).
         let mut after = text[end..].trim_start();
-        while after.starts_with("#[") {
-            match after.find(']') {
-                Some(close) => after = after[close + 1..].trim_start(),
-                None => break,
+        loop {
+            if after.starts_with("#[") {
+                match after.find(']') {
+                    Some(close) => after = after[close + 1..].trim_start(),
+                    None => break,
+                }
+            } else if after.starts_with("//") {
+                after = after.find('\n').map_or("", |at| after[at..].trim_start());
+            } else if after.starts_with("/*") {
+                match after.find("*/") {
+                    Some(close) => after = after[close + 2..].trim_start(),
+                    None => break,
+                }
+            } else {
+                break;
             }
         }
         Some((start, after))
     }
 
-    /// Where a file's inline test module starts: the first test-only attribute followed by `mod name {`
-    /// (a `mod name;` declaration only names another file and cuts nothing here).
-    fn test_module_start(text: &str) -> usize {
+    /// The module a declaration names, and the character after its name (`{` for an inline module,
+    /// `;` for a file of its own): `after` is what follows a test-only attribute.
+    fn module_declaration(after: &str) -> Option<(&str, char)> {
+        let rest = after
+            .trim_start_matches("pub(crate) ")
+            .trim_start_matches("pub ")
+            .strip_prefix("mod ")?;
+        let name_end = rest
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
+        let next = rest[name_end..].trim_start().chars().next()?;
+        Some((&rest[..name_end], next))
+    }
+
+    /// The file's text with every inline test module (`#[cfg(test)] mod name { ... }`, wherever it
+    /// stands) blanked out, so that only production code is left. The blanking keeps every byte
+    /// offset and line break where it was. A `mod name;` declaration only names another file and
+    /// blanks nothing here; code after an inline test module is production code again. A module
+    /// that never closes is an error, never a quiet blanking of the rest of the file: it can only
+    /// mean `block_end` misread the file, and everything after it would go unscanned.
+    fn production_code(text: &str) -> Result<String, String> {
+        let mut code = String::with_capacity(text.len());
+        let mut copied = 0;
         let mut from = 0;
         while let Some((start, after)) = next_cfg_test(text, from) {
-            let declaration = after
-                .trim_start_matches("pub(crate) ")
-                .trim_start_matches("pub ")
-                .strip_prefix("mod ");
-            if let Some(rest) = declaration {
-                let name_end = rest
-                    .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-                    .unwrap_or(rest.len());
-                if rest[name_end..].trim_start().starts_with('{') {
-                    return start;
+            if copied <= start && module_declaration(after).is_some_and(|(_, next)| next == '{') {
+                let module = text.len() - after.len();
+                let Some(end) = block_end(text, module) else {
+                    return Err(format!(
+                        "an inline test module never closes (it starts on line {}): the scan cannot read this file",
+                        text[..start].matches('\n').count() + 1
+                    ));
+                };
+                code.push_str(&text[copied..start]);
+                for c in text[start..end].chars() {
+                    let blank = if c == '\n' { '\n' } else { ' ' };
+                    code.extend(std::iter::repeat_n(blank, c.len_utf8()));
                 }
+                copied = end;
+                from = end;
+                continue;
             }
             from = start + 1;
         }
-        text.len()
+        code.push_str(&text[copied..]);
+        Ok(code)
+    }
+
+    /// How many `Command::new` sites a file's production code hides with `hide_console`, and the
+    /// line of each one that does not.
+    fn scan(text: &str) -> Result<(usize, Vec<usize>), String> {
+        let code = production_code(text)?;
+        let (mut hidden, mut unhidden) = (0, Vec::new());
+        for (at, _) in code.match_indices("Command::new(") {
+            let body = enclosing_function(&code, at).unwrap_or("");
+            if body.contains("hide_console(") {
+                hidden += 1;
+            } else {
+                unhidden.push(code[..at].matches('\n').count() + 1);
+            }
+        }
+        Ok((hidden, unhidden))
     }
 
     /// The files this file declares as test-only modules: `#[cfg(test)] mod name;` (every line of
@@ -121,27 +176,42 @@ mod tests {
         };
         let mut from = 0;
         while let Some((start, after)) = next_cfg_test(text, from) {
-            let declaration = after
-                .trim_start_matches("pub(crate) ")
-                .trim_start_matches("pub ")
-                .strip_prefix("mod ");
-            if let Some(rest) = declaration {
-                let name_end = rest
-                    .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-                    .unwrap_or(rest.len());
-                if rest[name_end..].trim_start().starts_with(';') {
-                    let name = &rest[..name_end];
-                    found.push(home.join(format!("{name}.rs")));
-                    found.push(home.join(name).join("mod.rs"));
-                }
+            if let Some((name, ';')) = module_declaration(after) {
+                found.push(home.join(format!("{name}.rs")));
+                found.push(home.join(name).join("mod.rs"));
             }
             from = start + 1;
         }
         found
     }
 
+    /// The offset just past a raw string literal that starts with the `r` at `at` (after an
+    /// optional `b`), or `None` where this `r` does not start one (the tail of a name, say) or the
+    /// literal never closes.
+    fn raw_string_end(bytes: &[u8], at: usize) -> Option<usize> {
+        let in_name = |index: usize| bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_';
+        // `r` must start a token: not the tail of a name, but `br` may.
+        let starts_token =
+            at == 0 || !in_name(at - 1) || (bytes[at - 1] == b'b' && (at == 1 || !in_name(at - 2)));
+        if !starts_token {
+            return None;
+        }
+        let hashes = bytes[at + 1..].iter().take_while(|&&b| b == b'#').count();
+        if bytes.get(at + 1 + hashes) != Some(&b'"') {
+            return None;
+        }
+        let body = at + 2 + hashes;
+        let mut closing = vec![b'"'];
+        closing.extend(std::iter::repeat_n(b'#', hashes));
+        bytes[body..]
+            .windows(closing.len())
+            .position(|window| window == closing.as_slice())
+            .map(|found| body + found + closing.len())
+    }
+
     /// The offset just past the `}` that closes the block opened by the first `{` at or after
-    /// `from`, skipping comments and string and character literals; `None` if it never closes.
+    /// `from`, skipping comments and string (raw ones too) and character literals; `None` if it
+    /// never closes.
     fn block_end(text: &str, from: usize) -> Option<usize> {
         let bytes = text.as_bytes();
         let mut depth = 0usize;
@@ -158,6 +228,12 @@ mod tests {
                 b'/' if bytes.get(at + 1) == Some(&b'*') => {
                     let end = text[at + 2..].find("*/")?;
                     at += end + 4;
+                    continue;
+                }
+                // A raw string (r"..", r#".."#, br"..") has no escapes: a `\` before its closing
+                // quote ends nothing.
+                b'r' if raw_string_end(bytes, at).is_some() => {
+                    at = raw_string_end(bytes, at)?;
                     continue;
                 }
                 b'"' => {
@@ -221,13 +297,69 @@ mod tests {
     fn the_scan_reads_modules_and_functions_as_they_are() {
         // `mod name;` cuts nothing, `mod name {` does.
         let declared = "fn a() { Command::new(\"x\"); }\n#[cfg(test)]\nmod other;\nfn b() { Command::new(\"y\"); }\n";
-        assert_eq!(test_module_start(declared), declared.len());
+        assert_eq!(production_code(declared).unwrap(), declared);
         let inline =
             "fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t() { Command::new(\"y\"); }\n}\n";
-        assert_eq!(&inline[test_module_start(inline)..][..13], "#[cfg(test)]\n");
-        assert!(test_module_start(inline) < inline.find("fn t").unwrap());
-        let attributed = "#[cfg(test)]\n#[allow(dead_code)]\nmod tests {\n}\n";
-        assert_eq!(test_module_start(attributed), 0);
+        let blanked = production_code(inline).unwrap();
+        assert_eq!(
+            blanked.len(),
+            inline.len(),
+            "every offset stays where it was"
+        );
+        assert!(blanked.starts_with("fn a() {}\n") && !blanked.contains("Command"));
+        assert_eq!(blanked.matches('\n').count(), inline.matches('\n').count());
+        let attributed = "#[cfg(test)]\n#[allow(dead_code)]\nmod tests {\n}\nfn p() {}\n";
+        assert_eq!(production_code(attributed).unwrap().trim(), "fn p() {}");
+        // A comment between the attributes and the module does not hide the module (vault.rs).
+        let noted = "#[cfg(test)]\n// a note }\n/* and { another */\n#[allow(dead_code)]\nmod tests {\n    fn t() { Command::new(\"t\"); }\n}\nfn p() { Command::new(\"p\"); }\n";
+        assert_eq!(scan(noted), Ok((0, vec![8])));
+        // Production code after an inline test module is still production code (#442 follow-up):
+        // the first test module does not end the scan, and what is inside any of them is not scanned.
+        let after = "fn early() { Command::new(\"a\"); hide_console(&mut c); }\n\
+            #[cfg(test)]\nmod tests {\n    fn t() { Command::new(\"in a test\"); }\n}\n\
+            fn late() {\n    let c = Command::new(\"b\");\n}\n\
+            #[cfg(all(test, unix))]\nmod more {\n    fn u() { Command::new(\"in another\"); }\n}\n\
+            fn last() { Command::new(\"c\"); hide_console(&mut c); }\n";
+        assert_eq!(
+            scan(after),
+            Ok((2, vec![7])),
+            "the unhidden call after the module is found"
+        );
+        // Braces in the module's strings and comments do not end it early, a lifetime is no literal.
+        let tricky = "#[cfg(test)]\nmod tests {\n    fn t<'a>(s: &'a str) { let _ = \"}\"; /* } */ }\n}\nfn p() { Command::new(\"z\"); }\n";
+        assert_eq!(scan(tricky), Ok((0, vec![5])));
+        // A module that never closes is an error naming where it starts, never a quiet blanking of
+        // the rest of the file (which could hide any amount of production code).
+        let unclosed = "fn p() {}\n#[cfg(test)]\nmod tests {\n fn t() {\n";
+        let error = scan(unclosed).unwrap_err();
+        assert!(
+            error.contains("never closes") && error.contains("line 2"),
+            "{error}"
+        );
+        assert!(production_code(unclosed).is_err());
+        // Raw strings, one literal per module (two misreads could cancel each other out): a
+        // backslash before the closing quote ends nothing, the hashes must match, and a brace
+        // inside one is text. Each of these is read as an unclosed module without the raw arm.
+        let mut misread = Vec::new();
+        for literal in [
+            "let a = r\"\\\";",
+            "let b = r#\"} \" }\"#;",
+            "let c = r#\"{ \" {\"#;",
+            "let d = br\"}\";",
+        ] {
+            let module = format!(
+                "#[cfg(test)]\nmod tests {{\n    fn t() {{ {literal} }}\n}}\nfn p() {{ Command::new(\"z\"); }}\n"
+            );
+            if scan(&module) != Ok((0, vec![5])) {
+                misread.push(literal);
+            }
+        }
+        assert!(misread.is_empty(), "read wrongly: {misread:?}");
+        // The `r` at the end of a name starts no raw string, but the one of `br"` does.
+        assert_eq!(raw_string_end(b"bar\"x\"", 2), None);
+        assert_eq!(raw_string_end(b"br\"x\"", 1), Some(5));
+        assert_eq!(raw_string_end(b"r##\"a\"#b\"##", 0), Some(11));
+        assert_eq!(raw_string_end(b"r\"never", 0), None);
         // `#[cfg(all(test, target_os = "linux"))] mod name;` names a test-only file too.
         let conditional = "#[cfg(all(test, target_os = \"linux\"))]\nmod extraction;\n";
         let named_conditional = test_only_files(Path::new("/s/src/lib.rs"), conditional);
@@ -291,15 +423,10 @@ mod tests {
                 .to_string_lossy()
                 .replace('\\', "/");
             let text = std::fs::read_to_string(&file).unwrap();
-            let code = &text[..test_module_start(&text)];
-            for (at, _) in code.match_indices("Command::new(") {
-                let body = enclosing_function(code, at).unwrap_or("");
-                if body.contains("hide_console(") {
-                    hidden += 1;
-                } else if !NOT_HIDDEN.iter().any(|(name, _)| *name == relative) {
-                    let line = code[..at].matches('\n').count() + 1;
-                    unhidden.push(format!("{relative}:{line}"));
-                }
+            let (found, lines) = scan(&text).unwrap_or_else(|error| panic!("{relative}: {error}"));
+            hidden += found;
+            if !NOT_HIDDEN.iter().any(|(name, _)| *name == relative) {
+                unhidden.extend(lines.iter().map(|line| format!("{relative}:{line}")));
             }
         }
         assert!(
@@ -314,7 +441,7 @@ mod tests {
     #[test]
     fn the_registry_login_item_starts_no_process() {
         let text = include_str!("desktop_background.rs");
-        let code = &text[..test_module_start(text)];
+        let code = production_code(text).unwrap();
         assert!(
             !code.contains("Command::new"),
             "desktop_background starts no process"

@@ -1,14 +1,16 @@
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import { MAX_UNSENT_BYTES } from "./video";
 import { RecordDialog, type RecordBridge } from "./RecordDialog";
 
@@ -971,5 +973,396 @@ describe("RecordDialog", () => {
       screen.getByText(humanText(/^Enregistré : \d+:\d{2}$/)),
     ).toBeVisible();
     setLocaleOverride("en");
+  });
+
+  // Gap tests (24 Nov): paths of the dialog that had no test. None touches the pause and the
+  // camera preview, which are #439's.
+
+  it("ends and saves the recording from the question Close asks, and a press inside the dialog does not close it", async () => {
+    const bridge = fakeBridge();
+    const { onSaved, onClose } = await recording(bridge);
+    // A press on the dialog itself is not a press on the backdrop.
+    fireEvent.mouseDown(screen.getByRole("dialog"));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText("Stop and save the video?")).toBeNull();
+    // A press on the backdrop asks, and never discards.
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);
+    await screen.findByText("Stop and save the video?");
+    expect(bridge.videoStop).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Stop and save",
+      }),
+    );
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "asked"),
+    );
+    expect(bridge.videoStop).toHaveBeenCalledWith("recording-1");
+  });
+
+  it("says so when the webview has no camera interface at all, and offers Try again", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {},
+    });
+    try {
+      const { bridge } = open();
+      fireEvent.click(button("Use the camera and microphone"));
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(button("Try again")).toBeEnabled();
+      expect(bridge.videoStart).not.toHaveBeenCalled();
+    } finally {
+      // Back to the browser's own.
+      Reflect.deleteProperty(navigator, "mediaDevices");
+    }
+  });
+
+  it("asks for nothing when Cancel comes while the room is being looked at, or after the camera refuses", async () => {
+    let looked!: (space: {
+      freeBytes: number;
+      level: "ok";
+      canRecord: boolean;
+    }) => void;
+    const bridge = fakeBridge({
+      videoSpace: vi.fn(
+        () =>
+          new Promise<{ freeBytes: number; level: "ok"; canRecord: boolean }>(
+            (resolve) => (looked = resolve),
+          ),
+      ),
+    });
+    const { onClose } = open({}, bridge);
+    fireEvent.click(button("Use the camera and microphone"));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      looked({ freeBytes: 50 * 1024 ** 3, level: "ok", canRecord: true }),
+    );
+    // The camera and the microphone were never asked for.
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    // A refusal that comes after Cancel is not shown either.
+    let refuse!: (error: unknown) => void;
+    getUserMedia.mockImplementationOnce(
+      () => new Promise<MediaStream>((_resolve, reject) => (refuse = reject)),
+    );
+    cleanup();
+    const second = open();
+    fireEvent.click(button("Use the camera and microphone"));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    await act(async () =>
+      refuse(new DOMException("FAKE denied", "NotAllowedError")),
+    );
+    expect(second.onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says the camera stopped when it ends, or the window is hidden, before recording; a visible window and an old camera's end change nothing", async () => {
+    open();
+    await readyToRecord();
+    const first = streams[0]!;
+    // The window being shown again, or any change that leaves it visible: nothing.
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => {
+      const track = first.getVideoTracks()[0]!;
+      track.stop();
+      track.dispatchEvent(new Event("ended"));
+    });
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Start recording" }),
+    ).toBeNull();
+    // Try again opens a new camera; the first one ending again is not the new one's end.
+    fireEvent.click(button("Try again"));
+    await screen.findByRole("button", { name: "Start recording" });
+    act(() => {
+      first.getVideoTracks()[0]!.dispatchEvent(new Event("ended"));
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(button("Start recording")).toBeEnabled();
+    // Hidden while only the camera is on: it is turned off and the dialog says so.
+    const hidden = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(
+        streams[1]!.getTracks().every((t) => t.readyState === "ended"),
+      ).toBe(true);
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it("keeps Standard when the webview refuses High, and goes back to Standard when asked", async () => {
+    getUserMedia.mockImplementation(async () => {
+      const stream = fakeCameraAndMicrophone({ width: 1920, height: 1080 });
+      Object.assign(stream.getVideoTracks()[0]!, {
+        applyConstraints: vi.fn(async () => {
+          throw new Error("FAKE refused");
+        }),
+      });
+      return stream;
+    });
+    open();
+    await readyToRecord();
+    fireEvent.click(screen.getByRole("radio", { name: /High \(1080p\)/ }));
+    expect(screen.getByRole("radio", { name: /High/ })).toBeChecked();
+    expect(window.localStorage.getItem("mycarlos.videoQuality.v1")).toBe(
+      "high",
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /Standard \(720p\)/ }));
+    expect(screen.getByRole("radio", { name: /Standard/ })).toBeChecked();
+    expect(window.localStorage.getItem("mycarlos.videoQuality.v1")).toBe(
+      "standard",
+    );
+    // Both asks reached the camera, and neither left an unhandled refusal.
+    const track = streams[0]!.getVideoTracks()[0]!;
+    expect(track.applyConstraints).toHaveBeenCalledTimes(2);
+    await act(async () => undefined);
+  });
+
+  it("sends nothing for an empty piece, and goes on with the next sequence number", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    act(() => {
+      recorder().emit(new Blob([]));
+    });
+    // An empty piece is dropped where it arrives: nothing is queued, so nothing is waited for.
+    await act(async () => undefined);
+    expect(bridge.videoAppend).not.toHaveBeenCalled();
+    act(() => {
+      recorder().emit(piece(40));
+    });
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(bridge.videoAppend).mock.calls[0]![1]).toBe(0);
+  });
+
+  it("still saves when the recorder will not stop, and ends the recording when it reports an error", async () => {
+    const bridge = fakeBridge();
+    const { onSaved } = await recording(bridge);
+    recorder().stop = () => {
+      throw new Error("FAKE already stopped");
+    };
+    fireEvent.click(button("Stop and save"));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "asked"),
+    );
+    cleanup();
+
+    const second = await recording(fakeBridge());
+    act(() => {
+      recorder().dispatchEvent(new Event("error"));
+    });
+    await waitFor(() =>
+      expect(second.onSaved).toHaveBeenCalledWith("video-1", "stopped"),
+    );
+  });
+
+  it("shows why the vault could not finish the video, and reports nothing saved", async () => {
+    const bridge = fakeBridge({
+      videoStop: vi.fn(async () => {
+        throw Object.assign(new Error("FAKE stop refused"), {
+          code: "FAKE_stop",
+        });
+      }),
+    });
+    const { onSaved, onClose } = await recording(bridge);
+    fireEvent.click(button("Stop and save"));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      streams.every((s) =>
+        s.getTracks().every((t) => t.readyState === "ended"),
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["finishes", "resolve"],
+    ["is refused", "reject"],
+  ] as const)(
+    "reports nothing, and shows nothing, when the vault's stop %s after the dialog has gone",
+    async (_name, how) => {
+      let answer!: () => void;
+      let fail!: (error: unknown) => void;
+      const bridge = fakeBridge({
+        videoStop: vi.fn(
+          () =>
+            new Promise<{ recordId: string | null }>((resolve, reject) => {
+              answer = () => resolve({ recordId: "video-1" });
+              fail = reject;
+            }),
+        ),
+      });
+      const { onSaved, unmount } = await recording(bridge);
+      fireEvent.click(button("Stop and save"));
+      await waitFor(() => expect(bridge.videoStop).toHaveBeenCalledTimes(1));
+      unmount();
+      await act(async () =>
+        how === "resolve" ? answer() : fail(new Error("FAKE late")),
+      );
+      expect(onSaved).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not close while the recording is being saved", async () => {
+    let answer!: () => void;
+    const bridge = fakeBridge({
+      videoStop: vi.fn(
+        () =>
+          new Promise<{ recordId: string | null }>((resolve) => {
+            answer = () => resolve({ recordId: "video-1" });
+          }),
+      ),
+    });
+    const { onClose, onSaved } = await recording(bridge);
+    fireEvent.click(button("Stop and save"));
+    await waitFor(() => expect(bridge.videoStop).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText("Stop and save the video?")).toBeNull();
+    await act(async () => answer());
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith("video-1", "asked"),
+    );
+  });
+
+  it("says this device cannot record MP4, and starts nothing, when no MP4 type is supported", async () => {
+    vi.stubGlobal(
+      "MediaRecorder",
+      class extends FakeRecorder {
+        static override isTypeSupported = () => false;
+      },
+    );
+    const bridge = fakeBridge();
+    open({}, bridge);
+    await readyToRecord();
+    fireEvent.click(button("Start recording"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This device can't record video in a form myCarlos can save.",
+    );
+    expect(bridge.videoStart).not.toHaveBeenCalled();
+    expect(FakeRecorder.all).toHaveLength(0);
+  });
+
+  it("is not stopped by a vault that also fails to end its recording, when the dialog was cancelled while starting or the recorder could not start", async () => {
+    // Cancelled while the vault was starting; its stop then fails too.
+    let began!: (value: { recordingId: string }) => void;
+    const stopFails = vi.fn(async () => {
+      throw new Error("FAKE stop failed");
+    });
+    const first = fakeBridge({
+      videoStart: vi.fn(
+        () =>
+          new Promise<{ recordingId: string }>((resolve) => (began = resolve)),
+      ),
+      videoStop: stopFails,
+    });
+    open({}, first);
+    await readyToRecord();
+    fireEvent.click(button("Start recording"));
+    await waitFor(() => expect(first.videoStart).toHaveBeenCalledTimes(1));
+    fireEvent.click(button("Cancel"));
+    await act(async () => began({ recordingId: "recording-1" }));
+    await waitFor(() => expect(stopFails).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    // The recorder could not start; the vault's stop fails too.
+    class Throws extends FakeRecorder {
+      constructor(stream: MediaStream, options: MediaRecorderOptions) {
+        super(stream, options);
+        throw new Error("FAKE no recorder");
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Throws);
+    const secondStop = vi.fn(async () => {
+      throw new Error("FAKE stop failed");
+    });
+    open({}, fakeBridge({ videoStop: secondStop }));
+    await readyToRecord();
+    fireEvent.click(button("Start recording"));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await waitFor(() => expect(secondStop).toHaveBeenCalledTimes(1));
+  });
+
+  it("goes on with the resume when the room cannot be looked at, and keeps the pause when the vault refuses it", async () => {
+    let lookable = true;
+    const bridge = fakeBridge();
+    const space = bridge.videoSpace;
+    bridge.videoSpace = vi.fn(async () => {
+      if (!lookable) throw new Error("FAKE cannot look");
+      return space();
+    });
+    await recording(bridge);
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Recording paused."),
+    );
+    // Room could not be read: the resume goes on, as before.
+    lookable = false;
+    vi.mocked(bridge.videoResume).mockRejectedValueOnce(
+      Object.assign(new Error("FAKE resume refused"), { code: "FAKE_resume" }),
+    );
+    fireEvent.click(button("Resume recording"));
+    // The vault refused: the pause stays, it says why, and Resume can be tried again.
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(bridge.videoResume).toHaveBeenCalledTimes(1);
+    expect(recorder().state).toBe("paused");
+    await waitFor(() => expect(button("Resume recording")).toBeEnabled());
+    fireEvent.click(button("Resume recording"));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Recording resumed.",
+      ),
+    );
+    expect(bridge.videoResume).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the time recorded moving while recording, one tick at a time", async () => {
+    // The clock reads performance.now, and the screen re-reads it on a timer of the dialog's own:
+    // both are driven here, so nothing waits in real time.
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const ticks: { run: () => void; delay: number }[] = [];
+    const realInterval = window.setInterval.bind(window);
+    const timer = vi.spyOn(window, "setInterval").mockImplementation(((
+      run: () => void,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      ticks.push({ run, delay: delay ?? 0 });
+      return realInterval(run, delay, ...rest);
+    }) as typeof window.setInterval);
+    try {
+      await recording();
+      // The timer is started by an effect, which runs after the screen shows Pause.
+      await act(async () => undefined);
+      const shown = () =>
+        visibleText(
+          screen.getByText(humanText(/^Recorded \d+:\d{2}$/)).textContent ?? "",
+        );
+      expect(shown()).toBe("Recorded 0:00");
+      const tick = ticks.filter((entry) => entry.delay === 500).at(-1)!;
+      expect(ticks.map((entry) => entry.delay)).toContain(500);
+      now += 61_000;
+      act(() => tick.run());
+      expect(shown()).toBe("Recorded 1:01");
+      now += 60_000;
+      act(() => tick.run());
+      expect(shown()).toBe("Recorded 2:01");
+    } finally {
+      clock.mockRestore();
+      timer.mockRestore();
+    }
   });
 });

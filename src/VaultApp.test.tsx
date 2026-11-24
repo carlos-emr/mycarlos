@@ -15581,3 +15581,343 @@ describe("the vault locked natively: closed to the tray, Quit or the native idle
     expect(bridge.lock).toHaveBeenCalledOnce();
   });
 });
+
+// Gap tests (24 Nov): paths of the app's own wiring that had no test.
+describe("what the app does when its calls to the native side fail or are not asked", () => {
+  const openVault = (overrides: Partial<VaultBridge> = {}) =>
+    nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      ...overrides,
+    });
+
+  it("says nothing changed when the erase is not carried out, and stays on the unlock screen", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({ reset: vi.fn().mockResolvedValue(false) });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    await user.click(screen.getByText(humanText("Forgot your passphrase?")));
+    await user.type(
+      screen.getByLabelText(humanText("Type RESET MYCARLOS VAULT")),
+      "RESET MYCARLOS VAULT",
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Set vault aside") }),
+    );
+    await waitFor(() =>
+      expect(bridge.reset).toHaveBeenCalledWith("RESET MYCARLOS VAULT"),
+    );
+    expect(
+      await screen.findByText(
+        humanText("Nothing changed: the vault was not set aside."),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: humanText("Unlock your vault") }),
+    ).toBeVisible();
+  });
+
+  it("tells the patient what was not received when native code reports shares it dropped or refused", async () => {
+    const bridge = openVault({
+      listReceived: vi.fn().mockResolvedValue({
+        files: [],
+        notice: { dropped: 2, refusedShares: 1 },
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(
+      await screen.findByText(
+        humanText(
+          /A share was not received: no more than 100 shared files can wait at once\..*2 shared items were not received: myCarlos accepts PDF files only\./,
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  const waitingForAnswer = (overrides: Partial<VaultBridge> = {}) =>
+    openVault({
+      listReceived: vi.fn().mockResolvedValue({
+        files: [
+          {
+            id: "shared-1",
+            name: "FAKE_Opened.pdf",
+            sourceLabel: "Manual import — unverified",
+            needsConfirm: true,
+          },
+        ],
+        notice: { dropped: 0, refusedShares: 0 },
+      }),
+      ...overrides,
+    });
+  const question = () =>
+    screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+    });
+
+  it("asks the same question again when native code was not asked, and adds the file when it is", async () => {
+    const user = userEvent.setup();
+    const bridge = waitingForAnswer();
+    render(<VaultApp bridge={bridge} />);
+    let dialog = await question();
+    // The window is hidden when the answer comes: nothing is asked of native code, and the
+    // file is not lost.
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      await user.click(
+        within(dialog).getByRole("button", { name: humanText("Import") }),
+      );
+      expect(bridge.acceptReceived).not.toHaveBeenCalled();
+      dialog = await question();
+    } finally {
+      visibility.mockRestore();
+    }
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Import") }),
+    );
+    await waitFor(() =>
+      expect(bridge.acceptReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+  });
+
+  it("closes the question on Cancel even when native code cannot forget the file", async () => {
+    const user = userEvent.setup();
+    const bridge = waitingForAnswer({
+      discardReceived: vi.fn().mockRejectedValue(new Error("FAKE busy")),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const dialog = await question();
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    );
+    await waitFor(() =>
+      expect(bridge.discardReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
+  });
+
+  it("opens the library when the platform and the tray cannot be read", async () => {
+    const bridge = openVault({
+      platform: vi.fn().mockRejectedValue(new Error("FAKE no platform")),
+      trayWaiting: vi.fn().mockRejectedValue(new Error("FAKE no tray")),
+      onTrayWaiting: vi.fn(() => () => undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(
+      await screen.findByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
+    expect(bridge.platform).toHaveBeenCalled();
+    expect(bridge.trayWaiting).toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("closes a native session it could not read the state of, even when closing fails, and shows why", async () => {
+    const bridge = nativeBridge({
+      status: vi
+        .fn()
+        .mockRejectedValue({ code: "storage", message: "FAKE no state." }),
+      lock: vi.fn().mockRejectedValue(new Error("FAKE cannot lock")),
+    });
+    render(<VaultApp bridge={bridge} />);
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(bridge.lock).toHaveBeenCalledOnce();
+    expect(screen.getByText(humanText(/FAKE no state\./))).toBeVisible();
+  });
+
+  it("saves the recovery kit through the app's own picker tracking, and says so", async () => {
+    const user = userEvent.setup();
+    const KEY = "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345";
+    const bridge = openVault({
+      beginRecoveryKey: vi.fn().mockResolvedValue(KEY),
+      saveRecoveryKit: vi.fn().mockResolvedValue(true),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText("Security") }),
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Set up recovery key"),
+      }),
+    );
+    const setup = screen.getByRole("dialog");
+    await user.type(
+      within(setup).getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(
+      within(setup).getByRole("button", { name: humanText("Continue") }),
+    );
+    const key = await screen.findByRole("dialog", {
+      name: humanText("Your recovery key"),
+    });
+    const save = await within(key).findByRole("button", {
+      name: humanText("Save recovery kit…"),
+    });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
+    await waitFor(() => expect(bridge.saveRecoveryKit).toHaveBeenCalledOnce());
+    expect(
+      await within(key).findByText(
+        humanText(
+          "Recovery kit saved. The key starts working once you finish the check.",
+        ),
+      ),
+    ).toBeVisible();
+  });
+});
+
+describe("the automatic lock and the native deadline, when a video plays or the native side does not answer (#359)", () => {
+  const VIDEO_NAME = "FAKE Video, 20 Nov 2026, 3.05 PM.mp4";
+  const TOKEN = "a".repeat(64);
+  beforeEach(() => {
+    window.localStorage.clear();
+    // One minute, so the warning comes at 30 seconds.
+    window.localStorage.setItem("mycarlos.autoLockMinutes.v1", "1");
+  });
+  const withVideo = (overrides: Partial<VaultBridge> = {}) => {
+    const vault: VaultSnapshot = {
+      ...emptySnapshot,
+      records: [
+        {
+          id: "video-1",
+          profileId: "profile-1",
+          folderIds: [],
+          displayName: VIDEO_NAME,
+          sourceLabel: "Manual import — unverified",
+          mediaType: "application/octet-stream",
+          plaintextSize: 2048,
+          importedAtMs: Date.UTC(2026, 10, 20, 15, 5),
+          available: true,
+        },
+      ],
+    };
+    return nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn(async () => captureSnapshot(vault)),
+      isVideo: vi.fn(async (id: string) => id === "video-1"),
+      videoOpen: vi.fn(async () => ({
+        token: TOKEN,
+        url: `mycarlos-video://localhost/${TOKEN}`,
+        totalBytes: 123,
+      })),
+      videoClose: vi.fn(async () => undefined),
+      ...overrides,
+    });
+  };
+  async function open(bridge: VaultBridge) {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    await act(async () => {
+      render(<VaultApp bridge={bridge} />);
+    });
+    return bridge;
+  }
+  const wait = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
+  const locked = () =>
+    screen.queryByRole("heading", { name: humanText("Unlock your vault") });
+
+  it("does not lock a vault while a video plays, tells the native deadline, and locks after it is paused", async () => {
+    const bridge = await open(
+      withVideo({
+        touch: vi.fn().mockRejectedValue(new Error("FAKE no touch")),
+      }),
+    );
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText(VIDEO_NAME) }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Play video") }),
+      );
+    });
+    await act(async () => undefined);
+    const player = screen.getByLabelText(
+      humanText(`Video player: ${VIDEO_NAME}`),
+    );
+    await act(async () => {
+      fireEvent(player, new Event("playing"));
+    });
+    // Well past the delay, and past the warning: playing is not idle time.
+    await wait(150_000);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("alertdialog", {
+        name: humanText(/^myCarlos will lock in/),
+      }),
+    ).toBeNull();
+    // The native deadline is told, sparingly (and its refusal is not a failure here).
+    const touches = vi.mocked(bridge.touch).mock.calls.length;
+    expect(touches).toBeGreaterThan(0);
+    // "Sparingly" is the rule: over these 150 s a call every second would be 150, so the bound
+    // only says the app does not tell native code on every tick or every playback event. It is a
+    // ceiling on the rate, not the interval's value: raise it if the interval is made shorter on
+    // purpose, and keep it far below one call a second.
+    expect(touches).toBeLessThan(20);
+    // Paused: the hold is let go, and the usual delay runs from here.
+    await act(async () => {
+      fireEvent(player, new Event("pause"));
+    });
+    await wait(30_000);
+    expect(bridge.lock).not.toHaveBeenCalled();
+    await wait(80_000);
+    expect(bridge.lock).toHaveBeenCalledOnce();
+    expect(locked()).toBeVisible();
+  });
+
+  it("goes on when the native deadline cannot be told, from use and from Keep open", async () => {
+    const bridge = await open(
+      nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        touch: vi.fn().mockRejectedValue(new Error("FAKE no touch")),
+      }),
+    );
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
+    // Use puts the lock off and tells the native deadline, which does not answer.
+    await wait(20_000);
+    await act(async () => {
+      window.dispatchEvent(new Event("pointerdown"));
+      window.dispatchEvent(new Event("keydown"));
+    });
+    expect(bridge.touch).toHaveBeenCalledTimes(1);
+    // A full delay again from the use: the warning comes at 30 seconds of idleness.
+    await wait(29_000);
+    expect(
+      screen.queryByRole("alertdialog", {
+        name: humanText(/^myCarlos will lock in/),
+      }),
+    ).toBeNull();
+    await wait(1_000);
+    const keep = screen.getByRole("button", { name: humanText("Keep open") });
+    await act(async () => {
+      fireEvent.click(keep);
+    });
+    expect(bridge.touch).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByRole("alertdialog", {
+        name: humanText(/^myCarlos will lock in/),
+      }),
+    ).toBeNull();
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: humanText("My records") }),
+    ).toBeVisible();
+  });
+});
