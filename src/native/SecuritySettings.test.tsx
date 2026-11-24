@@ -1114,9 +1114,9 @@ describe("SecuritySettings backup layout", () => {
   });
 });
 
-const LEAVE_OUT_HELP = humanText(
-  "The backup will not contain your videos. If you restore it, the videos are not brought back.",
-);
+const LEAVE_OUT_HELP_TEXT =
+  "The backup will not contain your videos. If you restore it, the videos are not brought back.";
+const LEAVE_OUT_HELP = humanText(LEAVE_OUT_HELP_TEXT);
 
 describe("the backup's size and leaving the videos out (#359)", () => {
   const sizes = (videos: number) =>
@@ -1171,7 +1171,7 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     });
     // Unticked: no sentence, nothing to describe the box, and an empty polite region that is ready.
     expect(screen.queryByText(LEAVE_OUT_HELP)).toBeNull();
-    expect(leave).not.toHaveAccessibleDescription(LEAVE_OUT_HELP);
+    expect(leave).not.toHaveAccessibleDescription(LEAVE_OUT_HELP_TEXT);
     const region = leave.closest(".appearance-choice")?.nextElementSibling;
     expect(region).toHaveAttribute("role", "status");
     expect(region).toBeEmptyDOMElement();
@@ -1179,7 +1179,7 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     fireEvent.click(leave);
     const help = screen.getByText(LEAVE_OUT_HELP);
     expect(help.closest("[role='status']")).toBe(region);
-    expect(leave).toHaveAccessibleDescription(LEAVE_OUT_HELP);
+    expect(leave).toHaveAccessibleDescription(LEAVE_OUT_HELP_TEXT);
     // Unticked again: gone.
     fireEvent.click(leave);
     expect(screen.queryByText(LEAVE_OUT_HELP)).toBeNull();
