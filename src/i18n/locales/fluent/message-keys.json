@@ -1366,5 +1366,13 @@
   "notifications.testFailed",
   "notifications.testOff",
   "preferences.moreAutomatic",
-  "preferences.moreBackground"
+  "preferences.moreBackground",
+  "iphonePush.title",
+  "iphonePush.allow",
+  "iphonePush.help",
+  "iphonePush.refused",
+  "iphonePush.iosOff",
+  "iphonePush.unavailable",
+  "iphonePush.timedOut",
+  "iphonePush.error"
 ]

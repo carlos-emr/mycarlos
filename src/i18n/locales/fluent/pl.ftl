@@ -3033,3 +3033,19 @@ notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
 notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
+
+iphonePush-title = Powiadomienia, gdy myCarlos jest zamknięty
+
+iphonePush-allow = Pokazuj powiadomienia, gdy myCarlos jest zamknięty (iPhone)
+
+iphonePush-help = Gdy placówka ma dokument do odebrania, usługa powiadomień push firmy Apple pokazuje powiadomienie na tym iPhonie, nawet gdy myCarlos jest zamknięty. Powiadomienie mówi tylko, że dokument czeka. Apple widzi, kiedy wysyłane jest powiadomienie, ale nigdy jego treści. Ta opcja jest wyłączona, dopóki nie zostanie włączona, a wtedy iPhone poprosi o zgodę.
+
+iphonePush-refused = Nie zezwolono na powiadomienia, gdy iPhone o to zapytał. Aby na nie zezwolić, proszę otworzyć Ustawienia na iPhonie, wybrać Powiadomienia, potem myCarlos i włączyć Zezwalaj na powiadomienia. Następnie proszę włączyć tę opcję ponownie.
+
+iphonePush-iosOff = Powiadomienia myCarlos są wyłączone w Ustawieniach iPhone’a. Aby na nie zezwolić, proszę otworzyć Ustawienia, wybrać Powiadomienia, potem myCarlos i włączyć Zezwalaj na powiadomienia.
+
+iphonePush-unavailable = Nie można połączyć się z usługą powiadomień Apple z tego iPhone’a. Proszę spróbować ponownie później.
+
+iphonePush-timedOut = Apple nie odpowiedziało na czas. Proszę wyłączyć i ponownie włączyć tę opcję, aby spróbować jeszcze raz.
+
+iphonePush-error = Nie udało się zapisać ustawienia. Proszę spróbować ponownie.

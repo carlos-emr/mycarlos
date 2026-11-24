@@ -2939,3 +2939,19 @@ notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
+
+iphonePush-title = Avisos cuando myCarlos está cerrado
+
+iphonePush-allow = Mostrar avisos cuando myCarlos está cerrado (iPhone)
+
+iphonePush-help = Cuando una clínica tiene un documento para usted, el servicio de notificaciones push de Apple muestra un aviso en este iPhone aunque myCarlos esté cerrado. El aviso solo dice que hay un documento esperando. Apple ve cuándo se envía una notificación, nunca lo que contiene. Está desactivado hasta que lo active, y entonces el iPhone le pedirá permiso.
+
+iphonePush-refused = No permitió los avisos cuando el iPhone se lo preguntó. Para permitirlos, abra Ajustes en su iPhone, elija Notificaciones, luego myCarlos, y active Permitir notificaciones. Después vuelva a activar esto.
+
+iphonePush-iosOff = Los avisos de myCarlos están desactivados en los Ajustes de su iPhone. Para permitirlos, abra Ajustes, elija Notificaciones, luego myCarlos, y active Permitir notificaciones.
+
+iphonePush-unavailable = No se pudo contactar con el servicio de avisos de Apple desde este iPhone. Inténtelo más tarde.
+
+iphonePush-timedOut = Apple no respondió a tiempo. Desactive y vuelva a activar esto para intentarlo de nuevo.
+
+iphonePush-error = No se pudo guardar el ajuste. Inténtelo de nuevo.
