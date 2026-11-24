@@ -172,6 +172,29 @@ mod tests {
     }
 
     #[test]
+    fn a_vault_in_recovery_mode_cannot_sync_and_sends_and_keeps_nothing() {
+        let (_temp, store, keys) = setup(&[linked()]);
+        // A vault left read-only after a failed write.
+        store.session().as_mut().unwrap().recovery = Some(RecoveryReason::WriteFailed);
+        let calls = RefCell::new(0);
+        let exchange = |_: &StoredLink,
+                        _: &str,
+                        _: &str,
+                        _: Vec<u8>,
+                        _: Option<&str>,
+                        _: usize,
+                        _: &dyn Fn() -> bool| {
+            *calls.borrow_mut() += 1;
+            answer(200)
+        };
+        let session = store.portal_link_ticket();
+        let result = store.sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| {});
+        assert!(matches!(result, Err(VaultError::RecoveryMode)));
+        assert_eq!(*calls.borrow(), 0);
+        assert_eq!(keys.entries(), Ok(vec![]));
+    }
+
+    #[test]
     fn a_locked_vault_cannot_sync_and_makes_no_key() {
         let (_temp, store, keys) = setup(&[linked()]);
         store.lock();

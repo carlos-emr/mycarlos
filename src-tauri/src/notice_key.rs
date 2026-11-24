@@ -500,9 +500,11 @@ pub(crate) fn kept() -> Option<&'static NoticeKeys<Box<dyn WrapKeyStore>>> {
     KEPT.get()
 }
 
-/// After a vault opens: any other vault's keys go. Nothing makes keys yet,
-/// so nothing is owed to the Portal; their revocation comes with its route
-/// (#87, step 3 of #230).
+/// After a vault opens: every other vault's keys go (`keep_only_vault`). Keys ARE made now
+/// (`VaultStore::sync_notice_keys`), and this wipe does not tell a Portal that a key is finished
+/// (the sync does that, for the open vault's own stale keys, through `tray_notices::sync_keys`), so
+/// the first vault's enrollments are left to lapse on the Portal's side. The several-vaults screen
+/// (#357 PR 5) replaces this with keys kept per vault; a test pins today's behavior until then.
 pub(crate) fn after_open(vault_id: Uuid) {
     if let Some(keys) = kept() {
         let _ = keys.keep_only_vault(vault_id);
@@ -1057,6 +1059,8 @@ mod tests {
         after_open(uuid(1));
         after_open(uuid(2));
         after_reset();
+        // Nothing was made, so no key file was written.
+        assert!(!temp.path().join(FILE_NAME).exists());
         // And a second install does not replace the first.
         install(temp.path());
         assert!(kept().is_some());
