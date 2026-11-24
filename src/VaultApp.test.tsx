@@ -15921,3 +15921,140 @@ describe("the automatic lock and the native deadline, when a video plays or the 
     ).toBeVisible();
   });
 });
+
+// Ben, 24 Nov (Windows): a file picker opened, other sections visited while it was open, and
+// the picker closed with nothing chosen. The library then said "Working…" for good, Add did not
+// work, and after Lock now the Unlock button was greyed. Cancelling at any point must return to idle,
+// and a lock must end whatever the session before it left in flight.
+describe("a file picker that is cancelled, fails, or is left behind never keeps the library working", () => {
+  const unlockedWith = (pickImportFiles: VaultBridge["pickImportFiles"]) =>
+    nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportFiles,
+    });
+  const newButton = () => screen.getByRole("button", { ...IMPORT_BUTTON });
+  const picker = () => {
+    let settle!: (pickId: string | null) => void;
+    let fail!: (error: unknown) => void;
+    const promise = new Promise<string | null>((resolve, reject) => {
+      settle = resolve;
+      fail = reject;
+    });
+    return { promise, settle, fail };
+  };
+
+  it("returns to idle when the picker is cancelled, with the place left as it was", async () => {
+    const user = userEvent.setup();
+    const pick = picker();
+    const bridge = unlockedWith(vi.fn(() => pick.promise));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    expect(screen.getByText(humanText("Working…"))).toBeVisible();
+    await act(async () => pick.settle(null));
+    expect(
+      await screen.findByText(humanText("No files selected. Nothing changed.")),
+    ).toBeVisible();
+    expect(newButton()).toBeEnabled();
+    expect(screen.queryByText(humanText("Working…"))).toBeNull();
+    // And Add works again.
+    vi.mocked(bridge.pickImportFiles).mockResolvedValueOnce("pick-2");
+    await user.click(newButton());
+    await waitFor(() =>
+      expect(bridge.pickImportFiles).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("returns to idle when the picker is cancelled after other sections were visited and left", async () => {
+    const user = userEvent.setup();
+    const pick = picker();
+    const bridge = unlockedWith(vi.fn(() => pick.promise));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    // The picker may not block the window: sections and settings pages are visited meanwhile.
+    for (const section of ["Security", "Preferences", "Shared with me"]) {
+      await user.click(screen.getByRole("button", { name: section }));
+    }
+    await user.click(screen.getByRole("button", { name: /^My records/ }));
+    await act(async () => pick.settle(null));
+    await waitFor(() => expect(newButton()).toBeEnabled());
+    expect(screen.queryByText(humanText("Working…"))).toBeNull();
+  });
+
+  it("returns to idle when the picker itself fails", async () => {
+    const user = userEvent.setup();
+    const pick = picker();
+    const bridge = unlockedWith(vi.fn(() => pick.promise));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    await act(async () =>
+      pick.fail({ code: "storage", message: "FAKE picker failure" }),
+    );
+    await waitFor(() => expect(newButton()).toBeEnabled());
+    expect(screen.queryByText(humanText("Working…"))).toBeNull();
+  });
+
+  it("does not leave Unlock greyed when the vault is locked with a picker still unanswered", async () => {
+    const user = userEvent.setup();
+    const pick = picker();
+    const bridge = unlockedWith(vi.fn(() => pick.promise));
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Security" }));
+    // The picker is never answered; the patient locks the vault.
+    await user.click(windowLock());
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: humanText("Unlock") }),
+    ).toBeEnabled();
+    // The old answer arriving now (cancelled) changes nothing of the unlock screen.
+    await act(async () => pick.settle(null));
+    expect(
+      screen.getByRole("button", { name: humanText("Unlock") }),
+    ).toBeEnabled();
+    // And the patient can unlock and add again.
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await waitFor(() => expect(newButton()).toBeEnabled());
+  });
+
+  it("does not let an old operation's end cancel the working state of a new one", async () => {
+    const user = userEvent.setup();
+    const first = picker();
+    const second = picker();
+    const pickImportFiles = vi
+      .fn<VaultBridge["pickImportFiles"]>()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const bridge = unlockedWith(pickImportFiles);
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(pickImportFiles).toHaveBeenCalledTimes(1));
+    await user.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(pickImportFiles).toHaveBeenCalledTimes(2));
+    // The first session's picker ends while the new one is still open: the new one is still working.
+    await act(async () => first.settle(null));
+    expect(screen.getByText(humanText("Working…"))).toBeVisible();
+    await act(async () => second.settle(null));
+    await waitFor(() => expect(newButton()).toBeEnabled());
+  });
+});
