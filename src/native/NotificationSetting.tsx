@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import { MoreAbout } from "./MoreAbout";
 
 type NoticeStatus = {
   supported: boolean;
@@ -110,8 +111,17 @@ export function NotificationSetting({
               : "notifications.help",
           )}
         </p>
+        {status.automaticChecksSupported && (
+          <>
+            {/* The fact that matters stays in view; the long explanation folds away. */}
+            <p id={`${id}-auto-summary`}>{t("notifications.autoSummary")}</p>
+            <MoreAbout label={t("preferences.moreAutomatic")}>
+              <p id={`${id}-auto-help`}>{t("notifications.autoHelp")}</p>
+            </MoreAbout>
+          </>
+        )}
       </div>
-      <div className="appearance-choice">
+      <div className="appearance-choice preferences-checks">
         <label className="appearance-option">
           <input
             type="checkbox"
@@ -126,7 +136,6 @@ export function NotificationSetting({
         </label>
         {status.automaticChecksSupported && (
           <>
-            <p id={`${id}-auto-help`}>{t("notifications.autoHelp")}</p>
             <label className="appearance-option">
               <input
                 type="checkbox"

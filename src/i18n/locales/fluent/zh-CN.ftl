@@ -2317,3 +2317,15 @@ security-backup-leaveVideosOutHelp = 备份将不包含您的视频。如果您�
 restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它会带回其他所有内容，但您的视频不会在其中。它们会作为缺失的文件列在隐藏文档中。
 security-backup-sizeCalculating = 正在计算备份大小…
 interface-hidden-videoLeftOut = 备份中未包含的视频
+
+
+
+notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
+
+background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
+
+background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动。开启上面的选项后，它会在后台静默启动，您的保险库保持锁定。
+
+preferences-moreAutomatic = 关于自动检查的更多说明
+
+preferences-moreBackground = 关于后台运行的更多说明

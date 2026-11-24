@@ -2535,3 +2535,15 @@ security-backup-leaveVideosOutHelp = The backup will not contain your videos. If
 restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
+
+
+
+notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+
+background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
+
+background-startAtLoginSummary = myCarlos can start when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked.
+
+preferences-moreAutomatic = More about automatic checks
+
+preferences-moreBackground = More about running in the background

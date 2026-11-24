@@ -1206,6 +1206,11 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2678,6 +2683,11 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "notifications.autoSummary": "notifications-autoSummary",
+  "background.keepRunningSummary": "background-keepRunningSummary",
+  "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "preferences.moreAutomatic": "preferences-moreAutomatic",
+  "preferences.moreBackground": "preferences-moreBackground",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4016,6 +4026,11 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "notifications.autoSummary": undefined;
+  "background.keepRunningSummary": undefined;
+  "background.startAtLoginSummary": undefined;
+  "preferences.moreAutomatic": undefined;
+  "preferences.moreBackground": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

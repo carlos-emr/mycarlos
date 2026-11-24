@@ -4951,3 +4951,50 @@ button:disabled,
   margin: 0;
   padding: 14px 20px 6px;
 }
+
+/* Preferences: the tick-box choices read at body size, like the sentences beside them, and a long
+   explanation folds under "More about this" so the key fact stays in view. */
+.native-vault-page .setting-row .preferences-checks .appearance-option {
+  font-size: 1rem;
+}
+.preferences-checks {
+  max-width: 440px;
+}
+.more-about {
+  margin-top: 4px;
+}
+.more-about summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.more-about summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron says it is a control that opens: pointing right when closed, down when open. It is
+   drawn with borders in currentColor, not a text glyph, so it is there in forced-colours mode
+   and in WebView2, which lays the summary out as flex and so drops the browser's own marker. */
+.more-about summary::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.55em;
+  height: 0.55em;
+  margin-inline: 0.2em 0.1em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+.more-about[open] > summary::before {
+  transform: rotate(45deg);
+}
+.more-about summary:focus-visible {
+  outline-offset: 2px;
+}
+.more-about-body p:first-child {
+  margin-top: 2px;
+}
