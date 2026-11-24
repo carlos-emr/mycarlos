@@ -2440,6 +2440,22 @@ impl VaultStore {
         });
     }
 
+    /// The clinic answered this device after a removal was saved: the saved removal ends.
+    /// Best effort and silent, like the marker it clears.
+    pub(crate) fn clear_clinic_removed(&self, link_id: Uuid) {
+        let _ = self.mutate_recorded(|manifest, _entries| {
+            let Some(link) = manifest
+                .portal_links
+                .iter_mut()
+                .find(|l| l.id == link_id && l.clinic_removed_at_ms.is_some())
+            else {
+                return Ok(false);
+            };
+            link.clinic_removed_at_ms = None;
+            Ok(true)
+        });
+    }
+
     /// Drops what this run remembers about a link that is no longer in the vault.
     fn forget_link_state(&self, link_id: Uuid) {
         self.gone_links

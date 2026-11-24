@@ -282,6 +282,21 @@ pub struct LinkSummary {
 }
 
 impl StoredLink {
+    /// Whether this link, as a caller read it, is still among `links`. The two saved flags (checks
+    /// stopped, clinic removed) are changed by the app itself while a check is under way, so a
+    /// copy read before that change still counts; any other difference (a replaced link, other
+    /// keys) does not.
+    pub fn is_held_in(&self, links: &[StoredLink]) -> bool {
+        links.iter().any(|held| {
+            held.id == self.id && {
+                let mut held = held.clone();
+                held.stopped_at_ms = self.stopped_at_ms;
+                held.clinic_removed_at_ms = self.clinic_removed_at_ms;
+                held == *self
+            }
+        })
+    }
+
     pub fn pending(
         portal: &str,
         device_name: &str,

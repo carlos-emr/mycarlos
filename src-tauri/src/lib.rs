@@ -3655,11 +3655,12 @@ async fn vault_portal_remove_link(
 
 #[tauri::command]
 async fn vault_portal_stop_checking_link(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
     link_id: Uuid,
 ) -> CommandResult<()> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.stop_checking_portal_link(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
@@ -3669,10 +3670,11 @@ async fn vault_portal_stop_checking_link(
 /// Removes every incomplete attempt (#160); returns how many.
 #[tauri::command]
 async fn vault_portal_remove_incomplete_links(
-    store: State<'_, Arc<VaultStore>>,
+    store: State<'_, StoreHandle>,
 ) -> CommandResult<usize> {
+    let store = store.pin();
     let session = store.portal_link_ticket();
-    let store = Arc::clone(store.inner());
+    let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.remove_incomplete_portal_links(session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?

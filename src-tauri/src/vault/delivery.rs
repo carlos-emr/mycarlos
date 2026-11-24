@@ -29,7 +29,7 @@ impl VaultStore {
             let open = guard.as_ref()?;
             if self.portal_link_ticket() != session
                 || open.recovery.is_some()
-                || !open.manifest.portal_links.contains(link)
+                || !link.is_held_in(&open.manifest.portal_links)
             {
                 return None;
             }
@@ -431,7 +431,7 @@ impl VaultStore {
         if self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
-        if !open.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&open.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let head = wire::head_bytes(&open.manifest.history.head).ok_or(VaultError::Corrupt)?;
@@ -465,7 +465,7 @@ impl VaultStore {
         if open.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !open.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&open.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
@@ -532,7 +532,7 @@ impl VaultStore {
         if open.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !open.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&open.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
@@ -623,7 +623,7 @@ impl VaultStore {
             if stop() || self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
-            if !manifest.portal_links.contains(link) {
+            if !link.is_held_in(&manifest.portal_links) {
                 return Err(VaultError::Invalid);
             }
             let record = manifest
@@ -710,7 +710,7 @@ impl VaultStore {
         if self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         Ok(crate::reading_aid::listed(
@@ -751,7 +751,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let others = unlocked
@@ -894,7 +894,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let mut out = WaitingRecheck::default();
@@ -1122,7 +1122,7 @@ impl VaultStore {
             if self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
-            if !manifest.portal_links.contains(link) {
+            if !link.is_held_in(&manifest.portal_links) {
                 return Err(VaultError::Invalid);
             }
             let record = manifest
@@ -1498,7 +1498,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         if let Some(record) = unlocked.manifest.records.iter().find(|r| {

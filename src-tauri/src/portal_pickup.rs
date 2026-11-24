@@ -314,8 +314,9 @@ where
         if original.stopped_at_ms.is_some() {
             continue;
         }
-        // The same, saved: a real 403 `portal_device_removed` found it gone in an earlier run.
-        if store.link_gone(original.id) || original.clinic_removed_at_ms.is_some() {
+        // A saved removal (#160) is shown without a request, but a check still asks once per run:
+        // the clinic may have taken the device back, and the receipts it owes are retried.
+        if store.link_gone(original.id) {
             add_issue(
                 &mut result,
                 &original,
@@ -569,6 +570,8 @@ where
         })();
         match outcome {
             Ok(()) => {
+                // The clinic answered this device: a removal saved earlier no longer holds.
+                store.clear_clinic_removed(original.id);
                 answered.insert(original.portal_base.clone());
             }
             Err(error) => {
