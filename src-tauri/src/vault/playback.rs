@@ -378,11 +378,15 @@ impl VaultStore {
         // session first, then the tokens).
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        // A hidden person's video is not played by its id any more than it is listed (#360): the
+        // answer is the one a record the vault does not have gets.
         let record = unlocked
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         if unlocked.unavailable.contains(&record.id) {
             return Err(VaultError::Corrupt);
@@ -434,6 +438,15 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|_, session| session.record_id != record_id);
+    }
+
+    /// Ends every playback of any of these records: hiding a person ends the videos that are
+    /// playing from their documents (#360).
+    pub(super) fn end_playback_for_records(&self, record_ids: &[Uuid]) {
+        self.playback
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|_, session| !record_ids.contains(&session.record_id));
     }
 
     /// Ends every playback and drops their keys: the lock, a reset and a dropped
@@ -810,6 +823,76 @@ mod tests {
             ),
             Err(PlaybackRefusal::Unreadable)
         );
+    }
+
+    /// Hiding a person (#360) takes their videos out of reach by id as well as out of the lists:
+    /// playing one, or asking how it was added, answers as for a record the vault does not have,
+    /// until the person is restored.
+    #[test]
+    fn a_hidden_persons_video_is_not_played_or_asked_about_by_its_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, _) = stored_video(temp.path(), 2, 100_000);
+        let person = store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .find(|r| r.id == record)
+            .unwrap()
+            .profile_id;
+        // A person must stay visible.
+        store.create_profile("FAKE Other Person", 7).unwrap();
+        assert!(store.playback_open(record).is_ok());
+        assert!(store.added_with_camera(record).unwrap());
+        store.hide_profile(person, 8).unwrap();
+        assert!(matches!(
+            store.playback_open(record),
+            Err(VaultError::NotFound)
+        ));
+        assert!(matches!(
+            store.added_with_camera(record),
+            Err(VaultError::NotFound)
+        ));
+        store.restore_profile(person).unwrap();
+        assert!(store.playback_open(record).is_ok());
+        assert!(store.added_with_camera(record).unwrap());
+    }
+
+    /// Hiding a person ends the videos already playing from their documents, as hiding a single
+    /// document does: a token opened before the hide serves nothing after it, and restoring the person
+    /// does not bring the old token back (#360).
+    #[test]
+    fn hiding_a_person_ends_the_playback_already_open_from_their_video() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, _) = stored_video(temp.path(), 2, 100_000);
+        let person = store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .find(|r| r.id == record)
+            .unwrap()
+            .profile_id;
+        store.create_profile("FAKE Other Person", 7).unwrap();
+        let opened = store.playback_open(record).unwrap();
+        assert_eq!(
+            serve(&store, &opened.token, Some("bytes=0-99"))
+                .unwrap()
+                .status,
+            206
+        );
+        store.hide_profile(person, 8).unwrap();
+        assert!(matches!(
+            serve(&store, &opened.token, Some("bytes=0-99")),
+            Err(PlaybackRefusal::UnknownToken)
+        ));
+        store.restore_profile(person).unwrap();
+        assert!(matches!(
+            serve(&store, &opened.token, Some("bytes=0-99")),
+            Err(PlaybackRefusal::UnknownToken)
+        ));
+        // A new open works again.
+        assert!(store.playback_open(record).is_ok());
     }
 
     #[test]
