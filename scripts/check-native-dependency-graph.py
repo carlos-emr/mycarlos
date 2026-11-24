@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # First-party plugin crates whose entire source is reviewed in this repository.
-FIRST_PARTY = {"tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml"}
+FIRST_PARTY = {
+    "tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml",
+    "tauri-plugin-ios-push": "src-tauri/ios-push/Cargo.toml",
+}
 
 
 def validate_metadata(metadata):
@@ -49,7 +52,7 @@ def main():
         "--manifest-path", str(ROOT / "src-tauri/Cargo.toml"),
     ], text=True))
     validate_metadata(metadata)
-    print("All-target graph selects upstream Tauri, the reviewed glib, wry and single-instance patches, and the first-party Android plugin")
+    print("All-target graph selects upstream Tauri, the reviewed glib, wry and single-instance patches, and the first-party Android and iPhone plugins")
 
 
 if __name__ == "__main__":

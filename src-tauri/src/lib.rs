@@ -7628,6 +7628,8 @@ pub fn run() {
     };
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_pdf::init());
+    #[cfg(target_os = "ios")]
+    let builder = builder.plugin(tauri_plugin_ios_push::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
