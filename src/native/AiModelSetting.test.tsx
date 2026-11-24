@@ -2241,3 +2241,203 @@ describe("Loading the chosen model once (D218)", () => {
     );
   });
 });
+
+describe("What the model setting does when the native side refuses or does not answer", () => {
+  const second: AcceptedModel = {
+    ...fake,
+    name: "FAKE second",
+    fileName: "fake-second.gguf",
+    sha256: "4".repeat(64),
+    sourceUrl: "https://example.invalid/fake-second.gguf",
+  };
+  const twoInstalled = (): ModelRow[] =>
+    [fake, second].map((model, index) => ({
+      index,
+      model,
+      state: "installed" as const,
+      inUse: index === 0,
+      addedByYou: false,
+    }));
+  const alertText = async () =>
+    visibleText((await screen.findByRole("alert")).textContent ?? "");
+
+  it("does not say the address was copied when the clipboard refuses", async () => {
+    answer({ ai_model_catalog: [fake] });
+    const writeText = vi.fn().mockRejectedValue(new Error("FAKE blocked"));
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    try {
+      render(
+        <AiModelSetting
+          status={{ state: "notInstalled" }}
+          onStatus={vi.fn()}
+        />,
+      );
+      await userEvent.click(
+        await screen.findByRole("button", { name: humanText("Copy address") }),
+      );
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+      await act(async () => undefined);
+      expect(screen.queryByText(humanText("Address copied"))).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows a model's own notices under its row, and an address that is not a web address as it is", async () => {
+    answer({
+      ai_model_catalog: [
+        {
+          ...fake,
+          notices: ["FAKE notice: read the licence first."],
+          sourceUrl: "not a web address",
+        },
+      ],
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    expect(
+      await screen.findByText("FAKE notice: read the licence first."),
+    ).toBeVisible();
+    // The note beside Download names where it comes from; with no host to read, the address.
+    expect(
+      screen.getByText(
+        humanText(
+          /Downloads one file \(2,500 MB\), once, from not a web address,/,
+        ),
+      ),
+    ).toBeVisible();
+  });
+
+  it("keeps the model when Remove is cancelled at the question", async () => {
+    answer({ ai_model_catalog: [fake] }, installed);
+    render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Remove / }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(native.invoke).not.toHaveBeenCalledWith(
+      "ai_model_remove",
+      expect.anything(),
+    );
+    expect(screen.getByRole("radio", { name: "FAKE model" })).toBeChecked();
+  });
+
+  it("says the model could not be saved when a switch fails for any reason but a busy helper", async () => {
+    answer({
+      ai_models: twoInstalled(),
+      ai_model_use: () => Promise.reject(new Error("FAKE disk")),
+    });
+    render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("radio", { name: second.name }),
+    );
+    expect(await alertText()).toBe(
+      "The model could not be saved on this device.",
+    );
+    expect(screen.getByRole("radio", { name: fake.name })).toBeChecked();
+  });
+
+  it.each([
+    [
+      "ram",
+      "This device does not have enough memory for the AI helper (it needs about 8 GB).",
+    ],
+    ["cpu", "This device’s processor is not supported by the AI helper."],
+    ["platform", "The AI helper is not available on this kind of device yet."],
+  ] as const)(
+    "says why when adding a file is refused as unsupported here (%s)",
+    async (reason, text) => {
+      answer({
+        ai_model_catalog: [fake],
+        ai_model_add_picked: { outcome: "unsupported", reason },
+      });
+      render(
+        <AiModelSetting
+          status={{ state: "notInstalled" }}
+          onStatus={vi.fn()}
+        />,
+      );
+      await userEvent.click(
+        await screen.findByRole("button", {
+          name: humanText("Add a model file…"),
+        }),
+      );
+      expect(await alertText()).toBe(text);
+    },
+  );
+
+  it("offers a retry when the model list is not a list", async () => {
+    answer({ ai_models: () => Promise.resolve({ not: "a list" }) });
+    render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+    expect(await alertText()).toBe(
+      "The model list could not be read. Try again.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Read the model list again" }),
+    ).toBeEnabled();
+  });
+
+  it("lists the models when their limits cannot be read", async () => {
+    answer({
+      ai_models: twoInstalled(),
+      ai_model_limits: () => Promise.reject(new Error("FAKE no limits")),
+    });
+    render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+    expect(
+      await screen.findByRole("radio", { name: second.name }),
+    ).toBeVisible();
+    await act(async () => undefined);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("treats a load check that cannot be asked as skipped: no note, no error", async () => {
+    answer({
+      ai_models: twoInstalled(),
+      ai_model_use: {
+        state: "installed",
+        model: { name: second.name, sha256: second.sha256 },
+      },
+      ai_model_check: () => Promise.reject(new Error("FAKE no check")),
+    });
+    render(<AiModelSetting status={installed} onStatus={vi.fn()} />);
+    await userEvent.click(
+      await screen.findByRole("radio", { name: second.name }),
+    );
+    await waitFor(() =>
+      expect(native.invoke).toHaveBeenCalledWith("ai_model_check", {
+        request: { index: 1 },
+      }),
+    );
+    await act(async () => undefined);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.queryByText("Checking that this model runs on this computer…"),
+    ).toBeNull();
+    expect(
+      screen.queryByText("This model started on this computer."),
+    ).toBeNull();
+  });
+
+  it("says the helper is busy when a download is refused as busy and the running copy cannot be asked about", async () => {
+    answer({
+      ai_model_catalog: [fake],
+      ai_model_download: { outcome: "busy" },
+      ai_model_add_active: () => Promise.reject(new Error("FAKE no answer")),
+    });
+    render(
+      <AiModelSetting status={{ state: "notInstalled" }} onStatus={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /^Download / }),
+    );
+    expect(await alertText()).toBe(
+      "The AI helper is working. Try again when it has finished.",
+    );
+  });
+});

@@ -906,6 +906,33 @@ function stopHere(scope: string): StopResult {
   return { kind: "stop", label, problems };
 }
 
+/** What Chromium says when it is asked for a screenshot it cannot make just yet. */
+const CAPTURE_REFUSED = /Unable to capture screenshot/;
+
+/**
+ * A clip screenshot, asked again (twice at most, after a short real wait) when the browser
+ * answers that it cannot capture one: on a busy machine a page that has only just been set up
+ * sometimes has no frame yet (the 24 Nov run of main dd05036e). Any other error is the test's
+ * real answer and is thrown at once, as is the same refusal after the last try. The wait is
+ * real time, not animation frames, which page.clock fakes.
+ */
+export async function screenshotClip(
+  page: Pick<Page, "screenshot">,
+  clip: { x: number; y: number; width: number; height: number },
+  { tries = 3, waitMs = 200 }: { tries?: number; waitMs?: number } = {},
+): Promise<Buffer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await page.screenshot({ clip, animations: "disabled" });
+    } catch (error) {
+      const refused =
+        error instanceof Error && CAPTURE_REFUSED.test(error.message);
+      if (!refused || attempt >= tries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, waitMs * attempt));
+    }
+  }
+}
+
 /**
  * Whether the focused element shows its focus: the pixels in and around it
  * differ with and without focus. "Around it" takes in a wrapper that fits
@@ -941,13 +968,13 @@ async function focusShown(page: Page): Promise<boolean> {
   };
   if (clip.width <= 0 || clip.height <= 0) return false;
   const pair = async () => {
-    const focused = await page.screenshot({ clip, animations: "disabled" });
+    const focused = await screenshotClip(page, clip);
     await page.evaluate(() => {
       const element = document.activeElement as HTMLElement;
       Reflect.set(window, "__walkBlurred", element);
       element.blur();
     });
-    const plain = await page.screenshot({ clip, animations: "disabled" });
+    const plain = await screenshotClip(page, clip);
     await page.evaluate(() =>
       (Reflect.get(window, "__walkBlurred") as HTMLElement).focus(),
     );

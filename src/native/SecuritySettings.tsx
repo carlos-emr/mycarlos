@@ -15,7 +15,12 @@ import {
   inDialogHost,
   trimmedDetails,
 } from "./PersonDetails";
-import type { BackupSize, PatientProfile, PersonDetails } from "../vault";
+import type {
+  BackupSize,
+  HiddenProfile,
+  PatientProfile,
+  PersonDetails,
+} from "../vault";
 import { SecretInput } from "./SecretInput";
 import { SpokenCount } from "./SpokenCount";
 import {
@@ -42,6 +47,7 @@ import {
 } from "./recordPresentation";
 import { MIN_PASSPHRASE_CHARS, tooShortPassphrase } from "./VaultAuth";
 import { KeyLabel, printedDate } from "./KeyLabel";
+import { HiddenPeopleList, HidePersonButton } from "./HiddenPeople";
 import type { OldBackupsGuide } from "./oldBackups";
 import { formatBackupSize, formatFileSize } from "./recordPresentation";
 
@@ -86,6 +92,20 @@ interface SecuritySettingsProps {
   /** How big a backup would be (#359), so that the patient sees it before
    * choosing where to save it. */
   onBackupSize?: () => Promise<BackupSize>;
+  /** Hand a person's records over (#360); offered when there is a person to hand over. */
+  onHandOver?: () => void;
+  /** Moved on each time the Hand records over button should take the focus once the library is
+   * no longer busy: after a handover dialog closed and hid the person it handed over, the button
+   * was disabled while focus came back to it. */
+  focusHandover?: number;
+  /** Add a person from a handover file (#360). */
+  onAddFromFile?: () => void;
+  /** Hide a whole person, bring one back, and the people who are hidden (#360). */
+  hiddenPeople?: HiddenProfile[];
+  onHidePerson?: (profileId: string) => void;
+  onRestorePerson?: (profileId: string) => void;
+  /** Hand a hidden person's records over. */
+  onHandOverHidden?: (person: HiddenProfile) => void;
   onSpeedTest: () => Promise<SpeedTestReport>;
   /** Whether to show the speed test, for testers. Only a development build
    * does by default: not Evaluation or release builds. */
@@ -175,6 +195,10 @@ function newBackupText(
 }
 
 export function SecuritySettings({
+  hiddenPeople,
+  onHidePerson,
+  onRestorePerson,
+  onHandOverHidden,
   clinicDocuments,
   busy,
   readOnly,
@@ -201,6 +225,9 @@ export function SecuritySettings({
   sizesIn1024s = false,
   onSetUpRecoveryKey,
   onSaveBackup,
+  onHandOver,
+  focusHandover = 0,
+  onAddFromFile,
   onBackupSize,
   onSpeedTest,
   showSpeedTest = speedTestShownByBuild(),
@@ -214,6 +241,23 @@ export function SecuritySettings({
     if (focusBackup) saveBackupRef.current?.focus();
   }, [focusBackup]);
   // The size a backup would be, with or without the videos (#359).
+  // The button that opened the handover takes the focus back once a hide that came from its dialog
+  // has finished (it is disabled while the library is busy).
+  const handoverRef = useRef<HTMLButtonElement | null>(null);
+  // Starts at the value the screen opened with, so a count that was already acted on (the focus
+  // went back to the button before the person left Security) does not move focus again when
+  // Security is entered afresh.
+  const handoverFocused = useRef(focusHandover);
+  useEffect(() => {
+    if (
+      focusHandover === 0 ||
+      busy ||
+      handoverFocused.current === focusHandover
+    )
+      return;
+    handoverFocused.current = focusHandover;
+    handoverRef.current?.focus();
+  }, [focusHandover, busy]);
   const [leaveVideosOut, setLeaveVideosOut] = useState(false);
   const [backupSize, setBackupSize] = useState<BackupSize | null>(null);
   const [sizePending, setSizePending] = useState(Boolean(onBackupSize));
@@ -556,6 +600,17 @@ export function SecuritySettings({
                 )}
               </>
             )}
+            <p>
+              <button
+                ref={saveBackupRef}
+                className="button"
+                type="button"
+                disabled={busy || readOnly}
+                onClick={() => void onSaveBackup(leaveVideosOut)}
+              >
+                {translateNow("security.backup.save")}
+              </button>
+            </p>
             {oldBackupsGuide && (
               <section
                 className="old-backups-guide"
@@ -607,17 +662,6 @@ export function SecuritySettings({
                 )}
               </section>
             )}
-          </div>
-          <div>
-            <button
-              ref={saveBackupRef}
-              className="button"
-              type="button"
-              disabled={busy || readOnly}
-              onClick={() => void onSaveBackup(leaveVideosOut)}
-            >
-              {translateNow("security.backup.save")}
-            </button>
           </div>
         </section>
         <section className="setting-row native-setting-form">
@@ -680,6 +724,28 @@ export function SecuritySettings({
               dialogHost={dialogHost}
               onDialogChange={onDialogChange}
               refusalText={notice}
+              actions={
+                onHidePerson
+                  ? (person) => (
+                      <HidePersonButton
+                        person={person}
+                        onlyOne={people.length <= 1}
+                        busy={busy}
+                        readOnly={readOnly}
+                        onHide={onHidePerson}
+                      />
+                    )
+                  : undefined
+              }
+            />
+          )}
+          {onRestorePerson && (
+            <HiddenPeopleList
+              hidden={hiddenPeople ?? []}
+              busy={busy}
+              readOnly={readOnly}
+              onRestore={onRestorePerson}
+              onHandOver={onHandOverHidden}
             />
           )}
           {addOpen &&
@@ -755,6 +821,41 @@ export function SecuritySettings({
               dialogHost,
             )}
         </section>
+        {/* After the people and the hidden people: handing a person's records over is about them, so it
+            sits at the end of the settings, not between the backup and the lock. */}
+        {(onHandOver || onAddFromFile) && (
+          <section className="setting-row native-handover-settings">
+            <div>
+              <h2>{translateNow("handover.section.title")}</h2>
+              <p>{translateNow("handover.section.body")}</p>
+            </div>
+            <div>
+              {onHandOver && (
+                <button
+                  ref={handoverRef}
+                  className="button"
+                  type="button"
+                  aria-haspopup="dialog"
+                  disabled={busy || readOnly || people.length === 0}
+                  onClick={onHandOver}
+                >
+                  {translateNow("handover.export.button")}
+                </button>
+              )}
+              {onAddFromFile && (
+                <button
+                  className="button"
+                  type="button"
+                  aria-haspopup="dialog"
+                  disabled={busy || readOnly}
+                  onClick={onAddFromFile}
+                >
+                  {translateNow("handover.import.button")}
+                </button>
+              )}
+            </div>
+          </section>
+        )}
         {/* #71: the privacy notice says what is kept. */}
         <section
           className="setting-row kept-setting"
