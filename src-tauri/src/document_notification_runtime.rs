@@ -108,7 +108,9 @@ pub(crate) mod active {
     /// could be noticed again if it were verified again, which is bounded and harmless.
     const MAX_EVENTS: usize = 512;
 
-    /// What the operating system said when asked whether this app may show notices.
+    /// What the operating system said when asked whether this app may show notices. Only the
+    /// Windows backend asks (and the tests): elsewhere there is no notice to ask about.
+    #[cfg(any(test, windows))]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(crate) enum OsSetting {
         Enabled,
@@ -120,6 +122,7 @@ pub(crate) mod active {
     }
 
     /// How an answer reads. Only a definite "disabled" blocks: a failed question is "not yet asked".
+    #[cfg(any(test, windows))]
     pub(crate) fn permission_for(setting: OsSetting) -> Permission {
         match setting {
             OsSetting::Enabled => Permission::Allowed,
@@ -129,6 +132,7 @@ pub(crate) mod active {
     }
 
     /// Whether a notice may be tried now: yes unless the system said it is disabled.
+    #[cfg(any(test, windows))]
     pub(crate) fn may_show(setting: OsSetting) -> bool {
         permission_for(setting) != Permission::Blocked
     }
@@ -1400,8 +1404,19 @@ pub(crate) mod active {
                 Permission::Unavailable,
             ] {
                 let temp = tempfile::tempdir().unwrap();
+                if permission == Permission::Unavailable {
+                    // Where no notice can be shown the switch cannot be turned on, but a saved
+                    // file (from another build, or a roaming profile) can still say it is on.
+                    fs::write(
+                        temp.path().join("state.json"),
+                        br#"{"version":2,"enabled":true,"events":[],"automatic_checks_enabled":false,"automatic_consent_version":0}"#,
+                    )
+                    .unwrap();
+                }
                 let (runtime, shown) = test_runtime(temp.path(), permission, false);
-                runtime.set_enabled(true).ok().unwrap();
+                if permission != Permission::Unavailable {
+                    runtime.set_enabled(true).ok().unwrap();
+                }
                 let device = "A".repeat(43);
                 runtime.arrived(
                     Uuid::new_v4(),

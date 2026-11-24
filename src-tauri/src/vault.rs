@@ -1495,13 +1495,14 @@ impl VaultStore {
     /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
     /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
     /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
-    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
-    /// there is nothing to run).
+    /// while this vault is unlocked and its owner turned automatic checks on (desktop; a phone has
+    /// no worker). The notice at the end of a check goes through the runtime, which on a system
+    /// with no notices records nothing.
     pub(crate) fn document_tick(&self) -> bool {
         if self.collection.is_shutdown() {
             return false;
         }
-        #[cfg(windows)]
+        #[cfg(desktop)]
         self.automatic_document_tick();
         true
     }
@@ -1522,7 +1523,7 @@ impl VaultStore {
         }
     }
 
-    #[cfg(windows)]
+    #[cfg(desktop)]
     fn automatic_document_tick(&self) {
         if !self.automatic_collection_allowed() {
             return;
