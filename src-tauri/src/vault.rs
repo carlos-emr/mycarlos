@@ -97,8 +97,8 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// a newer manifest.
 /// Format 13 (previous full names) follows 12 (remembered refusals, #143). Its number was
 /// taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"); the numbers
-/// after it are the profile handover's 14 and hiding a person's 15 (#360), the cloud AI key
-/// draft's 16 (#389) and #418's 17. A renumber changes this
+/// after it are the profile handover's 14 and hiding a person's 15 (#360), link removal's 16
+/// (#160), the cloud AI key draft's 17 (#389) and #418's 18. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 /// Format 14 (provisional, #360) is the profile handover: a profile can be hidden, can say
@@ -18633,6 +18633,8 @@ mod tests {
             // Previous full names, format 13: the last before the profile
             // handover (14, #360).
             MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
+            // The profile handover, format 14: the last before hiding a person (15).
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
             // Hiding a person, format 15: the last before link removal (16, #160).
             MANIFEST_FORMAT_HIDDEN_PROFILES,
         ] {

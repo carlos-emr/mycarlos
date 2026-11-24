@@ -1335,7 +1335,7 @@ A format 1–13 vault opens with none of these and upgrades with its state uncha
 
 ## Format 15 (provisional): hiding a whole person (#360 PR 7)
 
-This build understands manifest formats 1–15. **The number is provisional** and is taken at merge, with no gap (see "Format numbers are taken at merge"). A renumber changes `MANIFEST_FORMAT_HIDDEN_PROFILES` in `vault.rs` (`HIDDEN_PROFILES_FORMAT` and `VAULT_FORMAT` use it), this heading and the tests that name 14 and 15. A vault at 14 or lower upgrades at its next writable unlock in a commit of its own, like any older one, with its state unchanged; an older myCarlos refuses 15 as newer, so none can read a vault that has a hidden person and list that person.
+This build understands manifest formats 1–15. **The number is provisional** and is taken at merge, with no gap (see "Format numbers are taken at merge"). A renumber changes `MANIFEST_FORMAT_HIDDEN_PROFILES` in `vault.rs` (`HIDDEN_PROFILES_FORMAT` uses it), this heading and the tests that name 14 and 15. A vault at 14 or lower upgrades at its next writable unlock in a commit of its own, like any older one, with its state unchanged; an older myCarlos refuses 15 as newer, so none can read a vault that has a hidden person and list that person.
 
 Format 15 adds one thing: **`hidden` on a profile** (the same `{atMs, reason}` a document has; the reason is `patient`, never `damaged`). It is forbidden below 15, never on Shared with me, and a manifest in which every person (Shared with me is a holding folder, not a person) is hidden is refused: the last visible person cannot be hidden.
 
