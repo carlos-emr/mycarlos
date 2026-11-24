@@ -1029,13 +1029,15 @@ mod tests {
         registry.add_extra("Mum").unwrap();
         let first = registry.to_bytes();
         let second = registry.to_bytes();
-        let text = String::from_utf8_lossy(&first).to_lowercase();
+        let end = HEADER_BYTES + u32::from_be_bytes(first[10..14].try_into().unwrap()) as usize;
+        // Only the content is read for names: the padding is random bytes, which can spell a short
+        // name by chance (this test failed once in CI-like runs on "ana").
+        let text = String::from_utf8_lossy(&first[..end]).to_lowercase();
         for name in ["ana", "lopez", "mum"] {
             assert!(!text.contains(name), "{name}");
         }
         // Same registry, same content, different padding: padding is not a pattern to read.
         assert_ne!(first, second);
-        let end = HEADER_BYTES + u32::from_be_bytes(first[10..14].try_into().unwrap()) as usize;
         assert_eq!(first[..end], second[..end]);
     }
 

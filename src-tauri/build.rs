@@ -124,6 +124,7 @@ fn main() {
             "vault_create",
             "vault_unlock",
             "vault_unlock_named",
+            "vault_add_vault",
             "vault_lock",
             "vault_touch",
             "vault_set_auto_lock",

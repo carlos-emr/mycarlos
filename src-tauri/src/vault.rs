@@ -254,6 +254,25 @@ thread_local! {
         const { std::cell::Cell::new(&[]) };
 }
 
+/// Makes the named boundaries fail on this thread until dropped (for tests in other modules).
+#[cfg(test)]
+pub(crate) struct FailAtForTest;
+
+#[cfg(test)]
+impl FailAtForTest {
+    pub(crate) fn boundary(names: &'static [&'static str]) -> FailAtForTest {
+        FAIL_AT_TEST_BOUNDARY.set(names);
+        FailAtForTest
+    }
+}
+
+#[cfg(test)]
+impl Drop for FailAtForTest {
+    fn drop(&mut self) {
+        FAIL_AT_TEST_BOUNDARY.set(&[]);
+    }
+}
+
 #[cfg(test)]
 fn fail_at_test_boundary(boundary: &str) -> Result<(), VaultError> {
     if FAIL_AT_TEST_BOUNDARY.get().contains(&boundary)
@@ -4908,6 +4927,16 @@ pub struct PassphraseRules {
     pub long_enough: bool,
     pub not_a_name: bool,
     pub hard_to_guess: bool,
+}
+
+/// What `create` refuses before it writes anything, asked ahead of time so that a vault whose
+/// passphrase or first person's name would be refused is never registered (#357 4c).
+pub(crate) fn check_new_vault_inputs(
+    passphrase: &str,
+    initial_profile: &str,
+) -> Result<(), VaultError> {
+    validate_person_name(initial_profile)?;
+    validate_new_passphrase(passphrase, &[initial_profile])
 }
 
 fn validate_new_passphrase(passphrase: &str, context: &[&str]) -> Result<(), VaultError> {

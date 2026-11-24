@@ -698,6 +698,23 @@ struct PassphraseRequest {
     passphrase: String,
 }
 
+/// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddVaultRequest {
+    name: String,
+    passphrase: String,
+    initial_profile_name: String,
+}
+
+// Wiped however the command ends, including a request refused before it runs.
+impl Drop for AddVaultRequest {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.passphrase.zeroize();
+    }
+}
+
 /// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
 #[derive(Deserialize)]
 struct NamedPassphraseRequest {
@@ -2946,7 +2963,7 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
-        forget_vault(throttle.inner()).await;
+        forget_vault(throttle.inner(), store.arc(), store.all()).await;
         refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     }
     created
@@ -4138,11 +4155,33 @@ async fn tried<T>(
     result
 }
 
-/// The vault the counts were about is gone or replaced: its counts go too.
-async fn forget_vault(throttle: &Arc<AttemptThrottle>) {
+/// The vault the counts were about is gone or replaced: its counts go too, **but only when it was
+/// the only vault on the device** (#357 4c). With several vaults the counts are about the device,
+/// not about one vault: a vault made, set aside or restored while another exists must not be a way
+/// to start the counter again. A vault that cannot be read is taken to exist, so a doubt leaves the
+/// counts as they were.
+async fn forget_vault(
+    throttle: &Arc<AttemptThrottle>,
+    this: &Arc<VaultStore>,
+    all: Vec<Arc<VaultStore>>,
+) {
+    let this = Arc::clone(this);
+    let alone = tauri::async_runtime::spawn_blocking(move || !other_vault_exists(&this, &all))
+        .await
+        .unwrap_or(false);
+    if !alone {
+        return;
+    }
     let now = now_ms();
     // A clear lost to a failed thread leaves the counts as they were.
     let _ = on_throttle(throttle, move |throttle| throttle.forget_vault(now)).await;
+}
+
+/// Whether any vault of the device other than `this` exists (or cannot be told not to).
+fn other_vault_exists(this: &Arc<VaultStore>, all: &[Arc<VaultStore>]) -> bool {
+    all.iter()
+        .filter(|other| !Arc::ptr_eq(other, this))
+        .any(|other| !matches!(other.status(), Ok(VaultStatus::Absent)))
 }
 
 /// Runs `work` on the throttle away from the async runtime, as it reads and
@@ -4470,7 +4509,7 @@ async fn vault_restore(
     .await
     .map_err(PublicError::of_restore)?;
     // The vault the counts were about is replaced, or there was none.
-    forget_vault(throttle.inner()).await;
+    forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
 }
 
@@ -6294,6 +6333,60 @@ async fn vault_unlock_named(
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
+/// Add a vault (#357 4c). The name is what the owner will type to find it, the passphrase opens it
+/// and the profile name is its first person; the registry entry is written first and the vault second
+/// (`VaultSlots::add_vault`), and the new vault becomes the one the screen is on. An add is not a
+/// guess, so it is not counted on the device-wide counter, but it is refused while a wait is running:
+/// a screen the device has locked out must not be a way to make vaults. Adding never clears the
+/// counter (the counts are about the device). Not granted to the renderer until the screen for
+/// several vaults exists (PR 5). A refusal after the vault was made (the window was closed to the
+/// tray meanwhile, or the old vault began something while the new one was made) leaves the new vault
+/// registered and locked: the screen must say it was already added, not offer to add it again.
+#[tauri::command]
+async fn vault_add_vault(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: AddVaultRequest,
+) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    // As `vault_create` and `vault_unlock`: an add that finishes after the window was closed to the
+    // tray is closed again and refused (#206), or the new vault would open in a window nobody sees.
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
+    let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let now = now_ms();
+    if let Some(left) = on_throttle(throttle.inner(), move |throttle| {
+        throttle.wait(Attempt::Unlock, now)
+    })
+    .await?
+    {
+        return Err(PublicError::wait(left));
+    }
+    let vaults = store.clone();
+    let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
+    let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+    let profile = std::mem::take(&mut request.initial_profile_name);
+    drop(request);
+    let opened = tauri::async_runtime::spawn_blocking(move || {
+        vaults
+            .add_vault(&name, &passphrase, &profile, now_ms(), || {
+                stop_work_for_switch(&picks, &received)
+            })
+            // As `vault_create`: a pick that read the old session passes no check in the new one.
+            .inspect(|_| picks.clear())
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(PublicError::from)?;
+    // The vault is made and stays registered; it is locked again and the screen is told no.
+    refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
+    after_open(&opened);
+    run_blocking(&opened, VaultStore::snapshot).await
+}
+
 #[tauri::command]
 async fn vault_unlock_pdf(
     store: State<'_, StoreHandle>,
@@ -6474,7 +6567,7 @@ async fn vault_reset(
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
-    forget_vault(throttle.inner()).await;
+    forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
 }
 
@@ -6878,6 +6971,7 @@ pub fn run() {
             vault_create,
             vault_unlock,
             vault_unlock_named,
+            vault_add_vault,
             vault_lock,
             vault_touch,
             vault_set_auto_lock,
@@ -7460,7 +7554,7 @@ mod tests {
             (
                 "async fn vault_create(",
                 concat!(
-                    "if created.is_ok() { forget_vault(throttle.inner()).await; ",
+                    "if created.is_ok() { forget_vault(throttle.inner(), store.arc(), store.all()).await; ",
                     "refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?; }",
                 ),
             ),
@@ -7469,12 +7563,12 @@ mod tests {
                 concat!(
                     "VaultStore::reset).await?; ",
                     "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
-                    "forget_vault(throttle.inner()).await; Ok(true)",
+                    "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
             (
                 "async fn vault_restore(",
-                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner()).await; Ok(true)",
+                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
             ),
         ] {
             let body = source.split(command).nth(1).unwrap();
@@ -7500,7 +7594,53 @@ mod tests {
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
         let restore = &restore[..restore.find("\n}\n").unwrap()];
-        assert!(restore.ends_with("forget_vault(throttle.inner()).await;\n    Ok(true)"));
+        assert!(restore.ends_with(
+            "forget_vault(throttle.inner(), store.arc(), store.all()).await;\n    Ok(true)"
+        ));
+    }
+
+    /// Every command that opens a vault the owner cannot yet see closes it again if the window was
+    /// closed to the tray while it worked (#206): `started` is taken before any work and the refusal
+    /// comes after it and before the screen is given the vault. (`vault_unlock_named` is the same
+    /// gap and is listed in the PR that fixes it.)
+    #[test]
+    fn adding_a_vault_is_refused_when_the_window_was_closed_to_the_tray_meanwhile() {
+        let source = include_str!("lib.rs");
+        let body = source.split("async fn vault_add_vault(").nth(1).unwrap();
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let code = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let started = code.find("desktop_background::close_locks()").unwrap();
+        let work = code.find("spawn_blocking").unwrap();
+        let refused = code
+            .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
+            .unwrap();
+        let shown = code.find("after_open(&opened)").unwrap();
+        assert!(started < work && work < refused && refused < shown);
+    }
+
+    #[test]
+    fn the_counts_are_forgotten_only_when_no_other_vault_exists_on_the_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = Arc::new(VaultStore::new(temp.path().join("this")));
+        let other = Arc::new(VaultStore::new(temp.path().join("other")));
+        let all = vec![Arc::clone(&this), Arc::clone(&other)];
+        // Alone on the device (the other slot has no vault): its counts go.
+        assert!(!other_vault_exists(&this, &all));
+        assert!(!other_vault_exists(&this, std::slice::from_ref(&this)));
+        // Another vault exists, locked or open: the counts are the device's and stay.
+        other
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Person", 1)
+            .unwrap();
+        assert!(other_vault_exists(&this, &all));
+        other.lock();
+        assert!(other_vault_exists(&this, &all));
+        // The vault asking is never counted as "another".
+        assert!(!other_vault_exists(&other, std::slice::from_ref(&other)));
     }
 
     #[test]
@@ -9139,7 +9279,7 @@ mod tests {
         }
         // Registered and compiled, but not granted to the renderer until a screen calls them
         // (least privilege): the grant arrives with the screen that needs it.
-        const WITHHELD: &[&str] = &["vault_unlock_named"];
+        const WITHHELD: &[&str] = &["vault_unlock_named", "vault_add_vault"];
         for &command in WITHHELD {
             let grant = format!("allow-{}", command.replace('_', "-"));
             assert!(

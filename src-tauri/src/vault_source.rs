@@ -53,6 +53,20 @@ pub(crate) trait VaultSource: Send + Sync + 'static {
         store.unlock(passphrase)?;
         Ok(Arc::clone(store))
     }
+
+    /// Adds a vault the owner will find by `name`, creates it with `passphrase` and its first
+    /// person, and makes it the one the screen is on (see `VaultSlots::add_vault`). The one vault
+    /// has nowhere to add one: the refusal is `Invalid`, nothing is written.
+    fn add_vault(
+        &self,
+        _name: &str,
+        _passphrase: &str,
+        _initial_profile_name: &str,
+        _now_ms: u64,
+        _stop_work: &mut dyn FnMut(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        Err(VaultError::Invalid)
+    }
 }
 
 /// The only vault the device has, as before: a source whose current store never changes. The app
@@ -125,6 +139,25 @@ impl StoreHandle {
         mut stop_work: impl FnMut(),
     ) -> Result<Arc<VaultStore>, VaultError> {
         self.source.unlock_named(name, passphrase, &mut stop_work)
+    }
+
+    /// See [`VaultSource::add_vault`]. Goes to the source even on a pinned handle: the new vault
+    /// becomes the screen's.
+    pub(crate) fn add_vault(
+        &self,
+        name: &str,
+        passphrase: &str,
+        initial_profile_name: &str,
+        now_ms: u64,
+        mut stop_work: impl FnMut(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        self.source.add_vault(
+            name,
+            passphrase,
+            initial_profile_name,
+            now_ms,
+            &mut stop_work,
+        )
     }
 
     /// A handle for the one vault the device has (the tests' mock apps).

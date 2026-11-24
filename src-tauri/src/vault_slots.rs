@@ -362,6 +362,88 @@ impl VaultSlots {
         Ok(new)
     }
 
+    /// Makes a new vault the owner will find by `name`, creates it with `passphrase` and its first
+    /// person, and makes it the vault the screen is on (#357 4c). The order is the registry first,
+    /// then the vault: **the entry is written under the device lock (`Registry::update`, which
+    /// refuses a damaged or newer file untouched), the in-memory registry is read again so the name
+    /// finds the vault at once, the slot's store is added, the vault is created in it, and only then
+    /// does the screen move.** If the vault cannot be created (a weak passphrase, no room) the entry
+    /// is taken out again by a second `update` and the screen stays where it was; a folder the
+    /// attempt half made is left for `unregistered_slot_folders` to report, and the store the list
+    /// gained stays in memory until the app restarts, reachable by nothing (no name or slot finds
+    /// it).
+    ///
+    /// Nothing is written unless the screen's vault is at rest (an add opens a vault and moves the
+    /// screen: it would otherwise leave two open), and one add or unlock by name runs at a time per
+    /// device, so an add cannot overlap a guess. An add is not a guess and is not counted (the
+    /// command refuses it while a wait is running). A name already shared by four vaults is
+    /// `AlreadyExists`, a name that cannot be a name is `Invalid`, and a registry that cannot be read
+    /// or written is `Storage`; the typed name is hashed (never stored) by the registry.
+    pub(crate) fn add_vault(
+        &self,
+        name: &str,
+        passphrase: &str,
+        initial_profile_name: &str,
+        now_ms: u64,
+        stop_work: impl FnOnce(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        let Some(_attempt) = self.begin_named_attempt() else {
+            return Err(VaultError::Busy);
+        };
+        // A passphrase or name `create` would refuse registers nothing.
+        crate::vault::check_new_vault_inputs(passphrase, initial_profile_name)?;
+        // Whatever the registry could not be read as at start is left exactly as it is.
+        if self.registry_problem.is_some() {
+            return Err(VaultError::Storage);
+        }
+        if !self.current().is_at_rest() {
+            return Err(VaultError::Busy);
+        }
+        let slot = Registry::update(
+            &self.data_dir,
+            || Registry::with_main(HashCost::DEVICE),
+            |registry| registry.add_extra(name),
+        )
+        .map_err(registry_refusal)?;
+        self.reload_registry();
+        let store = Arc::clone(self.add_slot(slot));
+        if let Err(error) = store.create(passphrase, initial_profile_name, now_ms) {
+            // The entry goes again: a vault that was never made must not be a name that matches.
+            let _ = Registry::update(
+                &self.data_dir,
+                || Registry::with_main(HashCost::DEVICE),
+                |registry| registry.remove(slot),
+            );
+            self.reload_registry();
+            return Err(error);
+        }
+        let _changing = self.changing.lock().unwrap_or_else(|p| p.into_inner());
+        let target = self
+            .nodes()
+            .position(|node| node.slot == slot)
+            .ok_or(VaultError::Storage)?;
+        let from = self.current.load(Ordering::Acquire);
+        if !self.node_at(from).store.is_at_rest() {
+            // The old vault began something while the new one was being made. The new vault
+            // exists and is registered; it is locked again, and the screen stays where it was.
+            store.lock();
+            return Err(VaultError::Busy);
+        }
+        stop_work();
+        self.node_at(from).store.lock();
+        self.current.store(target, Ordering::Release);
+        Ok(store)
+    }
+
+    /// Reads the registry again from disk, so that what was just written (or taken out) is what a
+    /// typed name is matched against from now on. A registry that cannot be read leaves the one in
+    /// memory as it is.
+    fn reload_registry(&self) {
+        if let Ok(Some(registry)) = Registry::load(&self.data_dir) {
+            *self.registry.lock().unwrap_or_else(|p| p.into_inner()) = registry;
+        }
+    }
+
     /// Moves the screen back to the registry's default vault after a lock (Ben's Q2: a locked
     /// screen starts on the default), running `stop_work` first if it moves. Nothing happens when it
     /// is already there, or the default is not a slot this device has. A refusal leaves it where it
@@ -403,6 +485,16 @@ impl VaultSlots {
     }
 }
 
+/// What a registry refusal is to the app: the owner's own mistakes keep their words, and everything
+/// about the file (damaged, newer, unreadable) is the one storage refusal, never named.
+fn registry_refusal(error: RegistryError) -> VaultError {
+    match error {
+        RegistryError::Name(_) => VaultError::Invalid,
+        RegistryError::NameTaken => VaultError::AlreadyExists,
+        _ => VaultError::Storage,
+    }
+}
+
 impl VaultSource for VaultSlots {
     fn current(&self) -> &Arc<VaultStore> {
         &self.node_at(self.current.load(Ordering::Acquire)).store
@@ -423,6 +515,24 @@ impl VaultSource for VaultSlots {
         stop_work: &mut dyn FnMut(),
     ) -> Result<Arc<VaultStore>, VaultError> {
         VaultSlots::unlock_named(self, name, passphrase, stop_work)
+    }
+
+    fn add_vault(
+        &self,
+        name: &str,
+        passphrase: &str,
+        initial_profile_name: &str,
+        now_ms: u64,
+        stop_work: &mut dyn FnMut(),
+    ) -> Result<Arc<VaultStore>, VaultError> {
+        VaultSlots::add_vault(
+            self,
+            name,
+            passphrase,
+            initial_profile_name,
+            now_ms,
+            stop_work,
+        )
     }
 }
 
@@ -1061,5 +1171,215 @@ mod tests {
             Err(VaultError::WrongPassphrase)
         ));
         assert!(slots.unlock_named("", PASSWORD, || {}).is_ok());
+    }
+
+    // ---- add a vault (#357 4c) ----
+
+    fn registry_slots(dir: &Path) -> Vec<SlotId> {
+        Registry::load(dir).unwrap().unwrap().slots()
+    }
+
+    /// A device with Main and one more vault, both made and locked, on the test hashing cost.
+    fn two_vault_device(dir: &Path) -> (VaultSlots, SlotId) {
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        let second = registry.add_extra("Second").unwrap();
+        registry.save(dir).unwrap();
+        let slots = slots_in(dir);
+        make_vault_with(&slots, SlotId::Main, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        (slots, second)
+    }
+
+    #[test]
+    fn given_a_device_when_a_vault_is_added_then_it_is_registered_made_open_and_found_by_its_name()
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, second) = two_vault_device(temp.path());
+        assert_eq!(slots.current_slot(), SlotId::Main);
+        let stopped = Cell::new(0);
+        let store = slots
+            .add_vault("  Garden ", PASSWORD, "FAKE Gardener", 5, || {
+                stopped.set(stopped.get() + 1)
+            })
+            .unwrap();
+        // Written first: the registry lists three, the new one last, and the default is unchanged.
+        let listed = registry_slots(temp.path());
+        assert_eq!(listed.len(), 3);
+        let added = listed[2];
+        assert!(!listed[..2].contains(&added));
+        assert_eq!(
+            Registry::load(temp.path()).unwrap().unwrap().default_slot(),
+            Some(SlotId::Main)
+        );
+        // The device has it, the screen is on it, it is open, and the old vault is locked.
+        assert!(Arc::ptr_eq(&store, slots.store_of(added).unwrap()));
+        assert_eq!(slots.current_slot(), added);
+        assert_eq!(open_vaults(&slots), vec![added]);
+        assert_eq!(stopped.get(), 1);
+        assert!(matches!(
+            slots.store_of(second).unwrap().status(),
+            Ok(VaultStatus::Locked)
+        ));
+        // Locked again, its name finds it at once (the registry in memory was read again).
+        store.lock();
+        let opened = slots.unlock_named("GARDEN", PASSWORD, || {}).unwrap();
+        assert!(Arc::ptr_eq(&opened, &store));
+        // Its home is its own folder, apart from Main's and the second vault's.
+        assert!(slot_home(temp.path(), added).is_dir());
+        assert_ne!(
+            slot_home(temp.path(), added),
+            slot_home(temp.path(), second)
+        );
+    }
+
+    #[test]
+    fn given_no_registry_when_a_vault_is_added_then_main_is_listed_first_and_stays_the_default() {
+        let temp = tempfile::tempdir().unwrap();
+        let slots = slots_in(temp.path());
+        make_vault(&slots, SlotId::Main);
+        let store = slots
+            .add_vault("Garden", OTHER_PASSWORD, "FAKE Gardener", 5, || {})
+            .unwrap();
+        let listed = registry_slots(temp.path());
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0], SlotId::Main);
+        assert_eq!(
+            Registry::load(temp.path()).unwrap().unwrap().default_slot(),
+            Some(SlotId::Main)
+        );
+        assert!(Arc::ptr_eq(&store, slots.store_of(listed[1]).unwrap()));
+        assert_eq!(slots.current_slot(), listed[1]);
+    }
+
+    #[test]
+    fn given_a_name_four_vaults_share_when_a_fifth_is_added_then_it_is_refused_and_nothing_changes()
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        for n in 0..DUPLICATE_NAME_CAP_FOR_TEST {
+            slots
+                .add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
+                .unwrap_or_else(|e| panic!("add {n}: {e:?}"))
+                .lock();
+            // The screen is on the new vault, which is locked: it is at rest for the next add.
+        }
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        let slot_count = slots.slots().len();
+        let current = slots.current_slot();
+        assert!(matches!(
+            slots.add_vault("garden", PASSWORD, "FAKE Gardener", 5, || {}),
+            Err(VaultError::AlreadyExists)
+        ));
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert_eq!(slots.slots().len(), slot_count);
+        assert_eq!(slots.current_slot(), current);
+    }
+
+    #[test]
+    fn given_inputs_create_would_refuse_when_a_vault_is_added_then_nothing_is_registered() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        for (name, passphrase, person) in [
+            ("Garden", "short", "FAKE Gardener"),
+            ("Garden", PASSWORD, ""),
+            ("", PASSWORD, "FAKE Gardener"),
+            ("Gar\u{7}den", PASSWORD, "FAKE Gardener"),
+        ] {
+            assert!(
+                slots.add_vault(name, passphrase, person, 5, || {}).is_err(),
+                "{name:?} {passphrase:?} {person:?}"
+            );
+        }
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert_eq!(slots.slots().len(), 2);
+        assert_eq!(slots.current_slot(), SlotId::Main);
+    }
+
+    #[test]
+    fn given_a_vault_that_cannot_be_made_when_a_vault_is_added_then_its_entry_is_taken_out_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let before = registry_slots(temp.path());
+        // The vault's first history write fails, after the entry was written.
+        let outcome = {
+            let _fail = crate::vault::FailAtForTest::boundary(&["history.objects-sync"]);
+            slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
+        };
+        assert!(outcome.is_err());
+        assert_eq!(registry_slots(temp.path()), before);
+        assert_eq!(slots.current_slot(), SlotId::Main);
+        assert!(open_vaults(&slots).is_empty());
+        // The name finds nothing, and the owner can add it again.
+        assert!(slots.unlock_named("Garden", PASSWORD, || {}).is_err());
+        assert!(slots
+            .add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
+            .is_ok());
+    }
+
+    #[test]
+    fn given_a_registry_that_cannot_be_used_when_a_vault_is_added_then_the_file_is_left_untouched()
+    {
+        for bytes in [b"not a registry".to_vec(), {
+            let mut newer = Registry::with_main(HashCost::TEST).unwrap().to_bytes();
+            newer[8] = 0xff;
+            newer
+        }] {
+            let temp = tempfile::tempdir().unwrap();
+            fs::write(temp.path().join("vaults.v1"), &bytes).unwrap();
+            let slots = slots_in(temp.path());
+            assert!(slots.registry_problem().is_some());
+            make_vault(&slots, SlotId::Main);
+            assert!(matches!(
+                slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {}),
+                Err(VaultError::Storage)
+            ));
+            assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), bytes);
+            assert_eq!(slots.slots(), vec![SlotId::Main]);
+        }
+    }
+
+    #[test]
+    fn given_the_screens_vault_is_open_or_a_try_is_under_way_when_a_vault_is_added_then_it_is_refused(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, second) = two_vault_device(temp.path());
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        // An open vault is not left open beside a new one.
+        slots.current().unlock(PASSWORD).unwrap();
+        assert!(matches!(
+            slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {}),
+            Err(VaultError::Busy)
+        ));
+        slots.current().lock();
+        // One add or unlock by name at a time per device.
+        let _taken = slots.begin_named_attempt().unwrap();
+        assert!(matches!(
+            slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {}),
+            Err(VaultError::Busy)
+        ));
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert!(slots.store_of(second).is_some());
+    }
+
+    #[test]
+    fn given_two_adds_at_once_when_they_finish_then_neither_is_lost_from_the_registry() {
+        // Two windows or two instances: the registry is read, changed and written under the device
+        // lock, so both entries are there. (In one process the second add is refused as Busy by the
+        // device's one-at-a-time rule, which is the other half of the same guarantee.)
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let other = Registry::update(
+            temp.path(),
+            || Registry::with_main(HashCost::TEST),
+            |registry| registry.add_extra("Elsewhere"),
+        )
+        .unwrap();
+        slots
+            .add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || {})
+            .unwrap();
+        let listed = registry_slots(temp.path());
+        assert_eq!(listed.len(), 4);
+        assert!(listed.contains(&other));
     }
 }
