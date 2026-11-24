@@ -248,16 +248,33 @@ export function checkAndroidArchive(
   );
   const resources = new Map();
   for (const name of names) {
-    // Every compiled XML under res/, at any depth: resource path shortening moves
-    // res/xml/network_security_config.xml to a name like res/Ab.xml, so the folder says nothing.
-    if (/(?:^|\/)res\/(?:.+\/)?[^/]+\.xml$/.test(name)) {
-      try {
-        resources.set(`${label}!${name}`, decodeAnyXml(zip.read(name)));
-      } catch {
+    // Every compiled XML under res/, at any depth, by what it is and not by what it is called:
+    // resource path shortening moves res/xml/network_security_config.xml to a name like res/Ab.xml,
+    // and may drop the extension. A compiled (binary) XML file starts with its chunk header, type
+    // 0x0003 and header size 8; a bundle's XML is protobuf, which has no header, so a bundle's
+    // files are picked by their .xml name only (bundletool does not shorten paths in a bundle).
+    if (!/(?:^|\/)res\//.test(name)) continue;
+    let data;
+    try {
+      data = zip.read(name);
+    } catch {
+      if (/\.xml$/.test(name))
         problems.push(
           `${label}!${name}: cannot be read, so its cleartext and trust settings are unknown`,
         );
-      }
+      continue;
+    }
+    const compiledXml =
+      data.length >= 8 &&
+      data.readUInt16LE(0) === 0x0003 &&
+      data.readUInt16LE(2) === 8;
+    if (!compiledXml && !/\.xml$/.test(name)) continue;
+    try {
+      resources.set(`${label}!${name}`, decodeAnyXml(data));
+    } catch {
+      problems.push(
+        `${label}!${name}: cannot be read, so its cleartext and trust settings are unknown`,
+      );
     }
   }
   problems.push(...checkAndroidXmlResources(resources));
@@ -285,10 +302,24 @@ export function checkAndroidArchive(
   }
   // The test certificates, wherever they are: assets, a library, a dex file, a resource under any
   // name. Each is searched for as its DER bytes and as its base64 text.
-  const forbidden = (options.forbiddenCertificates ?? []).flatMap((der) => [
-    { label: "DER", bytes: der },
-    { label: "base64", bytes: Buffer.from(der.toString("base64")) },
-  ]);
+  // base64 is searched whole and also by two short runs of it (48 characters from the start and 48
+  // from offset 70), because pasted as wrapped PEM text (include_str!, an asset) its base64 breaks
+  // every 64 or 76 columns and no whole copy exists; either run lies inside one line at either width.
+  const forbidden = (options.forbiddenCertificates ?? []).flatMap((der) => {
+    const text = der.toString("base64");
+    return [
+      { label: "DER", bytes: der },
+      { label: "base64", bytes: Buffer.from(text) },
+      {
+        label: "wrapped base64 (start)",
+        bytes: Buffer.from(text.slice(0, 48)),
+      },
+      {
+        label: "wrapped base64 (middle)",
+        bytes: Buffer.from(text.slice(70, 118)),
+      },
+    ];
+  });
   for (const name of names) {
     if (forbidden.length === 0) break;
     let data;

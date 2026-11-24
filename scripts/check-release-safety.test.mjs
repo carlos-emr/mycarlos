@@ -601,6 +601,79 @@ test("the test certificates are found anywhere in a build, as DER or as base64",
   );
 });
 
+test("a compiled XML with a shortened name and no extension is still read, by its header", () => {
+  const config = axml([
+    ["network-security-config", {}],
+    ["base-config", { "android:cleartextTrafficPermitted": true }],
+    ["debug-overrides", {}],
+    ["certificates", { src: "user" }],
+  ]);
+  for (const name of ["res/Ab", "res/q/Zz", "res/xml/nsc"]) {
+    const found = checkAndroidArchive(
+      apk(GOOD_MANIFEST, [[name, config]]),
+      "n.apk",
+      EXPECTED_APP_ID,
+    ).join("\n");
+    assert.match(found, /cleartextTrafficPermitted is true/, name);
+    assert.match(found, /debug-overrides is present/, name);
+  }
+  // A resource that is not XML is not read as one (a png, a font, text).
+  assert.deepEqual(
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, [
+        ["res/Ab", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0])],
+        ["res/Cd", Buffer.from("plain text")],
+      ]),
+      "n.apk",
+      EXPECTED_APP_ID,
+    ),
+    [],
+  );
+});
+
+test("a test certificate pasted as wrapped PEM text is found by a run of its base64", () => {
+  const der = Buffer.concat([
+    Buffer.from([0x30, 0x82, 1, 0]),
+    Buffer.from(Array.from({ length: 200 }, (_, i) => (i * 37 + 11) % 256)),
+  ]);
+  const base64 = der.toString("base64");
+  const wrapped = (width) =>
+    `-----BEGIN CERTIFICATE-----\n${base64.match(new RegExp(`.{1,${width}}`, "g")).join("\n")}\n-----END CERTIFICATE-----\n`;
+  for (const width of [64, 76]) {
+    const found = checkAndroidArchive(
+      apk(GOOD_MANIFEST, [["assets/pasted.txt", Buffer.from(wrapped(width))]]),
+      "w.apk",
+      EXPECTED_APP_ID,
+      { forbiddenCertificates: [der] },
+    ).join("\n");
+    assert.match(found, /assets\/pasted.txt: holds a test certificate/, width);
+  }
+  // With its first line cut off, the run from the middle still finds it.
+  const withoutFirstLine = wrapped(64).split("\n").slice(2).join("\n");
+  assert.match(
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, [["assets/cut.txt", Buffer.from(withoutFirstLine)]]),
+      "w.apk",
+      EXPECTED_APP_ID,
+      { forbiddenCertificates: [der] },
+    ).join("\n"),
+    /assets\/cut.txt: holds a test certificate/,
+  );
+  // Text that is only a different certificate's PEM is not it.
+  const other = Buffer.concat([der.subarray(0, 4), Buffer.alloc(200, 9)]);
+  assert.deepEqual(
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, [
+        ["assets/other.txt", Buffer.from(other.toString("base64"))],
+      ]),
+      "w.apk",
+      EXPECTED_APP_ID,
+      { forbiddenCertificates: [der] },
+    ),
+    [],
+  );
+});
+
 test("the repository's test certificates are searched for in a real run of the gate", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-release-safety-"));
   try {
