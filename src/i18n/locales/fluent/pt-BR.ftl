@@ -2570,15 +2570,17 @@ restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta 
 security-backup-sizeCalculating = Calculando o tamanho do backup…
 interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
 
-preferences-more = Saiba mais
 
-preferences-less = Menos
 
 notifications-autoSummary = As verificações automáticas só acontecem enquanto o myCarlos está aberto e desbloqueado.
 
 background-keepRunningSummary = O myCarlos pode continuar em segundo plano depois que você fecha a janela. Seu cofre é bloqueado quando a janela fecha.
 
-background-startAtLoginSummary = O myCarlos pode iniciar quando você entra neste computador.
+background-startAtLoginSummary = O myCarlos pode iniciar quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano com seu cofre bloqueado.
+
+preferences-moreAutomatic = Saiba mais sobre as verificações automáticas
+
+preferences-moreBackground = Saiba mais sobre a execução em segundo plano
 
 native-notice-test = Este é um aviso de teste do myCarlos.
 

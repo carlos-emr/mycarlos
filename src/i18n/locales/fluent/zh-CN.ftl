@@ -2317,15 +2317,17 @@ restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它�
 security-backup-sizeCalculating = 正在计算备份大小…
 interface-hidden-videoLeftOut = 备份中未包含的视频
 
-preferences-more = 更多说明
 
-preferences-less = 收起
 
 notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
 
 background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
 
-background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动。
+background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动。开启上面的选项后，它会在后台静默启动，您的保险库保持锁定。
+
+preferences-moreAutomatic = 关于自动检查的更多说明
+
+preferences-moreBackground = 关于后台运行的更多说明
 
 native-notice-test = 这是来自 myCarlos 的测试通知。
 

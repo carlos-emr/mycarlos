@@ -2650,15 +2650,17 @@ restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywróc
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
 
-preferences-more = Więcej informacji
 
-preferences-less = Mniej
 
 notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
 
-background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Skarbiec blokuje się w chwili zamknięcia okna.
+background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
 
-background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu do tego komputera.
+background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu do tego komputera. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem.
+
+preferences-moreAutomatic = Więcej o automatycznym sprawdzaniu
+
+preferences-moreBackground = Więcej o działaniu w tle
 
 native-notice-test = To jest testowe powiadomienie z myCarlos.
 

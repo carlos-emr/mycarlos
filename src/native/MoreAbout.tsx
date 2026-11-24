@@ -1,18 +1,20 @@
-import { useState, type ReactNode } from "react";
-import { useI18n } from "../i18n";
+import type { ReactNode } from "react";
 
-/** A closed disclosure for the long explanation of a setting: the sentence that carries the key
- * fact stays visible beside it. A native `<details>`, so the keyboard (Enter and Space on the
- * summary) and screen readers (expanded or collapsed) are the browser's own. */
-export function MoreAbout({ children }: { children: ReactNode }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+/** A closed disclosure for the long explanation of a setting: the sentences that carry the key
+ * facts stay visible beside it. A native `<details>`, so the keyboard (Enter and Space on the
+ * summary) and screen readers (expanded or collapsed) are the browser's own. Its name says what
+ * it is about and stays the same open or closed, so two of them on one page are told apart and
+ * the state is the browser's to announce. */
+export function MoreAbout({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
   return (
-    <details
-      className="more-about"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary>{open ? t("preferences.less") : t("preferences.more")}</summary>
+    <details className="more-about">
+      <summary>{label}</summary>
       <div className="more-about-body">{children}</div>
     </details>
   );

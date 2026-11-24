@@ -68,18 +68,25 @@ test("the long text is folded at first, opens from the keyboard and closes again
   await expect(
     page.getByText(en("background.keepRunningSummary")),
   ).toBeVisible();
-  const more = page.getByText(en("preferences.more"), { exact: true });
-  await expect(more).toHaveCount(2);
-  const first = more.first();
+  // Two disclosures, told apart by name, the same open or closed.
+  const automatic = page.getByText(en("preferences.moreAutomatic"), {
+    exact: true,
+  });
+  const background = page.getByText(en("preferences.moreBackground"), {
+    exact: true,
+  });
+  await expect(automatic).toHaveCount(1);
+  await expect(background).toHaveCount(1);
+  const first = automatic;
   await first.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText(en("notifications.autoHelp"))).toBeVisible();
-  await expect(
-    page.getByText(en("preferences.less"), { exact: true }),
-  ).toHaveCount(1);
+  await expect(automatic).toHaveCount(1);
   await page.keyboard.press("Space");
   await expect(page.getByText(en("notifications.autoHelp"))).toBeHidden();
-  await expect(more).toHaveCount(2);
+  await expect(automatic).toHaveCount(1);
+  // The text is never swapped for "Less".
+  await expect(page.getByText("Less", { exact: true })).toHaveCount(0);
 });
 
 test("a screen reader finds each disclosure as a collapsed or expanded group, and the page has no violations", async ({
@@ -97,18 +104,33 @@ test("a screen reader finds each disclosure as a collapsed or expanded group, an
   await expectNoAxeViolations(page, "preferences with the text opened");
 });
 
-test("More about this has a chevron that points right when closed and down when open", async ({
+test("each disclosure has a drawn chevron: right when closed, down when open, in the text colour", async ({
   page,
 }) => {
   await preferences(page);
   const summary = page.locator("details.more-about > summary").first();
   const marker = () =>
-    summary.evaluate(
-      (element) => getComputedStyle(element, "::before").content,
-    );
-  expect(await marker()).toContain("\u25B8");
+    summary.evaluate((element) => {
+      const style = getComputedStyle(element, "::before");
+      return {
+        width: parseFloat(style.width),
+        height: parseFloat(style.height),
+        border: style.borderBottomStyle,
+        transform: style.transform,
+        color: style.borderBottomColor,
+        text: getComputedStyle(element).color,
+      };
+    });
+  const closed = await marker();
+  // A real box with a border, not a glyph the browser may drop or a font may lack.
+  expect(closed.width).toBeGreaterThan(4);
+  expect(closed.height).toBeGreaterThan(4);
+  expect(closed.border).toBe("solid");
+  expect(closed.color).toBe(closed.text);
   await summary.click();
-  expect(await marker()).toContain("\u25BE");
+  const open = await marker();
+  expect(open.transform).not.toBe(closed.transform);
+  expect(open.border).toBe("solid");
   // The focus ring stays visible on the keyboard.
   await summary.focus();
   await page.keyboard.press("Tab");

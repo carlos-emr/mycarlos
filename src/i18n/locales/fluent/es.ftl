@@ -2570,15 +2570,17 @@ restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se 
 security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
 interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad
 
-preferences-more = Más información
 
-preferences-less = Menos
 
 notifications-autoSummary = Las comprobaciones automáticas solo se hacen mientras myCarlos está abierto y desbloqueado.
 
 background-keepRunningSummary = myCarlos puede seguir en segundo plano después de cerrar su ventana. Su bóveda se bloquea al cerrarse la ventana.
 
-background-startAtLoginSummary = myCarlos puede iniciarse cuando inicia sesión en este equipo.
+background-startAtLoginSummary = myCarlos puede iniciarse cuando inicia sesión en este equipo. Con la opción anterior activada, se inicia discretamente en segundo plano con su bóveda bloqueada.
+
+preferences-moreAutomatic = Más información sobre las comprobaciones automáticas
+
+preferences-moreBackground = Más información sobre la ejecución en segundo plano
 
 native-notice-test = Este es un aviso de prueba de myCarlos.
 

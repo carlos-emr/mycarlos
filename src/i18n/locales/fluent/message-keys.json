@@ -1204,8 +1204,6 @@
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
-  "preferences.more",
-  "preferences.less",
   "notifications.autoSummary",
   "background.keepRunningSummary",
   "background.startAtLoginSummary",
@@ -1213,5 +1211,7 @@
   "notifications.testButton",
   "notifications.testSent",
   "notifications.testWait",
-  "notifications.testFailed"
+  "notifications.testFailed",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground"
 ]
