@@ -125,6 +125,8 @@ fn main() {
             "vault_unlock",
             "vault_unlock_named",
             "vault_add_vault",
+            "vault_find_other_vaults",
+            "vault_name_found_vaults",
             "vault_lock",
             "vault_touch",
             "vault_set_auto_lock",

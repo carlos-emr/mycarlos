@@ -715,6 +715,48 @@ impl Drop for AddVaultRequest {
     }
 }
 
+/// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
+#[derive(Deserialize)]
+struct FindVaultsRequest {
+    passphrase: String,
+}
+
+impl Drop for FindVaultsRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
+}
+
+/// What the search found: opaque folder ids of the vaults the passphrase opened, and how many
+/// folders it did not open or found empty. Nothing about names or contents.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FoundVaultsReply {
+    found: Vec<String>,
+    not_opened: usize,
+    empty: usize,
+}
+
+/// One found vault and the name its owner now gives it.
+#[derive(Deserialize)]
+struct NamedFoundVault {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct NameFoundRequest {
+    vaults: Vec<NamedFoundVault>,
+}
+
+impl Drop for NameFoundRequest {
+    fn drop(&mut self) {
+        for vault in &mut self.vaults {
+            vault.name.zeroize();
+        }
+    }
+}
+
 /// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
 #[derive(Deserialize)]
 struct NamedPassphraseRequest {
@@ -6379,6 +6421,70 @@ async fn vault_add_vault(
     run_blocking(&opened, VaultStore::snapshot).await
 }
 
+/// "Find my other vaults" (#357 4c-2): tries the passphrase on each folder the registry does not
+/// list, one derivation each, every one counted on the device-wide counter (it is a guess at
+/// those vaults). Writes nothing and opens nothing for good. Not granted to the renderer until
+/// the several-vaults screen exists.
+#[tauri::command]
+async fn vault_find_other_vaults(
+    store: State<'_, StoreHandle>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: FindVaultsRequest,
+) -> CommandResult<FoundVaultsReply> {
+    let store = store.pin();
+    let throttle = Arc::clone(throttle.inner());
+    let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+    drop(request);
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        let started = std::cell::Cell::new(None);
+        store.find_unlisted_vaults(
+            &passphrase,
+            || {
+                let begun = throttle.begin(Attempt::Unlock, now_ms())?;
+                started.set(Some(begun));
+                Ok(())
+            },
+            |outcome| {
+                if let Some(begun) = started.take() {
+                    throttle.settle(Attempt::Unlock, begun, outcome, now_ms());
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(|error| match error {
+        vault_slots::FindError::Wait(left) => PublicError::wait(left),
+        vault_slots::FindError::Vault(error) => PublicError::from(error),
+    })?;
+    Ok(FoundVaultsReply {
+        found: found.found.iter().map(|slot| slot.text()).collect(),
+        not_opened: found.not_opened,
+        empty: found.empty,
+    })
+}
+
+/// Gives the vaults a search found the names their owner chose, so they are found by name again
+/// (#357 4c-2). All or none. Not granted to the renderer yet.
+#[tauri::command]
+async fn vault_name_found_vaults(
+    store: State<'_, StoreHandle>,
+    mut request: NameFoundRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let mut named = Vec::new();
+    for vault in &mut request.vaults {
+        let slot = vault_registry::SlotId::parse(&vault.id)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        named.push((slot, std::mem::take(&mut vault.name)));
+    }
+    drop(request);
+    tauri::async_runtime::spawn_blocking(move || store.register_found(&named))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 async fn vault_unlock_pdf(
     store: State<'_, StoreHandle>,
@@ -6964,6 +7070,8 @@ pub fn run() {
             vault_unlock,
             vault_unlock_named,
             vault_add_vault,
+            vault_find_other_vaults,
+            vault_name_found_vaults,
             vault_lock,
             vault_touch,
             vault_set_auto_lock,
@@ -9247,7 +9355,12 @@ mod tests {
         }
         // Registered and compiled, but not granted to the renderer until a screen calls them
         // (least privilege): the grant arrives with the screen that needs it.
-        const WITHHELD: &[&str] = &["vault_unlock_named", "vault_add_vault"];
+        const WITHHELD: &[&str] = &[
+            "vault_unlock_named",
+            "vault_add_vault",
+            "vault_find_other_vaults",
+            "vault_name_found_vaults",
+        ];
         for &command in WITHHELD {
             let grant = format!("allow-{}", command.replace('_', "-"));
             assert!(

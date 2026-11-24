@@ -54,6 +54,26 @@ pub(crate) trait VaultSource: Send + Sync + 'static {
         Ok(Arc::clone(store))
     }
 
+    /// Looks for vaults the registry does not list (see `VaultSlots::find_unlisted_vaults`). The
+    /// one vault has none to find: nothing is searched or counted.
+    fn find_unlisted_vaults(
+        &self,
+        _passphrase: &str,
+        _before_try: &mut dyn FnMut() -> Result<(), u64>,
+        _after_try: &mut dyn FnMut(crate::throttle::Outcome),
+    ) -> Result<crate::vault_slots::FoundVaults, crate::vault_slots::FindError> {
+        Ok(crate::vault_slots::FoundVaults::default())
+    }
+
+    /// Lists vaults a search found under the names the owner gave (see
+    /// `VaultSlots::register_found`). The one vault has nothing to list: `Invalid`.
+    fn register_found(
+        &self,
+        _named: &[(crate::vault_registry::SlotId, String)],
+    ) -> Result<(), VaultError> {
+        Err(VaultError::Invalid)
+    }
+
     /// Adds a vault the owner will find by `name`, creates it with `passphrase` and its first
     /// person, and makes it the one the screen is on (see `VaultSlots::add_vault`). The one vault
     /// has nowhere to add one: the refusal is `Invalid`, nothing is written.
@@ -139,6 +159,25 @@ impl StoreHandle {
         mut stop_work: impl FnMut(),
     ) -> Result<Arc<VaultStore>, VaultError> {
         self.source.unlock_named(name, passphrase, &mut stop_work)
+    }
+
+    /// See [`VaultSource::find_unlisted_vaults`].
+    pub(crate) fn find_unlisted_vaults(
+        &self,
+        passphrase: &str,
+        mut before_try: impl FnMut() -> Result<(), u64>,
+        mut after_try: impl FnMut(crate::throttle::Outcome),
+    ) -> Result<crate::vault_slots::FoundVaults, crate::vault_slots::FindError> {
+        self.source
+            .find_unlisted_vaults(passphrase, &mut before_try, &mut after_try)
+    }
+
+    /// See [`VaultSource::register_found`].
+    pub(crate) fn register_found(
+        &self,
+        named: &[(crate::vault_registry::SlotId, String)],
+    ) -> Result<(), VaultError> {
+        self.source.register_found(named)
     }
 
     /// See [`VaultSource::add_vault`]. Goes to the source even on a pinned handle: the new vault

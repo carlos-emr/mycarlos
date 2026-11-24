@@ -39,7 +39,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::unlock_plan::{run_plan, RealOutcome};
 use crate::vault::{derive_decoy, VaultError, VaultStore};
 use crate::vault_registry::{
-    slot_home, slot_store_root, HashCost, Registry, RegistryError, SlotId, UnlockPlan,
+    set_aside_damaged, slot_home, slot_store_root, unregistered_slot_folders, HashCost, Registry,
+    RegistryError, SlotId, UnlockPlan,
 };
 use crate::vault_source::VaultSource;
 
@@ -81,7 +82,7 @@ pub(crate) struct VaultSlots {
     current: AtomicUsize,
     /// Held to add a slot or switch, so the two cannot interleave.
     changing: Mutex<()>,
-    registry_problem: Option<RegistryError>,
+    registry_problem: Mutex<Option<RegistryError>>,
     /// The registry as read at start (or, when there is none or it cannot be read, Main alone with
     /// no name, in memory only and never saved): what a typed name is looked up in.
     registry: Mutex<Registry>,
@@ -140,7 +141,7 @@ impl VaultSlots {
             head,
             current: AtomicUsize::new(current),
             changing: Mutex::new(()),
-            registry_problem: problem,
+            registry_problem: Mutex::new(problem),
             named_attempt: AtomicBool::new(false),
         }
     }
@@ -165,8 +166,11 @@ impl VaultSlots {
 
     /// Why the registry could not be read, when it could not: the Main vault is then the only one
     /// offered and the file has been left alone.
-    pub(crate) fn registry_problem(&self) -> Option<&RegistryError> {
-        self.registry_problem.as_ref()
+    pub(crate) fn registry_problem(&self) -> Option<RegistryError> {
+        self.registry_problem
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
     }
 
     /// The slots, oldest first.
@@ -393,7 +397,7 @@ impl VaultSlots {
         // A passphrase or name `create` would refuse registers nothing.
         crate::vault::check_new_vault_inputs(passphrase, initial_profile_name)?;
         // Whatever the registry could not be read as at start is left exactly as it is.
-        if self.registry_problem.is_some() {
+        if self.registry_problem().is_some() {
             return Err(VaultError::Storage);
         }
         if !self.current().is_at_rest() {
@@ -433,6 +437,145 @@ impl VaultSlots {
         self.node_at(from).store.lock();
         self.current.store(target, Ordering::Release);
         Ok(store)
+    }
+
+    /// Looks for vaults on this device that the registry does not list and opens none of them for
+    /// good: it tries `passphrase` on each unlisted slot folder (#357 4c-2), one derivation each,
+    /// one after another, and locks every vault it opens again. This is the owner's deliberate "Find
+    /// my other vaults": after a registry that could not be read, or a vault whose creation was
+    /// interrupted. It writes nothing (see [`VaultSlots::register_found`]).
+    ///
+    /// `before_try` runs before each derivation and may refuse it (the device counter is waiting:
+    /// the search stops there with what it has not found); `after_try` hears how each went, so the
+    /// caller counts every one on the device-wide counter and the search is no way round it. A
+    /// folder with no vault in it is reported as empty and costs nothing. Only an unreadable
+    /// (`Damaged`) or absent registry is searched past: a newer one (`Unsupported`) or one that
+    /// cannot be read at all (`Io`) is refused as `Storage` and left alone.
+    pub(crate) fn find_unlisted_vaults(
+        &self,
+        passphrase: &str,
+        mut before_try: impl FnMut() -> Result<(), u64>,
+        mut after_try: impl FnMut(crate::throttle::Outcome),
+    ) -> Result<FoundVaults, FindError> {
+        let Some(_attempt) = self.begin_named_attempt() else {
+            return Err(FindError::Vault(VaultError::Busy));
+        };
+        if !self.current().is_at_rest() {
+            return Err(FindError::Vault(VaultError::Busy));
+        }
+        let mut found = FoundVaults::default();
+        for slot in self.unlisted_slots().map_err(FindError::Vault)? {
+            let store = Self::new_store(&self.data_dir, &self.app_id, slot);
+            if !slot_store_root(&self.data_dir, slot).exists() {
+                found.empty += 1;
+                continue;
+            }
+            before_try().map_err(FindError::Wait)?;
+            match store.unlock(passphrase) {
+                Ok(()) => {
+                    store.lock();
+                    after_try(crate::throttle::Outcome::Right);
+                    found.found.push(slot);
+                }
+                Err(VaultError::WrongPassphrase) => {
+                    after_try(crate::throttle::Outcome::Wrong);
+                    found.not_opened += 1;
+                }
+                Err(_) => {
+                    after_try(crate::throttle::Outcome::Neither);
+                    found.not_opened += 1;
+                }
+            }
+        }
+        Ok(found)
+    }
+
+    /// The extra slot folders on disk that the registry the device would use does not list. A
+    /// registry that cannot be read is taken as listing nothing, and one that is newer or cannot
+    /// be read at all refuses (`Storage`): nothing is guessed about what it holds.
+    fn unlisted_slots(&self) -> Result<Vec<SlotId>, VaultError> {
+        let registry = match self.registry_problem() {
+            None => Registry::load(&self.data_dir)
+                .map_err(registry_refusal)?
+                .unwrap_or_else(|| {
+                    Registry::new(HashCost::DEVICE).expect("the device cost is acceptable")
+                }),
+            Some(RegistryError::Damaged) => {
+                Registry::new(HashCost::DEVICE).expect("the device cost is acceptable")
+            }
+            Some(_) => return Err(VaultError::Storage),
+        };
+        let folders = unregistered_slot_folders(&self.data_dir, &registry)
+            .map_err(|_| VaultError::Storage)?;
+        Ok(folders
+            .iter()
+            .filter_map(|path| path.file_name()?.to_str().and_then(SlotId::parse))
+            .collect())
+    }
+
+    /// Lists vaults [`VaultSlots::find_unlisted_vaults`] found, each under the name the owner now
+    /// gives it, so they are found by name again (#357 4c-2). Under the device lock, all or none: a
+    /// registry that could not be read is first **set aside, never deleted** (it stays beside the
+    /// new one as `vaults.v1.damaged-<seconds>-<id>`), then a registry with Main as the default and
+    /// these vaults is written, the in-memory registry is read again and each vault gets its store.
+    /// Every slot must be a folder the search could have listed, once; a name that cannot be one, or
+    /// that four vaults already have, refuses the whole call with the registry as it was. It
+    /// opens nothing: the owner unlocks a recovered vault by its name like any other.
+    pub(crate) fn register_found(&self, named: &[(SlotId, String)]) -> Result<(), VaultError> {
+        let Some(_attempt) = self.begin_named_attempt() else {
+            return Err(VaultError::Busy);
+        };
+        if !self.current().is_at_rest() {
+            return Err(VaultError::Busy);
+        }
+        let listable = self.unlisted_slots()?;
+        let mut seen = Vec::new();
+        for (slot, _) in named {
+            if !listable.contains(slot) || seen.contains(slot) {
+                return Err(VaultError::Invalid);
+            }
+            seen.push(*slot);
+        }
+        if named.is_empty() {
+            return Err(VaultError::Invalid);
+        }
+        if self.registry_problem() == Some(RegistryError::Damaged) {
+            // The new registry will hold only Main and these vaults, so a scratch registry says
+            // now whether every name would be accepted: a refusal must not leave the unreadable
+            // file moved aside with nothing written in its place.
+            let mut scratch =
+                Registry::new(HashCost::DEVICE).expect("the device cost is acceptable");
+            for (slot, name) in named {
+                scratch
+                    .add_recovered(*slot, name)
+                    .map_err(registry_refusal)?;
+            }
+            match set_aside_damaged(&self.data_dir) {
+                // Another writer repaired it meanwhile: it is read as it now is.
+                Ok(_) | Err(RegistryError::NotDamaged) => {}
+                Err(_) => return Err(VaultError::Storage),
+            }
+        }
+        Registry::update(
+            &self.data_dir,
+            || Registry::with_main(HashCost::DEVICE),
+            |registry| {
+                for (slot, name) in named {
+                    registry.add_recovered(*slot, name)?;
+                }
+                Ok(())
+            },
+        )
+        .map_err(registry_refusal)?;
+        *self
+            .registry_problem
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+        self.reload_registry();
+        for (slot, _) in named {
+            self.add_slot(*slot);
+        }
+        Ok(())
     }
 
     /// Reads the registry again from disk, so that what was just written (or taken out) is what a
@@ -485,6 +628,25 @@ impl VaultSlots {
     }
 }
 
+/// What a search for unlisted vaults found (#357 4c-2).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct FoundVaults {
+    /// The slots whose folders the passphrase opened, in folder order.
+    pub found: Vec<SlotId>,
+    /// Folders holding a vault the passphrase did not open (they stay on disk, untouched).
+    pub not_opened: usize,
+    /// Folders with no vault in them (an interrupted creation); never deleted by the app.
+    pub empty: usize,
+}
+
+/// Why a search for unlisted vaults stopped.
+#[derive(Debug)]
+pub(crate) enum FindError {
+    /// The device counter is waiting this many milliseconds.
+    Wait(u64),
+    Vault(VaultError),
+}
+
 /// What a registry refusal is to the app: the owner's own mistakes keep their words, and everything
 /// about the file (damaged, newer, unreadable) is the one storage refusal, never named.
 fn registry_refusal(error: RegistryError) -> VaultError {
@@ -517,6 +679,19 @@ impl VaultSource for VaultSlots {
         VaultSlots::unlock_named(self, name, passphrase, stop_work)
     }
 
+    fn find_unlisted_vaults(
+        &self,
+        passphrase: &str,
+        before_try: &mut dyn FnMut() -> Result<(), u64>,
+        after_try: &mut dyn FnMut(crate::throttle::Outcome),
+    ) -> Result<FoundVaults, FindError> {
+        VaultSlots::find_unlisted_vaults(self, passphrase, before_try, after_try)
+    }
+
+    fn register_found(&self, named: &[(SlotId, String)]) -> Result<(), VaultError> {
+        VaultSlots::register_found(self, named)
+    }
+
     fn add_vault(
         &self,
         name: &str,
@@ -544,6 +719,8 @@ mod tests {
     use std::cell::Cell;
     use std::fs;
     use std::path::Path;
+
+    use uuid::Uuid;
 
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
 
@@ -643,7 +820,7 @@ mod tests {
         fs::write(temp.path().join(FILE_NAME), b"scribble").unwrap();
         let slots = slots_in(temp.path());
         assert_eq!(slots.slots(), vec![SlotId::Main]);
-        assert_eq!(slots.registry_problem(), Some(&RegistryError::Damaged));
+        assert_eq!(slots.registry_problem(), Some(RegistryError::Damaged));
         assert_eq!(fs::read(temp.path().join(FILE_NAME)).unwrap(), b"scribble");
     }
 
@@ -1381,5 +1558,219 @@ mod tests {
         let listed = registry_slots(temp.path());
         assert_eq!(listed.len(), 4);
         assert!(listed.contains(&other));
+    }
+
+    // ---- find my other vaults (#357 4c-2) ----
+
+    /// A device that lost its registry: Main plus two more vaults on disk (one opened by PASSWORD,
+    /// one by OTHER_PASSWORD), a registry file nothing can read, and a fresh start.
+    fn device_that_lost_its_registry(dir: &Path) -> (SlotId, SlotId) {
+        let mut registry = Registry::with_main(HashCost::TEST).unwrap();
+        let first = registry.add_extra("First").unwrap();
+        let second = registry.add_extra("Second").unwrap();
+        registry.save(dir).unwrap();
+        let slots = slots_in(dir);
+        make_vault_with(&slots, first, PASSWORD);
+        make_vault_with(&slots, second, OTHER_PASSWORD);
+        drop(slots);
+        fs::write(dir.join("vaults.v1"), b"not a registry any more").unwrap();
+        (first, second)
+    }
+
+    fn find(
+        slots: &VaultSlots,
+        passphrase: &str,
+    ) -> (
+        Result<FoundVaults, FindError>,
+        Vec<crate::throttle::Outcome>,
+    ) {
+        let outcomes = std::cell::RefCell::new(Vec::new());
+        let result = slots.find_unlisted_vaults(
+            passphrase,
+            || Ok(()),
+            |outcome| outcomes.borrow_mut().push(outcome),
+        );
+        (result, outcomes.into_inner())
+    }
+
+    #[test]
+    fn given_a_registry_that_cannot_be_read_when_other_vaults_are_found_then_each_folder_costs_one_counted_try(
+    ) {
+        use crate::throttle::Outcome;
+        let temp = tempfile::tempdir().unwrap();
+        let (first, second) = device_that_lost_its_registry(temp.path());
+        let slots = slots_in(temp.path());
+        assert_eq!(slots.registry_problem(), Some(RegistryError::Damaged));
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        reset_counters();
+        let (result, outcomes) = find(&slots, PASSWORD);
+        let found = result.unwrap();
+        // One derivation per folder, one after another, each told to the counter.
+        assert_eq!(counters().0, 2);
+        assert_eq!(outcomes.len(), 2);
+        assert!(outcomes.contains(&Outcome::Right) && outcomes.contains(&Outcome::Wrong));
+        assert_eq!(found.found, vec![first]);
+        assert_eq!((found.not_opened, found.empty), (1, 0));
+        // It writes nothing: the unreadable file is as it was, and every vault is locked again.
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert!(open_vaults(&slots).is_empty());
+        let (result, _) = find(&slots, OTHER_PASSWORD);
+        assert_eq!(result.unwrap().found, vec![second]);
+        let (result, _) = find(&slots, "no-such-passphrase-anywhere-1234");
+        let nothing = result.unwrap();
+        assert!(nothing.found.is_empty());
+        assert_eq!(nothing.not_opened, 2);
+    }
+
+    #[test]
+    fn given_a_waiting_counter_when_other_vaults_are_found_then_the_search_stops_before_a_derivation(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        device_that_lost_its_registry(temp.path());
+        let slots = slots_in(temp.path());
+        reset_counters();
+        let result = slots.find_unlisted_vaults(PASSWORD, || Err(30_000), |_| {});
+        assert!(matches!(result, Err(FindError::Wait(30_000))));
+        assert_eq!(counters().0, 0);
+        // A wait that starts after the first try stops the rest, and what was tried was counted.
+        let tried = std::cell::Cell::new(0);
+        let result = slots.find_unlisted_vaults(
+            PASSWORD,
+            || {
+                if tried.get() == 1 {
+                    Err(5_000)
+                } else {
+                    Ok(())
+                }
+            },
+            |_| tried.set(tried.get() + 1),
+        );
+        assert!(matches!(result, Err(FindError::Wait(5_000))));
+        assert_eq!(tried.get(), 1);
+    }
+
+    #[test]
+    fn given_found_vaults_when_they_are_named_then_a_new_registry_lists_main_first_and_the_old_file_is_kept(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (first, second) = device_that_lost_its_registry(temp.path());
+        let slots = slots_in(temp.path());
+        let damaged = fs::read(temp.path().join("vaults.v1")).unwrap();
+        slots
+            .register_found(&[(first, "Garden".into()), (second, "Study".into())])
+            .unwrap();
+        // The unreadable file was set aside, not deleted, and a registry was written.
+        let kept: Vec<_> = fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.starts_with("vaults.v1.damaged-"))
+            .collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(fs::read(temp.path().join(&kept[0])).unwrap(), damaged);
+        let listed = Registry::load(temp.path()).unwrap().unwrap();
+        assert_eq!(listed.slots(), vec![SlotId::Main, first, second]);
+        assert_eq!(listed.default_slot(), Some(SlotId::Main));
+        assert!(slots.registry_problem().is_none());
+        // Each is found by its name and opens with its own passphrase.
+        let opened = slots.unlock_named("garden", PASSWORD, || {}).unwrap();
+        assert!(Arc::ptr_eq(&opened, slots.store_of(first).unwrap()));
+        opened.lock();
+        slots.return_to_default(|| {});
+        let opened = slots
+            .unlock_named(" STUDY ", OTHER_PASSWORD, || {})
+            .unwrap();
+        assert!(Arc::ptr_eq(&opened, slots.store_of(second).unwrap()));
+        // A second search finds nothing left to list.
+        opened.lock();
+        let (result, _) = find(&slots, PASSWORD);
+        assert_eq!(result.unwrap(), FoundVaults::default());
+    }
+
+    #[test]
+    fn given_a_name_four_vaults_have_or_a_slot_not_found_when_named_then_nothing_is_written() {
+        let temp = tempfile::tempdir().unwrap();
+        let (first, second) = device_that_lost_its_registry(temp.path());
+        let slots = slots_in(temp.path());
+        let damaged = fs::read(temp.path().join("vaults.v1")).unwrap();
+        for named in [
+            vec![],
+            vec![(first, "a".to_owned()), (first, "b".to_owned())],
+            vec![(SlotId::Main, "main".to_owned())],
+            vec![(SlotId::Extra(Uuid::new_v4()), "x".to_owned())],
+            vec![(first, "Garden".to_owned()), (second, "".to_owned())],
+        ] {
+            assert!(slots.register_found(&named).is_err(), "{named:?}");
+        }
+        // Refused with the file exactly as it was, nothing set aside, and still damaged.
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), damaged);
+        assert_eq!(
+            fs::read_dir(temp.path())
+                .unwrap()
+                .filter(|e| {
+                    e.as_ref()
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .contains("damaged")
+                })
+                .count(),
+            0
+        );
+        assert_eq!(slots.registry_problem(), Some(RegistryError::Damaged));
+    }
+
+    #[test]
+    fn given_a_newer_registry_or_an_open_vault_when_other_vaults_are_found_then_it_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let (first, _) = device_that_lost_its_registry(temp.path());
+        let mut newer = Registry::with_main(HashCost::TEST).unwrap().to_bytes();
+        newer[8] = 0xff;
+        fs::write(temp.path().join("vaults.v1"), &newer).unwrap();
+        let slots = slots_in(temp.path());
+        assert!(matches!(
+            find(&slots, PASSWORD).0,
+            Err(FindError::Vault(VaultError::Storage))
+        ));
+        assert!(matches!(
+            slots.register_found(&[(first, "Garden".into())]),
+            Err(VaultError::Storage)
+        ));
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), newer);
+        // An open vault is not left open beside a search that opens others.
+        let temp = tempfile::tempdir().unwrap();
+        device_that_lost_its_registry(temp.path());
+        let slots = slots_in(temp.path());
+        make_vault(&slots, SlotId::Main);
+        slots.current().unlock(PASSWORD).unwrap();
+        assert!(matches!(
+            find(&slots, PASSWORD).0,
+            Err(FindError::Vault(VaultError::Busy))
+        ));
+    }
+
+    #[test]
+    fn given_a_good_registry_and_an_interrupted_creation_when_found_then_a_folder_with_no_vault_is_reported_and_kept(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _second) = two_vault_device(temp.path());
+        // A creation that never reached the registry: a vault of its own, and an empty folder.
+        let lost = SlotId::Extra(Uuid::new_v4());
+        let stray = SlotId::Extra(Uuid::new_v4());
+        let lost_store = VaultSlots::new_store(temp.path(), "FAKE.app", lost);
+        lost_store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        lost_store.lock();
+        fs::create_dir_all(slot_home(temp.path(), stray)).unwrap();
+        let (result, outcomes) = find(&slots, PASSWORD);
+        let found = result.unwrap();
+        assert_eq!(found.found, vec![lost]);
+        assert_eq!((found.not_opened, found.empty), (0, 1));
+        assert_eq!(outcomes.len(), 1);
+        slots.register_found(&[(lost, "Recovered".into())]).unwrap();
+        // The registry kept what it had, in order, and added the recovered vault.
+        let listed = registry_slots(temp.path());
+        assert_eq!(listed.len(), 3);
+        assert_eq!(listed[2], lost);
+        // The empty folder was not touched.
+        assert!(slot_home(temp.path(), stray).is_dir());
     }
 }
