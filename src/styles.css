@@ -5059,6 +5059,8 @@ button:disabled,
   font-size: 0.85rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+}
+
 /* Preferences: the tick-box choices read at body size, like the sentences beside them, and a long
    explanation folds under "More about this" so the key fact stays in view. */
 .native-vault-page .setting-row .preferences-checks .appearance-option {
