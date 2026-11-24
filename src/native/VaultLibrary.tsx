@@ -3077,6 +3077,10 @@ export function VaultLibrary({
             !renameTarget &&
             !pendingAction &&
             !shownPhoto &&
+            // The details dialog is later in the page than the player, so left up it would sit
+            // over it: like a photo, a playing video replaces the details, which come back when
+            // the player closes.
+            shownVideo?.recordId !== activeRecord.id &&
             unlocking?.recordId !== activeRecord.id && (
               <RecordDetails
                 record={activeRecord}
