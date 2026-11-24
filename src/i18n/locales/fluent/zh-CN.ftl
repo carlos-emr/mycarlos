@@ -2329,3 +2329,14 @@ background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动�
 preferences-moreAutomatic = 关于自动检查的更多说明
 
 preferences-moreBackground = 关于后台运行的更多说明
+
+native-notice-test = 这是来自 myCarlos 的测试通知。
+
+notifications-testButton = 显示测试通知
+
+notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+
+notifications-testWait = 请等待几秒钟后再试。
+
+notifications-testFailed = 无法显示测试通知。
+notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。

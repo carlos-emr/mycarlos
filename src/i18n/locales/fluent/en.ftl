@@ -2547,3 +2547,14 @@ background-startAtLoginSummary = myCarlos can start when you sign in to this com
 preferences-moreAutomatic = More about automatic checks
 
 preferences-moreBackground = More about running in the background
+
+native-notice-test = This is a test notice from myCarlos.
+
+notifications-testButton = Show a test notice
+
+notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+
+notifications-testWait = Wait a few seconds, then try again.
+
+notifications-testFailed = The test notice could not be shown.
+notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.

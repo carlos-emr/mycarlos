@@ -1209,6 +1209,12 @@ export const MESSAGE_KEYS = [
   "notifications.autoSummary",
   "background.keepRunningSummary",
   "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed",
+  "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
 ] as const;
@@ -2686,6 +2692,12 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoSummary": "notifications-autoSummary",
   "background.keepRunningSummary": "background-keepRunningSummary",
   "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "native.notice.test": "native-notice-test",
+  "notifications.testButton": "notifications-testButton",
+  "notifications.testSent": "notifications-testSent",
+  "notifications.testWait": "notifications-testWait",
+  "notifications.testFailed": "notifications-testFailed",
+  "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
 } as const satisfies Record<MessageKey, string>;
@@ -4029,6 +4041,12 @@ export interface MessageArgsByKey {
   "notifications.autoSummary": undefined;
   "background.keepRunningSummary": undefined;
   "background.startAtLoginSummary": undefined;
+  "native.notice.test": undefined;
+  "notifications.testButton": undefined;
+  "notifications.testSent": undefined;
+  "notifications.testWait": undefined;
+  "notifications.testFailed": undefined;
+  "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
 }

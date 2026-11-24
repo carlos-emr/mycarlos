@@ -2582,3 +2582,14 @@ background-startAtLoginSummary = myCarlos peut démarrer lorsque vous ouvrez une
 preferences-moreAutomatic = En savoir plus sur les vérifications automatiques
 
 preferences-moreBackground = En savoir plus sur l’exécution en arrière-plan
+
+native-notice-test = Ceci est un avis de test de myCarlos.
+
+notifications-testButton = Afficher un avis de test
+
+notifications-testSent = Avis de test envoyé. Si vous ne le voyez pas, vérifiez les paramètres de notification de Windows.
+
+notifications-testWait = Patientez quelques secondes, puis réessayez.
+
+notifications-testFailed = L’avis de test n’a pas pu être affiché.
+notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.

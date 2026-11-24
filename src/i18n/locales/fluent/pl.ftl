@@ -2662,3 +2662,14 @@ background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu 
 preferences-moreAutomatic = Więcej o automatycznym sprawdzaniu
 
 preferences-moreBackground = Więcej o działaniu w tle
+
+native-notice-test = To jest testowe powiadomienie z myCarlos.
+
+notifications-testButton = Pokaż powiadomienie testowe
+
+notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+
+notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
+
+notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
+notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.

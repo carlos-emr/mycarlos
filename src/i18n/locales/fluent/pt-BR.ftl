@@ -2582,3 +2582,14 @@ background-startAtLoginSummary = O myCarlos pode iniciar quando você entra nest
 preferences-moreAutomatic = Saiba mais sobre as verificações automáticas
 
 preferences-moreBackground = Saiba mais sobre a execução em segundo plano
+
+native-notice-test = Este é um aviso de teste do myCarlos.
+
+notifications-testButton = Mostrar um aviso de teste
+
+notifications-testSent = Aviso de teste enviado. Se você não o vir, verifique as configurações de notificação do Windows.
+
+notifications-testWait = Aguarde alguns segundos e tente novamente.
+
+notifications-testFailed = Não foi possível mostrar o aviso de teste.
+notifications-testOff = Os avisos estão desativados no myCarlos. Ative-os e tente novamente.

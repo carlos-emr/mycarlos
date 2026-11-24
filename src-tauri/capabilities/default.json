@@ -41,6 +41,7 @@
     "allow-vault-forget-refused-deliveries",
     "allow-vault-notification-status",
     "allow-vault-set-notifications",
+    "allow-vault-send-test-notice",
     "allow-vault-set-automatic-document-checks",
     "allow-vault-request-device-approval",
     "allow-vault-restart-device-approval",

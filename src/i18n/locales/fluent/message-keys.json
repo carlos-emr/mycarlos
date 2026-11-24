@@ -1208,6 +1208,12 @@
   "notifications.autoSummary",
   "background.keepRunningSummary",
   "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed",
+  "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground"
 ]
