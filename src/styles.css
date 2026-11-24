@@ -4966,9 +4966,26 @@ button:disabled,
 .more-about summary {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 44px;
   cursor: pointer;
   font-weight: 700;
+  list-style: none;
+}
+.more-about summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron says it is a control that opens: pointing right when closed, down when open. Its alt
+   text is empty, so a screen reader reads the words and the state, not the shape. */
+.more-about summary::before {
+  content: "\25B8" / "";
+  flex: none;
+  width: 1em;
+  text-align: center;
+  color: var(--ink-soft);
+}
+.more-about[open] > summary::before {
+  content: "\25BE" / "";
 }
 .more-about summary:focus-visible {
   outline-offset: 2px;

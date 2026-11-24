@@ -96,3 +96,25 @@ test("a screen reader finds each disclosure as a collapsed or expanded group, an
   }
   await expectNoAxeViolations(page, "preferences with the text opened");
 });
+
+test("More about this has a chevron that points right when closed and down when open", async ({
+  page,
+}) => {
+  await preferences(page);
+  const summary = page.locator("details.more-about > summary").first();
+  const marker = () =>
+    summary.evaluate(
+      (element) => getComputedStyle(element, "::before").content,
+    );
+  expect(await marker()).toContain("\u25B8");
+  await summary.click();
+  expect(await marker()).toContain("\u25BE");
+  // The focus ring stays visible on the keyboard.
+  await summary.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  const outline = await summary.evaluate(
+    (element) => getComputedStyle(element).outlineStyle,
+  );
+  expect(outline).not.toBe("none");
+});
