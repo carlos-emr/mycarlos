@@ -9,19 +9,14 @@ import WebKit
 /// app's own Rust code calls `requestToken` and `permission`. UNVERIFIED until macOS CI builds it.
 class PushPlugin: Plugin, UNUserNotificationCenterDelegate {
   private let hook = RegistrationHook()
-  /// The asks that wait for Apple's answer. Only touched on the main queue.
-  private var waiting: [Invoke] = []
+  /// The asks that wait for Apple's answer, each with its own number so that its own timer can end
+  /// it alone. Only touched on the main queue.
+  private var waiting: [(id: UUID, invoke: Invoke)] = []
   /// How long to wait for Apple before giving up.
   private static let patience: TimeInterval = 30
 
-  /// A development build gets sandbox tokens; TestFlight and App Store builds get production ones.
-  private static var environment: String {
-    #if DEBUG
-      return "sandbox"
-    #else
-      return "production"
-    #endif
-  }
+  /// Which Apple push service this build's tokens belong to, from what it was signed with.
+  private static var environment: String { PushEnvironment.current() }
 
   override func load(webview: WKWebView) {
     UNUserNotificationCenter.current().delegate = self
@@ -42,10 +37,12 @@ class PushPlugin: Plugin, UNUserNotificationCenterDelegate {
           invoke.reject("push_permission_refused")
           return
         }
-        self.waiting.append(invoke)
+        let id = UUID()
+        self.waiting.append((id: id, invoke: invoke))
         UIApplication.shared.registerForRemoteNotifications()
+        // This ask's own timer: it ends this ask only, not one that came later.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.patience) {
-          self.finish(.failure("push_token_timeout"))
+          self.timeOut(id)
         }
       }
     }
@@ -67,18 +64,26 @@ class PushPlugin: Plugin, UNUserNotificationCenterDelegate {
     }
   }
 
+  /// Apple answered: every ask that is waiting gets the answer.
   private func finish(_ result: RegistrationResult) {
     let asks = waiting
     waiting = []
-    for invoke in asks {
+    for ask in asks {
       switch result {
       case .token(let token):
-        invoke.resolve(["token": token, "environment": Self.environment])
+        ask.invoke.resolve(["token": token, "environment": Self.environment])
       case .failure:
         // Apple's description is not passed on: only that it did not work.
-        invoke.reject("push_token_unavailable")
+        ask.invoke.reject("push_token_unavailable")
       }
     }
+  }
+
+  /// One ask ran out of patience. If it is still waiting it is refused, and the others wait on.
+  private func timeOut(_ id: UUID) {
+    guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
+    let ask = waiting.remove(at: index)
+    ask.invoke.reject("push_token_timeout")
   }
 
   /// A notice that arrives while myCarlos is in front is still shown as a banner.

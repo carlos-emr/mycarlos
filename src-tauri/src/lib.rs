@@ -53,6 +53,8 @@ mod model_limits;
 mod model_runtime;
 mod video_scheme;
 // The recording core (#359) and, in the next step, the playback address use it.
+#[cfg(any(target_os = "ios", test))]
+mod ios_push;
 #[allow(dead_code)]
 mod mp4_stream;
 mod notice_key;

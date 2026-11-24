@@ -1,30 +1,30 @@
 //! Native-only iPhone push registration (#422 push design, piece 2). No command is exposed to
 //! JavaScript: the app's own Rust code asks this plugin for the Apple device token, after the
 //! patient has opted in. The token is held in memory by the caller and never stored by this plugin.
+//! What the answers mean (a valid token, a known Apple service, why a refusal) is decided by the
+//! app's own `ios_push` module, which is tested on every platform.
 //!
 //! UNVERIFIED until macOS CI compiles it: the Swift half cannot be built on Linux.
-use serde::Deserialize;
-use tauri::{plugin::PluginHandle, Manager, Runtime};
+use tauri::{
+    plugin::{mobile::PluginInvokeError, PluginHandle},
+    Manager, Runtime,
+};
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_ios_push);
 
 struct Push<R: Runtime>(PluginHandle<R>);
 
-/// What Apple gave this install: the device token (hex, lower case) and which Apple push service it
-/// belongs to. A development build gets a sandbox token and TestFlight and App Store builds get a
-/// production one; sending to the wrong host fails.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct Token {
-    pub token: String,
-    pub environment: String,
-}
-
-/// The system's answer to "may this app show notices?" as the plugin reads it (`notDetermined`,
-/// `denied`, `authorized`, `provisional`, `ephemeral`, or `unknown`).
-#[derive(Debug, Deserialize)]
-pub struct Permission {
-    pub status: String,
+/// Why the plugin gave no answer.
+#[derive(Debug)]
+pub enum Failure {
+    /// The plugin rejected the ask; this is its reject text (`push_permission_refused`,
+    /// `push_token_timeout`, `push_token_unavailable`).
+    Rejected(Option<String>),
+    /// The call itself failed (the webview, serialisation).
+    Other,
+    /// This build has no iPhone push plugin.
+    NotAnIphone,
 }
 
 pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
@@ -37,22 +37,34 @@ pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .build()
 }
 
-/// Asks for notice permission (the system question is shown here, once) and then for the device
-/// token. `None` when the patient refuses, the system gives no token in time, or this is not an
-/// iPhone.
-pub async fn request_token<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<Token> {
-    app.try_state::<Push<R>>()?
-        .0
-        .run_mobile_plugin_async::<Token>("requestToken", ())
-        .await
-        .ok()
+fn failure(error: PluginInvokeError) -> Failure {
+    match error {
+        PluginInvokeError::InvokeRejected(response) => {
+            Failure::Rejected(response.message.or(response.code))
+        }
+        _ => Failure::Other,
+    }
 }
 
-/// The permission as it is now, without asking.
-pub async fn permission<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<Permission> {
-    app.try_state::<Push<R>>()?
-        .0
-        .run_mobile_plugin_async::<Permission>("permission", ())
+/// Asks for notice permission (the system question is shown here, once) and then for the device
+/// token. The raw reply is `{token, environment}`; the caller checks it.
+pub async fn request_token<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<serde_json::Value, Failure> {
+    let push = app.try_state::<Push<R>>().ok_or(Failure::NotAnIphone)?;
+    push.0
+        .run_mobile_plugin_async::<serde_json::Value>("requestToken", ())
         .await
-        .ok()
+        .map_err(failure)
+}
+
+/// The permission as it is now, without asking: `{status}`.
+pub async fn permission<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<serde_json::Value, Failure> {
+    let push = app.try_state::<Push<R>>().ok_or(Failure::NotAnIphone)?;
+    push.0
+        .run_mobile_plugin_async::<serde_json::Value>("permission", ())
+        .await
+        .map_err(failure)
 }
