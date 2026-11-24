@@ -382,6 +382,48 @@ describe("VideoViewer", () => {
     expect(video.muted).toBe(false);
   });
 
+  it("says Unmute or Mute from the video's real state, not from counting its own presses", () => {
+    const { video } = open();
+    const mute = () =>
+      screen.getByRole("button", { name: humanText("Mute (m)") });
+    expect(mute()).toBeVisible();
+    // Muted by something other than the button (the browser's own control, say).
+    video.muted = true;
+    fireEvent(video, new Event("volumechange"));
+    expect(
+      screen.getByRole("button", { name: humanText("Unmute (m)") }),
+    ).toBeVisible();
+    // A volume change that leaves it muted does not flip the label back.
+    fireEvent(video, new Event("volumechange"));
+    expect(
+      screen.getByRole("button", { name: humanText("Unmute (m)") }),
+    ).toBeVisible();
+    video.muted = false;
+    fireEvent(video, new Event("volumechange"));
+    expect(mute()).toBeVisible();
+  });
+
+  it("stops the page from also acting on a key the player handled (a phone's dialog scrolls)", () => {
+    const { video } = open();
+    for (const key of [" ", "k", "ArrowLeft", "m"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      video.dispatchEvent(event);
+      expect(event.defaultPrevented, key).toBe(true);
+    }
+    // A key it does not handle is left alone.
+    const other = new KeyboardEvent("keydown", {
+      key: "x",
+      bubbles: true,
+      cancelable: true,
+    });
+    video.dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(false);
+  });
+
   it("keeps the focus in the player after Play, even where the click took it away", () => {
     const { video } = open();
     const playButton = screen.getByRole("button", { name: "Play/Pause (k)" });
