@@ -1576,6 +1576,8 @@ impl Drop for Runner {
 /// model when there is one, looking every `CANCEL_POLL` whether it is still `wanted`.
 fn spawn(config: &RunnerConfig, wanted: &dyn Fn() -> bool) -> Result<Sidecar, RunnerError> {
     let mut command = Command::new(&config.command);
+    // No console window on Windows (a sandboxed start goes through the confined launcher, which has its own flag).
+    crate::process_flags::hide_console(&mut command);
     command.args(&config.args);
     let (process, input, output) = start_process(command, config)?;
     let (sender, lines) = mpsc::channel();

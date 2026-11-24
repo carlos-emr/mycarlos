@@ -7,6 +7,7 @@ import {
   aiKept,
   answerAi,
   fakeAiWith,
+  markAiKeptImported,
   refuseAi,
 } from "./support/aiFake";
 import { translate } from "./support/fluent";
@@ -123,6 +124,8 @@ test("a kept summary is shown again without the model, and Summarize again hides
   await expect(
     panel.getByText(en("aiHelper.resultLabel"), { exact: true }),
   ).toBeVisible();
+  // This computer's own answer is not marked as an imported one.
+  await expect(panel.getByText(en("handover.importedAnswer"))).toHaveCount(0);
   expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(1);
 
   // Summarize again: the model's newer answer is shown and kept; the older
@@ -216,5 +219,27 @@ test("a summary the vault could not keep says so and stays on screen", async ({
     panel.getByText(en("aiHelper.resultLabel"), { exact: true }),
   ).toBeVisible();
   expect(await aiKept(page)).toEqual([]);
+  await expectOnlyFakedCommands(page);
+});
+
+test("a kept summary that came in a handover file says it came from an imported file (#360)", async ({
+  page,
+}) => {
+  await start(page);
+  let reader = await openReader(page);
+  await open(page, reader, en("ai.summary.button"), true);
+  await expect(sentences(summaryPanel(reader))).toHaveCount(FAKE_PAGE_COUNT);
+  await close(reader);
+  // The vault now says the answer came in a file, as an import marks it.
+  await markAiKeptImported(page);
+  reader = await openReader(page);
+  await open(page, reader, en("ai.summary.button"));
+  const panel = summaryPanel(reader);
+  await expect(sentences(panel)).toHaveCount(FAKE_PAGE_COUNT);
+  await expect(
+    panel.getByText(en("handover.importedAnswer"), { exact: true }),
+  ).toBeVisible();
+  // Shown from the vault, not asked of the model again.
+  expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(1);
   await expectOnlyFakedCommands(page);
 });
