@@ -8134,6 +8134,76 @@ mod tests {
     }
 
     #[test]
+    fn the_main_window_opens_maximized_and_keeps_its_size_to_come_back_to() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let window = config.app.windows.first().unwrap();
+        // Maximized, not fullscreen: the title bar, the close button and the taskbar stay.
+        assert!(window.maximized, "the window starts maximized");
+        assert!(!window.fullscreen, "and is not fullscreen");
+        // Un-maximizing comes back to this size, which must stay a usable one.
+        assert_eq!((window.width, window.height), (1100.0, 760.0));
+        assert!(window.resizable && window.decorations);
+        assert!(window.min_width.is_some_and(|width| width <= window.width));
+        assert!(window
+            .min_height
+            .is_some_and(|height| height <= window.height));
+    }
+
+    /// Nothing sets, moves, centres or changes the main window after it is built, so showing it
+    /// again from the tray (`unminimize`, `show`, `set_focus`) brings it back as the patient left
+    /// it: maximized unless they restored it. A hide and a show keep the window's state.
+    #[test]
+    fn no_source_file_resizes_moves_or_changes_the_state_of_the_main_window() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        // Spelled in two parts so that this test does not find itself.
+        let calls: Vec<String> = [
+            ("set_", "fullscreen("),
+            ("set_", "size("),
+            ("set_", "position("),
+            ("set_", "maximized("),
+            ("set_", "min_size("),
+            ("set_", "max_size("),
+            (".", "center()"),
+            (".", "maximize()"),
+            (".", "unmaximize()"),
+            (".", "fullscreen("),
+        ]
+        .iter()
+        .map(|(head, tail)| format!("{head}{tail}"))
+        .collect();
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(files.len() > 40, "the scan found the source files");
+        let mut found = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap();
+            for call in &calls {
+                if text.contains(call.as_str()) {
+                    found.push(format!("{} has {call}", file.display()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "these change the main window after it opens; the window is made maximized by \
+             tauri.conf.json and must stay as the patient leaves it: {found:?}"
+        );
+    }
+
+    #[test]
     fn a_development_build_may_also_load_its_development_server() {
         let url = |text: &str| Url::parse(text).unwrap();
         let dev = url("http://localhost:1420");
