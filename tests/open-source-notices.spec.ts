@@ -45,7 +45,9 @@ test("lists the libraries with their licences and names myCarlos's own licence a
   const entries = page.locator("li.notice-entry");
   await expect(entries.first()).toBeVisible();
   await expect(entries.filter({ hasText: "react-dom" }).first()).toBeVisible();
-  await expect(entries.filter({ hasText: "llama.cpp and ggml" })).toHaveCount(1);
+  await expect(entries.filter({ hasText: "llama.cpp and ggml" })).toHaveCount(
+    1,
+  );
   await expectOnlyFakedCommands(page);
 });
 

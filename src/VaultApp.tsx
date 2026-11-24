@@ -71,6 +71,10 @@ import {
 } from "./native/unfinishedRecoveryKey";
 import { rememberOldBackupsGuide } from "./native/oldBackups";
 import {
+  rememberUnfinishedHandover,
+  takeUnfinishedHandover,
+} from "./native/unfinishedHandover";
+import {
   normalizeAutoLockMinutes,
   readAutoLockMinutes,
   persistAutoLockMinutes,
@@ -464,6 +468,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     pendingSharedOutcomeRef.current = null;
     rememberUnfinishedRecoveryKey(null);
     rememberOldBackupsGuide(null);
+    rememberUnfinishedHandover(false);
   };
 
   // Taken as a vault opens: what happened while it was locked, and how a
@@ -509,6 +514,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           )
         : null;
     pendingOutcomeRef.current = null;
+    // A handover whose key was shown when the lock fell: the key opens nothing now.
+    if (takeUnfinishedHandover())
+      return joinText(
+        outcome,
+        deferredText(() => t("handover.unfinished")),
+      );
     return outcome || null;
   };
 
@@ -832,6 +843,14 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         track(bridge.pickBackupDestination(localDate)),
       saveBackupToPicked: (pickId) =>
         transfer(() => bridge.saveBackupToPicked(pickId)),
+      // A person's records handed over, or added from a file (#360): pickers are
+      // tracked as the backup's are, and writing or adding is a transfer the lock waits for.
+      pickProfileExportDestination: (exportId, localDate) =>
+        track(bridge.pickProfileExportDestination(exportId, localDate)),
+      saveProfileExportToPicked: (pickId) =>
+        transfer(() => bridge.saveProfileExportToPicked(pickId)),
+      pickProfileImportSource: () => track(bridge.pickProfileImportSource()),
+      importProfile: (request) => transfer(() => bridge.importProfile(request)),
       pickRestoreSource: () => track(bridge.pickRestoreSource()),
       restore: async (pickId, credential, replace) => {
         try {
@@ -1666,6 +1685,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         ...outcome.notPdf.map((name) =>
           translateNow("interface.notice.notPdf", { name }),
         ),
+        ...outcome.unreadable.map((name) =>
+          translateNow("interface.notice.receivedNotOpened", { name }),
+        ),
         ...outcome.skippedDuplicates.map((name) =>
           translateNow("interface.notice.alreadyShared", { name }),
         ),
@@ -1680,6 +1702,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (
           outcome.imported.length ||
           outcome.notPdf.length ||
+          outcome.unreadable.length ||
           outcome.skippedDuplicates.length
         ) {
           const message = deferredText(() =>
@@ -1717,10 +1740,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (!current()) return;
         setSharedNew((count) => count + outcome.imported.length);
       }
-      if (outcome.notPdf.length || outcome.skippedDuplicates.length)
+      if (
+        outcome.notPdf.length ||
+        outcome.unreadable.length ||
+        outcome.skippedDuplicates.length
+      )
         setSessionNotice(deferredText(() => said().join(" ")));
-    } catch {
-      // They keep waiting: the next ask tries again.
+    } catch (error) {
+      // They keep waiting: the next ask tries again. Said, unless it is the
+      // vault locking or the work cancelled: without a word, no space, a
+      // paused vault or damage would mean the files never appear.
+      if (
+        inSession() &&
+        !hasVaultErrorCode(error, "locked") &&
+        !hasVaultErrorCode(error, "cancelled")
+      )
+        setSessionNotice(deferredText(() => vaultErrorMessage(error)));
     } finally {
       if (accepting.current === generation) accepting.current = null;
       // A newer unlock may have asked while these files were still taken.
@@ -2083,6 +2118,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onOpeningRecoverySetupShown={() => setOpeningRecoverySetup(null)}
         onOfferClosed={offerClosed}
         onUnfinishedRecoveryKey={rememberUnfinishedRecoveryKey}
+        onUnfinishedHandover={rememberUnfinishedHandover}
         canPrint={DESKTOP_PLATFORMS.has(platform)}
         keyboardHints={DESKTOP_PLATFORMS.has(platform)}
         computer={DESKTOP_PLATFORMS.has(platform)}
