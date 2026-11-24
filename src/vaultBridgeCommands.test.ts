@@ -584,7 +584,85 @@ describe("each bridge method invokes its native command with its arguments", () 
       "hideUnavailableRecords",
       (b) => b.hideUnavailableRecords(["rec-1"]),
       "vault_hide_unavailable_records",
-      { request: { confirmed: ["rec-1"] } },
+      { request: { confirmed: ["rec-1"], hiddenPeopleDocuments: 0 } },
+    ],
+    [
+      "prepareProfileExport",
+      (b) =>
+        b.prepareProfileExport({
+          profileId: "p-1",
+          includeHistory: true,
+          passphrase: "FAKE-passphrase",
+        }),
+      "vault_profile_export_prepare",
+      {
+        request: {
+          profileId: "p-1",
+          includeHistory: true,
+          passphrase: "FAKE-passphrase",
+        },
+      },
+    ],
+    [
+      "pickProfileExportDestination",
+      (b) => b.pickProfileExportDestination("exp-1", "2026-11-24"),
+      "vault_profile_export_pick",
+      { request: { exportId: "exp-1", localDate: "2026-11-24" } },
+    ],
+    [
+      "saveProfileExportToPicked",
+      (b) => b.saveProfileExportToPicked("pick-1"),
+      "vault_profile_export_picked",
+      { request: { pickId: "pick-1" } },
+    ],
+    [
+      "pickProfileImportSource",
+      (b) => b.pickProfileImportSource(),
+      "vault_profile_import_pick",
+      undefined,
+    ],
+    [
+      "profileImportKeyKind",
+      (b) => b.profileImportKeyKind("pick-1"),
+      "vault_profile_import_key_kind",
+      { request: { pickId: "pick-1" } },
+    ],
+    [
+      "inspectProfileImport",
+      (b) => b.inspectProfileImport({ pickId: "pick-1", key: "FAKE-key" }),
+      "vault_profile_import_inspect",
+      { request: { pickId: "pick-1", key: "FAKE-key" } },
+    ],
+    [
+      "importProfile",
+      (b) =>
+        b.importProfile({
+          pickId: "pick-1",
+          passphrase: "FAKE-passphrase",
+          displayName: "FAKE Person",
+          allowDuplicate: true,
+        }),
+      "vault_profile_import",
+      {
+        request: {
+          pickId: "pick-1",
+          passphrase: "FAKE-passphrase",
+          displayName: "FAKE Person",
+          allowDuplicate: true,
+        },
+      },
+    ],
+    [
+      "hideProfile",
+      (b) => b.hideProfile("p-1"),
+      "vault_hide_profile",
+      { request: { profileId: "p-1" } },
+    ],
+    [
+      "restoreProfile",
+      (b) => b.restoreProfile("p-1"),
+      "vault_restore_profile",
+      { request: { profileId: "p-1" } },
     ],
     [
       "reset",
@@ -965,9 +1043,12 @@ describe("the commands the renderer invokes are the ones the native side registe
     expect(Object.fromEntries(variableSites)).toEqual(VARIABLE_SITES);
     // Their callers write the command as a snake_case string; each one must be registered.
     const names = new Set<string>();
+    // Quoted snake_case words in those files that are values and not commands (the notice
+    // permission "not_yet_asked" in NotificationSetting.tsx).
+    const notCommands = new Set(["not_yet_asked"]);
     for (const file of Object.keys(VARIABLE_SITES)) {
       for (const found of sources[file].matchAll(/"([a-z]+(?:_[a-z0-9]+)+)"/g))
-        names.add(found[1]);
+        if (!notCommands.has(found[1])) names.add(found[1]);
     }
     const unknown = [...names].filter((name) => !registered.has(name));
     expect(unknown).toEqual([]);
