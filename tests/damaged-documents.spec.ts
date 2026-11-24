@@ -135,8 +135,8 @@ test("a missing file pauses changes and marks the document; hiding it is asked f
   await expect(banner).toHaveCount(0);
   await expect(row).toHaveCount(0);
   expect(await fakeCalls(page, "vault_hide_unavailable_records")).toEqual([
-    { request: { confirmed: [FAKE_IDS.letter] } },
-    { request: { confirmed: [FAKE_IDS.letter] } },
+    { request: { confirmed: [FAKE_IDS.letter], hiddenPeopleDocuments: 0 } },
+    { request: { confirmed: [FAKE_IDS.letter], hiddenPeopleDocuments: 0 } },
   ]);
   await expect(
     page.getByRole("button", {
