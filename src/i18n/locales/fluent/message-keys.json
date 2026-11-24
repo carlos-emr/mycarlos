@@ -1208,5 +1208,10 @@
   "preferences.less",
   "notifications.autoSummary",
   "background.keepRunningSummary",
-  "background.startAtLoginSummary"
+  "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed"
 ]

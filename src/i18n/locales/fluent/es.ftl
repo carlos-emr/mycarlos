@@ -2579,3 +2579,13 @@ notifications-autoSummary = Las comprobaciones automáticas solo se hacen mientr
 background-keepRunningSummary = myCarlos puede seguir en segundo plano después de cerrar su ventana. Su bóveda se bloquea al cerrarse la ventana.
 
 background-startAtLoginSummary = myCarlos puede iniciarse cuando inicia sesión en este equipo.
+
+native-notice-test = Este es un aviso de prueba de myCarlos.
+
+notifications-testButton = Mostrar un aviso de prueba
+
+notifications-testSent = Aviso de prueba enviado. Si no lo ve, revise la configuración de notificaciones de Windows.
+
+notifications-testWait = Espere unos segundos y vuelva a intentarlo.
+
+notifications-testFailed = No se pudo mostrar el aviso de prueba.

@@ -2326,3 +2326,13 @@ notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进
 background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
 
 background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动。
+
+native-notice-test = 这是来自 myCarlos 的测试通知。
+
+notifications-testButton = 显示测试通知
+
+notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+
+notifications-testWait = 请等待几秒钟后再试。
+
+notifications-testFailed = 无法显示测试通知。

@@ -3660,6 +3660,20 @@ async fn vault_notification_status(
         .map_err(|_| PublicError::from(VaultError::Storage))
 }
 
+/// "Show a test notice": the same generic notice an arrival shows, with a fixed sentence, so a
+/// person can confirm Windows lets myCarlos notify. No vault data is read, nothing is recorded,
+/// and a second press within a few seconds is refused.
+#[tauri::command]
+async fn vault_send_test_notice(
+    store: State<'_, StoreHandle>,
+) -> CommandResult<document_notification_runtime::TestNotice> {
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.send_test_notice())
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
 #[tauri::command]
 async fn vault_set_notifications(
     store: State<'_, StoreHandle>,
@@ -6802,6 +6816,7 @@ pub fn run() {
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
+            vault_send_test_notice,
             vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,

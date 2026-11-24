@@ -2544,3 +2544,13 @@ notifications-autoSummary = Automatic checks run only while myCarlos is open and
 background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
 
 background-startAtLoginSummary = myCarlos can start when you sign in to this computer.
+
+native-notice-test = This is a test notice from myCarlos.
+
+notifications-testButton = Show a test notice
+
+notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+
+notifications-testWait = Wait a few seconds, then try again.
+
+notifications-testFailed = The test notice could not be shown.

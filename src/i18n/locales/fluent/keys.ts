@@ -1210,6 +1210,11 @@ export const MESSAGE_KEYS = [
   "notifications.autoSummary",
   "background.keepRunningSummary",
   "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -2686,6 +2691,11 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.autoSummary": "notifications-autoSummary",
   "background.keepRunningSummary": "background-keepRunningSummary",
   "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "native.notice.test": "native-notice-test",
+  "notifications.testButton": "notifications-testButton",
+  "notifications.testSent": "notifications-testSent",
+  "notifications.testWait": "notifications-testWait",
+  "notifications.testFailed": "notifications-testFailed",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4028,6 +4038,11 @@ export interface MessageArgsByKey {
   "notifications.autoSummary": undefined;
   "background.keepRunningSummary": undefined;
   "background.startAtLoginSummary": undefined;
+  "native.notice.test": undefined;
+  "notifications.testButton": undefined;
+  "notifications.testSent": undefined;
+  "notifications.testWait": undefined;
+  "notifications.testFailed": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

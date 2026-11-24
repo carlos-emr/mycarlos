@@ -25,6 +25,90 @@ afterEach(() => {
 });
 
 describe("Document notice preference", () => {
+  it("shows a test notice only while notices are allowed, and says what came of it", async () => {
+    const user = userEvent.setup();
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return "shown";
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    const button = await screen.findByRole("button", {
+      name: humanText("Show a test notice"),
+    });
+    expect(button).toBeEnabled();
+    await user.click(button);
+    expect(
+      await screen.findByText(humanText(/Test notice sent/)),
+    ).toBeVisible();
+    // No arguments: nothing of the vault, a document or a clinic goes with it.
+    expect(native.invoke).toHaveBeenCalledWith("vault_send_test_notice");
+  });
+
+  it("keeps the test button off until notices are allowed", async () => {
+    native.invoke.mockResolvedValue({ ...allowed, enabled: false });
+    render(<NotificationSetting />);
+    expect(
+      await screen.findByRole("button", {
+        name: humanText("Show a test notice"),
+      }),
+    ).toBeDisabled();
+    expect(native.invoke).not.toHaveBeenCalledWith("vault_send_test_notice");
+  });
+
+  it("shows the Windows-is-blocking line when the system refuses the test notice", async () => {
+    const user = userEvent.setup();
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return "blocked";
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    expect(
+      screen.queryByText(humanText(/Windows is blocking notifications/)),
+    ).toBeNull();
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Show a test notice"),
+      }),
+    );
+    expect(
+      await screen.findByText(humanText(/Windows is blocking notifications/)),
+    ).toBeVisible();
+  });
+
+  it("tells a quick second press to wait, and a failure that it could not be shown", async () => {
+    const user = userEvent.setup();
+    let next = "tooSoon";
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return next;
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    const press = async () =>
+      user.click(
+        await screen.findByRole("button", {
+          name: humanText("Show a test notice"),
+        }),
+      );
+    await press();
+    expect(
+      await screen.findByText(humanText("Wait a few seconds, then try again.")),
+    ).toBeVisible();
+    next = "failed";
+    await press();
+    expect(
+      await screen.findByText(humanText("The test notice could not be shown.")),
+    ).toBeVisible();
+    // A command that throws is a failure too, not a silence.
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") throw new Error("FAKE");
+      return { ...allowed, enabled: true };
+    });
+    await press();
+    expect(
+      await screen.findByText(humanText("The test notice could not be shown.")),
+    ).toBeVisible();
+  });
+
   it("keeps the key fact in view and folds the long explanation under More about this", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,

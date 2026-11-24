@@ -1197,6 +1197,14 @@ impl VaultStore {
         status
     }
 
+    /// "Show a test notice" (Windows): a generic fixed notice with no document or clinic data.
+    pub(crate) fn send_test_notice(&self) -> crate::document_notification_runtime::TestNotice {
+        self.notifications.get().map_or(
+            crate::document_notification_runtime::TestNotice::NotAllowed,
+            |runtime| runtime.send_test_notice(),
+        )
+    }
+
     pub(crate) fn set_notifications(
         &self,
         enabled: bool,

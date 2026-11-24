@@ -2579,3 +2579,13 @@ notifications-autoSummary = Les vérifications automatiques n’ont lieu que lor
 background-keepRunningSummary = myCarlos peut rester en arrière-plan après la fermeture de sa fenêtre. Votre coffre se verrouille à la fermeture de la fenêtre.
 
 background-startAtLoginSummary = myCarlos peut démarrer lorsque vous ouvrez une session sur cet ordinateur.
+
+native-notice-test = Ceci est un avis de test de myCarlos.
+
+notifications-testButton = Afficher un avis de test
+
+notifications-testSent = Avis de test envoyé. Si vous ne le voyez pas, vérifiez les paramètres de notification de Windows.
+
+notifications-testWait = Patientez quelques secondes, puis réessayez.
+
+notifications-testFailed = L’avis de test n’a pas pu être affiché.

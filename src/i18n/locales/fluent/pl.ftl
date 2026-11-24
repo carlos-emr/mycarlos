@@ -2659,3 +2659,13 @@ notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy my
 background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Skarbiec blokuje się w chwili zamknięcia okna.
 
 background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu do tego komputera.
+
+native-notice-test = To jest testowe powiadomienie z myCarlos.
+
+notifications-testButton = Pokaż powiadomienie testowe
+
+notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+
+notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
+
+notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.

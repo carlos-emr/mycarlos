@@ -2579,3 +2579,13 @@ notifications-autoSummary = As verificações automáticas só acontecem enquant
 background-keepRunningSummary = O myCarlos pode continuar em segundo plano depois que você fecha a janela. Seu cofre é bloqueado quando a janela fecha.
 
 background-startAtLoginSummary = O myCarlos pode iniciar quando você entra neste computador.
+
+native-notice-test = Este é um aviso de teste do myCarlos.
+
+notifications-testButton = Mostrar um aviso de teste
+
+notifications-testSent = Aviso de teste enviado. Se você não o vir, verifique as configurações de notificação do Windows.
+
+notifications-testWait = Aguarde alguns segundos e tente novamente.
+
+notifications-testFailed = Não foi possível mostrar o aviso de teste.
