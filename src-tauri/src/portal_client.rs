@@ -914,11 +914,6 @@ mod network_tests {
         .unwrap()
     }
 
-    fn proxy_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     // ---- api / send_signed ----
 
     #[test]
@@ -1162,35 +1157,58 @@ mod network_tests {
         assert_eq!(server.accepted(), 0, "a clear-text connection was made");
     }
 
+    /// The proxy variables are set only on a child process (`Command::env`), never with `set_var` in
+    /// this multi-threaded test binary, where changing the environment races with C code reading it
+    /// (`getaddrinfo`): the child is this test binary run on `proxy_child` alone.
     #[test]
     fn should_not_use_a_proxy_from_the_environment() {
-        let _guard = proxy_lock();
         let proxy = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         proxy.set_nonblocking(true).unwrap();
         let proxy_address = format!("http://127.0.0.1:{}", proxy.local_addr().unwrap().port());
-        let names = [
-            "HTTPS_PROXY",
-            "https_proxy",
-            "ALL_PROXY",
-            "all_proxy",
-            "HTTP_PROXY",
-        ];
-        let before: Vec<_> = names.iter().map(std::env::var_os).collect();
-        for name in names {
-            std::env::set_var(name, &proxy_address);
-        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "--nocapture",
+                "portal_client::network_tests::proxy_child",
+            ])
+            .env("MYCARLOS_TEST_PROXY_CHILD", "1")
+            .env("HTTPS_PROXY", &proxy_address)
+            .env("https_proxy", &proxy_address)
+            .env("ALL_PROXY", &proxy_address)
+            .env("all_proxy", &proxy_address)
+            .env("HTTP_PROXY", &proxy_address)
+            .env("http_proxy", &proxy_address)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(
+            status.success(),
+            "the request did not go direct in the child"
+        );
+        assert!(proxy.accept().is_err(), "the proxy was contacted");
+    }
+
+    /// Run by `should_not_use_a_proxy_from_the_environment` in a child process whose environment names
+    /// a proxy; it asserts the request still goes straight to the server.
+    #[test]
+    #[ignore = "run only as the child of should_not_use_a_proxy_from_the_environment"]
+    fn proxy_child() {
+        assert_eq!(
+            std::env::var("MYCARLOS_TEST_PROXY_CHILD").as_deref(),
+            Ok("1"),
+            "only the proxy test starts this"
+        );
+        assert!(
+            std::env::var_os("HTTPS_PROXY").is_some(),
+            "no proxy in the environment"
+        );
         let _root = Trusting::test_root(Duration::from_secs(5));
         let server = serve(|_| Step::Reply(http(200, &[], b"direct")));
         let reply = call(&link_to(&server.base()), b"{}", 64);
-        for (name, value) in names.iter().zip(before) {
-            match value {
-                Some(value) => std::env::set_var(name, value),
-                None => std::env::remove_var(name),
-            }
-        }
         assert_eq!(&reply.unwrap().body[..], b"direct");
         assert_eq!(server.accepted(), 1);
-        assert!(proxy.accept().is_err(), "the proxy was contacted");
     }
 
     #[test]
