@@ -40,7 +40,9 @@ impl VaultStore {
             .map(|link| LinkView {
                 id: link.id,
                 portal_base: &link.portal_base,
-                linked: link.clinic.is_some(),
+                // A stopped or removed clinic is not asked again: not even to enrol a key, and
+                // a key it already holds is given up like a gone link's.
+                linked: link.clinic.is_some() && !link.checks_stopped(),
             })
             .collect();
         sync_keys(

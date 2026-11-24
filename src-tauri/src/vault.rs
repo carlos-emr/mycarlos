@@ -2347,8 +2347,9 @@ impl VaultStore {
             if manifest.remote_notices.has_destination_for(link_id) {
                 return Err(VaultError::Invalid);
             }
-            link.stopped_at_ms = Some(crate::now_ms());
-            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkStopped, crate::now_ms());
+            let now = crate::now_ms();
+            link.stopped_at_ms = Some(now);
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkStopped, now);
             entry.portal_link_id = Some(link_id);
             entry.profile_id = link.profile_id;
             entry.name = link
@@ -2425,9 +2426,9 @@ impl VaultStore {
             if link.clinic_removed_at_ms.is_some() {
                 return Ok(false);
             }
-            link.clinic_removed_at_ms = Some(crate::now_ms());
-            let mut entry =
-                HistoryEntry::new(HistoryEvent::PortalLinkClinicRemoved, crate::now_ms());
+            let now = crate::now_ms();
+            link.clinic_removed_at_ms = Some(now);
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkClinicRemoved, now);
             entry.portal_link_id = Some(link_id);
             entry.profile_id = link.profile_id;
             entry.name = link

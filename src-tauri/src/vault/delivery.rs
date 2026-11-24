@@ -7974,6 +7974,90 @@ mod approval_recovery_tests {
             Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
         ));
     }
+    /// #160 stage 3: only a real 403 `device_removed` from a check is saved as a clinic removal;
+    /// a 404 (the portal does not know the device) saves nothing, so a restart asks again.
+    #[test]
+    fn should_save_a_removal_from_a_checks_403_and_not_from_its_404() {
+        let flag = |store: &VaultStore| saved(store).clinic_removed_at_ms.is_some();
+        let (_temp, store, _, _) = setup(false);
+        crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(reply(404, b"{}")),
+        )
+        .unwrap();
+        assert!(!flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            0
+        );
+        crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(refusal("device_removed")),
+        )
+        .unwrap();
+        assert!(flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            1
+        );
+    }
+    /// #160 stage 3 review: the notice-key sync enrols a key with a live clinic, and neither
+    /// enrols one with, nor contacts, a clinic whose checks were stopped; a key it already held
+    /// is given up and wiped.
+    #[test]
+    fn should_not_contact_a_stopped_clinic_to_sync_its_notice_key() {
+        use crate::notice_key::{FakeWrapKeyStore, NoticeKeys};
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let keys_dir = tempfile::tempdir().unwrap();
+        let keys = NoticeKeys::new(keys_dir.path(), FakeWrapKeyStore::default());
+        let posts = std::cell::Cell::new(0usize);
+        let exchange = |sent: &StoredLink,
+                        method: &str,
+                        _: &str,
+                        _: Vec<u8>,
+                        _: Option<&str>,
+                        _: usize,
+                        _: &dyn Fn() -> bool| {
+            assert_eq!(method, "POST");
+            if sent.id == link.id {
+                posts.set(posts.get() + 1);
+            }
+            Ok(reply(201, b"{}"))
+        };
+        let held = || {
+            keys.entries()
+                .unwrap()
+                .iter()
+                .filter(|entry| entry.link_id == link.id)
+                .count()
+        };
+        let session = store.portal_link_ticket();
+        let mut given_up = 0usize;
+        store
+            .sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| given_up += 1)
+            .unwrap();
+        assert_eq!(posts.get(), 1);
+        assert_eq!(held(), 1);
+        store.stop_checking_portal_link(link.id, session).unwrap();
+        store
+            .sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| given_up += 1)
+            .unwrap();
+        assert_eq!(posts.get(), 1, "a stopped clinic is sent nothing");
+        assert_eq!(given_up, 1);
+        assert_eq!(held(), 0);
+        // And no new key is made for it on a later sync either.
+        store
+            .sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| given_up += 1)
+            .unwrap();
+        assert_eq!(posts.get(), 1);
+        assert_eq!(held(), 0);
+    }
     /// #160 stage 3: the bulk button removes every incomplete attempt and nothing else.
     #[test]
     fn should_remove_all_incomplete_attempts_and_only_those() {
