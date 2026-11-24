@@ -4985,6 +4985,18 @@ button:disabled,
 .language-button .icon {
   flex: none;
 }
+/* The language dialog's title may be long in some languages: it folds onto more lines (the general
+   .dialog-head h2 cuts it to one) and Close stays at the top right of the head, as in the document
+   details. */
+.native-language-dialog .dialog-head h2 {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.native-language-dialog .dialog-head > div {
+  flex: 1 1 auto;
+}
 /* In the language dialog the list lines up with the title above it: the same
    20px as .dialog-head. */
 .native-language-dialog .language-compact {
