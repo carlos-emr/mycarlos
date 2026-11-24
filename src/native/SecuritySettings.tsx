@@ -236,7 +236,10 @@ export function SecuritySettings({
   // The button that opened the handover takes the focus back once a hide that came from its dialog
   // has finished (it is disabled while the library is busy).
   const handoverRef = useRef<HTMLButtonElement | null>(null);
-  const handoverFocused = useRef(0);
+  // Starts at the value the screen opened with, so a count that was already acted on (the focus
+  // went back to the button before the person left Security) does not move focus again when
+  // Security is entered afresh.
+  const handoverFocused = useRef(focusHandover);
   useEffect(() => {
     if (
       focusHandover === 0 ||
