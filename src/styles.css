@@ -5056,7 +5056,7 @@ button:disabled,
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
