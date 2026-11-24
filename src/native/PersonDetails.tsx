@@ -492,10 +492,13 @@ export function PersonDetailsList({
   dialogHost,
   onDialogChange,
   refusalText = "",
+  actions,
 }: {
   people: PatientProfile[];
   busy: boolean;
   readOnly?: boolean;
+  /** More buttons on a person's line, after Edit details (Hide, #360). */
+  actions?: (person: PatientProfile) => ReactNode;
   onSave: (profileId: string, details: PersonDetails) => Promise<boolean>;
   /** Opens this person's form, with the focus in it: the library's reminder
    * leads here (#234). A new object each time, so the same person can be
@@ -692,6 +695,7 @@ export function PersonDetailsList({
             >
               {t("personDetails.edit")}
             </button>
+            {actions?.(person)}
           </li>
         ))}
       </ul>

@@ -71,6 +71,25 @@ In a native build, additionally:
 8. On Android, use a test document provider that fails after accepting some bytes. Confirm the app
    says the destination may contain a partial readable copy, then inspect and delete that
    destination before retrying. A provider-backed destination is not an atomic export.
+9. On a Mac (#52, "Open With"): with the built app in place, check that a PDF's Finder **Open With**
+   menu lists myCarlos, from Finder and from a Mail attachment's right-click menu.
+   - **App not running, vault locked (the start):** choose Open With. myCarlos starts and the
+     unlock screen says "1 shared file is waiting. Unlock and it goes into Shared with me. If
+     myCarlos closes first, it is not kept: share it again." After unlocking, the file is in
+     **Shared with me**.
+   - **App running and unlocked:** choose Open With again. The file appears in **Shared with me**
+     when the window next comes to the front (the page looks when it gets focus). A drop on the
+     Dock icon while myCarlos is frontmost also waits for the next time the window gets focus, so
+     note whether the file arrives at once or only after switching away and back.
+   - **Quit before unlocking:** open a PDF with myCarlos, quit without unlocking, start myCarlos
+     again: the file is **gone** (it is kept in memory only, as the unlock screen says). This is
+     expected; record that it is.
+   - On a Mac whose default PDF app is Preview, confirm double-clicking a PDF still opens Preview
+     and **Get Info > Open with** still shows Preview.
+   - Record the macOS version and the Mac's model.
+
+   `node scripts/check-macos-pdf-association.mjs <myCarlos.app>` checks the built app's
+   `Info.plist` for the same thing (role Viewer, rank Alternate, one PDF type, nothing exported).
 
 The Rust suite automates abrupt process termination after an encrypted chunk write, completed
 staging, object rename, each redundant manifest write, and each deletion boundary. It also covers
