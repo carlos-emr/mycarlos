@@ -87,6 +87,24 @@ export function checkAndroidXmlResources(resources) {
   const problems = [];
   for (const [name, elements] of resources) {
     for (const element of elements) {
+      // A store build trusts the phone's system authorities and nothing else (the portal connection).
+      // `debug-overrides` is the debug build's way of trusting a test root (it only applies to a
+      // debuggable app, but it must not even be present), and a trust anchor that is not literally
+      // "system" is a user-installed authority (src="user") or a certificate in the build (a resource
+      // reference): either one lets a root the app did not choose stand in for a clinic's portal.
+      if (element.name === "debug-overrides") {
+        problems.push(
+          `${name}: debug-overrides is present (it trusts a test certificate authority; only a debug build has it)`,
+        );
+      }
+      if (element.name === "certificates") {
+        const source = element.attrs.src;
+        if (source !== "system") {
+          problems.push(
+            `${name}: certificates src is ${source === undefined ? "missing" : `"${source}"`} (only "system" is trusted; a user-installed or bundled authority is refused)`,
+          );
+        }
+      }
       const value = androidAttr(element, "cleartextTrafficPermitted");
       if (notFalse(value)) {
         problems.push(
@@ -241,6 +259,28 @@ export function checkAndroidArchive(
     }
   }
   problems.push(...checkAndroidXmlResources(resources));
+  // No certificate file in the resources: a bundled authority would be trusted only through a network
+  // security config, but nothing in a store build has a reason to carry one at all.
+  for (const name of names) {
+    if (!/(?:^|\/)res\//.test(name)) continue;
+    let reason = null;
+    if (/\.(pem|crt|cer|der|p7b|p12|pfx)$/i.test(name)) {
+      reason = "a certificate file";
+    } else if (/(?:^|\/)res\/raw\//.test(name)) {
+      try {
+        if (zip.read(name).includes("-----BEGIN CERTIFICATE-----"))
+          reason = "a PEM certificate";
+      } catch {
+        problems.push(
+          `${label}!${name}: cannot be read, so whether it is a certificate is unknown`,
+        );
+      }
+    }
+    if (reason)
+      problems.push(
+        `${label}!${name}: ${reason} is in the resources (a store build trusts only the system's authorities)`,
+      );
+  }
   let libraries = 0;
   for (const name of names) {
     if (/(?:^|\/)lib\/[^/]+\/[^/]+\.so$/.test(name)) {

@@ -397,6 +397,127 @@ test("a network security config that permits cleartext is found, in an APK and i
   );
 });
 
+const releaseConfig = [
+  ["network-security-config", {}],
+  ["base-config", { "android:cleartextTrafficPermitted": false }],
+  ["trust-anchors", {}],
+  ["certificates", { src: "system" }],
+];
+
+test("a network security config that trusts the system's authorities only is accepted", () => {
+  const good = apk(GOOD_MANIFEST, [
+    ["res/xml/network_security_config.xml", axml(releaseConfig)],
+  ]);
+  assert.deepEqual(checkAndroidArchive(good, "g.apk", EXPECTED_APP_ID), []);
+});
+
+test("debug-overrides, user authorities and bundled authorities in a network security config are found", () => {
+  const found = (elements) =>
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, [
+        ["res/xml/network_security_config.xml", axml(elements)],
+      ]),
+      "b.apk",
+      EXPECTED_APP_ID,
+    ).join("\n");
+  // The debug build's test root.
+  assert.match(
+    found([
+      ...releaseConfig,
+      ["debug-overrides", {}],
+      ["trust-anchors", {}],
+      ["certificates", { src: "system" }],
+    ]),
+    /debug-overrides is present/,
+  );
+  // A user-installed authority.
+  assert.match(
+    found([
+      ["network-security-config", {}],
+      ["base-config", { "android:cleartextTrafficPermitted": false }],
+      ["trust-anchors", {}],
+      ["certificates", { src: "user" }],
+    ]),
+    /certificates src is "user"/,
+  );
+  // One that is left out of src altogether, and one named by anything but "system".
+  assert.match(found([["certificates", {}]]), /certificates src is missing/);
+  assert.match(
+    found([["certificates", { src: "@raw/ca" }]]),
+    /certificates src is "@raw\/ca"/,
+  );
+  // Inside a domain-config too, wherever it is.
+  assert.match(
+    found([
+      ["domain-config", { "android:cleartextTrafficPermitted": false }],
+      ["trust-anchors", {}],
+      ["certificates", { src: "user" }],
+    ]),
+    /certificates src is "user"/,
+  );
+});
+
+test("the same refusals hold in a bundle (protobuf XML)", () => {
+  const aab = zip([
+    [
+      "base/manifest/AndroidManifest.xml",
+      protoNode([
+        "manifest",
+        { package: EXPECTED_APP_ID },
+        [["application", { "android:allowBackup": "false" }]],
+      ]),
+    ],
+    [
+      "base/res/xml/mycarlos_network_security_config.xml",
+      protoNode([
+        "network-security-config",
+        {},
+        [
+          [
+            "debug-overrides",
+            {},
+            [["trust-anchors", {}, [["certificates", { src: "user" }]]]],
+          ],
+        ],
+      ]),
+    ],
+    ["base/lib/arm64-v8a/libmycarlos.so", elf("release")],
+  ]);
+  const problems = checkAndroidArchive(aab, "x.aab", EXPECTED_APP_ID).join(
+    "\n",
+  );
+  assert.match(problems, /debug-overrides is present/);
+  assert.match(problems, /certificates src is "user"/);
+});
+
+test("a certificate file among the resources is found, by name or by its PEM marker", () => {
+  const withFile = (name, bytes) =>
+    checkAndroidArchive(
+      apk(GOOD_MANIFEST, [[name, bytes]]),
+      "c.apk",
+      EXPECTED_APP_ID,
+    ).join("\n");
+  assert.match(
+    withFile("res/raw/mycarlos_test_ca.der", Buffer.from([0x30, 0x82, 1, 2])),
+    /a certificate file is in the resources/,
+  );
+  assert.match(
+    withFile("base/res/raw/ca.pem", Buffer.from("x")),
+    /a certificate file is in the resources/,
+  );
+  assert.match(
+    withFile(
+      "res/raw/root",
+      Buffer.from(
+        "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----",
+      ),
+    ),
+    /a PEM certificate is in the resources/,
+  );
+  // An ordinary resource is not a certificate.
+  assert.equal(withFile("res/raw/sound", Buffer.from("not a certificate")), "");
+});
+
 test("the stub, the cloud AI send, dev addresses and unstripped libraries are found in native code", () => {
   assert.deepEqual(checkBinary(elf("release build"), "lib.so"), []);
   assert.match(
