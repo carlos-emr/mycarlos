@@ -793,4 +793,208 @@ mod tests {
         // This tests callback forwarding through the real adapter, not actual
         // HTTP socket cancellation, helper death or installed Windows behavior.
     }
+
+    /// An exchange that counts its calls and, when told to, trips the cycle's cancel token or
+    /// fails, so each way `BoundedApproval` ends a request can be driven on its own.
+    struct Counting {
+        calls: AtomicUsize,
+        trip: Option<Arc<AtomicBool>>,
+        fail: bool,
+        saw_stopped: AtomicBool,
+    }
+    impl Counting {
+        fn new(trip: Option<Arc<AtomicBool>>, fail: bool) -> Self {
+            Counting {
+                calls: AtomicUsize::new(0),
+                trip,
+                fail,
+                saw_stopped: AtomicBool::new(false),
+            }
+        }
+        fn run<T>(&self, ok: T, stop: &dyn Fn() -> bool) -> Result<T, VaultError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.saw_stopped.store(stop(), Ordering::SeqCst);
+            if let Some(token) = &self.trip {
+                token.store(true, Ordering::Release);
+            }
+            if self.fail {
+                Err(VaultError::Invalid)
+            } else {
+                Ok(ok)
+            }
+        }
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+    fn attempt() -> Attempt {
+        Attempt {
+            request_id: Uuid::from_u128(4),
+            intent: "synthetic".into(),
+            expires_at: 100,
+            challenge: None,
+            acceptance: None,
+            status: None,
+            reason: None,
+        }
+    }
+    impl ApprovalExchange for Counting {
+        fn get(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            stop: &dyn Fn() -> bool,
+        ) -> Result<Option<Attempt>, VaultError> {
+            self.run(None, stop)
+        }
+        fn post(
+            &self,
+            _: &StoredLink,
+            attempt: &Attempt,
+            _: &str,
+            stop: &dyn Fn() -> bool,
+        ) -> Result<Attempt, VaultError> {
+            self.run(attempt.clone(), stop)
+        }
+        fn submit_code(
+            &self,
+            _: &StoredLink,
+            _: &Attempt,
+            _: &str,
+            _: &str,
+            stop: &dyn Fn() -> bool,
+        ) -> Result<(), VaultError> {
+            self.run((), stop)
+        }
+    }
+
+    /// The three requests a background check can make through the adapter, by name, each
+    /// reduced to "did it pass, and what was the error".
+    type Request = fn(
+        &BoundedApproval<'_, Counting>,
+        &StoredLink,
+        &dyn Fn() -> bool,
+    ) -> Result<(), VaultError>;
+    const REQUESTS: [(&str, Request); 3] = [
+        ("get", |bound, link, cancelled| {
+            bound.get(link, &attempt(), cancelled).map(|_| ())
+        }),
+        ("post", |bound, link, cancelled| {
+            bound
+                .post(link, &attempt(), "anchor", cancelled)
+                .map(|_| ())
+        }),
+        ("submit_code", |bound, link, cancelled| {
+            bound
+                .submit_code(link, &attempt(), "123456", "anchor", cancelled)
+                .map(|_| ())
+        }),
+    ];
+
+    #[test]
+    fn a_request_the_cycle_has_no_budget_for_is_cancelled_before_it_is_sent() {
+        let link = link();
+        for (name, request) in REQUESTS {
+            let control = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)));
+            for _ in 0..crate::document_collection::MAX_REQUESTS {
+                assert!(control.request());
+            }
+            let inner = Counting::new(None, false);
+            let bound = BoundedApproval {
+                inner: &inner,
+                control: &control,
+                stop: &|| false,
+            };
+            assert!(
+                matches!(
+                    request(&bound, &link, &|| false),
+                    Err(VaultError::Cancelled)
+                ),
+                "{name}"
+            );
+            assert_eq!(inner.calls(), 0, "{name}: nothing is sent");
+        }
+    }
+
+    #[test]
+    fn a_request_is_cancelled_before_it_is_sent_when_any_stop_signal_is_already_up() {
+        let link = link();
+        for (name, request) in REQUESTS {
+            // The caller's own cancel, the cycle's stop (a lock, a switch), and the cycle's cancel token.
+            for source in ["caller", "cycle", "token"] {
+                let token = Arc::new(AtomicBool::new(source == "token"));
+                let control = CycleControl::new(Instant::now(), token);
+                let inner = Counting::new(None, false);
+                let cycle_stop = source == "cycle";
+                let bound = BoundedApproval {
+                    inner: &inner,
+                    control: &control,
+                    stop: &move || cycle_stop,
+                };
+                let caller_stop = source == "caller";
+                let result = request(&bound, &link, &move || caller_stop);
+                assert!(
+                    matches!(result, Err(VaultError::Cancelled)),
+                    "{name} {source}"
+                );
+                assert_eq!(inner.calls(), 0, "{name} {source}: nothing is sent");
+            }
+        }
+    }
+
+    #[test]
+    fn a_request_that_finishes_in_time_returns_the_exchanges_own_answer() {
+        let link = link();
+        for (name, request) in REQUESTS {
+            let control = CycleControl::new(Instant::now(), Arc::new(AtomicBool::new(false)));
+            // An answer is passed on whole.
+            let inner = Counting::new(None, false);
+            let bound = BoundedApproval {
+                inner: &inner,
+                control: &control,
+                stop: &|| false,
+            };
+            assert!(request(&bound, &link, &|| false).is_ok(), "{name}");
+            assert_eq!(inner.calls(), 1, "{name}");
+            assert!(
+                !inner.saw_stopped.load(Ordering::SeqCst),
+                "{name}: the exchange is not told to stop"
+            );
+            // So is a failure that is not a stop: it keeps its own reason.
+            let failing = Counting::new(None, true);
+            let bound = BoundedApproval {
+                inner: &failing,
+                control: &control,
+                stop: &|| false,
+            };
+            assert!(
+                matches!(request(&bound, &link, &|| false), Err(VaultError::Invalid)),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_answer_that_arrives_after_the_cycle_was_stopped_is_cancelled_not_used() {
+        let link = link();
+        for (name, request) in REQUESTS {
+            let token = Arc::new(AtomicBool::new(false));
+            let control = CycleControl::new(Instant::now(), token.clone());
+            // The exchange succeeds, but the cycle was stopped while it ran: the answer is dropped.
+            let inner = Counting::new(Some(token), false);
+            let bound = BoundedApproval {
+                inner: &inner,
+                control: &control,
+                stop: &|| false,
+            };
+            assert!(
+                matches!(
+                    request(&bound, &link, &|| false),
+                    Err(VaultError::Cancelled)
+                ),
+                "{name}"
+            );
+            assert_eq!(inner.calls(), 1, "{name}");
+        }
+    }
 }
