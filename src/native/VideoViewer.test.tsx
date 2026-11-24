@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
-import { visibleText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import { BIG_SKIP_SECONDS, SKIP_SECONDS, VideoViewer } from "./VideoViewer";
 
 const AXE = {
@@ -347,7 +347,7 @@ describe("VideoViewer", () => {
   it("has a button for each key that does what the key does", () => {
     const { video, time } = open();
     const press = (name: string) =>
-      fireEvent.click(screen.getByRole("button", { name }));
+      fireEvent.click(screen.getByRole("button", { name: humanText(name) }));
     press("Play/Pause (k)");
     expect(play).toHaveBeenCalledTimes(1);
     Object.defineProperty(video, "paused", {
@@ -404,7 +404,7 @@ describe("VideoViewer", () => {
     // The buttons say their keys in the patient's language too.
     expect(screen.getByRole("button", { name: "Silenciar (m)" })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Retroceder 5 s (←)" }),
+      screen.getByRole("button", { name: humanText("Retroceder 5 s (←)") }),
     ).toBeVisible();
   });
 });
