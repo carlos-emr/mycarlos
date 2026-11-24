@@ -7386,11 +7386,25 @@ pub fn run() {
                 .first()
                 .cloned()
                 .ok_or("the main window is not configured")?;
+            // A start from the login entry that may be quiet builds the window hidden: maximized,
+            // a window shown for an instant and then hidden would flash across the whole screen.
+            // `install` below hides it for good, or shows it if the tray icon could not be made.
+            #[cfg(desktop)]
+            let built_hidden = desktop_background::may_start_quietly(
+                &app.path()
+                    .app_local_data_dir()?
+                    .join("vault-home")
+                    .join("background-v1.json"),
+                std::env::args_os(),
+            );
+            #[cfg(not(desktop))]
+            let built_hidden = false;
             #[cfg(windows)]
             let startup = Arc::new(Mutex::new(NavigationStartup::default()));
             #[cfg(windows)]
             let navigation_startup = Arc::clone(&startup);
             let _webview = tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+                .visible(!built_hidden)
                 .on_navigation(move |url| {
                     let allowed = may_navigate(&config, url);
                     #[cfg(windows)]
@@ -7517,6 +7531,7 @@ pub fn run() {
                         .join("vault-home")
                         .join("background-v1.json"),
                     close_lock(app.handle()),
+                    built_hidden,
                 );
                 // Tray notices (#230) need this switch: the poller and the notice keys read it.
                 tray_notices::set_keep_running(background.status().keep_running);

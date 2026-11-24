@@ -243,6 +243,20 @@ pub(crate) fn starts_in_background<S: AsRef<OsStr>>(
             .any(|arg| arg.as_ref() == OsStr::new(BACKGROUND_ARG))
 }
 
+/// Whether the start MAY be quiet, known before the window is built (the tray icon, which the
+/// quiet start also needs, only exists after the window): the login argument and the patient's
+/// saved choice to keep running. The window of such a start is built hidden, so that it never
+/// flashes on screen (maximized, it would fill it); `install` then shows it after all if the icon
+/// could not be made, which is the only case `starts_in_background` refuses afterwards.
+#[cfg_attr(not(desktop), allow(dead_code))]
+pub(crate) fn may_start_quietly<S: AsRef<OsStr>>(
+    settings_path: &Path,
+    args: impl IntoIterator<Item = S>,
+) -> bool {
+    let settings = Settings::load(settings_path.to_path_buf());
+    starts_in_background(args, &settings.choices(), true)
+}
+
 // --- Saving the choices -----------------------------------------------------------------
 
 #[derive(Serialize, Deserialize)]
@@ -906,6 +920,7 @@ pub(crate) mod desktop {
         app: &tauri::App,
         settings_path: PathBuf,
         lock_all: LockAll,
+        built_hidden: bool,
     ) -> Arc<Background> {
         let controller = Arc::new(Controller::new(
             Settings::load(settings_path),
@@ -915,9 +930,15 @@ pub(crate) mod desktop {
                 lock_all,
             },
         ));
-        if controller.start(std::env::args_os()) {
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let quiet = controller.start(std::env::args_os());
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            if quiet {
                 let _ = window.hide();
+            } else if built_hidden {
+                // Built hidden for a start that was to be quiet, but the icon could not be made:
+                // the window opens as it always does (maximized), not into a hidden app.
+                let _ = window.show();
+                let _ = window.set_focus();
             }
         }
         app.manage(Arc::clone(&controller));
@@ -1266,6 +1287,46 @@ mod tests {
         ));
         assert!(!starts_in_background(["app", "--background-x"], &on, true));
         assert_eq!(close_action(&on, false), CloseAction::Exit);
+    }
+
+    #[test]
+    fn the_window_is_built_hidden_only_for_a_start_that_may_be_quiet() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("background-v1.json");
+        let quiet = ["app", BACKGROUND_ARG];
+        // No saved choice (no file): never hidden, whatever the argument.
+        assert!(!may_start_quietly(&path, quiet));
+        let keep = |keep_running: bool| {
+            Settings::load(path.clone())
+                .save(
+                    Choices {
+                        keep_running,
+                        start_at_login: true,
+                    },
+                    None,
+                )
+                .unwrap()
+        };
+        keep(false);
+        assert!(
+            !may_start_quietly(&path, quiet),
+            "not chosen to keep running"
+        );
+        keep(true);
+        assert!(
+            may_start_quietly(&path, quiet),
+            "login entry, chosen to keep running"
+        );
+        // A start by the patient (no argument, or another one) opens the window as always.
+        assert!(!may_start_quietly(&path, ["app"]));
+        assert!(!may_start_quietly(&path, ["app", "--background-x"]));
+        // The same rule as the quiet start itself, so the two cannot drift apart: whenever the
+        // icon is there, a start built hidden is a start that stays hidden.
+        let choices = Settings::load(path.clone()).choices();
+        assert_eq!(
+            may_start_quietly(&path, quiet),
+            starts_in_background(quiet, &choices, true)
+        );
     }
 
     #[test]
