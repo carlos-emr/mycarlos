@@ -1204,9 +1204,9 @@
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
-  "preferences.more",
-  "preferences.less",
   "notifications.autoSummary",
   "background.keepRunningSummary",
-  "background.startAtLoginSummary"
+  "background.startAtLoginSummary",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground"
 ]

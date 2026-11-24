@@ -2570,12 +2570,14 @@ restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer 
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
 
-preferences-more = En savoir plus
 
-preferences-less = Moins
 
 notifications-autoSummary = Les vérifications automatiques n’ont lieu que lorsque myCarlos est ouvert et déverrouillé.
 
 background-keepRunningSummary = myCarlos peut rester en arrière-plan après la fermeture de sa fenêtre. Votre coffre se verrouille à la fermeture de la fenêtre.
 
-background-startAtLoginSummary = myCarlos peut démarrer lorsque vous ouvrez une session sur cet ordinateur.
+background-startAtLoginSummary = myCarlos peut démarrer lorsque vous ouvrez une session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan avec votre coffre verrouillé.
+
+preferences-moreAutomatic = En savoir plus sur les vérifications automatiques
+
+preferences-moreBackground = En savoir plus sur l’exécution en arrière-plan

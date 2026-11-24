@@ -83,7 +83,7 @@ export function BackgroundSetting() {
         {/* What matters is said in view (the vault locks as the window closes); the rest folds away. */}
         <p id={`${id}-keep-summary`}>{t("background.keepRunningSummary")}</p>
         <p id={`${id}-login-summary`}>{t("background.startAtLoginSummary")}</p>
-        <MoreAbout>
+        <MoreAbout label={t("preferences.moreBackground")}>
           <p id={`${id}-keep-help`}>{t("background.keepRunningHelp")}</p>
           <p id={`${id}-login-help`}>{t("background.startAtLoginHelp")}</p>
         </MoreAbout>
@@ -94,7 +94,7 @@ export function BackgroundSetting() {
             type="checkbox"
             checked={status.keepRunning}
             disabled={saving}
-            aria-describedby={`${id}-keep-summary ${id}-keep-help`}
+            aria-describedby={`${id}-keep-help`}
             onChange={(event) =>
               save("background_set_keep_running", event.currentTarget.checked)
             }
@@ -107,7 +107,7 @@ export function BackgroundSetting() {
             type="checkbox"
             checked={status.startAtLogin}
             disabled={saving}
-            aria-describedby={`${id}-login-summary ${id}-login-help`}
+            aria-describedby={`${id}-login-help`}
             onChange={(event) =>
               save("background_set_start_at_login", event.currentTarget.checked)
             }

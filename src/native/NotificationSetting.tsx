@@ -115,7 +115,7 @@ export function NotificationSetting({
           <>
             {/* The fact that matters stays in view; the long explanation folds away. */}
             <p id={`${id}-auto-summary`}>{t("notifications.autoSummary")}</p>
-            <MoreAbout>
+            <MoreAbout label={t("preferences.moreAutomatic")}>
               <p id={`${id}-auto-help`}>{t("notifications.autoHelp")}</p>
             </MoreAbout>
           </>
@@ -146,7 +146,7 @@ export function NotificationSetting({
                     !status.automaticChecksEnabled)
                 }
                 aria-describedby={[
-                  describedBy(`${id}-auto-summary ${id}-auto-help`),
+                  describedBy(`${id}-auto-help`),
                   needsNotices ? `${id}-auto-needs` : "",
                 ]
                   .filter(Boolean)

@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe("Document notice preference", () => {
-  it("keeps the key fact in view and folds the long explanation under More about this", async () => {
+  it("keeps the key fact in view and folds the long explanation under More about automatic checks", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,
       automaticChecksSupported: true,
@@ -53,7 +53,7 @@ describe("Document notice preference", () => {
     const long = screen.getByText(
       humanText(/with at least two minutes between attempts/),
     );
-    const more = screen.getByText(humanText("More about this"));
+    const more = screen.getByText(humanText("More about automatic checks"));
     const details = more.closest("details") as HTMLDetailsElement;
     expect(details.open).toBe(false);
     expect(long).not.toBeVisible();
@@ -61,8 +61,8 @@ describe("Document notice preference", () => {
     await user.click(more);
     expect(details.open).toBe(true);
     expect(long).toBeVisible();
-    expect(screen.getByText(humanText("Less"))).toBeVisible();
-    // The box is described by the summary and the long text, folded or not.
+    expect(screen.queryByText(humanText("Less"))).toBeNull();
+    // The box is described by the long text alone (the summary is read in place, not twice).
     const box = screen.getByRole("checkbox", {
       name: humanText(
         "Check for clinic documents automatically while unlocked",
@@ -72,17 +72,19 @@ describe("Document notice preference", () => {
       .split(" ")
       .map((id) => document.getElementById(id)?.textContent ?? "")
       .join(" ");
-    expect(humanText(/open and unlocked/)(description)).toBe(true);
     expect(humanText(/at least two minutes/)(description)).toBe(true);
+    expect(humanText(/open and unlocked\.$/)(description)).toBe(false);
   });
 
-  it("has no More about this where the automatic checks are not offered", async () => {
+  it("has no More about automatic checks where the automatic checks are not offered", async () => {
     native.invoke.mockResolvedValue({ ...allowed });
     render(<NotificationSetting />);
     await screen.findByRole("checkbox", {
       name: humanText("Allow document arrival notices"),
     });
-    expect(screen.queryByText(humanText("More about this"))).toBeNull();
+    expect(
+      screen.queryByText(humanText("More about automatic checks")),
+    ).toBeNull();
   });
 
   it("hides unsupported native capability without opting in or sending a notice", async () => {

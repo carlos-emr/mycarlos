@@ -42,12 +42,15 @@ test("the two background choices are off by default, separate, and say what wait
   await openPreferences(page);
   await expect(keep(page)).not.toBeChecked();
   await expect(login(page)).not.toBeChecked();
-  // The key fact is in view; the long explanation is behind More about this.
+  // The key fact is in view; the long explanation is behind More about running in the background.
   await expect(
     page.getByText(en("background.keepRunningSummary")),
   ).toBeVisible();
   await expect(page.getByText(en("background.keepRunningHelp"))).toBeHidden();
-  await page.getByText(en("preferences.more"), { exact: true }).first().click();
+  await page
+    .getByText(en("preferences.moreBackground"), { exact: true })
+    .first()
+    .click();
   await expect(page.getByText(en("background.keepRunningHelp"))).toBeVisible();
   // Start at login on its own.
   await login(page).check();
