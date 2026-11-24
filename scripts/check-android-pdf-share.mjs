@@ -44,6 +44,12 @@ export function configProblems(config) {
   return problems;
 }
 
+/** The manifest without its XML comments: a filter that is commented out is not in the app, so it
+ * must not count as one that is (a commented-out SEND filter would pass the check while PDFs could
+ * not be shared). A comment that never closes is refused by `manifestProblems`, not guessed at. */
+export const withoutComments = (manifest) =>
+  manifest.replace(/<!--[\s\S]*?-->/g, "");
+
 const attribute = (tag, name) =>
   new RegExp(`android:${name}\\s*=\\s*"([^"]*)"`).exec(tag)?.[1];
 
@@ -73,7 +79,8 @@ function filtersIn(block) {
  * filters before EVERY `</activity>`, not only MainActivity's, so all of them are read. The
  * opening tag is told from `<activity-alias` by what follows the name, and may spread its
  * attributes over lines, as the real template does. */
-export function activities(manifest) {
+export function activities(manifestText) {
+  const manifest = withoutComments(manifestText);
   const open = (tag) =>
     [
       ...manifest.matchAll(
@@ -107,6 +114,8 @@ export function mainActivityFilters(manifest) {
 
 /** The problems with a generated manifest; empty when it is right. */
 export function manifestProblems(manifest) {
+  if (withoutComments(manifest).includes("<!--"))
+    return ["the manifest has an XML comment that never closes"];
   const filters = mainActivityFilters(manifest);
   if (!filters) return ["no MainActivity found"];
   const problems = [];

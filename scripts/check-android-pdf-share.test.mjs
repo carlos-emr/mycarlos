@@ -261,3 +261,56 @@ test("a SEND filter for another type is refused on any activity, not only MainAc
   );
   assert.deepEqual(manifestProblems(template(generated)), []);
 });
+
+test("an XML comment is not part of the manifest: a commented-out filter does not count", () => {
+  // The SEND filter exists only inside a comment: PDFs could not be shared.
+  const commentedSend = manifest(
+    `<!-- ${send("SEND")} -->` + send("SEND_MULTIPLE"),
+  );
+  assert.deepEqual(manifestProblems(commentedSend), [
+    "expected one android.intent.action.SEND filter for application/pdf, found 0",
+  ]);
+  // A comment inside a real filter hides its data line, so the filter takes no PDF.
+  const commentedData = manifest(
+    send("SEND").replace(
+      '<data android:mimeType="application/pdf" />',
+      '<!-- <data android:mimeType="application/pdf" /> -->',
+    ) + send("SEND_MULTIPLE"),
+  );
+  assert.deepEqual(manifestProblems(commentedData), [
+    "expected one android.intent.action.SEND filter for application/pdf, found 0",
+  ]);
+  // A commented-out VIEW filter for PDFs is not in the app, so it is not a problem; a live one is.
+  const view = `<intent-filter><action android:name="android.intent.action.VIEW" /><data android:mimeType="application/pdf" /></intent-filter>`;
+  assert.deepEqual(
+    manifestProblems(
+      manifest(`<!-- ${view} -->` + send("SEND") + send("SEND_MULTIPLE")),
+    ),
+    [],
+  );
+  assert.notDeepEqual(
+    manifestProblems(manifest(view + send("SEND") + send("SEND_MULTIPLE"))),
+    [],
+  );
+  // A comment spread over lines, with the real filters beside it.
+  assert.deepEqual(
+    manifestProblems(
+      manifest(
+        `<!--\n  old\n  ${send("SEND")}\n-->\n` +
+          send("SEND") +
+          send("SEND_MULTIPLE"),
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(mainActivityFilters(commentedSend).length, 2);
+});
+
+test("a comment that never closes is refused, not guessed at", () => {
+  assert.deepEqual(
+    manifestProblems(
+      manifest(send("SEND") + send("SEND_MULTIPLE") + "<!-- unfinished"),
+    ),
+    ["the manifest has an XML comment that never closes"],
+  );
+});
