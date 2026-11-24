@@ -5049,6 +5049,9 @@ button:disabled,
    main area scrolls as a whole instead of squeezing the region to nothing. */
 @media (min-width: 56.25em) and (min-height: 32em) {
   .native-vault-page {
+    /* Positioned, so that what is placed absolutely inside it (the screen-reader-only lines) is
+       clipped with it and cannot make the document itself scroll. */
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -5081,6 +5084,7 @@ button:disabled,
     grid-template-rows: minmax(0, 1fr);
   }
   .native-vault-page .app-body > * {
+    position: relative;
     min-height: 0;
     overflow-y: auto;
     /* Fill the row, whatever the section asked (.purpose-screen starts at the top and would
