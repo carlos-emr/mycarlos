@@ -548,6 +548,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       await bridge.lock();
       sessionRef.current += 1;
       // The session shown from here has no operation of its own yet.
+      transferHold.moveTo(sessionRef.current);
       refreshBusy();
       endedPortalWorkRef.current = Promise.allSettled([
         endedPortalWorkRef.current,
@@ -1157,7 +1158,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       );
       refreshBusy();
       setNotice("");
-      transferHold.operationStarted();
+      transferHold.operationStarted(startedIn);
     } else if (clinicOperation !== "quiet") showPortalNotice(startedIn, "");
     try {
       await operation();
@@ -1245,7 +1246,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (left > 0) runsBySessionRef.current.set(startedIn, left);
         else runsBySessionRef.current.delete(startedIn);
         refreshBusy();
-        const idle = transferHold.operationEnded();
+        const idle = transferHold.operationEnded(startedIn);
         if (idle && lockHeldRef.current) requestLock(true);
         else if (idle) flushPortalNotice();
       }

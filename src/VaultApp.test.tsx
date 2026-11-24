@@ -16057,4 +16057,80 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     await act(async () => second.settle(null));
     await waitFor(() => expect(newButton()).toBeEnabled());
   });
+
+  it("still shows a clinic result in the next session after a lock left a picker unanswered", async () => {
+    // The lock leaves the picker's operation behind; it must not keep the next session "busy" for
+    // the notices a clinic check queues behind a running library operation.
+    const user = userEvent.setup();
+    const pick = picker();
+    const link = {
+      id: "fake-clinic-link",
+      portalBase: "https://portal.example.test/patient",
+      deviceName: "myCarlos FAKE device",
+      profileId: null,
+      clinicName: "FAKE First Clinic",
+      fingerprints: [],
+      incomplete: false,
+      deviceKeyId: "FAKE_FIRST_DEVICE",
+      deviceFingerprint: "11".repeat(32),
+      approvalRequested: true,
+      clinicApproved: false,
+    };
+    const snapshot: VaultSnapshot = {
+      ...snapshotWithRecord,
+      profiles: [
+        { id: "profile-1", displayName: "FAKE First Patient", createdAtMs: 1 },
+      ],
+      recoveryKeySetAtMs: 5,
+      portalLinkingEnabled: true,
+      portalLinks: [link],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshot)),
+      unlock: vi.fn().mockImplementation(async () => captureSnapshot(snapshot)),
+      connectPortal: vi.fn(),
+      linkPortal: vi.fn(),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      pickImportFiles: vi.fn(() => pick.promise),
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 1, refused: 0, receiptsPending: 0 }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    await user.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await user.click(
+      (await screen.findAllByRole("button", { name: /^Shared with me/ }))[0],
+    );
+    await screen.findByRole("heading", { name: humanText("Shared with me") });
+    const calls = vi.mocked(bridge.checkDocuments!).mock.calls.length;
+    await user.click(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    );
+    await waitFor(() =>
+      expect(
+        vi.mocked(bridge.checkDocuments!).mock.calls.length,
+      ).toBeGreaterThan(calls),
+    );
+    // The result is written at once, not queued behind the old session's picker.
+    expect(
+      await screen.findByText(
+        humanText(
+          "New documents saved: 1. Documents that could not be verified: 0.",
+        ),
+      ),
+    ).toBeVisible();
+  });
 });
