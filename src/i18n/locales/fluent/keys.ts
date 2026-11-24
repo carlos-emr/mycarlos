@@ -222,6 +222,7 @@ export const MESSAGE_KEYS = [
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -1528,6 +1529,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.notice.movedMany": "interface-notice-movedMany",
   "interface.notice.movedNamed": "interface-notice-movedNamed",
   "interface.notice.notPdf": "interface-notice-notPdf",
+  "interface.notice.receivedNotOpened": "interface-notice-receivedNotOpened",
   "interface.notice.pdfUnlocked": "interface-notice-pdfUnlocked",
   "interface.notice.personAdded": "interface-notice-personAdded",
   "interface.notice.photoSaved": "interface-notice-photoSaved",
@@ -2955,6 +2957,7 @@ export interface MessageArgsByKey {
     where: FluentArgument;
   };
   "interface.notice.notPdf": { name: FluentArgument };
+  "interface.notice.receivedNotOpened": { name: FluentArgument };
   "interface.notice.pdfUnlocked": { name: FluentArgument };
   "interface.notice.personAdded": { name: FluentArgument };
   "interface.notice.photoSaved": { name: FluentArgument };
