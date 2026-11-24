@@ -917,4 +917,148 @@ mod tests {
         let unsupported = v1_fixture(&wrap, &slots, SLOTS * LEGACY_SLOT_BYTES + 1, 1);
         assert_eq!(open(&wrap, &unsupported), Err(NoticeKeyError::Damaged));
     }
+
+    // ---- several vaults on one device, and the OS store this build has (#357, #230) ----
+
+    #[test]
+    fn keys_of_several_vaults_sit_side_by_side_and_each_names_its_vault() {
+        let (_temp, keys) = keys();
+        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        keys.make_for(uuid(1), uuid(11), ORIGIN).unwrap();
+        keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap();
+        let entries = keys.entries().unwrap();
+        let mine = |vault: Uuid| {
+            entries
+                .iter()
+                .filter(|entry| entry.vault_id == vault)
+                .map(|entry| entry.link_id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(mine(uuid(1)), vec![uuid(10), uuid(11)]);
+        assert_eq!(mine(uuid(2)), vec![uuid(20)]);
+        // A link's key is replaced by link, wherever its vault's other keys are.
+        let old = entries.iter().find(|e| e.link_id == uuid(20)).unwrap();
+        let new = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap();
+        assert_eq!(new.replaced.key_ids, vec![old.key_id.clone()]);
+        assert_eq!(keys.entries().unwrap().len(), 3);
+    }
+
+    /// Pins what an unlock of another vault does TODAY, so the change that gives each vault its
+    /// own keys (the multi-vault screen, #357 PR 5) has to change this test knowingly: opening a
+    /// vault wipes every OTHER vault's keys (`after_open` calls `keep_only_vault`), so on a device
+    /// with two vaults, switching from one to the other and back leaves neither with a key, and
+    /// the wrap key goes with the last one. The keys are not owed to the Portal in that case
+    /// (nothing revokes them), which is why this has to be fixed before any screen offers a name.
+    #[test]
+    fn opening_another_vault_today_wipes_the_first_vaults_keys_and_the_last_takes_the_os_item() {
+        let (_temp, keys) = keys();
+        let a = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+        let b = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
+        // Vault 1 opens: vault 2's key goes, its own stays.
+        assert_eq!(keys.keep_only_vault(uuid(1)).unwrap().key_ids, vec![b]);
+        assert_eq!(keys.entries().unwrap().len(), 1);
+        assert!(keys.store.get().unwrap().is_some());
+        // Vault 2 opens: vault 1's key goes (it was made in vault 1), and nothing is left, so the
+        // OS item goes too.
+        assert_eq!(keys.keep_only_vault(uuid(2)).unwrap().key_ids, vec![a]);
+        assert_eq!(keys.entries(), Ok(vec![]));
+        assert!(keys.store.get().unwrap().is_none());
+        // Opening a vault with no keys of its own and none of anyone's changes nothing.
+        assert_eq!(keys.keep_only_vault(uuid(1)), Ok(Wiped::default()));
+    }
+
+    #[test]
+    fn a_reset_wipes_the_keys_of_every_vault_and_keeps_the_file_its_size() {
+        let (temp, keys) = keys();
+        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap();
+        keys.make_for(uuid(3), uuid(30), ORIGIN).unwrap();
+        let wiped = keys.wipe_all().unwrap();
+        assert_eq!(wiped.key_ids.len(), 3);
+        assert_eq!(keys.entries(), Ok(vec![]));
+        assert!(keys.store.get().unwrap().is_none());
+        assert_eq!(
+            fs::read(temp.path().join(FILE_NAME)).unwrap().len(),
+            FILE_BYTES
+        );
+    }
+
+    #[test]
+    fn a_keyring_that_is_gone_after_keys_were_made_fails_every_change_closed_and_leaves_the_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let before = {
+            let keys = NoticeKeys::new(temp.path(), FakeWrapKeyStore::default());
+            keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+            fs::read(temp.path().join(FILE_NAME)).unwrap()
+        };
+        // The same file, a computer whose OS store is not there: no key is read, made or wiped.
+        let gone = NoticeKeys::new(
+            temp.path(),
+            FakeWrapKeyStore {
+                absent: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(gone.entries(), Err(NoticeKeyError::NoKeyring));
+        assert_eq!(
+            gone.make_for(uuid(1), uuid(11), ORIGIN).map(|_| ()),
+            Err(NoticeKeyError::NoKeyring)
+        );
+        assert_eq!(
+            gone.keep_only_vault(uuid(2)),
+            Err(NoticeKeyError::NoKeyring)
+        );
+        assert_eq!(gone.wipe_link(uuid(10)), Err(NoticeKeyError::NoKeyring));
+        assert_eq!(
+            fs::read(temp.path().join(FILE_NAME)).unwrap(),
+            before,
+            "a failed change leaves the file as it was"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn where_this_build_has_no_os_store_it_says_so_and_a_wipe_changes_nothing() {
+        // `NoKeyringStore`, the store of Linux, macOS and the phones for now.
+        let store = NoKeyringStore;
+        assert_eq!(store.get().map(|_| ()), Err(NoticeKeyError::NoKeyring));
+        assert_eq!(store.put(&[7; 32]), Err(NoticeKeyError::NoKeyring));
+        assert_eq!(store.delete(), Ok(()));
+        // The boxed store this build uses forwards each call unchanged.
+        let boxed: Box<dyn WrapKeyStore> = Box::new(NoKeyringStore);
+        assert_eq!(boxed.get().map(|_| ()), Err(NoticeKeyError::NoKeyring));
+        assert_eq!(boxed.put(&[7; 32]), Err(NoticeKeyError::NoKeyring));
+        assert_eq!(boxed.delete(), Ok(()));
+        let through_os_store = os_store();
+        assert_eq!(
+            through_os_store.get().map(|_| ()),
+            Err(NoticeKeyError::NoKeyring)
+        );
+        // Keys over it: nothing is made and there is no plain-file fallback.
+        let temp = tempfile::tempdir().unwrap();
+        let keys = NoticeKeys::new(temp.path(), os_store());
+        assert_eq!(
+            keys.make_for(uuid(1), uuid(10), ORIGIN).map(|_| ()),
+            Err(NoticeKeyError::NoKeyring)
+        );
+        assert!(!temp.path().join(FILE_NAME).exists());
+        assert_eq!(keys.wipe_all(), Ok(Wiped::default()));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_hooks_the_app_calls_do_nothing_where_there_is_no_os_store_and_never_panic() {
+        // The app installs one set of keys at start-up, beside the vault; it is process-wide, so
+        // this only checks what holds whichever test installed it first. With no OS store here the
+        // hooks have no key to wipe: they return quietly.
+        let temp = tempfile::tempdir().unwrap();
+        install(temp.path());
+        assert!(kept().is_some());
+        after_open(uuid(1));
+        after_open(uuid(2));
+        after_reset();
+        // And a second install does not replace the first.
+        install(temp.path());
+        assert!(kept().is_some());
+    }
 }
