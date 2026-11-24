@@ -9,6 +9,7 @@
   --ink: #12211f;
   --ink-soft: #4a5f5c;
   --ink-faint: #596d6a;
+  --muted: var(--ink-soft);
   --teal: #0f6b62;
   --teal-dark: #0a4f48;
   --teal-soft: #e4f2f0;
@@ -1680,6 +1681,18 @@ p {
   border-color: var(--teal-line);
   background: var(--teal-soft);
   color: var(--teal-dark);
+}
+/* What a handover file says of its own evidence (#360): plain, muted, no mark and no green. */
+.record-file-claim {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--muted);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+/* A row or a tile is one line: the claim is in Details and the reader. */
+:is(.file-row, .file-tile) .record-file-claim {
+  display: none;
 }
 .record-source-name {
   min-width: 0;

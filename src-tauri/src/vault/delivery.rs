@@ -303,7 +303,10 @@ pub(crate) struct PendingReceipts {
 }
 
 pub(super) fn verified_clinic(record: &StoredRecord, links: &[StoredLink]) -> Option<String> {
-    let c = record.delivery.as_ref()?;
+    // A record that arrived in a profile handover has no link of its own to read.
+    let Some(c) = record.delivery.as_ref() else {
+        return super::carried::verified_clinic(record, links);
+    };
     let link = links.iter().find(|l| l.id == c.link_id)?;
     let clinic = link.clinic.as_ref()?;
     clinic
@@ -1526,10 +1529,17 @@ impl VaultStore {
             .filter(|p| link.profile_id.is_none_or(|id| p.id == id))
             .map(|p| p.id)
             .collect::<Vec<_>>();
-        let profile_id = if matches.len() == 1 {
-            matches[0]
+        let matched = if matches.len() == 1 {
+            Some(matches[0])
         } else {
-            shared
+            None
+        };
+        // A person who is hidden is not filed into: the document waits in Shared with me, in
+        // plain view, with the person it was for on its history entry (#360, section 8.6).
+        let person_hidden = matched.is_some_and(|id| unlocked.manifest.person_is_hidden(id));
+        let profile_id = match matched {
+            Some(id) if !person_hidden => id,
+            _ => shared,
         };
         let stage = self.root.join("staging").join(Uuid::new_v4().to_string());
         create_private_dir_all(&stage)?;
@@ -1576,6 +1586,7 @@ impl VaultStore {
                 delivery: None,
                 reading_aid: None,
                 ai_results: Vec::new(),
+                carried: None,
             };
             record.original_pdf = Some(self.stage_original_pdf(
                 unlocked.manifest.vault_id,
@@ -1607,6 +1618,10 @@ impl VaultStore {
             entry.delivery_id = Some(outer.delivery_id.clone());
             entry.ciphertext_sha256 = Some(outer.ciphertext_sha256.clone());
             entry.profile_id = Some(profile_id);
+            if let (true, Some(intended)) = (person_hidden, matched) {
+                entry.profile_id = Some(intended);
+                entry.how = Some(HOW_PERSON_HIDDEN.to_owned());
+            }
             let prepared = prepare_history(
                 &self.root,
                 &unlocked.master_key,
@@ -1641,6 +1656,9 @@ impl VaultStore {
                     full_name: None,
                     birth_date: None,
                     previous_full_names: None,
+                    hidden: None,
+                    imported_from: None,
+                    imported_history: None,
                 });
             }
             next.history = prepared.state;
@@ -1686,7 +1704,31 @@ impl VaultStore {
             remove_objects(&self.root, &history_written, Removable::UncommittedObject);
         }
         let _ = remove_owned_dir_all(&stage, Removable::ImportStaging);
+        if result.is_ok() && person_hidden {
+            // Said by the check that filed it, once: the document is in Shared with me.
+            self.arrived_for_hidden
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(id);
+        }
         result
+    }
+
+    /// Forgets what earlier commits noted for the check to say (`take_arrived_for_hidden`).
+    pub(crate) fn clear_arrived_for_hidden(&self) {
+        self.arrived_for_hidden
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
+
+    /// Whether the document just filed as `record_id` was for a person who is hidden, and so
+    /// waits in Shared with me (#360, section 8.6). Said once: the flag is taken.
+    pub(crate) fn take_arrived_for_hidden(&self, record_id: Uuid) -> bool {
+        self.arrived_for_hidden
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&record_id)
     }
 }
 
@@ -3686,7 +3728,7 @@ mod approval_recovery_tests {
     /// A vault holding the contract's original (delivery 6f1c2a7e): a real committed record
     /// (unit tests have no PDF helper for the contract's own document) whose custody is
     /// rewritten to the contract's original, with its receipt signed again.
-    fn vault_with_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+    pub(super) fn vault_with_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
         let pair = pair_fixture();
         let pair_link = wire::tests::fixture_link(&pair);
         let temp = tempfile::tempdir().unwrap();
@@ -3732,7 +3774,8 @@ mod approval_recovery_tests {
     /// receipt readback tests must keep bytes, digests and lengths coherent.
     /// This verifies the package envelope at its reference clock, not a new
     /// confined PDF-helper or installed-app delivery proof.
-    fn vault_with_readable_pair_original() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+    pub(super) fn vault_with_readable_pair_original(
+    ) -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
         let (temp, store, link, record_id) = vault_with_pair_original();
         let pair = pair_fixture();
         let outer: wire::Outer =
@@ -5469,7 +5512,9 @@ mod approval_recovery_tests {
                 opened,
                 &link,
                 &checked,
-                crate::now_ms(),
+                // The fixture's own clock: a carried check must be dated within the delivery's
+                // life (`checked_within`).
+                now * 1000,
                 store.portal_link_ticket(),
             )
             .unwrap();
@@ -5481,6 +5526,80 @@ mod approval_recovery_tests {
             .clone();
         (link, id, receipt)
     }
+    /// A document a clinic delivers for a person who is hidden is not filed into them: it waits
+    /// in Shared with me, in plain view, with the person it was for on its history entry
+    /// (#360, section 8.6). Restoring the person offers exactly that document back, and
+    /// moving it makes it theirs; one the patient moved elsewhere in the meantime is not offered.
+    #[test]
+    fn should_file_a_delivery_for_a_hidden_person_in_shared_with_me_and_offer_it_back_on_restore() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, outer, opened, checked) = signed_delivery();
+        let person = store.snapshot().unwrap().profiles[0].id;
+        store
+            .update_profile_details(
+                person,
+                ProfileDetails {
+                    full_name: Some(opened.manifest.patient.name.clone()),
+                    birth_date: Some(opened.manifest.patient.birth_date.clone()),
+                    previous_full_names: None,
+                },
+                &utc_date_text(crate::now_ms()),
+                crate::now_ms(),
+            )
+            .unwrap();
+        store.create_profile("FAKE Other Person", 6).unwrap();
+        add_link(&store, &link);
+        store.hide_profile(person, 100).unwrap();
+        let shared = store.shared_profile().unwrap();
+
+        let (id, added) = store
+            .commit_delivery(
+                &outer,
+                opened,
+                &link,
+                &checked,
+                200,
+                store.portal_link_ticket(),
+            )
+            .unwrap();
+        assert!(added);
+        // In Shared with me, visible at once; the hidden person has nothing new in the library.
+        let snapshot = store.snapshot().unwrap();
+        let record = snapshot.records.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(record.profile_id, shared);
+        assert_eq!(snapshot.hidden_profiles.len(), 1);
+        assert_eq!(snapshot.hidden_profiles[0].documents, 0);
+        // Said once to the check that filed it, naming nobody.
+        assert!(store.take_arrived_for_hidden(id));
+        assert!(!store.take_arrived_for_hidden(id));
+        // The history keeps who it was for, and that the person was hidden.
+        let entry = crate::vault::history_events_for_test(&store)
+            .into_iter()
+            .find(|e| e.event == HistoryEvent::DeliveryFiled)
+            .unwrap();
+        assert_eq!(entry.profile_id, Some(person));
+        assert_eq!(entry.how.as_deref(), Some(HOW_PERSON_HIDDEN));
+        // Its receipt is owed and sent as for any delivery.
+        assert_eq!(
+            store
+                .pending_receipts(&link, store.portal_link_ticket())
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Restore: offered back, by title; moving it makes it the person's.
+        let arrived = store.restore_profile(person).unwrap();
+        assert_eq!(arrived.len(), 1);
+        assert_eq!(arrived[0].record_id, id);
+        let moved = store.move_to_profile(vec![id], person, vec![]).unwrap();
+        assert_eq!(moved.moved, vec![id]);
+        // Hidden and restored again: it is no longer in Shared with me, so it is not offered.
+        store.create_profile("FAKE Third Person", 7).unwrap();
+        store.hide_profile(person, 300).unwrap();
+        assert!(store.restore_profile(person).unwrap().is_empty());
+    }
+
     /// Each unlock checks for new documents once (#128). A delivery its
     /// portal lists again at a later unlock, because the pickup confirmation
     /// did not reach the portal, is the one already filed: no second record,
@@ -6827,7 +6946,7 @@ mod approval_recovery_tests {
                 opened,
                 other,
                 &checked,
-                crate::now_ms(),
+                now * 1000,
                 store.portal_link_ticket(),
             )
             .unwrap();
@@ -8164,6 +8283,728 @@ mod approval_recovery_tests {
         }));
     }
 
+    // --- Carried clinic evidence and the profile handover fields (#360 PR 2) ---------
+
+    /// The vault's manifest with the first record's clinic evidence carried instead of
+    /// filed, as a handover leaves it: no delivery, no reading aid, and no link at all.
+    fn carried_manifest(store: &VaultStore, link: &StoredLink, record_id: Uuid) -> Manifest {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let mut manifest = store.session().as_ref().unwrap().manifest.clone();
+        let record = manifest
+            .records
+            .iter_mut()
+            .find(|r| r.id == record_id)
+            .unwrap();
+        let c = record.delivery.take().unwrap();
+        let aid = record.reading_aid.take();
+        let (x25519, ed25519) = link.keys.public();
+        record.carried = Some(wire::Carried {
+            clinic: link.clinic.clone().unwrap(),
+            device_x25519: URL_SAFE_NO_PAD.encode(x25519),
+            device_ed25519: URL_SAFE_NO_PAD.encode(ed25519),
+            delivery: wire::CarriedDelivery {
+                outer: c.outer,
+                manifest: c.manifest,
+                manifest_compact: c.manifest_compact,
+                pdf_document_id: c.pdf_document_id,
+                pdf_version: c.pdf_version,
+                checked_at_ms: c.checked_at_ms,
+                anchor_head: c.anchor_head,
+                receipt: c.receipt,
+                receipt_outcome: c.receipt_outcome,
+            },
+            reading_aid: aid.map(|a| wire::CarriedAid {
+                outer: a.outer,
+                manifest_compact: a.manifest_compact,
+                json: a.json,
+                checked_at_ms: a.checked_at_ms,
+                anchor_head: a.anchor_head,
+                receipt: a.receipt,
+                receipt_outcome: a.receipt_outcome,
+            }),
+        });
+        manifest.portal_links.clear();
+        manifest
+    }
+
+    fn with_aid() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid) {
+        let (temp, store, link, record_id) = vault_with_pair_original();
+        let (outer, sealed) = aid_vector("a reading aid for a filed original");
+        store
+            .receive_aid_at(&outer, &sealed, &link, store.portal_link_ticket(), NOW_MS)
+            .unwrap();
+        (temp, store, link, record_id)
+    }
+
+    fn structure_ok(manifest: &Manifest) -> bool {
+        validate_manifest_structure(manifest, manifest.vault_id).is_ok()
+    }
+
+    #[test]
+    fn a_carried_record_needs_no_link_and_is_checked_on_every_read() {
+        let (_temp, store, link, record_id) = with_aid();
+        let manifest = carried_manifest(&store, &link, record_id);
+        assert!(manifest.portal_links.is_empty());
+        let record = manifest.records.iter().find(|r| r.id == record_id).unwrap();
+        assert!(record.carried.as_ref().unwrap().reading_aid.is_some());
+        assert!(structure_ok(&manifest));
+        // It round trips through the manifest's own encoding, camelCase and all.
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(json.contains("\"carried\"") && json.contains("deviceEd25519"));
+        let back: Manifest = serde_json::from_str(&json).unwrap();
+        assert!(back == manifest);
+        // Only the public half of the device is in it: nothing of the private keys.
+        assert!(!json.contains("\"keys\""));
+        // With no link, no clinic is "verified" and none is claimed.
+        assert_eq!(verified_clinic(record, &manifest.portal_links), None);
+    }
+
+    #[test]
+    fn a_carried_record_is_refused_when_any_part_of_it_is_changed() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let (_temp, store, link, record_id) = with_aid();
+        let manifest = carried_manifest(&store, &link, record_id);
+        let refused = |change: &dyn Fn(&mut StoredRecord)| {
+            let mut changed = manifest.clone();
+            let record = changed
+                .records
+                .iter_mut()
+                .find(|r| r.id == record_id)
+                .unwrap();
+            change(record);
+            !structure_ok(&changed)
+        };
+        macro_rules! refuse {
+            ($name:literal, $body:expr) => {
+                assert!(refused(&$body), $name)
+            };
+        }
+        // The original PDF is not the one the clinic signed.
+        refuse!("pdf hash", |r: &mut StoredRecord| r
+            .original_pdf
+            .as_mut()
+            .unwrap()
+            .sha256 =
+            "0".repeat(64));
+        refuse!("pdf size", |r: &mut StoredRecord| r
+            .original_pdf
+            .as_mut()
+            .unwrap()
+            .plaintext_size += 1);
+        refuse!("no original", |r: &mut StoredRecord| r.original_pdf = None);
+        // The clinic's signed manifest is changed, in its parsed or its signed form.
+        refuse!("manifest field", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .delivery
+            .manifest
+            .provider_name
+            .push('x'));
+        refuse!("signed bytes", |r: &mut StoredRecord| {
+            let d = &mut r.carried.as_mut().unwrap().delivery;
+            let last = d.manifest_compact.pop().unwrap();
+            d.manifest_compact.push(if last == 'A' { 'B' } else { 'A' });
+        });
+        refuse!("signing key id", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .delivery
+            .manifest
+            .kid =
+            "other".into());
+        // The clinic is another, or its keys are gone.
+        refuse!("clinic id", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .clinic
+            .clinic_id =
+            "FAKE-other-clinic".into());
+        refuse!("no keys", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .clinic
+            .clinic_keys
+            .clear());
+        refuse!("clinic device id", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .clinic
+            .device_key_id =
+            "x".repeat(43));
+        // The device is another: its keys do not give the id the delivery names.
+        refuse!("device key", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .device_ed25519 =
+            URL_SAFE_NO_PAD.encode([7_u8; 32]));
+        refuse!("device key not base64", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .device_x25519 =
+            "!".into());
+        // The receipt, its time, or the delivery it names.
+        refuse!("receipt", |r: &mut StoredRecord| {
+            let d = &mut r.carried.as_mut().unwrap().delivery;
+            let last = d.receipt.pop().unwrap();
+            d.receipt.push(if last == 'A' { 'B' } else { 'A' });
+        });
+        refuse!("checked at", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .delivery
+            .checked_at_ms +=
+            5_000);
+        refuse!("recipient", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .delivery
+            .outer
+            .recipient_id =
+            "someone-else".into());
+        refuse!("pdf version", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .delivery
+            .pdf_version = 0);
+        // The reading aid: its JSON, its receipt, its pair.
+        refuse!("aid json", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .reading_aid
+            .as_mut()
+            .unwrap()
+            .json
+            .push(' '));
+        refuse!("aid receipt", |r: &mut StoredRecord| {
+            let a = r.carried.as_mut().unwrap().reading_aid.as_mut().unwrap();
+            let last = a.receipt.pop().unwrap();
+            a.receipt.push(if last == 'A' { 'B' } else { 'A' });
+        });
+        refuse!("aid for another delivery", |r: &mut StoredRecord| r
+            .carried
+            .as_mut()
+            .unwrap()
+            .reading_aid
+            .as_mut()
+            .unwrap()
+            .outer
+            .delivery_id =
+            "FAKE-other-delivery".into());
+        // A record is filed or carried, never both.
+        let filed = store
+            .session()
+            .as_ref()
+            .unwrap()
+            .manifest
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .unwrap()
+            .delivery
+            .clone();
+        let mut both = manifest.clone();
+        both.records
+            .iter_mut()
+            .find(|r| r.id == record_id)
+            .unwrap()
+            .delivery = filed;
+        assert!(!structure_ok(&both));
+        // And only a format that holds it.
+        let mut older = manifest.clone();
+        older.format_version = MANIFEST_FORMAT_PROFILE_HANDOVER - 1;
+        assert!(!structure_ok(&older));
+        assert!(structure_ok(&manifest));
+    }
+
+    #[test]
+    fn a_carried_record_whose_snapshot_keys_are_all_revoked_stays_valid_and_gains_trust_only_from_an_active_linked_key(
+    ) {
+        let (_temp, store, link, record_id) = vault_with_pair_original();
+        let mut manifest = carried_manifest(&store, &link, record_id);
+        {
+            let record = manifest
+                .records
+                .iter_mut()
+                .find(|r| r.id == record_id)
+                .unwrap();
+            for key in &mut record.carried.as_mut().unwrap().clinic.clinic_keys {
+                key.status = KeyStatus::Revoked;
+            }
+        }
+        // History, not current trust: still a valid record.
+        assert!(structure_ok(&manifest));
+        let record = manifest.records.iter().find(|r| r.id == record_id).unwrap();
+        // A link of this vault to the same clinic, whose key list holds the signing key as
+        // active, takes it to "verified"; one where that key is revoked does not.
+        assert!(verified_clinic(record, std::slice::from_ref(&link)).is_some());
+        let mut revoked = link.clone();
+        for key in &mut revoked.clinic.as_mut().unwrap().clinic_keys {
+            key.status = KeyStatus::Revoked;
+        }
+        assert_eq!(
+            verified_clinic(record, std::slice::from_ref(&revoked)),
+            None
+        );
+        // Another clinic, with the same key id, is another clinic.
+        let mut other = link.clone();
+        other.clinic.as_mut().unwrap().clinic_id = "FAKE-other-clinic".into();
+        assert_eq!(verified_clinic(record, std::slice::from_ref(&other)), None);
+        // A link whose clinic is not set up yet gives nothing.
+        let mut unfinished = link.clone();
+        unfinished.clinic = None;
+        assert_eq!(verified_clinic(record, &[unfinished]), None);
+        // The carried evidence stays after the clinic link comes: the vault still reads it.
+        let mut linked = manifest.clone();
+        linked.portal_links.push(link.clone());
+        assert!(structure_ok(&linked));
+    }
+
+    #[test]
+    fn a_carried_aid_and_date_show_only_through_a_linked_clinic_that_holds_the_key() {
+        let (_temp, store, link, record_id) = with_aid();
+        let shown = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+            (
+                record.clinic_service_date.clone(),
+                record.reading_aid.is_some(),
+                record.verified_clinic_name.clone(),
+            )
+        };
+        let filed = shown(&store);
+        assert!(filed.0.is_some() && filed.1 && filed.2.is_some());
+        let carried = carried_manifest(&store, &link, record_id);
+        store
+            .mutate_recorded(|m, _| {
+                *m = carried.clone();
+                m.format_version = VAULT_FORMAT;
+                Ok(())
+            })
+            .unwrap();
+        // Carried, with no link here: the evidence is in the manifest and nowhere in the
+        // interface. A handover file's author could have made a consistent aid and date.
+        assert_eq!(shown(&store), (None, false, None));
+        // A link to a clinic that holds the key as active key brings the first back, and with
+        // them what the clinic signed; one whose key is revoked does not.
+        let mut revoked = link.clone();
+        for key in &mut revoked.clinic.as_mut().unwrap().clinic_keys {
+            key.status = KeyStatus::Revoked;
+        }
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.push(revoked.clone());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(shown(&store), (None, false, None));
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.clear();
+                m.portal_links.push(link.clone());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(shown(&store), filed);
+        let store = restart(store);
+        assert_eq!(shown(&store), filed);
+    }
+
+    /// The re-link upgrade (#360 PR 6, design section 7). A record that came in a handover
+    /// file stands at level 1 (what the file says, with its time; this vault has not checked it) until a link of
+    /// this vault to the same clinic holds the signing key as an active key; then it is level 2
+    /// ("verified with the clinic", with its aid and date), and unlinking returns it to level 1.
+    /// Nothing about the file itself (its package, its person) ever authorises the step: only
+    /// the clinic's id and a key of its that is active.
+    #[test]
+    fn a_carried_record_moves_from_the_files_claim_to_verified_only_through_a_link_of_this_vault_to_that_clinic(
+    ) {
+        let (_temp, store, link, record_id) = with_aid();
+        let level = |store: &VaultStore| {
+            let snapshot = store.snapshot().unwrap();
+            let record = snapshot.records.iter().find(|r| r.id == record_id).unwrap();
+            (
+                record.file_says_checked_at_ms,
+                record.verified_clinic_name.clone(),
+                record.reading_aid.is_some(),
+                record.clinic_service_date.is_some(),
+            )
+        };
+        let clinic_name = link.clinic.as_ref().unwrap().clinic_name.clone();
+        let carried = carried_manifest(&store, &link, record_id);
+        let checked_at = carried
+            .records
+            .iter()
+            .find(|r| r.id == record_id)
+            .and_then(|r| r.carried.as_ref())
+            .map(|c| c.delivery.checked_at_ms)
+            .unwrap();
+        // Filed here: a delivery of this vault's own, so level 2 and no level 1.
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        store
+            .mutate_recorded(|m, _| {
+                *m = carried.clone();
+                m.format_version = VAULT_FORMAT;
+                Ok(())
+            })
+            .unwrap();
+        // Carried, with no link: level 1, with the time the source device checked it, and no
+        // aid or date: those wait for the clinic's key.
+        assert_eq!(level(&store), (Some(checked_at), None, false, false));
+        // Linked to another clinic, or to the same clinic with the key revoked, or to a link
+        // not yet set up: still level 1.
+        let mut other = link.clone();
+        other.clinic.as_mut().unwrap().clinic_id = "FAKE-other-clinic".into();
+        let mut revoked = link.clone();
+        for key in &mut revoked.clinic.as_mut().unwrap().clinic_keys {
+            key.status = KeyStatus::Revoked;
+        }
+        let mut unfinished = link.clone();
+        unfinished.clinic = None;
+        // The same clinic id with keys of other ids: whoever wrote the file could have named
+        // the clinic and invented its keys; a link of this vault that does not hold the
+        // signing key proves nothing for it.
+        let mut other_keys = link.clone();
+        for key in &mut other_keys.clinic.as_mut().unwrap().clinic_keys {
+            key.kid = format!("FAKE-other-{}", key.kid);
+        }
+        {
+            // (A link with keys of other ids is not a link this vault can hold, so the rule is
+            // asked directly.)
+            let record = carried.records.iter().find(|r| r.id == record_id).unwrap();
+            assert_eq!(verified_clinic(record, &[other_keys]), None);
+        }
+        for not_yet in [other, revoked, unfinished] {
+            store
+                .mutate_recorded(|m, _| {
+                    m.portal_links = vec![not_yet.clone()];
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(level(&store), (Some(checked_at), None, false, false));
+        }
+        // Linked to the same clinic, holding the signing key as an active key: level 2, with
+        // what the clinic signed, and level 1 is gone.
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links = vec![link.clone()];
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        let store = restart(store);
+        assert_eq!(level(&store), (None, Some(clinic_name.clone()), true, true));
+        // Disconnecting the link takes the trust with it: the evidence is still there.
+        store
+            .mutate_recorded(|m, _| {
+                m.portal_links.clear();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(level(&store), (Some(checked_at), None, false, false));
+    }
+
+    #[test]
+    fn a_carried_record_never_owes_a_receipt_and_never_has_one_sent() {
+        let (_temp, store, link, record_id) = vault_with_readable_pair_original();
+        // Filed here, its receipt is owed.
+        let owed = store
+            .pending_receipts(&link, store.portal_link_ticket())
+            .unwrap();
+        assert_eq!(owed.len(), 1);
+        let carried = carried_manifest(&store, &link, record_id);
+        assert!(carried.records[0]
+            .carried
+            .as_ref()
+            .unwrap()
+            .delivery
+            .receipt_outcome
+            .is_none());
+        store
+            .mutate_recorded(|m, _| {
+                *m = carried.clone();
+                // The clinic's link is in this vault too (linked later, or the same device).
+                m.portal_links.push(link.clone());
+                m.format_version = VAULT_FORMAT;
+                Ok(())
+            })
+            .unwrap();
+        let store = restart(store);
+        let after = store
+            .pending_receipts(&link, store.portal_link_ticket())
+            .unwrap();
+        assert!(after.is_empty());
+    }
+
+    #[test]
+    fn two_records_never_carry_one_delivery() {
+        let (_temp, store, link, record_id) = with_aid();
+        let mut manifest = carried_manifest(&store, &link, record_id);
+        assert!(structure_ok(&manifest));
+        // A second record of the vault with the same carried delivery is refused.
+        let mut twin = manifest.records[0].clone();
+        twin.id = Uuid::new_v4();
+        twin.object_name = format!("{}.mcobj", Uuid::new_v4());
+        twin.original_pdf.as_mut().unwrap().id = Uuid::new_v4();
+        twin.original_pdf.as_mut().unwrap().object_name = format!("{}.mcobj", Uuid::new_v4());
+        manifest.records.push(twin);
+        assert!(!structure_ok(&manifest));
+    }
+
+    #[test]
+    fn profile_handover_fields_need_the_new_format_and_the_right_profile() {
+        let (_temp, store, _, _) = vault_with_pair_original();
+        let base = store.session().as_ref().unwrap().manifest.clone();
+        let id = base.vault_id;
+        let hidden = Hidden {
+            at_ms: 5,
+            reason: HiddenReason::Patient,
+        };
+        let from = ImportedFrom {
+            package_id: Uuid::new_v4(),
+            at_ms: 6,
+        };
+        let entry = |event: HistoryEvent| ImportedHistoryEntry {
+            at_ms: 7,
+            event,
+            record_id: Some(Uuid::new_v4()),
+            name: Some("FAKE Letter".into()),
+            old_name: None,
+            how: Some("picked".into()),
+            hash: "a".repeat(64),
+            prev: "b".repeat(64),
+        };
+        // Two profiles, so one can be hidden and someone stays visible.
+        let mut two = base.clone();
+        two.profiles.push(PatientProfile {
+            id: Uuid::new_v4(),
+            display_name: "FAKE Second".into(),
+            created_at_ms: 2,
+            full_name: None,
+            birth_date: None,
+            previous_full_names: None,
+            hidden: None,
+            imported_from: None,
+            imported_history: None,
+        });
+        assert!(structure_ok(&two));
+        // The profile added above; the vault may already hold Shared with me before it.
+        let last = two.profiles.len() - 1;
+        let ok = |change: &dyn Fn(&mut Manifest)| {
+            let mut changed = two.clone();
+            change(&mut changed);
+            structure_ok(&changed)
+        };
+        // `hidden` has a format of its own, after the handover's (PR 7): refused below it, the
+        // handover's format included, so no build that does not honour it reads a hidden
+        // person and lists them; accepted at it.
+        for format in [
+            MANIFEST_FORMAT_PROFILE_HANDOVER - 1,
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
+        ] {
+            assert!(!ok(&|m| {
+                m.format_version = format;
+                m.profiles[last].hidden = Some(hidden);
+            }));
+        }
+        assert!(ok(&|m| {
+            m.format_version = MANIFEST_FORMAT_HIDDEN_PROFILES;
+            m.profiles[last].hidden = Some(hidden);
+        }));
+        // The rule itself is in place for the format that will hold it: a person hidden by the
+        // patient, on an ordinary profile, is fine there; never as damaged, never Shared.
+        let ordinary = |hidden: Option<Hidden>| {
+            let mut profile = two.profiles[last].clone();
+            profile.hidden = hidden;
+            profile
+        };
+        assert!(valid_handover_fields_from(
+            &ordinary(Some(hidden)),
+            20,
+            id,
+            Some(20)
+        ));
+        assert!(!valid_handover_fields_from(
+            &ordinary(Some(hidden)),
+            19,
+            id,
+            Some(20)
+        ));
+        assert!(valid_handover_fields(
+            &ordinary(Some(hidden)),
+            VAULT_FORMAT,
+            id
+        ));
+        assert!(!valid_handover_fields(
+            &ordinary(Some(hidden)),
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
+            id
+        ));
+        assert!(!valid_handover_fields_from(
+            &ordinary(Some(Hidden {
+                at_ms: 5,
+                reason: HiddenReason::Damaged
+            })),
+            20,
+            id,
+            Some(20)
+        ));
+        // Each other field, in the new format, on an ordinary profile.
+        assert!(ok(&|m| m.profiles[last].imported_from = Some(from.clone())));
+        assert!(ok(&|m| {
+            m.profiles[last].imported_from = Some(from.clone());
+            m.profiles[last].imported_history = Some(vec![entry(HistoryEvent::Imported)]);
+        }));
+        // Each one refused below the format that holds it.
+        for (name, set) in [
+            (
+                "hidden",
+                (&|p: &mut PatientProfile| p.hidden = Some(hidden)) as &dyn Fn(&mut PatientProfile),
+            ),
+            ("from", &|p: &mut PatientProfile| {
+                p.imported_from = Some(from.clone())
+            }),
+        ] {
+            assert!(
+                !ok(&|m| {
+                    m.format_version = MANIFEST_FORMAT_PROFILE_HANDOVER - 1;
+                    set(&mut m.profiles[last]);
+                }),
+                "{name}"
+            );
+        }
+        // The last visible person cannot be hidden, and Shared with me never is.
+        assert!(!ok(&|m| m
+            .profiles
+            .iter_mut()
+            .for_each(|p| p.hidden = Some(hidden))));
+        let shared = shared_profile_id(id);
+        let shared_at = two.profiles.iter().position(|p| p.id == shared);
+        let make_shared = |m: &mut Manifest| -> usize {
+            shared_at.unwrap_or_else(|| {
+                m.profiles[last].id = shared;
+                last
+            })
+        };
+        assert!(ok(&|m| {
+            make_shared(m);
+        }));
+        assert!(!ok(&|m| {
+            let at = make_shared(m);
+            m.profiles[at].hidden = Some(hidden);
+        }));
+        assert!(!ok(&|m| {
+            let at = make_shared(m);
+            m.profiles[at].imported_from = Some(from.clone());
+        }));
+        // A person is hidden by the patient, never as a damaged file.
+        assert!(!ok(&|m| m.profiles[last].hidden = Some(Hidden {
+            at_ms: 5,
+            reason: HiddenReason::Damaged
+        })));
+        // One file makes one profile.
+        assert!(!ok(&|m| {
+            m.profiles[0].imported_from = Some(from.clone());
+            m.profiles[last].imported_from = Some(from.clone());
+        }));
+        // The old history: only with its file, nonempty, bounded, record-level events only.
+        let with = |history: Vec<ImportedHistoryEntry>, file: bool| {
+            ok(&|m| {
+                m.profiles[last].imported_from = file.then(|| from.clone());
+                m.profiles[last].imported_history = Some(history.clone());
+            })
+        };
+        assert!(with(vec![entry(HistoryEvent::Moved)], true));
+        assert!(!with(vec![entry(HistoryEvent::Imported)], false));
+        assert!(!with(vec![], true));
+        assert!(!with(vec![entry(HistoryEvent::Unlocked)], true));
+        assert!(!with(vec![entry(HistoryEvent::BackupSaved)], true));
+        assert!(!with(
+            vec![entry(HistoryEvent::Imported); MAX_IMPORTED_HISTORY + 1],
+            true
+        ));
+        assert!(with(
+            vec![entry(HistoryEvent::Imported); MAX_IMPORTED_HISTORY],
+            true
+        ));
+        // A document's name may be as long as a record name is (240), longer than a person's.
+        let mut long = entry(HistoryEvent::Renamed);
+        long.name = Some("x".repeat(240));
+        assert!(with(vec![long], true));
+        let mut too_long = entry(HistoryEvent::Renamed);
+        too_long.name = Some("x".repeat(241));
+        assert!(!with(vec![too_long], true));
+        // Across every imported profile there is a cap too.
+        let many = |profiles: usize, each: usize| {
+            ok(&|m| {
+                while m.profiles.len() < profiles + 1 {
+                    let mut extra = m.profiles[last].clone();
+                    extra.id = Uuid::new_v4();
+                    extra.display_name = format!("FAKE Extra {}", m.profiles.len());
+                    m.profiles.push(extra);
+                }
+                for (n, profile) in m
+                    .profiles
+                    .iter_mut()
+                    .filter(|p| p.id != shared)
+                    .enumerate()
+                    .take(profiles)
+                {
+                    profile.imported_from = Some(ImportedFrom {
+                        package_id: Uuid::from_u128(n as u128 + 1),
+                        at_ms: 6,
+                    });
+                    profile.imported_history = Some(vec![entry(HistoryEvent::Imported); each]);
+                }
+            })
+        };
+        assert!(many(10, MAX_IMPORTED_HISTORY));
+        assert!(!many(11, MAX_IMPORTED_HISTORY));
+        let mut bad = entry(HistoryEvent::Renamed);
+        bad.hash = "short".into();
+        assert!(!with(vec![bad], true));
+        let mut bad = entry(HistoryEvent::Renamed);
+        bad.name = Some(" padded ".into());
+        assert!(!with(vec![bad], true));
+        let mut bad = entry(HistoryEvent::Renamed);
+        bad.how = Some("a b".into());
+        assert!(!with(vec![bad], true));
+    }
+
+    #[test]
+    fn a_profile_that_uses_none_of_the_new_fields_writes_none_of_them() {
+        let (_temp, store, _, _) = vault_with_pair_original();
+        let manifest = store.session().as_ref().unwrap().manifest.clone();
+        let json = serde_json::to_string(&manifest.profiles).unwrap();
+        for field in ["hidden", "importedFrom", "importedHistory"] {
+            assert!(!json.contains(field), "{field}");
+        }
+        assert!(!serde_json::to_string(&manifest.records)
+            .unwrap()
+            .contains("carried"));
+        for event in [
+            (HistoryEvent::ProfileExported, "profileExported"),
+            (HistoryEvent::ProfileHidden, "profileHidden"),
+            (HistoryEvent::ProfileRestored, "profileRestored"),
+            (HistoryEvent::ProfileImported, "profileImported"),
+        ] {
+            assert_eq!(
+                serde_json::to_string(&event.0).unwrap(),
+                format!("\"{}\"", event.1)
+            );
+        }
+    }
+
     // ---- filing a delivery, and what keeps it honest (the gaps of check_and_file_delivery,
     //      commit_delivery_controlled and valid_custody) ----
     //
@@ -8798,4 +9639,11 @@ mod approval_recovery_tests {
 #[cfg(test)]
 pub(super) fn automatic_pending_fixture_for_test(store: &VaultStore, link: &StoredLink) -> Uuid {
     approval_recovery_tests::add_unsent_delivery_for(store, link)
+}
+
+/// A vault holding a delivered original from a linked clinic, for the handover export's tests.
+#[cfg(test)]
+pub(super) fn pair_original_fixture_for_test() -> (tempfile::TempDir, VaultStore, StoredLink, Uuid)
+{
+    approval_recovery_tests::vault_with_readable_pair_original()
 }

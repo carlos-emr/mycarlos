@@ -58,6 +58,13 @@
     "allow-vault-backup-size",
     "allow-vault-left-out-records",
     "allow-vault-backup-picked",
+    "allow-vault-profile-export-prepare",
+    "allow-vault-profile-export-pick",
+    "allow-vault-profile-export-picked",
+    "allow-vault-profile-import-pick",
+    "allow-vault-profile-import-key-kind",
+    "allow-vault-profile-import-inspect",
+    "allow-vault-profile-import",
     "allow-vault-restore-pick",
     "allow-vault-restore-inspect",
     "allow-vault-restore",
@@ -109,6 +116,8 @@
     "allow-vault-ai-results",
     "allow-vault-ai-result-read",
     "allow-vault-unhide-record",
+    "allow-vault-hide-profile",
+    "allow-vault-restore-profile",
     "allow-vault-hide-unavailable-records",
     "allow-vault-reset"
   ]
