@@ -48,9 +48,11 @@ export interface VaultFolder {
 export interface ClinicPatient {
   name: string;
   birthDate: string;
-  /** The person the clinic link is tied to, if any (it files only under them). */
+  /** The visible person the clinic link is tied to, if any (it files only under them). */
   linkPerson?: string;
-  /** Everyone (hidden people included, by opaque id) who matches these words today. */
+  /** The link is tied to a hidden person: it files only under them, so under no one listed. */
+  linkedToHidden?: boolean;
+  /** Everyone (by opaque id) who matches these words today; never a hidden person. */
   matchingPeople?: string[];
 }
 

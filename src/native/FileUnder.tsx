@@ -44,10 +44,11 @@ export function fileUnderPlan(
 }
 
 /** Whether the next documents from this clinic would file themselves under `person`: not when
- * the clinic link is tied to someone else, nor when someone else matches the same words (two
+ * the clinic link is tied to someone else (a hidden person included), nor when someone else matches the same words (two
  * matches leave a document in Shared with me). */
 export function filesOnItsOwn(personId: string, clinic: ClinicPatient) {
   return (
+    !clinic.linkedToHidden &&
     (clinic.linkPerson === undefined || clinic.linkPerson === personId) &&
     (clinic.matchingPeople ?? []).every((id) => id === personId)
   );

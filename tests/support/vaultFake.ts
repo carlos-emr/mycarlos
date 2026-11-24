@@ -243,7 +243,13 @@ export interface FakeVaultSetup {
   hiddenPeople?: string[];
   /** The patient the clinic's first delivery names (#340): the document arrives in Shared
    * with me carrying these words. */
-  clinicPatient?: { name: string; birthDate: string };
+  clinicPatient?: {
+    name: string;
+    birthDate: string;
+    linkPerson?: string;
+    linkedToHidden?: boolean;
+    matchingPeople?: string[];
+  };
 }
 
 /** The id of the n-th extra person (`people` in the setup), counting from 1. */
@@ -296,7 +302,13 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
         /** What the clinic wrote as the patient, on a document in Shared with me (#340). */
-        clinicPatient?: { name: string; birthDate: string };
+        clinicPatient?: {
+          name: string;
+          birthDate: string;
+          linkPerson?: string;
+          linkedToHidden?: boolean;
+          matchingPeople?: string[];
+        };
         clinicServiceDate?: string;
         readingAid?: {
           deliveryId: string;
