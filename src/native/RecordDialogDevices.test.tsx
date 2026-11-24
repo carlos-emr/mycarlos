@@ -347,7 +347,7 @@ describe("choosing the camera and the microphone", () => {
     open();
     const region = document.querySelector(".record-device-note")!;
     // Present from the start and empty, so a screen reader is already watching it.
-    expect(region).toHaveAttribute("role", "status");
+    expect(region).toHaveAttribute("aria-live", "polite");
     expect(region).toHaveTextContent("");
     await ready();
     expect(document.querySelector(".record-device-note")).toBe(region);

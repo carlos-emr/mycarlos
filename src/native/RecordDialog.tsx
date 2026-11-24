@@ -822,9 +822,10 @@ export function RecordDialog({
             muted
             playsInline
           />
-          {/* Always present, empty until there is something to say: a status region that is
-              inserted together with its text is not announced by every screen reader. */}
-          <p role="status" className="record-device-note">
+          {/* Always present, empty until there is something to say: a live region that is inserted
+              together with its text is not announced by every screen reader. A live region and not
+              role="status", which the dialog's own status line already is (one per dialog). */}
+          <p aria-live="polite" className="record-device-note">
             {fellBack && (stage === "ready" || recordingNow)
               ? translateNow("interface.RecordDialog.deviceFellBack")
               : ""}
