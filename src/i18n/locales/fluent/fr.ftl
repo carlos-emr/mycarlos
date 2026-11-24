@@ -301,6 +301,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } a été déplacé vers { $where }.
 
 interface-notice-notPdf = { $name } n’est pas un document PDF; myCarlos ne l’a donc pas ajouté. Pour le moment, seuls les documents PDF peuvent être partagés avec myCarlos.
+interface-notice-receivedNotOpened = { $name } n’a pas pu être ouvert ou lu, donc myCarlos ne l’a pas ajouté. Partagez-le de nouveau si vous en avez encore besoin.
 
 interface-notice-pdfUnlocked = Une copie déverrouillée a été ajoutée. L’original verrouillé s’appelle maintenant { $name }.
 
@@ -1712,6 +1713,14 @@ interface-history-event-profileCreated = Profil patient ajouté
 
 interface-history-event-profileDetailsChanged = Renseignements personnels modifiés
 
+interface-history-event-profileExported = Profil patient exporté
+
+interface-history-event-profileHidden = Profil patient masqué
+
+interface-history-event-profileRestored = Profil patient restauré
+
+interface-history-event-profileImported = Profil patient ajouté depuis un fichier de transfert
+
 interface-history-event-readingAidFiled = Aide à la lecture enregistrée
 
 interface-history-event-recoveryKeySet = Clé de récupération configurée
@@ -2569,3 +2578,318 @@ security-backup-leaveVideosOutHelp = La sauvegarde ne contiendra pas vos vidéos
 restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer ramène tout le reste, et vos vidéos n’y seront pas. Elles figurent parmi les documents masqués, comme des fichiers manquants.
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
+
+handover-section-title = Transmettre les dossiers d'une personne
+
+handover-section-body = Copiez les documents d'une personne dans un fichier pour un autre appareil, par exemple pour donner à un enfant ses propres dossiers. Le fichier a sa propre clé et ne modifie pas votre coffre. Vous pouvez aussi ajouter une personne à partir d'un fichier que quelqu'un vous a remis.
+
+handover-export-button = Transmettre des dossiers…
+
+handover-import-button = Ajouter une personne depuis un fichier…
+
+handover-close = Fermer
+
+handover-export-title = Transmettre les dossiers d'une personne
+
+handover-export-about = Cela crée un fichier contenant les documents d'une personne, avec sa propre clé, qu'un autre appareil pourra lire. Rien ne change dans votre coffre.
+
+handover-export-caution = Cela copie des dossiers de santé. Une lettre peut nommer d'autres personnes, comme un parent ou un tuteur, et chaque document est copié en entier, sans modification. Vérifiez que la personne qui ouvrira le fichier est la bonne et qu'elle peut le lire.
+
+handover-export-person = De qui sont les dossiers
+
+handover-export-history = Inclure l'historique de ces documents (quand ils ont été ajoutés, renommés ou déplacés)
+
+handover-export-keyKind-legend = Comment le fichier est verrouillé
+
+handover-export-keyKind-generated = Une clé créée par myCarlos (recommandé)
+
+handover-export-keyKind-passphrase = Une phrase secrète que je choisis
+
+handover-export-passphrase = Phrase secrète du fichier
+
+handover-export-passphraseHint = Au moins 15 caractères, et difficile à deviner. Ce ne doit pas être la phrase secrète de votre coffre ni votre clé de récupération.
+
+handover-export-continue = Continuer
+
+handover-export-preparing = Préparation…
+
+handover-export-keyTitle = Notez la clé de ce fichier
+
+handover-export-keyBody = Quiconque possède le fichier et cette clé peut lire ces dossiers. Remettez la clé à la personne séparément du fichier. myCarlos ne la conserve pas : si elle est perdue, refaites le fichier.
+
+handover-export-keyLabel = Clé du fichier
+
+handover-export-keyGroup = Groupe { $number } : { $characters }
+
+handover-export-copy = Copier la clé
+
+handover-export-copied = Clé copiée. Si rien d'autre n'est copié entre-temps, elle est effacée du presse-papiers dans une minute.
+
+handover-export-copyFailed = La clé n'a pas pu être copiée. Notez-la plutôt.
+
+handover-export-keySaved = J'ai noté la clé ou je l'ai rangée en lieu sûr
+
+handover-export-saveTitle = Enregistrer le fichier
+
+handover-export-summary = Le fichier contiendra les dossiers de { $name } :
+
+handover-export-apart = Conservez le fichier et la clé séparément.
+
+handover-export-provider = Sur certains téléphones, si l'enregistrement échoue, l'emplacement choisi peut rester vide ou incomplet. Dans ce cas, supprimez ce fichier et réessayez.
+
+handover-export-chooseWhere = Choisir où enregistrer…
+
+handover-export-saving = Enregistrement et vérification du fichier…
+
+handover-export-noLocation = Aucun emplacement n'a été choisi. Rien n'a été enregistré.
+
+handover-export-doneTitle = Fichier enregistré
+
+handover-export-done =
+    { $count ->
+        [one] Un document de { $name } a été enregistré, et le fichier a été relu pour le vérifier.
+       *[other] { $count } documents de { $name } ont été enregistrés, et le fichier a été relu pour le vérifier.
+    }
+
+handover-export-doneApart = Conservez le fichier et la clé séparément. Ce fichier ne modifie pas votre coffre.
+
+handover-export-hideOffer = Masquer { $name } dans ce coffre
+
+handover-export-leftOut =
+    { $count ->
+        [one] Un document exclu, car son fichier est illisible.
+       *[other] { $count } documents exclus, car leurs fichiers sont illisibles.
+    }
+
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] La signature de la clinique n'a pas pu être incluse pour un document (le document est bien dans le fichier).
+       *[other] La signature de la clinique n'a pas pu être incluse pour { $count } documents (les documents sont bien dans le fichier).
+    }
+
+handover-count-documents = Documents : { $count }
+
+handover-count-hidden = Masqués par vous : { $count }
+
+handover-count-folders = Dossiers : { $count }
+
+handover-count-answers = Réponses de l'assistant IA : { $count }
+
+handover-count-evidence = Documents avec la remise signée d'une clinique : { $count }
+
+handover-count-size = Taille : { $size }
+
+handover-import-title = Ajouter une personne depuis un fichier
+
+handover-import-about = Choisissez un fichier que quelqu'un vous a remis et gardez à portée de main la clé ou la phrase secrète qu'on vous a donnée. La personne arrive comme une nouvelle personne ; rien de ce qui est déjà ici n'est modifié.
+
+handover-import-choose = Choisir le fichier…
+
+handover-import-noFile = Aucun fichier n'a été choisi. Rien n'a changé.
+
+handover-import-keyTitle = Ouvrir le fichier
+
+handover-import-key = Clé
+
+handover-import-passphrase = Phrase secrète
+
+handover-import-keyHint = Sept groupes de quatre lettres et chiffres. Les majuscules, les espaces et les tirets n'ont pas d'importance.
+
+handover-import-passphraseHint = La phrase secrète choisie pour le fichier par la personne qui l'a créé.
+
+handover-import-open = Ouvrir le fichier
+
+handover-import-opening = Ouverture…
+
+handover-import-error-typo = Cette clé ne semble pas correcte. Comparez-la avec celle qu'on vous a donnée.
+
+handover-import-error-recovery = C'est une clé de récupération, pas la clé de ce fichier. Demandez la clé créée pour le fichier.
+
+handover-import-error-wrong = Cela n'ouvre pas ce fichier.
+
+handover-import-error-newer = Ce fichier a été créé par une version plus récente de myCarlos. Mettez myCarlos à jour et réessayez.
+
+handover-import-error-damaged = Ce fichier est incomplet, a été modifié ou ne peut pas être ajouté ici. Demandez-en une nouvelle copie.
+
+handover-import-previewTitle = Ce que dit le fichier
+
+handover-import-says = Le fichier indique qu'il contient les dossiers de { $name }.
+
+handover-import-birth = Né(e) le { $date }, tel que l'a noté la personne qui a créé le fichier.
+
+handover-import-madeOn = Créé le { $date }.
+
+handover-import-evidenceNote = Certains documents portent la remise signée d'une clinique. Tant que vous n'avez pas lié cet appareil à cette clinique, myCarlos peut seulement dire qu'ils ont été vérifiés sur l'appareil qui a créé le fichier, pas que cette clinique s'en porte garante.
+
+handover-import-duplicate-legend = Vous avez peut-être déjà cette personne
+
+handover-import-duplicate-package = Vous avez déjà ajouté ce fichier ici.
+
+handover-import-duplicate-content =
+    { $count ->
+        [one] Un des documents de ce fichier a exactement le même contenu qu'un document que vous avez déjà pour une autre personne ici.
+       *[other] { $count } des documents de ce fichier ont exactement le même contenu que des documents que vous avez déjà pour une autre personne ici.
+    }
+
+handover-import-duplicate-anyway = L'ajouter quand même comme autre personne
+
+handover-import-nameLabel = Comment appeler cette personne ici
+
+handover-import-add = Ajouter cette personne
+
+handover-import-adding = Ajout et vérification des dossiers…
+
+handover-import-doneTitle = Terminé
+
+handover-import-done =
+    { $count ->
+        [one] Un document a été ajouté pour { $name }.
+       *[other] { $count } documents ont été ajoutés pour { $name }.
+    }
+
+handover-import-doneAnswers =
+    { $count ->
+        [one] Une réponse de l'assistant IA est arrivée avec eux, marquée comme provenant d'un fichier importé.
+       *[other] { $count } réponses de l'assistant IA sont arrivées avec eux, marquées comme provenant d'un fichier importé.
+    }
+
+handover-import-doneEvidence = Les documents de la clinique n'indiquent que ce qui a pu être vérifié ici. Pour les faire vérifier avec la clé de la clinique sur cet appareil, liez cet appareil à la clinique.
+
+handover-import-doneDropped =
+    { $count ->
+        [one] Un élément du fichier a été exclu, car il ne respectait pas les règles de ce coffre.
+       *[other] { $count } éléments du fichier ont été exclus, car ils ne respectaient pas les règles de ce coffre.
+    }
+
+handover-import-receipt = Code de réception :
+
+handover-import-receiptNote = Vous pouvez donner ce code à la personne qui a créé le fichier. Il montre que quelqu'un qui avait le fichier et sa clé a ouvert tout le fichier et l'a lu en entier. Il ne prouve pas que les dossiers ont été ajoutés quelque part, ni que votre copie est toujours en sécurité.
+
+handover-import-nothingNew = Rien n'a été ajouté : ce coffre a déjà cette personne.
+
+handover-importedAnswer = D'un fichier importé
+
+handover-export-leavingWarning = Restez dans myCarlos tant que cette clé est affichée. Passer à une autre application verrouille votre coffre et cette clé cesse de fonctionner : vous recommenceriez et obtiendriez une nouvelle clé.
+
+handover-export-leave-title = Quitter sans enregistrer de fichier ?
+
+handover-export-leave-body = Aucun fichier n'a été enregistré. La clé affichée cessera de fonctionner : ne la remettez à personne. Pour transmettre les dossiers, recommencez et vous obtiendrez une nouvelle clé.
+
+handover-export-leave-confirm = Quitter
+
+
+handover-export-error-weak = Cette phrase secrète ne peut pas être utilisée. Elle est peut-être trop facile à deviner, contient le nom de la personne ou ressemble trop à la phrase secrète de votre coffre ou à votre clé de récupération. Choisissez-en une autre.
+
+handover-unfinished = Une transmission n'a pas été terminée. Toute clé que vous avez copiée ou notée n'ouvre rien. Pour transmettre les dossiers, recommencez pour obtenir une nouvelle clé.
+
+native-error-49 = Cette session déverrouillée a déjà essayé le maximum de phrases secrètes pour un fichier. Verrouillez myCarlos puis déverrouillez-le de nouveau pour continuer, ou laissez myCarlos créer une clé pour le fichier.
+
+native-error-50 = Au moins une personne doit rester dans la bibliothèque : la dernière ne peut pas être masquée. Ajoutez d'abord une autre personne.
+
+hiddenPeople-title = Personnes masquées
+
+hiddenPeople-body = Les personnes que vous avez masquées sont absentes de la bibliothèque, de la recherche et de l'assistant IA. Rien n'est supprimé : elles restent dans ce coffre et dans vos sauvegardes. Toute personne qui connaît votre phrase secrète peut les rétablir.
+
+hiddenPeople-list = Personnes masquées
+
+hiddenPeople-since = masquée le { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } document
+       *[other] { $count } documents
+    }
+
+hiddenPeople-restore = Rétablir
+
+hiddenPeople-restoreFor = Rétablir { $name }
+
+hiddenPeople-handOver = Transmettre…
+
+hiddenPeople-handOverFor = Transmettre les dossiers de { $name }
+
+hiddenPeople-hide = Masquer
+
+hiddenPeople-hideFor = Masquer { $name }
+
+hiddenPeople-lastPerson = Au moins une personne doit rester dans la bibliothèque.
+
+hiddenPeople-confirm-title = Masquer { $name } ?
+
+hiddenPeople-confirm-body = Cela masque { $name } et tous ses documents dans myCarlos. Rien n'est supprimé. Ils restent dans ce coffre et dans vos sauvegardes, et vous pouvez les rétablir à tout moment sous Personnes masquées. Masquer n'empêche pas une personne qui connaît votre phrase secrète de les rétablir.
+
+hiddenPeople-confirm-hide = Masquer { $name }
+
+hiddenPeople-hidden = { $name } est maintenant masquée.
+
+hiddenPeople-restored = { $name } est de retour dans la bibliothèque.
+
+hiddenPeople-arrived-title = Déplacer les nouveaux documents vers { $name } ?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] Pendant que { $name } était masquée, { $count } document est arrivé pour cette personne et se trouve dans Partagés avec moi. Le déplacer vers { $name } ?
+       *[other] Pendant que { $name } était masquée, { $count } documents sont arrivés pour cette personne et se trouvent dans Partagés avec moi. Les déplacer vers { $name } ?
+    }
+
+hiddenPeople-arrived-move = Déplacer vers { $name }
+
+hiddenPeople-arrived-leave = Laisser dans Partagés avec moi
+
+hiddenPeople-arrived-list = Documents arrivés
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] Un document est arrivé de { $clinic } et se trouve dans Partagés avec moi. La personne concernée est masquée.
+       *[other] { $count } documents sont arrivés de { $clinic } et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
+    }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] Cela masque aussi { $count } document endommagé d'une personne masquée. Il n'est pas listé ici, pour ne pas montrer qui est masqué.
+       *[other] Cela masque aussi { $count } documents endommagés de personnes masquées. Ils ne sont pas listés ici, pour ne pas montrer qui est masqué.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } entrée concernant une personne masquée n'est pas affichée. Elle est conservée et réaffichée quand la personne est rétablie.
+       *[other] { $count } entrées concernant des personnes masquées ne sont pas affichées. Elles sont conservées et réaffichées quand les personnes sont rétablies.
+    }
+
+interface-history-how-personHidden = Classé dans Partagés avec moi pendant que la personne était masquée
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] Un document est arrivé et se trouve dans Partagés avec moi. La personne concernée est masquée.
+       *[other] { $count } documents sont arrivés et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
+    }
+
+library-fileSaysChecked = Le fichier dans lequel il est arrivé indique qu'il a été contrôlé sur l'appareil d'origine, le { $date }. Ce coffre ne l'a pas contrôlé.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } document arrivé dans un fichier de transmission est maintenant vérifié avec { $clinic }, dont ce coffre détient la clé.
+       *[other] { $count } documents arrivés dans un fichier de transmission sont maintenant vérifiés avec { $clinic }, dont ce coffre détient la clé.
+    }
+
+
+notifications-autoSummary = Les vérifications automatiques n’ont lieu que lorsque myCarlos est ouvert et déverrouillé.
+
+background-keepRunningSummary = myCarlos peut rester en arrière-plan après la fermeture de sa fenêtre. Votre coffre se verrouille à la fermeture de la fenêtre.
+
+background-startAtLoginSummary = myCarlos peut démarrer lorsque vous ouvrez une session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan avec votre coffre verrouillé.
+
+preferences-moreAutomatic = En savoir plus sur les vérifications automatiques
+
+preferences-moreBackground = En savoir plus sur l’exécution en arrière-plan
+
+native-notice-test = Ceci est un avis de test de myCarlos.
+
+notifications-testButton = Afficher un avis de test
+
+notifications-testSent = Avis de test envoyé. Si vous ne le voyez pas, vérifiez les paramètres de notification de Windows.
+
+notifications-testWait = Patientez quelques secondes, puis réessayez.
+
+notifications-testFailed = L’avis de test n’a pas pu être affiché.
+notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.

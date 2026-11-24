@@ -527,6 +527,8 @@ fn talk(
 #[cfg(desktop)]
 pub(crate) fn helper_command(executable: &std::path::Path) -> std::process::Command {
     let mut command = std::process::Command::new(executable);
+    // No console window on Windows (a confined start uses its own launcher with CREATE_NO_WINDOW).
+    crate::process_flags::hide_console(&mut command);
     command.arg(HELPER_ARG);
     command
 }

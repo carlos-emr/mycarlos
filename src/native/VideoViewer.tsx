@@ -31,7 +31,9 @@ export function VideoViewer({
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playingRef = useRef(false);
-  useModalFocus(true, dialogRef, onClose, closeRef);
+  // The player takes the first focus (its Space, arrow and J/L keys work at once, and its own
+  // controls are one Tab away); Escape and the Close button still close the viewer.
+  useModalFocus(true, dialogRef, onClose, videoRef);
 
   // The latest callback and address, read through refs: the library hands in a
   // new function on every render, and a teardown that depended on it would run

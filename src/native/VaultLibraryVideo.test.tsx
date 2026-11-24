@@ -217,15 +217,61 @@ describe("video in the library", () => {
     expect(release).toHaveBeenCalledTimes(1);
     fireEvent(player, new Event("playing"));
     expect(hold).toHaveBeenCalledTimes(2);
-    // The player is the dialog on top of the document's details.
-    const viewer = screen
-      .getAllByRole("dialog", { name: humanText(VIDEO_NAME) })
-      .find((dialog) => dialog.querySelector("video"))!;
+    // The player replaces the document's details: the details dialog is later in the page than the
+    // player and would sit over it, so it is not up while the player is.
+    const dialogs = screen.getAllByRole("dialog", {
+      name: humanText(VIDEO_NAME),
+    });
+    expect(dialogs).toHaveLength(1);
+    const viewer = dialogs[0]!;
+    expect(viewer.querySelector("video")).toBe(player);
+    expect(
+      screen.queryByRole("button", { name: humanText("Play video") }),
+    ).toBeNull();
     fireEvent.click(
       within(viewer).getByRole("button", { name: humanText("Close") }),
     );
     expect(bridge.videoClose).toHaveBeenCalledWith(TOKEN);
     expect(release).toHaveBeenCalledTimes(2);
+    // Closing the player brings the document's details back.
+    expect(
+      await screen.findByRole("button", { name: humanText("Play video") }),
+    ).toBeVisible();
+  });
+
+  it("puts the first focus on the player, covers it with nothing, and closes on Escape", async () => {
+    const bridge = renderLibrary(
+      { ...base, records: [record("video-1", VIDEO_NAME)] },
+      { isVideo: vi.fn(async (id: string) => id === "video-1") },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(VIDEO_NAME) }),
+    );
+    const details = screen.getByRole("dialog", { name: humanText(VIDEO_NAME) });
+    fireEvent.click(
+      await within(details).findByRole("button", {
+        name: humanText("Play video"),
+      }),
+    );
+    const player = await screen.findByLabelText(
+      humanText(`Video player: ${VIDEO_NAME}`),
+    );
+    // Focus is on the player, so its keys work at once; the details are gone.
+    await waitFor(() => expect(document.activeElement).toBe(player));
+    expect(
+      screen.getAllByRole("dialog", { name: humanText(VIDEO_NAME) }),
+    ).toHaveLength(1);
+    // Nothing is stacked above the player: its centre is the player itself.
+    const box = player.getBoundingClientRect();
+    expect(
+      document.elementFromPoint(box.left + box.width / 2, box.top + 20),
+    ).toBe(player);
+    // Escape closes the player (and ends its playback), and the details come back.
+    fireEvent.keyDown(player, { key: "Escape" });
+    await waitFor(() => expect(bridge.videoClose).toHaveBeenCalledWith(TOKEN));
+    expect(
+      await screen.findByRole("button", { name: humanText("Play video") }),
+    ).toBeVisible();
   });
 
   it("offers no Play for a document that is not a video", async () => {
