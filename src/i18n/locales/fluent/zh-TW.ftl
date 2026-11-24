@@ -440,6 +440,7 @@ interface-notice-movedMany = 已將 { $count } 份文件移至 { $where }。
 interface-notice-movedNamed = { $name } 已移至 { $where }。
 
 interface-notice-notPdf = { $name } 不是 PDF 文件，因此 myCarlos 未新增該檔案。目前只有 PDF 文件可以分享至 myCarlos。
+interface-notice-receivedNotOpened = 無法開啟或讀取 { $name }，因此 myCarlos 沒有加入它。如果仍需要，請再次分享。
 
 interface-notice-pdfUnlocked = 已新增解鎖副本。鎖定的原始文件現在名稱為 { $name }。
 
@@ -2561,3 +2562,14 @@ portal-arrivedForHiddenNoClinic = 有 { $count } 份文件已送達，目前在�
 library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來源裝置上檢查過。此保險庫沒有檢查過。
 
 handover-nowVerified = 透過移交檔案到來的 { $count } 份文件現已透過 { $clinic } 驗證，此保險庫持有其金鑰。
+
+
+notifications-autoSummary = 自動檢查僅在 myCarlos 開啟且已解鎖時進行。
+
+background-keepRunningSummary = 關閉視窗後，myCarlos 可以留在背景執行。視窗關閉時，您的保險庫會鎖定。
+
+background-startAtLoginSummary = myCarlos 可以在您登入此電腦時啟動。開啟上方的選項後，它會在背景靜默啟動，您的保險庫保持鎖定。
+
+preferences-moreAutomatic = 關於自動檢查的更多說明
+
+preferences-moreBackground = 關於背景執行的更多說明

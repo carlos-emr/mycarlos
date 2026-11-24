@@ -221,6 +221,7 @@
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -1325,5 +1326,10 @@
   "interface.history.how.personHidden",
   "portal.arrivedForHiddenNoClinic",
   "library.fileSaysChecked",
-  "handover.nowVerified"
+  "handover.nowVerified",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground"
 ]

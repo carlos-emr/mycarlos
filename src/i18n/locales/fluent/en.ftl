@@ -289,6 +289,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } moved to { $where }.
 
 interface-notice-notPdf = { $name } is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.
+interface-notice-receivedNotOpened = { $name } could not be opened or read, so myCarlos did not add it. Share it again if you still need it.
 
 interface-notice-pdfUnlocked = An unlocked copy was added. The locked original is now called { $name }.
 
@@ -2835,3 +2836,14 @@ handover-nowVerified =
         [one] { $count } document that came in a handover file is now verified with { $clinic }, whose key this vault holds.
        *[other] { $count } documents that came in a handover file are now verified with { $clinic }, whose key this vault holds.
     }
+
+
+notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+
+background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
+
+background-startAtLoginSummary = myCarlos can start when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked.
+
+preferences-moreAutomatic = More about automatic checks
+
+preferences-moreBackground = More about running in the background

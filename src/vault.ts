@@ -441,6 +441,11 @@ export interface ImportOutcome {
 export interface ReceivedAcceptOutcome extends ImportOutcome {
   /** Names of files that are not PDF documents: not added, and forgotten. */
   notPdf: string[];
+  /** Names of files that could not be opened or read (moved or deleted while
+   * the vault was locked, a permission or connection that ended, a read that
+   * failed part-way): not added, and forgotten, so the person shares them
+   * again. One such file never holds back the others. */
+  unreadable: string[];
 }
 
 /** What a move out of Shared with me did (#61). */

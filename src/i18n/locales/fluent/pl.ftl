@@ -313,6 +313,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = Przeniesiono { $name } do { $where }.
 
 interface-notice-notPdf = { $name } nie jest dokumentem PDF, więc myCarlos go nie dodał. Na razie do myCarlos można udostępniać tylko dokumenty PDF.
+interface-notice-receivedNotOpened = Nie udało się otworzyć ani odczytać pliku { $name }, więc myCarlos go nie dodał. Jeśli nadal jest potrzebny, proszę udostępnić go ponownie.
 
 interface-notice-pdfUnlocked = Dodano odblokowaną kopię. Zabezpieczony oryginał nosi teraz nazwę { $name }.
 
@@ -2964,3 +2965,14 @@ handover-nowVerified =
         [few] { $count } dokumenty, które dotarły w pliku przekazania, są teraz zweryfikowane z { $clinic }, której klucz ma ten sejf.
        *[other] Dokumenty, które dotarły w pliku przekazania, są teraz zweryfikowane z { $clinic }, której klucz ma ten sejf: { $count }.
     }
+
+
+notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
+
+background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
+
+background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu do tego komputera. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem.
+
+preferences-moreAutomatic = Więcej o automatycznym sprawdzaniu
+
+preferences-moreBackground = Więcej o działaniu w tle

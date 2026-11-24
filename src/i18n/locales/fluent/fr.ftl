@@ -301,6 +301,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } a été déplacé vers { $where }.
 
 interface-notice-notPdf = { $name } n’est pas un document PDF; myCarlos ne l’a donc pas ajouté. Pour le moment, seuls les documents PDF peuvent être partagés avec myCarlos.
+interface-notice-receivedNotOpened = { $name } n’a pas pu être ouvert ou lu, donc myCarlos ne l’a pas ajouté. Partagez-le de nouveau si vous en avez encore besoin.
 
 interface-notice-pdfUnlocked = Une copie déverrouillée a été ajoutée. L’original verrouillé s’appelle maintenant { $name }.
 
@@ -2870,3 +2871,14 @@ handover-nowVerified =
         [one] { $count } document arrivé dans un fichier de transmission est maintenant vérifié avec { $clinic }, dont ce coffre détient la clé.
        *[other] { $count } documents arrivés dans un fichier de transmission sont maintenant vérifiés avec { $clinic }, dont ce coffre détient la clé.
     }
+
+
+notifications-autoSummary = Les vérifications automatiques n’ont lieu que lorsque myCarlos est ouvert et déverrouillé.
+
+background-keepRunningSummary = myCarlos peut rester en arrière-plan après la fermeture de sa fenêtre. Votre coffre se verrouille à la fermeture de la fenêtre.
+
+background-startAtLoginSummary = myCarlos peut démarrer lorsque vous ouvrez une session sur cet ordinateur. Si le choix ci-dessus est activé, il démarre discrètement en arrière-plan avec votre coffre verrouillé.
+
+preferences-moreAutomatic = En savoir plus sur les vérifications automatiques
+
+preferences-moreBackground = En savoir plus sur l’exécution en arrière-plan

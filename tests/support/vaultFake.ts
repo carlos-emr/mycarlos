@@ -1174,7 +1174,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               imported.push(record.id);
               wrote("imported", { name: file.name, how: "shared" });
             }
-            return { imported, skippedDuplicates, notPdf };
+            return { imported, skippedDuplicates, notPdf, unreadable: [] };
           }
           case "vault_shared_identity": {
             refuseLocked();
