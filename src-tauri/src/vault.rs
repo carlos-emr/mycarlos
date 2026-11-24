@@ -3826,6 +3826,13 @@ impl VaultStore {
         let mut entry = HistoryEntry::new(HistoryEvent::ProfileHidden, now_ms);
         entry.profile_id = Some(profile_id);
         entry.name = Some(profile.display_name.clone());
+        // The person's documents, to stop any video playing from them once the hide is committed.
+        let their_records: Vec<Uuid> = manifest
+            .records
+            .iter()
+            .filter(|record| record.profile_id == profile_id)
+            .map(|record| record.id)
+            .collect();
         let mut next = unlocked.manifest.clone();
         for profile in &mut next.profiles {
             if profile.id == profile_id {
@@ -3843,6 +3850,9 @@ impl VaultStore {
             vec![entry],
         )?;
         unlocked.recovery = (!redundant).then_some(RecoveryReason::WriteFailed);
+        // A video already playing from one of them stops being served, as when a single document is
+        // hidden (the session is held, then the tokens: the order the lock takes).
+        self.end_playback_for_records(&their_records);
         Ok(())
     }
 
