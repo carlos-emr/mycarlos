@@ -47,7 +47,7 @@ In Settings > Preferences, turn on **Allow document arrival notices** to allow a
 
 Automatic checks need a separate choice: **Check for clinic documents automatically while unlocked**. This allows checks of saved, approved clinic links while myCarlos is running and the vault is unlocked, with at least two minutes between attempts. Locking the vault or closing the app stops further checks. Turning off document arrival notices also turns off automatic checks. Windows blocking notices does not itself turn off automatic checks you have allowed.
 
-If automatic checks are paused, open Security > Clinic documents and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
+If automatic checks are paused, open Security > Connected clinics and choose **Check for new documents**. This feature does not deliver notices or fetch documents while the app is closed.
 
 myCarlos keeps a small plain file beside its settings (`vault-home/document-notifications-v1.json`) with your two choices, the language, and a fingerprint and outcome for each of the newest 512 notices so the same arrival is not announced twice; it holds no document names or contents. A build from this version on still reads a file that a later build wrote and ignores the parts it does not know; going back to a build from before this version needs the file removed first.
 

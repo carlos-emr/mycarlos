@@ -19,6 +19,7 @@ export function HiddenDocuments({
   onRestore,
   onBack,
   focusOnOpen = false,
+  leftOutIds,
 }: {
   records: VaultRecord[];
   folderNameById: Map<string, string>;
@@ -29,6 +30,8 @@ export function HiddenDocuments({
   onRestore: (record: VaultRecord) => void;
   onBack?: () => void;
   focusOnOpen?: boolean;
+  /** Records a backup was made without the file of: said so, not just missing. */
+  leftOutIds?: ReadonlySet<string>;
 }) {
   useI18n();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -120,7 +123,10 @@ export function HiddenDocuments({
                     {damaged &&
                       (record.available
                         ? " · " + translateNow("interface.hidden.fileBack")
-                        : " · " + translateNow("interface.hidden.fileMissing"))}
+                        : " · " +
+                          (leftOutIds?.has(record.id)
+                            ? translateNow("interface.hidden.videoLeftOut")
+                            : translateNow("interface.hidden.fileMissing")))}
                   </small>
                 </span>
               </div>
