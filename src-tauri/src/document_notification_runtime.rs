@@ -186,7 +186,8 @@ pub(crate) mod active {
         notice: fn(Option<UiLocale>) -> Option<String>,
         /// The fixed test sentence; tests swap in one that fails.
         test_notice: fn(Option<UiLocale>) -> Option<String>,
-        /// When the test button last got as far as the operating system, and how long it waits.
+        /// When the test button was last let through: any press that passed the too-soon check
+        /// starts the wait, whatever came of it (shown, blocked or failed). And how long it waits.
         last_test: Mutex<Option<std::time::Instant>>,
         test_interval: std::time::Duration,
         supported: bool,
