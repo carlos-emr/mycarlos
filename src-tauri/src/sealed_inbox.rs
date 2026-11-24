@@ -392,9 +392,11 @@ pub(crate) fn sealed_size(size: u64) -> u64 {
 }
 
 /// The two keys of an item, from its HPKE context.
+type KeyPair = (Zeroizing<[u8; 32]>, Zeroizing<[u8; 32]>);
+
 fn item_keys(
     export: impl Fn(&[u8], &mut [u8]) -> Result<(), hpke::HpkeError>,
-) -> Result<(Zeroizing<[u8; 32]>, Zeroizing<[u8; 32]>), InboxError> {
+) -> Result<KeyPair, InboxError> {
     let mut body = Zeroizing::new([0_u8; 32]);
     let mut meta = Zeroizing::new([0_u8; 32]);
     export(BODY_KEY_LABEL, body.as_mut()).map_err(|_| InboxError::Malformed)?;
@@ -550,6 +552,7 @@ fn seal_with_trailer<R: Read, W: Write>(
 /// goes. A failed check is an `InvalidData` error, never a short or altered read.
 pub(crate) struct OpenedItem<F: Read + Seek> {
     pub(crate) meta: ItemMeta,
+    #[allow(dead_code)] // read by the unlock import (stage 3)
     pub(crate) item_id: ItemId,
     file: F,
     header: [u8; HEADER_LEN],
