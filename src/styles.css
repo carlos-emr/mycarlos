@@ -5100,6 +5100,10 @@ button:disabled,
     margin: 0 -22px;
     padding: 0 22px 24px;
     overflow-y: auto;
+    /* The search row sticks to the top, so a row focused from below is scrolled to just under it
+       and not behind it (WCAG 2.2, 2.4.11). VaultLibrary.tsx keeps the variable at the row's own
+       height, whatever the text size; 4.5rem is the answer before it has measured. */
+    scroll-padding-top: calc(var(--library-sticky-height, 4.5rem) + 4px);
   }
   .native-vault-page .library-list-scroll .library-search-row {
     position: sticky;

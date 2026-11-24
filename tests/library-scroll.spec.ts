@@ -109,3 +109,112 @@ test("a window too short for that, and a phone, scroll the page as before", asyn
   expect(state.list!.room).toBeLessThanOrEqual(1);
   await expectNoAxeViolations(page, "library with 200 documents, page scrolls");
 });
+
+test("focusing upward never leaves the row behind the sticky search (WCAG 2.2, 2.4.11)", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "a phone's page scrolls as a whole",
+  );
+  await openLibrary(page, 1280, 800);
+  const region = page.locator(".library-list-scroll");
+  const search = page.locator(".library-search-row");
+  await region.evaluate((list) => {
+    list.scrollTop = list.scrollHeight;
+  });
+  // From the bottom, to a row near the top of the list: the region scrolls up to it.
+  const rows = page.locator(".record-open");
+  await rows.nth(20).focus();
+  const underTheSearch = async (what: string) => {
+    const searchBottom = (await search.boundingBox())!;
+    const focused = (await page.locator(":focus").boundingBox())!;
+    expect(
+      focused.y,
+      `${what}: the focused control starts at or below the search row's bottom`,
+    ).toBeGreaterThanOrEqual(searchBottom.y + searchBottom.height - 0.5);
+  };
+  await underTheSearch("a row focused from below");
+  // And upward by keyboard, a few rows, each one scrolled into view clear of the search.
+  for (let step = 1; step <= 8; step++) {
+    await page.keyboard.press("Shift+Tab");
+    await underTheSearch(`Shift+Tab ${step}`);
+  }
+  // The measured height is what the region keeps clear.
+  const kept = await region.evaluate((list) => ({
+    variable: getComputedStyle(list).getPropertyValue(
+      "--library-sticky-height",
+    ),
+    padding: getComputedStyle(list).scrollPaddingTop,
+  }));
+  expect(kept.variable).toMatch(/^\d+(\.\d+)?px$/);
+  expect(parseFloat(kept.padding)).toBeCloseTo(
+    parseFloat(kept.variable) + 4,
+    0,
+  );
+});
+
+test("dragging the last document, with the list scrolled, onto a sidebar folder moves it", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "a phone's page scrolls as a whole",
+  );
+  await openLibrary(page, 1280, 800);
+  await page.locator(".library-list-scroll").evaluate((list) => {
+    list.scrollTop = list.scrollHeight;
+  });
+  const row = page.locator('.library-list-scroll [draggable="true"]').last();
+  await expect(row).toBeInViewport();
+  const name = (await row.locator(".record-open").textContent())!.trim();
+  const folder = sidebar(page).getByRole("button", { name: /FAKE Letters/ });
+  await row.dragTo(folder);
+  // It left this list (the place it was dragged from) and the folder now holds one.
+  await expect(
+    page.locator(".library-list-scroll .record-open", { hasText: name }),
+  ).toHaveCount(0);
+  await expect(folder).toContainText("1");
+});
+
+test("with 160% text the list region keeps 14rem and the main area scrolls instead", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "phone",
+    "a phone's page scrolls as a whole",
+  );
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Page.setFontSizes", { fontSizes: { standard: 26 } });
+  await openLibrary(page, 1920, 840);
+  expect(
+    await page.evaluate(
+      () => getComputedStyle(document.documentElement).fontSize,
+    ),
+  ).toBe("26px");
+  const state = await page.evaluate(() => {
+    const region = document.querySelector(".library-list-scroll")!;
+    const main = document.querySelector("main.library-main")!;
+    return {
+      region: region.clientHeight,
+      mainRoom: main.scrollHeight - main.clientHeight,
+      mainOverflow: getComputedStyle(main).overflowY,
+      pageRoom: document.scrollingElement!.scrollHeight - innerHeight,
+    };
+  });
+  // 14rem at 26px: the region is not squeezed below it, so the main area scrolls as a whole, and
+  // the page itself still has nothing to scroll.
+  expect(state.region).toBeGreaterThanOrEqual(14 * 26 - 1);
+  expect(state.mainOverflow).toBe("auto");
+  expect(state.mainRoom).toBeGreaterThan(0);
+  expect(state.pageRoom).toBeLessThanOrEqual(1);
+  // The last document can still be reached, by scrolling the main area and then the region.
+  await page.locator("main.library-main").evaluate((main) => {
+    main.scrollTop = main.scrollHeight;
+  });
+  await page.locator(".library-list-scroll").evaluate((list) => {
+    list.scrollTop = list.scrollHeight;
+  });
+  await expect(page.locator(".record-open").last()).toBeInViewport();
+  await expectNoAxeViolations(page, "library at 160% text, main area scrolls");
+});

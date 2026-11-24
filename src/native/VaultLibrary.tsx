@@ -1009,6 +1009,25 @@ export function VaultLibrary({
   // gone by then (the banner that offered the setup, the Create screen), focus
   // would be left on nothing: put it on the page's heading.
   const pageHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // The list's scroll region and the search row that sticks to its top (styles.css, "fits the
+  // window"): the region's scroll-padding is the row's height, so that a row focused from below
+  // (Shift+Tab, an arrow) is not left under the sticky row (WCAG 2.2, 2.4.11), at any text size.
+  const listRegionRef = useRef<HTMLDivElement | null>(null);
+  const searchRowRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const region = listRegionRef.current;
+    const row = searchRowRef.current;
+    if (!region || !row || typeof ResizeObserver === "undefined") return;
+    const measure = () =>
+      region.style.setProperty(
+        "--library-sticky-height",
+        `${row.offsetHeight}px`,
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [section, inShared]);
   const locationSummaryId = useId();
   const locationCountId = useId();
   // Rename keeps the whole page behind it from a screen reader: the parts
@@ -2498,7 +2517,7 @@ export function VaultLibrary({
                     the search (it sticks to the top of the region) and the list, while the
                     title bar, the sidebar, the path and the head with its actions stay in view
                     (styles.css, "fits the window"). A phone's page scrolls as a whole. */}
-                <div className="library-list-scroll">
+                <div className="library-list-scroll" ref={listRegionRef}>
                   {inShared && (
                     <p className="purpose-note native-shared-intro">
                       <Icon name="info" />
@@ -2705,7 +2724,7 @@ export function VaultLibrary({
 
                   {/* Check for new documents sits to the right of the search box when the row
                     has room; otherwise it goes under the box (#84 large text). */}
-                  <div className="library-search-row">
+                  <div className="library-search-row" ref={searchRowRef}>
                     <label className="search">
                       <Icon name="search" />
                       <span className="sr-only">{searchLabel}</span>
