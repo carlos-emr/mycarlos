@@ -173,7 +173,7 @@ impl VaultStore {
             .saturating_add(package.total_plaintext_bytes() / 512)
             .saturating_add(package.objects().len() as u64 * IMPORT_PER_FILE_OVERHEAD)
             .saturating_add(IMPORT_SPACE_RESERVE);
-        if crate::local_model::free_disk(&self.root).is_some_and(|free| free < needed) {
+        if crate::disk_space::free_bytes(&self.root).is_some_and(|free| free < needed) {
             return Err(VaultError::NoSpace);
         }
 

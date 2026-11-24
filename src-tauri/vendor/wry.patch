@@ -1,0 +1,140 @@
+diff --git a/src/wkwebview/class/media_capture_policy.rs b/src/wkwebview/class/media_capture_policy.rs
+new file mode 100644
+index 0000000..faca888
+--- /dev/null
++++ b/src/wkwebview/class/media_capture_policy.rs
+@@ -0,0 +1,54 @@
++// MYCARLOS LOCAL PATCH (#359 PR 7): this whole file is added by
++// `vendor/wry.patch`; upstream Wry does not have it. See vendor/README.md.
++//
++// Which page may use the camera and the microphone. Upstream Wry answers every
++// `getUserMedia` request on macOS and iOS with "grant"; myCarlos grants only
++// what its own recording and photo dialogs ask for, as its Linux and Windows
++// handlers (`src-tauri/src/camera_permission.rs`) already do:
++//
++// - video alone (a photo), or video with sound (a recording): allowed;
++// - sound alone, or a request of any kind this policy does not know: refused;
++// - only from the app's own page: the main frame, whose origin is the bundled
++//   one, `tauri://localhost` (the same origin `bundled_origin` in
++//   `src-tauri/src/lib.rs` gives macOS and iOS), with the default port.
++//
++// A refusal is `WKPermissionDecision::Deny`, never `Prompt`: a prompt would
++// show WebKit's own question naming an origin, which is not for the patient
++// to answer. The operating system's own camera and microphone prompt (and
++// the app's `NSCameraUsageDescription`/`NSMicrophoneUsageDescription`) still
++// follows for an allowed request.
++//
++// This file uses nothing from Wry, Cocoa or the platform, so that it can be
++// tested on any host: `src-tauri/src/camera_permission.rs` compiles it in its
++// own tests and runs the cases there against exactly these lines.
++
++/// The scheme of the app's own bundled pages on macOS and iOS.
++pub(crate) const OWN_PROTOCOL: &str = "tauri";
++/// The host of the app's own bundled pages on macOS and iOS.
++pub(crate) const OWN_HOST: &str = "localhost";
++
++/// The `WKMediaCaptureType` values by number. `wry_web_view_ui_delegate.rs`
++/// checks at compile time that they are the ones WebKit's binding names, so a
++/// change there stops the build instead of changing what is allowed.
++/// `MICROPHONE` (sound alone) is the one that is not allowed.
++pub(crate) const CAMERA: isize = 0;
++pub(crate) const MICROPHONE: isize = 1;
++pub(crate) const CAMERA_AND_MICROPHONE: isize = 2;
++
++/// Whether the page that asked may have what it asked for.
++///
++/// `capture_type` is the raw `WKMediaCaptureType`; `port` is the security
++/// origin's port, which WebKit reports as 0 for the scheme's default.
++pub(crate) fn media_capture_allowed(
++  capture_type: isize,
++  main_frame: bool,
++  protocol: &str,
++  host: &str,
++  port: isize,
++) -> bool {
++  (capture_type == CAMERA || capture_type == CAMERA_AND_MICROPHONE)
++    && main_frame
++    && protocol == OWN_PROTOCOL
++    && host == OWN_HOST
++    && port == 0
++}
+diff --git a/src/wkwebview/class/mod.rs b/src/wkwebview/class/mod.rs
+index 22bd404..5520e5b 100644
+--- a/src/wkwebview/class/mod.rs
++++ b/src/wkwebview/class/mod.rs
+@@ -3,6 +3,8 @@
+ // SPDX-License-Identifier: MIT
+ 
+ pub mod document_title_changed_observer;
++// MYCARLOS LOCAL PATCH (#359 PR 7): see vendor/README.md.
++pub(crate) mod media_capture_policy;
+ pub mod url_scheme_handler;
+ pub mod wry_download_delegate;
+ pub mod wry_navigation_delegate;
+diff --git a/src/wkwebview/class/wry_web_view_ui_delegate.rs b/src/wkwebview/class/wry_web_view_ui_delegate.rs
+index 9b21cc0..c681d81 100644
+--- a/src/wkwebview/class/wry_web_view_ui_delegate.rs
++++ b/src/wkwebview/class/wry_web_view_ui_delegate.rs
+@@ -21,8 +21,20 @@ use objc2_web_kit::{
+   WKFrameInfo, WKMediaCaptureType, WKPermissionDecision, WKSecurityOrigin, WKUIDelegate,
+ };
+ 
++use super::media_capture_policy;
+ use crate::{NewWindowFeatures, NewWindowResponse, WryWebView};
+ 
++// MYCARLOS LOCAL PATCH (#359 PR 7): the policy names the capture types by
++// number so that it needs nothing from WebKit; this ties those numbers to the
++// binding's. A mismatch is a compile error, not a different decision.
++const _: () = {
++  assert!(WKMediaCaptureType::Camera.0 == media_capture_policy::CAMERA);
++  assert!(WKMediaCaptureType::Microphone.0 == media_capture_policy::MICROPHONE);
++  assert!(
++    WKMediaCaptureType::CameraAndMicrophone.0 == media_capture_policy::CAMERA_AND_MICROPHONE
++  );
++};
++
+ #[cfg(target_os = "macos")]
+ struct NewWindow {
+   #[allow(dead_code)]
+@@ -127,13 +139,37 @@ define_class!(
+     fn request_media_capture_permission(
+       &self,
+       _webview: &WryWebView,
+-      _origin: &WKSecurityOrigin,
+-      _frame: &WKFrameInfo,
+-      _capture_type: WKMediaCaptureType,
++      origin: &WKSecurityOrigin,
++      frame: &WKFrameInfo,
++      capture_type: WKMediaCaptureType,
+       decision_handler: &Block<dyn Fn(WKPermissionDecision)>,
+     ) {
+       //https://developer.apple.com/documentation/webkit/wkpermissiondecision?language=objc
+-      (*decision_handler).call((WKPermissionDecision::Grant,));
++      // MYCARLOS LOCAL PATCH (#359 PR 7): upstream grants every request here.
++      // Only video, alone or with sound, from the app's own page is granted;
++      // everything else is denied without a prompt. See media_capture_policy.rs.
++      // The four reads from WebKit are the only unsafe calls; the decision
++      // itself is plain Rust, so it is outside them.
++      let (main_frame, protocol, host, port) = unsafe {
++        (
++          frame.isMainFrame(),
++          origin.protocol().to_string(),
++          origin.host().to_string(),
++          origin.port(),
++        )
++      };
++      let allowed = media_capture_policy::media_capture_allowed(
++        capture_type.0,
++        main_frame,
++        &protocol,
++        &host,
++        port,
++      );
++      (*decision_handler).call((if allowed {
++        WKPermissionDecision::Grant
++      } else {
++        WKPermissionDecision::Deny
++      },));
+     }
+ 
+     #[cfg(target_os = "macos")]

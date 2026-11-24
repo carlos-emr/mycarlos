@@ -1,0 +1,1410 @@
+//! Desktop background mode: two separate choices, both off by default.
+//!
+//! - **Keep myCarlos running in the background.** Closing the window locks the vault and hides
+//!   the window instead of exiting; a tray icon (menu: Open, Quit) stays. Quit really exits.
+//! - **Start myCarlos at login.** A per-user login entry starts myCarlos with `--background`: it
+//!   starts hidden in the tray when the first choice is on, and shows its window when it is off.
+//!
+//! The vault is locked whenever myCarlos is in the tray, so every check that needs the vault
+//! (the automatic document checks and the Windows arrival notice) pauses until the patient opens
+//! myCarlos and unlocks it. Nothing here reads a vault, a key or a credential. Checking while
+//! locked needs a separately scoped, revocable notification credential from the Portal
+//! (docs/notifications, step 4 of the background-notification plan); until that exists this mode
+//! only keeps the process and its icon, and the Preferences screen says so.
+//!
+//! The decisions (what a close does, whether a start is hidden, what the login entry says, how a
+//! choice is saved) are plain functions and a `Controller` over a `Backend`, so they are tested
+//! without a window system. The Tauri tray and window code is `TauriBackend`.
+use crate::ui_text::UiLocale;
+use crate::ui_text_ids::MessageId;
+use atomicwrites::{AllowOverwrite, AtomicFile};
+use serde::{Deserialize, Serialize};
+use std::{
+    ffi::OsStr,
+    fs,
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+};
+
+/// Runs `work` on a thread of its own, or on this one if no thread can be made. A lock that a
+/// failed spawn silently dropped would leave the window hidden with the vault open (a close) or a
+/// Quit that does nothing, which is worse than a lock that waits for the vault's mutex here.
+#[cfg_attr(not(desktop), allow(dead_code))]
+pub(crate) fn run_off_thread(name: &str, work: impl FnOnce() + Send + 'static) {
+    run_with(name, work, |name, job| {
+        std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(job)
+            .map(|_| ())
+    });
+}
+
+/// `run_off_thread` with the spawning given, so a test can make it fail.
+fn run_with<W, S>(name: &str, work: W, spawner: S)
+where
+    W: FnOnce() + Send + 'static,
+    S: FnOnce(&str, Box<dyn FnOnce() + Send>) -> io::Result<()>,
+{
+    type Work = Box<dyn FnOnce() + Send>;
+    fn take(slot: &Mutex<Option<Work>>) -> Option<Work> {
+        slot.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+    }
+    let slot: Arc<Mutex<Option<Work>>> = Arc::new(Mutex::new(Some(Box::new(work))));
+    let in_thread = Arc::clone(&slot);
+    // A spawn that fails drops its closure, so the work waits in a slot both sides can take from.
+    let job: Work = Box::new(move || {
+        if let Some(work) = take(&in_thread) {
+            work();
+        }
+    });
+    if spawner(name, job).is_err() {
+        if let Some(work) = take(&slot) {
+            work();
+        }
+    }
+}
+
+/// How many times the window was closed to the tray (the vault locked with it).
+static CLOSE_LOCKS: AtomicU64 = AtomicU64::new(0);
+/// The window is hidden in the tray, since a close and until it is shown again.
+static HIDDEN_BY_CLOSE: AtomicBool = AtomicBool::new(false);
+
+/// The number of closes to the tray so far. An unlock, recovery or creation notes it as it starts
+/// and asks `unlock_refused` as it completes.
+pub(crate) fn close_locks() -> u64 {
+    CLOSE_LOCKS.load(Ordering::SeqCst)
+}
+
+/// The window was closed to the tray: from now on a vault that finishes opening is closed again.
+pub(crate) fn closed_to_tray() {
+    CLOSE_LOCKS.fetch_add(1, Ordering::SeqCst);
+    HIDDEN_BY_CLOSE.store(true, Ordering::SeqCst);
+}
+
+/// The window was brought back from the tray.
+pub(crate) fn shown_again() {
+    HIDDEN_BY_CLOSE.store(false, Ordering::SeqCst);
+}
+
+/// Whether an unlock (or recovery, or creation) that started when `started` closes had been
+/// counted must be refused as it completes: the window was closed to the tray meanwhile, or is
+/// still hidden there. Without this, a close that arrives while an unlock is in flight finds
+/// nothing to lock, the screen ignores the lock because it is not unlocked yet, and the queued
+/// unlock then opens the vault in a window nobody can see (#206 review).
+pub(crate) fn unlock_refused(started: u64) -> bool {
+    must_refuse_unlock(
+        started,
+        close_locks(),
+        HIDDEN_BY_CLOSE.load(Ordering::SeqCst),
+    )
+}
+
+/// The decision of `unlock_refused`, with its inputs, so it is tested without the global counters.
+pub(crate) fn must_refuse_unlock(started: u64, now: u64, hidden: bool) -> bool {
+    now != started || hidden
+}
+
+/// Whether this desktop has somewhere to show a tray icon. Linux only asks: a stock GNOME without
+/// the AppIndicator extension takes the icon without error and shows it nowhere, so a close would
+/// hide the window with no way back. `name_has_owner` says whether a session D-Bus name is taken.
+pub(crate) fn linux_tray_has_host(name_has_owner: &dyn Fn(&str) -> bool) -> bool {
+    [
+        "org.kde.StatusNotifierWatcher",
+        "org.freedesktop.StatusNotifierWatcher",
+    ]
+    .iter()
+    .any(|name| name_has_owner(name))
+}
+
+/// Whether the session bus has an owner for `name` (Linux). Any failure is "no".
+#[cfg(target_os = "linux")]
+fn session_name_has_owner(name: &str) -> bool {
+    use webkit2gtk::gio;
+    use webkit2gtk::glib::ToVariant;
+    let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else {
+        return false;
+    };
+    connection
+        .call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            Some(&(name,).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            2000,
+            gio::Cancellable::NONE,
+        )
+        .ok()
+        .and_then(|reply| reply.get::<(bool,)>())
+        .is_some_and(|(owned,)| owned)
+}
+
+/// The argument the login entry passes so a start at login can be quiet.
+pub(crate) const BACKGROUND_ARG: &str = "--background";
+/// Whether closing the window to the tray locks the vault. True: the vault is locked as the window
+/// closes, so nothing that needs it (the document checks, the arrival notice) runs from the tray.
+/// False is the maintainer's option A: the vault is left as it was and the normal auto-lock timer
+/// still applies, so checks and notices run in the tray until auto-lock, with the same exposure as
+/// a minimized window. Not chosen yet; the decision is the maintainer's.
+pub(crate) const LOCK_ON_CLOSE: bool = true;
+// Changing the line above is a decision about what stays exposed in the tray, not a refactor:
+// this fails the build until whoever changes it also changes this line and the PR says why.
+const _: () = assert!(LOCK_ON_CLOSE);
+/// The name of the login entry (a value name, a file stem, a label).
+#[cfg_attr(not(windows), allow(dead_code))] // the Windows value name; the text is tested everywhere
+const LOGIN_NAME: &str = "myCarlos";
+const LOGIN_LABEL: &str = "ca.carlos.mycarlos";
+const FILE_VERSION: u32 = 1;
+const MAX_FILE_BYTES: u64 = 4096;
+
+/// What the patient chose. Both off until they say otherwise.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Choices {
+    pub keep_running: bool,
+    pub start_at_login: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Error {
+    /// This build or computer has no background mode (a phone, or no tray).
+    Unsupported,
+    /// The tray icon could not be made.
+    Tray,
+    /// The login entry could not be written or removed.
+    LoginItem,
+    /// The choice could not be saved.
+    Storage,
+}
+
+impl Status {
+    /// What a phone reports: no background mode at all (the phone build's command uses it).
+    #[cfg_attr(desktop, allow(dead_code))]
+    pub(crate) fn unsupported() -> Self {
+        Self {
+            supported: false,
+            keep_running: false,
+            start_at_login: false,
+            tray_ready: false,
+            paused_while_locked: false,
+        }
+    }
+}
+
+/// What the screen shows. `paused_while_locked` is true whenever the background mode is on:
+/// checks that need the vault wait for the patient to unlock it.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Status {
+    pub supported: bool,
+    pub keep_running: bool,
+    pub start_at_login: bool,
+    /// The tray icon exists right now (the choice is on and the icon could be made).
+    pub tray_ready: bool,
+    pub paused_while_locked: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CloseAction {
+    /// Close as before: the app exits.
+    Exit,
+    /// Lock the vault and hide the window; the tray icon keeps the app running.
+    LockAndHide,
+}
+
+/// A close hides the window only when the patient chose to keep running and the icon is there to
+/// get back in. With no icon, hiding would strand the app, so it exits as before.
+pub(crate) fn close_action(choices: &Choices, tray_ready: bool) -> CloseAction {
+    if choices.keep_running && tray_ready {
+        CloseAction::LockAndHide
+    } else {
+        CloseAction::Exit
+    }
+}
+
+/// A start is quiet only when it came from the login entry (`--background`), the patient chose to
+/// keep running, and the icon is there. Otherwise the window opens as always.
+pub(crate) fn starts_in_background<S: AsRef<OsStr>>(
+    args: impl IntoIterator<Item = S>,
+    choices: &Choices,
+    tray_ready: bool,
+) -> bool {
+    choices.keep_running
+        && tray_ready
+        && args
+            .into_iter()
+            .any(|arg| arg.as_ref() == OsStr::new(BACKGROUND_ARG))
+}
+
+// --- Saving the choices -----------------------------------------------------------------
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedFile {
+    version: u32,
+    keep_running: bool,
+    start_at_login: bool,
+    /// The language the interface last reported, for the tray's words.
+    #[serde(default)]
+    locale: Option<UiLocale>,
+}
+
+struct Saved {
+    choices: Choices,
+    locale: Option<UiLocale>,
+}
+
+/// The choices on disk, beside the vault's other machine-local files. A missing, oversized,
+/// unreadable or newer-than-known file means both off; it is only replaced by a deliberate
+/// change, never by reading it.
+pub(crate) struct Settings {
+    path: PathBuf,
+    saved: Mutex<Saved>,
+}
+
+impl Settings {
+    pub(crate) fn load(path: PathBuf) -> Self {
+        let saved = Self::read(&path).unwrap_or(Saved {
+            choices: Choices::default(),
+            locale: None,
+        });
+        Self {
+            path,
+            saved: Mutex::new(saved),
+        }
+    }
+
+    fn read(path: &Path) -> Option<Saved> {
+        let mut file = fs::File::open(path).ok()?;
+        if file.metadata().ok()?.len() > MAX_FILE_BYTES {
+            return None;
+        }
+        let mut text = String::new();
+        Read::take(&mut file, MAX_FILE_BYTES)
+            .read_to_string(&mut text)
+            .ok()?;
+        let saved: SavedFile = serde_json::from_str(&text).ok()?;
+        (saved.version == FILE_VERSION).then_some(Saved {
+            choices: Choices {
+                keep_running: saved.keep_running,
+                start_at_login: saved.start_at_login,
+            },
+            locale: saved.locale,
+        })
+    }
+
+    pub(crate) fn choices(&self) -> Choices {
+        self.saved
+            .lock()
+            .expect("background settings poisoned")
+            .choices
+    }
+
+    pub(crate) fn locale(&self) -> Option<UiLocale> {
+        self.saved
+            .lock()
+            .expect("background settings poisoned")
+            .locale
+    }
+
+    /// Saves, then remembers. Nothing changes in memory if the file cannot be written.
+    fn save(&self, choices: Choices, locale: Option<UiLocale>) -> Result<(), Error> {
+        let mut saved = self.saved.lock().expect("background settings poisoned");
+        let text = serde_json::to_vec(&SavedFile {
+            version: FILE_VERSION,
+            keep_running: choices.keep_running,
+            start_at_login: choices.start_at_login,
+            locale,
+        })
+        .map_err(|_| Error::Storage)?;
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent).map_err(|_| Error::Storage)?;
+        }
+        AtomicFile::new(&self.path, AllowOverwrite)
+            .write(|file| file.write_all(&text))
+            .map_err(|_| Error::Storage)?;
+        *saved = Saved { choices, locale };
+        Ok(())
+    }
+}
+
+// --- The login entry ----------------------------------------------------------------------
+
+/// A path that could break out of a quoted login entry is refused, not escaped: the install
+/// folder is never one of these. A Windows path keeps its backslashes.
+fn login_path_ok(exe: &Path) -> bool {
+    let Some(text) = exe.to_str() else {
+        return false;
+    };
+    if text.is_empty() || text.chars().any(char::is_control) {
+        return false;
+    }
+    if cfg!(windows) {
+        !text.contains(['"', '%'])
+    } else {
+        !text.contains(['"', '\\', '`', '$', '%'])
+    }
+}
+
+/// The `Run` value: the quoted program and the quiet-start argument.
+#[cfg_attr(not(windows), allow(dead_code))] // written on Windows only; tested everywhere
+pub(crate) fn windows_run_value(exe: &Path) -> String {
+    format!("\"{}\" {BACKGROUND_ARG}", exe.display())
+}
+
+/// The key under HKEY_CURRENT_USER whose `Run` values start programs at sign-in.
+#[cfg_attr(not(windows), allow(dead_code))] // used on Windows; the test pins it everywhere
+pub(crate) const WINDOWS_RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+
+/// Setting and removing the sign-in `Run` value through the registry API. It used to start
+/// `reg.exe`, which flashed a console window each time the choice changed; nothing is started now.
+#[cfg(windows)]
+mod login_registry {
+    use super::{Error, LOGIN_NAME, WINDOWS_RUN_SUBKEY};
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+    use windows::Win32::System::Registry::{
+        RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+    };
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// The value now, or `None` when there is none.
+    pub(super) fn read() -> Result<Option<String>, Error> {
+        let (key, name) = (wide(WINDOWS_RUN_SUBKEY), wide(LOGIN_NAME));
+        let mut bytes = 0u32;
+        // SAFETY: both strings are NUL-terminated and outlive the call; `bytes` is a valid out-pointer.
+        let probe = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                RRF_RT_REG_SZ,
+                None,
+                None,
+                Some(&mut bytes),
+            )
+        };
+        if probe == ERROR_FILE_NOT_FOUND {
+            return Ok(None);
+        }
+        if probe != ERROR_SUCCESS {
+            return Err(Error::LoginItem);
+        }
+        let mut buffer = vec![0u16; bytes as usize / 2 + 1];
+        let mut size = (buffer.len() * 2) as u32;
+        // SAFETY: `buffer` holds `size` bytes and the strings are as above.
+        let got = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                RRF_RT_REG_SZ,
+                None,
+                Some(buffer.as_mut_ptr().cast()),
+                Some(&mut size),
+            )
+        };
+        if got != ERROR_SUCCESS {
+            return Err(Error::LoginItem);
+        }
+        let units = (size as usize / 2).min(buffer.len());
+        let text = &buffer[..units];
+        let end = text
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(text.len());
+        Ok(Some(String::from_utf16_lossy(&text[..end])))
+    }
+
+    /// Writes the value, then reads it back: anything but exactly `value` is a failure.
+    pub(super) fn set(value: &str) -> Result<(), Error> {
+        let (key, name, data) = (wide(WINDOWS_RUN_SUBKEY), wide(LOGIN_NAME), wide(value));
+        // SAFETY: the strings are NUL-terminated; `data` holds `data.len() * 2` readable bytes.
+        let status = unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+                REG_SZ.0,
+                Some(data.as_ptr().cast()),
+                (data.len() * 2) as u32,
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(Error::LoginItem);
+        }
+        match read()? {
+            Some(now) if now == value => Ok(()),
+            _ => Err(Error::LoginItem),
+        }
+    }
+
+    /// Removes the value; one that is not there is as good as removed. Reads back that it is gone.
+    pub(super) fn remove() -> Result<(), Error> {
+        let (key, name) = (wide(WINDOWS_RUN_SUBKEY), wide(LOGIN_NAME));
+        // SAFETY: the strings are NUL-terminated and outlive the call.
+        let status = unsafe {
+            RegDeleteKeyValueW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key.as_ptr()),
+                PCWSTR(name.as_ptr()),
+            )
+        };
+        // Any other failure (access denied, say) means it may still be there, and is reported.
+        if status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND {
+            return Err(Error::LoginItem);
+        }
+        match read()? {
+            None => Ok(()),
+            Some(_) => Err(Error::LoginItem),
+        }
+    }
+}
+
+/// A macOS LaunchAgent that starts the program at login with the quiet argument.
+pub(crate) fn mac_launch_agent(exe: &Path) -> String {
+    let escape = |text: &str| {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&apos;")
+    };
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+<plist version=\"1.0\">\n<dict>\n\
+\t<key>Label</key>\n\t<string>{LOGIN_LABEL}</string>\n\
+\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>{}</string>\n\t\t<string>{BACKGROUND_ARG}</string>\n\t</array>\n\
+\t<key>RunAtLoad</key>\n\t<true/>\n\
+</dict>\n</plist>\n",
+        escape(&exe.to_string_lossy())
+    )
+}
+
+/// A freedesktop autostart entry that starts the program at login with the quiet argument.
+pub(crate) fn linux_desktop_entry(exe: &Path) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName=myCarlos\nExec=\"{}\" {BACKGROUND_ARG}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        exe.display()
+    )
+}
+
+/// Where the login entry file lives on macOS and Linux, from the home folder and (on Linux) the
+/// configuration folder. None where the entry is not a file (Windows).
+pub(crate) fn login_file(mac: bool, home: &Path, xdg_config_home: Option<&Path>) -> PathBuf {
+    if mac {
+        home.join("Library")
+            .join("LaunchAgents")
+            .join(format!("{LOGIN_LABEL}.plist"))
+    } else {
+        xdg_config_home
+            .filter(|dir| dir.is_absolute())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("autostart")
+            .join(format!("{LOGIN_LABEL}.desktop"))
+    }
+}
+
+/// Writes the entry (`Some`) or removes it (`None`). A missing file is already removed.
+// The file removed here is the login entry myCarlos itself wrote (a LaunchAgent or an autostart
+// entry), never anything a vault holds, so the vault's removal rule (#71, clippy.toml) is not
+// the one that applies.
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn apply_login_file(path: &Path, contents: Option<&str>) -> io::Result<()> {
+    match contents {
+        Some(text) => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            AtomicFile::new(path, AllowOverwrite)
+                .write(|file| file.write_all(text.as_bytes()))
+                .map_err(|error| match error {
+                    atomicwrites::Error::Internal(e) | atomicwrites::Error::User(e) => e,
+                })
+        }
+        None => match fs::remove_file(path) {
+            Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+            _ => Ok(()),
+        },
+    }
+}
+
+/// Sets or removes this computer's login entry for the running program.
+pub(crate) fn set_login_item(enabled: bool, exe: &Path) -> Result<(), Error> {
+    if enabled && !login_path_ok(exe) {
+        return Err(Error::LoginItem);
+    }
+    #[cfg(windows)]
+    {
+        if enabled {
+            login_registry::set(&windows_run_value(exe))
+        } else {
+            login_registry::remove()
+        }
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or(Error::LoginItem)?;
+        if !home.is_absolute() {
+            return Err(Error::LoginItem);
+        }
+        let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+        let mac = cfg!(target_os = "macos");
+        let path = login_file(mac, &home, xdg.as_deref());
+        // An AppImage runs from a temporary mount: its own path is what must start at login.
+        let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from);
+        let exe = appimage
+            .as_deref()
+            .filter(|path| !mac && path.is_absolute())
+            .unwrap_or(exe);
+        if enabled && !login_path_ok(exe) {
+            return Err(Error::LoginItem);
+        }
+        let contents = enabled.then(|| {
+            if mac {
+                mac_launch_agent(exe)
+            } else {
+                linux_desktop_entry(exe)
+            }
+        });
+        apply_login_file(&path, contents.as_deref()).map_err(|_| Error::LoginItem)
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = exe;
+        Err(Error::Unsupported)
+    }
+}
+
+// --- The controller ------------------------------------------------------------------------
+
+/// What the controller needs from the window system and the operating system.
+pub(crate) trait Backend: Send + Sync {
+    /// Whether this computer can have a background mode at all.
+    fn supported(&self) -> bool;
+    /// Makes the tray icon (or keeps it), worded in `locale`.
+    fn show_tray(&self, locale: Option<UiLocale>) -> Result<(), Error>;
+    fn hide_tray(&self);
+    /// Rewords the icon's menu and tooltip.
+    fn reword_tray(&self, locale: Option<UiLocale>);
+    fn set_login_item(&self, enabled: bool) -> Result<(), Error>;
+    /// The tooltip says a document is waiting (#230), or goes back to "vault locked". Nothing
+    /// else changes; a backend with no tooltip ignores it.
+    fn set_waiting(&self, waiting: bool, locale: Option<UiLocale>) {
+        let _ = (waiting, locale);
+    }
+}
+
+pub(crate) struct Controller<B: Backend> {
+    settings: Settings,
+    backend: B,
+    tray_ready: AtomicBool,
+}
+
+impl<B: Backend> Controller<B> {
+    pub(crate) fn new(settings: Settings, backend: B) -> Self {
+        Self {
+            settings,
+            backend,
+            tray_ready: AtomicBool::new(false),
+        }
+    }
+
+    /// At launch: bring the icon back if the patient chose to keep running. Returns whether this
+    /// start should be quiet.
+    pub(crate) fn start<S: AsRef<OsStr>>(&self, args: impl IntoIterator<Item = S>) -> bool {
+        let choices = self.settings.choices();
+        if choices.keep_running && self.backend.supported() {
+            let ready = self.backend.show_tray(self.settings.locale()).is_ok();
+            self.tray_ready.store(ready, Ordering::SeqCst);
+        }
+        starts_in_background(args, &choices, self.tray_ready.load(Ordering::SeqCst))
+    }
+
+    pub(crate) fn status(&self) -> Status {
+        let choices = self.settings.choices();
+        let supported = self.backend.supported();
+        Status {
+            supported,
+            keep_running: choices.keep_running,
+            start_at_login: choices.start_at_login,
+            tray_ready: self.tray_ready.load(Ordering::SeqCst),
+            paused_while_locked: supported && choices.keep_running,
+        }
+    }
+
+    /// The interface's language, for the icon's words. Saved so the next start words it right.
+    pub(crate) fn report_locale(&self, locale: UiLocale) {
+        if self.settings.locale() == Some(locale) {
+            return;
+        }
+        // A language that cannot be saved is still used now.
+        let _ = self.settings.save(self.settings.choices(), Some(locale));
+        if self.tray_ready.load(Ordering::SeqCst) {
+            self.backend.reword_tray(Some(locale));
+        }
+    }
+
+    /// Turning it on makes the icon first: with no icon, closing the window would strand the
+    /// app, so nothing is saved and the choice stays off.
+    /// The language the interface last reported, for the words the tray and its notices use.
+    pub(crate) fn locale(&self) -> Option<UiLocale> {
+        self.settings.locale()
+    }
+
+    /// Tells the icon whether a document is waiting (#230): its tooltip carries the one fixed
+    /// sentence, and goes back to "vault locked" when the patient unlocks.
+    pub(crate) fn set_waiting(&self, waiting: bool) {
+        self.backend.set_waiting(waiting, self.settings.locale());
+    }
+
+    pub(crate) fn set_keep_running(&self, on: bool) -> Result<Status, Error> {
+        if !self.backend.supported() {
+            return Err(Error::Unsupported);
+        }
+        let choices = self.settings.choices();
+        if choices.keep_running == on {
+            return Ok(self.status());
+        }
+        if on {
+            self.backend.show_tray(self.settings.locale())?;
+            if let Err(error) = self.settings.save(
+                Choices {
+                    keep_running: true,
+                    ..choices
+                },
+                self.settings.locale(),
+            ) {
+                self.backend.hide_tray();
+                return Err(error);
+            }
+            self.tray_ready.store(true, Ordering::SeqCst);
+        } else {
+            self.settings.save(
+                Choices {
+                    keep_running: false,
+                    ..choices
+                },
+                self.settings.locale(),
+            )?;
+            self.tray_ready.store(false, Ordering::SeqCst);
+            self.backend.hide_tray();
+        }
+        Ok(self.status())
+    }
+
+    /// The login entry is written before the choice is saved, so a failure leaves both as they were.
+    pub(crate) fn set_start_at_login(&self, on: bool) -> Result<Status, Error> {
+        if !self.backend.supported() {
+            return Err(Error::Unsupported);
+        }
+        let choices = self.settings.choices();
+        if choices.start_at_login == on {
+            return Ok(self.status());
+        }
+        self.backend.set_login_item(on)?;
+        if let Err(error) = self.settings.save(
+            Choices {
+                start_at_login: on,
+                ..choices
+            },
+            self.settings.locale(),
+        ) {
+            // Put the entry back as the saved choice has it.
+            let _ = self.backend.set_login_item(!on);
+            return Err(error);
+        }
+        Ok(self.status())
+    }
+
+    pub(crate) fn on_close(&self) -> CloseAction {
+        close_action(
+            &self.settings.choices(),
+            self.tray_ready.load(Ordering::SeqCst),
+        )
+    }
+}
+
+/// The words on the icon's menu and tooltip, in `locale` or English.
+pub(crate) fn tray_text(locale: Option<UiLocale>, id: MessageId) -> String {
+    locale
+        .unwrap_or_default()
+        .text(id)
+        .ok()
+        .or_else(|| UiLocale::default().text(id).ok())
+        .unwrap_or_else(|| "myCarlos".to_owned())
+}
+
+// --- Tauri: the tray icon and the window ---------------------------------------------------
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) mod desktop {
+    use super::*;
+    use std::sync::Arc;
+    use tauri::{
+        menu::{Menu, MenuItem},
+        tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
+        AppHandle, Manager, Window, WindowEvent,
+    };
+
+    const TRAY_ID: &str = "myCarlos";
+    const MAIN_WINDOW: &str = "main";
+
+    struct Parts {
+        tray: TrayIcon,
+        open: MenuItem<tauri::Wry>,
+        quit: MenuItem<tauri::Wry>,
+    }
+
+    /// Locks the vault and everything that holds its contents; given by `lib.rs`, which owns them.
+    pub(crate) type LockAll = Arc<dyn Fn() + Send + Sync>;
+
+    pub(crate) struct TauriBackend {
+        app: AppHandle,
+        parts: Mutex<Option<Parts>>,
+        lock_all: LockAll,
+    }
+
+    pub(crate) type Background = Controller<TauriBackend>;
+
+    /// Brings the window back. The vault stays locked: it was locked as the window closed. A
+    /// screen that did not take the lock while hidden is told again first, so it lets go of the
+    /// vault's contents before it is drawn (#206).
+    pub(crate) fn show_main<R: tauri::Runtime>(app: &AppHandle<R>) {
+        shown_again();
+        crate::tell_screen_if_locked(app);
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+
+    impl TauriBackend {
+        fn words(&self, locale: Option<UiLocale>) -> (String, String, String) {
+            (
+                tray_text(locale, MessageId::NativeTrayOpen),
+                tray_text(locale, MessageId::NativeTrayQuit),
+                // The tooltip is the waiting sentence while a document waits (#230).
+                if crate::tray_poller::waiting_now() {
+                    crate::tray_poller::waiting_notice_text(locale)
+                } else {
+                    tray_text(locale, MessageId::NativeTrayTooltip)
+                },
+            )
+        }
+    }
+
+    impl Backend for TauriBackend {
+        fn supported(&self) -> bool {
+            true
+        }
+
+        fn show_tray(&self, locale: Option<UiLocale>) -> Result<(), Error> {
+            let mut parts = self.parts.lock().expect("tray parts poisoned");
+            if parts.is_some() {
+                return Ok(());
+            }
+            // A "successful" tray with nowhere to show it would hide the window for good.
+            #[cfg(target_os = "linux")]
+            if !linux_tray_has_host(&session_name_has_owner) {
+                return Err(Error::Tray);
+            }
+            let (open_text, quit_text, tooltip) = self.words(locale);
+            let open = MenuItem::with_id(&self.app, "open", open_text, true, None::<&str>)
+                .map_err(|_| Error::Tray)?;
+            let quit = MenuItem::with_id(&self.app, "quit", quit_text, true, None::<&str>)
+                .map_err(|_| Error::Tray)?;
+            let menu = Menu::with_items(&self.app, &[&open, &quit]).map_err(|_| Error::Tray)?;
+            let icon = self.app.default_window_icon().cloned().ok_or(Error::Tray)?;
+            let lock_all = Arc::clone(&self.lock_all);
+            let tray = TrayIconBuilder::with_id(TRAY_ID)
+                .icon(icon)
+                .tooltip(tooltip)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "open" => show_main(app),
+                    // Quit really exits: lock first, so nothing stays open in memory. Off the menu's
+                    // thread, which must not wait for the vault's mutex.
+                    "quit" => {
+                        let lock_all = Arc::clone(&lock_all);
+                        let app = app.clone();
+                        run_off_thread("quit-lock", move || {
+                            lock_all();
+                            app.exit(0);
+                        });
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(&self.app)
+                .map_err(|_| Error::Tray)?;
+            *parts = Some(Parts { tray, open, quit });
+            Ok(())
+        }
+
+        fn hide_tray(&self) {
+            let mut parts = self.parts.lock().expect("tray parts poisoned");
+            if parts.take().is_some() {
+                let _ = self.app.remove_tray_by_id(TRAY_ID);
+            }
+        }
+
+        fn reword_tray(&self, locale: Option<UiLocale>) {
+            let (open_text, quit_text, tooltip) = self.words(locale);
+            if let Some(parts) = self.parts.lock().expect("tray parts poisoned").as_ref() {
+                let _ = parts.open.set_text(open_text);
+                let _ = parts.quit.set_text(quit_text);
+                let _ = parts.tray.set_tooltip(Some(tooltip));
+            }
+        }
+
+        fn set_login_item(&self, enabled: bool) -> Result<(), Error> {
+            let exe = std::env::current_exe().map_err(|_| Error::LoginItem)?;
+            set_login_item(enabled, &exe)
+        }
+
+        fn set_waiting(&self, waiting: bool, locale: Option<UiLocale>) {
+            let tooltip = if waiting {
+                crate::tray_poller::waiting_notice_text(locale)
+            } else {
+                tray_text(locale, MessageId::NativeTrayTooltip)
+            };
+            if let Some(parts) = self.parts.lock().expect("tray parts poisoned").as_ref() {
+                let _ = parts.tray.set_tooltip(Some(tooltip));
+            }
+        }
+    }
+
+    /// Makes the controller, brings the icon back if it was chosen, and hides the window of a
+    /// quiet start. Called once from the builder's setup, after the window exists.
+    pub(crate) fn install(
+        app: &tauri::App,
+        settings_path: PathBuf,
+        lock_all: LockAll,
+    ) -> Arc<Background> {
+        let controller = Arc::new(Controller::new(
+            Settings::load(settings_path),
+            TauriBackend {
+                app: app.handle().clone(),
+                parts: Mutex::new(None),
+                lock_all,
+            },
+        ));
+        if controller.start(std::env::args_os()) {
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = window.hide();
+            }
+        }
+        app.manage(Arc::clone(&controller));
+        controller
+    }
+
+    /// The window's close: hide to the tray after locking, or exit as before.
+    pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
+        let WindowEvent::CloseRequested { api, .. } = event else {
+            return;
+        };
+        let Some(background) = window.try_state::<Arc<Background>>() else {
+            return;
+        };
+        if background.on_close() == CloseAction::LockAndHide {
+            api.prevent_close();
+            let _ = window.hide();
+            // Counted first, so that an unlock already in flight is refused as it completes.
+            closed_to_tray();
+            if LOCK_ON_CLOSE {
+                // Off the window's own thread: the lock waits for the vault's mutex, which an
+                // unlock or an import holds for as long as it runs, and a window that does not
+                // answer is worse than a lock a moment later (the vault_lock command does the
+                // same on the blocking pool).
+                let lock_all = Arc::clone(&background.backend.lock_all);
+                run_off_thread("close-lock", move || lock_all());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    #[derive(Default)]
+    struct Fake {
+        supported: bool,
+        tray_fails: bool,
+        login_fails: bool,
+        tray_up: AtomicBool,
+        shown: AtomicUsize,
+        hidden: AtomicUsize,
+        reworded: Mutex<Vec<Option<UiLocale>>>,
+        login: Mutex<Vec<bool>>,
+        waiting: Mutex<Vec<bool>>,
+    }
+    impl Fake {
+        fn desktop() -> Self {
+            Self {
+                supported: true,
+                ..Self::default()
+            }
+        }
+    }
+    impl Backend for &Fake {
+        fn supported(&self) -> bool {
+            self.supported
+        }
+        fn show_tray(&self, _locale: Option<UiLocale>) -> Result<(), Error> {
+            if self.tray_fails {
+                return Err(Error::Tray);
+            }
+            self.shown.fetch_add(1, Ordering::SeqCst);
+            self.tray_up.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+        fn hide_tray(&self) {
+            self.hidden.fetch_add(1, Ordering::SeqCst);
+            self.tray_up.store(false, Ordering::SeqCst);
+        }
+        fn reword_tray(&self, locale: Option<UiLocale>) {
+            self.reworded.lock().unwrap().push(locale);
+        }
+        fn set_login_item(&self, enabled: bool) -> Result<(), Error> {
+            if self.login_fails {
+                return Err(Error::LoginItem);
+            }
+            self.login.lock().unwrap().push(enabled);
+            Ok(())
+        }
+        fn set_waiting(&self, waiting: bool, _locale: Option<UiLocale>) {
+            self.waiting.lock().unwrap().push(waiting);
+        }
+    }
+    fn controller<'a>(dir: &Path, fake: &'a Fake) -> Controller<&'a Fake> {
+        Controller::new(Settings::load(dir.join("background-v1.json")), fake)
+    }
+
+    #[test]
+    fn the_icon_is_told_when_a_document_is_waiting_and_when_the_patient_unlocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        c.set_waiting(true);
+        c.set_waiting(false);
+        assert_eq!(*fake.waiting.lock().unwrap(), vec![true, false]);
+    }
+
+    #[test]
+    fn an_unlock_that_completes_after_a_close_to_the_tray_is_refused() {
+        // Nothing closed since it started, and the window is shown: it stands.
+        assert!(!must_refuse_unlock(3, 3, false));
+        // A close was counted while it was in flight: refused, whether or not the window was
+        // brought back since.
+        assert!(must_refuse_unlock(3, 4, false));
+        assert!(must_refuse_unlock(3, 4, true));
+        // The window is still hidden in the tray: refused, even with no new close.
+        assert!(must_refuse_unlock(3, 3, true));
+    }
+
+    #[test]
+    fn work_runs_inline_when_no_thread_can_be_made_and_once_when_one_can() {
+        let ran = Arc::new(AtomicUsize::new(0));
+        // The spawn fails: the lock still happens, here.
+        let count = Arc::clone(&ran);
+        run_with(
+            "lock",
+            move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            },
+            |_, _| Err(io::Error::other("no threads")),
+        );
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
+        // The spawn works (the job runs as the thread would): it runs once, not again inline.
+        let count = Arc::clone(&ran);
+        run_with(
+            "lock",
+            move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            },
+            |_, job| {
+                job();
+                Ok(())
+            },
+        );
+        assert_eq!(ran.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_tray_needs_a_host_on_linux_or_it_is_not_made() {
+        let owners = |taken: &'static [&'static str]| move |name: &str| taken.contains(&name);
+        // Stock GNOME without the AppIndicator extension: nobody owns either watcher name.
+        assert!(!linux_tray_has_host(&owners(&[])));
+        // KDE, or GNOME with the extension, or a desktop that uses the newer name.
+        assert!(linux_tray_has_host(&owners(&[
+            "org.kde.StatusNotifierWatcher"
+        ])));
+        assert!(linux_tray_has_host(&owners(&[
+            "org.freedesktop.StatusNotifierWatcher"
+        ])));
+        assert!(!linux_tray_has_host(&owners(&["org.example.Other"])));
+    }
+
+    #[test]
+    fn both_choices_are_off_by_default_and_closing_exits() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        assert_eq!(
+            c.status(),
+            Status {
+                supported: true,
+                keep_running: false,
+                start_at_login: false,
+                tray_ready: false,
+                paused_while_locked: false,
+            }
+        );
+        assert_eq!(c.on_close(), CloseAction::Exit);
+        assert!(!c.start(["myCarlos", BACKGROUND_ARG]));
+        assert_eq!(fake.shown.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn keeping_it_running_makes_the_icon_saves_the_choice_and_hides_on_close() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        let status = c.set_keep_running(true).unwrap();
+        assert!(status.keep_running && status.tray_ready && status.paused_while_locked);
+        assert_eq!(c.on_close(), CloseAction::LockAndHide);
+        // And it survives a restart: the icon comes back, and a quiet start is quiet.
+        let fake2 = Fake::desktop();
+        let again = controller(dir.path(), &fake2);
+        assert!(again.start(["myCarlos", BACKGROUND_ARG]));
+        assert_eq!(fake2.shown.load(Ordering::SeqCst), 1);
+        assert_eq!(again.on_close(), CloseAction::LockAndHide);
+        // A start without the argument opens the window even so.
+        let fake3 = Fake::desktop();
+        assert!(!controller(dir.path(), &fake3).start(["myCarlos"]));
+    }
+
+    #[test]
+    fn without_an_icon_the_choice_is_not_saved_and_closing_still_exits() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake {
+            tray_fails: true,
+            ..Fake::desktop()
+        };
+        let c = controller(dir.path(), &fake);
+        assert_eq!(c.set_keep_running(true), Err(Error::Tray));
+        assert!(!c.status().keep_running);
+        assert_eq!(c.on_close(), CloseAction::Exit);
+        assert!(!dir.path().join("background-v1.json").exists());
+        // A saved "on" with an icon that can no longer be made does not strand the app.
+        fs::write(
+            dir.path().join("background-v1.json"),
+            r#"{"version":1,"keepRunning":true,"startAtLogin":false}"#,
+        )
+        .unwrap();
+        let again = controller(dir.path(), &fake);
+        assert!(!again.start([BACKGROUND_ARG]));
+        assert_eq!(again.on_close(), CloseAction::Exit);
+    }
+
+    #[test]
+    fn turning_it_off_removes_the_icon_and_closing_exits_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        c.set_keep_running(true).unwrap();
+        let status = c.set_keep_running(false).unwrap();
+        assert!(!status.keep_running && !status.tray_ready && !status.paused_while_locked);
+        assert_eq!(fake.hidden.load(Ordering::SeqCst), 1);
+        assert_eq!(c.on_close(), CloseAction::Exit);
+        // Setting what is already set does nothing.
+        c.set_keep_running(false).unwrap();
+        assert_eq!(fake.hidden.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn start_at_login_is_separate_and_a_failure_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        let status = c.set_start_at_login(true).unwrap();
+        assert!(status.start_at_login && !status.keep_running);
+        assert_eq!(*fake.login.lock().unwrap(), vec![true]);
+        assert_eq!(fake.shown.load(Ordering::SeqCst), 0);
+        let broken = Fake {
+            login_fails: true,
+            ..Fake::desktop()
+        };
+        let other = tempfile::tempdir().unwrap();
+        let c2 = controller(other.path(), &broken);
+        assert_eq!(c2.set_start_at_login(true), Err(Error::LoginItem));
+        assert!(!c2.status().start_at_login);
+        assert!(!other.path().join("background-v1.json").exists());
+    }
+
+    #[test]
+    fn a_choice_that_cannot_be_saved_is_undone() {
+        let dir = tempfile::tempdir().unwrap();
+        // The settings path is a directory, so the file cannot be written.
+        let path = dir.path().join("background-v1.json");
+        fs::create_dir(&path).unwrap();
+        let fake = Fake::desktop();
+        let c = Controller::new(Settings::load(path), &fake);
+        assert_eq!(c.set_keep_running(true), Err(Error::Storage));
+        assert_eq!(
+            fake.hidden.load(Ordering::SeqCst),
+            1,
+            "the icon is taken back"
+        );
+        assert!(!c.status().keep_running && !c.status().tray_ready);
+        assert_eq!(c.set_start_at_login(true), Err(Error::Storage));
+        assert_eq!(
+            *fake.login.lock().unwrap(),
+            vec![true, false],
+            "the entry is put back"
+        );
+    }
+
+    #[test]
+    fn a_phone_or_a_computer_with_no_background_mode_refuses_both_choices() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::default();
+        let c = controller(dir.path(), &fake);
+        assert_eq!(c.set_keep_running(true), Err(Error::Unsupported));
+        assert_eq!(c.set_start_at_login(true), Err(Error::Unsupported));
+        assert!(!c.status().supported && !c.status().paused_while_locked);
+        assert_eq!(c.on_close(), CloseAction::Exit);
+    }
+
+    #[test]
+    fn the_language_is_saved_and_rewords_the_icon_only_when_it_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = Fake::desktop();
+        let c = controller(dir.path(), &fake);
+        c.report_locale(UiLocale::Fr);
+        assert!(fake.reworded.lock().unwrap().is_empty(), "no icon yet");
+        c.set_keep_running(true).unwrap();
+        c.report_locale(UiLocale::Fr);
+        assert!(fake.reworded.lock().unwrap().is_empty(), "unchanged");
+        c.report_locale(UiLocale::PtBr);
+        assert_eq!(*fake.reworded.lock().unwrap(), vec![Some(UiLocale::PtBr)]);
+        assert_eq!(
+            Settings::load(dir.path().join("background-v1.json")).locale(),
+            Some(UiLocale::PtBr)
+        );
+        assert!(
+            Settings::load(dir.path().join("background-v1.json"))
+                .choices()
+                .keep_running
+        );
+    }
+
+    #[test]
+    fn a_damaged_oversized_or_newer_file_means_both_off_and_is_not_rewritten_by_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("background-v1.json");
+        for text in [
+            "not json".to_owned(),
+            r#"{"version":2,"keepRunning":true,"startAtLogin":true}"#.to_owned(),
+            r#"{"version":1,"keepRunning":"yes","startAtLogin":true}"#.to_owned(),
+            format!(
+                r#"{{"version":1,"keepRunning":true,"startAtLogin":true,"locale":"{}"}}"#,
+                "x".repeat(5000)
+            ),
+        ] {
+            fs::write(&path, &text).unwrap();
+            let settings = Settings::load(path.clone());
+            assert_eq!(settings.choices(), Choices::default(), "{text:.60}");
+            assert_eq!(fs::read_to_string(&path).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn a_quiet_start_needs_the_argument_the_choice_and_the_icon() {
+        let on = Choices {
+            keep_running: true,
+            start_at_login: true,
+        };
+        assert!(starts_in_background(["app", BACKGROUND_ARG], &on, true));
+        assert!(!starts_in_background(["app"], &on, true));
+        assert!(!starts_in_background(["app", BACKGROUND_ARG], &on, false));
+        assert!(!starts_in_background(
+            ["app", BACKGROUND_ARG],
+            &Choices {
+                keep_running: false,
+                start_at_login: true
+            },
+            true
+        ));
+        assert!(!starts_in_background(["app", "--background-x"], &on, true));
+        assert_eq!(close_action(&on, false), CloseAction::Exit);
+    }
+
+    #[test]
+    fn the_quiet_argument_is_not_taken_for_a_file_to_open() {
+        let (offered, kept) = crate::received::accept_command_line(
+            ["myCarlos", BACKGROUND_ARG].map(std::ffi::OsString::from),
+        );
+        assert_eq!(offered, 0);
+        assert!(kept.is_empty());
+    }
+
+    #[test]
+    fn the_login_entries_start_the_program_with_the_quiet_argument() {
+        let exe = Path::new("/opt/myCarlos/my carlos");
+        let desktop = linux_desktop_entry(exe);
+        assert!(desktop.contains("Exec=\"/opt/myCarlos/my carlos\" --background\n"));
+        assert!(desktop.contains("X-GNOME-Autostart-enabled=true"));
+        let plist = mac_launch_agent(Path::new(
+            "/Applications/my&Carlos <1>.app/Contents/MacOS/m",
+        ));
+        assert!(plist.contains(
+            "<string>/Applications/my&amp;Carlos &lt;1&gt;.app/Contents/MacOS/m</string>"
+        ));
+        assert!(plist.contains("<string>--background</string>"));
+        assert!(plist.contains("<key>RunAtLoad</key>\n\t<true/>"));
+        assert!(plist.contains("<string>ca.carlos.mycarlos</string>"));
+        assert_eq!(
+            windows_run_value(Path::new(r"C:\Program Files\myCarlos\myCarlos.exe")),
+            r#""C:\Program Files\myCarlos\myCarlos.exe" --background"#
+        );
+        // The value goes into the registry's Run key under this name (no process is started to do it).
+        assert_eq!(
+            WINDOWS_RUN_SUBKEY,
+            r"Software\Microsoft\Windows\CurrentVersion\Run"
+        );
+        assert_eq!(LOGIN_NAME, "myCarlos");
+    }
+
+    #[test]
+    fn login_files_go_where_each_system_looks_and_are_written_and_removed() {
+        // Paths absolute on every system: on Windows "/x/conf" has no drive, so it is not
+        // absolute there and XDG_CONFIG_HOME's rule would ignore it.
+        let root = tempfile::tempdir().unwrap();
+        let (home, conf) = (root.path().join("home/fake"), root.path().join("x/conf"));
+        assert_eq!(
+            login_file(true, &home, None),
+            home.join("Library/LaunchAgents/ca.carlos.mycarlos.plist")
+        );
+        assert_eq!(
+            login_file(false, &home, None),
+            home.join(".config/autostart/ca.carlos.mycarlos.desktop")
+        );
+        assert_eq!(
+            login_file(false, &home, Some(&conf)),
+            conf.join("autostart/ca.carlos.mycarlos.desktop")
+        );
+        assert_eq!(
+            login_file(false, &home, Some(Path::new("rel"))),
+            home.join(".config/autostart/ca.carlos.mycarlos.desktop")
+        );
+        // The same, as the macOS and Linux paths are written.
+        #[cfg(unix)]
+        {
+            let home = Path::new("/home/fake");
+            assert_eq!(
+                login_file(true, home, None),
+                Path::new("/home/fake/Library/LaunchAgents/ca.carlos.mycarlos.plist")
+            );
+            assert_eq!(
+                login_file(false, home, None),
+                Path::new("/home/fake/.config/autostart/ca.carlos.mycarlos.desktop")
+            );
+            assert_eq!(
+                login_file(false, home, Some(Path::new("/x/conf"))),
+                Path::new("/x/conf/autostart/ca.carlos.mycarlos.desktop")
+            );
+            // A relative XDG_CONFIG_HOME is ignored, as the specification says.
+            assert_eq!(
+                login_file(false, home, Some(Path::new("rel"))),
+                Path::new("/home/fake/.config/autostart/ca.carlos.mycarlos.desktop")
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let file = login_file(false, dir.path(), None);
+        apply_login_file(&file, Some("entry")).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "entry");
+        apply_login_file(&file, Some("entry two")).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "entry two");
+        apply_login_file(&file, None).unwrap();
+        assert!(!file.exists());
+        apply_login_file(&file, None).unwrap();
+    }
+
+    #[test]
+    fn a_program_path_that_could_break_out_of_a_quoted_entry_is_refused() {
+        // Everywhere: a quote ends the quoted program, % names a variable, and a control
+        // character breaks the line.
+        for bad in ["/opt/a\"b", "/opt/a%b", "/opt/a\nb", "/opt/a\tb", ""] {
+            assert!(!login_path_ok(Path::new(bad)), "{bad:?}");
+        }
+        // A macOS or Linux login entry is read as a shell would read a quoted word: $, ` and \
+        // act inside double quotes there.
+        #[cfg(not(windows))]
+        for bad in ["/opt/a$b", "/opt/a`b", "/opt/a\\b"] {
+            assert!(!login_path_ok(Path::new(bad)), "{bad:?}");
+        }
+        // Windows starts the Run value's program without a shell: $ and ` mean nothing there,
+        // and \ is its folder separator.
+        #[cfg(windows)]
+        for good in [
+            r"C:\Program Files\myCarlos\myCarlos.exe",
+            r"C:\Users\a$b\AppData\Local\myCarlos\myCarlos.exe",
+            r"C:\Users\a`b\myCarlos.exe",
+        ] {
+            assert!(login_path_ok(Path::new(good)), "{good:?}");
+        }
+        assert!(login_path_ok(Path::new("/opt/myCarlos/my carlos")));
+        assert!(set_login_item(true, Path::new("/opt/a\"b")).is_err());
+    }
+
+    #[test]
+    fn the_icon_words_exist_in_all_seven_languages_and_name_the_vault_state() {
+        for locale in UiLocale::ALL {
+            for id in [
+                MessageId::NativeTrayOpen,
+                MessageId::NativeTrayQuit,
+                MessageId::NativeTrayTooltip,
+            ] {
+                let text = tray_text(Some(locale), id);
+                assert!(
+                    !text.trim().is_empty() && text.contains("myCarlos"),
+                    "{locale:?} {id:?}"
+                );
+            }
+        }
+        assert_eq!(tray_text(None, MessageId::NativeTrayQuit), "Quit myCarlos");
+        assert_eq!(
+            tray_text(Some(UiLocale::Fr), MessageId::NativeTrayOpen),
+            "Ouvrir myCarlos"
+        );
+    }
+}

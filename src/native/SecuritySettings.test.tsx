@@ -11,11 +11,16 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BackupSize } from "../vault";
 import { page } from "vitest/browser";
 import { setLocaleOverride, translate } from "../i18n";
 import { setDeviceLocale } from "../test/deviceLocale";
 import { printedDate } from "./KeyLabel";
-import { SecuritySettings, speedTestLine } from "./SecuritySettings";
+import {
+  SecuritySettings,
+  speedTestLine,
+  speedTestShownByBuild,
+} from "./SecuritySettings";
 
 const speedTest = {
   memoryKib: 65536,
@@ -149,6 +154,26 @@ describe("SecuritySettings profile layout", () => {
     const box = button.getBoundingClientRect();
     expect(box.left).toBeGreaterThanOrEqual(text.right);
     expect(box.top).toBeLessThan(text.bottom);
+  });
+});
+
+// Vite replaces import.meta.env.DEV with a boolean in a build; vi.stubEnv stores
+// "1" or "" for it instead, so only DEV false can be stood in for here.
+describe("Which builds show the speed test", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is hidden in a production build made without VITE_SHOW_SPEED_TEST", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_SHOW_SPEED_TEST", undefined);
+    expect(speedTestShownByBuild()).toBe(false);
+  });
+
+  it("is shown in a production build made with VITE_SHOW_SPEED_TEST=1", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_SHOW_SPEED_TEST", "1");
+    expect(speedTestShownByBuild()).toBe(true);
   });
 });
 
@@ -444,7 +469,8 @@ describe("SecuritySettings privacy notice", () => {
     // Read after all of the text, Hidden first.
     const follows = (a: Node, b: Node) =>
       Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(paragraphs).toHaveLength(3);
+    // Three paragraphs of what is kept, and the one about readable copies.
+    expect(paragraphs).toHaveLength(4);
     expect(follows(last, hidden)).toBe(true);
     expect(follows(hidden, audit)).toBe(true);
     const box = (element: Element) => element.getBoundingClientRect();
@@ -497,16 +523,84 @@ describe("SecuritySettings passphrase change", () => {
 
   it("says hiding a document leaves copies outside the vault, not that it deletes (#71)", () => {
     renderSettings();
-    const section = screen
-      .getByRole("heading", {
+    // One section, "What myCarlos keeps", holds Hidden, History and the text
+    // about readable copies and screenshots (they were two sections).
+    expect(
+      screen.queryByRole("heading", {
         name: humanText("Readable copies and screenshots"),
-      })
+      }),
+    ).toBeNull();
+    const section = screen
+      .getByRole("heading", { name: humanText("What myCarlos keeps") })
       .closest("section")!;
     expect(section).toHaveHumanTextContent(
       /Hiding a document in myCarlos does not erase those copies/,
     );
-    // Nothing in myCarlos deletes a document since #71.
-    expect(section).not.toHaveHumanTextContent(/delet/i);
+    // Nothing in myCarlos deletes a document since #71: the copies text says
+    // so (the section's other text says myCarlos never deletes one).
+    const copies = within(section).getByText(
+      humanText(/Hiding a document in myCarlos does not erase those copies/),
+    );
+    expect(copies).not.toHaveHumanTextContent(/delet/i);
+    expect(
+      within(section).getByRole("button", { name: humanText(/^Hidden/) }),
+    ).toBeInTheDocument();
+    expect(
+      within(section).getByRole("button", {
+        name: humanText("Audit history"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists its sections in this order: encryption, passphrase, recovery key, backup, lock, connected clinics, profiles, what myCarlos keeps", () => {
+    renderSettings({
+      clinicDocuments: (
+        <section aria-labelledby="clinics-heading">
+          <h2 id="clinics-heading">Connected clinics</h2>
+        </section>
+      ),
+    });
+    const names = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent ?? "");
+    const order = [
+      /^Encryption/,
+      /^Change passphrase/,
+      /^Recovery key/,
+      /^Encrypted backup/,
+      /^Lock automatically/,
+      /^Connected clinics/,
+      /^Patient profiles/,
+      /^What myCarlos keeps/,
+    ];
+    const positions = order.map((pattern) =>
+      names.findIndex((name) => pattern.test(humanValue(name))),
+    );
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    // The AI helper's notice is in the AI helper section now (#355).
+    expect(
+      screen.queryByRole("button", { name: humanText("About the AI helper") }),
+    ).toBeNull();
+  });
+
+  it("shows the speed test for testers only in a development build", () => {
+    const { unmount } = render(
+      <SecuritySettings {...settingsProps({ showSpeedTest: false })} />,
+    );
+    expect(
+      screen.queryByRole("button", { name: humanText("Run speed test") }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("heading", {
+        name: humanText("Speed test, for testers"),
+      }),
+    ).toBeNull();
+    unmount();
+    renderSettings({ showSpeedTest: true });
+    expect(
+      screen.getByRole("button", { name: humanText("Run speed test") }),
+    ).toBeInTheDocument();
   });
 
   it("keeps mismatched passphrase drafts while translating and clears all three only on explicit submit", () => {
@@ -1017,5 +1111,163 @@ describe("SecuritySettings backup layout", () => {
     } finally {
       document.documentElement.style.fontSize = "";
     }
+  });
+});
+
+describe("the backup's size and leaving the videos out (#359)", () => {
+  const sizes = (videos: number) =>
+    vi.fn(async () => ({
+      totalBytes: 14_200_000_000,
+      withoutVideosBytes: videos > 0 ? 1_300_000_000 : 14_200_000_000,
+      videoBytes: videos > 0 ? 12_900_000_000 : 0,
+      videoCount: videos,
+    }));
+
+  it("shows how big the backup will be, and how much of it is video, before anything is saved", async () => {
+    setLocaleOverride("en");
+    const props = renderSettings({ onBackupSize: sizes(3) });
+    expect(
+      await screen.findByText(
+        humanText("About 14.2 GB, of which videos 12.9 GB."),
+      ),
+    ).toBeVisible();
+    expect(props.onSaveBackup).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("checkbox", { name: humanText("Leave videos out") }),
+    ).not.toBeChecked();
+  });
+
+  it("shows the size without the videos when the box is ticked, with no second question, and says what that means, and saves without them", async () => {
+    setLocaleOverride("en");
+    const onBackupSize = sizes(3);
+    const props = renderSettings({ onBackupSize });
+    const leave = await screen.findByRole("checkbox", {
+      name: humanText("Leave videos out"),
+    });
+    fireEvent.click(leave);
+    expect(
+      await screen.findByText(humanText("About 1.3 GB, without videos.")),
+    ).toBeVisible();
+    // Asked once: ticking the box does not ask again.
+    expect(onBackupSize).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(
+        humanText(
+          "The backup will not contain your videos. If you restore it, the videos are not brought back.",
+        ),
+      ),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(true);
+  });
+
+  it("says the size is being worked out until it is known", async () => {
+    setLocaleOverride("en");
+    let answer: (size: BackupSize) => void = () => {};
+    renderSettings({
+      onBackupSize: vi.fn(
+        () =>
+          new Promise<BackupSize>((resolve) => {
+            answer = resolve;
+          }),
+      ),
+    });
+    expect(
+      await screen.findByText(
+        humanText("Working out how big the backup will be…"),
+      ),
+    ).toBeVisible();
+    act(() =>
+      answer({
+        totalBytes: 14_200_000_000,
+        withoutVideosBytes: 1_300_000_000,
+        videoBytes: 12_900_000_000,
+        videoCount: 3,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        humanText("About 14.2 GB, of which videos 12.9 GB."),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("Working out how big the backup will be…")),
+    ).toBeNull();
+  });
+
+  it("offers nothing to leave out when the vault holds no video", async () => {
+    setLocaleOverride("en");
+    const props = renderSettings({ onBackupSize: sizes(0) });
+    expect(await screen.findByText(humanText("About 14.2 GB."))).toBeVisible();
+    expect(
+      screen.queryByRole("checkbox", { name: humanText("Leave videos out") }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(false);
+  });
+
+  it("is in the patient's language and still saves when the size cannot be told", async () => {
+    setLocaleOverride("fr");
+    const props = renderSettings({
+      onBackupSize: vi.fn().mockRejectedValue(new Error("FAKE")),
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: /./ })).toBeNull(),
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText(translate("fr", "security.backup.save")),
+      }),
+    );
+    expect(props.onSaveBackup).toHaveBeenCalledWith(false);
+    setLocaleOverride("en");
+  });
+});
+
+describe("the Hand records over button takes the focus back once (#360)", () => {
+  afterEach(cleanup);
+  const button = () =>
+    screen.getByRole("button", { name: humanText("Hand records over…") });
+
+  it("does so when a hide from the handover dialog ends, and not again when Security is entered afresh", () => {
+    const props = settingsProps({
+      people: FAKE_PEOPLE,
+      onHandOver: vi.fn(),
+      focusHandover: 0,
+    });
+    const view = render(<SecuritySettings {...props} />);
+    expect(button()).not.toHaveFocus();
+    // The dialog hid the person it handed over: the count moves, and the button takes the focus.
+    view.rerender(<SecuritySettings {...props} focusHandover={1} />);
+    expect(button()).toHaveFocus();
+    // The person goes to another part of the library and comes back to Security: the count is
+    // still 1 and was already acted on, so the focus stays where it opens.
+    view.unmount();
+    render(<SecuritySettings {...props} focusHandover={1} />);
+    expect(button()).not.toHaveFocus();
+  });
+
+  it("waits while the library is busy, then takes the focus once", () => {
+    const props = settingsProps({
+      people: FAKE_PEOPLE,
+      onHandOver: vi.fn(),
+    });
+    const view = render(<SecuritySettings {...props} focusHandover={0} />);
+    // The hide is still being carried out: the button is disabled, so nothing yet.
+    view.rerender(<SecuritySettings {...props} focusHandover={1} busy />);
+    expect(button()).not.toHaveFocus();
+    view.rerender(
+      <SecuritySettings {...props} focusHandover={1} busy={false} />,
+    );
+    expect(button()).toHaveFocus();
+    // And the next hide takes it again.
+    button().blur();
+    view.rerender(<SecuritySettings {...props} focusHandover={2} />);
+    expect(button()).toHaveFocus();
   });
 });

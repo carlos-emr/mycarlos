@@ -23,6 +23,22 @@ pub enum Outcome {
     Unknown,
 }
 
+/// What a "Show a test notice" press came to. Never written to the ledger: a test is not an arrival.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TestNotice {
+    /// The operating system accepted it.
+    Shown,
+    /// The operating system is blocking this app's notices.
+    Blocked,
+    /// Notices are not allowed in myCarlos, or not available here.
+    NotAllowed,
+    /// Pressed again within a few seconds of the last press.
+    TooSoon,
+    /// The system could not show it.
+    Failed,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Unavailable,
@@ -86,6 +102,19 @@ pub(crate) mod active {
         /// fixed catalogue sentence for the language the app last reported, never data.
         fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error>;
     }
+
+    /// The fixed sentence of a test notice, for `locale`, falling back to English.
+    fn test_notice_text(locale: Option<UiLocale>) -> Option<String> {
+        let id = crate::ui_text_ids::MessageId::NativeNoticeTest;
+        locale
+            .unwrap_or_default()
+            .text(id)
+            .ok()
+            .or_else(|| UiLocale::default().text(id).ok())
+    }
+
+    /// Two presses of the test button closer than this are one: the second is refused.
+    const TEST_NOTICE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// The notice sentence for `locale`, falling back to English; identical for every arrival.
     /// `None` means no catalogue text could be rendered: the arrival is then recorded as Failed
@@ -155,6 +184,12 @@ pub(crate) mod active {
         backend: Box<dyn Backend>,
         /// The catalogue lookup for the notice sentence; tests swap in one that fails.
         notice: fn(Option<UiLocale>) -> Option<String>,
+        /// The fixed test sentence; tests swap in one that fails.
+        test_notice: fn(Option<UiLocale>) -> Option<String>,
+        /// When the test button was last let through: any press that passed the too-soon check
+        /// starts the wait, whatever came of it (shown, blocked or failed). And how long it waits.
+        last_test: Mutex<Option<std::time::Instant>>,
+        test_interval: std::time::Duration,
         supported: bool,
         accepting: AtomicBool,
         automatic_ready: AtomicBool,
@@ -191,6 +226,9 @@ pub(crate) mod active {
                 path,
                 state: Mutex::new(None),
                 notice: arrival_notice,
+                test_notice: test_notice_text,
+                last_test: Mutex::new(None),
+                test_interval: TEST_NOTICE_INTERVAL,
                 backend: Box::new(Unavailable),
                 supported: false,
                 accepting: AtomicBool::new(false),
@@ -265,6 +303,9 @@ pub(crate) mod active {
                 state: Mutex::new(state),
                 backend,
                 notice: arrival_notice,
+                test_notice: test_notice_text,
+                last_test: Mutex::new(None),
+                test_interval: TEST_NOTICE_INTERVAL,
                 supported: true,
                 accepting: AtomicBool::new(accepting),
                 automatic_ready: AtomicBool::new(automatic_ready),
@@ -312,6 +353,21 @@ pub(crate) mod active {
         #[cfg(test)]
         pub(crate) fn load_for_test(path: PathBuf, backend: Box<dyn Backend>) -> Self {
             Self::load(path, backend)
+        }
+        /// Where this runtime keeps its ledger, for the tests that check each vault has its own.
+        #[cfg(test)]
+        pub(crate) fn ledger_path(&self) -> &std::path::Path {
+            &self.path
+        }
+        #[cfg(test)]
+        fn with_test_interval(mut self, interval: std::time::Duration) -> Self {
+            self.test_interval = interval;
+            self
+        }
+        #[cfg(test)]
+        fn with_test_notice(mut self, notice: fn(Option<UiLocale>) -> Option<String>) -> Self {
+            self.test_notice = notice;
+            self
         }
         #[cfg(test)]
         fn with_notice(mut self, notice: fn(Option<UiLocale>) -> Option<String>) -> Self {
@@ -433,6 +489,50 @@ pub(crate) mod active {
             *guard = Some(next);
             drop(guard);
             Ok(self.status())
+        }
+
+        /// "Show a test notice": the same generic notice an arrival shows, with a fixed sentence and
+        /// no document or clinic data, so a person can see that the system lets myCarlos notify.
+        /// Only while notices are allowed; no ledger entry, no effect on the checks. The disable
+        /// path takes the same lock, so a notice cannot be raised after notices were turned off.
+        pub fn send_test_notice(&self) -> TestNotice {
+            if !self.supported {
+                return TestNotice::NotAllowed;
+            }
+            let Ok(guard) = self.state.lock() else {
+                return TestNotice::Failed;
+            };
+            let Some(state) = guard.as_ref() else {
+                return TestNotice::NotAllowed;
+            };
+            if !state.enabled || !self.accepting.load(Ordering::Acquire) {
+                return TestNotice::NotAllowed;
+            }
+            // `state` stays locked through the OS call on purpose: turning notices off takes the
+            // same lock, so a notice cannot be raised after notices were turned off.
+            {
+                let Ok(mut last) = self.last_test.lock() else {
+                    return TestNotice::Failed;
+                };
+                if last.is_some_and(|at| at.elapsed() < self.test_interval) {
+                    return TestNotice::TooSoon;
+                }
+                *last = Some(std::time::Instant::now());
+            }
+            match self.backend.permission() {
+                Permission::Allowed => match (self.test_notice)(state.locale) {
+                    Some(body) => {
+                        let still_enabled = || self.accepting.load(Ordering::Acquire);
+                        match self.backend.accept(&body, &still_enabled) {
+                            Ok(()) => TestNotice::Shown,
+                            Err(_) => TestNotice::Failed,
+                        }
+                    }
+                    None => TestNotice::Failed,
+                },
+                Permission::Blocked => TestNotice::Blocked,
+                _ => TestNotice::Failed,
+            }
         }
 
         /// Native recheck occurs after permission observation and immediately before acceptance.
@@ -991,6 +1091,141 @@ pub(crate) mod active {
             assert!(!runtime.status().available);
         }
 
+        /// A backend whose permission is chosen, recording the sentences it was asked to show.
+        struct Chosen {
+            permission: Permission,
+            bodies: Arc<Mutex<Vec<String>>>,
+            reject: bool,
+        }
+        impl Backend for Chosen {
+            fn permission(&self) -> Permission {
+                self.permission
+            }
+            fn accept(&self, body: &str, current: &dyn Fn() -> bool) -> Result<(), Error> {
+                if !current() {
+                    return Err(Error::Cancelled);
+                }
+                self.bodies.lock().unwrap().push(body.to_string());
+                if self.reject {
+                    Err(Error::OsRejected)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        fn test_runtime(
+            dir: &std::path::Path,
+            permission: Permission,
+            reject: bool,
+        ) -> (Runtime, Arc<Mutex<Vec<String>>>) {
+            let bodies = Arc::new(Mutex::new(Vec::new()));
+            let runtime = Runtime::load(
+                dir.join("state.json"),
+                Box::new(Chosen {
+                    permission,
+                    bodies: Arc::clone(&bodies),
+                    reject,
+                }),
+            );
+            (runtime, bodies)
+        }
+
+        #[test]
+        fn a_test_notice_shows_the_fixed_sentence_and_nothing_of_a_document() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, bodies) = test_runtime(temp.path(), Permission::Allowed, false);
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            let sentence = UiLocale::default()
+                .text(crate::ui_text_ids::MessageId::NativeNoticeTest)
+                .unwrap();
+            assert_eq!(*bodies.lock().unwrap(), vec![sentence.clone()]);
+            assert_eq!(sentence, "This is a test notice from myCarlos.");
+            // Not an arrival: the ledger holds no event and the last outcome is unchanged.
+            let saved = fs::read_to_string(runtime.ledger_path()).unwrap();
+            assert!(saved.contains("\"events\":[]"), "{saved}");
+            assert_eq!(runtime.status().last_outcome, None);
+        }
+
+        #[test]
+        fn a_test_notice_is_in_the_language_the_app_reported_and_falls_back_to_english() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, bodies) = test_runtime(temp.path(), Permission::Allowed, false);
+            runtime.set_enabled(true).ok().unwrap();
+            runtime.observe_locale(Some(UiLocale::Fr));
+            let runtime = runtime.with_test_interval(std::time::Duration::ZERO);
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            let french = UiLocale::Fr
+                .text(crate::ui_text_ids::MessageId::NativeNoticeTest)
+                .unwrap();
+            assert_eq!(bodies.lock().unwrap().last(), Some(&french));
+            // No catalogue text at all: nothing reaches the system, and it says it failed.
+            let runtime = runtime.with_test_notice(|_| None);
+            assert_eq!(runtime.send_test_notice(), TestNotice::Failed);
+            assert_eq!(bodies.lock().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn a_test_notice_waits_for_notices_to_be_allowed_and_stops_when_they_are_turned_off() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, bodies) = test_runtime(temp.path(), Permission::Allowed, false);
+            let runtime = runtime.with_test_interval(std::time::Duration::ZERO);
+            // Never allowed: nothing is shown.
+            assert_eq!(runtime.send_test_notice(), TestNotice::NotAllowed);
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            runtime.set_enabled(false).ok().unwrap();
+            assert_eq!(runtime.send_test_notice(), TestNotice::NotAllowed);
+            assert_eq!(bodies.lock().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn a_test_notice_is_rate_limited_and_a_refused_press_does_not_extend_the_wait() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, bodies) = test_runtime(temp.path(), Permission::Allowed, false);
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            assert_eq!(runtime.send_test_notice(), TestNotice::TooSoon);
+            assert_eq!(runtime.send_test_notice(), TestNotice::TooSoon);
+            assert_eq!(bodies.lock().unwrap().len(), 1);
+            // After the wait it works again (the wait is a constant of a few seconds).
+            assert!(TEST_NOTICE_INTERVAL >= std::time::Duration::from_secs(2));
+            let runtime = runtime.with_test_interval(std::time::Duration::ZERO);
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            assert_eq!(bodies.lock().unwrap().len(), 2);
+        }
+
+        #[test]
+        fn a_test_notice_says_when_windows_blocks_notices_or_rejects_it() {
+            let temp = tempfile::tempdir().unwrap();
+            let (blocked, shown) = test_runtime(temp.path(), Permission::Blocked, false);
+            blocked.set_enabled(true).ok().unwrap();
+            assert_eq!(blocked.send_test_notice(), TestNotice::Blocked);
+            assert!(shown.lock().unwrap().is_empty());
+            let other = tempfile::tempdir().unwrap();
+            let (unknown, shown) = test_runtime(other.path(), Permission::Unknown, false);
+            unknown.set_enabled(true).ok().unwrap();
+            assert_eq!(unknown.send_test_notice(), TestNotice::Failed);
+            assert!(shown.lock().unwrap().is_empty());
+            let third = tempfile::tempdir().unwrap();
+            let (rejecting, _) = test_runtime(third.path(), Permission::Allowed, true);
+            rejecting.set_enabled(true).ok().unwrap();
+            assert_eq!(rejecting.send_test_notice(), TestNotice::Failed);
+        }
+
+        #[test]
+        fn the_test_notice_result_has_stable_wire_names() {
+            for (value, name) in [
+                (TestNotice::Shown, "shown"),
+                (TestNotice::Blocked, "blocked"),
+                (TestNotice::NotAllowed, "notAllowed"),
+                (TestNotice::TooSoon, "tooSoon"),
+                (TestNotice::Failed, "failed"),
+            ] {
+                assert_eq!(serde_json::to_value(value).unwrap(), name);
+            }
+        }
+
         #[test]
         fn an_unrenderable_notice_is_recorded_as_failed_and_never_reaches_the_os() {
             let temp = tempfile::tempdir().unwrap();
@@ -1090,6 +1325,9 @@ impl Runtime {
         Status::unavailable()
     }
     pub fn suspend_notices(&self) {}
+    pub fn send_test_notice(&self) -> TestNotice {
+        TestNotice::NotAllowed
+    }
     pub(crate) fn observe_locale(&self, _locale: Option<UiLocale>) {}
     pub fn set_enabled(&self, _enabled: bool) -> Result<Status, Error> {
         Err(Error::Unavailable)

@@ -44,8 +44,7 @@ ${EXCLUDES}
 // without asking. Not required, so a phone or tablet without a camera can
 // still install myCarlos. The camera permission also implies autofocus, so
 // that is declared not required too, or Google Play would leave out devices
-// whose camera has none. Nothing asks for the microphone, so it is not
-// declared.
+// whose camera has none. (The microphone is declared below, #359.)
 const CAMERA_PERMISSION =
   '<uses-permission android:name="android.permission.CAMERA" />';
 const CAMERA_FEATURE =
@@ -71,6 +70,41 @@ export function declareCamera(manifest) {
       /<manifest\b[^>]*>/,
       (open) =>
         `${open}\n    ${CAMERA_PERMISSION}\n    ${CAMERA_FEATURE}\n    ${AUTOFOCUS_FEATURE}`,
+    );
+}
+
+// The microphone (#359): the recording dialog asks the page for video and
+// sound together, and wry asks Android for RECORD_AUDIO and
+// MODIFY_AUDIO_SETTINGS when it does; an undeclared permission is refused
+// without asking. Not required, so a phone or tablet without a microphone can
+// still install myCarlos (it then records no video, see the design). The photo
+// dialog still asks for video only, and nothing asks for sound until the
+// patient chooses Record video.
+const RECORD_AUDIO_PERMISSION =
+  '<uses-permission android:name="android.permission.RECORD_AUDIO" />';
+const MODIFY_AUDIO_PERMISSION =
+  '<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />';
+const MICROPHONE_FEATURE =
+  '<uses-feature android:name="android.hardware.microphone" android:required="false" />';
+
+/** The manifest with the microphone declared exactly once. */
+export function declareMicrophone(manifest) {
+  if (!/<manifest\b[^>]*>/.test(manifest)) {
+    throw new Error("Android manifest element not found");
+  }
+  return manifest
+    .replace(
+      /\s*<uses-permission\s+android:name="android\.permission\.(RECORD_AUDIO|MODIFY_AUDIO_SETTINGS)"\s*\/>/g,
+      "",
+    )
+    .replace(
+      /\s*<uses-feature\s+android:name="android\.hardware\.microphone"[^>]*\/>/g,
+      "",
+    )
+    .replace(
+      /<manifest\b[^>]*>/,
+      (open) =>
+        `${open}\n    ${RECORD_AUDIO_PERMISSION}\n    ${MODIFY_AUDIO_PERMISSION}\n    ${MICROPHONE_FEATURE}`,
     );
 }
 
@@ -259,6 +293,7 @@ export async function configureAndroidSecurity(
       `<application android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/${RULES_NAME}"`,
     );
   manifest = declareCamera(manifest);
+  manifest = declareMicrophone(manifest);
 
   const resDirectory = join(dirname(manifestPath), "res");
   await copyLauncherIcons(resDirectory, iconsDirectory);

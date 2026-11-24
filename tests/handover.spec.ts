@@ -109,6 +109,130 @@ test("Hand records over: the key is shown to be written down, the file is saved,
   await expectOnlyFakedCommands(page);
 });
 
+/** Walks the export dialog to its last step: the key written down, the file saved. */
+async function saveHandover(page: import("@playwright/test").Page) {
+  await openSecurity(page);
+  await page
+    .getByRole("button", { name: en("handover.export.button"), exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("button", { name: en("handover.export.continue") })
+    .click();
+  await dialog.getByLabel(en("handover.export.keySaved")).check();
+  await dialog
+    .getByRole("button", { name: en("handover.export.continue") })
+    .click();
+  await dialog
+    .getByRole("button", { name: en("handover.export.chooseWhere") })
+    .click();
+  await expect(
+    dialog.getByRole("heading", { name: en("handover.export.doneTitle") }),
+  ).toBeVisible();
+  return dialog;
+}
+
+test("After the file is saved the person can be hidden in this vault: the offer is off, says what hiding means, and hides only when chosen", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    people: [{ displayName: "FAKE Child" }],
+  });
+  await page.goto("/");
+  await expect(sidebar(page)).toBeVisible();
+  const dialog = await saveHandover(page);
+  const offer = dialog.getByRole("checkbox", {
+    name: en("handover.export.hideOffer", { name: "FAKE Patient" }),
+  });
+  await expect(offer).not.toBeChecked();
+  // The words under the box are the box's description.
+  await expect(offer).toHaveAccessibleDescription(
+    en("hiddenPeople.confirm.body", { name: "FAKE Patient" }),
+  );
+  await expect(
+    dialog.getByText(
+      en("hiddenPeople.confirm.body", { name: "FAKE Patient" }),
+      {
+        exact: true,
+      },
+    ),
+  ).toBeVisible();
+  await expectEveryControlNamed(dialog, "the handover saved step");
+  // Left off, Close hides nobody.
+  await dialog.getByRole("button", { name: en("handover.close") }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await fakeCalls(page, "vault_hide_profile")).toHaveLength(0);
+
+  // Chosen, Close hides the person: they appear under Hidden people.
+  const again = await saveHandover(page);
+  await again
+    .getByRole("checkbox", {
+      name: en("handover.export.hideOffer", { name: "FAKE Patient" }),
+    })
+    .check();
+  await again.getByRole("button", { name: en("handover.close") }).click();
+  await expect(again).toHaveCount(0);
+  await expect
+    .poll(() => fakeCalls(page, "vault_hide_profile"))
+    .toHaveLength(1);
+  // The hide sets the library busy while focus goes back to where the dialog was opened from:
+  // once it has finished, focus is on that button, not lost to the page.
+  await expect(
+    page.getByRole("button", {
+      name: en("handover.export.button"),
+      exact: true,
+    }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("heading", { name: en("hiddenPeople.title"), level: 3 }),
+  ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("After the file is saved, the only person in the library cannot be hidden, and the dialog says so instead of offering a box", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  const dialog = await saveHandover(page);
+  await expect(
+    dialog.getByText(en("hiddenPeople.lastPerson"), { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+  await dialog.getByRole("button", { name: en("handover.close") }).click();
+  expect(await fakeCalls(page, "vault_hide_profile")).toHaveLength(0);
+});
+
+test("Security keeps Save encrypted backup inside the Encrypted backup section, and Hand records over after the people, not between the backup and the lock", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await openSecurity(page);
+  const backup = page.locator("section", {
+    has: page.getByRole("heading", { name: en("security.backup.title") }),
+  });
+  await expect(
+    backup.getByRole("button", { name: en("security.backup.save") }),
+  ).toBeVisible();
+  // The headings in page order: backup, auto-lock, people, then handing over.
+  const order = await page.getByRole("heading", { level: 2 }).allTextContents();
+  const at = (title: string) => order.findIndex((text) => text.includes(title));
+  expect(at(en("security.backup.title"))).toBeGreaterThanOrEqual(0);
+  expect(at(en("security.autoLock.title"))).toBeGreaterThan(
+    at(en("security.backup.title")),
+  );
+  expect(at(en("security.profiles.title"))).toBeGreaterThan(
+    at(en("security.autoLock.title")),
+  );
+  expect(at(en("handover.section.title"))).toBeGreaterThan(
+    at(en("security.profiles.title")),
+  );
+});
+
 test("Hand records over: a cancelled picker says nothing was saved and keeps the key", async ({
   page,
 }) => {

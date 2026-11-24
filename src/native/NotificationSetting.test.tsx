@@ -25,6 +25,176 @@ afterEach(() => {
 });
 
 describe("Document notice preference", () => {
+  it("shows a test notice only while notices are allowed, and says what came of it", async () => {
+    const user = userEvent.setup();
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return "shown";
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    const button = await screen.findByRole("button", {
+      name: humanText("Show a test notice"),
+    });
+    expect(button).toBeEnabled();
+    await user.click(button);
+    expect(
+      await screen.findByText(humanText(/Test notice sent/)),
+    ).toBeVisible();
+    // No arguments: nothing of the vault, a document or a clinic goes with it.
+    expect(native.invoke).toHaveBeenCalledWith("vault_send_test_notice");
+  });
+
+  it("keeps the test button off until notices are allowed", async () => {
+    native.invoke.mockResolvedValue({ ...allowed, enabled: false });
+    render(<NotificationSetting />);
+    expect(
+      await screen.findByRole("button", {
+        name: humanText("Show a test notice"),
+      }),
+    ).toBeDisabled();
+    expect(native.invoke).not.toHaveBeenCalledWith("vault_send_test_notice");
+  });
+
+  it("shows the Windows-is-blocking line when the system refuses the test notice", async () => {
+    const user = userEvent.setup();
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return "blocked";
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    expect(
+      screen.queryByText(humanText(/Windows is blocking notifications/)),
+    ).toBeNull();
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Show a test notice"),
+      }),
+    );
+    expect(
+      await screen.findByText(humanText(/Windows is blocking notifications/)),
+    ).toBeVisible();
+  });
+
+  it("tells a quick second press to wait, and a failure that it could not be shown", async () => {
+    const user = userEvent.setup();
+    let next = "tooSoon";
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return next;
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    const press = async () =>
+      user.click(
+        await screen.findByRole("button", {
+          name: humanText("Show a test notice"),
+        }),
+      );
+    await press();
+    expect(
+      await screen.findByText(humanText("Wait a few seconds, then try again.")),
+    ).toBeVisible();
+    next = "failed";
+    await press();
+    expect(
+      await screen.findByText(humanText("The test notice could not be shown.")),
+    ).toBeVisible();
+    // A command that throws is a failure too, not a silence.
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") throw new Error("FAKE");
+      return { ...allowed, enabled: true };
+    });
+    await press();
+    expect(
+      await screen.findByText(humanText("The test notice could not be shown.")),
+    ).toBeVisible();
+  });
+
+  it("says notices are off in myCarlos, not that the test failed, when native will not show one", async () => {
+    const user = userEvent.setup();
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return "notAllowed";
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Show a test notice"),
+      }),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Notices are turned off in myCarlos. Turn them on, then try again.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("The test notice could not be shown.")),
+    ).toBeNull();
+  });
+
+  it("keeps the key fact in view and folds the long explanation under More about automatic checks", async () => {
+    native.invoke.mockResolvedValue({
+      ...allowed,
+      automaticChecksSupported: true,
+      automaticChecksEnabled: false,
+      automaticChecksPaused: false,
+    });
+    const user = userEvent.setup();
+    render(<NotificationSetting />);
+    await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    // In view: the notice is generic, and automatic checks happen only while open and unlocked.
+    expect(
+      screen.getByText(
+        humanText(/Windows can show a generic notice after a clinic document/),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        humanText(
+          "Automatic checks run only while myCarlos is open and unlocked.",
+        ),
+      ),
+    ).toBeVisible();
+    const long = screen.getByText(
+      humanText(/with at least two minutes between attempts/),
+    );
+    const more = screen.getByText(humanText("More about automatic checks"));
+    const details = more.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(long).not.toBeVisible();
+    // The keys themselves are the browser's own and are driven in tests/preferences-text.spec.ts.
+    await user.click(more);
+    expect(details.open).toBe(true);
+    expect(long).toBeVisible();
+    expect(screen.queryByText(humanText("Less"))).toBeNull();
+    // The box is described by the long text alone (the summary is read in place, not twice).
+    const box = screen.getByRole("checkbox", {
+      name: humanText(
+        "Check for clinic documents automatically while unlocked",
+      ),
+    });
+    const description = (box.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(humanText(/at least two minutes/)(description)).toBe(true);
+    expect(humanText(/open and unlocked\.$/)(description)).toBe(false);
+  });
+
+  it("has no More about automatic checks where the automatic checks are not offered", async () => {
+    native.invoke.mockResolvedValue({ ...allowed });
+    render(<NotificationSetting />);
+    await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    expect(
+      screen.queryByText(humanText("More about automatic checks")),
+    ).toBeNull();
+  });
+
   it("hides unsupported native capability without opting in or sending a notice", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,

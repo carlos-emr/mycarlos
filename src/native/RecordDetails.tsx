@@ -45,6 +45,8 @@ interface RecordDetailsProps {
   onAnonymize?: () => void;
   /** Shows the document as a photo; given only when its file is one. */
   onViewPhoto?: () => void;
+  /** Plays the document as a video; given only when its file is an MP4. */
+  onPlayVideo?: () => void;
   /** The document is a PDF that may be locked with a password (#54). */
   locked?: boolean;
   /** Asks for its password; given only where myCarlos can unlock it. */
@@ -70,6 +72,7 @@ export function RecordDetails({
   onReadAid,
   onAnonymize,
   onViewPhoto,
+  onPlayVideo,
   locked = false,
   onUnlock,
 }: RecordDetailsProps) {
@@ -272,6 +275,17 @@ export function RecordDetails({
             >
               <Icon name="lock-open" />
               <span>{translateNow("interface.RecordDetails.unlock")}</span>
+            </button>
+          )}
+          {onPlayVideo && (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={onPlayVideo}
+            >
+              <Icon name="play" />
+              <span>{translateNow("interface.VideoViewer.playVideo")}</span>
             </button>
           )}
           {onViewPhoto && (
