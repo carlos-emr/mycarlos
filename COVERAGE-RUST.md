@@ -79,7 +79,7 @@ helpers**. Default features currently enable no optional features. The denominat
 Unmapped files are listed separately rather than represented as invented zero counts. In
 particular, `main.rs`, disabled features and code selected only for other platforms may be absent.
 Integration tests, doctests, browser/native UI tests and other operating systems are outside this
-run. Region coverage is not branch coverage; no coverage threshold or full-project claim is made.
+run. Region coverage is not branch coverage; no full-project claim is made. A floor on the run's line and region totals is described below.
 
 Only profiles actually flushed by the library test process and its children are merged. Sandboxed
 children can be denied profile-file writes, and deliberately killed or aborting helpers may never
@@ -92,3 +92,36 @@ Cargo's [JSON message contract](https://doc.rust-lang.org/cargo/reference/extern
 and the standard [llvm-profdata](https://llvm.org/docs/CommandGuide/llvm-profdata.html) and
 [llvm-cov](https://llvm.org/docs/CommandGuide/llvm-cov.html) commands. The optional `llvm-tools-preview`
 component can change with the compiler; the runner requires its LLVM version to match rustc.
+
+## Coverage floor (a ratchet)
+
+`scripts/coverage-rust-floor.json` pins two whole percents, `lines` and `regions`: the totals of the
+measured run rounded **down**. First measured at `0d6b6061` (24 Nov 2026): lines 87.75% (62,966 of
+71,754), regions 87.84% (111,946 of 127,436), functions 83.07% (5,731 of 6,899), so the measured floor was 87 and 87.
+Ben set the floor to **80 and 80** on 24 Nov 2026, to leave room for code that is hard to test.
+Counting production code only (without the `#[cfg(test)]` lines) the line figure is about 82%. A run fails, after its report is complete and kept (`run.json` says
+`status: "below-floor"`), when either total is lower:
+
+```bash
+python3 scripts/coverage-rust.py --floor-file scripts/coverage-rust-floor.json --timeout-seconds 7200
+python3 scripts/coverage-rust.py --fail-under-lines 80 --fail-under-regions 70   # explicit floors
+```
+
+An explicit `--fail-under-lines` / `--fail-under-regions` overrides the same metric from the file.
+The percentages are those of the denominator above (Linux host, default features, library tests,
+inline test code included): they say how much of that code the tests run, nothing about other
+platforms or production-only code.
+
+The floor is 80/80 by decision and is not raised after new tests unless Ben asks. When he does, raise it
+from a passing run's own report, in its own change:
+
+```bash
+python3 scripts/coverage-rust.py --ratchet-report coverage/rust/<run>/report/coverage.json \
+  --floor-file scripts/coverage-rust-floor.json
+```
+
+`--ratchet-report` expects the report of a complete, passing run (`status: "passed"` in its `run.json`), never a
+partial one, and never lowers a floor, and `--check-report <coverage.json> --floor-file ...` checks
+an earlier report without building or testing. Both need no toolchain. `python3 -m unittest
+scripts/test_coverage_rust.py` tests the gate. Don't lower the file to make a run pass: add tests where reasonable, or say in the change why code
+left the denominator.

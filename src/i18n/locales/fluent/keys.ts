@@ -222,6 +222,7 @@ export const MESSAGE_KEYS = [
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -1205,6 +1206,139 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "interface.history.event.profileExported",
+  "interface.history.event.profileHidden",
+  "interface.history.event.profileRestored",
+  "interface.history.event.profileImported",
+  "handover.section.title",
+  "handover.section.body",
+  "handover.export.button",
+  "handover.import.button",
+  "handover.close",
+  "handover.export.title",
+  "handover.export.about",
+  "handover.export.caution",
+  "handover.export.person",
+  "handover.export.history",
+  "handover.export.keyKind.legend",
+  "handover.export.keyKind.generated",
+  "handover.export.keyKind.passphrase",
+  "handover.export.passphrase",
+  "handover.export.passphraseHint",
+  "handover.export.continue",
+  "handover.export.preparing",
+  "handover.export.keyTitle",
+  "handover.export.keyBody",
+  "handover.export.keyLabel",
+  "handover.export.keyGroup",
+  "handover.export.copy",
+  "handover.export.copied",
+  "handover.export.copyFailed",
+  "handover.export.keySaved",
+  "handover.export.saveTitle",
+  "handover.export.summary",
+  "handover.export.apart",
+  "handover.export.provider",
+  "handover.export.chooseWhere",
+  "handover.export.saving",
+  "handover.export.noLocation",
+  "handover.export.doneTitle",
+  "handover.export.done",
+  "handover.export.doneApart",
+  "handover.export.hideOffer",
+  "handover.export.leftOut",
+  "handover.export.evidenceLeftOut",
+  "handover.count.documents",
+  "handover.count.hidden",
+  "handover.count.folders",
+  "handover.count.answers",
+  "handover.count.evidence",
+  "handover.count.size",
+  "handover.import.title",
+  "handover.import.about",
+  "handover.import.choose",
+  "handover.import.noFile",
+  "handover.import.keyTitle",
+  "handover.import.key",
+  "handover.import.passphrase",
+  "handover.import.keyHint",
+  "handover.import.passphraseHint",
+  "handover.import.open",
+  "handover.import.opening",
+  "handover.import.error.typo",
+  "handover.import.error.recovery",
+  "handover.import.error.wrong",
+  "handover.import.error.newer",
+  "handover.import.error.damaged",
+  "handover.import.previewTitle",
+  "handover.import.says",
+  "handover.import.birth",
+  "handover.import.madeOn",
+  "handover.import.evidenceNote",
+  "handover.import.duplicate.legend",
+  "handover.import.duplicate.package",
+  "handover.import.duplicate.content",
+  "handover.import.duplicate.anyway",
+  "handover.import.nameLabel",
+  "handover.import.add",
+  "handover.import.adding",
+  "handover.import.doneTitle",
+  "handover.import.done",
+  "handover.import.doneAnswers",
+  "handover.import.doneEvidence",
+  "handover.import.doneDropped",
+  "handover.import.receipt",
+  "handover.import.receiptNote",
+  "handover.import.nothingNew",
+  "handover.importedAnswer",
+  "handover.export.leavingWarning",
+  "handover.export.leave.title",
+  "handover.export.leave.body",
+  "handover.export.leave.confirm",
+  "handover.export.error.weak",
+  "handover.unfinished",
+  "native.error.49",
+  "native.error.50",
+  "hiddenPeople.title",
+  "hiddenPeople.body",
+  "hiddenPeople.list",
+  "hiddenPeople.since",
+  "hiddenPeople.documents",
+  "hiddenPeople.restore",
+  "hiddenPeople.restoreFor",
+  "hiddenPeople.handOver",
+  "hiddenPeople.handOverFor",
+  "hiddenPeople.hide",
+  "hiddenPeople.hideFor",
+  "hiddenPeople.lastPerson",
+  "hiddenPeople.confirm.title",
+  "hiddenPeople.confirm.body",
+  "hiddenPeople.confirm.hide",
+  "hiddenPeople.hidden",
+  "hiddenPeople.restored",
+  "hiddenPeople.arrived.title",
+  "hiddenPeople.arrived.body",
+  "hiddenPeople.arrived.move",
+  "hiddenPeople.arrived.leave",
+  "hiddenPeople.arrived.list",
+  "portal.arrivedForHidden",
+  "hiddenPeople.damagedToo",
+  "interface.history.aboutHiddenPeople",
+  "interface.history.how.personHidden",
+  "portal.arrivedForHiddenNoClinic",
+  "library.fileSaysChecked",
+  "handover.nowVerified",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed",
+  "notifications.testOff",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1517,6 +1651,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.notice.movedMany": "interface-notice-movedMany",
   "interface.notice.movedNamed": "interface-notice-movedNamed",
   "interface.notice.notPdf": "interface-notice-notPdf",
+  "interface.notice.receivedNotOpened": "interface-notice-receivedNotOpened",
   "interface.notice.pdfUnlocked": "interface-notice-pdfUnlocked",
   "interface.notice.personAdded": "interface-notice-personAdded",
   "interface.notice.photoSaved": "interface-notice-photoSaved",
@@ -2676,6 +2811,143 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "interface.history.event.profileExported":
+    "interface-history-event-profileExported",
+  "interface.history.event.profileHidden":
+    "interface-history-event-profileHidden",
+  "interface.history.event.profileRestored":
+    "interface-history-event-profileRestored",
+  "interface.history.event.profileImported":
+    "interface-history-event-profileImported",
+  "handover.section.title": "handover-section-title",
+  "handover.section.body": "handover-section-body",
+  "handover.export.button": "handover-export-button",
+  "handover.import.button": "handover-import-button",
+  "handover.close": "handover-close",
+  "handover.export.title": "handover-export-title",
+  "handover.export.about": "handover-export-about",
+  "handover.export.caution": "handover-export-caution",
+  "handover.export.person": "handover-export-person",
+  "handover.export.history": "handover-export-history",
+  "handover.export.keyKind.legend": "handover-export-keyKind-legend",
+  "handover.export.keyKind.generated": "handover-export-keyKind-generated",
+  "handover.export.keyKind.passphrase": "handover-export-keyKind-passphrase",
+  "handover.export.passphrase": "handover-export-passphrase",
+  "handover.export.passphraseHint": "handover-export-passphraseHint",
+  "handover.export.continue": "handover-export-continue",
+  "handover.export.preparing": "handover-export-preparing",
+  "handover.export.keyTitle": "handover-export-keyTitle",
+  "handover.export.keyBody": "handover-export-keyBody",
+  "handover.export.keyLabel": "handover-export-keyLabel",
+  "handover.export.keyGroup": "handover-export-keyGroup",
+  "handover.export.copy": "handover-export-copy",
+  "handover.export.copied": "handover-export-copied",
+  "handover.export.copyFailed": "handover-export-copyFailed",
+  "handover.export.keySaved": "handover-export-keySaved",
+  "handover.export.saveTitle": "handover-export-saveTitle",
+  "handover.export.summary": "handover-export-summary",
+  "handover.export.apart": "handover-export-apart",
+  "handover.export.provider": "handover-export-provider",
+  "handover.export.chooseWhere": "handover-export-chooseWhere",
+  "handover.export.saving": "handover-export-saving",
+  "handover.export.noLocation": "handover-export-noLocation",
+  "handover.export.doneTitle": "handover-export-doneTitle",
+  "handover.export.done": "handover-export-done",
+  "handover.export.doneApart": "handover-export-doneApart",
+  "handover.export.hideOffer": "handover-export-hideOffer",
+  "handover.export.leftOut": "handover-export-leftOut",
+  "handover.export.evidenceLeftOut": "handover-export-evidenceLeftOut",
+  "handover.count.documents": "handover-count-documents",
+  "handover.count.hidden": "handover-count-hidden",
+  "handover.count.folders": "handover-count-folders",
+  "handover.count.answers": "handover-count-answers",
+  "handover.count.evidence": "handover-count-evidence",
+  "handover.count.size": "handover-count-size",
+  "handover.import.title": "handover-import-title",
+  "handover.import.about": "handover-import-about",
+  "handover.import.choose": "handover-import-choose",
+  "handover.import.noFile": "handover-import-noFile",
+  "handover.import.keyTitle": "handover-import-keyTitle",
+  "handover.import.key": "handover-import-key",
+  "handover.import.passphrase": "handover-import-passphrase",
+  "handover.import.keyHint": "handover-import-keyHint",
+  "handover.import.passphraseHint": "handover-import-passphraseHint",
+  "handover.import.open": "handover-import-open",
+  "handover.import.opening": "handover-import-opening",
+  "handover.import.error.typo": "handover-import-error-typo",
+  "handover.import.error.recovery": "handover-import-error-recovery",
+  "handover.import.error.wrong": "handover-import-error-wrong",
+  "handover.import.error.newer": "handover-import-error-newer",
+  "handover.import.error.damaged": "handover-import-error-damaged",
+  "handover.import.previewTitle": "handover-import-previewTitle",
+  "handover.import.says": "handover-import-says",
+  "handover.import.birth": "handover-import-birth",
+  "handover.import.madeOn": "handover-import-madeOn",
+  "handover.import.evidenceNote": "handover-import-evidenceNote",
+  "handover.import.duplicate.legend": "handover-import-duplicate-legend",
+  "handover.import.duplicate.package": "handover-import-duplicate-package",
+  "handover.import.duplicate.content": "handover-import-duplicate-content",
+  "handover.import.duplicate.anyway": "handover-import-duplicate-anyway",
+  "handover.import.nameLabel": "handover-import-nameLabel",
+  "handover.import.add": "handover-import-add",
+  "handover.import.adding": "handover-import-adding",
+  "handover.import.doneTitle": "handover-import-doneTitle",
+  "handover.import.done": "handover-import-done",
+  "handover.import.doneAnswers": "handover-import-doneAnswers",
+  "handover.import.doneEvidence": "handover-import-doneEvidence",
+  "handover.import.doneDropped": "handover-import-doneDropped",
+  "handover.import.receipt": "handover-import-receipt",
+  "handover.import.receiptNote": "handover-import-receiptNote",
+  "handover.import.nothingNew": "handover-import-nothingNew",
+  "handover.importedAnswer": "handover-importedAnswer",
+  "handover.export.leavingWarning": "handover-export-leavingWarning",
+  "handover.export.leave.title": "handover-export-leave-title",
+  "handover.export.leave.body": "handover-export-leave-body",
+  "handover.export.leave.confirm": "handover-export-leave-confirm",
+  "handover.export.error.weak": "handover-export-error-weak",
+  "handover.unfinished": "handover-unfinished",
+  "native.error.49": "native-error-49",
+  "native.error.50": "native-error-50",
+  "hiddenPeople.title": "hiddenPeople-title",
+  "hiddenPeople.body": "hiddenPeople-body",
+  "hiddenPeople.list": "hiddenPeople-list",
+  "hiddenPeople.since": "hiddenPeople-since",
+  "hiddenPeople.documents": "hiddenPeople-documents",
+  "hiddenPeople.restore": "hiddenPeople-restore",
+  "hiddenPeople.restoreFor": "hiddenPeople-restoreFor",
+  "hiddenPeople.handOver": "hiddenPeople-handOver",
+  "hiddenPeople.handOverFor": "hiddenPeople-handOverFor",
+  "hiddenPeople.hide": "hiddenPeople-hide",
+  "hiddenPeople.hideFor": "hiddenPeople-hideFor",
+  "hiddenPeople.lastPerson": "hiddenPeople-lastPerson",
+  "hiddenPeople.confirm.title": "hiddenPeople-confirm-title",
+  "hiddenPeople.confirm.body": "hiddenPeople-confirm-body",
+  "hiddenPeople.confirm.hide": "hiddenPeople-confirm-hide",
+  "hiddenPeople.hidden": "hiddenPeople-hidden",
+  "hiddenPeople.restored": "hiddenPeople-restored",
+  "hiddenPeople.arrived.title": "hiddenPeople-arrived-title",
+  "hiddenPeople.arrived.body": "hiddenPeople-arrived-body",
+  "hiddenPeople.arrived.move": "hiddenPeople-arrived-move",
+  "hiddenPeople.arrived.leave": "hiddenPeople-arrived-leave",
+  "hiddenPeople.arrived.list": "hiddenPeople-arrived-list",
+  "portal.arrivedForHidden": "portal-arrivedForHidden",
+  "hiddenPeople.damagedToo": "hiddenPeople-damagedToo",
+  "interface.history.aboutHiddenPeople": "interface-history-aboutHiddenPeople",
+  "interface.history.how.personHidden": "interface-history-how-personHidden",
+  "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
+  "library.fileSaysChecked": "library-fileSaysChecked",
+  "handover.nowVerified": "handover-nowVerified",
+  "notifications.autoSummary": "notifications-autoSummary",
+  "background.keepRunningSummary": "background-keepRunningSummary",
+  "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "native.notice.test": "native-notice-test",
+  "notifications.testButton": "notifications-testButton",
+  "notifications.testSent": "notifications-testSent",
+  "notifications.testWait": "notifications-testWait",
+  "notifications.testFailed": "notifications-testFailed",
+  "notifications.testOff": "notifications-testOff",
+  "preferences.moreAutomatic": "preferences-moreAutomatic",
+  "preferences.moreBackground": "preferences-moreBackground",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2933,6 +3205,7 @@ export interface MessageArgsByKey {
     where: FluentArgument;
   };
   "interface.notice.notPdf": { name: FluentArgument };
+  "interface.notice.receivedNotOpened": { name: FluentArgument };
   "interface.notice.pdfUnlocked": { name: FluentArgument };
   "interface.notice.personAdded": { name: FluentArgument };
   "interface.notice.photoSaved": { name: FluentArgument };
@@ -4013,6 +4286,142 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "interface.history.event.profileExported": undefined;
+  "interface.history.event.profileHidden": undefined;
+  "interface.history.event.profileRestored": undefined;
+  "interface.history.event.profileImported": undefined;
+  "handover.section.title": undefined;
+  "handover.section.body": undefined;
+  "handover.export.button": undefined;
+  "handover.import.button": undefined;
+  "handover.close": undefined;
+  "handover.export.title": undefined;
+  "handover.export.about": undefined;
+  "handover.export.caution": undefined;
+  "handover.export.person": undefined;
+  "handover.export.history": undefined;
+  "handover.export.keyKind.legend": undefined;
+  "handover.export.keyKind.generated": undefined;
+  "handover.export.keyKind.passphrase": undefined;
+  "handover.export.passphrase": undefined;
+  "handover.export.passphraseHint": undefined;
+  "handover.export.continue": undefined;
+  "handover.export.preparing": undefined;
+  "handover.export.keyTitle": undefined;
+  "handover.export.keyBody": undefined;
+  "handover.export.keyLabel": undefined;
+  "handover.export.keyGroup": {
+    characters: FluentArgument;
+    number: FluentArgument;
+  };
+  "handover.export.copy": undefined;
+  "handover.export.copied": undefined;
+  "handover.export.copyFailed": undefined;
+  "handover.export.keySaved": undefined;
+  "handover.export.saveTitle": undefined;
+  "handover.export.summary": { name: FluentArgument };
+  "handover.export.apart": undefined;
+  "handover.export.provider": undefined;
+  "handover.export.chooseWhere": undefined;
+  "handover.export.saving": undefined;
+  "handover.export.noLocation": undefined;
+  "handover.export.doneTitle": undefined;
+  "handover.export.done": { count: FluentArgument; name: FluentArgument };
+  "handover.export.doneApart": undefined;
+  "handover.export.hideOffer": { name: FluentArgument };
+  "handover.export.leftOut": { count: FluentArgument };
+  "handover.export.evidenceLeftOut": { count: FluentArgument };
+  "handover.count.documents": { count: FluentArgument };
+  "handover.count.hidden": { count: FluentArgument };
+  "handover.count.folders": { count: FluentArgument };
+  "handover.count.answers": { count: FluentArgument };
+  "handover.count.evidence": { count: FluentArgument };
+  "handover.count.size": { size: FluentArgument };
+  "handover.import.title": undefined;
+  "handover.import.about": undefined;
+  "handover.import.choose": undefined;
+  "handover.import.noFile": undefined;
+  "handover.import.keyTitle": undefined;
+  "handover.import.key": undefined;
+  "handover.import.passphrase": undefined;
+  "handover.import.keyHint": undefined;
+  "handover.import.passphraseHint": undefined;
+  "handover.import.open": undefined;
+  "handover.import.opening": undefined;
+  "handover.import.error.typo": undefined;
+  "handover.import.error.recovery": undefined;
+  "handover.import.error.wrong": undefined;
+  "handover.import.error.newer": undefined;
+  "handover.import.error.damaged": undefined;
+  "handover.import.previewTitle": undefined;
+  "handover.import.says": { name: FluentArgument };
+  "handover.import.birth": { date: FluentArgument };
+  "handover.import.madeOn": { date: FluentArgument };
+  "handover.import.evidenceNote": undefined;
+  "handover.import.duplicate.legend": undefined;
+  "handover.import.duplicate.package": undefined;
+  "handover.import.duplicate.content": { count: FluentArgument };
+  "handover.import.duplicate.anyway": undefined;
+  "handover.import.nameLabel": undefined;
+  "handover.import.add": undefined;
+  "handover.import.adding": undefined;
+  "handover.import.doneTitle": undefined;
+  "handover.import.done": { count: FluentArgument; name: FluentArgument };
+  "handover.import.doneAnswers": { count: FluentArgument };
+  "handover.import.doneEvidence": undefined;
+  "handover.import.doneDropped": { count: FluentArgument };
+  "handover.import.receipt": undefined;
+  "handover.import.receiptNote": undefined;
+  "handover.import.nothingNew": undefined;
+  "handover.importedAnswer": undefined;
+  "handover.export.leavingWarning": undefined;
+  "handover.export.leave.title": undefined;
+  "handover.export.leave.body": undefined;
+  "handover.export.leave.confirm": undefined;
+  "handover.export.error.weak": undefined;
+  "handover.unfinished": undefined;
+  "native.error.49": undefined;
+  "native.error.50": undefined;
+  "hiddenPeople.title": undefined;
+  "hiddenPeople.body": undefined;
+  "hiddenPeople.list": undefined;
+  "hiddenPeople.since": { date: FluentArgument };
+  "hiddenPeople.documents": { count: FluentArgument };
+  "hiddenPeople.restore": undefined;
+  "hiddenPeople.restoreFor": { name: FluentArgument };
+  "hiddenPeople.handOver": undefined;
+  "hiddenPeople.handOverFor": { name: FluentArgument };
+  "hiddenPeople.hide": undefined;
+  "hiddenPeople.hideFor": { name: FluentArgument };
+  "hiddenPeople.lastPerson": undefined;
+  "hiddenPeople.confirm.title": { name: FluentArgument };
+  "hiddenPeople.confirm.body": { name: FluentArgument };
+  "hiddenPeople.confirm.hide": { name: FluentArgument };
+  "hiddenPeople.hidden": { name: FluentArgument };
+  "hiddenPeople.restored": { name: FluentArgument };
+  "hiddenPeople.arrived.title": { name: FluentArgument };
+  "hiddenPeople.arrived.body": { count: FluentArgument; name: FluentArgument };
+  "hiddenPeople.arrived.move": { name: FluentArgument };
+  "hiddenPeople.arrived.leave": undefined;
+  "hiddenPeople.arrived.list": undefined;
+  "portal.arrivedForHidden": { clinic: FluentArgument; count: FluentArgument };
+  "hiddenPeople.damagedToo": { count: FluentArgument };
+  "interface.history.aboutHiddenPeople": { count: FluentArgument };
+  "interface.history.how.personHidden": undefined;
+  "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
+  "library.fileSaysChecked": { date: FluentArgument };
+  "handover.nowVerified": { clinic: FluentArgument; count: FluentArgument };
+  "notifications.autoSummary": undefined;
+  "background.keepRunningSummary": undefined;
+  "background.startAtLoginSummary": undefined;
+  "native.notice.test": undefined;
+  "notifications.testButton": undefined;
+  "notifications.testSent": undefined;
+  "notifications.testWait": undefined;
+  "notifications.testFailed": undefined;
+  "notifications.testOff": undefined;
+  "preferences.moreAutomatic": undefined;
+  "preferences.moreBackground": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

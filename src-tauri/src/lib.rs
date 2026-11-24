@@ -67,6 +67,7 @@ mod portal_client;
 mod portal_delivery;
 mod portal_link;
 mod portal_pickup;
+mod process_flags;
 mod reading_aid;
 mod received;
 #[allow(dead_code)] // Production authenticated clinic linking remains a later step (#55).
@@ -505,6 +506,17 @@ impl From<VaultError> for PublicText {
                 code: "weak_passphrase",
                 message_key: "native.error.20",
             },
+            // The handover dialog says it on this code: lock and unlock to keep trying, or use
+            // the generated key (#360).
+            VaultError::PackagePassphraseTriesUsed => Self {
+                code: "package_passphrase_tries_used",
+                message_key: "native.error.49",
+            },
+            // Security says it beside the person's Hide: someone has to stay in the library.
+            VaultError::LastVisibleProfile => Self {
+                code: "last_visible_profile",
+                message_key: "native.error.50",
+            },
             VaultError::ImportBatchLimit => Self {
                 code: "import_batch_limit",
                 message_key: "native.error.21",
@@ -690,6 +702,9 @@ impl Drop for CreateVaultRequest {
 #[derive(Deserialize)]
 struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
+    /// How many damaged documents of hidden people the patient was told of (#360).
+    #[serde(default)]
+    hidden_people_documents: usize,
 }
 
 #[derive(Deserialize)]
@@ -1351,6 +1366,13 @@ struct PendingPicks {
     imports: PickTable<(ImportRequest, Vec<tauri_plugin_fs::FilePath>)>,
     exports: PickTable<(Uuid, tauri_plugin_fs::FilePath)>,
     backups: PickTable<tauri_plugin_fs::FilePath>,
+    /// A person's export that has been prepared (#360): the person, the choices and the key,
+    /// held here so that the key never has to come back from the renderer. Ends at lock.
+    profile_exports: PickTable<PendingProfileExport>,
+    /// A handover file the patient chose to read (#360), kept for its inspect and its import.
+    profile_imports: PickTable<tauri_plugin_fs::FilePath>,
+    /// A prepared export with the place the patient chose for it.
+    profile_export_picks: PickTable<(PendingProfileExport, tauri_plugin_fs::FilePath)>,
     restores: PickTable<tauri_plugin_fs::FilePath>,
     /// The AI helper's preview tickets (#72, AI-02): one per text read, bound
     /// to the record and the session; gone at lock, when the document is
@@ -1716,6 +1738,9 @@ impl PendingPicks {
         self.imports.clear();
         self.exports.clear();
         self.backups.clear();
+        self.profile_exports.clear();
+        self.profile_imports.clear();
+        self.profile_export_picks.clear();
         self.restores.clear();
         self.texts.clear();
         self.text_exports.clear();
@@ -1727,6 +1752,12 @@ impl PendingPicks {
 #[serde(rename_all = "camelCase")]
 struct RecordIdRequest {
     record_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileIdRequest {
+    profile_id: Uuid,
 }
 
 /// An AI answer to keep with a document (#72): its document and the id `ai_summarize` /
@@ -2784,6 +2815,9 @@ struct AuditHistory {
     checked_from_ms: Option<u64>,
     /// Every event the manifest pins is shown, even when part of the storage is damaged.
     every_event_shown: bool,
+    /// How many entries were left out for being about a hidden person (#360): counted, never
+    /// named, and shown again once the person is restored.
+    about_hidden_people: usize,
 }
 
 impl From<vault::HistoryView> for AuditHistory {
@@ -2802,6 +2836,7 @@ impl From<vault::HistoryView> for AuditHistory {
             checked_until_ms,
             checked_from_ms,
             every_event_shown: view.every_event_shown,
+            about_hidden_people: view.about_hidden_people,
         }
     }
 }
@@ -3354,7 +3389,7 @@ async fn vault_snapshot(store: State<'_, StoreHandle>) -> CommandResult<VaultSna
 #[tauri::command]
 async fn vault_history(store: State<'_, StoreHandle>) -> CommandResult<AuditHistory> {
     let store = store.pin();
-    audit_history_result(run_blocking(store.arc(), VaultStore::history_view).await)
+    audit_history_result(run_blocking(store.arc(), VaultStore::history_view_for_display).await)
 }
 
 /// What Security receives for a history read: the view, or `history_unverified` when the read
@@ -3656,6 +3691,20 @@ async fn vault_notification_status(
     let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.notification_status(locale))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))
+}
+
+/// "Show a test notice": the same generic notice an arrival shows, with a fixed sentence, so a
+/// person can confirm Windows lets myCarlos notify. No vault data is read, nothing is recorded,
+/// and a second press within a few seconds is refused.
+#[tauri::command]
+async fn vault_send_test_notice(
+    store: State<'_, StoreHandle>,
+) -> CommandResult<document_notification_runtime::TestNotice> {
+    let store = store.pin();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.send_test_notice())
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))
 }
@@ -4248,6 +4297,590 @@ async fn vault_backup_picked(
     })
 }
 
+/// What a person's export needs once it has been prepared: who, whether the history excerpt
+/// goes, and the key the package is made under. The key is held only here, and zeroed when
+/// the last copy goes.
+#[derive(Clone)]
+struct PendingProfileExport {
+    profile_id: Uuid,
+    include_history: bool,
+    secret: ProfileExportSecret,
+}
+
+#[derive(Clone)]
+enum ProfileExportSecret {
+    Key(Zeroizing<[u8; 16]>),
+    Passphrase(Zeroizing<String>),
+}
+
+impl ProfileExportSecret {
+    fn as_secret(&self) -> vault::PackageSecret<'_> {
+        match self {
+            Self::Key(key) => vault::PackageSecret::Key(key),
+            Self::Passphrase(passphrase) => vault::PackageSecret::Passphrase(passphrase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileExportPrepareRequest {
+    profile_id: Uuid,
+    include_history: bool,
+    /// A passphrase the patient typed for the package. None: a key is generated.
+    #[serde(default)]
+    passphrase: Option<String>,
+}
+
+/// What a person's export holds, in counts. Names no document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileExportSummary {
+    documents: usize,
+    hidden: usize,
+    folders: usize,
+    ai_answers: usize,
+    with_clinic_evidence: usize,
+    left_out_damaged: usize,
+    evidence_left_out: usize,
+    history_entries: usize,
+    plaintext_bytes: u64,
+}
+
+impl From<&vault::ExportReport> for ProfileExportSummary {
+    fn from(report: &vault::ExportReport) -> Self {
+        Self {
+            documents: report.documents,
+            hidden: report.hidden,
+            folders: report.folders,
+            ai_answers: report.ai_answers,
+            with_clinic_evidence: report.with_clinic_evidence,
+            left_out_damaged: report.left_out_damaged,
+            evidence_left_out: report.evidence_left_out,
+            history_entries: report.history_entries,
+            plaintext_bytes: report.plaintext_bytes,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileExportPrepared {
+    export_id: Uuid,
+    /// The generated key as it is shown (7 groups of 4), once; none when the patient typed a
+    /// passphrase of their own. It is not stored in the vault: lost, the person exports again.
+    generated_key: Option<String>,
+    summary: ProfileExportSummary,
+}
+
+/// A pick made earlier, asked for by its id (the handover export's save step).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfilePickRequest {
+    pick_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileExportPickRequest {
+    export_id: Uuid,
+    #[serde(default)]
+    local_date: Option<String>,
+}
+
+/// What a saved handover file was: its name where the platform says it, its size, and what it holds.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedProfileExport {
+    name: Option<String>,
+    bytes: Option<u64>,
+    summary: ProfileExportSummary,
+}
+
+/// Prepares one person's export (#360): says what it would hold and makes the key. Nothing is
+/// written. A typed passphrase is checked here, so a weak one, or the vault's own, is refused
+/// before anything is asked.
+#[tauri::command]
+async fn vault_profile_export_prepare(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileExportPrepareRequest,
+) -> CommandResult<ProfileExportPrepared> {
+    let store = store.pin();
+    let session = picks.session();
+    let options = vault::ExportOptions {
+        include_history: request.include_history,
+    };
+    let profile_id = request.profile_id;
+    let (secret, generated_key) = match request.passphrase {
+        Some(passphrase) => {
+            let passphrase = Zeroizing::new(passphrase);
+            let typed = passphrase.clone();
+            run_blocking(store.arc(), move |store| {
+                store.check_package_passphrase(profile_id, &typed)
+            })
+            .await?;
+            (ProfileExportSecret::Passphrase(passphrase), None)
+        }
+        None => {
+            let (key, text) = vault::generate_package_key();
+            (ProfileExportSecret::Key(key), Some((*text).clone()))
+        }
+    };
+    let report = run_blocking(store.arc(), move |store| {
+        store.profile_export_preview(profile_id, options)
+    })
+    .await?;
+    let pending = PendingProfileExport {
+        profile_id,
+        include_history: request.include_history,
+        secret,
+    };
+    // A lock during the checks (a passphrase derivation takes seconds) ended the session: the
+    // key is not kept for one that is gone.
+    if picks.session() != session {
+        return Err(VaultError::Locked.into());
+    }
+    Ok(ProfileExportPrepared {
+        export_id: picks.profile_exports.store(session, pending),
+        generated_key,
+        summary: ProfileExportSummary::from(&report),
+    })
+}
+
+/// Asks where to save a prepared export. The file name is generic: it names no person.
+#[tauri::command]
+async fn vault_profile_export_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileExportPickRequest,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let session = picks.session();
+    // The patient reads the key off the screen and may take a while; the preparation keeps
+    // as long as a text preview does.
+    let pending = picks
+        .profile_exports
+        .peek_within(request.export_id, session, TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let date = request
+        .local_date
+        .as_deref()
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms()), str::to_owned);
+    // Nothing is asked for unless there is a writable vault.
+    run_blocking(store.arc(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let name = format!("mycarlos-handover-{date}.mycarlosprofile");
+    let _open = ActivityHold::new(store.idle());
+    let destination = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().set_file_name(name).blocking_save_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(destination) = destination else {
+        return Ok(None);
+    };
+    // The preparation is spent by the pick that takes it: two picks of one preparation do not
+    // make two destinations under one key. And a lock while the dialog was open ended the
+    // session: nothing is stored for one that is gone.
+    if picks.session() != session
+        || picks
+            .profile_exports
+            .take_within(request.export_id, session, TEXT_TICKET_TTL)
+            .is_none()
+    {
+        return Err(VaultError::NotFound.into());
+    }
+    Ok(Some(
+        picks
+            .profile_export_picks
+            .store(session, (pending, destination)),
+    ))
+}
+
+/// Writes the prepared export to the place chosen: read back with its key and checked before
+/// it replaces anything.
+#[tauri::command]
+async fn vault_profile_export_picked(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfilePickRequest,
+) -> CommandResult<SavedProfileExport> {
+    let store = store.pin();
+    let (pending, destination) = picks
+        .profile_export_picks
+        .take(request.pick_id, picks.session())
+        .ok_or(VaultError::NotFound)?;
+    let options = vault::ExportOptions {
+        include_history: pending.include_history,
+    };
+    if let Ok(path) = destination.clone().into_path() {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        return run_blocking(store.arc(), move |store| {
+            let report = store.export_profile_atomic(
+                pending.profile_id,
+                options,
+                pending.secret.as_secret(),
+                &path,
+                now_ms(),
+            )?;
+            Ok(SavedProfileExport {
+                name,
+                bytes: std::fs::metadata(&path).ok().map(|metadata| metadata.len()),
+                summary: ProfileExportSummary::from(&report),
+            })
+        })
+        .await;
+    }
+    // Android content providers give a document, not a path: it is opened for reading and
+    // writing, written, and read back in place. (A failure may leave the document empty:
+    // nothing is renamed over it, so nothing earlier survives there.)
+    let place = destination.to_string();
+    run_blocking(store.arc(), move |store| {
+        // Every refusal first: opening the document empties it.
+        store.check_export(pending.profile_id, pending.secret.as_secret())?;
+        let mut options_open = OpenOptions::new();
+        options_open
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true);
+        let opening = Opening::new(store.idle());
+        let mut file = app
+            .fs()
+            .open(destination, options_open)
+            .map_err(|_| VaultError::Storage)?;
+        drop(opening);
+        let report = store.export_profile_to_open_file(
+            pending.profile_id,
+            options,
+            pending.secret.as_secret(),
+            &mut file,
+            &place,
+            now_ms(),
+        )?;
+        let bytes = file.metadata().ok().map(|metadata| metadata.len());
+        Ok(SavedProfileExport {
+            name: None,
+            bytes,
+            summary: ProfileExportSummary::from(&report),
+        })
+    })
+    .await
+}
+
+/// Asks which handover file to read (#360). Nothing is read until the patient gives its key.
+#[tauri::command]
+async fn vault_profile_import_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let session = picks.session();
+    // Only into a vault that can take it.
+    run_blocking(store.arc(), |store| match store.snapshot()?.recovery {
+        None => Ok(()),
+        Some(_) => Err(VaultError::RecoveryMode),
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    // No filter: a phone's picker filters by file type, and a handover file has none it knows.
+    let source =
+        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_file())
+            .await
+            .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(source) = source else {
+        return Ok(None);
+    };
+    if picks.session() != session {
+        return Err(VaultError::Locked.into());
+    }
+    Ok(Some(picks.profile_imports.store(session, source)))
+}
+
+/// A handover file opened for reading and seeking: a regular file, opened without following a
+/// link or waiting on a pipe or a device, or the document an Android provider gives.
+fn open_profile_import_source(
+    app: &tauri::AppHandle,
+    source: tauri_plugin_fs::FilePath,
+) -> Result<std::io::BufReader<std::fs::File>, VaultError> {
+    if let Ok(path) = source.clone().into_path() {
+        return vault::open_regular_read(&path)
+            .map(std::io::BufReader::new)
+            .map_err(|_| VaultError::Invalid);
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    app.fs()
+        .open(source, options)
+        .map(std::io::BufReader::new)
+        .map_err(|_| VaultError::Invalid)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportKeyRequest {
+    pick_id: Uuid,
+}
+
+/// Whether the chosen file opens with a generated key or a typed passphrase, from its header
+/// alone: so that the screen asks for the right one. Says "newer" for a file from a newer
+/// myCarlos, and `invalid` for anything that is not a handover file.
+#[tauri::command]
+async fn vault_profile_import_key_kind(
+    app: tauri::AppHandle,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportKeyRequest,
+) -> CommandResult<&'static str> {
+    let source = picks
+        .profile_imports
+        .peek_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = open_profile_import_source(&app, source)?;
+        match vault::package_key_kind(file)? {
+            vault::PackageKeyKind::Key => Ok("key"),
+            vault::PackageKeyKind::Passphrase => Ok("passphrase"),
+        }
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(|error: VaultError| error.into())
+}
+
+/// What opens a file, as typed: a key is read (case, spaces and dashes do not matter) and its
+/// check characters catch a typo before anything is tried; a recovery key typed here is said
+/// to be one. The distinct codes are for the screen to word; their message is the generic one
+/// until it does.
+enum ProfileImportSecretValue {
+    Key(Zeroizing<[u8; 16]>),
+    Passphrase(Zeroizing<String>),
+}
+
+impl ProfileImportSecretValue {
+    /// The key or the passphrase a patient typed for a handover file: exactly one.
+    fn parse(key: Option<String>, passphrase: Option<String>) -> Result<Self, PublicError> {
+        match (key, passphrase) {
+            (Some(text), None) => {
+                let text = Zeroizing::new(text);
+                vault::parse_package_key(&text)
+                    .map(Self::Key)
+                    .map_err(|error| {
+                        let mut public = PublicError::from(VaultError::Invalid);
+                        public.code = match error {
+                            vault::PackageError::RecoveryKeyEntered => {
+                                "package_key_is_recovery_key"
+                            }
+                            _ => "package_key_typo",
+                        };
+                        public
+                    })
+            }
+            (None, Some(passphrase)) => Ok(Self::Passphrase(Zeroizing::new(passphrase))),
+            _ => Err(VaultError::Invalid.into()),
+        }
+    }
+
+    fn as_secret(&self) -> vault::PackageSecret<'_> {
+        match self {
+            Self::Key(key) => vault::PackageSecret::Key(key),
+            Self::Passphrase(passphrase) => vault::PackageSecret::Passphrase(passphrase),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportInspectRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    passphrase: Option<String>,
+}
+
+/// A person this vault already holds, from the same file or the same documents.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileAlreadyHere {
+    profile_id: Uuid,
+    /// "package" (the same file) or "content" (the same original PDFs).
+    by: &'static str,
+    matching_documents: usize,
+}
+
+impl From<vault::AlreadyHere> for ProfileAlreadyHere {
+    fn from(found: vault::AlreadyHere) -> Self {
+        Self {
+            profile_id: found.profile_id,
+            by: match found.by {
+                vault::DuplicateBy::Package => "package",
+                vault::DuplicateBy::Content => "content",
+            },
+            matching_documents: found.matching_documents,
+        }
+    }
+}
+
+/// What a handover file holds, as its person's label and counts. Names no document.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileImportPreview {
+    exported_at_ms: u64,
+    display_name: String,
+    full_name: Option<String>,
+    birth_date: Option<String>,
+    documents: usize,
+    hidden: usize,
+    folders: usize,
+    ai_answers: usize,
+    with_clinic_evidence: usize,
+    history_entries: usize,
+    plaintext_bytes: u64,
+    already_here: Option<ProfileAlreadyHere>,
+}
+
+/// Opens the chosen file with its key and says what it holds and whether this vault has it.
+/// Refuses a file that is cut short, altered or extended, or from a newer myCarlos. Nothing is
+/// written. The pick stays for `vault_profile_import`.
+#[tauri::command]
+async fn vault_profile_import_inspect(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportInspectRequest,
+) -> CommandResult<ProfileImportPreview> {
+    let store = store.pin();
+    let source = picks
+        .profile_imports
+        .peek_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
+    run_blocking(store.arc(), move |store| {
+        let file = open_profile_import_source(&app, source)?;
+        let preview = store.inspect_profile_package(file, secret.as_secret())?;
+        Ok(ProfileImportPreview {
+            exported_at_ms: preview.exported_at_ms,
+            display_name: preview.display_name,
+            full_name: preview.full_name,
+            birth_date: preview.birth_date,
+            documents: preview.documents,
+            hidden: preview.hidden,
+            folders: preview.folders,
+            ai_answers: preview.ai_answers,
+            with_clinic_evidence: preview.with_clinic_evidence,
+            history_entries: preview.history_entries,
+            plaintext_bytes: preview.plaintext_bytes,
+            already_here: preview.already_here.map(ProfileAlreadyHere::from),
+        })
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileImportRequest {
+    pick_id: Uuid,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    passphrase: Option<String>,
+    /// What to call the person here; the file's label when none.
+    #[serde(default)]
+    display_name: Option<String>,
+    /// Make the person although this vault already has them.
+    #[serde(default)]
+    allow_duplicate: bool,
+}
+
+/// What an import did, in counts that name no document, and the receipt code the source can
+/// recompute from the file and its key.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileImportOutcome {
+    /// "imported", or "alreadyHere" (nothing was written).
+    status: &'static str,
+    profile_id: Option<Uuid>,
+    documents: usize,
+    folders: usize,
+    hidden: usize,
+    ai_answers: usize,
+    ai_answers_dropped: usize,
+    evidence_kept: usize,
+    evidence_dropped: usize,
+    history_entries: usize,
+    receipt_code: Option<String>,
+    already_here: Option<ProfileAlreadyHere>,
+}
+
+/// Makes a person from the chosen file: staged, re-encrypted under this vault's keys, verified,
+/// published and committed together, or not at all.
+#[tauri::command]
+async fn vault_profile_import(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileImportRequest,
+) -> CommandResult<ProfileImportOutcome> {
+    let store = store.pin();
+    // The secret is read first: a key that is mistyped is told so with the pick still there to
+    // try again, and the pick is spent only by a try that goes ahead. The patient may have been
+    // a while at the preview, so it keeps as long as the preparation of an export does.
+    let secret = ProfileImportSecretValue::parse(request.key, request.passphrase)?;
+    let source = picks
+        .profile_imports
+        .take_within(request.pick_id, picks.session(), TEXT_TICKET_TTL)
+        .ok_or(VaultError::NotFound)?;
+    let options = vault::ImportOptions {
+        display_name: request.display_name,
+        allow_duplicate: request.allow_duplicate,
+    };
+    run_blocking(store.arc(), move |store| {
+        let file = open_profile_import_source(&app, source)?;
+        let result = store.import_profile_package(file, secret.as_secret(), &options, now_ms())?;
+        Ok(match result {
+            vault::ImportResult::Imported(done) => ProfileImportOutcome {
+                status: "imported",
+                profile_id: Some(done.profile_id),
+                documents: done.documents,
+                folders: done.folders,
+                hidden: done.hidden,
+                ai_answers: done.ai_answers,
+                ai_answers_dropped: done.ai_answers_dropped,
+                evidence_kept: done.evidence_kept,
+                evidence_dropped: done.evidence_dropped,
+                history_entries: done.history_entries,
+                receipt_code: Some(done.receipt_code),
+                already_here: None,
+            },
+            vault::ImportResult::AlreadyHere(found) => ProfileImportOutcome {
+                status: "alreadyHere",
+                profile_id: None,
+                documents: 0,
+                folders: 0,
+                hidden: 0,
+                ai_answers: 0,
+                ai_answers_dropped: 0,
+                evidence_kept: 0,
+                evidence_dropped: 0,
+                history_entries: 0,
+                receipt_code: None,
+                already_here: Some(found.into()),
+            },
+        })
+    })
+    .await
+}
+
 /// Asks which backup to restore. Only while no vault is open.
 #[tauri::command]
 async fn vault_restore_pick(
@@ -4776,6 +5409,36 @@ struct ReceivedAcceptOutcome {
     skipped_duplicates: Vec<String>,
     /// Files that are not PDF documents: not added, and forgotten.
     not_pdf: Vec<String>,
+    /// Files that could not be opened when the vault was open (moved, renamed or deleted while it
+    /// was locked, or not a regular file): not added, and forgotten, so one gone file never holds
+    /// back the others.
+    unreadable: Vec<String>,
+}
+
+/// How opening one received file went, for the batch.
+enum ReceivedOpen {
+    Source(ImportSource),
+    NotPdf,
+    Unreadable,
+}
+
+/// Sorts the opening of one received file. Opening and reading the start of the file is all
+/// that has happened to it, so a file that is not a PDF, that is gone or not a regular file, or
+/// that cannot be read (a permission refused or an I/O error: on Android 11 and older a
+/// `content://` grant ends with the activity that received it, while the process lives on) is a
+/// problem with that file alone: it is named and forgotten, and never holds back the others.
+/// Anything else (the vault) fails the batch and every file keeps waiting.
+fn sort_received_open(
+    opened: Result<ImportSource, VaultError>,
+) -> Result<ReceivedOpen, VaultError> {
+    match opened {
+        Ok(source) => Ok(ReceivedOpen::Source(source)),
+        Err(VaultError::NotPdf) => Ok(ReceivedOpen::NotPdf),
+        Err(VaultError::NotFound | VaultError::Invalid | VaultError::Storage) => {
+            Ok(ReceivedOpen::Unreadable)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
@@ -4787,6 +5450,94 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
     ReceivedState {
         files: received.list(),
         notice: received.take_notice(),
+    }
+}
+
+/// A received file's reader that notes it when a read fails (a sector going bad on a share or a
+/// USB drive, an Android provider failing mid-stream), so the import that read it can name that
+/// file. The error itself passes through unchanged.
+struct NotedRead {
+    inner: Box<dyn std::io::Read + Send>,
+    failed: Arc<AtomicBool>,
+}
+
+impl std::io::Read for NotedRead {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf);
+        // An interrupted read is retried by the reader of the import and says nothing about the
+        // file, so it is not a failure.
+        if read
+            .as_ref()
+            .is_err_and(|error| error.kind() != std::io::ErrorKind::Interrupted)
+        {
+            self.failed.store(true, Ordering::SeqCst);
+        }
+        read
+    }
+}
+
+/// Adds the received files to Shared with me, each on its own account: a file that is not a PDF,
+/// that cannot be opened (see `sort_received_open`), or whose reading fails part-way (a read error
+/// inside the import, noted by `NotedRead`) is named and forgotten, and the others are still
+/// added. Anything that is not the file's (the vault locked, in recovery mode, out of space) fails
+/// the batch and every file keeps waiting. `open` opens one file as an import source.
+fn accept_received_batch(
+    store: &VaultStore,
+    files: Vec<(Uuid, received::ReceivedFile)>,
+    mut open: impl FnMut(received::ReceivedFile) -> Result<ImportSource, VaultError>,
+) -> Result<ReceivedAcceptOutcome, VaultError> {
+    let shared = store.shared_profile()?;
+    let mut not_pdf = Vec::new();
+    let mut unreadable = Vec::new();
+    let mut remaining = files;
+    loop {
+        let mut sources = Vec::with_capacity(remaining.len());
+        let mut notes: Vec<Arc<AtomicBool>> = Vec::with_capacity(remaining.len());
+        let mut kept = Vec::with_capacity(remaining.len());
+        {
+            let _opening = Opening::new(store.idle());
+            for (id, file) in remaining {
+                let name = file.name.clone();
+                match sort_received_open(open(file.clone()))? {
+                    ReceivedOpen::Source(source) => {
+                        let failed = Arc::new(AtomicBool::new(false));
+                        sources.push(ImportSource {
+                            display_name: source.display_name,
+                            reader: Box::new(NotedRead {
+                                inner: source.reader,
+                                failed: Arc::clone(&failed),
+                            }),
+                        });
+                        notes.push(failed);
+                        kept.push((id, file));
+                    }
+                    ReceivedOpen::NotPdf => not_pdf.push(name),
+                    ReceivedOpen::Unreadable => unreadable.push(name),
+                }
+            }
+        }
+        match store.import_from(shared, Vec::new(), sources, now_ms(), "shared") {
+            Ok(outcome) => {
+                return Ok(ReceivedAcceptOutcome {
+                    imported: outcome.imported,
+                    skipped_duplicates: outcome.skipped_duplicates,
+                    not_pdf,
+                    unreadable,
+                })
+            }
+            // A source that failed to read is that file's fault: name it, forget it, and add the
+            // rest (the import added nothing, so they are opened again).
+            Err(error) => match notes
+                .iter()
+                .position(|failed| failed.load(Ordering::SeqCst))
+            {
+                Some(at) => {
+                    unreadable.push(kept.remove(at).1.name);
+                    remaining = kept;
+                }
+                None => return Err(error),
+            },
+        }
     }
 }
 
@@ -4815,8 +5566,9 @@ fn received_discard(
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
-/// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
-/// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
+/// file arrives while the vault is open. A file that is not a PDF, or that can no longer be
+/// opened (moved or deleted while the vault was locked), is not added and is forgotten, and named
+/// in the outcome. When anything else fails, every file keeps waiting for the next ask.
 #[tauri::command]
 async fn received_accept(
     app: tauri::AppHandle,
@@ -4837,6 +5589,7 @@ async fn received_accept(
             imported: Vec::new(),
             skipped_duplicates: Vec::new(),
             not_pdf: Vec::new(),
+            unreadable: Vec::new(),
         });
     }
     let taken = received
@@ -4844,26 +5597,7 @@ async fn received_accept(
         .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     let files = taken.clone();
     let result = run_blocking(store.arc(), move |store| {
-        let shared = store.shared_profile()?;
-        let mut sources = Vec::with_capacity(files.len());
-        let mut not_pdf = Vec::new();
-        {
-            let _opening = Opening::new(store.idle());
-            for (_, file) in files {
-                let name = file.name.clone();
-                match open_received_source(&app, file) {
-                    Ok(source) => sources.push(source),
-                    Err(VaultError::NotPdf) => not_pdf.push(name),
-                    Err(error) => return Err(error),
-                }
-            }
-        }
-        let outcome = store.import_from(shared, Vec::new(), sources, now_ms(), "shared")?;
-        Ok(ReceivedAcceptOutcome {
-            imported: outcome.imported,
-            skipped_duplicates: outcome.skipped_duplicates,
-            not_pdf,
-        })
+        accept_received_batch(store, files, |file| open_received_source(&app, file))
     })
     .await;
     match result {
@@ -5885,7 +6619,11 @@ async fn vault_hide_unavailable_records(
 ) -> CommandResult<Vec<Uuid>> {
     let store = store.pin();
     run_blocking(store.arc(), move |store| {
-        store.hide_unavailable_records(&request.confirmed, now_ms())
+        store.hide_unavailable_records_covering(
+            &request.confirmed,
+            request.hidden_people_documents,
+            now_ms(),
+        )
     })
     .await
     .map_err(|error| match error.code {
@@ -6317,6 +7055,42 @@ async fn vault_unhide_record(
     let store = store.pin();
     run_blocking(store.arc(), move |store| {
         store.unhide_record(request.record_id)
+    })
+    .await
+}
+
+/// Hides a whole person (#360): one flag, one history entry, nothing deleted. Whatever the
+/// AI helper holds for their documents is forgotten, as for one hidden document.
+#[tauri::command]
+async fn vault_hide_profile(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ProfileIdRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let picks = Arc::clone(picks.inner());
+    run_blocking(store.arc(), move |store| {
+        // Forgotten only once the person is hidden: a refused hide changes nothing.
+        let ids = store.profile_record_ids(request.profile_id);
+        store.hide_profile(request.profile_id, now_ms())?;
+        for record_id in ids {
+            picks.forget_texts_for(record_id);
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// Brings a hidden person back (#360), and says which documents arrived for them while they
+/// were hidden and wait in Shared with me, so the screen can offer to move them back.
+#[tauri::command]
+async fn vault_restore_profile(
+    store: State<'_, StoreHandle>,
+    request: ProfileIdRequest,
+) -> CommandResult<Vec<vault::ArrivedWhileHidden>> {
+    let store = store.pin();
+    run_blocking(store.arc(), move |store| {
+        store.restore_profile(request.profile_id)
     })
     .await
 }
@@ -6802,6 +7576,7 @@ pub fn run() {
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
+            vault_send_test_notice,
             vault_set_automatic_document_checks,
             vault_request_device_approval,
             vault_restart_device_approval,
@@ -6818,6 +7593,13 @@ pub fn run() {
             vault_backup_size,
             vault_left_out_records,
             vault_backup_picked,
+            vault_profile_export_prepare,
+            vault_profile_export_pick,
+            vault_profile_export_picked,
+            vault_profile_import_pick,
+            vault_profile_import_key_kind,
+            vault_profile_import_inspect,
+            vault_profile_import,
             vault_restore_pick,
             vault_restore_inspect,
             vault_restore,
@@ -6866,6 +7648,8 @@ pub fn run() {
             vault_unlock_pdf,
             vault_hide_record,
             vault_unhide_record,
+            vault_hide_profile,
+            vault_restore_profile,
             vault_ai_result_save,
             vault_ai_results,
             vault_ai_result_read,
@@ -10475,6 +11259,232 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn one_received_file_that_is_gone_or_not_a_pdf_never_holds_back_the_others() {
+        let source = || ImportSource {
+            display_name: "FAKE.pdf".into(),
+            reader: Box::new(std::io::empty()),
+        };
+        assert!(matches!(
+            sort_received_open(Ok(source())),
+            Ok(ReceivedOpen::Source(_))
+        ));
+        assert!(matches!(
+            sort_received_open(Err(VaultError::NotPdf)),
+            Ok(ReceivedOpen::NotPdf)
+        ));
+        // Moved or deleted while the vault was locked, no longer a regular file, or unreadable
+        // (a dead `content://` grant, a refused permission, an I/O error): that file only.
+        for gone in [
+            VaultError::NotFound,
+            VaultError::Invalid,
+            VaultError::Storage,
+        ] {
+            assert!(matches!(
+                sort_received_open(Err(gone)),
+                Ok(ReceivedOpen::Unreadable)
+            ));
+        }
+        // The vault failing is not the file's fault: the batch fails and every file keeps
+        // waiting.
+        for failure in [VaultError::Locked, VaultError::RecoveryMode] {
+            assert!(sort_received_open(Err(failure)).is_err());
+        }
+    }
+
+    /// A reader of one received file for the tests: its bytes, and optionally an error after the
+    /// first read (a bad sector, a provider failing mid-stream).
+    struct Bytes {
+        data: std::io::Cursor<Vec<u8>>,
+        fail_after_first: bool,
+        read_once: bool,
+        /// The first read is interrupted (and succeeds when tried again).
+        interrupt_first: bool,
+    }
+
+    impl std::io::Read for Bytes {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.interrupt_first && !self.read_once {
+                self.read_once = true;
+                return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
+            }
+            if self.fail_after_first && self.read_once {
+                return Err(std::io::Error::other("FAKE bad sector"));
+            }
+            self.read_once = true;
+            let wanted = if self.fail_after_first {
+                buf.len().min(8)
+            } else {
+                buf.len()
+            };
+            self.data.read(&mut buf[..wanted])
+        }
+    }
+
+    fn received_file(name: &str) -> (Uuid, received::ReceivedFile) {
+        (
+            Uuid::new_v4(),
+            received::ReceivedFile {
+                source: received::ReceivedSource::Path(format!("/FAKE/{name}").into()),
+                name: name.to_owned(),
+            },
+        )
+    }
+
+    #[test]
+    fn a_batch_adds_the_good_files_and_names_each_one_that_cannot_be_taken() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_first.pdf"),
+            received_file("FAKE_not_a_pdf.jpg"),
+            received_file("FAKE_gone.pdf"),
+            received_file("FAKE_bad_sector.pdf"),
+            received_file("FAKE_second.pdf"),
+        ];
+        let opened = std::cell::RefCell::new(Vec::new());
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.borrow_mut().push(file.name.clone());
+            let bytes = |fail_after_first: bool| {
+                Ok(ImportSource {
+                    display_name: file.name.clone(),
+                    reader: Box::new(Bytes {
+                        data: std::io::Cursor::new(
+                            format!("%PDF-1.4 FAKE {} {}", file.name, "x".repeat(4096))
+                                .into_bytes(),
+                        ),
+                        fail_after_first,
+                        read_once: false,
+                        interrupt_first: false,
+                    }),
+                })
+            };
+            match file.name.as_str() {
+                "FAKE_not_a_pdf.jpg" => Err(VaultError::NotPdf),
+                "FAKE_gone.pdf" => Err(VaultError::NotFound),
+                "FAKE_bad_sector.pdf" => bytes(true),
+                _ => bytes(false),
+            }
+        })
+        .unwrap();
+        // Both good files were added, though one failed after the others had been read.
+        assert_eq!(outcome.imported.len(), 2);
+        assert_eq!(outcome.not_pdf, ["FAKE_not_a_pdf.jpg"]);
+        assert_eq!(outcome.unreadable, ["FAKE_gone.pdf", "FAKE_bad_sector.pdf"]);
+        assert!(outcome.skipped_duplicates.is_empty());
+        let snapshot = store.snapshot().unwrap();
+        let names: Vec<_> = snapshot
+            .records
+            .iter()
+            .map(|record| record.display_name.as_str())
+            .collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"FAKE_first.pdf") && names.contains(&"FAKE_second.pdf"));
+        // The good files were opened again for the second attempt, the others not.
+        let opened = opened.into_inner();
+        assert_eq!(
+            opened.iter().filter(|name| name.contains("first")).count(),
+            2
+        );
+        assert_eq!(
+            opened.iter().filter(|name| name.contains("gone")).count(),
+            1
+        );
+    }
+
+    /// A reader of a small PDF-looking file for the tests of the batch.
+    fn small_source(name: &str, fail_after_first: bool, interrupt_first: bool) -> ImportSource {
+        ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(Bytes {
+                data: std::io::Cursor::new(
+                    format!("%PDF-1.4 FAKE {name} {}", "y".repeat(4096)).into_bytes(),
+                ),
+                fail_after_first,
+                read_once: false,
+                interrupt_first,
+            }),
+        }
+    }
+
+    #[test]
+    fn two_files_that_fail_to_read_are_both_named_and_an_interrupted_read_is_not_a_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_interrupted.pdf"),
+            received_file("FAKE_bad_one.pdf"),
+            received_file("FAKE_good.pdf"),
+            received_file("FAKE_bad_two.pdf"),
+        ];
+        let outcome = accept_received_batch(&store, files, |file| {
+            Ok(small_source(
+                &file.name,
+                file.name.contains("bad"),
+                file.name.contains("interrupted"),
+            ))
+        })
+        .unwrap();
+        // The file whose read was interrupted once and then went on is added, not forgotten
+        // because another file failed later.
+        let names: Vec<_> = store
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .map(|record| record.display_name)
+            .collect();
+        assert_eq!(outcome.imported.len(), 2, "{names:?}");
+        assert!(names.contains(&"FAKE_interrupted.pdf".to_owned()));
+        assert!(names.contains(&"FAKE_good.pdf".to_owned()));
+        assert_eq!(outcome.unreadable, ["FAKE_bad_one.pdf", "FAKE_bad_two.pdf"]);
+    }
+
+    #[test]
+    fn a_read_that_failed_followed_by_a_vault_failure_fails_the_batch_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_bad.pdf"),
+            received_file("FAKE_good.pdf"),
+        ];
+        let opened = std::cell::Cell::new(0);
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.set(opened.get() + 1);
+            // The second attempt (after the bad file was named) finds the vault locked.
+            if opened.get() == 3 {
+                store.lock();
+            }
+            Ok(small_source(&file.name, file.name.contains("bad"), false))
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn a_batch_that_fails_for_the_vault_fails_whole_and_every_file_keeps_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // Locked: nothing is opened, nothing is named, and the caller restores every file.
+        let outcome = accept_received_batch(&store, vec![received_file("FAKE_a.pdf")], |_| {
+            panic!("nothing is opened while the vault is locked")
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        // Unlocked again, a vault error from the open itself also fails the batch.
+        store.unlock(PASSWORD).unwrap();
+        let outcome = accept_received_batch(
+            &store,
+            vec![received_file("FAKE_a.pdf"), received_file("FAKE_b.pdf")],
+            |_| Err(VaultError::Locked),
+        );
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        assert!(store.snapshot().unwrap().records.is_empty());
+    }
+
+    #[test]
     fn the_photo_commands_are_wired_as_the_renderer_calls_them() {
         let source = include_str!("lib.rs");
         let body = |command: &str| {
@@ -11077,6 +12087,8 @@ mod native_localization_tests {
             VaultError::AiResultsFull,
             VaultError::AiSummaryTooLarge,
             VaultError::WeakPassphrase,
+            VaultError::PackagePassphraseTriesUsed,
+            VaultError::LastVisibleProfile,
             VaultError::ImportBatchLimit,
             VaultError::NotPdf,
             VaultError::PdfLocked,
@@ -11330,6 +12342,7 @@ mod audit_history_ipc_tests {
                 later,
                 complete,
                 every_event_shown: complete,
+                about_hidden_people: 0,
             })
         };
         let partial = shown(entries(), Vec::new(), false);
@@ -11405,6 +12418,7 @@ mod audit_history_ipc_tests {
         assert_eq!(
             top,
             [
+                "aboutHiddenPeople",
                 "checkedFromMs",
                 "checkedUntilMs",
                 "complete",
@@ -11465,7 +12479,8 @@ mod audit_history_ipc_tests {
                 "complete": false,
                 "checkedUntilMs": null,
                 "checkedFromMs": null,
-                "everyEventShown": false
+                "everyEventShown": false,
+                "aboutHiddenPeople": 0
             })
         );
         store.lock();

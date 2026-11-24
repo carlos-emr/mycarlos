@@ -65,6 +65,21 @@ const issueLines = (issues: NonNullable<DocumentCheck["issues"]>) =>
     }),
   );
 
+/** Documents that arrived for a person who is hidden and wait in Shared with me (#360,
+ * section 8.6): said per clinic and never naming the person, so that a glance at the screen
+ * does not show who is hidden. */
+const hiddenArrivalLines = ({ forHidden }: DocumentCheck) => {
+  const perClinic = new Map<string, number>();
+  for (const clinic of forHidden ?? [])
+    perClinic.set(clinic, (perClinic.get(clinic) ?? 0) + 1);
+  return [...perClinic].map(([clinic, count]) =>
+    // A link with no clinic name yet is said without one, never as an empty name.
+    clinic
+      ? t("portal.arrivedForHidden", { clinic, count })
+      : t("portal.arrivedForHiddenNoClinic", { count }),
+  );
+};
+
 /** Saved documents whose pickup the portal has not confirmed yet. */
 const pendingLines = ({ receiptsPending }: DocumentCheck) =>
   receiptsPending > 0
@@ -79,6 +94,7 @@ export function documentCheckText(result: DocumentCheck): string {
       added: result.added,
       refused: result.refused,
     }),
+    ...hiddenArrivalLines(result),
     ...issueLines(issues),
     ...pendingLines(result),
   ].join(" ");

@@ -10,7 +10,13 @@ import {
   type UiText,
   type MessageKey,
 } from "../i18n";
-import type { BackupSize, PendingRecording, PersonDetails } from "../vault";
+import type {
+  ArrivedWhileHidden,
+  BackupSize,
+  PatientProfile,
+  PendingRecording,
+  PersonDetails,
+} from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
@@ -47,12 +53,14 @@ import {
   RecoveryKeySetup,
   type OpeningRecoverySetup,
 } from "./RecoveryKeySetup";
+import { ProfileExportDialog, ProfileImportDialog } from "./ProfileHandover";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
+import { ArrivedWhileHiddenDialog } from "./HiddenPeople";
 import { RecordDetails } from "./RecordDetails";
 import { AndroidDocumentReader } from "./AndroidDocumentReader";
 import { DocumentReader } from "./DocumentReader";
@@ -151,6 +159,7 @@ export function VaultLibrary({
   onOpeningRecoverySetupShown,
   onOfferClosed,
   onUnfinishedRecoveryKey,
+  onUnfinishedHandover,
   canPrint = false,
   keyboardHints = true,
   computer = true,
@@ -198,6 +207,8 @@ export function VaultLibrary({
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
+  /** A handover's key is shown and unused (true), or the handover ended (false). */
+  onUnfinishedHandover?: (unfinished: boolean) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
   /** Whether to show keyboard-only instructions (Tab, Escape): false on
@@ -463,6 +474,49 @@ export function VaultLibrary({
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
+  // Handing a person's records over, or adding one from a file (#360).
+  const [handover, setHandover] = useState<"export" | "import" | null>(null);
+  // Documents that came in a handover file stand on what the file says until a link of this
+  // vault to the same clinic holds its signing key (#360): say when that happens.
+  const claimedIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const claimed = new Set(
+      snapshot.records
+        .filter((record) => record.fileSaysCheckedAtMs !== undefined)
+        .map((record) => record.id),
+    );
+    const before = claimedIds.current;
+    claimedIds.current = claimed;
+    if (!before) return;
+    const perClinic = new Map<string, number>();
+    for (const record of snapshot.records)
+      if (before.has(record.id) && record.verifiedClinicName)
+        perClinic.set(
+          record.verifiedClinicName,
+          (perClinic.get(record.verifiedClinicName) ?? 0) + 1,
+        );
+    if (perClinic.size === 0) return;
+    setNoticeRef.current(
+      deferredText(() =>
+        [...perClinic]
+          .map(([clinic, count]) =>
+            translateNow("handover.nowVerified", { clinic, count }),
+          )
+          .join(" "),
+      ),
+    );
+  }, [snapshot.records]);
+  // A hidden person whose records are being handed over: the dialog offers only them.
+  const [handoverHidden, setHandoverHidden] = useState<PatientProfile | null>(
+    null,
+  );
+  // Documents that arrived for a person while they were hidden, offered back once they are
+  // restored (#360, section 8.6).
+  const [arrivedFor, setArrivedFor] = useState<{
+    profileId: string;
+    name: string;
+    arrived: ArrivedWhileHidden[];
+  } | null>(null);
   const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
     null,
   );
@@ -1608,7 +1662,9 @@ export function VaultLibrary({
     (record) => !record.available && record.hidden?.reason !== "damaged",
   );
   const damagedIds = damaged.map((record) => record.id);
-  const damagedCount = damagedIds.length;
+  // Damaged documents of hidden people are in no list: counted, never named (#360).
+  const hiddenPeopleDamaged = snapshot.hiddenPeopleDamaged ?? 0;
+  const damagedCount = damagedIds.length + hiddenPeopleDamaged;
   const profileName = (id: string) =>
     id === sharedProfileId
       ? translateNow("interface.LibrarySidebar.sharedWithMe")
@@ -1620,7 +1676,10 @@ export function VaultLibrary({
       let removed: string[];
       try {
         // The vault removes only what this screen showed as damaged.
-        removed = await bridge.hideUnavailableRecords(damagedIds);
+        removed = await bridge.hideUnavailableRecords(
+          damagedIds,
+          hiddenPeopleDamaged,
+        );
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -1666,6 +1725,39 @@ export function VaultLibrary({
           translateNow("interface.notice.hidden", { name: record.displayName }),
         ),
       );
+    });
+  };
+  // A whole person is hidden or restored in one step (#360): nothing is deleted, and the
+  // person's documents, folders and AI answers leave or rejoin the library together.
+  // Moved on when a hide that came from the handover dialog has finished: Security's Hand records
+  // over button takes the focus then (it is disabled while the hide runs).
+  const [handoverFocus, setHandoverFocus] = useState(0);
+  const hidePerson = (id: string, afterHide?: () => void) => {
+    const name = profileName(id);
+    void run(async () => {
+      await bridge.hideProfile!(id);
+      setSelectedIds([]);
+      setActiveRecordId(null);
+      await refresh();
+      afterHide?.();
+      // Said to a screen reader (the polite line the library keeps for news), with no line on the
+      // screen: the person leaving the lists is what shows.
+      setSharedAnnouncement(
+        deferredText(() => translateNow("hiddenPeople.hidden", { name })),
+      );
+    });
+  };
+  const restorePerson = (id: string) => {
+    const name =
+      snapshot.hiddenProfiles?.find((person) => person.id === id)
+        ?.displayName ?? "";
+    void run(async () => {
+      const arrived = await bridge.restoreProfile!(id);
+      await refresh();
+      setSharedAnnouncement(
+        deferredText(() => translateNow("hiddenPeople.restored", { name })),
+      );
+      if (arrived.length > 0) setArrivedFor({ profileId: id, name, arrived });
     });
   };
   const unhideRecord = (record: VaultRecord) => {
@@ -2896,6 +2988,22 @@ export function VaultLibrary({
                 sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
+                onHandOver={() => setHandover("export")}
+                focusHandover={handoverFocus}
+                onAddFromFile={() => setHandover("import")}
+                hiddenPeople={snapshot.hiddenProfiles}
+                onHidePerson={bridge.hideProfile ? hidePerson : undefined}
+                onRestorePerson={
+                  bridge.restoreProfile ? restorePerson : undefined
+                }
+                onHandOverHidden={(person) => {
+                  setHandoverHidden({
+                    id: person.id,
+                    displayName: person.displayName,
+                    createdAtMs: 0,
+                  });
+                  setHandover("export");
+                }}
                 onBackupSize={backupSize}
                 onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
@@ -2994,6 +3102,63 @@ export function VaultLibrary({
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
+          {arrivedFor && (
+            <ArrivedWhileHiddenDialog
+              name={arrivedFor.name}
+              arrived={arrivedFor.arrived}
+              onLeave={() => setArrivedFor(null)}
+              onMove={() => {
+                const { profileId: to, arrived } = arrivedFor;
+                setArrivedFor(null);
+                moveToPerson(
+                  arrived.map((document) => document.recordId),
+                  to,
+                  null,
+                );
+              }}
+            />
+          )}
+          {handover === "export" && (
+            <ProfileExportDialog
+              bridge={bridge}
+              people={handoverHidden ? [handoverHidden] : people}
+              sizesIn1024s={sizesIn1024s}
+              // On a phone, leaving myCarlos to paste the key elsewhere locks the
+              // vault and ends the key: no Copy there.
+              canCopy={keyboardHints}
+              onUnfinished={onUnfinishedHandover}
+              // A person already hidden cannot be hidden again; otherwise the saved file offers it.
+              onHidePerson={
+                handoverHidden || !bridge.hideProfile
+                  ? undefined
+                  : (id) =>
+                      hidePerson(id, () =>
+                        setHandoverFocus((count) => count + 1),
+                      )
+              }
+              onClose={() => {
+                setHandover(null);
+                setHandoverHidden(null);
+              }}
+              onLocked={() => {
+                setHandover(null);
+                setHandoverHidden(null);
+                void lockAndConceal();
+              }}
+            />
+          )}
+          {handover === "import" && (
+            <ProfileImportDialog
+              bridge={bridge}
+              sizesIn1024s={sizesIn1024s}
+              onClose={() => setHandover(null)}
+              onLocked={() => {
+                setHandover(null);
+                void lockAndConceal();
+              }}
+              onImported={() => void refresh()}
+            />
+          )}
           {renameTarget && (
             <RenameDialog
               target={renameTarget}
@@ -3077,6 +3242,10 @@ export function VaultLibrary({
             !renameTarget &&
             !pendingAction &&
             !shownPhoto &&
+            // The details dialog is later in the page than the player, so left up it would sit
+            // over it: like a photo, a playing video replaces the details, which come back when
+            // the player closes.
+            shownVideo?.recordId !== activeRecord.id &&
             unlocking?.recordId !== activeRecord.id && (
               <RecordDetails
                 record={activeRecord}
@@ -3334,6 +3503,13 @@ export function VaultLibrary({
                 </ul>
               }
             >
+              {hiddenPeopleDamaged > 0 && (
+                <p>
+                  {translateNow("hiddenPeople.damagedToo", {
+                    count: hiddenPeopleDamaged,
+                  })}
+                </p>
+              )}
               <p>
                 {translateNow(
                   "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis",

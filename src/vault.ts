@@ -118,6 +118,10 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** When a handover file SAYS this document's delivery was checked, on the device it came
+   * from (#360). The file's claim, never fact: this vault has not checked it. Present only
+   * while no link of this vault to the same clinic holds the clinic's signing key. */
+  fileSaysCheckedAtMs?: number;
   /** Exact clinic date; empty means not recorded. Never inferred from Date added. */
   clinicServiceDate?: string;
   /** The clinician-approved reading aid filed with this delivery (vault format 10). Reached from
@@ -154,9 +158,33 @@ export interface SnapshotCapture {
   sequence: number;
 }
 
+/** A person who is hidden (#360): Security's Hidden people list shows them and nothing
+ * else does. */
+export interface HiddenProfile {
+  id: string;
+  displayName: string;
+  hiddenAtMs: number;
+  /** All the person's documents, those hidden one by one included. */
+  documents: number;
+}
+
+/** A document that arrived for a person while they were hidden and waits in Shared with
+ * me (#360). */
+export interface ArrivedWhileHidden {
+  recordId: string;
+  displayName: string;
+}
+
 export interface VaultSnapshot {
   capture: SnapshotCapture;
+  /** The people the library shows: a hidden person is not among them. */
   profiles: PatientProfile[];
+  /** The people who are hidden (#360); absent in a fake that has none. */
+  hiddenProfiles?: HiddenProfile[];
+  /** Documents of hidden people whose file is missing (#360): counted, never named. The vault
+   * is read-only until they are dealt with, so the confirmation to hide the damaged
+   * documents says so. */
+  hiddenPeopleDamaged?: number;
   folders: VaultFolder[];
   records: VaultRecord[];
   /** Native compile capability; absent/false keeps the linking flow hidden. */
@@ -270,6 +298,78 @@ export interface SavedBackup {
   bytes: number | null;
 }
 
+/** What a person's export holds, in counts; it names no document (#360). */
+export interface ProfileExportSummary {
+  documents: number;
+  /** Of the documents, hidden by the patient: they arrive hidden. */
+  hidden: number;
+  folders: number;
+  aiAnswers: number;
+  withClinicEvidence: number;
+  /** Hidden as damaged: their file cannot be read, so they are not in it. */
+  leftOutDamaged: number;
+  /** Clinic evidence that would not stand up alone: the document goes without it. */
+  evidenceLeftOut: number;
+  historyEntries: number;
+  plaintextBytes: number;
+}
+
+/** A prepared export: the key it will be made under is shown once. */
+export interface ProfileExportPrepared {
+  exportId: string;
+  /** The generated key, 7 groups of 4; null when the patient typed a passphrase. */
+  generatedKey: string | null;
+  summary: ProfileExportSummary;
+}
+
+/** A saved handover file: its name where the platform says it, its size, and what it holds. */
+export interface SavedProfileExport {
+  name: string | null;
+  bytes: number | null;
+  summary: ProfileExportSummary;
+}
+
+/** A person this vault already holds, from the same handover file or the same documents. */
+export interface ProfileAlreadyHere {
+  profileId: string;
+  /** "package": the same file. "content": the same original PDFs, whatever the file. */
+  by: "package" | "content";
+  matchingDocuments: number;
+}
+
+/** What a handover file holds, from its header, manifest and end: no document is read. */
+export interface ProfileImportPreview {
+  exportedAtMs: number;
+  displayName: string;
+  fullName: string | null;
+  birthDate: string | null;
+  documents: number;
+  hidden: number;
+  folders: number;
+  aiAnswers: number;
+  withClinicEvidence: number;
+  historyEntries: number;
+  plaintextBytes: number;
+  alreadyHere: ProfileAlreadyHere | null;
+}
+
+/** What an import did, in counts; "alreadyHere" means nothing was written. */
+export interface ProfileImportOutcome {
+  status: "imported" | "alreadyHere";
+  profileId: string | null;
+  documents: number;
+  folders: number;
+  hidden: number;
+  aiAnswers: number;
+  aiAnswersDropped: number;
+  evidenceKept: number;
+  evidenceDropped: number;
+  historyEntries: number;
+  /** The short code the source can recompute from the file and its key. */
+  receiptCode: string | null;
+  alreadyHere: ProfileAlreadyHere | null;
+}
+
 /** Today on the patient's own calendar, as `YYYY-MM-DD`. */
 export function localDateText(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -341,6 +441,11 @@ export interface ImportOutcome {
 export interface ReceivedAcceptOutcome extends ImportOutcome {
   /** Names of files that are not PDF documents: not added, and forgotten. */
   notPdf: string[];
+  /** Names of files that could not be opened or read (moved or deleted while
+   * the vault was locked, a permission or connection that ended, a read that
+   * failed part-way): not added, and forgotten, so the person shares them
+   * again. One such file never holds back the others. */
+  unreadable: string[];
 }
 
 /** What a move out of Shared with me did (#61). */
@@ -410,6 +515,9 @@ export interface AuditHistoryView {
    * Native code always sends it; it is optional so that a view without it is
    * read the safe way, with the damage notice and the gap. */
   everyEventShown?: boolean;
+  /** Entries left out for being about a hidden person (#360): counted, never named, and
+   * shown again once the person is restored. */
+  aboutHiddenPeople?: number;
 }
 
 /** An audit event that native code authenticated from the start of the history chain. */
@@ -448,7 +556,11 @@ export interface AuditHistoryEntry {
     | "deliveryFiled"
     | "deliveryReceiptSettled"
     | "readingAidFiled"
-    | "aiResultSaved";
+    | "aiResultSaved"
+    | "profileExported"
+    | "profileHidden"
+    | "profileRestored"
+    | "profileImported";
   name: string | null;
   oldName: string | null;
   from: string[] | null;
@@ -470,6 +582,8 @@ export interface AiResultInfo {
   modelSha256: string;
   createdAtMs: number;
   size: number;
+  /** From a handover file, not this computer's model (#360): the screens say so. */
+  imported?: boolean;
 }
 
 /** Which rules a new passphrase meets, as the vault judges it (#69). */
@@ -526,6 +640,9 @@ export interface VaultBridge {
   }>;
   checkDocuments?(): Promise<{
     added: number;
+    /** The clinic of each new document that was for a person who is hidden and waits in
+     * Shared with me (#360); names no person. */
+    forHidden?: string[];
     refused: number;
     receiptsPending: number;
     issues?: { linkId: string; clinicName: string; code: string }[];
@@ -578,6 +695,38 @@ export interface VaultBridge {
   backupSize(): Promise<BackupSize>;
   /** The records a backup was made without the file of (ids). */
   leftOutRecords(): Promise<string[]>;
+  /** Prepares one person's export (#360): says what it holds and makes the key. Nothing is
+   * written. A typed passphrase is checked at once. */
+  prepareProfileExport(request: {
+    profileId: string;
+    includeHistory: boolean;
+    passphrase?: string;
+  }): Promise<ProfileExportPrepared>;
+  /** Asks where to save a prepared export; null if the picker was cancelled. */
+  pickProfileExportDestination(
+    exportId: string,
+    localDate?: string,
+  ): Promise<string | null>;
+  /** Writes the export to the chosen place, read back and checked before it replaces anything. */
+  saveProfileExportToPicked(pickId: string): Promise<SavedProfileExport>;
+  /** Asks which handover file to read (#360); null if the picker was cancelled. */
+  pickProfileImportSource(): Promise<string | null>;
+  /** Whether the file opens with a generated key or a typed passphrase, from its header. */
+  profileImportKeyKind(pickId: string): Promise<"key" | "passphrase">;
+  /** Opens the file with its key (or passphrase) and says what it holds. Nothing is written. */
+  inspectProfileImport(request: {
+    pickId: string;
+    key?: string;
+    passphrase?: string;
+  }): Promise<ProfileImportPreview>;
+  /** Makes a person from the file, or says nothing was written (already here). */
+  importProfile(request: {
+    pickId: string;
+    key?: string;
+    passphrase?: string;
+    displayName?: string;
+    allowDuplicate?: boolean;
+  }): Promise<ProfileImportOutcome>;
   /** Asks which backup to restore, while no vault is open. */
   pickRestoreSource(): Promise<string | null>;
   /** Opens the chosen backup and says what restoring it would replace. */
@@ -676,6 +825,11 @@ export interface VaultBridge {
    * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
   viewPhoto(recordId: string): Promise<string>;
   /** Hides a document (#71). There is no way to delete one. */
+  /** Hides a whole person (#360): one step, nothing deleted. */
+  hideProfile?(profileId: string): Promise<void>;
+  /** Brings a hidden person back; says which documents arrived for them while they were
+   * hidden and wait in Shared with me. */
+  restoreProfile?(profileId: string): Promise<ArrivedWhileHidden[]>;
   hideRecord(recordId: string): Promise<void>;
   /** Puts a hidden document back. One hidden as damaged only once its file
    * is back. */
@@ -684,7 +838,10 @@ export interface VaultBridge {
    * whose encrypted file is still missing, so the vault leaves recovery
    * mode. Refused when the vault's own list differs. Resolves to the ids
    * hidden. */
-  hideUnavailableRecords(confirmed: string[]): Promise<string[]>;
+  hideUnavailableRecords(
+    confirmed: string[],
+    hiddenPeopleDocuments?: number,
+  ): Promise<string[]>;
   /** Whether a stored PDF may be locked with a password (#54): a scan of its
    * names only, so the details can offer Unlock. */
   isLockedPdf(recordId: string): Promise<boolean>;
@@ -1203,6 +1360,28 @@ export function createVaultBridge(): VaultBridge {
       }),
     backupSize: () => invoke<BackupSize>("vault_backup_size"),
     leftOutRecords: () => invoke<string[]>("vault_left_out_records"),
+    prepareProfileExport: (request) =>
+      invoke<ProfileExportPrepared>("vault_profile_export_prepare", {
+        request,
+      }),
+    pickProfileExportDestination: (exportId, localDate) =>
+      invoke<string | null>("vault_profile_export_pick", {
+        request: { exportId, localDate },
+      }),
+    saveProfileExportToPicked: (pickId) =>
+      invoke<SavedProfileExport>("vault_profile_export_picked", {
+        request: { pickId },
+      }),
+    pickProfileImportSource: () =>
+      invoke<string | null>("vault_profile_import_pick"),
+    profileImportKeyKind: (pickId) =>
+      invoke<"key" | "passphrase">("vault_profile_import_key_kind", {
+        request: { pickId },
+      }),
+    inspectProfileImport: (request) =>
+      invoke<ProfileImportPreview>("vault_profile_import_inspect", { request }),
+    importProfile: (request) =>
+      invoke<ProfileImportOutcome>("vault_profile_import", { request }),
     pickRestoreSource: () =>
       invoke<string | null>("vault_restore_pick", { locale: getLocale() }),
     inspectRestore: (pickId, credential) =>
@@ -1493,13 +1672,19 @@ export function createVaultBridge(): VaultBridge {
       invoke<string>("vault_ai_result_read", {
         request: { recordId, resultId },
       }),
+    hideProfile: (profileId) =>
+      invoke<void>("vault_hide_profile", { request: { profileId } }),
+    restoreProfile: (profileId) =>
+      invoke<ArrivedWhileHidden[]>("vault_restore_profile", {
+        request: { profileId },
+      }),
     hideRecord: (recordId) =>
       invoke<void>("vault_hide_record", { request: { recordId } }),
     unhideRecord: (recordId) =>
       invoke<void>("vault_unhide_record", { request: { recordId } }),
-    hideUnavailableRecords: (confirmed) =>
+    hideUnavailableRecords: (confirmed, hiddenPeopleDocuments = 0) =>
       invoke<string[]>("vault_hide_unavailable_records", {
-        request: { confirmed },
+        request: { confirmed, hiddenPeopleDocuments },
       }),
     reset: (confirmation) =>
       invoke<boolean>("vault_reset", {
