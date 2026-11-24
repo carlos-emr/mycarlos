@@ -109,6 +109,30 @@ describe("Document notice preference", () => {
     ).toBeVisible();
   });
 
+  it("says notices are off in myCarlos, not that the test failed, when native will not show one", async () => {
+    const user = userEvent.setup();
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_send_test_notice") return "notAllowed";
+      return { ...allowed, enabled: true };
+    });
+    render(<NotificationSetting />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: humanText("Show a test notice"),
+      }),
+    );
+    expect(
+      await screen.findByText(
+        humanText(
+          "Notices are turned off in myCarlos. Turn them on, then try again.",
+        ),
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(humanText("The test notice could not be shown.")),
+    ).toBeNull();
+  });
+
   it("keeps the key fact in view and folds the long explanation under More about automatic checks", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,

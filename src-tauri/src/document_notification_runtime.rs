@@ -508,6 +508,8 @@ pub(crate) mod active {
             if !state.enabled || !self.accepting.load(Ordering::Acquire) {
                 return TestNotice::NotAllowed;
             }
+            // `state` stays locked through the OS call on purpose: turning notices off takes the
+            // same lock, so a notice cannot be raised after notices were turned off.
             {
                 let Ok(mut last) = self.last_test.lock() else {
                     return TestNotice::Failed;

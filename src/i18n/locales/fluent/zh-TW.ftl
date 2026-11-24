@@ -2338,3 +2338,4 @@ notifications-testSent = 測試通知已傳送。如果您沒有看到，請檢�
 notifications-testWait = 請等候幾秒鐘後再試一次。
 
 notifications-testFailed = 無法顯示測試通知。
+notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。

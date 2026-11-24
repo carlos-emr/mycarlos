@@ -2591,3 +2591,4 @@ notifications-testSent = Aviso de teste enviado. Se você não o vir, verifique 
 notifications-testWait = Aguarde alguns segundos e tente novamente.
 
 notifications-testFailed = Não foi possível mostrar o aviso de teste.
+notifications-testOff = Os avisos estão desativados no myCarlos. Ative-os e tente novamente.

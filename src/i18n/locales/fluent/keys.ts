@@ -1213,6 +1213,7 @@ export const MESSAGE_KEYS = [
   "notifications.testSent",
   "notifications.testWait",
   "notifications.testFailed",
+  "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
 ] as const;
@@ -2694,6 +2695,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testSent": "notifications-testSent",
   "notifications.testWait": "notifications-testWait",
   "notifications.testFailed": "notifications-testFailed",
+  "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
 } as const satisfies Record<MessageKey, string>;
@@ -4041,6 +4043,7 @@ export interface MessageArgsByKey {
   "notifications.testSent": undefined;
   "notifications.testWait": undefined;
   "notifications.testFailed": undefined;
+  "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
 }

@@ -188,6 +188,9 @@ test("Show a test notice says when Windows is blocking notices, and when to wait
   await setTestNoticeResult(page, "tooSoon");
   await testButton(row).click();
   await expect(row.getByText(en("notifications.testWait"))).toBeVisible();
+  await setTestNoticeResult(page, "notAllowed");
+  await testButton(row).click();
+  await expect(row.getByText(en("notifications.testOff"))).toBeVisible();
   await setTestNoticeResult(page, "failed");
   await testButton(row).click();
   await expect(row.getByText(en("notifications.testFailed"))).toBeVisible();

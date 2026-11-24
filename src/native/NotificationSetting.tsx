@@ -219,9 +219,11 @@ export function NotificationSetting({
             ? t("notifications.testSent")
             : testResult === "tooSoon"
               ? t("notifications.testWait")
-              : testResult === "failed" || testResult === "notAllowed"
-                ? t("notifications.testFailed")
-                : ""}
+              : testResult === "notAllowed"
+                ? t("notifications.testOff")
+                : testResult === "failed"
+                  ? t("notifications.testFailed")
+                  : ""}
         </p>
         {status.permission === "blocked" && (
           <p id={`${id}-blocked`}>{t("notifications.blocked")}</p>

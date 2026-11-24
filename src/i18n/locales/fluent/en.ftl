@@ -2556,3 +2556,4 @@ notifications-testSent = Test notice sent. If you do not see it, check Windows n
 notifications-testWait = Wait a few seconds, then try again.
 
 notifications-testFailed = The test notice could not be shown.
+notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.

@@ -1212,6 +1212,7 @@
   "notifications.testSent",
   "notifications.testWait",
   "notifications.testFailed",
+  "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground"
 ]
