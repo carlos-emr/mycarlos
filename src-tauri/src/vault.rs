@@ -1007,13 +1007,17 @@ pub struct ArrivedWhileHidden {
 pub struct ClinicPatient {
     pub name: String,
     pub birth_date: String,
-    /// The person the delivery's clinic link is tied to, if it is tied to one (it then files
-    /// only under that person). Opaque; may be a hidden person's.
+    /// The visible person the delivery's clinic link is tied to, if it is tied to one (it then
+    /// files only under that person). Opaque. Never a hidden person's id: the renderer is not
+    /// told who is hidden (#360); see `linked_to_hidden`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link_person: Option<Uuid>,
-    /// Everyone, hidden people included (by opaque id), who matches these words today: more than
-    /// one leaves the document in Shared with me, so filing under one of them does not make the
-    /// next documents file themselves.
+    /// The link is tied to a hidden person: it files only under them, so no visible person is
+    /// the one the next documents file under.
+    pub linked_to_hidden: bool,
+    /// Everyone (by opaque id) who matches these words today. Never a hidden person: words a
+    /// hidden person matches are not shown at all. More than one leaves the document in Shared
+    /// with me, so filing under one of them does not make the next documents file themselves.
     pub matching_people: Vec<Uuid>,
 }
 
@@ -2426,31 +2430,42 @@ impl VaultStore {
                                         )
                                 })
                             })
-                            .map(|patient| ClinicPatient {
-                                name: patient.name.clone(),
-                                birth_date: patient.birth_date.clone(),
-                                link_person: record.delivery.as_ref().and_then(|custody| {
+                            .map(|patient| {
+                                let linked_profile = record.delivery.as_ref().and_then(|custody| {
                                     unlocked
                                         .manifest
                                         .portal_links
                                         .iter()
                                         .find(|link| link.id == custody.link_id)
                                         .and_then(|link| link.profile_id)
-                                }),
-                                matching_people: unlocked
-                                    .manifest
-                                    .profiles
-                                    .iter()
-                                    .filter(|profile| {
-                                        profile.id != shared_profile_id(unlocked.manifest.vault_id)
-                                            && delivery::matches_patient(
-                                                profile,
-                                                &patient.name,
-                                                &patient.birth_date,
-                                            )
-                                    })
-                                    .map(|profile| profile.id)
-                                    .collect(),
+                                });
+                                let hidden_link =
+                                    linked_profile.is_some_and(|id| {
+                                        unlocked.manifest.profiles.iter().any(|profile| {
+                                            profile.id == id && profile.hidden.is_some()
+                                        })
+                                    });
+                                ClinicPatient {
+                                    name: patient.name.clone(),
+                                    birth_date: patient.birth_date.clone(),
+                                    link_person: linked_profile.filter(|_| !hidden_link),
+                                    linked_to_hidden: hidden_link,
+                                    matching_people: unlocked
+                                        .manifest
+                                        .profiles
+                                        .iter()
+                                        .filter(|profile| {
+                                            profile.id
+                                                != shared_profile_id(unlocked.manifest.vault_id)
+                                                && delivery::matches_patient(
+                                                    profile,
+                                                    &patient.name,
+                                                    &patient.birth_date,
+                                                )
+                                        })
+                                        .map(|profile| profile.id)
+                                        .collect(),
+                                }
                             }),
                         file_says_checked_at_ms: record
                             .carried
@@ -9189,8 +9204,19 @@ fn checked_profile_details(
     {
         return Err(VaultError::Invalid);
     }
+    // A name typed with an accent as one character and the same name with it as two is one
+    // name (the filing rule compares NFC forms, #340), so the second is not kept as another
+    // alias. Done only on this save path: `checked_previous_names` also validates what is
+    // already stored, and a vault saved before this must still open.
     let previous_full_names = details
         .previous_full_names
+        .map(|names| {
+            let mut seen = HashSet::new();
+            names
+                .into_iter()
+                .filter(|name| seen.insert(name.trim().nfc().collect::<String>()))
+                .collect::<Vec<_>>()
+        })
         .map(checked_previous_names)
         .transpose()?;
     Ok((full_name, birth_date, previous_full_names))
@@ -21264,6 +21290,47 @@ mod tests {
         assert!(!serde_json::to_string(&view.entries)
             .unwrap()
             .contains("Zorvana"));
+    }
+
+    #[test]
+    fn previous_full_names_keep_one_of_two_spellings_of_the_same_accented_name() {
+        let (_temp, store, _record, _) = original_pdf_fixture();
+        let id = store.snapshot().unwrap().profiles[0].id;
+        let now = 1_792_713_600_000;
+        let today = utc_date_text(now);
+        store
+            .update_profile_details(
+                id,
+                ProfileDetails {
+                    previous_full_names: Some(vec![
+                        "FAKE Zo\u{e9} Neralis".into(),
+                        " FAKE Zoe\u{301} Neralis ".into(),
+                        "FAKE Zoe Neralis".into(),
+                    ]),
+                    ..Default::default()
+                },
+                &today,
+                now,
+            )
+            .unwrap();
+        // The first spelling is kept as typed; the unaccented name is another name.
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0].previous_full_names,
+            Some(vec![
+                "FAKE Zo\u{e9} Neralis".into(),
+                "FAKE Zoe Neralis".into()
+            ])
+        );
+        // Reopening accepts what was saved.
+        store.lock();
+        store.unlock(PASSWORD).unwrap();
+        assert_eq!(
+            store.snapshot().unwrap().profiles[0]
+                .previous_full_names
+                .as_ref()
+                .map(Vec::len),
+            Some(2)
+        );
     }
 
     #[test]
