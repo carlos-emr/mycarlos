@@ -69,6 +69,10 @@ pub(super) struct StoredAiResult {
     /// read again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(super) superseded: bool,
+    /// The answer came in a handover file (#360), not from this computer's model: the screens
+    /// say "from an imported file". A handover-format field (#360): forbidden below `MANIFEST_FORMAT_PROFILE_HANDOVER`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(super) imported: bool,
 }
 
 impl StoredAiResult {
@@ -114,6 +118,9 @@ pub struct AiResultInfo {
     pub model_sha256: String,
     pub created_at_ms: u64,
     pub size: u64,
+    /// From a handover file, not this computer's model (#360).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub imported: bool,
 }
 
 impl From<&StoredAiResult> for AiResultInfo {
@@ -127,6 +134,7 @@ impl From<&StoredAiResult> for AiResultInfo {
             model_sha256: stored.model_sha256.clone(),
             created_at_ms: stored.created_at_ms,
             size: stored.plaintext_size,
+            imported: stored.imported,
         }
     }
 }
@@ -153,7 +161,7 @@ fn valid_text(text: &str, max_chars: usize) -> bool {
         && !text.chars().any(char::is_control)
 }
 
-fn valid_fields(
+pub(super) fn valid_fields(
     tool: AiTool,
     lang: &str,
     term: Option<&str>,
@@ -285,6 +293,9 @@ pub(super) fn validate<'a>(
         .count();
     let shown = record.ai_results.len() - hidden;
     if format_version < MANIFEST_FORMAT_AI_RESULTS
+        // Provenance belongs to the handover format: an older build would drop it.
+        || (format_version < MANIFEST_FORMAT_PROFILE_HANDOVER
+            && record.ai_results.iter().any(|result| result.imported))
         || shown > MAX_SHOWN_AI_RESULTS_PER_RECORD
         || hidden > MAX_HIDDEN_AI_RESULTS_PER_RECORD
         // Format 10 had one cap for every answer, hidden ones included.
@@ -355,7 +366,9 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         if record.hidden.is_some() {
             return Err(VaultError::Invalid);
@@ -404,6 +417,7 @@ impl VaultStore {
             plaintext_size: encrypted.plaintext_size,
             wrapped_object_key: wrap_secret(&keys.object_wrap, &object_key, id.as_bytes())?,
             superseded: false,
+            imported: false,
         };
         let info = AiResultInfo::from(&stored);
 
@@ -469,7 +483,9 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         let mut results: Vec<AiResultInfo> = record
             .ai_results
@@ -490,7 +506,9 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| record.id == record_id)
+            .find(|record| {
+                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
+            })
             .ok_or(VaultError::NotFound)?;
         let stored = record
             .ai_results

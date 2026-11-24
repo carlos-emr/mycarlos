@@ -440,6 +440,7 @@ interface-notice-movedMany = 已将 { $count } 份文档移至 { $where }。
 interface-notice-movedNamed = { $name } 已移至 { $where }。
 
 interface-notice-notPdf = { $name } 不是 PDF 文档，因此 myCarlos 未添加该文件。目前只有 PDF 文档可以分享至 myCarlos。
+interface-notice-receivedNotOpened = 无法打开或读取 { $name }，因此 myCarlos 没有添加它。如果仍需要，请再次分享。
 
 interface-notice-pdfUnlocked = 已添加解锁副本。锁定的原始文档现在名称为 { $name }。
 
@@ -1545,6 +1546,14 @@ interface-history-event-profileCreated = 患者档案已添加
 
 interface-history-event-profileDetailsChanged = 个人资料已更改
 
+interface-history-event-profileExported = 患者档案已导出
+
+interface-history-event-profileHidden = 患者档案已隐藏
+
+interface-history-event-profileRestored = 患者档案已恢复
+
+interface-history-event-profileImported = 已从交接文件添加患者档案
+
 interface-history-event-readingAidFiled = 已保存阅读辅助
 
 interface-history-event-recoveryKeySet = 恢复密钥已设置
@@ -2333,3 +2342,262 @@ security-backup-leaveVideosOutHelp = 备份将不包含您的视频。如果您�
 restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它会带回其他所有内容，但您的视频不会在其中。它们会作为缺失的文件列在隐藏文档中。
 security-backup-sizeCalculating = 正在计算备份大小…
 interface-hidden-videoLeftOut = 备份中未包含的视频
+
+handover-section-title = 移交某人的记录
+
+handover-section-body = 将某人的文档复制到一个文件中供另一台设备使用，例如把孩子自己的记录交给孩子。该文件有自己的密钥，不会改变您的保险库。您也可以从别人交给您的文件中添加一个人。
+
+handover-export-button = 移交记录…
+
+handover-import-button = 从文件添加一个人…
+
+handover-close = 关闭
+
+handover-export-title = 移交某人的记录
+
+handover-export-about = 这会生成一个包含某人文档的文件，带有自己的密钥，供另一台设备读取。您的保险库不会有任何改变。
+
+handover-export-caution = 这会复制健康记录。信件中可能提到其他人，例如父母或监护人，每份文档都会完整复制、不作编辑。请确认将打开该文件的人是正确的人，并且能够阅读它。
+
+handover-export-person = 谁的记录
+
+handover-export-history = 包含这些文档的历史记录（添加、重命名或移动的时间）
+
+handover-export-keyKind-legend = 文件如何加锁
+
+handover-export-keyKind-generated = 由 myCarlos 生成的密钥（推荐）
+
+handover-export-keyKind-passphrase = 我自己选择的口令
+
+handover-export-passphrase = 文件口令
+
+handover-export-passphraseHint = 至少 15 个字符，且不易被猜到。不能是您保险库的口令或恢复密钥。
+
+handover-export-continue = 继续
+
+handover-export-preparing = 正在准备…
+
+handover-export-keyTitle = 记下此文件的密钥
+
+handover-export-keyBody = 拿到该文件和此密钥的人都可以阅读这些记录。请把密钥与文件分开交给对方。myCarlos 不会保存它：如果丢失，请重新生成文件。
+
+handover-export-keyLabel = 文件密钥
+
+handover-export-keyGroup = 第 { $number } 组：{ $characters }
+
+handover-export-copy = 复制密钥
+
+handover-export-copied = 密钥已复制。如果期间没有复制其他内容，一分钟后会从剪贴板中清除。
+
+handover-export-copyFailed = 无法复制密钥，请改为手写记下。
+
+handover-export-keySaved = 我已记下密钥或妥善保存
+
+handover-export-saveTitle = 保存文件
+
+handover-export-summary = 文件将包含 { $name } 的记录：
+
+handover-export-apart = 请把文件和密钥分开保管。
+
+handover-export-provider = 在某些手机上，如果保存失败，您选择的位置可能会留下空文件或不完整的文件。如果发生这种情况，请删除该文件后重试。
+
+handover-export-chooseWhere = 选择保存位置…
+
+handover-export-saving = 正在保存并检查文件…
+
+handover-export-noLocation = 未选择位置，没有保存任何内容。
+
+handover-export-doneTitle = 文件已保存
+
+handover-export-done = 已为 { $name } 保存 { $count } 份文档，并重新读取文件进行了检查。
+
+handover-export-doneApart = 请把文件和密钥分开保管。此文件不会改变您的保险库。
+
+handover-export-hideOffer = 在此保险库中隐藏 { $name }
+
+handover-export-leftOut = 因文件无法读取而未包含的文档：{ $count }
+
+handover-export-evidenceLeftOut = 无法包含诊所签名的文档（文档本身在文件中）：{ $count }
+
+handover-count-documents = 文档：{ $count }
+
+handover-count-hidden = 您已隐藏的：{ $count }
+
+handover-count-folders = 文件夹：{ $count }
+
+handover-count-answers = AI 助手的回答：{ $count }
+
+handover-count-evidence = 附有诊所签名送达记录的文档：{ $count }
+
+handover-count-size = 大小：{ $size }
+
+handover-import-title = 从文件添加一个人
+
+handover-import-about = 选择别人交给您的文件，并准备好他们给您的密钥或口令。这个人会作为新的一个人加入，这里已有的内容不会改变。
+
+handover-import-choose = 选择文件…
+
+handover-import-noFile = 未选择文件，没有任何改变。
+
+handover-import-keyTitle = 打开文件
+
+handover-import-key = 密钥
+
+handover-import-passphrase = 口令
+
+handover-import-keyHint = 七组，每组四个字母和数字。大小写、空格和短横线都无关紧要。
+
+handover-import-passphraseHint = 制作该文件的人为它选择的口令。
+
+handover-import-open = 打开文件
+
+handover-import-opening = 正在打开…
+
+handover-import-error-typo = 该密钥看起来不对，请与您拿到的密钥核对。
+
+handover-import-error-recovery = 这是恢复密钥，不是此文件的密钥。请索取为该文件生成的密钥。
+
+handover-import-error-wrong = 这无法打开此文件。
+
+handover-import-error-newer = 此文件由更新版本的 myCarlos 制作。请更新 myCarlos 后重试。
+
+handover-import-error-damaged = 此文件不完整、已被更改，或无法添加到这里。请索取新的副本。
+
+handover-import-previewTitle = 文件的内容
+
+handover-import-says = 文件声称其中包含 { $name } 的记录。
+
+handover-import-birth = 出生日期：{ $date }，由制作文件的人记录。
+
+handover-import-madeOn = 制作于 { $date }。
+
+handover-import-evidenceNote = 部分文档附有诊所的签名送达记录。在您把此设备与该诊所关联之前，myCarlos 只能说明它们是在制作文件的设备上检查过的，而不能说明该诊所为其担保。
+
+handover-import-duplicate-legend = 您可能已经有这个人
+
+handover-import-duplicate-package = 您已经在这里添加过这个文件了。
+
+handover-import-duplicate-content = 此文件中有 { $count } 份文档与您在此处另一个人下已有的文档内容完全相同。
+
+handover-import-duplicate-anyway = 仍然添加为另一个人
+
+handover-import-nameLabel = 在这里如何称呼此人
+
+handover-import-add = 添加此人
+
+handover-import-adding = 正在添加并检查记录…
+
+handover-import-doneTitle = 完成
+
+handover-import-done = 已为 { $name } 添加 { $count } 份文档。
+
+handover-import-doneAnswers = 随文档一起到来的 AI 助手回答，已标记为来自导入的文件：{ $count }
+
+handover-import-doneEvidence = 诊所文档只显示在此处能够检查到的内容。若要在此设备上用诊所的密钥检查它们，请把此设备与该诊所关联。
+
+handover-import-doneDropped = 因不符合此保险库的规则而未包含的项目：{ $count }
+
+handover-import-receipt = 回执码：
+
+handover-import-receiptNote = 您可以把这个代码告诉制作文件的人。它说明有人拿着文件和密钥打开了整个文件并从头读完，但并不说明这些记录已被添加到某处，也不说明您的副本仍然安全。
+
+handover-import-nothingNew = 没有添加任何内容：此保险库已经有这个人。
+
+handover-importedAnswer = 来自导入的文件
+
+handover-export-leavingWarning = 显示此密钥时请留在 myCarlos 中。切换到其他应用会锁定您的保险库，此密钥也会失效：您需要重新开始并获得新的密钥。
+
+handover-export-leave-title = 不保存文件就离开吗？
+
+handover-export-leave-body = 尚未保存任何文件。此屏幕上的密钥将失效，请不要把它交给任何人。若要移交记录，请重新开始，您会得到新的密钥。
+
+handover-export-leave-confirm = 离开
+
+
+handover-export-error-weak = 无法使用该口令。它可能太容易被猜到、包含此人的姓名，或与您保险库的口令或恢复密钥太相似。请换一个。
+
+handover-unfinished = 有一次移交没有完成。您复制或记下的任何密钥都无法打开任何内容。若要移交记录，请重新开始以获得新的密钥。
+
+native-error-49 = 此次解锁期间已尝试了文件口令的最多次数。请锁定 myCarlos 后重新解锁以继续尝试，或改由 myCarlos 为文件生成密钥。
+
+native-error-50 = 资料库中至少要留下一个人，因此无法隐藏最后一个人。请先添加另一个人。
+
+hiddenPeople-title = 已隐藏的人
+
+hiddenPeople-body = 您隐藏的人不会出现在资料库、搜索和 AI 助手中。不会删除任何内容：他们仍保存在此保险库和您的备份中。任何知道您口令的人都可以将他们恢复。
+
+hiddenPeople-list = 已隐藏的人
+
+hiddenPeople-since = 隐藏于 { $date }
+
+hiddenPeople-documents = { $count } 份文档
+
+hiddenPeople-restore = 恢复
+
+hiddenPeople-restoreFor = 恢复 { $name }
+
+hiddenPeople-handOver = 移交…
+
+hiddenPeople-handOverFor = 移交 { $name } 的记录
+
+hiddenPeople-hide = 隐藏
+
+hiddenPeople-hideFor = 隐藏 { $name }
+
+hiddenPeople-lastPerson = 资料库中至少要留下一个人。
+
+hiddenPeople-confirm-title = 隐藏 { $name }？
+
+hiddenPeople-confirm-body = 这会在 myCarlos 中隐藏 { $name } 及其所有文档。不会删除任何内容。他们仍保存在此保险库和您的备份中，您随时可以在“已隐藏的人”中恢复。隐藏并不能阻止任何知道您口令的人将其恢复。
+
+hiddenPeople-confirm-hide = 隐藏 { $name }
+
+hiddenPeople-hidden = { $name } 现已隐藏。
+
+hiddenPeople-restored = { $name } 已回到资料库。
+
+hiddenPeople-arrived-title = 要把新文档移到 { $name } 吗？
+
+hiddenPeople-arrived-body = { $name } 被隐藏期间，有 { $count } 份文档送达，目前在“与我分享”中。要把它们移到 { $name } 吗？
+
+hiddenPeople-arrived-move = 移到 { $name }
+
+hiddenPeople-arrived-leave = 留在“与我分享”
+
+hiddenPeople-arrived-list = 送达的文档
+
+portal-arrivedForHidden = 来自 { $clinic } 的 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。
+
+hiddenPeople-damagedToo = 这还会隐藏已隐藏的人的 { $count } 份受损文档。为了不显示谁被隐藏，这里不列出它们。
+
+interface-history-aboutHiddenPeople = 有 { $count } 条与已隐藏的人有关的记录未显示。它们已保留，恢复这些人后会再次显示。
+
+interface-history-how-personHidden = 该人被隐藏期间归档到“与我分享”
+
+portal-arrivedForHiddenNoClinic = 有 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。
+
+library-fileSaysChecked = 随之而来的文件称，它已于 { $date } 在来源设备上检查过。此保险库没有检查过。
+
+handover-nowVerified = 通过移交文件到来的 { $count } 份文档现已通过 { $clinic } 验证，此保险库持有其密钥。
+
+
+notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
+
+background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
+
+background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动。开启上面的选项后，它会在后台静默启动，您的保险库保持锁定。
+
+preferences-moreAutomatic = 关于自动检查的更多说明
+
+preferences-moreBackground = 关于后台运行的更多说明
+
+native-notice-test = 这是来自 myCarlos 的测试通知。
+
+notifications-testButton = 显示测试通知
+
+notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+
+notifications-testWait = 请等待几秒钟后再试。
+
+notifications-testFailed = 无法显示测试通知。
+notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。

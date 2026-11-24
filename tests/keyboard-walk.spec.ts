@@ -436,6 +436,14 @@ test("the keyboard walk handles native date parts and still detects a trapped da
     <label>Birth date <input type="date"></label>
     <button>After</button>
   `);
+  // A page set up from text has drawn nothing yet: on a busy machine the first screenshot of the
+  // walk was refused ("Unable to capture screenshot"). Wait for two painted frames first.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   expect((await tabRound(page)).problems).toEqual([]);
   await page.locator('input[type="date"]').evaluate((input) => {
     input.addEventListener("keydown", (event) => {

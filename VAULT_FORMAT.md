@@ -765,6 +765,90 @@ first, as the backup checks it (a read-only vault, the header, the manifest slot
 before that document is opened and emptied; only a failure while the backup is written, or a lock
 or change that comes between the check and the writing, can leave it emptied.
 
+### Profile handover package (#360 PR 1)
+
+One person's records in a file of its own, `.mycarlosprofile`, with a key of its own, for another myCarlos
+to read. It is **not** a backup: a backup carries the vault's header and so hands over the vault's master key,
+while a package has none of the source vault's keys, ids, names or devices in it. Package format **1**. It is
+not a vault or manifest format: nothing in the vault changes when one is written, and the vault does not read
+one in this step (the writer and reader are in `src-tauri/src/vault/profile_package.rs`; the export and import
+commands follow).
+
+```text
+"MYCARLOS-PROFILE"                      16-byte magic
+header length (u32) | header JSON       {format, packageId, keyKind: "key"|"passphrase", kdf?, wrappedPackageKey}
+entry*   kind (u8) | name length (u16) | name | length (u64) | bytes
+         manifest (kind 1, first)       encrypted JSON, padded to a size class
+         object   (kind 2, many)        one MCVO1 object each, in the manifest's order
+         digests  (kind 3, last)        encrypted: each object's id, size and plaintext SHA-256
+trailer  0xff | length (u32) | JSON {format, packageId, entries[]} | HMAC-SHA-256 tag (32 bytes)
+```
+
+- **Keys.** A random 256-bit package key is wrapped under either a generated 128-bit key (HKDF, shown as 7
+  groups of 4 like a recovery key, with check characters of its own so that a recovery key typed here is
+  named as one; never stored) or the Argon2id of a typed passphrase (the vault's own
+  parameters, and the vault's rules for a new passphrase). The manifest key, the object key and the tag key
+  come from the package key and the package id with labels of their own (`mycarlos/profile-package/v1/...`).
+  An object's key comes from the object key and the object's id, so the manifest, which comes first, carries no
+  per-object key. Nothing is related to a vault key; two exports of one person differ in every byte.
+- **Objects.** The chunk format is the vault's own (`MCVO1`, 1 MiB frames, XChaCha20-Poly1305, a final flag
+  on the last chunk), with the **package id where a vault id would be** in each chunk's associated data. The
+  stored length of an object is fixed by its size (25 + 21 per chunk + size; an empty object is one empty
+  final chunk), so an object streams from the source vault into the package one chunk at a time with no
+  readable copy anywhere, and a source that is not the declared size is refused.
+- **The manifest** is the person's identity details, the folder tree, the records (name, source label, media
+  type, dates, folders, whether hidden, their objects, AI answer details, carried clinic evidence as JSON) and
+  the history excerpt if it was kept (at most 2,000 entries, the latest). **Every folder, record and object
+  id in the file is made by the writer**: the exporter builds its manifest with the vault's own ids to say which
+  source goes with which object, and none of them reaches the file, so an export cannot be matched to the vault or
+  to another export of the same person by an id. It is checked on writing and on reading: bounded counts, names that are
+  names, unique ids, every folder's parent present, no cycle, depth at most 64, every record in folders that
+  exist, an object used once, sizes within a terabyte.
+- **Padding and the clear.** The manifest and the digests are padded with zeros to a size class (a power of
+  two, at least 16 KiB, at most 16 MiB: the largest manifest a vault can hold, so a package that fits can be
+  taken, and what a reader parses is bounded by that), and the padding is checked. In the clear: the magic, the package id,
+  the KDF salt, the entry names (a random id each), their lengths and the SHA-256 of their ciphertext. That
+  shows how many documents and how large; it shows no name, no vault id, no device, no clinic, and not the
+  time of the export.
+- **Order and trust.** The plaintext hashes are written after the objects because they are known only once an
+  object has been streamed; the manifest is first so that it can be inspected on its own. The tag is last and
+  covers the header and every entry's hash, so **nothing read from a package is trusted until the reader's
+  `finish` has returned**, and `finish` returns a `Verified` value that the import's commit must be given. A
+  reader stages what it reads and commits after. Inspect can already refuse a cut, altered or extended file
+  without reading an object: the manifest gives every entry's size, so `verify_tail` jumps to the digests and
+  the trailer, checks the tag, the entry list and that nothing follows (it does not check object bytes).
+  The header and the manifest are read for their `format` first, so a newer myCarlos's file, with fields or key
+  kinds this build does not know, is "made by a newer myCarlos", not "unreadable". A writer that has failed
+  writes nothing more.
+- **Refused.** A wrong key (a damaged header looks the same), a typed key whose check characters are wrong, a
+  package format newer than this build's, a file that is cut short, has a changed byte anywhere, bytes after
+  the trailer, an entry swapped, repeated or missing, a trailer that lists what the file does not hold, or a
+  declared length past the limits (checked before anything is allocated).
+
+#### Exporting one person (#360 PR 3)
+
+`vault::profile_export` writes one person's documents to a package; three commands (`vault_profile_export_prepare`, `_pick`, `_picked`) wrap it, and the screens are a later pull request.
+
+- **What goes in:** the person's identity details and former names, their folders, and every document with its name, source label, media type, dates and folders; the original PDF of a signed document; every AI answer, shown and superseded; the clinic evidence (`carried`, built from the filed delivery and the link by `carried::from_filed`, which checks it stands up on its own); and the history excerpt, the latest 2,000 record-level events about the documents that go (a switch, on by default). A document the patient hid arrives hidden. A hidden **person** can be exported (the package never carries the person's flag: a handed-over profile arrives visible).
+- **What is left out, and counted:** a document hidden as damaged (its file cannot be read), and clinic evidence that would not stand up alone (the document still goes). Shared with me is not a person and is refused, as is recovery mode.
+- **One pass, one snapshot.** The session is held as for a backup, so the package reflects one generation of the manifest, and a lock or a cancel stops it between chunks. Each document is decrypted a chunk at a time into the package's encryptor; nothing readable is kept. Every id in the package is made by the writer.
+- **Read back before success.** The file is written beside the destination (never inside the vault home), flushed, rewound and read back with its key: the end and the tag first, then every object decrypted and hashed, then the whole verified, and it must hold exactly the objects, sizes and hashes the writer saw. Only then is it renamed over the destination; a failure at any step leaves the destination as it was and no temporary file. On an Android document provider (no rename) it is written and read back in place. The history entry (`profileExported`: the person and the place, no document names) is taken after that.
+- **Keys.** The key is generated at `prepare` (7 groups of 4, shown once, held only in the app's memory until the file is written, never stored in the vault) or the patient's typed passphrase, checked at `prepare` against the vault's rules for a new passphrase (the person's own names may not be in it) and **refused if it is the vault's own** (tried against the vault's header; a file that holds one person's documents must not open with the key to all of them).
+- **Not here yet:** the screens, the key's printing, the phone share sheet, import, and the "Hide this person" offer.
+
+#### Importing a person (#360 PR 4)
+
+`vault::profile_import` makes a new profile from a package; four commands (`vault_profile_import_pick`, `_key_kind`, `_inspect`, `vault_profile_import`) wrap it, and the screens are a later pull request.
+
+- **The package is hostile even after its tag checks out.** Anyone with the key can make one. Every count and size is capped before anything is allocated (the package's own limits first; then this vault's: a folder no deeper than the vault holds (31), folder and person names cut to 120 characters, previous names to 16, a manifest that fits). Fields the vault fixes for its own records are set, not taken: the source label, the media type and "added" times (never later than now). A package never says what is verified.
+- **Inspect reads nothing but the header, the manifest and the end of the file** (the tail check: tag, entry list, no trailing bytes), with the key; it shows the person's label and the counts, and whether this vault has them. `vault_profile_import_key_kind` reads the key kind from the header alone, so the screen asks for a key or a passphrase as the file needs.
+- **Duplicates are found by content, not by name.** The same file is recognised by its package id (`importedFrom`); another file of the same documents is recognised by the SHA-256 of its original PDFs, which the package's digests give before any document is read, against the original PDFs this vault holds. The patient is told which profile, and must ask for a second copy. A second copy of the same file has no `importedFrom` (one file makes one profile).
+- **One commit, or nothing.** Each document is decrypted a chunk at a time out of the package and re-encrypted under this vault's own keys (a new object key and nonce prefix, this vault's id, a record id made here); a new vault-keyed fingerprint is computed. Objects are staged outside the published state; the whole package must verify (`finish`: the end, the tag, every object against its digest) **before** anything is published; then the objects are published, the directory synced and **one manifest commit** adds the person, folders, documents, evidence and the old history, with one `profileImported` history entry. The new manifest is checked by `validate_manifest_structure` first. A failure, a cancel, a lock or a crash before the commit leaves the vault as it was (tested at staging, publication and sync; a crash leaves orphans in `objects/`, which unlock moves aside). Free space is checked first where the platform can say.
+- **AI answers** are judged as the vault judges an answer it is asked to keep (shape, language, term, size, the model the answer itself names; whether that model ran here is not something a file can say) and dropped if they do not pass; the caps per document apply (32 shown, 96 hidden).
+- **Clinic evidence** follows format 14's rules: it is kept only if it parses, stands up without a link (`valid_carried`) and is about a delivery this vault does not already hold (otherwise the document comes and the evidence is dropped, and counted). Imported documents are never "verified" by the package: only a link of this vault to the same clinic, holding the signing key, does that.
+- **The old history** is kept on the profile as `importedHistory`, on this vault's record ids, only for entries about a document that came: an entry that names no document, or one that is not in the package, is dropped (never kept pointing at nothing), and an entry's time is never later than the import.
+- **The receipt code** (`XXXX-XXXX`) is an HMAC under a key only the package key gives, of the package id, the object count and a hash of every object's size and hash. The source recomputes it from the file and the key (`PackageReader::receipt_code`, from the digests alone). It shows that someone holding both ran the import and saw the same package; it is **not proof that the data is still there**.
+
 ## Settings kept outside the vault
 
 The following device preferences are kept in the webview's own storage, not in the vault, so that
@@ -1222,7 +1306,7 @@ formats and the delivery wire format are unchanged.
 
 ## Format 13: previous full names
 
-This build understands manifest formats 1–13. Format 12 (remembered refusals, #143, above) is a real format: a vault at 12 upgrades to 13 at its next writable unlock, in a commit of its own, like any older one. A format newer than 13 is refused as newer without being rewritten or interpreted; the parked model-file draft (#298) takes the next number, 14, when it merges. Format numbers are taken at merge (above): this one is 13 because it merges after #143's 12. Header, object and backup container formats do not change.
+This build understands manifest formats 1–13. Format 12 (remembered refusals, #143, above) is a real format: a vault at 12 upgrades to 13 at its next writable unlock, in a commit of its own, like any older one. A format newer than 13 is refused as newer without being rewritten or interpreted; the model-file draft (#298) no longer takes a number here: the order is the profile handover 14 and hiding a whole person 15 (#360), then the cloud AI key draft (#389) 16, then #418 17, each taken at merge. Format numbers are taken at merge (above): this one is 13 because it merges after #143's 12. Header, object and backup container formats do not change.
 
 A non-Shared encrypted profile may contain `previousFullNames`, a nonempty ordered array of at most 16 distinct trimmed names. Each uses the existing 120-Unicode-scalar name/control validation. Absence is the canonical empty state; null, wrong types, empty stored arrays, duplicates and noncanonical stored names are refused. The field is forbidden in older declared formats and on Shared. Writable legacy unlock uses the existing redundant standalone manifest upgrade; read-only recovery does not migrate. Older builds must refuse format 13 rather than read/drop this field.
 
@@ -1230,9 +1314,45 @@ The details request omits the list to preserve it; explicit `[]` clears it. Name
 
 Removing an entry removes only this current field as a known-name source. Other current profiles, authenticated former folder labels, delivery identifiers, documents, prior manifests and backups may still contain it; restoring a backup may restore the list. This is not secure erasure.
 
-## Format 14: removing a clinic link
+## Format 14 (provisional): profile handover (#360)
 
-This build understands manifest formats 1–14. A vault at 13 upgrades to 14 at its next writable unlock, in a commit of its own, like any older one. A format newer than 14 is refused as newer. Format numbers are taken at merge (above): 14 is provisional until #160 merges. Header, object and backup container formats do not change.
+This build understands manifest formats 1–14. **The number is provisional** and is taken at merge, with no gap (see "Format numbers are taken at merge"): the cloud AI key draft (#389) also holds 14, so whichever merges second renumbers. A renumber changes `MANIFEST_FORMAT_PROFILE_HANDOVER` in `vault.rs`, this heading, the gates that name it (they use the constant) and the tests that name a format. A vault at 13 or lower upgrades at its next writable unlock, in a commit of its own, like any older one; an older myCarlos refuses format 14 as newer. Header, object and backup container formats do not change. The handover file itself, once it lands (#390), is a separate format of its own.
+
+Format 14 adds, all of it forbidden below 14 so that an older build that accepted a newer number could never drop what it does not know:
+
+- **Not `hidden` on a profile.** It is **not part of format 14**: it has the format of its own below (15), because a build that reads a hidden person without honouring the flag would list them in its library, search and AI helper. A manifest at 14 with a hidden profile is refused.
+- **`importedFrom`** on a profile: `{packageId, atMs}`, the handover file the person was made from, so the same file is recognised again. Two profiles of one vault never name the same file. Never on Shared with me.
+- **`importedHistory`** on a profile: the excerpt of the person's history in the vault they came from, read-only and **not a verified chain** (the importing vault has its own chain and does not splice these in). Present only with `importedFrom`; nonempty, at most 2,000 entries; each entry is a record-level event only (imported, renamed, moved, hidden, restored, a delivery or reading aid filed, an AI answer kept), with its time, the document id and name at that moment, `how`, and the source chain's `hash` and `prev` kept for comparison with the handover file's own list. Nothing about the source (app version, places, sessions, link ids) is kept. An entry's document id, when it has one, is the id of that document in this vault (the handover file has ids of its own, and the import maps them); an entry about a document that is not in the person's records has none.
+- **`carried` on a record**: the clinic evidence of a delivery whose link did not come along (a link holds a device's private keys and stays on its device), in place of `delivery` and `readingAid`, never beside them, and only on a record with an original PDF. It holds public and signed material only: the clinic as the source had pinned it (id, name, keys and their status then, the clinic's ids for the source device), the source device's two public keys, the delivery's outer record, the clinic-signed manifest in its signed compact form with the receipt the source device signed, and the same for a reading aid. Never a private key, the sealed ciphertext, the portal address, a device name or an approval attempt. `valid_carried` checks it on every manifest read without a link: the clinic's snapshot is well formed, the device id is the one the two public keys give, the signed manifest verifies under a key in the snapshot (a key revoked since is no reason to refuse what it signed before) and says what the record's original PDF says, and each receipt verifies under the device's signing key and names this delivery and this PDF. It cannot check the receipt's anchor to the source's history head (this vault has another chain): a carried receipt proves that the source device acknowledged the delivery, nothing about this vault, and **no receipt is ever queued for a carried record**. What it means to the patient is only what the file says: "the file says this was checked on the device it came from, on {date}; this vault has not checked it"; it becomes "verified with the clinic's key" only when a link of this vault to the same clinic holds the signing key as an active key (`verified_clinic`), and "matched to you" stays the existing signed-PDF rule.
+- **`imported` on an AI answer** (a stored answer's provenance: it came in a handover file, not from this computer's model; the screens say "from an imported file"). Forbidden below the handover format; skipped when false; set by nothing but an import. It is also in the answer's info for the screens.
+- **Four history events**: `profileExported`, `profileHidden`, `profileRestored`, `profileImported`, each with the profile id and the name the history keeps for profiles, no document names and no place. Their titles are in all seven languages. A vault upgraded to 14 holds none until its patient uses the feature.
+
+A format 1–13 vault opens with none of these and upgrades with its state unchanged. Tests: the upgrade ladder is checked from every older format with the state unchanged and the history starting there; each new field is refused when declared below 14; a carried record is refused for each field changed in turn (the manifest hash, the key id, a signature, the receipt, the clinic id, a revoked key kept in the snapshot, a record that also holds `delivery`), and accepted with its clinic's keys revoked; `verified_clinic` reaches a carried record only through a linked clinic that has the signing key.
+
+**Format numbers for the rest of the handover.** PR 7 (hide and restore) took the format of its own, 15, below.
+
+**What a carried record shows.** The snapshot shows a carried reading aid and clinic service date, and `verifiedClinicName`, **only once a link of this vault to the same clinic holds the signing key as an active key**. Until then they are in the manifest and nowhere in the interface: whoever wrote a handover file could have made a consistent aid or date, and "reviewed by a clinician" must not rest on the file alone (design section 7). The middle level is **only what the file says**, never fact: the snapshot carries `fileSaysCheckedAtMs` (the carried receipt's time) for a carried record while no link of this vault holds the clinic's active signing key, and the screens word it as the file's claim ("The file this came in says it was checked on the device it came from, on {date}. This vault has not checked it."), unverified, with no check mark, since whoever holds a file's key can write evidence that stands up by itself. **The re-link upgrade needs no step**: the snapshot is computed on every read, so once a link of this vault to the same clinic id holds the signing key's id as an `active` key, the record is `verifiedClinicName` (and its aid and date show, and the field is absent); disconnecting the link returns it to the file's claim. Nothing about the file itself (its package id, its person) ever authorises that step. The same trust as any link applies: a link that publishes a real clinic's public key under that clinic's id can verify handed-over documents under the `clinic_name` that link chose. The check time a file claims is held to the delivery's own life (not before it was made, not more than a day after it expired) and never shown later than now. The library says, once, when a link makes handed-over documents verified ("N documents that came in a handover file are now verified with {clinic}"). The state "signed for another account" for a document addressed to the sending device's link (design section 7, level 3) has no screen in this build.
+
+## Format 15 (provisional): hiding a whole person (#360 PR 7)
+
+This build understands manifest formats 1–15. **The number is provisional** and is taken at merge, with no gap (see "Format numbers are taken at merge"). A renumber changes `MANIFEST_FORMAT_HIDDEN_PROFILES` in `vault.rs` (`HIDDEN_PROFILES_FORMAT` and `VAULT_FORMAT` use it), this heading and the tests that name 14 and 15. A vault at 14 or lower upgrades at its next writable unlock in a commit of its own, like any older one, with its state unchanged; an older myCarlos refuses 15 as newer, so none can read a vault that has a hidden person and list that person.
+
+Format 15 adds one thing: **`hidden` on a profile** (the same `{atMs, reason}` a document has; the reason is `patient`, never `damaged`). It is forbidden below 15, never on Shared with me, and a manifest in which every person (Shared with me is a holding folder, not a person) is hidden is refused: the last visible person cannot be hidden.
+
+What the flag does, and does not do:
+
+- **One flag, one commit, one history entry** (`profileHidden`, `profileRestored`, each with the profile id and the name the history keeps for profiles, no document names). Nothing is deleted or re-encrypted, no document's own `hidden` changes (so restoring returns exactly what was visible), and no link, passphrase or key changes.
+- **Out of reach while hidden.** The snapshot lists a hidden person only in `hiddenProfiles` (name, when, document count); their records, folders and the person are in no other list. Every lookup by id refuses their documents and folders (read, copy, rename, folders, move as source or target, hide, AI answers, identifiers, profile and folder edits, import): `not found`. The AI helper holds nothing for them (its kept text is forgotten when they are hidden).
+- **Still allowed:** export (a parent may hide first and still hand the file over; a hidden document travels as hidden, the person's flag does not travel and an imported person arrives visible), backup and restore (the flag travels in the manifest; an older backup restores the earlier state), and duplicate detection on import.
+- **A delivery for a hidden person** is filed in **Shared with me**, visible at once, with the person it was for on its history entry (`how` "personHidden"). The check says, per clinic and without naming anyone, that documents arrived for a hidden person. Its receipt is sent as for any delivery. A restore offers, by title, the documents that arrived meanwhile and are still in Shared with me (found from the history); moving them uses the ordinary move.
+- **Security's history** leaves out the entries about a hidden person (their profile's, their documents' and their folders') and says how many ("N entries about a hidden person"); they stay in the chain and are shown again on restore. Chain checking is unchanged: the filter is applied to what was verified.
+- **A hidden person's lost file** (a document of theirs whose encrypted file is missing) is in no list, yet the vault is read-only until it is dealt with, so the snapshot carries an anonymous count (`hiddenPeopleDamaged`) and the confirmation to hide the damaged documents covers it ("and N of a hidden person"); the request carries the count and the vault refuses if it differs. Restoring or hiding a person is refused while the vault is read-only, since a commit needs every file the manifest names; the confirmation is the way out, and the person can be restored right after.
+- **Hiding is tidiness, not secrecy:** anyone with the passphrase can restore. The screens say so.
+
+Tests: the round trip (lists, folders, counts; a document hidden on its own stays hidden after the restore); one commit and one entry each way; the last visible person and Shared with me; every lookup refused and allowed again after the restore; export of a hidden person; a backup and an older backup; the format gate (refused at 14, accepted at 15, damaged reason, nobody visible); a delivery for a hidden person and its restore offer; a process killed at each write boundary of hide and restore leaves the person fully visible or fully hidden.
+## Format 16 (provisional): removing a clinic link (#160)
+
+This build understands manifest formats 1–16. A vault at 15 or lower upgrades to 16 at its next writable unlock, in a commit of its own, like any older one. A format newer than 16 is refused as newer. Format numbers are taken at merge (above): 16 follows the profile handover's 14 and hiding a person's 15, and is provisional until #160 merges. Header, object and backup container formats do not change.
 
 No manifest field changes. The format exists because of one new history event, `portalLinkRemoved`, which an older build cannot read: it would refuse the history as corrupt, so it must refuse the vault as newer instead. The event records `portalLinkId`, the profile id and the clinic name, never keys, device ids or documents.
 

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import { MoreAbout } from "./MoreAbout";
 
 type NoticeStatus = {
   supported: boolean;
@@ -11,6 +12,14 @@ type NoticeStatus = {
   automaticChecksPaused?: boolean;
   permission: "unavailable" | "unknown" | "allowed" | "blocked";
 };
+
+/** What a press of "Show a test notice" came to (native `TestNotice`). */
+type TestNoticeResult =
+  | "shown"
+  | "blocked"
+  | "notAllowed"
+  | "tooSoon"
+  | "failed";
 
 /** Native owns consent, event identity, persistence and the fixed OS message.
  * `headingLevel` 3 when it sits under another heading (the notices step after
@@ -26,6 +35,8 @@ export function NotificationSetting({
   const [status, setStatus] = useState<NoticeStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestNoticeResult | null>(null);
   const request = useRef(0);
   const mounted = useRef(false);
   const savingNow = useRef(false);
@@ -53,7 +64,31 @@ export function NotificationSetting({
       window.removeEventListener("focus", refresh);
     };
   }, [locale]);
+  // The same generic notice an arrival shows, with a fixed sentence: nothing of the vault is sent.
+  const sendTest = () => {
+    setTesting(true);
+    setTestResult(null);
+    void invoke<TestNoticeResult>("vault_send_test_notice")
+      .then(
+        (result) => {
+          if (!mounted.current) return;
+          setTestResult(result);
+          // Windows said no: the line that tells how to allow it shows, as it does for any check.
+          if (result === "blocked")
+            setStatus((previous) =>
+              previous ? { ...previous, permission: "blocked" } : previous,
+            );
+        },
+        () => {
+          if (mounted.current) setTestResult("failed");
+        },
+      )
+      .finally(() => {
+        if (mounted.current) setTesting(false);
+      });
+  };
   const save = (command: string, enabled: boolean) => {
+    setTestResult(null);
     const issued = ++request.current;
     savingNow.current = true;
     setSaving(true);
@@ -110,8 +145,17 @@ export function NotificationSetting({
               : "notifications.help",
           )}
         </p>
+        {status.automaticChecksSupported && (
+          <>
+            {/* The fact that matters stays in view; the long explanation folds away. */}
+            <p id={`${id}-auto-summary`}>{t("notifications.autoSummary")}</p>
+            <MoreAbout label={t("preferences.moreAutomatic")}>
+              <p id={`${id}-auto-help`}>{t("notifications.autoHelp")}</p>
+            </MoreAbout>
+          </>
+        )}
       </div>
-      <div className="appearance-choice">
+      <div className="appearance-choice preferences-checks">
         <label className="appearance-option">
           <input
             type="checkbox"
@@ -126,7 +170,6 @@ export function NotificationSetting({
         </label>
         {status.automaticChecksSupported && (
           <>
-            <p id={`${id}-auto-help`}>{t("notifications.autoHelp")}</p>
             <label className="appearance-option">
               <input
                 type="checkbox"
@@ -162,6 +205,26 @@ export function NotificationSetting({
             )}
           </>
         )}
+        <button
+          className="button"
+          type="button"
+          disabled={saving || testing || !status.enabled}
+          onClick={sendTest}
+        >
+          {t("notifications.testButton")}
+        </button>
+        {/* Always on the page, so a screen reader hears what the press came to. */}
+        <p aria-live="polite">
+          {testResult === "shown"
+            ? t("notifications.testSent")
+            : testResult === "tooSoon"
+              ? t("notifications.testWait")
+              : testResult === "notAllowed"
+                ? t("notifications.testOff")
+                : testResult === "failed"
+                  ? t("notifications.testFailed")
+                  : ""}
+        </p>
         {status.permission === "blocked" && (
           <p id={`${id}-blocked`}>{t("notifications.blocked")}</p>
         )}
