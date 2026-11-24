@@ -97,8 +97,9 @@ component can change with the compiler; the runner requires its LLVM version to 
 
 `scripts/coverage-rust-floor.json` pins two whole percents, `lines` and `regions`: the totals of the
 measured run rounded **down**. First measured at `0d6b6061` (24 Nov 2026): lines 87.75% (62,966 of
-71,754), regions 87.84% (111,946 of 127,436), functions 83.07% (5,731 of 6,899), so the floor was 87 and 87. Ben set it to 80 and 80 on 24 Nov 2026 to leave room for code that is hard to test;
-counting production code only (without the `#[cfg(test)]` lines) the line figure is about 82%. A run fails, after its report is complete and kept (`run.json` says
+71,754), regions 87.84% (111,946 of 127,436), functions 83.07% (5,731 of 6,899), so the measured floor was 87 and 87.
+Ben set the floor to **80 and 80** on 24 Nov 2026, to leave room for code that is hard to test.
+Counting production code only (without the `#[cfg(test)]` lines) the line figure is about 82%. A run fails, after its report is complete and kept (`run.json` says
 `status: "below-floor"`), when either total is lower:
 
 ```bash
@@ -111,8 +112,8 @@ The percentages are those of the denominator above (Linux host, default features
 inline test code included): they say how much of that code the tests run, nothing about other
 platforms or production-only code.
 
-The floor only goes up. After a run that improved coverage, raise it from the run's own report and
-commit the file in the same change as the tests that earned it:
+The floor is 80/80 by decision and is not raised after new tests unless Ben asks. When he does, raise it
+from a passing run's own report, in its own change:
 
 ```bash
 python3 scripts/coverage-rust.py --ratchet-report coverage/rust/<run>/report/coverage.json \
@@ -122,5 +123,5 @@ python3 scripts/coverage-rust.py --ratchet-report coverage/rust/<run>/report/cov
 `--ratchet-report` expects the report of a complete, passing run (`status: "passed"` in its `run.json`), never a
 partial one, and never lowers a floor, and `--check-report <coverage.json> --floor-file ...` checks
 an earlier report without building or testing. Both need no toolchain. `python3 -m unittest
-scripts/test_coverage_rust.py` tests the gate. Never lower the file to make a run pass: add tests, or
-say in the change why code left the denominator.
+scripts/test_coverage_rust.py` tests the gate. Don't lower the file to make a run pass: add tests where reasonable, or say in the change why code
+left the denominator.

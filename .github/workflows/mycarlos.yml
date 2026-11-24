@@ -221,15 +221,16 @@ jobs:
           path: src-tauri/target/debug/bundle
           retention-days: 7
 
-  # DRAFT FOR BEN (#441): the Rust coverage floor. An hour or more (a fresh instrumented build of the
-  # whole library and llama.cpp, then the whole library test suite on one thread), so it runs on main,
-  # on the weekly schedule and by hand, not on every pull request. It fails when the lines or the
-  # regions covered are below scripts/coverage-rust-floor.json; raise that file in the change that adds
-  # the tests, never lower it (COVERAGE-RUST.md).
+  # The Rust coverage floor (#441). An hour or more (a fresh instrumented build of the whole library
+  # and llama.cpp, then the whole library test suite on one thread), so it runs only on the weekly
+  # schedule and by hand (workflow_dispatch), never on a pull request or on every push to main. It
+  # fails when the lines or the regions covered are below scripts/coverage-rust-floor.json, which is
+  # 80/80 by Ben's decision (24 Nov 2026) and is not raised after new tests unless he asks
+  # (COVERAGE-RUST.md).
   rust-coverage:
     name: Rust coverage floor (Linux, library tests)
     needs: desktop
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
