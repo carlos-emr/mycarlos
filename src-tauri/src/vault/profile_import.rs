@@ -61,6 +61,9 @@ pub(crate) struct ImportPreview {
     pub display_name: String,
     pub full_name: Option<String>,
     pub birth_date: Option<String>,
+    /// The names the person had before, as the file lists them: once imported they count as the
+    /// clinic's name when a delivery is filed (#340), so the preview says so.
+    pub previous_full_names: Vec<String>,
     pub documents: usize,
     pub hidden: usize,
     pub folders: usize,
@@ -1037,6 +1040,13 @@ fn preview_of(
         display_name: package.profile.display_name.clone(),
         full_name: package.profile.full_name.clone(),
         birth_date: package.profile.birth_date.clone(),
+        previous_full_names: package
+            .profile
+            .previous_full_names
+            .iter()
+            .take(MAX_PREVIOUS_FULL_NAMES)
+            .cloned()
+            .collect(),
         documents: package.records.len(),
         hidden: package
             .records
@@ -2081,6 +2091,25 @@ mod tests {
             created_at_ms: at,
             superseded,
         }
+    }
+
+    /// The preview says which previous names the file lists, since once imported they count as
+    /// the clinic's name when a clinic document is filed (#340).
+    #[test]
+    fn the_preview_lists_the_previous_names_the_file_carries() {
+        let (key, _) = generate_package_key();
+        let (_temp, target) = target_vault();
+        let mut manifest = hand_made(Vec::new(), Vec::new());
+        manifest.profile.previous_full_names =
+            vec!["FAKE Old Name".to_owned(), "FAKE Maiden Name".to_owned()];
+        let bytes = crafted(manifest, &[], &key);
+        let preview = target
+            .inspect_profile_package(Cursor::new(&bytes), PackageSecret::Key(&key))
+            .unwrap();
+        assert_eq!(
+            preview.previous_full_names,
+            vec!["FAKE Old Name".to_owned(), "FAKE Maiden Name".to_owned()]
+        );
     }
 
     #[test]
