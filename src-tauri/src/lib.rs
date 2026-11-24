@@ -2226,7 +2226,7 @@ async fn ai_model_add_picked(
     let _open = ActivityHold::new(store.idle());
     let picker = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        let dialog = picker.dialog().file();
+        let dialog = file_dialog(&picker);
         #[cfg(desktop)]
         let dialog = dialog.add_filter(&filter, &["gguf"]);
         #[cfg(not(desktop))]
@@ -3967,6 +3967,22 @@ fn confirmed_natively<R: tauri::Runtime>(
 #[cfg(desktop)]
 const MAIN_WINDOW: &str = "main";
 
+/// A native file dialog owned by the app's window. Every file picker and save dialog of the app
+/// is opened through this and never through `app.dialog().file()`: with no owner, Windows shows
+/// the picker as a separate top-level window that is not modal to the app, so the patient can
+/// carry on in the app behind it, lose it behind the window or in the taskbar, and leave the
+/// operation waiting on a dialog that looks closed. Owned, it stays above the window and
+/// blocks it. No timeout is added: a patient may leave a dialog open as long as they like.
+fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().file();
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    };
+    dialog
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -4084,9 +4100,7 @@ async fn vault_recovery_kit_save(
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        dialog
-            .dialog()
-            .file()
+        file_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -4315,7 +4329,7 @@ async fn vault_backup_pick(
     let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4601,7 +4615,7 @@ async fn vault_profile_export_pick(
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4718,7 +4732,7 @@ async fn vault_profile_import_pick(
     let _open = ActivityHold::new(store.idle());
     // No filter: a phone's picker filters by file type, and a handover file has none it knows.
     let source =
-        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_file())
+        tauri::async_runtime::spawn_blocking(move || file_dialog(&app).blocking_pick_file())
             .await
             .map_err(|_| PublicError::from(VaultError::Storage))?;
     let Some(source) = source else {
@@ -5024,7 +5038,7 @@ async fn vault_restore_pick(
     .await?;
     let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
-        let picker = app.dialog().file();
+        let picker = file_dialog(&app);
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
@@ -5385,8 +5399,7 @@ async fn vault_import_pick(
     let _open = ActivityHold::new(store.idle());
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .add_filter(&pdf_filter, &["pdf"])
             .blocking_pick_files()
     })
@@ -6434,8 +6447,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -6677,8 +6689,7 @@ async fn vault_export_pick(
         run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -9597,6 +9608,31 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
+    /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
+    /// top-level window that can be lost behind the app while its command waits for it.
+    #[test]
+    fn every_file_dialog_is_opened_through_the_owned_helper() {
+        let source = include_str!("lib.rs");
+        let code = &source[..source.find("\nmod tests {").unwrap()];
+        let code: String = code
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .split_whitespace()
+            .collect();
+        // Once, inside the helper itself; spacing and line breaks are ignored.
+        assert_eq!(code.matches(".dialog().file()").count(), 1);
+        let helper = source.split("fn file_dialog(").nth(1).unwrap();
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("app.dialog().file()"));
+        assert!(helper.contains("set_parent(&window)"));
+        assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
+        // Eight sites use it: the model picker, three saves, two more picks, the two exports.
+        assert!(source.matches("file_dialog(&").count() >= 9);
     }
 
     #[test]
