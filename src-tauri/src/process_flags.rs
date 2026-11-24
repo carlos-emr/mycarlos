@@ -337,10 +337,24 @@ mod tests {
             "{error}"
         );
         assert!(production_code(unclosed).is_err());
-        // Raw strings: a backslash before the closing quote ends nothing, hashes must match, and a
-        // brace inside one is text. Without this a raw string misreads the module as unclosed.
-        let raw = "#[cfg(test)]\nmod tests {\n    fn t() { let a = r\"\\\"; let b = r#\"} \" }\"#; let c = br\"}\"; }\n}\nfn p() { Command::new(\"z\"); }\n";
-        assert_eq!(scan(raw), Ok((0, vec![5])));
+        // Raw strings, one literal per module (two misreads could cancel each other out): a
+        // backslash before the closing quote ends nothing, the hashes must match, and a brace
+        // inside one is text. Each of these is read as an unclosed module without the raw arm.
+        let mut misread = Vec::new();
+        for literal in [
+            "let a = r\"\\\";",
+            "let b = r#\"} \" }\"#;",
+            "let c = r#\"{ \" {\"#;",
+            "let d = br\"}\";",
+        ] {
+            let module = format!(
+                "#[cfg(test)]\nmod tests {{\n    fn t() {{ {literal} }}\n}}\nfn p() {{ Command::new(\"z\"); }}\n"
+            );
+            if scan(&module) != Ok((0, vec![5])) {
+                misread.push(literal);
+            }
+        }
+        assert!(misread.is_empty(), "read wrongly: {misread:?}");
         // The `r` at the end of a name starts no raw string, but the one of `br"` does.
         assert_eq!(raw_string_end(b"bar\"x\"", 2), None);
         assert_eq!(raw_string_end(b"br\"x\"", 1), Some(5));
