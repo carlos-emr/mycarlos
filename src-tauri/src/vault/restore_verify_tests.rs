@@ -90,17 +90,32 @@ mod verify_object_errors {
 
     #[test]
     fn a_path_that_cannot_be_looked_at_is_a_storage_failure_a_retry_can_get_past() {
-        // The object's folder is a file: neither "not found" nor "not a regular file", so not damage.
+        // Neither "not found" nor "not a regular file", so not damage.
         let temp = tempfile::tempdir().unwrap();
-        let blocker = temp.path().join("not-a-folder");
-        fs::write(&blocker, b"x").unwrap();
+        #[cfg(unix)]
+        let (path, _held) = {
+            // The object's folder is a file: Unix says "not a directory".
+            let blocker = temp.path().join("not-a-folder");
+            fs::write(&blocker, b"x").unwrap();
+            (blocker.join("object.mcobj"), ())
+        };
+        #[cfg(windows)]
+        let (path, _held) = {
+            // Windows says "not found" for that path, which is damage, so the fault is made
+            // another way: the object exists and another handle holds it with no sharing,
+            // which fails the open with a sharing violation.
+            use std::os::windows::fs::OpenOptionsExt;
+            let path = temp.path().join("object.mcobj");
+            fs::write(&path, b"x").unwrap();
+            let held = fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&path)
+                .unwrap();
+            (path, held)
+        };
         assert!(matches!(
-            verify(
-                &blocker.join("object.mcobj"),
-                Uuid::new_v4(),
-                Uuid::new_v4(),
-                0
-            ),
+            verify(&path, Uuid::new_v4(), Uuid::new_v4(), 0),
             Err(VaultError::Storage)
         ));
     }
@@ -275,12 +290,24 @@ mod restore_failures {
         let mut backup = Vec::new();
         store.backup(&mut backup, 3).unwrap();
         // The device has no vault; the name the verified copy takes is a file, which a directory
-        // cannot be renamed onto.
+        // cannot be renamed onto. (A folder there would be a pending restore that the start of
+        // this one puts in place, so it would not be a fault.)
         let to = temp.path().join("to").join("vault");
         let fresh = VaultStore::new(to.clone());
         let ready = restore_ready_path(&to).unwrap();
         fs::create_dir_all(ready.parent().unwrap()).unwrap();
         fs::write(&ready, b"in the way").unwrap();
+        // Windows replaces a plain file by the rename, so there the file is also held open with
+        // no sharing, which refuses the rename.
+        #[cfg(windows)]
+        let held = {
+            use std::os::windows::fs::OpenOptionsExt;
+            fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&ready)
+                .unwrap()
+        };
         let result = fresh.restore(
             Cursor::new(backup.clone()),
             RestoreCredential::Passphrase(PASSWORD),
@@ -296,6 +323,8 @@ mod restore_failures {
             leftovers(&to)
         );
         // Once what was in the way is gone, the same backup restores.
+        #[cfg(windows)]
+        drop(held);
         fs::remove_file(&ready).unwrap();
         fresh
             .restore(
@@ -508,22 +537,29 @@ mod notification_status {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         store.configure_notifications(temp.path().join("notices.json"), "test.app".to_owned());
-        // This build has no operating-system notices to turn on: the runtime says so, and a
-        // change is refused as a storage failure, never as success.
         let status = store.notification_status(Some(crate::ui_text::UiLocale::Fr));
-        assert!(!status.available);
         assert!(!status.automatic_checks_paused);
         store.collection.set_paused(true);
         assert!(store.notification_status(None).automatic_checks_paused);
         store.collection.set_paused(false);
-        assert!(matches!(
-            store.set_notifications(true),
-            Err(VaultError::Storage)
-        ));
-        assert!(matches!(
-            store.set_notifications(false),
-            Err(VaultError::Storage)
-        ));
-        assert!(!store.automatic_collection_allowed());
+        // Only where this build has no operating-system notices to turn on (everything but
+        // Windows): the runtime says so, and a change is refused as a storage failure, never
+        // as success. On Windows the runtime is the real one, what it reports is the machine's,
+        // and a change would write the registry, so that half is not run there.
+        #[cfg(not(windows))]
+        {
+            assert!(!status.available);
+            assert!(matches!(
+                store.set_notifications(true),
+                Err(VaultError::Storage)
+            ));
+            assert!(matches!(
+                store.set_notifications(false),
+                Err(VaultError::Storage)
+            ));
+            assert!(!store.automatic_collection_allowed());
+        }
+        #[cfg(windows)]
+        let _ = status;
     }
 }
