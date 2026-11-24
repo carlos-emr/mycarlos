@@ -3676,7 +3676,13 @@ p {
   cursor: not-allowed;
 }
 /* Recording a video, and playing one (#359). */
-.record-video-dialog .record-devices {
+.record-video-dialog .record-device-note {
+  margin: 0;
+}
+.record-device-note:empty {
+  min-height: 0;
+}
+.record-devices {
   display: grid;
   gap: 8px;
 }

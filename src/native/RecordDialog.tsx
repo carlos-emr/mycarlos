@@ -822,11 +822,13 @@ export function RecordDialog({
             muted
             playsInline
           />
-          {fellBack && (stage === "ready" || recordingNow) && (
-            <p role="status">
-              {translateNow("interface.RecordDialog.deviceFellBack")}
-            </p>
-          )}
+          {/* Always present, empty until there is something to say: a status region that is
+              inserted together with its text is not announced by every screen reader. */}
+          <p role="status" className="record-device-note">
+            {fellBack && (stage === "ready" || recordingNow)
+              ? translateNow("interface.RecordDialog.deviceFellBack")
+              : ""}
+          </p>
           {(stage === "ready" || recordingNow) &&
             (devices.cameras.length > 0 || devices.microphones.length > 0) && (
               <fieldset className="record-devices appearance-choice">

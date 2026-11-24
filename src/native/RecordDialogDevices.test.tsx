@@ -343,6 +343,17 @@ describe("choosing the camera and the microphone", () => {
     ).toBeVisible();
   });
 
+  it("keeps one standing status region for the fallback line, empty until needed", async () => {
+    open();
+    const region = document.querySelector(".record-device-note")!;
+    // Present from the start and empty, so a screen reader is already watching it.
+    expect(region).toHaveAttribute("role", "status");
+    expect(region).toHaveTextContent("");
+    await ready();
+    expect(document.querySelector(".record-device-note")).toBe(region);
+    expect(region).toHaveTextContent("");
+  });
+
   it("remembers a device only once its stream has opened", async () => {
     open();
     await ready();
