@@ -19,6 +19,8 @@
     "test:coverage:frontend": "vitest run --config vitest.coverage.config.ts",
     "test:dev-data": "node --test scripts/generate-fake-dev-data.test.mjs",
     "test:android-security": "node --test scripts/configure-android-security.test.mjs",
+    "check:release-safety": "node scripts/check-release-safety.mjs",
+    "test:release-safety": "node --test scripts/check-release-safety.test.mjs",
     "test:macos-association": "node --test scripts/check-macos-pdf-association.test.mjs && node scripts/check-macos-pdf-association.mjs --config",
     "test:dev-hmr": "node scripts/test-dev-hmr.mjs",
     "test:watch": "vitest",

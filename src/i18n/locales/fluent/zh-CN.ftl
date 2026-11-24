@@ -440,6 +440,7 @@ interface-notice-movedMany = 已将 { $count } 份文档移至 { $where }。
 interface-notice-movedNamed = { $name } 已移至 { $where }。
 
 interface-notice-notPdf = { $name } 不是 PDF 文档，因此 myCarlos 未添加该文件。目前只有 PDF 文档可以分享至 myCarlos。
+interface-notice-receivedNotOpened = 无法打开或读取 { $name }，因此 myCarlos 没有添加它。如果仍需要，请再次分享。
 
 interface-notice-pdfUnlocked = 已添加解锁副本。锁定的原始文档现在名称为 { $name }。
 
@@ -2395,6 +2396,8 @@ handover-export-done = 已为 { $name } 保存 { $count } 份文档，并重新�
 
 handover-export-doneApart = 请把文件和密钥分开保管。此文件不会改变您的保险库。
 
+handover-export-hideOffer = 在此保险库中隐藏 { $name }
+
 handover-export-leftOut = 因文件无法读取而未包含的文档：{ $count }
 
 handover-export-evidenceLeftOut = 无法包含诊所签名的文档（文档本身在文件中）：{ $count }
@@ -2559,3 +2562,25 @@ portal-arrivedForHiddenNoClinic = 有 { $count } 份文档已送达，目前在�
 library-fileSaysChecked = 随之而来的文件称，它已于 { $date } 在来源设备上检查过。此保险库没有检查过。
 
 handover-nowVerified = 通过移交文件到来的 { $count } 份文档现已通过 { $clinic } 验证，此保险库持有其密钥。
+
+
+notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
+
+background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
+
+background-startAtLoginSummary = myCarlos 可以在您登录此电脑时启动。开启上面的选项后，它会在后台静默启动，您的保险库保持锁定。
+
+preferences-moreAutomatic = 关于自动检查的更多说明
+
+preferences-moreBackground = 关于后台运行的更多说明
+
+native-notice-test = 这是来自 myCarlos 的测试通知。
+
+notifications-testButton = 显示测试通知
+
+notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+
+notifications-testWait = 请等待几秒钟后再试。
+
+notifications-testFailed = 无法显示测试通知。
+notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。

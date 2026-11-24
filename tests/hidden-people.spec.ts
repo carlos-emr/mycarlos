@@ -43,6 +43,15 @@ async function openSecurity(page: Page) {
   ).toBeVisible();
 }
 
+/** Hiding and restoring are said to a screen reader (the polite line the library keeps for news)
+ * and shown on no line at the top of the library. */
+async function expectAnnouncedOnly(page: Page, text: string) {
+  await expect(page.locator("p.sr-only[aria-live='polite']")).toHaveText(text);
+  await expect(
+    page.locator("p.status-line[role='status']").first(),
+  ).not.toContainText(text);
+}
+
 const line = (page: Page, name: string) =>
   page
     .getByRole("list", { name: en("personDetails.list"), exact: true })
@@ -94,9 +103,7 @@ test("Hide a person: the dialog says nothing is deleted and that it is tidiness,
       exact: true,
     })
     .click();
-  await expect(
-    page.getByText(en("hiddenPeople.hidden", { name: CHILD }), { exact: true }),
-  ).toBeVisible();
+  await expectAnnouncedOnly(page, en("hiddenPeople.hidden", { name: CHILD }));
   expect(await fakeCalls(page, "vault_hide_profile")).toEqual([
     { request: { profileId: CHILD_ID } },
   ]);
@@ -119,11 +126,7 @@ test("Hide a person: the dialog says nothing is deleted and that it is tidiness,
       exact: true,
     })
     .click();
-  await expect(
-    page.getByText(en("hiddenPeople.restored", { name: CHILD }), {
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expectAnnouncedOnly(page, en("hiddenPeople.restored", { name: CHILD }));
   await expect(line(page, CHILD)).toHaveCount(1);
   await expect(
     page.getByRole("list", { name: en("hiddenPeople.list"), exact: true }),
@@ -172,9 +175,7 @@ test("A document that arrived for a hidden person is offered back on restore, by
       exact: true,
     })
     .click();
-  await expect(
-    page.getByText(en("hiddenPeople.hidden", { name: CHILD }), { exact: true }),
-  ).toBeVisible();
+  await expectAnnouncedOnly(page, en("hiddenPeople.hidden", { name: CHILD }));
   // Meanwhile a clinic document arrives for them: it is in Shared with me.
   await page.evaluate(
     ([id, name]) =>

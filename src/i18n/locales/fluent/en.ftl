@@ -289,6 +289,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } moved to { $where }.
 
 interface-notice-notPdf = { $name } is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.
+interface-notice-receivedNotOpened = { $name } could not be opened or read, so myCarlos did not add it. Share it again if you still need it.
 
 interface-notice-pdfUnlocked = An unlocked copy was added. The locked original is now called { $name }.
 
@@ -2617,6 +2618,8 @@ handover-export-done =
 
 handover-export-doneApart = Keep the file and the key apart. This file does not change your vault.
 
+handover-export-hideOffer = Hide { $name } in this vault
+
 handover-export-leftOut =
     { $count ->
         [one] One document left out because its file cannot be read.
@@ -2833,3 +2836,25 @@ handover-nowVerified =
         [one] { $count } document that came in a handover file is now verified with { $clinic }, whose key this vault holds.
        *[other] { $count } documents that came in a handover file are now verified with { $clinic }, whose key this vault holds.
     }
+
+
+notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+
+background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
+
+background-startAtLoginSummary = myCarlos can start when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked.
+
+preferences-moreAutomatic = More about automatic checks
+
+preferences-moreBackground = More about running in the background
+
+native-notice-test = This is a test notice from myCarlos.
+
+notifications-testButton = Show a test notice
+
+notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+
+notifications-testWait = Wait a few seconds, then try again.
+
+notifications-testFailed = The test notice could not be shown.
+notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.

@@ -221,6 +221,7 @@
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -1243,6 +1244,7 @@
   "handover.export.doneTitle",
   "handover.export.done",
   "handover.export.doneApart",
+  "handover.export.hideOffer",
   "handover.export.leftOut",
   "handover.export.evidenceLeftOut",
   "handover.count.documents",
@@ -1324,5 +1326,16 @@
   "interface.history.how.personHidden",
   "portal.arrivedForHiddenNoClinic",
   "library.fileSaysChecked",
-  "handover.nowVerified"
+  "handover.nowVerified",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed",
+  "notifications.testOff",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground"
 ]

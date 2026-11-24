@@ -1729,14 +1729,20 @@ export function VaultLibrary({
   };
   // A whole person is hidden or restored in one step (#360): nothing is deleted, and the
   // person's documents, folders and AI answers leave or rejoin the library together.
-  const hidePerson = (id: string) => {
+  // Moved on when a hide that came from the handover dialog has finished: Security's Hand records
+  // over button takes the focus then (it is disabled while the hide runs).
+  const [handoverFocus, setHandoverFocus] = useState(0);
+  const hidePerson = (id: string, afterHide?: () => void) => {
     const name = profileName(id);
     void run(async () => {
       await bridge.hideProfile!(id);
       setSelectedIds([]);
       setActiveRecordId(null);
       await refresh();
-      setNotice(
+      afterHide?.();
+      // Said to a screen reader (the polite line the library keeps for news), with no line on the
+      // screen: the person leaving the lists is what shows.
+      setSharedAnnouncement(
         deferredText(() => translateNow("hiddenPeople.hidden", { name })),
       );
     });
@@ -1748,7 +1754,7 @@ export function VaultLibrary({
     void run(async () => {
       const arrived = await bridge.restoreProfile!(id);
       await refresh();
-      setNotice(
+      setSharedAnnouncement(
         deferredText(() => translateNow("hiddenPeople.restored", { name })),
       );
       if (arrived.length > 0) setArrivedFor({ profileId: id, name, arrived });
@@ -2983,6 +2989,7 @@ export function VaultLibrary({
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
                 onHandOver={() => setHandover("export")}
+                focusHandover={handoverFocus}
                 onAddFromFile={() => setHandover("import")}
                 hiddenPeople={snapshot.hiddenProfiles}
                 onHidePerson={bridge.hideProfile ? hidePerson : undefined}
@@ -3120,6 +3127,15 @@ export function VaultLibrary({
               // vault and ends the key: no Copy there.
               canCopy={keyboardHints}
               onUnfinished={onUnfinishedHandover}
+              // A person already hidden cannot be hidden again; otherwise the saved file offers it.
+              onHidePerson={
+                handoverHidden || !bridge.hideProfile
+                  ? undefined
+                  : (id) =>
+                      hidePerson(id, () =>
+                        setHandoverFocus((count) => count + 1),
+                      )
+              }
               onClose={() => {
                 setHandover(null);
                 setHandoverHidden(null);
@@ -3226,6 +3242,10 @@ export function VaultLibrary({
             !renameTarget &&
             !pendingAction &&
             !shownPhoto &&
+            // The details dialog is later in the page than the player, so left up it would sit
+            // over it: like a photo, a playing video replaces the details, which come back when
+            // the player closes.
+            shownVideo?.recordId !== activeRecord.id &&
             unlocking?.recordId !== activeRecord.id && (
               <RecordDetails
                 record={activeRecord}

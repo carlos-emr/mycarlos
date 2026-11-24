@@ -301,6 +301,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } foi movido para { $where }.
 
 interface-notice-notPdf = { $name } não é um documento PDF, então o myCarlos não o adicionou. Por enquanto, só documentos PDF podem ser compartilhados com o myCarlos.
+interface-notice-receivedNotOpened = Não foi possível abrir nem ler { $name }, então o myCarlos não o adicionou. Compartilhe-o de novo se ainda precisar dele.
 
 interface-notice-pdfUnlocked = Uma cópia desbloqueada foi adicionada. O original protegido agora se chama { $name }.
 
@@ -2652,6 +2653,8 @@ handover-export-done =
 
 handover-export-doneApart = Guarde o arquivo e a chave separadamente. Este arquivo não altera o seu cofre.
 
+handover-export-hideOffer = Ocultar { $name } neste cofre
+
 handover-export-leftOut =
     { $count ->
         [one] Um documento deixado de fora porque o arquivo não pode ser lido.
@@ -2868,3 +2871,25 @@ handover-nowVerified =
         [one] { $count } documento que chegou em um arquivo de entrega agora está verificado com { $clinic }, cuja chave este cofre tem.
        *[other] { $count } documentos que chegaram em um arquivo de entrega agora estão verificados com { $clinic }, cuja chave este cofre tem.
     }
+
+
+notifications-autoSummary = As verificações automáticas só acontecem enquanto o myCarlos está aberto e desbloqueado.
+
+background-keepRunningSummary = O myCarlos pode continuar em segundo plano depois que você fecha a janela. Seu cofre é bloqueado quando a janela fecha.
+
+background-startAtLoginSummary = O myCarlos pode iniciar quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano com seu cofre bloqueado.
+
+preferences-moreAutomatic = Saiba mais sobre as verificações automáticas
+
+preferences-moreBackground = Saiba mais sobre a execução em segundo plano
+
+native-notice-test = Este é um aviso de teste do myCarlos.
+
+notifications-testButton = Mostrar um aviso de teste
+
+notifications-testSent = Aviso de teste enviado. Se você não o vir, verifique as configurações de notificação do Windows.
+
+notifications-testWait = Aguarde alguns segundos e tente novamente.
+
+notifications-testFailed = Não foi possível mostrar o aviso de teste.
+notifications-testOff = Os avisos estão desativados no myCarlos. Ative-os e tente novamente.

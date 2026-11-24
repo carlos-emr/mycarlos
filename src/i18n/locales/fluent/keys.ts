@@ -222,6 +222,7 @@ export const MESSAGE_KEYS = [
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -1244,6 +1245,7 @@ export const MESSAGE_KEYS = [
   "handover.export.doneTitle",
   "handover.export.done",
   "handover.export.doneApart",
+  "handover.export.hideOffer",
   "handover.export.leftOut",
   "handover.export.evidenceLeftOut",
   "handover.count.documents",
@@ -1326,6 +1328,17 @@ export const MESSAGE_KEYS = [
   "portal.arrivedForHiddenNoClinic",
   "library.fileSaysChecked",
   "handover.nowVerified",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testWait",
+  "notifications.testFailed",
+  "notifications.testOff",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1638,6 +1651,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.notice.movedMany": "interface-notice-movedMany",
   "interface.notice.movedNamed": "interface-notice-movedNamed",
   "interface.notice.notPdf": "interface-notice-notPdf",
+  "interface.notice.receivedNotOpened": "interface-notice-receivedNotOpened",
   "interface.notice.pdfUnlocked": "interface-notice-pdfUnlocked",
   "interface.notice.personAdded": "interface-notice-personAdded",
   "interface.notice.photoSaved": "interface-notice-photoSaved",
@@ -2840,6 +2854,7 @@ const FLUENT_IDS_BY_KEY = {
   "handover.export.doneTitle": "handover-export-doneTitle",
   "handover.export.done": "handover-export-done",
   "handover.export.doneApart": "handover-export-doneApart",
+  "handover.export.hideOffer": "handover-export-hideOffer",
   "handover.export.leftOut": "handover-export-leftOut",
   "handover.export.evidenceLeftOut": "handover-export-evidenceLeftOut",
   "handover.count.documents": "handover-count-documents",
@@ -2922,6 +2937,17 @@ const FLUENT_IDS_BY_KEY = {
   "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
   "library.fileSaysChecked": "library-fileSaysChecked",
   "handover.nowVerified": "handover-nowVerified",
+  "notifications.autoSummary": "notifications-autoSummary",
+  "background.keepRunningSummary": "background-keepRunningSummary",
+  "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "native.notice.test": "native-notice-test",
+  "notifications.testButton": "notifications-testButton",
+  "notifications.testSent": "notifications-testSent",
+  "notifications.testWait": "notifications-testWait",
+  "notifications.testFailed": "notifications-testFailed",
+  "notifications.testOff": "notifications-testOff",
+  "preferences.moreAutomatic": "preferences-moreAutomatic",
+  "preferences.moreBackground": "preferences-moreBackground",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3179,6 +3205,7 @@ export interface MessageArgsByKey {
     where: FluentArgument;
   };
   "interface.notice.notPdf": { name: FluentArgument };
+  "interface.notice.receivedNotOpened": { name: FluentArgument };
   "interface.notice.pdfUnlocked": { name: FluentArgument };
   "interface.notice.personAdded": { name: FluentArgument };
   "interface.notice.photoSaved": { name: FluentArgument };
@@ -4301,6 +4328,7 @@ export interface MessageArgsByKey {
   "handover.export.doneTitle": undefined;
   "handover.export.done": { count: FluentArgument; name: FluentArgument };
   "handover.export.doneApart": undefined;
+  "handover.export.hideOffer": { name: FluentArgument };
   "handover.export.leftOut": { count: FluentArgument };
   "handover.export.evidenceLeftOut": { count: FluentArgument };
   "handover.count.documents": { count: FluentArgument };
@@ -4383,6 +4411,17 @@ export interface MessageArgsByKey {
   "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
   "library.fileSaysChecked": { date: FluentArgument };
   "handover.nowVerified": { clinic: FluentArgument; count: FluentArgument };
+  "notifications.autoSummary": undefined;
+  "background.keepRunningSummary": undefined;
+  "background.startAtLoginSummary": undefined;
+  "native.notice.test": undefined;
+  "notifications.testButton": undefined;
+  "notifications.testSent": undefined;
+  "notifications.testWait": undefined;
+  "notifications.testFailed": undefined;
+  "notifications.testOff": undefined;
+  "preferences.moreAutomatic": undefined;
+  "preferences.moreBackground": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

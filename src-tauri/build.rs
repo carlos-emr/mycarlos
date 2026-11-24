@@ -134,6 +134,7 @@ fn main() {
             "vault_forget_refused_deliveries",
             "vault_notification_status",
             "vault_set_notifications",
+            "vault_send_test_notice",
             "vault_set_automatic_document_checks",
             "vault_request_device_approval",
             "vault_restart_device_approval",

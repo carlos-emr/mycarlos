@@ -1685,6 +1685,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         ...outcome.notPdf.map((name) =>
           translateNow("interface.notice.notPdf", { name }),
         ),
+        ...outcome.unreadable.map((name) =>
+          translateNow("interface.notice.receivedNotOpened", { name }),
+        ),
         ...outcome.skippedDuplicates.map((name) =>
           translateNow("interface.notice.alreadyShared", { name }),
         ),
@@ -1699,6 +1702,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (
           outcome.imported.length ||
           outcome.notPdf.length ||
+          outcome.unreadable.length ||
           outcome.skippedDuplicates.length
         ) {
           const message = deferredText(() =>
@@ -1736,10 +1740,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         if (!current()) return;
         setSharedNew((count) => count + outcome.imported.length);
       }
-      if (outcome.notPdf.length || outcome.skippedDuplicates.length)
+      if (
+        outcome.notPdf.length ||
+        outcome.unreadable.length ||
+        outcome.skippedDuplicates.length
+      )
         setSessionNotice(deferredText(() => said().join(" ")));
-    } catch {
-      // They keep waiting: the next ask tries again.
+    } catch (error) {
+      // They keep waiting: the next ask tries again. Said, unless it is the
+      // vault locking or the work cancelled: without a word, no space, a
+      // paused vault or damage would mean the files never appear.
+      if (
+        inSession() &&
+        !hasVaultErrorCode(error, "locked") &&
+        !hasVaultErrorCode(error, "cancelled")
+      )
+        setSessionNotice(deferredText(() => vaultErrorMessage(error)));
     } finally {
       if (accepting.current === generation) accepting.current = null;
       // A newer unlock may have asked while these files were still taken.

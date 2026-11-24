@@ -2416,6 +2416,86 @@ describe("clinic documents that failed their checks (#143)", () => {
   });
 });
 
+// Gap tests (24 Nov), placed here, not at the end, so that the stacked #448 can add its own cases
+// below without a clash.
+describe("the identifiers and the emailed code, where they had no test", () => {
+  const asked: PortalLinkSummary = {
+    ...link,
+    approvalStatus: "challenge_ready",
+    approvalByCode: true,
+  };
+  const withCode = { ...snapshot, portalLinks: [asked] };
+  const codeBox = () =>
+    screen.getByRole("textbox", { name: "Code from your clinic's email" });
+
+  it("selects the whole device code and fingerprint when they are reached by keyboard or by a click", async () => {
+    fixture();
+    const user = userEvent.setup();
+    const code = screen.getByLabelText("Device code") as HTMLInputElement;
+    const print = screen.getByLabelText(
+      "Full device fingerprint",
+    ) as HTMLTextAreaElement;
+    // By keyboard: Tab onto the fields selects everything, to copy it whole.
+    fireEvent.focus(code);
+    expect(code.selectionEnd! - code.selectionStart!).toBe(code.value.length);
+    fireEvent.focus(print);
+    expect(print.selectionEnd! - print.selectionStart!).toBe(
+      print.value.length,
+    );
+    // By a click that lands inside the text: still the whole of it.
+    code.setSelectionRange(2, 2);
+    await user.click(code);
+    expect(code.selectionEnd! - code.selectionStart!).toBe(code.value.length);
+    print.setSelectionRange(3, 3);
+    await user.click(print);
+    expect(print.selectionEnd! - print.selectionStart!).toBe(
+      print.value.length,
+    );
+  });
+
+  it("keeps the portal's wait when a code is refused as sent too often", async () => {
+    const waits = new PortalWaits();
+    const { bridge, failures } = fixture({ snapshot: withCode, waits });
+    vi.mocked(bridge.submitApprovalCode!).mockRejectedValue({
+      code: "portal_rate_limited",
+      retryAfterMs: 120_000,
+    });
+    const user = userEvent.setup();
+    await user.type(codeBox(), "482193644");
+    const before = performance.now();
+    await user.click(screen.getByRole("button", { name: "Confirm code" }));
+    await waitFor(() =>
+      expect(bridge.submitApprovalCode).toHaveBeenCalledOnce(),
+    );
+    await waitFor(() =>
+      expect(waits.notBefore(asked.portalBase)).toBeGreaterThanOrEqual(
+        before + 120_000,
+      ),
+    );
+    // The code stays to be sent again once the wait is over.
+    expect(codeBox()).toHaveValue("482193644");
+    // The refusal also goes on to the app's own handling of a clinic failure.
+    expect(failures).toEqual([
+      { code: "portal_rate_limited", retryAfterMs: 120_000 },
+    ]);
+  });
+
+  it("shows the compact check as working, and off, while clinic work runs, and as ready again after", () => {
+    const { props, rerender } = fixture({ compact: true, working: true });
+    const button = screen.getByRole("button", {
+      name: "Clinic operation in progress…",
+    });
+    expect(button).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Check for new documents" }),
+    ).toBeNull();
+    rerender(<PortalDocuments {...props} working={false} />);
+    expect(
+      screen.getByRole("button", { name: "Check for new documents" }),
+    ).toBeEnabled();
+  });
+});
+
 describe("Link another clinic (#145)", () => {
   const unlinked = unlinkedSnapshot;
   const addressBox = () => screen.queryByLabelText("Portal HTTPS address");
