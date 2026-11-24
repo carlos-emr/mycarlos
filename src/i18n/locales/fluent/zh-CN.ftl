@@ -2559,6 +2559,40 @@ interface-history-how-personHidden = 该人被隐藏期间归档到“与我分�
 
 portal-arrivedForHiddenNoClinic = 有 { $count } 份文档已送达，目前在“与我分享”中。对应的人已被隐藏。
 
+fileUnder-button = 归档到…
+
+fileUnder-title = 把 { $document } 归档到某人
+
+fileUnder-fromClinic = 来自诊所
+
+fileUnder-words = { $name }，出生日期 { $date }
+
+fileUnder-clinicWords = 来自诊所：{ $name }，出生日期 { $date }。
+
+fileUnder-rule = 只有当恰好一个人拥有此出生日期和此全名（或曾用全名）时，myCarlos 才会自行归档诊所文档。不会替您做任何选择。
+
+fileUnder-person = 人员
+
+fileUnder-what-both = 全名“{ $name }”和出生日期 { $date }
+
+fileUnder-what-name = 全名“{ $name }”
+
+fileUnder-what-date = 出生日期 { $date }
+
+fileUnder-saveDetails = 同时将 { $what } 保存为 { $person } 的资料，这样此诊所之后的文档会自动归档到 { $person }。
+
+fileUnder-confirm = 归档到 { $person }
+
+fileUnder-choose = 请选择一个人
+
+fileUnder-differs = 诊所的资料与此人的资料不同，因此不会提供保存。请确认这是否是正确的人。
+
+fileUnder-saveDetailsOnly = 同时将 { $what } 保存为 { $person } 的资料。
+
+fileUnder-notOnItsOwn = 此诊所之后的文档仍可能留在“与我分享”中：此诊所的链接绑定了另一个人，或另一个人已有相同的姓名和出生日期。
+
+handover-import-previousNames = 文件中的曾用名：{ $names }。这些名字也将用于把诊所的新文档归档到此人名下。
+
 library-fileSaysChecked = 随之而来的文件称，它已于 { $date } 在来源设备上检查过。此保险库没有检查过。
 
 handover-nowVerified = 通过移交文件到来的 { $count } 份文档现已通过 { $clinic } 验证，此保险库持有其密钥。

@@ -61,6 +61,7 @@ import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
 import { ArrivedWhileHiddenDialog } from "./HiddenPeople";
+import { FileUnderDialog, fileUnderPlan } from "./FileUnder";
 import { RecordDetails } from "./RecordDetails";
 import { AndroidDocumentReader } from "./AndroidDocumentReader";
 import { DocumentReader } from "./DocumentReader";
@@ -476,6 +477,8 @@ export function VaultLibrary({
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
   // Handing a person's records over, or adding one from a file (#360).
   const [handover, setHandover] = useState<"export" | "import" | null>(null);
+  // A clinic document being filed under a person the patient chooses (#340).
+  const [fileUnderId, setFileUnderId] = useState<string | null>(null);
   // Documents that came in a handover file stand on what the file says until a link of this
   // vault to the same clinic holds its signing key (#360): say when that happens.
   const claimedIds = useRef<Set<string> | null>(null);
@@ -1847,6 +1850,8 @@ export function VaultLibrary({
     ids: string[],
     toProfileId: string,
     folderId: string | null,
+    /** Run once the move has happened, before the library is read again. */
+    afterMove?: () => Promise<void>,
   ) =>
     void run(async () => {
       const names = new Map(
@@ -1864,6 +1869,7 @@ export function VaultLibrary({
       setSelectedIds((current) =>
         current.filter((id) => !outcome.moved.includes(id)),
       );
+      if (afterMove && outcome.moved.length > 0) await afterMove();
       await refresh();
       const said = () => {
         const theirs =
@@ -3102,6 +3108,46 @@ export function VaultLibrary({
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
+          {fileUnderId &&
+            (() => {
+              const record = snapshot.records.find(
+                (candidate) => candidate.id === fileUnderId,
+              );
+              const clinic = record?.clinicPatient;
+              if (!record || !clinic) return null;
+              return (
+                <FileUnderDialog
+                  documentName={record.displayName}
+                  clinic={clinic}
+                  people={people}
+                  busy={busy}
+                  onCancel={() => setFileUnderId(null)}
+                  onConfirm={(to, saveDetails) => {
+                    setFileUnderId(null);
+                    const person = people.find((p) => p.id === to);
+                    const fill =
+                      saveDetails && person
+                        ? fileUnderPlan(person, clinic).fill
+                        : {};
+                    moveToPerson(
+                      [record.id],
+                      to,
+                      null,
+                      Object.keys(fill).length > 0 && person
+                        ? async () => {
+                            // Only what the person had none of, and the rest as it was.
+                            await bridge.updateProfileDetails!(to, {
+                              fullName: fill.fullName ?? person.fullName,
+                              birthDate: fill.birthDate ?? person.birthDate,
+                              previousFullNames: person.previousFullNames,
+                            });
+                          }
+                        : undefined,
+                    );
+                  }}
+                />
+              );
+            })()}
           {arrivedFor && (
             <ArrivedWhileHiddenDialog
               name={arrivedFor.name}
@@ -3240,6 +3286,7 @@ export function VaultLibrary({
           )}
           {activeRecord &&
             !renameTarget &&
+            !fileUnderId &&
             !pendingAction &&
             !shownPhoto &&
             // The details dialog is later in the page than the player, so left up it would sit
@@ -3253,6 +3300,14 @@ export function VaultLibrary({
                 folders={folders}
                 moveTargets={
                   inShared || people.length > 1 ? moveTargets : undefined
+                }
+                onFileUnder={
+                  inShared &&
+                  activeRecord.clinicPatient &&
+                  people.length > 0 &&
+                  bridge.updateProfileDetails
+                    ? () => setFileUnderId(activeRecord.id)
+                    : undefined
                 }
                 onMoveTo={(to, folderId) =>
                   to === activeRecord.profileId
