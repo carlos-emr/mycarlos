@@ -313,6 +313,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = Przeniesiono { $name } do { $where }.
 
 interface-notice-notPdf = { $name } nie jest dokumentem PDF, więc myCarlos go nie dodał. Na razie do myCarlos można udostępniać tylko dokumenty PDF.
+interface-notice-receivedNotOpened = Nie udało się otworzyć ani odczytać pliku { $name }, więc myCarlos go nie dodał. Jeśli nadal jest potrzebny, proszę udostępnić go ponownie.
 
 interface-notice-pdfUnlocked = Dodano odblokowaną kopię. Zabezpieczony oryginał nosi teraz nazwę { $name }.
 
@@ -2649,3 +2650,15 @@ security-backup-leaveVideosOutHelp = Kopia zapasowa nie będzie zawierać Twoich
 restore-leftOut = Ta kopia zapasowa została wykonana bez filmów. Jej przywrócenie przywraca wszystko inne, a filmów nie będzie. Są wymienione wśród ukrytych dokumentów jako brakujące pliki.
 security-backup-sizeCalculating = Obliczanie rozmiaru kopii zapasowej…
 interface-hidden-videoLeftOut = Film pominięty w kopii zapasowej
+
+
+
+notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
+
+background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
+
+background-startAtLoginSummary = myCarlos może uruchamiać się po zalogowaniu do tego komputera. Gdy powyższy wybór jest włączony, uruchamia się po cichu w tle z zablokowanym sejfem.
+
+preferences-moreAutomatic = Więcej o automatycznym sprawdzaniu
+
+preferences-moreBackground = Więcej o działaniu w tle

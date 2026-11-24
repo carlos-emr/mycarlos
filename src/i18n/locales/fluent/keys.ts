@@ -222,6 +222,7 @@ export const MESSAGE_KEYS = [
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -1205,6 +1206,11 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1517,6 +1523,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.notice.movedMany": "interface-notice-movedMany",
   "interface.notice.movedNamed": "interface-notice-movedNamed",
   "interface.notice.notPdf": "interface-notice-notPdf",
+  "interface.notice.receivedNotOpened": "interface-notice-receivedNotOpened",
   "interface.notice.pdfUnlocked": "interface-notice-pdfUnlocked",
   "interface.notice.personAdded": "interface-notice-personAdded",
   "interface.notice.photoSaved": "interface-notice-photoSaved",
@@ -2676,6 +2683,11 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "notifications.autoSummary": "notifications-autoSummary",
+  "background.keepRunningSummary": "background-keepRunningSummary",
+  "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "preferences.moreAutomatic": "preferences-moreAutomatic",
+  "preferences.moreBackground": "preferences-moreBackground",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -2933,6 +2945,7 @@ export interface MessageArgsByKey {
     where: FluentArgument;
   };
   "interface.notice.notPdf": { name: FluentArgument };
+  "interface.notice.receivedNotOpened": { name: FluentArgument };
   "interface.notice.pdfUnlocked": { name: FluentArgument };
   "interface.notice.personAdded": { name: FluentArgument };
   "interface.notice.photoSaved": { name: FluentArgument };
@@ -4013,6 +4026,11 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "notifications.autoSummary": undefined;
+  "background.keepRunningSummary": undefined;
+  "background.startAtLoginSummary": undefined;
+  "preferences.moreAutomatic": undefined;
+  "preferences.moreBackground": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

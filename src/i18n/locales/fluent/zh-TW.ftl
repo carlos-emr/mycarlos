@@ -440,6 +440,7 @@ interface-notice-movedMany = 已將 { $count } 份文件移至 { $where }。
 interface-notice-movedNamed = { $name } 已移至 { $where }。
 
 interface-notice-notPdf = { $name } 不是 PDF 文件，因此 myCarlos 未新增該檔案。目前只有 PDF 文件可以分享至 myCarlos。
+interface-notice-receivedNotOpened = 無法開啟或讀取 { $name }，因此 myCarlos 沒有加入它。如果仍需要，請再次分享。
 
 interface-notice-pdfUnlocked = 已新增解鎖副本。鎖定的原始文件現在名稱為 { $name }。
 
@@ -2316,3 +2317,15 @@ security-backup-leaveVideosOutHelp = 備份將不包含您的影片。如果您�
 restore-leftOut = 此備份是在不含影片的情況下製作的。還原它會帶回其他所有內容，但您的影片不會在其中。它們會作為遺失的檔案列在隱藏文件中。
 security-backup-sizeCalculating = 正在計算備份大小…
 interface-hidden-videoLeftOut = 備份中未包含的影片
+
+
+
+notifications-autoSummary = 自動檢查僅在 myCarlos 開啟且已解鎖時進行。
+
+background-keepRunningSummary = 關閉視窗後，myCarlos 可以留在背景執行。視窗關閉時，您的保險庫會鎖定。
+
+background-startAtLoginSummary = myCarlos 可以在您登入此電腦時啟動。開啟上方的選項後，它會在背景靜默啟動，您的保險庫保持鎖定。
+
+preferences-moreAutomatic = 關於自動檢查的更多說明
+
+preferences-moreBackground = 關於背景執行的更多說明

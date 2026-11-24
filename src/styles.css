@@ -1097,6 +1097,29 @@ p {
   outline-offset: 1px;
   border-radius: 2px;
 }
+/* While the page picture shows the quote (its boxes are drawn), the text's mark is not drawn a
+   second time: it keeps the focus, its place in the reading order and its words for assistive
+   technology (it is neither hidden from them nor moved), but a sighted reader sees the picture's
+   highlight only. A keyboard user still sees where the focus is. Forced colours would otherwise
+   paint a mark in Highlight, so they are not adjusted for it here (its colours are the plain
+   text's). Where the words could not be placed on the picture, the class is absent and the mark
+   above is the highlight. */
+.native-reader-text-mark-quiet mark {
+  background: transparent;
+  color: inherit;
+  outline: none;
+  border-radius: 0;
+  forced-color-adjust: none;
+}
+.native-reader-text-mark-quiet mark:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+@media (forced-colors: active) {
+  .native-reader-text-mark-quiet mark:focus-visible {
+    outline-color: Highlight;
+  }
+}
 /* The page picture, and the quoted words' boxes over it (#292). A box is a
    fraction of the picture, so it stays on its words at every zoom. The picture
    is always white paper, so every theme gives the boxes the same colours: an
@@ -4331,8 +4354,12 @@ button:disabled,
   }
   /* Focus on the chosen one is drawn inside its Highlight fill, in the text
      colour that goes with it, so it still shows against the fill. */
-  .appearance-choice.choice-segmented .appearance-option input:checked:focus-visible,
-  .appearance-choice.choice-grid .appearance-option input:checked:focus-visible {
+  .appearance-choice.choice-segmented
+    .appearance-option
+    input:checked:focus-visible,
+  .appearance-choice.choice-grid
+    .appearance-option
+    input:checked:focus-visible {
     outline: 3px solid HighlightText;
     outline-offset: -6px;
   }
@@ -4950,4 +4977,51 @@ button:disabled,
 .native-language-dialog .language-compact {
   margin: 0;
   padding: 14px 20px 6px;
+}
+
+/* Preferences: the tick-box choices read at body size, like the sentences beside them, and a long
+   explanation folds under "More about this" so the key fact stays in view. */
+.native-vault-page .setting-row .preferences-checks .appearance-option {
+  font-size: 1rem;
+}
+.preferences-checks {
+  max-width: 440px;
+}
+.more-about {
+  margin-top: 4px;
+}
+.more-about summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.more-about summary::-webkit-details-marker {
+  display: none;
+}
+/* A chevron says it is a control that opens: pointing right when closed, down when open. It is
+   drawn with borders in currentColor, not a text glyph, so it is there in forced-colours mode
+   and in WebView2, which lays the summary out as flex and so drops the browser's own marker. */
+.more-about summary::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 0.55em;
+  height: 0.55em;
+  margin-inline: 0.2em 0.1em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+.more-about[open] > summary::before {
+  transform: rotate(45deg);
+}
+.more-about summary:focus-visible {
+  outline-offset: 2px;
+}
+.more-about-body p:first-child {
+  margin-top: 2px;
 }

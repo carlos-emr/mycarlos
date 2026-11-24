@@ -301,6 +301,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } foi movido para { $where }.
 
 interface-notice-notPdf = { $name } não é um documento PDF, então o myCarlos não o adicionou. Por enquanto, só documentos PDF podem ser compartilhados com o myCarlos.
+interface-notice-receivedNotOpened = Não foi possível abrir nem ler { $name }, então o myCarlos não o adicionou. Compartilhe-o de novo se ainda precisar dele.
 
 interface-notice-pdfUnlocked = Uma cópia desbloqueada foi adicionada. O original protegido agora se chama { $name }.
 
@@ -2569,3 +2570,15 @@ security-backup-leaveVideosOutHelp = O backup não conterá seus vídeos. Se voc
 restore-leftOut = Este backup foi feito sem vídeos. Restaurá-lo traz de volta todo o resto, e seus vídeos não estarão lá. Eles aparecem entre os documentos ocultos, como arquivos ausentes.
 security-backup-sizeCalculating = Calculando o tamanho do backup…
 interface-hidden-videoLeftOut = Vídeo deixado de fora do backup
+
+
+
+notifications-autoSummary = As verificações automáticas só acontecem enquanto o myCarlos está aberto e desbloqueado.
+
+background-keepRunningSummary = O myCarlos pode continuar em segundo plano depois que você fecha a janela. Seu cofre é bloqueado quando a janela fecha.
+
+background-startAtLoginSummary = O myCarlos pode iniciar quando você entra neste computador. Com a opção acima ativada, ele inicia discretamente em segundo plano com seu cofre bloqueado.
+
+preferences-moreAutomatic = Saiba mais sobre as verificações automáticas
+
+preferences-moreBackground = Saiba mais sobre a execução em segundo plano
