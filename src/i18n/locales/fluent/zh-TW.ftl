@@ -2145,6 +2145,7 @@ notifications-help = 手動檢查後，診所文件儲存至 myCarlos 時，Wind
 notifications-allow = 允許文件送達通知
 notifications-blocked = Windows 正在封鎖通知。請查看 Windows 通知設定。
 notifications-unknown = 無法檢查 Windows 通知權限。
+notifications-notYetAsked = Windows 尚未顯示過 myCarlos 的通知，因此還沒有針對它的設定。在您於 Windows 設定中將其關閉之前，通知是允許的。
 notifications-error = 無法儲存此設定。本次工作階段的通知已關閉。
 notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
 notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。

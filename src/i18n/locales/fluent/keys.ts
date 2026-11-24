@@ -1017,6 +1017,7 @@ export const MESSAGE_KEYS = [
   "notifications.error",
   "notifications.help",
   "notifications.title",
+  "notifications.notYetAsked",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
@@ -2583,6 +2584,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.error": "notifications-error",
   "notifications.help": "notifications-help",
   "notifications.title": "notifications-title",
+  "notifications.notYetAsked": "notifications-notYetAsked",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
@@ -4082,6 +4084,7 @@ export interface MessageArgsByKey {
   "notifications.error": undefined;
   "notifications.help": undefined;
   "notifications.title": undefined;
+  "notifications.notYetAsked": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;

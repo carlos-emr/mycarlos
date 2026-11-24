@@ -254,6 +254,30 @@ describe("Document notice preference", () => {
     );
   });
 
+  it("says Windows has no setting for it yet without blocking the box", async () => {
+    native.invoke.mockResolvedValue({
+      ...allowed,
+      permission: "not_yet_asked",
+    });
+    render(<NotificationSetting />);
+    const checkbox = await screen.findByRole("checkbox", {
+      name: humanText("Allow document arrival notices"),
+    });
+    // Nothing was refused: the notices can be turned on, and the first one shown makes the setting.
+    expect(checkbox).toBeEnabled();
+    expect(
+      screen.getByText(
+        humanText(/Windows has not shown a myCarlos notice yet/),
+      ),
+    ).toBeVisible();
+    expect(checkbox).toHaveHumanAccessibleDescription(
+      /Notices are allowed until you turn them off in Windows settings/,
+    );
+    expect(
+      screen.queryByText(humanText(/could not be checked/)),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps consent off until a person acts and bounds the native call to one boolean", async () => {
     const user = userEvent.setup();
     let enabled = false;

@@ -2478,6 +2478,7 @@ notifications-help = Gdy po ręcznym sprawdzeniu zostanie zapisany dokument z pr
 notifications-allow = Zezwalaj na powiadomienia o nowych dokumentach
 notifications-blocked = System Windows blokuje powiadomienia. Proszę sprawdzić ustawienia powiadomień.
 notifications-unknown = Nie można sprawdzić uprawnień do powiadomień w systemie Windows.
+notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
 notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wyłączone w tej sesji.
 notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.

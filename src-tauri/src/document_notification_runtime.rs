@@ -9,7 +9,12 @@ use std::path::PathBuf;
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
     Unavailable,
+    /// The operating system could not be asked at all (no notifier could be made): nothing is shown.
     Unknown,
+    /// The system has no setting for this app yet. Windows makes one only when an unpackaged app
+    /// first shows a notice, and until then asking for it fails. Nothing has been refused, so
+    /// notices are tried; the first one shown makes the setting.
+    NotYetAsked,
     Allowed,
     Blocked,
 }
@@ -95,6 +100,31 @@ pub(crate) mod active {
     /// new ones arrive, so a full ledger never stops notices; a delivery older than the window
     /// could be noticed again if it were verified again, which is bounded and harmless.
     const MAX_EVENTS: usize = 512;
+
+    /// What the operating system said when asked whether this app may show notices.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(crate) enum OsSetting {
+        Enabled,
+        /// Turned off by the person, an administrator, the app's own manifest or "do not disturb".
+        Disabled,
+        /// The question itself failed (Windows throws it for an app it has never shown a notice
+        /// for), which is not a refusal.
+        Failed,
+    }
+
+    /// How an answer reads. Only a definite "disabled" blocks: a failed question is "not yet asked".
+    pub(crate) fn permission_for(setting: OsSetting) -> Permission {
+        match setting {
+            OsSetting::Enabled => Permission::Allowed,
+            OsSetting::Disabled => Permission::Blocked,
+            OsSetting::Failed => Permission::NotYetAsked,
+        }
+    }
+
+    /// Whether a notice may be tried now: yes unless the system said it is disabled.
+    pub(crate) fn may_show(setting: OsSetting) -> bool {
+        permission_for(setting) != Permission::Blocked
+    }
 
     pub trait Backend: Send + Sync {
         fn permission(&self) -> Permission;
@@ -520,16 +550,18 @@ pub(crate) mod active {
                 *last = Some(std::time::Instant::now());
             }
             match self.backend.permission() {
-                Permission::Allowed => match (self.test_notice)(state.locale) {
-                    Some(body) => {
-                        let still_enabled = || self.accepting.load(Ordering::Acquire);
-                        match self.backend.accept(&body, &still_enabled) {
-                            Ok(()) => TestNotice::Shown,
-                            Err(_) => TestNotice::Failed,
+                Permission::Allowed | Permission::NotYetAsked => {
+                    match (self.test_notice)(state.locale) {
+                        Some(body) => {
+                            let still_enabled = || self.accepting.load(Ordering::Acquire);
+                            match self.backend.accept(&body, &still_enabled) {
+                                Ok(()) => TestNotice::Shown,
+                                Err(_) => TestNotice::Failed,
+                            }
                         }
+                        None => TestNotice::Failed,
                     }
-                    None => TestNotice::Failed,
-                },
+                }
                 Permission::Blocked => TestNotice::Blocked,
                 _ => TestNotice::Failed,
             }
@@ -597,14 +629,16 @@ pub(crate) mod active {
             }
             // Serialize the opt-out and side effect. No detached task can revive a disabled notice.
             let outcome = match self.backend.permission() {
-                Permission::Allowed if current() => match (self.notice)(next.locale) {
-                    Some(body) => match self.backend.accept(&body, &current) {
-                        Ok(()) => Outcome::OsAccepted,
-                        Err(Error::Cancelled) => Outcome::Unknown,
-                        Err(_) => Outcome::Failed,
-                    },
-                    None => Outcome::Failed,
-                },
+                Permission::Allowed | Permission::NotYetAsked if current() => {
+                    match (self.notice)(next.locale) {
+                        Some(body) => match self.backend.accept(&body, &current) {
+                            Ok(()) => Outcome::OsAccepted,
+                            Err(Error::Cancelled) => Outcome::Unknown,
+                            Err(_) => Outcome::Failed,
+                        },
+                        None => Outcome::Failed,
+                    }
+                }
                 _ => Outcome::Unknown,
             };
             next.events.last_mut().unwrap().outcome = outcome;
@@ -1193,6 +1227,74 @@ pub(crate) mod active {
             let runtime = runtime.with_test_interval(std::time::Duration::ZERO);
             assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
             assert_eq!(bodies.lock().unwrap().len(), 2);
+        }
+
+        #[test]
+        fn only_a_definite_disabled_blocks_and_a_failed_question_is_not_yet_asked() {
+            assert_eq!(permission_for(OsSetting::Enabled), Permission::Allowed);
+            assert_eq!(permission_for(OsSetting::Disabled), Permission::Blocked);
+            assert_eq!(permission_for(OsSetting::Failed), Permission::NotYetAsked);
+            assert!(may_show(OsSetting::Enabled));
+            assert!(may_show(OsSetting::Failed));
+            assert!(!may_show(OsSetting::Disabled));
+        }
+
+        #[test]
+        fn an_app_the_system_has_no_setting_for_yet_still_shows_its_first_test_notice() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, shown) = test_runtime(temp.path(), Permission::NotYetAsked, false);
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(runtime.status().permission, Permission::NotYetAsked);
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            assert_eq!(shown.lock().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn an_app_the_system_has_no_setting_for_yet_still_shows_an_arrival() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, shown) = test_runtime(temp.path(), Permission::NotYetAsked, false);
+            runtime.set_enabled(true).ok().unwrap();
+            let device = "A".repeat(43);
+            runtime.arrived(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &device,
+                &Uuid::new_v4().to_string(),
+                Uuid::new_v4(),
+                || true,
+            );
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::OsAccepted));
+            assert_eq!(shown.lock().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn a_blocked_or_unreachable_system_still_shows_no_arrival() {
+            for permission in [
+                Permission::Blocked,
+                Permission::Unknown,
+                Permission::Unavailable,
+            ] {
+                let temp = tempfile::tempdir().unwrap();
+                let (runtime, shown) = test_runtime(temp.path(), permission, false);
+                runtime.set_enabled(true).ok().unwrap();
+                let device = "A".repeat(43);
+                runtime.arrived(
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    &device,
+                    &Uuid::new_v4().to_string(),
+                    Uuid::new_v4(),
+                    || true,
+                );
+                assert_eq!(runtime.status().last_outcome, Some(Outcome::Unknown));
+                assert!(shown.lock().unwrap().is_empty(), "{permission:?}");
+            }
+        }
+
+        #[test]
+        fn the_not_yet_asked_state_reaches_the_page_by_its_own_name() {
+            let json = serde_json::to_string(&Permission::NotYetAsked).unwrap();
+            assert_eq!(json, "\"not_yet_asked\"");
         }
 
         #[test]
