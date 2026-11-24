@@ -6462,7 +6462,7 @@ async fn vault_find_other_vaults(
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?
     .map_err(|error| match error {
-        vault_slots::FindError::Wait(left) => PublicError::wait(left),
+        vault_slots::FindError::Wait { left, .. } => PublicError::wait(left),
         vault_slots::FindError::Vault(error) => PublicError::from(error),
     })?;
     Ok(FoundVaultsReply {
