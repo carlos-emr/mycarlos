@@ -663,6 +663,10 @@ export async function fakeAiWith(page: Page, setup: FakeAiSetup = {}) {
             hidden: entry.hidden,
             content: entry.content,
           })),
+        // As if the answers had come in a handover file (#360): the vault marks them.
+        markKeptImported: () => {
+          for (const entry of kept) entry.info.imported = true;
+        },
         cancelled: () => structuredClone(cancelled),
         held: () => held.map((entry) => entry.command),
         hold: (command: string) => holds.add(command),
@@ -941,6 +945,15 @@ export async function aiKept(page: Page): Promise<
         }[];
       }
     ).kept(),
+  );
+}
+
+/** Marks every answer the fake vault keeps as one that came in a handover file (#360). */
+export async function markAiKeptImported(page: Page) {
+  await page.evaluate(() =>
+    (
+      Reflect.get(window, "__fakeAi") as { markKeptImported: () => void }
+    ).markKeptImported(),
   );
 }
 

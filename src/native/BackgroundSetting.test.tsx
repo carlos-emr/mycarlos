@@ -54,12 +54,79 @@ describe("Running in the background", () => {
     expect(await keep()).not.toBeChecked();
     expect(await login()).not.toBeChecked();
     expect(screen.queryByRole("status")).toBeNull();
+    // The key fact is in view, in a sentence of its own.
     expect(
-      screen.getByText(humanText(/Your vault locks as the window closes/)),
+      screen.getByText(
+        humanText(
+          "myCarlos can stay in the background after you close its window. Your vault locks as the window closes.",
+        ),
+      ),
     ).toBeVisible();
     expect(native.invoke).toHaveBeenCalledWith("background_status", {
       locale: "en",
     });
+  });
+
+  it("folds the long explanation under More about running in the background: closed at first, opened, closed again", async () => {
+    native.invoke.mockResolvedValue({ ...off });
+    const user = userEvent.setup();
+    render(<BackgroundSetting />);
+    await keep();
+    const long = screen.getByText(humanText(/Choose Quit from the icon/));
+    const more = screen.getByText(
+      humanText("More about running in the background"),
+    );
+    const details = more.closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(long).not.toBeVisible();
+    // The same, for a screen reader: the disclosure is a summary that says it is collapsed.
+    expect(more.tagName).toBe("SUMMARY");
+    // The keys themselves are the browser's own and are driven in tests/preferences-text.spec.ts.
+    await user.click(more);
+    expect(details.open).toBe(true);
+    expect(long).toBeVisible();
+    // The name does not change with the state: the browser announces open or closed.
+    expect(more).toHaveTextContent("More about running in the background");
+    await user.click(more);
+    expect(details.open).toBe(false);
+    expect(long).not.toBeVisible();
+    expect(screen.queryByText(humanText("Less"))).toBeNull();
+  });
+
+  it("describes each box by its long explanation alone, which does not repeat the summary", async () => {
+    native.invoke.mockResolvedValue({ ...off });
+    render(<BackgroundSetting />);
+    for (const [box, long, summary] of [
+      [
+        await keep(),
+        /Choose Quit from the icon/,
+        /Your vault locks as the window closes\.$/,
+      ],
+      [
+        await login(),
+        /starts quietly in the background/,
+        /^myCarlos can start when you sign in/,
+      ],
+    ] as const) {
+      const ids = (box.getAttribute("aria-describedby") ?? "").split(" ");
+      expect(ids).toHaveLength(1);
+      const description = document.getElementById(ids[0])?.textContent ?? "";
+      expect(humanText(long)(description)).toBe(true);
+      expect(summary.test(description)).toBe(false);
+    }
+  });
+
+  it("says in view that starting at sign-in is quiet and keeps the vault locked", async () => {
+    native.invoke.mockResolvedValue({ ...off });
+    render(<BackgroundSetting />);
+    await keep();
+    expect(
+      screen.getByText(
+        humanText(
+          "myCarlos can start when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked.",
+        ),
+      ),
+    ).toBeVisible();
   });
 
   it("turns each choice on on its own and shows that checks wait while locked", async () => {

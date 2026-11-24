@@ -301,6 +301,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = Se movió { $name } a { $where }.
 
 interface-notice-notPdf = { $name } no es un documento PDF, por lo que myCarlos no lo añadió. Por ahora solo se pueden compartir documentos PDF con myCarlos.
+interface-notice-receivedNotOpened = No se pudo abrir ni leer { $name }, así que myCarlos no lo añadió. Vuelva a compartirlo si todavía lo necesita.
 
 interface-notice-pdfUnlocked = Se añadió una copia desbloqueada. El original bloqueado ahora se llama { $name }.
 
@@ -1712,6 +1713,14 @@ interface-history-event-profileCreated = Perfil de paciente añadido
 
 interface-history-event-profileDetailsChanged = Datos personales cambiados
 
+interface-history-event-profileExported = Perfil de paciente exportado
+
+interface-history-event-profileHidden = Perfil de paciente oculto
+
+interface-history-event-profileRestored = Perfil de paciente restaurado
+
+interface-history-event-profileImported = Perfil de paciente añadido desde un archivo de traspaso
+
 interface-history-event-readingAidFiled = Ayuda de lectura guardada
 
 interface-history-event-recoveryKeySet = Clave de recuperación configurada
@@ -2389,6 +2398,7 @@ notifications-help = Cuando se guarda un documento de la clínica tras una revis
 notifications-allow = Permitir avisos de llegada de documentos
 notifications-blocked = Windows está bloqueando las notificaciones. Revise sus ajustes de notificaciones.
 notifications-unknown = No se pudo comprobar el permiso de notificaciones de Windows.
+notifications-notYetAsked = Windows aún no ha mostrado ningún aviso de myCarlos, así que no tiene un ajuste para ellos. Los avisos están permitidos hasta que los desactive en los ajustes de Windows.
 notifications-error = No se pudo guardar este ajuste. Los avisos están desactivados durante esta sesión.
 notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
 notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
@@ -2535,7 +2545,18 @@ interface-RecordDialog-videoSavedSlow = La grabación se detuvo porque el video 
 interface-VideoViewer-video = Video
 interface-VideoViewer-player = Reproductor de video: { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = No se pudo reproducir este video.
-interface-VideoViewer-keys = La barra espaciadora reproduce o pausa. Las flechas izquierda y derecha avanzan o retroceden { $seconds } segundos. Arriba y abajo cambian el volumen. M silencia.
+interface-VideoViewer-controls = Controles del reproductor
+interface-VideoViewer-playPause = Reproducir/Pausar (k)
+interface-VideoViewer-back = Retroceder { $seconds } s (←)
+interface-VideoViewer-forward = Avanzar { $seconds } s (→)
+interface-VideoViewer-backBig = Retroceder { $seconds } s (j)
+interface-VideoViewer-forwardBig = Avanzar { $seconds } s (l)
+interface-VideoViewer-volumeUp = Subir volumen (↑)
+interface-VideoViewer-volumeDown = Bajar volumen (↓)
+interface-VideoViewer-mute = Silenciar (m)
+interface-VideoViewer-unmute = Activar sonido (m)
+interface-VideoViewer-start = Al inicio (Inicio)
+interface-VideoViewer-end = Al final (Fin)
 interface-VideoViewer-playVideo = Reproducir video
 interface-VideoHelp-title = ¿Por qué no puedo grabar video aquí?
 interface-VideoHelp-engine = Para grabar video, el motor web integrado de este dispositivo debe poder grabar video MP4 con sonido. El motor de este dispositivo no lo ofrece.
@@ -2569,3 +2590,352 @@ security-backup-leaveVideosOutHelp = La copia de seguridad no contendrá tus vid
 restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se recupera todo lo demás, y tus videos no estarán. Aparecen entre los documentos ocultos, como archivos que faltan.
 security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
 interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad
+
+handover-section-title = Entregar los registros de una persona
+
+handover-section-body = Copie los documentos de una persona en un archivo para otro dispositivo, por ejemplo para dar a un niño sus propios registros. El archivo tiene su propia clave y no cambia su bóveda. También puede añadir una persona desde un archivo que alguien le haya dado.
+
+handover-export-button = Entregar registros…
+
+handover-import-button = Añadir una persona desde un archivo…
+
+handover-close = Cerrar
+
+handover-export-title = Entregar los registros de una persona
+
+handover-export-about = Esto crea un archivo con los documentos de una persona, con su propia clave, para que lo lea otro dispositivo. Nada cambia en su bóveda.
+
+handover-export-caution = Esto copia registros de salud. Una carta puede nombrar a otras personas, como un padre, una madre o un tutor, y cada documento se copia completo y sin editar. Compruebe que la persona que abrirá el archivo es la correcta y puede leerlo.
+
+handover-export-person = De quién son los registros
+
+handover-export-history = Incluir el historial de estos documentos (cuándo se añadieron, renombraron o movieron)
+
+handover-export-keyKind-legend = Cómo se protege el archivo
+
+handover-export-keyKind-generated = Una clave que crea myCarlos (recomendado)
+
+handover-export-keyKind-passphrase = Una frase de contraseña que elijo
+
+handover-export-passphrase = Frase de contraseña del archivo
+
+handover-export-passphraseHint = Al menos 15 caracteres y difícil de adivinar. No puede ser la frase de contraseña de su bóveda ni su clave de recuperación.
+
+handover-export-continue = Continuar
+
+handover-export-preparing = Preparando…
+
+handover-export-keyTitle = Anote la clave de este archivo
+
+handover-export-keyBody = Quien tenga el archivo y esta clave puede leer estos registros. Entregue la clave a la persona por separado del archivo. myCarlos no la conserva: si se pierde, cree el archivo de nuevo.
+
+handover-export-keyLabel = Clave del archivo
+
+handover-export-keyGroup = Grupo { $number }: { $characters }
+
+handover-export-copy = Copiar la clave
+
+handover-export-copied = Clave copiada. Si no se copia nada más mientras tanto, se borra del portapapeles en un minuto.
+
+handover-export-copyFailed = No se pudo copiar la clave. Anótela en su lugar.
+
+handover-export-keySaved = He anotado la clave o la he guardado en un lugar seguro
+
+handover-export-saveTitle = Guardar el archivo
+
+handover-export-summary = El archivo contendrá los registros de { $name }:
+
+handover-export-apart = Guarde el archivo y la clave por separado.
+
+handover-export-provider = En algunos teléfonos, si falla el guardado, el lugar elegido puede quedar vacío o incompleto. Si ocurre, elimine ese archivo e inténtelo de nuevo.
+
+handover-export-chooseWhere = Elegir dónde guardar…
+
+handover-export-saving = Guardando y comprobando el archivo…
+
+handover-export-noLocation = No se eligió ningún lugar. No se guardó nada.
+
+handover-export-doneTitle = Archivo guardado
+
+handover-export-done =
+    { $count ->
+        [one] Se guardó un documento de { $name } y se releyó el archivo para comprobarlo.
+       *[other] Se guardaron { $count } documentos de { $name } y se releyó el archivo para comprobarlo.
+    }
+
+handover-export-doneApart = Guarde el archivo y la clave por separado. Este archivo no cambia su bóveda.
+
+handover-export-hideOffer = Ocultar a { $name } en esta bóveda
+
+handover-export-leftOut =
+    { $count ->
+        [one] Un documento excluido porque su archivo no se puede leer.
+       *[other] { $count } documentos excluidos porque sus archivos no se pueden leer.
+    }
+
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] No se pudo incluir la firma de la clínica de un documento (el documento sí está en el archivo).
+       *[other] No se pudo incluir la firma de la clínica de { $count } documentos (los documentos sí están en el archivo).
+    }
+
+handover-count-documents = Documentos: { $count }
+
+handover-count-hidden = Ocultos por usted: { $count }
+
+handover-count-folders = Carpetas: { $count }
+
+handover-count-answers = Respuestas del asistente de IA: { $count }
+
+handover-count-evidence = Documentos con la entrega firmada de una clínica: { $count }
+
+handover-count-size = Tamaño: { $size }
+
+handover-import-title = Añadir una persona desde un archivo
+
+handover-import-about = Elija un archivo que alguien le dio y tenga a mano la clave o la frase de contraseña que le dieron. La persona llega como una persona nueva; nada de lo que ya está aquí cambia.
+
+handover-import-choose = Elegir el archivo…
+
+handover-import-noFile = No se eligió ningún archivo. No cambió nada.
+
+handover-import-keyTitle = Abrir el archivo
+
+handover-import-key = Clave
+
+handover-import-passphrase = Frase de contraseña
+
+handover-import-keyHint = Siete grupos de cuatro letras y números. Las mayúsculas, los espacios y los guiones no importan.
+
+handover-import-passphraseHint = La frase de contraseña que eligió para el archivo quien lo creó.
+
+handover-import-open = Abrir el archivo
+
+handover-import-opening = Abriendo…
+
+handover-import-error-typo = Esa clave no parece correcta. Compárela con la que le dieron.
+
+handover-import-error-recovery = Esa es una clave de recuperación, no la clave de este archivo. Pida la clave creada para el archivo.
+
+handover-import-error-wrong = Eso no abre este archivo.
+
+handover-import-error-newer = Este archivo lo creó una versión más reciente de myCarlos. Actualice myCarlos e inténtelo de nuevo.
+
+handover-import-error-damaged = Este archivo está incompleto, ha sido modificado o no se puede añadir aquí. Pida una copia nueva.
+
+handover-import-previewTitle = Lo que dice el archivo
+
+handover-import-says = El archivo dice que contiene los registros de { $name }.
+
+handover-import-birth = Nacimiento: { $date }, según lo registró quien creó el archivo.
+
+handover-import-madeOn = Creado el { $date }.
+
+handover-import-evidenceNote = Algunos documentos llevan la entrega firmada de una clínica. Hasta que vincule este dispositivo con esa clínica, myCarlos solo puede decir que se comprobaron en el dispositivo que creó el archivo, no que esa clínica los avale.
+
+handover-import-duplicate-legend = Puede que ya tenga a esta persona
+
+handover-import-duplicate-package = Ya añadió este archivo aquí.
+
+handover-import-duplicate-content =
+    { $count ->
+        [one] Uno de los documentos de este archivo tiene exactamente el mismo contenido que un documento que ya tiene en otra persona de aquí.
+       *[other] { $count } de los documentos de este archivo tienen exactamente el mismo contenido que documentos que ya tiene en otra persona de aquí.
+    }
+
+handover-import-duplicate-anyway = Añadirla como otra persona de todos modos
+
+handover-import-nameLabel = Cómo llamar a esta persona aquí
+
+handover-import-add = Añadir esta persona
+
+handover-import-adding = Añadiendo y comprobando los registros…
+
+handover-import-doneTitle = Listo
+
+handover-import-done =
+    { $count ->
+        [one] Se añadió un documento de { $name }.
+       *[other] Se añadieron { $count } documentos de { $name }.
+    }
+
+handover-import-doneAnswers =
+    { $count ->
+        [one] Una respuesta del asistente de IA llegó con ellos, marcada como de un archivo importado.
+       *[other] { $count } respuestas del asistente de IA llegaron con ellos, marcadas como de un archivo importado.
+    }
+
+handover-import-doneEvidence = Los documentos de la clínica muestran solo lo que se pudo comprobar aquí. Para comprobarlos con la clave de la clínica en este dispositivo, vincule este dispositivo con la clínica.
+
+handover-import-doneDropped =
+    { $count ->
+        [one] Un elemento del archivo se excluyó por no cumplir las reglas de esta bóveda.
+       *[other] { $count } elementos del archivo se excluyeron por no cumplir las reglas de esta bóveda.
+    }
+
+handover-import-receipt = Código de recibo:
+
+handover-import-receiptNote = Puede dar este código a quien creó el archivo. Muestra que alguien que tenía el archivo y su clave abrió el archivo completo y lo leyó entero. No demuestra que los registros se añadieron en algún lugar, ni que su copia siga a salvo.
+
+handover-import-nothingNew = No se añadió nada: esta bóveda ya tiene a esta persona.
+
+handover-importedAnswer = De un archivo importado
+
+handover-export-leavingWarning = Permanezca en myCarlos mientras se muestra esta clave. Cambiar a otra aplicación bloquea su bóveda y esta clave deja de funcionar: tendría que empezar de nuevo y obtener una nueva.
+
+handover-export-leave-title = ¿Salir sin guardar un archivo?
+
+handover-export-leave-body = No se ha guardado ningún archivo. La clave de esta pantalla dejará de funcionar, así que no se la dé a nadie. Para entregar los registros, empiece de nuevo y recibirá una clave nueva.
+
+handover-export-leave-confirm = Salir
+
+
+handover-export-error-weak = Esa frase de contraseña no se puede usar. Puede ser demasiado fácil de adivinar, contener el nombre de la persona o parecerse demasiado a la frase de contraseña de su bóveda o a su clave de recuperación. Elija otra.
+
+handover-unfinished = Una entrega no se terminó. Cualquier clave que haya copiado o anotado no abre nada. Para entregar los registros, empiece de nuevo para obtener una clave nueva.
+
+native-error-49 = Esta sesión desbloqueada ya probó el máximo de frases de contraseña para un archivo. Bloquee myCarlos y desbloquéelo de nuevo para seguir intentándolo, o deje que myCarlos cree una clave para el archivo.
+
+native-error-50 = Al menos una persona debe quedar en la biblioteca, así que no se puede ocultar a la última. Añada antes a otra persona.
+
+hiddenPeople-title = Personas ocultas
+
+hiddenPeople-body = Las personas que ocultó no aparecen en la biblioteca, la búsqueda ni el asistente de IA. No se elimina nada: siguen en esta bóveda y en sus copias de seguridad. Cualquiera que conozca su frase de contraseña puede recuperarlas.
+
+hiddenPeople-list = Personas ocultas
+
+hiddenPeople-since = oculta desde el { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } documento
+       *[other] { $count } documentos
+    }
+
+hiddenPeople-restore = Restaurar
+
+hiddenPeople-restoreFor = Restaurar a { $name }
+
+hiddenPeople-handOver = Entregar…
+
+hiddenPeople-handOverFor = Entregar los registros de { $name }
+
+hiddenPeople-hide = Ocultar
+
+hiddenPeople-hideFor = Ocultar a { $name }
+
+hiddenPeople-lastPerson = Al menos una persona debe quedar en la biblioteca.
+
+hiddenPeople-confirm-title = ¿Ocultar a { $name }?
+
+hiddenPeople-confirm-body = Esto oculta a { $name } y todos sus documentos en myCarlos. No se elimina nada. Siguen en esta bóveda y en sus copias de seguridad, y puede recuperarlos en cualquier momento en Personas ocultas. Ocultar no impide que quien conozca su frase de contraseña los restaure.
+
+hiddenPeople-confirm-hide = Ocultar a { $name }
+
+hiddenPeople-hidden = { $name } ahora está oculta.
+
+hiddenPeople-restored = { $name } ha vuelto a la biblioteca.
+
+hiddenPeople-arrived-title = ¿Mover los documentos nuevos a { $name }?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] Mientras { $name } estaba oculta, llegó { $count } documento para esa persona y está en Compartido conmigo. ¿Moverlo a { $name }?
+       *[other] Mientras { $name } estaba oculta, llegaron { $count } documentos para esa persona y están en Compartido conmigo. ¿Moverlos a { $name }?
+    }
+
+hiddenPeople-arrived-move = Mover a { $name }
+
+hiddenPeople-arrived-leave = Dejar en Compartido conmigo
+
+hiddenPeople-arrived-list = Documentos que llegaron
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] Llegó un documento de { $clinic } y está en Compartido conmigo. La persona a la que corresponde está oculta.
+       *[other] Llegaron { $count } documentos de { $clinic } y están en Compartido conmigo. Las personas a las que corresponden están ocultas.
+    }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] Esto también oculta { $count } documento dañado de una persona oculta. No aparece en la lista, para no mostrar quién está oculto.
+       *[other] Esto también oculta { $count } documentos dañados de personas ocultas. No aparecen en la lista, para no mostrar quién está oculto.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] No se muestra { $count } entrada sobre una persona oculta. Se conserva y se muestra de nuevo cuando se restaura a la persona.
+       *[other] No se muestran { $count } entradas sobre personas ocultas. Se conservan y se muestran de nuevo cuando se restaura a las personas.
+    }
+
+interface-history-how-personHidden = Archivado en Compartido conmigo mientras la persona estaba oculta
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] Llegó un documento y está en Compartido conmigo. La persona a la que corresponde está oculta.
+       *[other] Llegaron { $count } documentos y están en Compartido conmigo. Las personas a las que corresponden están ocultas.
+    }
+
+fileUnder-button = Archivar en…
+
+fileUnder-title = Archivar { $document } en una persona
+
+fileUnder-fromClinic = De la clínica
+
+fileUnder-words = { $name }, nacimiento { $date }
+
+fileUnder-clinicWords = De la clínica: { $name }, nacimiento { $date }.
+
+fileUnder-rule = myCarlos archiva un documento de una clínica por sí solo únicamente cuando exactamente una persona tiene esta fecha de nacimiento y este nombre completo (o un nombre completo anterior). No se elige nada en su lugar.
+
+fileUnder-person = Persona
+
+fileUnder-what-both = el nombre completo «{ $name }» y la fecha de nacimiento { $date }
+
+fileUnder-what-name = el nombre completo «{ $name }»
+
+fileUnder-what-date = la fecha de nacimiento { $date }
+
+fileUnder-saveDetails = Guardar también { $what } como datos de { $person }, para que los próximos documentos de esta clínica se archiven en { $person } por sí solos.
+
+fileUnder-confirm = Archivar en { $person }
+
+fileUnder-choose = Elija una persona
+
+fileUnder-differs = Los datos de la clínica difieren de los de esta persona, así que no se ofrece guardar ninguno. Compruebe que es la persona correcta.
+
+fileUnder-saveDetailsOnly = Guardar también { $what } como datos de { $person }.
+
+fileUnder-notOnItsOwn = Los próximos documentos de esta clínica pueden seguir esperando en Compartido conmigo: el enlace de esta clínica está vinculado a otra persona, o ya hay otra persona con el mismo nombre y fecha de nacimiento.
+
+handover-import-previousNames = Nombres anteriores en el archivo: { $names }. Estos nombres también se usarán para archivar documentos nuevos de clínicas en esta persona.
+
+library-fileSaysChecked = El archivo en el que llegó dice que se comprobó en el dispositivo de origen, el { $date }. Esta bóveda no lo ha comprobado.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } documento que llegó en un archivo de entrega ahora está verificado con { $clinic }, cuya clave tiene esta bóveda.
+       *[other] { $count } documentos que llegaron en un archivo de entrega ahora están verificados con { $clinic }, cuya clave tiene esta bóveda.
+    }
+
+
+notifications-autoSummary = Las comprobaciones automáticas solo se hacen mientras myCarlos está abierto y desbloqueado.
+
+background-keepRunningSummary = myCarlos puede seguir en segundo plano después de cerrar su ventana. Su bóveda se bloquea al cerrarse la ventana.
+
+background-startAtLoginSummary = myCarlos puede iniciarse cuando inicia sesión en este equipo. Con la opción anterior activada, se inicia discretamente en segundo plano con su bóveda bloqueada.
+
+preferences-moreAutomatic = Más información sobre las comprobaciones automáticas
+
+preferences-moreBackground = Más información sobre la ejecución en segundo plano
+
+native-notice-test = Este es un aviso de prueba de myCarlos.
+
+notifications-testButton = Mostrar un aviso de prueba
+
+notifications-testSent = Aviso de prueba enviado. Si no lo ve, revise la configuración de notificaciones de Windows.
+
+notifications-testWait = Espere unos segundos y vuelva a intentarlo.
+
+notifications-testFailed = No se pudo mostrar el aviso de prueba.
+notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.

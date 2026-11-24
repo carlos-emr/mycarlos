@@ -440,6 +440,7 @@ interface-notice-movedMany = 已將 { $count } 份文件移至 { $where }。
 interface-notice-movedNamed = { $name } 已移至 { $where }。
 
 interface-notice-notPdf = { $name } 不是 PDF 文件，因此 myCarlos 未新增該檔案。目前只有 PDF 文件可以分享至 myCarlos。
+interface-notice-receivedNotOpened = 無法開啟或讀取 { $name }，因此 myCarlos 沒有加入它。如果仍需要，請再次分享。
 
 interface-notice-pdfUnlocked = 已新增解鎖副本。鎖定的原始文件現在名稱為 { $name }。
 
@@ -1543,6 +1544,14 @@ interface-history-event-profileCreated = 病患檔案已新增
 
 interface-history-event-profileDetailsChanged = 個人資料已變更
 
+interface-history-event-profileExported = 病患檔案已匯出
+
+interface-history-event-profileHidden = 病患檔案已隱藏
+
+interface-history-event-profileRestored = 病患檔案已還原
+
+interface-history-event-profileImported = 已從交接檔案新增病患檔案
+
 interface-history-event-readingAidFiled = 已儲存閱讀輔助
 
 interface-history-event-recoveryKeySet = 復原金鑰已設定
@@ -2136,6 +2145,7 @@ notifications-help = 手動檢查後，診所文件儲存至 myCarlos 時，Wind
 notifications-allow = 允許文件送達通知
 notifications-blocked = Windows 正在封鎖通知。請查看 Windows 通知設定。
 notifications-unknown = 無法檢查 Windows 通知權限。
+notifications-notYetAsked = Windows 尚未顯示過 myCarlos 的通知，因此還沒有針對它的設定。在您於 Windows 設定中將其關閉之前，通知是允許的。
 notifications-error = 無法儲存此設定。本次工作階段的通知已關閉。
 notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
 notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
@@ -2282,7 +2292,18 @@ interface-RecordDialog-videoSavedSlow = 錄製已停止，因為影片無法足�
 interface-VideoViewer-video = 影片
 interface-VideoViewer-player = 影片播放器：{ $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = 無法播放此影片。
-interface-VideoViewer-keys = 空白鍵播放或暫停。左右方向鍵快退或快進 { $seconds } 秒。上下方向鍵調整音量。M 鍵靜音。
+interface-VideoViewer-controls = 播放器控制項
+interface-VideoViewer-playPause = 播放/暫停 (k)
+interface-VideoViewer-back = 倒退 { $seconds } 秒 (←)
+interface-VideoViewer-forward = 快轉 { $seconds } 秒 (→)
+interface-VideoViewer-backBig = 倒退 { $seconds } 秒 (j)
+interface-VideoViewer-forwardBig = 快轉 { $seconds } 秒 (l)
+interface-VideoViewer-volumeUp = 調高音量 (↑)
+interface-VideoViewer-volumeDown = 調低音量 (↓)
+interface-VideoViewer-mute = 靜音 (m)
+interface-VideoViewer-unmute = 取消靜音 (m)
+interface-VideoViewer-start = 回到開頭 (Home)
+interface-VideoViewer-end = 跳到結尾 (End)
 interface-VideoViewer-playVideo = 播放影片
 interface-VideoHelp-title = 為什麼我無法在此錄製影片？
 interface-VideoHelp-engine = 錄製影片需要此裝置內建的網頁引擎能夠錄製含聲音的 MP4 影片，而此裝置的引擎不支援。
@@ -2316,3 +2337,296 @@ security-backup-leaveVideosOutHelp = 備份將不包含您的影片。如果您�
 restore-leftOut = 此備份是在不含影片的情況下製作的。還原它會帶回其他所有內容，但您的影片不會在其中。它們會作為遺失的檔案列在隱藏文件中。
 security-backup-sizeCalculating = 正在計算備份大小…
 interface-hidden-videoLeftOut = 備份中未包含的影片
+
+handover-section-title = 移交某人的記錄
+
+handover-section-body = 將某人的文件複製到一個檔案中供另一台裝置使用，例如把孩子自己的記錄交給孩子。該檔案有自己的金鑰，不會改變您的保險庫。您也可以從別人交給您的檔案中新增一個人。
+
+handover-export-button = 移交記錄…
+
+handover-import-button = 從檔案新增一個人…
+
+handover-close = 關閉
+
+handover-export-title = 移交某人的記錄
+
+handover-export-about = 這會產生一個包含某人文件的檔案，帶有自己的金鑰，供另一台裝置讀取。您的保險庫不會有任何改變。
+
+handover-export-caution = 這會複製健康記錄。信件中可能提到其他人，例如父母或監護人，每份文件都會完整複製、不作編輯。請確認將開啟該檔案的人是正確的人，並且能夠閱讀它。
+
+handover-export-person = 誰的記錄
+
+handover-export-history = 包含這些文件的歷史記錄（新增、重新命名或移動的時間）
+
+handover-export-keyKind-legend = 檔案如何上鎖
+
+handover-export-keyKind-generated = 由 myCarlos 產生的金鑰（建議）
+
+handover-export-keyKind-passphrase = 我自己選擇的口令
+
+handover-export-passphrase = 檔案口令
+
+handover-export-passphraseHint = 至少 15 個字元，且不易被猜到。不能是您保險庫的口令或復原金鑰。
+
+handover-export-continue = 繼續
+
+handover-export-preparing = 正在準備…
+
+handover-export-keyTitle = 記下此檔案的金鑰
+
+handover-export-keyBody = 拿到該檔案和此金鑰的人都可以閱讀這些記錄。請把金鑰與檔案分開交給對方。myCarlos 不會保存它：如果遺失，請重新產生檔案。
+
+handover-export-keyLabel = 檔案金鑰
+
+handover-export-keyGroup = 第 { $number } 組：{ $characters }
+
+handover-export-copy = 複製金鑰
+
+handover-export-copied = 金鑰已複製。如果期間沒有複製其他內容，一分鐘後會從剪貼簿中清除。
+
+handover-export-copyFailed = 無法複製金鑰，請改為手寫記下。
+
+handover-export-keySaved = 我已記下金鑰或妥善保存
+
+handover-export-saveTitle = 儲存檔案
+
+handover-export-summary = 檔案將包含 { $name } 的記錄：
+
+handover-export-apart = 請把檔案和金鑰分開保管。
+
+handover-export-provider = 在某些手機上，如果儲存失敗，您選擇的位置可能會留下空檔案或不完整的檔案。如果發生這種情況，請刪除該檔案後重試。
+
+handover-export-chooseWhere = 選擇儲存位置…
+
+handover-export-saving = 正在儲存並檢查檔案…
+
+handover-export-noLocation = 未選擇位置，沒有儲存任何內容。
+
+handover-export-doneTitle = 檔案已儲存
+
+handover-export-done = 已為 { $name } 儲存 { $count } 份文件，並重新讀取檔案進行了檢查。
+
+handover-export-doneApart = 請把檔案和金鑰分開保管。此檔案不會改變您的保險庫。
+
+handover-export-hideOffer = 在此保險庫中隱藏 { $name }
+
+handover-export-leftOut = 因檔案無法讀取而未包含的文件：{ $count }
+
+handover-export-evidenceLeftOut = 無法包含診所簽章的文件（文件本身在檔案中）：{ $count }
+
+handover-count-documents = 文件：{ $count }
+
+handover-count-hidden = 您已隱藏的：{ $count }
+
+handover-count-folders = 資料夾：{ $count }
+
+handover-count-answers = AI 助手的回答：{ $count }
+
+handover-count-evidence = 附有診所簽章送達記錄的文件：{ $count }
+
+handover-count-size = 大小：{ $size }
+
+handover-import-title = 從檔案新增一個人
+
+handover-import-about = 選擇別人交給您的檔案，並準備好他們給您的金鑰或口令。這個人會作為新的一個人加入，這裡已有的內容不會改變。
+
+handover-import-choose = 選擇檔案…
+
+handover-import-noFile = 未選擇檔案，沒有任何改變。
+
+handover-import-keyTitle = 開啟檔案
+
+handover-import-key = 金鑰
+
+handover-import-passphrase = 口令
+
+handover-import-keyHint = 七組，每組四個字母和數字。大小寫、空格和短橫線都無關緊要。
+
+handover-import-passphraseHint = 製作該檔案的人為它選擇的口令。
+
+handover-import-open = 開啟檔案
+
+handover-import-opening = 正在開啟…
+
+handover-import-error-typo = 該金鑰看起來不對，請與您拿到的金鑰核對。
+
+handover-import-error-recovery = 這是復原金鑰，不是此檔案的金鑰。請索取為該檔案產生的金鑰。
+
+handover-import-error-wrong = 這無法開啟此檔案。
+
+handover-import-error-newer = 此檔案由更新版本的 myCarlos 製作。請更新 myCarlos 後重試。
+
+handover-import-error-damaged = 此檔案不完整、已被更改，或無法新增到這裡。請索取新的副本。
+
+handover-import-previewTitle = 檔案的內容
+
+handover-import-says = 檔案聲稱其中包含 { $name } 的記錄。
+
+handover-import-birth = 出生日期：{ $date }，由製作檔案的人記錄。
+
+handover-import-madeOn = 製作於 { $date }。
+
+handover-import-evidenceNote = 部分文件附有診所的簽章送達記錄。在您把此裝置與該診所連結之前，myCarlos 只能說明它們是在製作檔案的裝置上檢查過的，而不能說明該診所為其擔保。
+
+handover-import-duplicate-legend = 您可能已經有這個人
+
+handover-import-duplicate-package = 您已經在這裡新增過這個檔案了。
+
+handover-import-duplicate-content = 此檔案中有 { $count } 份文件與您在此處另一個人下已有的文件內容完全相同。
+
+handover-import-duplicate-anyway = 仍然新增為另一個人
+
+handover-import-nameLabel = 在這裡如何稱呼此人
+
+handover-import-add = 新增此人
+
+handover-import-adding = 正在新增並檢查記錄…
+
+handover-import-doneTitle = 完成
+
+handover-import-done = 已為 { $name } 新增 { $count } 份文件。
+
+handover-import-doneAnswers = 隨文件一起到來的 AI 助手回答，已標記為來自匯入的檔案：{ $count }
+
+handover-import-doneEvidence = 診所文件只顯示在此處能夠檢查到的內容。若要在此裝置上用診所的金鑰檢查它們，請把此裝置與該診所連結。
+
+handover-import-doneDropped = 因不符合此保險庫的規則而未包含的項目：{ $count }
+
+handover-import-receipt = 回執碼：
+
+handover-import-receiptNote = 您可以把這個代碼告訴製作檔案的人。它說明有人拿著檔案和金鑰開啟了整個檔案並從頭讀完，但並不說明這些記錄已被新增到某處，也不說明您的副本仍然安全。
+
+handover-import-nothingNew = 沒有新增任何內容：此保險庫已經有這個人。
+
+handover-importedAnswer = 來自匯入的檔案
+
+handover-export-leavingWarning = 顯示此金鑰時請留在 myCarlos 中。切換到其他應用程式會鎖定您的保險庫，此金鑰也會失效：您需要重新開始並取得新的金鑰。
+
+handover-export-leave-title = 不儲存檔案就離開嗎？
+
+handover-export-leave-body = 尚未儲存任何檔案。此畫面上的金鑰將失效，請不要把它交給任何人。若要移交記錄，請重新開始，您會得到新的金鑰。
+
+handover-export-leave-confirm = 離開
+
+
+handover-export-error-weak = 無法使用該口令。它可能太容易被猜到、包含此人的姓名，或與您保險庫的口令或復原金鑰太相似。請換一個。
+
+handover-unfinished = 有一次移交沒有完成。您複製或記下的任何金鑰都無法開啟任何內容。若要移交記錄，請重新開始以取得新的金鑰。
+
+native-error-49 = 此次解鎖期間已嘗試了檔案口令的最多次數。請鎖定 myCarlos 後重新解鎖以繼續嘗試，或改由 myCarlos 為檔案產生金鑰。
+
+native-error-50 = 資料庫中至少要留下一個人，因此無法隱藏最後一個人。請先新增另一個人。
+
+hiddenPeople-title = 已隱藏的人
+
+hiddenPeople-body = 您隱藏的人不會出現在資料庫、搜尋和 AI 助手中。不會刪除任何內容：他們仍保存在此保險庫和您的備份中。任何知道您口令的人都可以將他們還原。
+
+hiddenPeople-list = 已隱藏的人
+
+hiddenPeople-since = 隱藏於 { $date }
+
+hiddenPeople-documents = { $count } 份文件
+
+hiddenPeople-restore = 還原
+
+hiddenPeople-restoreFor = 還原 { $name }
+
+hiddenPeople-handOver = 移交…
+
+hiddenPeople-handOverFor = 移交 { $name } 的記錄
+
+hiddenPeople-hide = 隱藏
+
+hiddenPeople-hideFor = 隱藏 { $name }
+
+hiddenPeople-lastPerson = 資料庫中至少要留下一個人。
+
+hiddenPeople-confirm-title = 隱藏 { $name }？
+
+hiddenPeople-confirm-body = 這會在 myCarlos 中隱藏 { $name } 及其所有文件。不會刪除任何內容。他們仍保存在此保險庫和您的備份中，您隨時可以在「已隱藏的人」中還原。隱藏並不能阻止任何知道您口令的人將其還原。
+
+hiddenPeople-confirm-hide = 隱藏 { $name }
+
+hiddenPeople-hidden = { $name } 現已隱藏。
+
+hiddenPeople-restored = { $name } 已回到資料庫。
+
+hiddenPeople-arrived-title = 要把新文件移到 { $name } 嗎？
+
+hiddenPeople-arrived-body = { $name } 被隱藏期間，有 { $count } 份文件送達，目前在「與我分享」中。要把它們移到 { $name } 嗎？
+
+hiddenPeople-arrived-move = 移到 { $name }
+
+hiddenPeople-arrived-leave = 留在「與我分享」
+
+hiddenPeople-arrived-list = 送達的文件
+
+portal-arrivedForHidden = 來自 { $clinic } 的 { $count } 份文件已送達，目前在「與我分享」中。對應的人已被隱藏。
+
+hiddenPeople-damagedToo = 這還會隱藏已隱藏的人的 { $count } 份受損文件。為了不顯示誰被隱藏，這裡不列出它們。
+
+interface-history-aboutHiddenPeople = 有 { $count } 筆與已隱藏的人有關的記錄未顯示。它們已保留，還原這些人後會再次顯示。
+
+interface-history-how-personHidden = 該人被隱藏期間歸檔到「與我分享」
+
+portal-arrivedForHiddenNoClinic = 有 { $count } 份文件已送達，目前在「與我分享」中。對應的人已被隱藏。
+
+fileUnder-button = 歸檔到…
+
+fileUnder-title = 把 { $document } 歸檔到某人
+
+fileUnder-fromClinic = 來自診所
+
+fileUnder-words = { $name }，出生日期 { $date }
+
+fileUnder-clinicWords = 來自診所：{ $name }，出生日期 { $date }。
+
+fileUnder-rule = 只有當恰好一個人擁有此出生日期和此全名（或曾用全名）時，myCarlos 才會自行歸檔診所文件。不會替您做任何選擇。
+
+fileUnder-person = 人員
+
+fileUnder-what-both = 全名「{ $name }」和出生日期 { $date }
+
+fileUnder-what-name = 全名「{ $name }」
+
+fileUnder-what-date = 出生日期 { $date }
+
+fileUnder-saveDetails = 同時將 { $what } 儲存為 { $person } 的資料，這樣此診所之後的文件會自動歸檔到 { $person }。
+
+fileUnder-confirm = 歸檔到 { $person }
+
+fileUnder-choose = 請選擇一個人
+
+fileUnder-differs = 診所的資料與此人的資料不同，因此不會提供儲存。請確認這是否是正確的人。
+
+fileUnder-saveDetailsOnly = 同時將 { $what } 儲存為 { $person } 的資料。
+
+fileUnder-notOnItsOwn = 此診所之後的文件仍可能留在「與我分享」中：此診所的連結綁定了另一個人，或另一個人已有相同的姓名和出生日期。
+
+handover-import-previousNames = 檔案中的曾用名：{ $names }。這些名字也將用於把診所的新文件歸檔到此人名下。
+
+library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來源裝置上檢查過。此保險庫沒有檢查過。
+
+handover-nowVerified = 透過移交檔案到來的 { $count } 份文件現已透過 { $clinic } 驗證，此保險庫持有其金鑰。
+
+
+notifications-autoSummary = 自動檢查僅在 myCarlos 開啟且已解鎖時進行。
+
+background-keepRunningSummary = 關閉視窗後，myCarlos 可以留在背景執行。視窗關閉時，您的保險庫會鎖定。
+
+background-startAtLoginSummary = myCarlos 可以在您登入此電腦時啟動。開啟上方的選項後，它會在背景靜默啟動，您的保險庫保持鎖定。
+
+preferences-moreAutomatic = 關於自動檢查的更多說明
+
+preferences-moreBackground = 關於背景執行的更多說明
+
+native-notice-test = 這是來自 myCarlos 的測試通知。
+
+notifications-testButton = 顯示測試通知
+
+notifications-testSent = 測試通知已傳送。如果您沒有看到，請檢查 Windows 的通知設定。
+
+notifications-testWait = 請等候幾秒鐘後再試一次。
+
+notifications-testFailed = 無法顯示測試通知。
+notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。
