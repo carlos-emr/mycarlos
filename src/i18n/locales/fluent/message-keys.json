@@ -1016,6 +1016,7 @@
   "notifications.error",
   "notifications.help",
   "notifications.title",
+  "notifications.notYetAsked",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",

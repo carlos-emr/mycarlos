@@ -2363,6 +2363,7 @@ notifications-help = When a clinic document is saved after a manual check, Windo
 notifications-allow = Allow document arrival notices
 notifications-blocked = Windows is blocking notifications. Review its notification settings.
 notifications-unknown = Windows notification permission could not be checked.
+notifications-notYetAsked = Windows has not shown a myCarlos notice yet, so it has no setting for it. Notices are allowed until you turn them off in Windows settings.
 notifications-error = This setting could not be saved. Notices are off for this session.
 notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
 notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.

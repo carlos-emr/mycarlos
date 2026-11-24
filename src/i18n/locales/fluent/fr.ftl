@@ -2398,6 +2398,7 @@ notifications-help = Lorsqu’un document de la clinique est enregistré après 
 notifications-allow = Autoriser les avis d’arrivée de documents
 notifications-blocked = Windows bloque les notifications. Vérifiez ses paramètres de notification.
 notifications-unknown = Impossible de vérifier l’autorisation de notification de Windows.
+notifications-notYetAsked = Windows n’a pas encore affiché d’avis myCarlos, il n’a donc pas encore de paramètre pour eux. Les avis sont autorisés jusqu’à ce que vous les désactiviez dans les paramètres de Windows.
 notifications-error = Ce réglage n’a pas pu être enregistré. Les avis sont désactivés pour cette session.
 notifications-unavailable = Les avis de documents ne sont pas disponibles. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.

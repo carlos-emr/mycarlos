@@ -2398,6 +2398,7 @@ notifications-help = Cuando se guarda un documento de la clínica tras una revis
 notifications-allow = Permitir avisos de llegada de documentos
 notifications-blocked = Windows está bloqueando las notificaciones. Revise sus ajustes de notificaciones.
 notifications-unknown = No se pudo comprobar el permiso de notificaciones de Windows.
+notifications-notYetAsked = Windows aún no ha mostrado ningún aviso de myCarlos, así que no tiene un ajuste para ellos. Los avisos están permitidos hasta que los desactive en los ajustes de Windows.
 notifications-error = No se pudo guardar este ajuste. Los avisos están desactivados durante esta sesión.
 notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
 notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
