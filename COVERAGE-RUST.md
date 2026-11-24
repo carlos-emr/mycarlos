@@ -97,7 +97,7 @@ component can change with the compiler; the runner requires its LLVM version to 
 
 `scripts/coverage-rust-floor.json` pins two whole percents, `lines` and `regions`: the totals of the
 measured run rounded **down**. First measured at `0d6b6061` (24 Nov 2026): lines 87.75% (62,966 of
-71,754), regions 87.84% (111,946 of 127,436), functions 83.07% (5,731 of 6,899), so the floor is 87 and 87;
+71,754), regions 87.84% (111,946 of 127,436), functions 83.07% (5,731 of 6,899), so the floor was 87 and 87. Ben set it to 80 and 80 on 24 Nov 2026 to leave room for code that is hard to test;
 counting production code only (without the `#[cfg(test)]` lines) the line figure is about 82%. A run fails, after its report is complete and kept (`run.json` says
 `status: "below-floor"`), when either total is lower:
 

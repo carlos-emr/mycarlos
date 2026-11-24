@@ -221,6 +221,57 @@ jobs:
           path: src-tauri/target/debug/bundle
           retention-days: 7
 
+  # DRAFT FOR BEN (#441): the Rust coverage floor. An hour or more (a fresh instrumented build of the
+  # whole library and llama.cpp, then the whole library test suite on one thread), so it runs on main,
+  # on the weekly schedule and by hand, not on every pull request. It fails when the lines or the
+  # regions covered are below scripts/coverage-rust-floor.json; raise that file in the change that adds
+  # the tests, never lower it (COVERAGE-RUST.md).
+  rust-coverage:
+    name: Rust coverage floor (Linux, library tests)
+    needs: desktop
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Linux webview dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y \
+              libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+              libclang-dev; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+      - name: Install the pinned Rust toolchain and its LLVM tools
+        run: >-
+          rustup toolchain install 1.98.0 --profile minimal
+          --component llvm-tools-preview
+      - name: Test the coverage floor gate
+        run: python3 -m unittest scripts/test_coverage_rust.py
+      - name: Measure Rust coverage and hold the floor
+        run: >-
+          python3 scripts/coverage-rust.py --jobs 2 --timeout-seconds 12600
+          --floor-file scripts/coverage-rust-floor.json
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mycarlos-rust-coverage
+          path: |
+            coverage/rust/*/report/summary.txt
+            coverage/rust/*/report/coverage.json
+            coverage/rust/*/report/lcov.info
+            coverage/rust/*/run.json
+          if-no-files-found: warn
+          retention-days: 14
+
   windows:
     # This downloadable installer is unsigned synthetic-data evaluation evidence.
     # Publisher signing and patient-release approval remain separate gates.
