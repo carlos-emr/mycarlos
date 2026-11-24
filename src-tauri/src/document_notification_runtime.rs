@@ -1,4 +1,7 @@
-//! Best-effort LOCAL ARRIVAL notices for the running Windows evaluation app.
+//! Two independent settings of the running desktop app, kept in one small file per vault:
+//! the AUTOMATIC DOCUMENT CHECKS while unlocked (every desktop OS; its own consent), and the
+//! best-effort LOCAL ARRIVAL notices (an add-on, only where the OS can show one: Windows today).
+//! Neither needs the other.
 //! Not remote readiness, push delivery, an activation grant, or proof of display.
 //! Native callers alone supply identities after durable authenticated custody.
 use crate::ui_text::UiLocale;
@@ -57,6 +60,9 @@ pub struct Status {
     pub automatic_checks_enabled: bool,
     pub automatic_checks_supported: bool,
     pub automatic_checks_paused: bool,
+    /// Whether this computer can show a notice at all (Windows today): the notice switch is an
+    /// add-on offered only where it is true. The automatic checks do not depend on it.
+    pub notices_supported: bool,
     pub last_outcome: Option<Outcome>,
 }
 
@@ -70,12 +76,13 @@ impl Status {
             automatic_checks_enabled: false,
             automatic_checks_supported: false,
             automatic_checks_paused: false,
+            notices_supported: false,
             last_outcome: None,
         }
     }
 }
 
-#[cfg(any(test, windows))]
+#[cfg(any(test, desktop))]
 pub(crate) mod active {
     use super::*;
     use atomicwrites::{AllowOverwrite, AtomicFile};
@@ -207,7 +214,9 @@ pub(crate) mod active {
             )
         }
 
-        #[cfg(all(test, not(windows)))]
+        /// Where the OS cannot show a notice (everything but Windows): the checks are still
+        /// supported, and a notice is never attempted.
+        #[cfg(not(windows))]
         pub fn new(path: PathBuf, _app_id: String) -> Self {
             struct Unavailable;
             impl Backend for Unavailable {
@@ -222,19 +231,7 @@ pub(crate) mod active {
                     Err(Error::Unavailable)
                 }
             }
-            Self {
-                path,
-                state: Mutex::new(None),
-                notice: arrival_notice,
-                test_notice: test_notice_text,
-                last_test: Mutex::new(None),
-                test_interval: TEST_NOTICE_INTERVAL,
-                backend: Box::new(Unavailable),
-                supported: false,
-                accepting: AtomicBool::new(false),
-                automatic_ready: AtomicBool::new(false),
-                consent_epoch: AtomicU64::new(0),
-            }
+            Self::load(path, Box::new(Unavailable))
         }
 
         fn load(path: PathBuf, backend: Box<dyn Backend>) -> Self {
@@ -271,8 +268,9 @@ pub(crate) mod active {
                 let mut keys = std::collections::HashSet::new();
                 if ledger.version != 2
                     || ledger.automatic_consent_version > 1
-                    || (ledger.automatic_checks_enabled
-                        && (!ledger.enabled || ledger.automatic_consent_version != 1))
+                    // The automatic checks need their own consent, not the notices: a file with
+                    // them on and notices off is a valid state.
+                    || (ledger.automatic_checks_enabled && ledger.automatic_consent_version != 1)
                     || ledger.events.len() > MAX_EVENTS
                     || ledger.events.iter().any(|e| {
                         e.key.len() != 64
@@ -295,9 +293,9 @@ pub(crate) mod active {
             };
             let state = read().ok();
             let accepting = state.as_ref().is_some_and(|s| s.enabled);
-            let automatic_ready = state.as_ref().is_some_and(|s| {
-                s.enabled && s.automatic_checks_enabled && s.automatic_consent_version == 1
-            });
+            let automatic_ready = state
+                .as_ref()
+                .is_some_and(|s| s.automatic_checks_enabled && s.automatic_consent_version == 1);
             Self {
                 path,
                 state: Mutex::new(state),
@@ -338,15 +336,11 @@ pub(crate) mod active {
         pub fn automatic_eligible(&self) -> bool {
             self.supported
                 && !self.state.is_poisoned()
-                && self.accepting.load(Ordering::Acquire)
                 && self.automatic_ready.load(Ordering::Acquire)
         }
         fn update_automatic(&self, s: &Ledger) {
             self.automatic_ready.store(
-                self.accepting.load(Ordering::Acquire)
-                    && s.enabled
-                    && s.automatic_checks_enabled
-                    && s.automatic_consent_version == 1,
+                s.automatic_checks_enabled && s.automatic_consent_version == 1,
                 Ordering::Release,
             );
         }
@@ -388,6 +382,7 @@ pub(crate) mod active {
                     automatic_checks_enabled: false,
                     automatic_checks_supported: false,
                     automatic_checks_paused: false,
+                    notices_supported: false,
                     last_outcome: Some(Outcome::Unknown),
                 };
             };
@@ -396,12 +391,12 @@ pub(crate) mod active {
                 available: guard.as_ref().is_some(),
                 enabled: self.accepting.load(Ordering::Acquire)
                     && guard.as_ref().is_some_and(|s| s.enabled),
-                automatic_checks_enabled: self.accepting.load(Ordering::Acquire)
-                    && guard.as_ref().is_some_and(|s| {
-                        s.enabled && s.automatic_checks_enabled && s.automatic_consent_version == 1
-                    }),
-                automatic_checks_supported: cfg!(any(test, windows)),
+                automatic_checks_enabled: guard.as_ref().is_some_and(|s| {
+                    s.automatic_checks_enabled && s.automatic_consent_version == 1
+                }),
+                automatic_checks_supported: true,
                 automatic_checks_paused: false,
+                notices_supported: self.backend.permission() != Permission::Unavailable,
                 permission: self.backend.permission(),
                 last_outcome: guard
                     .as_ref()
@@ -431,13 +426,18 @@ pub(crate) mod active {
             }
         }
 
+        /// Stops the notices only (the add-on): the automatic document checks are a separate
+        /// choice and keep running.
         pub fn suspend_notices(&self) {
             self.accepting.store(false, Ordering::Release);
-            self.automatic_ready.store(false, Ordering::Release);
             self.consent_epoch.fetch_add(1, Ordering::AcqRel);
         }
 
         pub fn set_enabled(&self, enabled: bool) -> Result<Status, Error> {
+            // Where the OS cannot show a notice there is nothing to turn on.
+            if enabled && self.backend.permission() == Permission::Unavailable {
+                return Err(Error::Unavailable);
+            }
             if !enabled {
                 // This happens before any blocking ledger write/lock.
                 self.suspend_notices();
@@ -445,9 +445,6 @@ pub(crate) mod active {
             let mut guard = self.state.lock().map_err(|_| Error::Storage)?;
             let mut next = guard.as_ref().ok_or(Error::Unavailable)?.clone();
             next.enabled = enabled;
-            if !enabled {
-                next.automatic_checks_enabled = false;
-            }
             if self.persist(&next).is_err() {
                 // Stop notices in this process rather than continue with an unsaved preference.
                 self.accepting.store(false, Ordering::Release);
@@ -470,9 +467,6 @@ pub(crate) mod active {
             }
             let mut guard = self.state.lock().map_err(|_| Error::Storage)?;
             let mut next = guard.as_ref().ok_or(Error::Unavailable)?.clone();
-            if enabled && (!next.enabled || !self.accepting.load(Ordering::Acquire)) {
-                return Err(Error::Unavailable);
-            }
             next.automatic_checks_enabled = enabled;
             next.automatic_consent_version = if enabled {
                 1
@@ -656,6 +650,17 @@ pub(crate) mod active {
                 || true,
             );
         }
+        /// A second, different delivery (its own identity, so it is not a repeat).
+        fn arrival_other(runtime: &Runtime) {
+            runtime.arrived(
+                Uuid::from_u128(1),
+                Uuid::from_u128(2),
+                &"B".repeat(43),
+                "00000000-0000-4000-8000-000000000005",
+                Uuid::from_u128(6),
+                || true,
+            );
+        }
         #[test]
         fn opt_in_and_durable_dedupe_do_not_claim_display() {
             let temp = tempfile::tempdir().unwrap();
@@ -794,9 +799,129 @@ pub(crate) mod active {
             assert_eq!(saved.version, 2);
             assert_eq!(saved.automatic_consent_version, 1);
             assert!(saved.automatic_checks_enabled);
+            // Turning the notices off is not turning the automatic checks off.
             runtime.set_enabled(false).ok().unwrap();
-            assert!(!runtime.status().automatic_checks_enabled);
-            assert!(runtime.set_automatic_checks(true).is_err());
+            assert!(runtime.status().automatic_checks_enabled);
+            assert!(runtime.automatic_eligible());
+            assert!(!runtime.status().enabled);
+        }
+
+        fn mock_runtime(path: std::path::PathBuf) -> (Runtime, Arc<AtomicUsize>) {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let runtime = Runtime::load(
+                path,
+                Box::new(Mock {
+                    calls: calls.clone(),
+                    fail: false,
+                }),
+            );
+            (runtime, calls)
+        }
+
+        #[test]
+        fn automatic_checks_work_with_the_notices_off_and_a_notice_is_never_shown() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let (runtime, calls) = mock_runtime(path.clone());
+            assert!(!runtime.automatic_eligible());
+            // No notice switch was ever turned on: the automatic check can still be.
+            let status = runtime.set_automatic_checks(true).ok().unwrap();
+            assert!(status.automatic_checks_enabled && !status.enabled);
+            assert!(runtime.automatic_eligible());
+            let on_disk: Ledger = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert!(on_disk.automatic_checks_enabled && !on_disk.enabled);
+            assert_eq!(on_disk.automatic_consent_version, 1);
+            // A document arriving through an automatic check raises no notice and is not recorded.
+            arrival(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            assert!(saved(&path).events.is_empty());
+            // It is still on after a restart.
+            let (again, _) = mock_runtime(path);
+            assert!(again.automatic_eligible());
+            assert!(again.status().automatic_checks_enabled && !again.status().enabled);
+        }
+
+        #[test]
+        fn each_switch_turns_the_other_neither_on_nor_off() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, calls) = mock_runtime(temp.path().join("state.json"));
+            runtime.set_enabled(true).ok().unwrap();
+            // Notices alone: no automatic check.
+            assert!(runtime.status().enabled && !runtime.status().automatic_checks_enabled);
+            assert!(!runtime.automatic_eligible());
+            runtime.set_automatic_checks(true).ok().unwrap();
+            // Both on: an arrival raises its notice.
+            assert!(runtime.status().enabled && runtime.status().automatic_checks_enabled);
+            arrival(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            // Notices off: the checks go on and nothing more is shown.
+            runtime.set_enabled(false).ok().unwrap();
+            assert!(!runtime.status().enabled && runtime.status().automatic_checks_enabled);
+            assert!(runtime.automatic_eligible());
+            arrival_other(&runtime);
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            // Notices on again, checks off: the notice add-on stays, the checks stop.
+            runtime.set_enabled(true).ok().unwrap();
+            runtime.set_automatic_checks(false).ok().unwrap();
+            assert!(runtime.status().enabled && !runtime.status().automatic_checks_enabled);
+            assert!(!runtime.automatic_eligible());
+        }
+
+        #[test]
+        fn a_saved_file_keeps_what_was_on_whichever_way_it_was() {
+            let temp = tempfile::tempdir().unwrap();
+            for (name, enabled, automatic) in [
+                ("both", true, true),
+                ("notices-only", true, false),
+                ("automatic-only", false, true),
+            ] {
+                let path = temp.path().join(format!("{name}.json"));
+                let file = format!(
+                    r#"{{"version":2,"enabled":{enabled},"events":[],"automatic_checks_enabled":{automatic},"automatic_consent_version":{}}}"#,
+                    u8::from(automatic)
+                );
+                fs::write(&path, &file).unwrap();
+                let (runtime, _) = mock_runtime(path.clone());
+                let status = runtime.status();
+                assert!(status.available, "{name}");
+                assert_eq!(status.enabled, enabled, "{name}");
+                assert_eq!(status.automatic_checks_enabled, automatic, "{name}");
+                assert_eq!(runtime.automatic_eligible(), automatic, "{name}");
+                // Loading rewrites nothing.
+                assert_eq!(fs::read(&path).unwrap(), file.as_bytes(), "{name}");
+            }
+        }
+
+        #[test]
+        fn automatic_checks_without_their_own_consent_are_not_a_valid_file() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let original = br#"{"version":2,"enabled":false,"events":[],"automatic_checks_enabled":true,"automatic_consent_version":0}"#;
+            fs::write(&path, original).unwrap();
+            let (runtime, _) = mock_runtime(path.clone());
+            assert!(!runtime.status().available);
+            assert!(!runtime.automatic_eligible());
+            assert_eq!(fs::read(&path).unwrap(), original);
+        }
+
+        #[cfg(not(windows))]
+        #[test]
+        fn where_no_notice_can_be_shown_the_automatic_checks_still_work() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("state.json");
+            let runtime = Runtime::new(path.clone(), "FAKE.app".to_owned());
+            let status = runtime.status();
+            assert!(status.supported && status.available);
+            assert!(status.automatic_checks_supported && !status.notices_supported);
+            assert!(!status.enabled && !status.automatic_checks_enabled);
+            // There is no notice to turn on, and nothing is saved by trying.
+            assert!(matches!(runtime.set_enabled(true), Err(Error::Unavailable)));
+            assert!(!path.exists());
+            // The automatic checks have their own consent and need no notice.
+            let status = runtime.set_automatic_checks(true).ok().unwrap();
+            assert!(status.automatic_checks_enabled && !status.notices_supported);
+            assert!(runtime.automatic_eligible());
+            assert!(Runtime::new(path, "FAKE.app".to_owned()).automatic_eligible());
         }
 
         #[test]
@@ -1308,12 +1433,13 @@ pub(crate) mod active {
     }
 }
 
-#[cfg(any(test, windows))]
+#[cfg(any(test, desktop))]
 pub use active::Runtime;
 
-#[cfg(not(any(test, windows)))]
+/// Phones: no notices and no automatic checks.
+#[cfg(not(any(test, desktop)))]
 pub struct Runtime;
-#[cfg(not(any(test, windows)))]
+#[cfg(not(any(test, desktop)))]
 impl Runtime {
     pub fn new(_path: PathBuf, _app_id: String) -> Self {
         Self

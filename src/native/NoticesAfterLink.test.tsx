@@ -20,6 +20,7 @@ type Status = {
   supported: boolean;
   available: boolean;
   enabled: boolean;
+  noticesSupported: boolean;
   permission: "unavailable" | "unknown" | "allowed" | "blocked";
   automaticChecksSupported: boolean;
   automaticChecksEnabled: boolean;
@@ -29,6 +30,7 @@ const offStatus: Status = {
   supported: true,
   available: true,
   enabled: false,
+  noticesSupported: true,
   permission: "allowed",
   automaticChecksSupported: true,
   automaticChecksEnabled: false,
@@ -68,12 +70,8 @@ beforeEach(() => {
     async (command: string, args?: { enabled?: boolean }) => {
       if (command === "vault_notification_status") return { ...status };
       if (command === "vault_set_notifications")
-        status = {
-          ...status,
-          enabled: args?.enabled === true,
-          automaticChecksEnabled:
-            args?.enabled === true ? status.automaticChecksEnabled : false,
-        };
+        // The notices are an add-on: turning them on or off leaves the automatic check alone.
+        status = { ...status, enabled: args?.enabled === true };
       if (command === "vault_set_automatic_document_checks")
         status = { ...status, automaticChecksEnabled: args?.enabled === true };
       return { ...status };
@@ -156,14 +154,14 @@ describe("Notices after the first clinic link", () => {
     linkForm([], [link]);
     await submitLink();
     const dialog = await screen.findByRole("dialog", {
-      name: humanText("Notices from your clinic"),
+      name: humanText("Documents from your clinic"),
     });
     await waitFor(() => expect(document.activeElement).toBe(dialog));
     expect(dialog).toHaveAccessibleDescription(
-      "Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.",
+      "Your clinic is linked. myCarlos can check for new documents for you, and show a notice when one arrives on a computer that can. Nothing is turned on unless you tick it.",
     );
     const notices = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     const checks = screen.getByRole("checkbox", {
       name: humanText(
@@ -173,7 +171,7 @@ describe("Notices after the first clinic link", () => {
     expect(notices).not.toBeChecked();
     expect(checks).not.toBeChecked();
     expect(visibleText(dialog.textContent ?? "")).toContain(
-      "You can change these any time in Settings, under Preferences: Notices after document checks.",
+      "You can change these any time in Settings, under Preferences: Checking for documents.",
     );
     expect(settingCalls()).toEqual([]);
   });
@@ -183,7 +181,7 @@ describe("Notices after the first clinic link", () => {
     const user = await submitLink();
     await user.click(
       await screen.findByRole("checkbox", {
-        name: humanText("Allow document arrival notices"),
+        name: humanText("Show a notice when a document arrives"),
       }),
     );
     await waitFor(() =>
@@ -269,7 +267,7 @@ describe("Notices after the first clinic link", () => {
     expect(screen.getByRole("button", { name: "Not now" })).toBeVisible();
     await user.click(
       await screen.findByRole("checkbox", {
-        name: humanText("Allow document arrival notices"),
+        name: humanText("Show a notice when a document arrives"),
       }),
     );
     await waitFor(() =>
@@ -279,7 +277,7 @@ describe("Notices after the first clinic link", () => {
     expect(dialog).toBeVisible();
   });
 
-  it("says why the automatic checks wait, and nests the setting's heading", async () => {
+  it("offers the automatic check without the notices, says what it contacts, and nests the setting's heading", async () => {
     linkForm([], [link]);
     const user = await submitLink();
     const dialog = await screen.findByRole("dialog");
@@ -288,31 +286,54 @@ describe("Notices after the first clinic link", () => {
         "Check for clinic documents automatically while unlocked",
       ),
     });
-    expect(checks).toBeDisabled();
+    // It does not wait for the notices, and carries its own consent line.
+    expect(checks).toBeEnabled();
     expect(checks).toHaveHumanAccessibleDescription(
-      /Allow document arrival notices first to turn this on\./,
+      /contact your clinic's portal on a schedule, at least two minutes apart/,
     );
     expect(
       screen.getByRole("heading", {
         level: 3,
-        name: humanText("Notices after document checks"),
+        name: humanText("Checking for documents"),
       }),
     ).toBeVisible();
     expect(dialog).toContainElement(
       screen.getByRole("heading", {
         level: 2,
-        name: humanText("Notices from your clinic"),
+        name: humanText("Documents from your clinic"),
       }),
     );
-    await user.click(
-      screen.getByRole("checkbox", {
-        name: humanText("Allow document arrival notices"),
-      }),
-    );
-    await waitFor(() => expect(checks).toBeEnabled());
-    expect(dialog).not.toHaveTextContent(
-      "Allow document arrival notices first to turn this on.",
-    );
+    await user.click(checks);
+    await waitFor(() => expect(checks).toBeChecked());
+    expect(status.automaticChecksEnabled && !status.enabled).toBe(true);
+  });
+
+  it("offers just the automatic check on a computer that cannot show a notice", async () => {
+    status = {
+      ...offStatus,
+      noticesSupported: false,
+      permission: "unavailable",
+    };
+    linkForm([], [link]);
+    await submitLink();
+    const dialog = await screen.findByRole("dialog", {
+      name: humanText("Documents from your clinic"),
+    });
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(dialog).not.toHaveTextContent(/Windows/);
+  });
+
+  it("is not offered when the automatic check is on and no notice can be shown", async () => {
+    status = {
+      ...offStatus,
+      noticesSupported: false,
+      permission: "unavailable",
+      automaticChecksEnabled: true,
+    };
+    linkForm([], [link]);
+    await submitLink();
+    await waitFor(() => expect(native.invoke).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("is offered whichever action made the first link, but not for an unfinished link or at unlock", async () => {
@@ -324,7 +345,7 @@ describe("Notices after the first clinic link", () => {
     view.show(snapshot([link]));
     expect(
       await screen.findByRole("dialog", {
-        name: humanText("Notices from your clinic"),
+        name: humanText("Documents from your clinic"),
       }),
     ).toBeVisible();
     cleanup();
@@ -398,7 +419,7 @@ describe("Notices after the first clinic link", () => {
       // No notices dialog; the patient's own Link another clinic stays open.
       expect(
         screen.queryByRole("dialog", {
-          name: humanText("Notices from your clinic"),
+          name: humanText("Documents from your clinic"),
         }),
       ).toBeNull();
       expect(
