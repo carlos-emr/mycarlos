@@ -4777,6 +4777,36 @@ struct ReceivedAcceptOutcome {
     skipped_duplicates: Vec<String>,
     /// Files that are not PDF documents: not added, and forgotten.
     not_pdf: Vec<String>,
+    /// Files that could not be opened when the vault was open (moved, renamed or deleted while it
+    /// was locked, or not a regular file): not added, and forgotten, so one gone file never holds
+    /// back the others.
+    unreadable: Vec<String>,
+}
+
+/// How opening one received file went, for the batch.
+enum ReceivedOpen {
+    Source(ImportSource),
+    NotPdf,
+    Unreadable,
+}
+
+/// Sorts the opening of one received file. Opening and reading the start of the file is all
+/// that has happened to it, so a file that is not a PDF, that is gone or not a regular file, or
+/// that cannot be read (a permission refused or an I/O error: on Android 11 and older a
+/// `content://` grant ends with the activity that received it, while the process lives on) is a
+/// problem with that file alone: it is named and forgotten, and never holds back the others.
+/// Anything else (the vault) fails the batch and every file keeps waiting.
+fn sort_received_open(
+    opened: Result<ImportSource, VaultError>,
+) -> Result<ReceivedOpen, VaultError> {
+    match opened {
+        Ok(source) => Ok(ReceivedOpen::Source(source)),
+        Err(VaultError::NotPdf) => Ok(ReceivedOpen::NotPdf),
+        Err(VaultError::NotFound | VaultError::Invalid | VaultError::Storage) => {
+            Ok(ReceivedOpen::Unreadable)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// The files waiting for the patient, and what could not be taken since the last call. The
@@ -4788,6 +4818,94 @@ fn received_list(received: State<'_, Arc<ReceivedFiles>>) -> ReceivedState {
     ReceivedState {
         files: received.list(),
         notice: received.take_notice(),
+    }
+}
+
+/// A received file's reader that notes it when a read fails (a sector going bad on a share or a
+/// USB drive, an Android provider failing mid-stream), so the import that read it can name that
+/// file. The error itself passes through unchanged.
+struct NotedRead {
+    inner: Box<dyn std::io::Read + Send>,
+    failed: Arc<AtomicBool>,
+}
+
+impl std::io::Read for NotedRead {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf);
+        // An interrupted read is retried by the reader of the import and says nothing about the
+        // file, so it is not a failure.
+        if read
+            .as_ref()
+            .is_err_and(|error| error.kind() != std::io::ErrorKind::Interrupted)
+        {
+            self.failed.store(true, Ordering::SeqCst);
+        }
+        read
+    }
+}
+
+/// Adds the received files to Shared with me, each on its own account: a file that is not a PDF,
+/// that cannot be opened (see `sort_received_open`), or whose reading fails part-way (a read error
+/// inside the import, noted by `NotedRead`) is named and forgotten, and the others are still
+/// added. Anything that is not the file's (the vault locked, in recovery mode, out of space) fails
+/// the batch and every file keeps waiting. `open` opens one file as an import source.
+fn accept_received_batch(
+    store: &VaultStore,
+    files: Vec<(Uuid, received::ReceivedFile)>,
+    mut open: impl FnMut(received::ReceivedFile) -> Result<ImportSource, VaultError>,
+) -> Result<ReceivedAcceptOutcome, VaultError> {
+    let shared = store.shared_profile()?;
+    let mut not_pdf = Vec::new();
+    let mut unreadable = Vec::new();
+    let mut remaining = files;
+    loop {
+        let mut sources = Vec::with_capacity(remaining.len());
+        let mut notes: Vec<Arc<AtomicBool>> = Vec::with_capacity(remaining.len());
+        let mut kept = Vec::with_capacity(remaining.len());
+        {
+            let _opening = Opening::new(store.idle());
+            for (id, file) in remaining {
+                let name = file.name.clone();
+                match sort_received_open(open(file.clone()))? {
+                    ReceivedOpen::Source(source) => {
+                        let failed = Arc::new(AtomicBool::new(false));
+                        sources.push(ImportSource {
+                            display_name: source.display_name,
+                            reader: Box::new(NotedRead {
+                                inner: source.reader,
+                                failed: Arc::clone(&failed),
+                            }),
+                        });
+                        notes.push(failed);
+                        kept.push((id, file));
+                    }
+                    ReceivedOpen::NotPdf => not_pdf.push(name),
+                    ReceivedOpen::Unreadable => unreadable.push(name),
+                }
+            }
+        }
+        match store.import_from(shared, Vec::new(), sources, now_ms(), "shared") {
+            Ok(outcome) => {
+                return Ok(ReceivedAcceptOutcome {
+                    imported: outcome.imported,
+                    skipped_duplicates: outcome.skipped_duplicates,
+                    not_pdf,
+                    unreadable,
+                })
+            }
+            // A source that failed to read is that file's fault: name it, forget it, and add the
+            // rest (the import added nothing, so they are opened again).
+            Err(error) => match notes
+                .iter()
+                .position(|failed| failed.load(Ordering::SeqCst))
+            {
+                Some(at) => {
+                    unreadable.push(kept.remove(at).1.name);
+                    remaining = kept;
+                }
+                None => return Err(error),
+            },
+        }
     }
 }
 
@@ -4816,8 +4934,9 @@ fn received_discard(
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
-/// file arrives while the vault is open. A file that is not a PDF is not added and is forgotten,
-/// and named in the outcome. When anything else fails, every file keeps waiting for the next ask.
+/// file arrives while the vault is open. A file that is not a PDF, or that can no longer be
+/// opened (moved or deleted while the vault was locked), is not added and is forgotten, and named
+/// in the outcome. When anything else fails, every file keeps waiting for the next ask.
 #[tauri::command]
 async fn received_accept(
     app: tauri::AppHandle,
@@ -4838,6 +4957,7 @@ async fn received_accept(
             imported: Vec::new(),
             skipped_duplicates: Vec::new(),
             not_pdf: Vec::new(),
+            unreadable: Vec::new(),
         });
     }
     let taken = received
@@ -4845,26 +4965,7 @@ async fn received_accept(
         .ok_or_else(|| PublicError::from(VaultError::NotFound))?;
     let files = taken.clone();
     let result = run_blocking(store.arc(), move |store| {
-        let shared = store.shared_profile()?;
-        let mut sources = Vec::with_capacity(files.len());
-        let mut not_pdf = Vec::new();
-        {
-            let _opening = Opening::new(store.idle());
-            for (_, file) in files {
-                let name = file.name.clone();
-                match open_received_source(&app, file) {
-                    Ok(source) => sources.push(source),
-                    Err(VaultError::NotPdf) => not_pdf.push(name),
-                    Err(error) => return Err(error),
-                }
-            }
-        }
-        let outcome = store.import_from(shared, Vec::new(), sources, now_ms(), "shared")?;
-        Ok(ReceivedAcceptOutcome {
-            imported: outcome.imported,
-            skipped_duplicates: outcome.skipped_duplicates,
-            not_pdf,
-        })
+        accept_received_batch(store, files, |file| open_received_source(&app, file))
     })
     .await;
     match result {
@@ -10473,6 +10574,232 @@ mod photo_command_tests {
                 "photo_body"
             );
         }
+    }
+
+    #[test]
+    fn one_received_file_that_is_gone_or_not_a_pdf_never_holds_back_the_others() {
+        let source = || ImportSource {
+            display_name: "FAKE.pdf".into(),
+            reader: Box::new(std::io::empty()),
+        };
+        assert!(matches!(
+            sort_received_open(Ok(source())),
+            Ok(ReceivedOpen::Source(_))
+        ));
+        assert!(matches!(
+            sort_received_open(Err(VaultError::NotPdf)),
+            Ok(ReceivedOpen::NotPdf)
+        ));
+        // Moved or deleted while the vault was locked, no longer a regular file, or unreadable
+        // (a dead `content://` grant, a refused permission, an I/O error): that file only.
+        for gone in [
+            VaultError::NotFound,
+            VaultError::Invalid,
+            VaultError::Storage,
+        ] {
+            assert!(matches!(
+                sort_received_open(Err(gone)),
+                Ok(ReceivedOpen::Unreadable)
+            ));
+        }
+        // The vault failing is not the file's fault: the batch fails and every file keeps
+        // waiting.
+        for failure in [VaultError::Locked, VaultError::RecoveryMode] {
+            assert!(sort_received_open(Err(failure)).is_err());
+        }
+    }
+
+    /// A reader of one received file for the tests: its bytes, and optionally an error after the
+    /// first read (a bad sector, a provider failing mid-stream).
+    struct Bytes {
+        data: std::io::Cursor<Vec<u8>>,
+        fail_after_first: bool,
+        read_once: bool,
+        /// The first read is interrupted (and succeeds when tried again).
+        interrupt_first: bool,
+    }
+
+    impl std::io::Read for Bytes {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.interrupt_first && !self.read_once {
+                self.read_once = true;
+                return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
+            }
+            if self.fail_after_first && self.read_once {
+                return Err(std::io::Error::other("FAKE bad sector"));
+            }
+            self.read_once = true;
+            let wanted = if self.fail_after_first {
+                buf.len().min(8)
+            } else {
+                buf.len()
+            };
+            self.data.read(&mut buf[..wanted])
+        }
+    }
+
+    fn received_file(name: &str) -> (Uuid, received::ReceivedFile) {
+        (
+            Uuid::new_v4(),
+            received::ReceivedFile {
+                source: received::ReceivedSource::Path(format!("/FAKE/{name}").into()),
+                name: name.to_owned(),
+            },
+        )
+    }
+
+    #[test]
+    fn a_batch_adds_the_good_files_and_names_each_one_that_cannot_be_taken() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_first.pdf"),
+            received_file("FAKE_not_a_pdf.jpg"),
+            received_file("FAKE_gone.pdf"),
+            received_file("FAKE_bad_sector.pdf"),
+            received_file("FAKE_second.pdf"),
+        ];
+        let opened = std::cell::RefCell::new(Vec::new());
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.borrow_mut().push(file.name.clone());
+            let bytes = |fail_after_first: bool| {
+                Ok(ImportSource {
+                    display_name: file.name.clone(),
+                    reader: Box::new(Bytes {
+                        data: std::io::Cursor::new(
+                            format!("%PDF-1.4 FAKE {} {}", file.name, "x".repeat(4096))
+                                .into_bytes(),
+                        ),
+                        fail_after_first,
+                        read_once: false,
+                        interrupt_first: false,
+                    }),
+                })
+            };
+            match file.name.as_str() {
+                "FAKE_not_a_pdf.jpg" => Err(VaultError::NotPdf),
+                "FAKE_gone.pdf" => Err(VaultError::NotFound),
+                "FAKE_bad_sector.pdf" => bytes(true),
+                _ => bytes(false),
+            }
+        })
+        .unwrap();
+        // Both good files were added, though one failed after the others had been read.
+        assert_eq!(outcome.imported.len(), 2);
+        assert_eq!(outcome.not_pdf, ["FAKE_not_a_pdf.jpg"]);
+        assert_eq!(outcome.unreadable, ["FAKE_gone.pdf", "FAKE_bad_sector.pdf"]);
+        assert!(outcome.skipped_duplicates.is_empty());
+        let snapshot = store.snapshot().unwrap();
+        let names: Vec<_> = snapshot
+            .records
+            .iter()
+            .map(|record| record.display_name.as_str())
+            .collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"FAKE_first.pdf") && names.contains(&"FAKE_second.pdf"));
+        // The good files were opened again for the second attempt, the others not.
+        let opened = opened.into_inner();
+        assert_eq!(
+            opened.iter().filter(|name| name.contains("first")).count(),
+            2
+        );
+        assert_eq!(
+            opened.iter().filter(|name| name.contains("gone")).count(),
+            1
+        );
+    }
+
+    /// A reader of a small PDF-looking file for the tests of the batch.
+    fn small_source(name: &str, fail_after_first: bool, interrupt_first: bool) -> ImportSource {
+        ImportSource {
+            display_name: name.to_owned(),
+            reader: Box::new(Bytes {
+                data: std::io::Cursor::new(
+                    format!("%PDF-1.4 FAKE {name} {}", "y".repeat(4096)).into_bytes(),
+                ),
+                fail_after_first,
+                read_once: false,
+                interrupt_first,
+            }),
+        }
+    }
+
+    #[test]
+    fn two_files_that_fail_to_read_are_both_named_and_an_interrupted_read_is_not_a_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_interrupted.pdf"),
+            received_file("FAKE_bad_one.pdf"),
+            received_file("FAKE_good.pdf"),
+            received_file("FAKE_bad_two.pdf"),
+        ];
+        let outcome = accept_received_batch(&store, files, |file| {
+            Ok(small_source(
+                &file.name,
+                file.name.contains("bad"),
+                file.name.contains("interrupted"),
+            ))
+        })
+        .unwrap();
+        // The file whose read was interrupted once and then went on is added, not forgotten
+        // because another file failed later.
+        let names: Vec<_> = store
+            .snapshot()
+            .unwrap()
+            .records
+            .into_iter()
+            .map(|record| record.display_name)
+            .collect();
+        assert_eq!(outcome.imported.len(), 2, "{names:?}");
+        assert!(names.contains(&"FAKE_interrupted.pdf".to_owned()));
+        assert!(names.contains(&"FAKE_good.pdf".to_owned()));
+        assert_eq!(outcome.unreadable, ["FAKE_bad_one.pdf", "FAKE_bad_two.pdf"]);
+    }
+
+    #[test]
+    fn a_read_that_failed_followed_by_a_vault_failure_fails_the_batch_whole() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let files = vec![
+            received_file("FAKE_bad.pdf"),
+            received_file("FAKE_good.pdf"),
+        ];
+        let opened = std::cell::Cell::new(0);
+        let outcome = accept_received_batch(&store, files, |file| {
+            opened.set(opened.get() + 1);
+            // The second attempt (after the bad file was named) finds the vault locked.
+            if opened.get() == 3 {
+                store.lock();
+            }
+            Ok(small_source(&file.name, file.name.contains("bad"), false))
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+    }
+
+    #[test]
+    fn a_batch_that_fails_for_the_vault_fails_whole_and_every_file_keeps_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = VaultStore::new(temp.path().join("vault"));
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        store.lock();
+        // Locked: nothing is opened, nothing is named, and the caller restores every file.
+        let outcome = accept_received_batch(&store, vec![received_file("FAKE_a.pdf")], |_| {
+            panic!("nothing is opened while the vault is locked")
+        });
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        // Unlocked again, a vault error from the open itself also fails the batch.
+        store.unlock(PASSWORD).unwrap();
+        let outcome = accept_received_batch(
+            &store,
+            vec![received_file("FAKE_a.pdf"), received_file("FAKE_b.pdf")],
+            |_| Err(VaultError::Locked),
+        );
+        assert!(matches!(outcome, Err(VaultError::Locked)));
+        assert!(store.snapshot().unwrap().records.is_empty());
     }
 
     #[test]
