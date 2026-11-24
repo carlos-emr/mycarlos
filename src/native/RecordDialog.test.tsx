@@ -10,7 +10,7 @@ import {
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride } from "../i18n";
-import { humanText } from "../test/humanText";
+import { humanText, visibleText } from "../test/humanText";
 import { MAX_UNSENT_BYTES } from "./video";
 import { RecordDialog, type RecordBridge } from "./RecordDialog";
 
@@ -1004,9 +1004,8 @@ describe("RecordDialog", () => {
     act(() => {
       recorder().emit(new Blob([]));
     });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
+    // An empty piece is dropped where it arrives: nothing is queued, so nothing is waited for.
+    await act(async () => undefined);
     expect(bridge.videoAppend).not.toHaveBeenCalled();
     act(() => {
       recorder().emit(piece(40));
@@ -1200,11 +1199,41 @@ describe("RecordDialog", () => {
     expect(bridge.videoResume).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the time recorded moving while recording", async () => {
-    await recording();
-    const shown = () =>
-      screen.getByText(humanText(/^Recorded \d+:\d{2}$/)).textContent;
-    const before = shown();
-    await waitFor(() => expect(shown()).not.toBe(before), { timeout: 4000 });
+  it("keeps the time recorded moving while recording, one tick at a time", async () => {
+    // The clock reads performance.now, and the screen re-reads it on a timer of the dialog's own:
+    // both are driven here, so nothing waits in real time.
+    let now = 1_000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const ticks: { run: () => void; delay: number }[] = [];
+    const realInterval = window.setInterval.bind(window);
+    const timer = vi.spyOn(window, "setInterval").mockImplementation(((
+      run: () => void,
+      delay?: number,
+      ...rest: unknown[]
+    ) => {
+      ticks.push({ run, delay: delay ?? 0 });
+      return realInterval(run, delay, ...rest);
+    }) as typeof window.setInterval);
+    try {
+      await recording();
+      // The timer is started by an effect, which runs after the screen shows Pause.
+      await act(async () => undefined);
+      const shown = () =>
+        visibleText(
+          screen.getByText(humanText(/^Recorded \d+:\d{2}$/)).textContent ?? "",
+        );
+      expect(shown()).toBe("Recorded 0:00");
+      const tick = ticks.filter((entry) => entry.delay === 500).at(-1)!;
+      expect(ticks.map((entry) => entry.delay)).toContain(500);
+      now += 61_000;
+      act(() => tick.run());
+      expect(shown()).toBe("Recorded 1:01");
+      now += 60_000;
+      act(() => tick.run());
+      expect(shown()).toBe("Recorded 2:01");
+    } finally {
+      clock.mockRestore();
+      timer.mockRestore();
+    }
   });
 });
