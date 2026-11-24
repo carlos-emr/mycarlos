@@ -1896,11 +1896,9 @@ aiHelper-resultLabelInfo = O que significa “Rascunho de IA”
 
 ai-label-settingsTitle = Aviso nas respostas da IA
 
-ai-label-settingsBody = Cada resposta da IA informa que foi escrita por IA e pode conter erros. Depois de “Não mostrar novamente”, uma etiqueta curta “Rascunho de IA” substitui a frase completa. A etiqueta nunca é removida. A escolha fica guardada neste dispositivo e recomeça se o modelo ou a ferramenta mudar.
+ai-label-settingsBody = As respostas da IA podem conter erros, e cada uma informa isso. Se você escolher “Não mostrar novamente” em uma resposta, as respostas seguintes mostram uma etiqueta curta “Rascunho de IA” no lugar da frase completa.
 
 ai-label-settingsShowFull = Mostrar o aviso completo novamente
-
-ai-label-settingsFullShown = O aviso completo é mostrado em cada resposta da IA.
 
 ai-label-settingsShortShown = Uma etiqueta curta “Rascunho de IA” é mostrada nas respostas da IA para as quais você a escolheu.
 

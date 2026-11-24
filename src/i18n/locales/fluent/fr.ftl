@@ -1896,11 +1896,9 @@ aiHelper-resultLabelInfo = Ce que signifie « Brouillon IA »
 
 ai-label-settingsTitle = Avertissement sur les réponses de l’IA
 
-ai-label-settingsBody = Chaque réponse de l’IA indique qu’elle a été écrite par une IA et peut contenir des erreurs. Après « Ne plus afficher », une courte étiquette « Brouillon IA » remplace la phrase complète. L’étiquette n’est jamais retirée. Le choix est gardé sur cet appareil et recommence si le modèle ou l’outil change.
+ai-label-settingsBody = Les réponses de l’IA peuvent contenir des erreurs, et chacune l’indique. Si vous choisissez « Ne plus afficher » sur une réponse, les réponses suivantes affichent une courte étiquette « Brouillon IA » au lieu de la phrase complète.
 
 ai-label-settingsShowFull = Afficher de nouveau l’avertissement complet
-
-ai-label-settingsFullShown = L’avertissement complet est affiché sur chaque réponse de l’IA.
 
 ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affichée sur les réponses de l’IA pour lesquelles vous l’avez choisie.
 

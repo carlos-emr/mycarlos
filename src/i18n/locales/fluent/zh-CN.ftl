@@ -1708,11 +1708,9 @@ aiHelper-resultLabelInfo = “AI 草稿”是什么意思
 
 ai-label-settingsTitle = AI 回答上的提示
 
-ai-label-settingsBody = 每条 AI 回答都会说明由 AI 撰写、可能有误。选择“不再显示”后，完整的句子会由简短的“AI 草稿”标签代替。标签不会被移除。此选择保存在本设备上，模型或工具更换后会重新开始。
+ai-label-settingsBody = AI 回答可能有误，每条回答都会这样说明。如果您在某条回答上选择“不再显示”，之后的回答会显示简短的“AI 草稿”标签，而不是完整的句子。
 
 ai-label-settingsShowFull = 再次显示完整提示
-
-ai-label-settingsFullShown = 每条 AI 回答都显示完整提示。
 
 ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的“AI 草稿”标签。
 

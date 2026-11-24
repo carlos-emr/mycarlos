@@ -839,7 +839,6 @@ export const MESSAGE_KEYS = [
   "ai.label.settingsTitle",
   "ai.label.settingsBody",
   "ai.label.settingsShowFull",
-  "ai.label.settingsFullShown",
   "ai.label.settingsShortShown",
   "ai.result.meta",
   "ai.summary.showInDocument",
@@ -2318,7 +2317,6 @@ const FLUENT_IDS_BY_KEY = {
   "ai.label.settingsTitle": "ai-label-settingsTitle",
   "ai.label.settingsBody": "ai-label-settingsBody",
   "ai.label.settingsShowFull": "ai-label-settingsShowFull",
-  "ai.label.settingsFullShown": "ai-label-settingsFullShown",
   "ai.label.settingsShortShown": "ai-label-settingsShortShown",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
@@ -3882,7 +3880,6 @@ export interface MessageArgsByKey {
   "ai.label.settingsTitle": undefined;
   "ai.label.settingsBody": undefined;
   "ai.label.settingsShowFull": undefined;
-  "ai.label.settingsFullShown": undefined;
   "ai.label.settingsShortShown": undefined;
   "ai.result.meta": {
     date: FluentArgument;

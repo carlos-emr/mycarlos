@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { expectOnlyFakedCommands } from "./support/a11y";
+import { expectNoAxeViolations, expectOnlyFakedCommands } from "./support/a11y";
 import {
   AI_COMMANDS,
   FAKE_MODEL,
@@ -19,6 +19,7 @@ import {
   fakeVaultWith,
   myRecords,
   openDetails,
+  sidebar,
 } from "./support/vaultFake";
 
 // The AI helper's answers kept with the document (#212): a summary shown
@@ -241,5 +242,53 @@ test("a kept summary that came in a handover file says it came from an imported 
   ).toBeVisible();
   // Shown from the vault, not asked of the model again.
   expect(await aiCalls(page, AI_COMMANDS.summarize)).toHaveLength(1);
+  await expectOnlyFakedCommands(page);
+});
+
+test("Don't show this again leaves an AI draft label with a button that shows the full warning, and Settings explains it in a few words", async ({
+  page,
+}) => {
+  await start(page);
+  const reader = await openReader(page);
+  await open(page, reader, en("ai.summary.button"), true);
+  const panel = summaryPanel(reader);
+  const full = panel.getByText(en("aiHelper.resultLabel"), { exact: true });
+  await expect(full).toBeVisible();
+  await button(panel, en("aiHelper.resultLabelHide")).click();
+  // The short label stands in, and a button beside it shows the sentence on request.
+  await expect(
+    panel.getByText(en("aiHelper.resultLabelShort"), { exact: true }),
+  ).toBeVisible();
+  await expect(full).toBeHidden();
+  const info = button(panel, en("aiHelper.resultLabelInfo"));
+  await expect(info).toBeFocused();
+  await expect(info).toHaveAttribute("aria-expanded", "false");
+  expect((await info.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await info.click();
+  await expect(info).toHaveAttribute("aria-expanded", "true");
+  await expect(full).toBeVisible();
+  await expectNoAxeViolations(page, "an AI answer with the short label open");
+  await info.click();
+  await expect(full).toBeHidden();
+  await close(reader);
+
+  // Settings: the explanation in Ben's words, the button to bring the full warning back.
+  await sidebar(page)
+    .getByRole("button", { name: en("ai.preferences.title"), exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: en("ai.label.settingsTitle"), level: 2 }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(en("ai.label.settingsBody"), { exact: true }),
+  ).toBeVisible();
+  const back = page.getByRole("button", {
+    name: en("ai.label.settingsShowFull"),
+    exact: true,
+  });
+  await expect(back).toBeVisible();
+  await expectNoAxeViolations(page, "the AI helper's settings");
+  await back.click();
+  await expect(back).toHaveCount(0);
   await expectOnlyFakedCommands(page);
 });

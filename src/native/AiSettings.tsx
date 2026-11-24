@@ -67,12 +67,11 @@ export function AiSettings({
             <p>{t("ai.label.settingsBody")}</p>
           </div>
           <div>
-            {/* Always on the page, so that a change of its words is read out; the button goes
-                when there is nothing to bring back, and the focus goes to the row's heading. */}
+            {/* Always on the page, so that its words are read out when they come; the sentence and
+                the button go when there is nothing to bring back, and the focus goes to the row's
+                heading. */}
             <p role="status">
-              {shortLabel
-                ? t("ai.label.settingsShortShown")
-                : t("ai.label.settingsFullShown")}
+              {shortLabel ? t("ai.label.settingsShortShown") : null}
             </p>
             {shortLabel && (
               <button
