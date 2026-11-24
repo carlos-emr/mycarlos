@@ -8,6 +8,7 @@ import {
   checkManifest,
   INFO_PLIST_PATH,
   MANIFEST_PATH,
+  MINIMUM_REASONS,
   REQUIRED_APIS,
   run,
 } from "./check-ios-privacy.mjs";
@@ -112,6 +113,27 @@ test("every required-reason category needs a reason Apple lists for it", async (
     checkManifest(text.replace("C617.1", "ZZZZ.9")).join(),
     /ZZZZ\.9 is not one Apple lists/,
   );
+  // The reasons the code needs must all be there: dropping the document-picker reason (an import
+  // reads the metadata of a picked file) is refused.
+  for (const [category, needed] of Object.entries(MINIMUM_REASONS)) {
+    for (const reason of needed) {
+      const dropped = text.replace(
+        new RegExp(`\\s*<string>${reason.replace(".", "\\.")}</string>`),
+        "",
+      );
+      assert.match(
+        checkManifest(dropped).join(),
+        new RegExp(
+          `${category}.*(must declare the reason ${reason.replace(".", "\\.")}|is not declared)`,
+        ),
+        `${category} ${reason}`,
+      );
+    }
+  }
+  assert.match(text, /3B52\.1/);
+  // 85F4.1 (showing disk space to the person) is deliberately not declared: no message shows a
+  // free-space figure.
+  assert.doesNotMatch(text, /85F4\.1/);
   assert.match(
     checkManifest(
       text.replace(
@@ -218,6 +240,37 @@ test("the manifest is copied into the one generated iOS app folder", async () =>
   }
 });
 
+/** The `localStorage` get/set/remove calls in `text` whose key is not a named constant. */
+export function unnamedStorageCalls(text) {
+  const found = [];
+  for (const call of text.matchAll(
+    /localStorage\s*\.\s*(?:getItem|setItem|removeItem)\(\s*/g,
+  )) {
+    const rest = text.slice(call.index + call[0].length);
+    if (!/^[A-Za-z_][\w.]*(?:\([^)]*\))?\s*[,)]/.test(rest))
+      found.push(`${call[0]}${rest.slice(0, 30)}`);
+  }
+  return found;
+}
+
+test("a localStorage key typed at the call is found, and a named constant is not", () => {
+  assert.equal(
+    unnamedStorageCalls('window.localStorage.setItem("mycarlos.x.v1", "1")')
+      .length,
+    1,
+  );
+  assert.equal(
+    unnamedStorageCalls("localStorage.getItem(`mycarlos.${name}`)").length,
+    1,
+  );
+  assert.deepEqual(
+    unnamedStorageCalls(
+      "window.localStorage.setItem(STORAGE_KEY, v); localStorage.getItem(keyFor(scope))",
+    ),
+    [],
+  );
+});
+
 // WKWebView keeps localStorage and IndexedDB under Library/WebKit, which an iOS backup takes: the
 // backup exclusion of the app's data folder does not cover it (#422). Nothing about a person or a
 // document may live there. This list is the review: a new key makes this test fail until it is read
@@ -250,16 +303,27 @@ test("the webview's own storage keys are the reviewed ones, and nothing else is 
     .split("\n")
     .filter((file) => /\.(ts|tsx)$/.test(file) && !file.endsWith("keys.ts"));
   const found = new Set();
+  const unnamed = [];
   for (const file of sources) {
     const text = await readFile(file, "utf8");
     for (const key of text.matchAll(/"(mycarlos\.[A-Za-z]+\.v\d+)"/g))
       found.add(key[1]);
+    // Every use of localStorage names its key by a constant (an identifier, such as
+    // STORAGE_KEY or keyFor(scope)), never a string typed at the call: a key invented inline
+    // would not be in the list above. The one computed key, unfinishedHandover's
+    // "<constant>.<scope>", takes the vault slot's id as its suffix, an opaque random id that
+    // names no person (see src/native/unfinishedHandover.ts). sessionStorage is not scanned:
+    // it is not written to disk and does not outlive the app.
+    unnamed.push(
+      ...unnamedStorageCalls(text).map((call) => `${file}: ${call}`),
+    );
     assert.doesNotMatch(
       text,
       /indexedDB|IDBFactory|caches\.open|document\.cookie/,
       file,
     );
   }
+  assert.deepEqual(unnamed, [], "a localStorage key must be a named constant");
   assert.deepEqual(
     [...found].sort(),
     Object.keys(REVIEWED_WEBVIEW_STORAGE).sort(),

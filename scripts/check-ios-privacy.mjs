@@ -42,6 +42,21 @@ export const REQUIRED_APIS = {
   ],
 };
 
+/**
+ * Reasons the manifest must declare (a subset of the allowed ones above): the app's own files
+ * (C617.1) and the files the person picked in the document picker (3B52.1: an import reads the
+ * size and dates of a picked file). The disk-space reason 85F4.1 (showing disk space to the person)
+ * is not declared because no message shows a free-space figure: the app only says "not enough
+ * room" (E174.1, a check before writing). Add 85F4.1 here and in the manifest the day a screen
+ * shows such a figure.
+ */
+export const MINIMUM_REASONS = {
+  NSPrivacyAccessedAPICategoryFileTimestamp: ["C617.1", "3B52.1"],
+  NSPrivacyAccessedAPICategoryDiskSpace: ["E174.1"],
+  NSPrivacyAccessedAPICategorySystemBootTime: ["35F9.1"],
+  NSPrivacyAccessedAPICategoryUserDefaults: ["CA92.1"],
+};
+
 const stripComments = (text) => text.replace(/<!--[\s\S]*?-->/g, "");
 
 /** The value following `<key>name</key>` as a raw XML fragment (arrays kept whole, nesting counted), or null. */
@@ -65,10 +80,15 @@ function valueOf(text, name) {
 }
 
 /**
- * What the app collects, as declared: ONE type, a device identifier the clinic portal keeps,
- * linked to the user, not used for tracking, for App Functionality (Ben's decision: the portal
- * stays on iPhone and is declared). Anything else added or dropped must change this together
- * with the store answers (mycarlos-store-forms-draft) and IOS_RELEASE.md.
+ * What the manifest declares today: ONE type, a device identifier the clinic portal keeps, linked
+ * to the user, not used for tracking, for App Functionality (Ben's decision: the portal stays on
+ * iPhone and is declared). **This is not a complete account of what the clinic's portal receives**:
+ * the device's name (typed by the person), delivery and receipt events, the timing and frequency
+ * of checks and the internet address also reach it (PRIVACY_NOTICE_DRAFT.md says so). Whether they
+ * are "collected" in Apple's sense, when the data goes only to the clinic's own server, which the
+ * publisher does not operate or access, is a decision for Ben and counsel (IOS_RELEASE.md, "What
+ * the portal receives beyond the declared type"). Anything added or dropped here must change
+ * together with the store answers (mycarlos-store-forms-draft) and IOS_RELEASE.md.
  */
 export const COLLECTED_DATA = {
   type: "NSPrivacyCollectedDataTypeDeviceID",
@@ -153,6 +173,11 @@ export function checkManifest(source) {
     if (!reasons || reasons.length === 0) {
       problems.push(`${category} is not declared with a reason`);
     } else {
+      for (const needed of MINIMUM_REASONS[category] ?? []) {
+        if (!reasons.includes(needed)) {
+          problems.push(`${category} must declare the reason ${needed}`);
+        }
+      }
       for (const reason of reasons) {
         if (!allowed.includes(reason)) {
           problems.push(

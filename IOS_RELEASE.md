@@ -18,20 +18,36 @@ clinic's portal keeps for the linked device) is collected, **linked to the user,
 the purpose **App Functionality**. `scripts/check-ios-privacy.mjs` pins exactly that (`COLLECTED_DATA`): a
 second type, another purpose, a changed linked or tracking flag, or dropping it is refused until the script,
 this file and the store answers (`mycarlos-store-forms-draft-20261124.md`) are changed together. The App
-Privacy label is therefore **no longer "Data Not Collected"**. Other things the portal sees (connection times,
-the internet address, delivery receipts, and the encrypted documents the clinic itself sends) are not
-declared separately here; whether they need entries (for example "Other User Content" or "Diagnostics")
-is a question for Ben and counsel, and the pinned list is where it would be added.
+Privacy label is therefore **no longer "Data Not Collected"**. **What the portal receives beyond the declared type (a decision for Ben and counsel; the pinned list is
+not a complete account).** The privacy notice draft (`PRIVACY_NOTICE_DRAFT.md`, "What leaves your device") says the clinic's portal
+also learns: the **device's name** (typed by the person), **delivery and receipt events**, the **times and how
+often** the device checks (and, with notices and the background mode, asks "is anything waiting?"), and
+the **internet address** the requests come from. Only the device identifier is declared here. The argument
+for not declaring the rest is that this data goes only to the clinic's own portal server, which the publisher
+does not operate and cannot access, so the publisher does not "collect" it in Apple's sense (data sent off the device that
+the developer or its partners can access). Whether that holds, and whether the clinic counts as a third-party
+partner, is not an engineering question: **until Ben and counsel decide, treat the one-entry list as
+incomplete.** If they decide to declare more, the Apple types that would match are data types such as
+"Other User Content", "Other Usage Data" and "Other Diagnostic Data", linked to the user, for App
+Functionality, and the change goes in `COLLECTED_DATA` in the script, this file, the store answers and the
+notice together.
 
-Four required-reason API categories are declared, because the Rust standard library, the
+Four required-reason API categories are declared (five reasons), because the Rust standard library, the
 webview and the app's own disk-space check can reach them:
 
-| Category         | Reason                                    | Why                                                                     |
-| ---------------- | ----------------------------------------- | ----------------------------------------------------------------------- |
-| File timestamp   | `C617.1` (files inside the app container) | opening and listing the app's own files                                 |
-| Disk space       | `E174.1` (check before writing)           | the free-space check before a download or a recording (`disk_space.rs`) |
-| System boot time | `35F9.1` (measure elapsed time)           | monotonic clocks (`Instant`)                                            |
-| User defaults    | `CA92.1` (the app's own settings)         | the webview and plugins' own settings                                   |
+| Category         | Reason                                    | Why                                                                        |
+| ---------------- | ----------------------------------------- | -------------------------------------------------------------------------- |
+| File timestamp   | `C617.1` (files inside the app container) | opening and listing the app's own files                                    |
+| File timestamp   | `3B52.1` (files the person granted)       | an import reads the size and dates of a file picked in the document picker |
+| Disk space       | `E174.1` (check before writing)           | the free-space check before a download or a recording (`disk_space.rs`)    |
+| System boot time | `35F9.1` (measure elapsed time)           | monotonic clocks (`Instant`)                                               |
+| User defaults    | `CA92.1` (the app's own settings)         | the webview and plugins' own settings                                      |
+
+**Disk space is declared as `E174.1` only** (a check before writing, then an error if there is no room). `85F4.1`
+("show disk space to the person") is not declared because no screen shows a free-space figure: the messages
+(`interface-RecordDialog-notEnoughRoom`, `ai-model-refusedDisk` and the like) say there is not enough room and what
+the app needs, never how much is free. The day a screen shows that figure, add `85F4.1` to the manifest and
+to `MINIMUM_REASONS` in the script.
 
 Declaring a category the code never reaches does no harm; leaving one out is what Apple rejects (ITMS-91053).
 **Xcode's Privacy Report on the first archive is the authority**; adjust the list and
@@ -46,12 +62,22 @@ root.
 
 ## Export compliance (draft for Ben, with a lawyer)
 
-`ITSAppUsesNonExemptEncryption` is set to **true**: the app uses standard algorithms of its own (XChaCha20-
-Poly1305, Argon2id, X25519) beyond what iOS provides, and it is not in the exempt list. With the key present,
-App Store Connect stops asking at every upload and asks the classification questions once. If counsel decides an
-exemption applies, change the value (and add `ITSEncryptionExportComplianceCode` if Apple issues one). France
-needs a declaration when non-OS encryption is distributed there. See
-`mycarlos-store-forms-draft-20261124.md` section 3.2.
+`ITSAppUsesNonExemptEncryption` is set to **true**, which is the right answer for this app: it uses standard
+algorithms of its own, beyond what iOS provides, and is not in the exempt list. What it ships (all standard,
+implemented in Rust crates, none proprietary):
+
+- vault and delivery encryption: **XChaCha20-Poly1305**, **Argon2id** (passphrase keys), **X25519** and **HPKE**
+  (the clinic's deliveries to a device);
+- signatures: **Ed25519** (device and notice keys);
+- **HMAC** and **SHA-2** (SHA-256);
+- **TLS to the clinic's portal through rustls** (the Rust TLS library, with the platform's certificate
+  verifier): the app's **own TLS stack, not `NSURLSession`**, so it is not covered by iOS's own encryption.
+  **Setting `true` does not stop App Store Connect asking.** With the key at `true`, App Store Connect asks for
+  the export compliance documentation on each build until an `ITSEncryptionExportComplianceCode`, issued for an
+  approved classification, is added to the Info.plist. (A claimed exemption would change the value to `false`; that
+  and the classification are for counsel: US EAR 5D992 mass-market is the usual route, and Canadian rules
+  apply.) France needs a declaration when non-OS encryption is distributed there. See
+  `mycarlos-store-forms-draft-20261124.md` section 3.2.
 
 ## Out of iCloud and computer backups
 
@@ -73,8 +99,11 @@ Support` folder (it must be absent), or inspect with `xattr -l` on a development
 The exclusion covers the app's local data folder. WKWebView keeps `localStorage` and IndexedDB under
 `Library/WebKit`, which **an iOS backup does take**, so nothing about a person or a document may live there.
 The renderer uses `localStorage` only, for the choices below (the list is pinned by a test in
-`scripts/check-ios-privacy.test.mjs`, which fails when a key is added until it is read and listed there). It
-uses no IndexedDB, Cache API or cookies (the same test refuses them).
+`scripts/check-ios-privacy.test.mjs`, which fails when a key is added until it is read and listed there; it
+also refuses any `localStorage` get/set/remove whose key is typed at the call rather than a named constant). It
+uses no IndexedDB, Cache API or cookies (the same test refuses them). `sessionStorage` is **not** scanned: it
+is not written to disk and does not outlive the app. `mycarlos.unfinishedHandover.v1` gets the vault slot's
+id as a `.<slotId>` suffix; that id is random and opaque and names no person.
 
 | Key                                                                                                                                                         | Holds                                                                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,8 +112,8 @@ uses no IndexedDB, Cache API or cookies (the same test refuses them).
 | `mycarlos.recoveryOfferHour.v1`, `mycarlos.unfinishedRecoveryKey.v1`                                                                                        | times and a flag of a recovery-key step; **no key**                                                                                                                                                                                                                                                                                                                    |
 | `mycarlos.oldBackupsGuide.v1`                                                                                                                               | the step for older backups, **a time and a size, no file name**: the saved backup's name can carry a person's name and this storage is in iOS backups, so it is kept in memory for the session only (a test pins that it is never written, and drops one an earlier build stored). After myCarlos is closed the steps name the file by when it was saved and its size. |
 
-(Keys not on `main` yet: #360's unfinished-handover key is built by concatenation and #429's key is new; each needs an
-audit row (and an entry in the test's list) when it merges after this.)
+(`mycarlos.unfinishedHandover.v1` is in the list now. Keys not on `main` yet, such as #429's, need an
+audit row and an entry in the test's list when they merge after this.)
 
 ## Decisions for Ben (not changed here)
 
