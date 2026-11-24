@@ -194,7 +194,9 @@ function clipped() {
       }
       // From here on, it is the scrolling box that must show. Only up and down: a list that
       // scrolls sideways to reach a control is a reflow failure, not an excuse.
-      if (scrolls(style.overflowY))
+      // The scroller must have room to show the control (a scroller squeezed to nothing shows
+      // nothing, however much it holds).
+      if (scrolls(style.overflowY) && edge.height >= box.height)
         box = new DOMRect(box.left, edge.top, box.width, edge.height);
     }
   }
@@ -417,6 +419,40 @@ describe("targets and text sizes in the app (#67)", () => {
     it("accepts a control that is scrolled to inside a vertical scroller that is shown", () => {
       render(box({ overflowY: "auto" }, tall));
       expect(clipped()).toEqual([]);
+    });
+
+    it("accepts a control scrolled to in a shown scroller that sits inside a box that hides overflow", () => {
+      // The case the change is for: the control itself lies far below the hidden box, but the
+      // scroller that holds it is inside the box and shown.
+      render(
+        <div style={{ width: 300, height: 150, overflow: "hidden" }}>
+          {box({ overflowY: "auto" }, tall)}
+        </div>,
+      );
+      expect(clipped()).toEqual([]);
+    });
+
+    it("still fails a control beside a scroller that lies outside the box around it", () => {
+      render(
+        <div style={{ width: 300, overflow: "hidden" }}>
+          {box(
+            { overflowY: "auto", width: 100 },
+            <button type="button" style={{ marginLeft: 400 }}>
+              Out at the side
+            </button>,
+          )}
+        </div>,
+      );
+      expect(clipped()).toEqual([expect.stringContaining("Out at the side")]);
+    });
+
+    it("fails a control whose scroller has no height to show it in", () => {
+      render(
+        <div style={{ width: 300, height: 150, overflow: "hidden" }}>
+          {box({ overflowY: "auto", height: 0 }, tall)}
+        </div>,
+      );
+      expect(clipped()).not.toEqual([]);
     });
 
     it("still fails a scroller that a box around it cuts off", () => {
