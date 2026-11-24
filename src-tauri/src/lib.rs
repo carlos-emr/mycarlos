@@ -79,6 +79,7 @@ mod throttle;
 mod tray_notices;
 mod tray_poller;
 mod unicode_cleaning_table;
+mod unlock_plan;
 mod vault;
 mod vault_registry;
 mod vault_slots;
@@ -710,6 +711,80 @@ struct HideUnavailableRequest {
 #[derive(Deserialize)]
 struct PassphraseRequest {
     passphrase: String,
+}
+
+/// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddVaultRequest {
+    name: String,
+    passphrase: String,
+    initial_profile_name: String,
+}
+
+// Wiped however the command ends, including a request refused before it runs.
+impl Drop for AddVaultRequest {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.passphrase.zeroize();
+    }
+}
+
+/// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
+#[derive(Deserialize)]
+struct FindVaultsRequest {
+    passphrase: String,
+}
+
+impl Drop for FindVaultsRequest {
+    fn drop(&mut self) {
+        self.passphrase.zeroize();
+    }
+}
+
+/// What the search found: opaque folder ids of the vaults the passphrase opened, and how many
+/// folders it did not open or found empty. Nothing about names or contents.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FoundVaultsReply {
+    found: Vec<String>,
+    not_opened: usize,
+    empty: usize,
+}
+
+/// One found vault and the name its owner now gives it.
+#[derive(Deserialize)]
+struct NamedFoundVault {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct NameFoundRequest {
+    vaults: Vec<NamedFoundVault>,
+}
+
+impl Drop for NameFoundRequest {
+    fn drop(&mut self) {
+        for vault in &mut self.vaults {
+            vault.name.zeroize();
+        }
+    }
+}
+
+/// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
+#[derive(Deserialize)]
+struct NamedPassphraseRequest {
+    name: String,
+    passphrase: String,
+}
+
+// Wiped however the command ends, including a try refused before it runs.
+impl Drop for NamedPassphraseRequest {
+    fn drop(&mut self) {
+        self.name.zeroize();
+        self.passphrase.zeroize();
+    }
 }
 
 // Wiped however the command ends, including a try refused before it runs.
@@ -2965,7 +3040,7 @@ async fn vault_create(
     .await;
     // Wrong tries at an earlier vault say nothing about this one.
     if created.is_ok() {
-        forget_vault(throttle.inner()).await;
+        forget_vault(throttle.inner(), store.arc(), store.all()).await;
         refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?;
     }
     created
@@ -3063,15 +3138,16 @@ fn close_lock<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Arc<dyn Fn() + Se
     Arc::new(move || lock_vault_for_close(&app, vaults.arc(), &picks))
 }
 
-/// One turn of the idle-lock thread, as `run` spawns it: lock if the vault is due, and if it
-/// locked, tell the screen (a hidden window's own idle timer may not run). Returns whether it locked.
+/// One turn of the idle-lock thread, as `run` spawns it: lock every vault that is due (each has its
+/// own deadline), and if any locked, tell the screen (a hidden window's own idle timer may not run).
+/// Returns whether any locked.
 fn idle_step<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
-    store: &VaultStore,
+    stores: &[Arc<VaultStore>],
     picks: &PendingPicks,
     now: Instant,
 ) -> bool {
-    let locked = lock_if_idle(store, picks, now);
+    let locked = lock_all_if_idle(stores, picks, now);
     if locked {
         tell_screen_vault_locked(app, LockedBy::Idle);
     }
@@ -3245,14 +3321,19 @@ async fn vault_lock(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
 ) -> CommandResult<()> {
     let store = store.pin();
     stop_work_for_lock(&picks);
     let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let vaults = store.clone();
     let result = run_blocking(store.arc(), move |store| {
         store.lock();
         // Again once locked: a request that came in meanwhile stops too.
         stop_work_for_lock(&picks);
+        // A locked screen starts on the default vault (#357); with one vault there is nowhere to go.
+        vaults.return_to_default(|| stop_work_for_switch(&picks, &received));
         Ok(())
     })
     .await;
@@ -3285,6 +3366,26 @@ const _: () = assert!(idle::MARGIN.as_secs() > RENDERER_TOUCH_THROTTLE.as_secs()
 /// once it has been idle past its deadline. Returns whether it locked. This is
 /// the backstop for a renderer that hung, crashed or was suspended before its
 /// own timer could lock.
+/// What the app stops when the screen moves from one vault to another (#357): everything a lock
+/// stops, and the files the operating system offered the app, which belong to the session they came
+/// in, not to whichever vault the owner opens next.
+fn stop_work_for_switch(picks: &PendingPicks, received: &ReceivedFiles) {
+    stop_work_for_lock(picks);
+    received.clear();
+}
+
+/// The idle check over EVERY store the device has, not only the current one: a vault left open by
+/// any path still locks at its own deadline. Whether any locked (the caller then returns the screen
+/// to the default vault).
+fn lock_all_if_idle(stores: &[Arc<VaultStore>], picks: &PendingPicks, now: Instant) -> bool {
+    // Every store is checked: no short-circuit, each has its own deadline.
+    let mut any = false;
+    for store in stores {
+        any |= lock_if_idle(store, picks, now);
+    }
+    any
+}
+
 fn lock_if_idle(store: &VaultStore, picks: &PendingPicks, now: Instant) -> bool {
     let locked = store.lock_if_idle(now);
     if locked {
@@ -4145,11 +4246,33 @@ async fn tried<T>(
     result
 }
 
-/// The vault the counts were about is gone or replaced: its counts go too.
-async fn forget_vault(throttle: &Arc<AttemptThrottle>) {
+/// The vault the counts were about is gone or replaced: its counts go too, **but only when it was
+/// the only vault on the device** (#357 4c). With several vaults the counts are about the device,
+/// not about one vault: a vault made, set aside or restored while another exists must not be a way
+/// to start the counter again. A vault that cannot be read is taken to exist, so a doubt leaves the
+/// counts as they were.
+async fn forget_vault(
+    throttle: &Arc<AttemptThrottle>,
+    this: &Arc<VaultStore>,
+    all: Vec<Arc<VaultStore>>,
+) {
+    let this = Arc::clone(this);
+    let alone = tauri::async_runtime::spawn_blocking(move || !other_vault_exists(&this, &all))
+        .await
+        .unwrap_or(false);
+    if !alone {
+        return;
+    }
     let now = now_ms();
     // A clear lost to a failed thread leaves the counts as they were.
     let _ = on_throttle(throttle, move |throttle| throttle.forget_vault(now)).await;
+}
+
+/// Whether any vault of the device other than `this` exists (or cannot be told not to).
+fn other_vault_exists(this: &Arc<VaultStore>, all: &[Arc<VaultStore>]) -> bool {
+    all.iter()
+        .filter(|other| !Arc::ptr_eq(other, this))
+        .any(|other| !matches!(other.status(), Ok(VaultStatus::Absent)))
 }
 
 /// Runs `work` on the throttle away from the async runtime, as it reads and
@@ -4739,6 +4862,7 @@ struct ProfileImportPreview {
     display_name: String,
     full_name: Option<String>,
     birth_date: Option<String>,
+    previous_full_names: Vec<String>,
     documents: usize,
     hidden: usize,
     folders: usize,
@@ -4773,6 +4897,7 @@ async fn vault_profile_import_inspect(
             display_name: preview.display_name,
             full_name: preview.full_name,
             birth_date: preview.birth_date,
+            previous_full_names: preview.previous_full_names,
             documents: preview.documents,
             hidden: preview.hidden,
             folders: preview.folders,
@@ -5061,7 +5186,7 @@ async fn vault_restore(
     .await
     .map_err(PublicError::of_restore)?;
     // The vault the counts were about is replaced, or there was none.
-    forget_vault(throttle.inner()).await;
+    forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
 }
 
@@ -6950,6 +7075,164 @@ impl Drop for UnlockPdfRequest {
 
 /// Unlocks a stored PDF with the password the patient typed (#54); see
 /// `unlock_pdf`. The password is used once and wiped.
+/// Unlock by name (#357, PR 4b). A name and a passphrase choose the vault: the vaults the name
+/// matched are tried with the passphrase, decoys fill the rest to a fixed number of derivations, and
+/// the one that opens becomes the vault the screen is on (the old one locked, the app's work for it
+/// stopped). **One counted try per attempt, taken BEFORE the name is looked up**, on the one
+/// device-wide counter: an unknown name, a name whose vault was never made and a wrong passphrase
+/// are all `wrong_passphrase`, count the same and take the same derivations. An empty name is the
+/// default vault, as `vault_unlock`. The opened vault gets the same follow-up as `vault_unlock`.
+#[tauri::command]
+async fn vault_unlock_named(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: NamedPassphraseRequest,
+) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let vaults = store.clone();
+    let opened = tried(throttle.inner(), Attempt::Unlock, async move {
+        let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
+        let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+        drop(request);
+        tauri::async_runtime::spawn_blocking(move || {
+            vaults
+                .unlock_named(&name, &passphrase, || {
+                    stop_work_for_switch(&picks, &received)
+                })
+                // As `vault_unlock`: a pick that read the old session passes no check in the new one.
+                .inspect(|_| picks.clear())
+        })
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+    })
+    .await?;
+    after_open(&opened);
+    run_blocking(&opened, VaultStore::snapshot).await
+}
+
+/// Add a vault (#357 4c). The name is what the owner will type to find it, the passphrase opens it
+/// and the profile name is its first person; the registry entry is written first and the vault second
+/// (`VaultSlots::add_vault`), and the new vault becomes the one the screen is on. An add is not a
+/// guess, so it is not counted on the device-wide counter, but it is refused while a wait is running:
+/// a screen the device has locked out must not be a way to make vaults. Adding never clears the
+/// counter (the counts are about the device). Not granted to the renderer until the screen for
+/// several vaults exists (PR 5). A refusal after the vault was made (the window was closed to the
+/// tray meanwhile, or the old vault began something while the new one was made) leaves the new vault
+/// registered and locked: the screen must say it was already added, not offer to add it again.
+#[tauri::command]
+async fn vault_add_vault(
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    received: State<'_, Arc<ReceivedFiles>>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: AddVaultRequest,
+) -> CommandResult<VaultSnapshot> {
+    let store = store.pin();
+    // As `vault_create` and `vault_unlock`: an add that finishes after the window was closed to the
+    // tray is closed again and refused (#206), or the new vault would open in a window nobody sees.
+    let started = desktop_background::close_locks();
+    let relock = Arc::clone(picks.inner());
+    let picks = Arc::clone(picks.inner());
+    let received = Arc::clone(received.inner());
+    let now = now_ms();
+    if let Some(left) = on_throttle(throttle.inner(), move |throttle| {
+        throttle.wait(Attempt::Unlock, now)
+    })
+    .await?
+    {
+        return Err(PublicError::wait(left));
+    }
+    let vaults = store.clone();
+    let name = zeroize::Zeroizing::new(std::mem::take(&mut request.name));
+    let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+    let profile = std::mem::take(&mut request.initial_profile_name);
+    drop(request);
+    let opened = tauri::async_runtime::spawn_blocking(move || {
+        vaults
+            .add_vault(&name, &passphrase, &profile, now_ms(), || {
+                stop_work_for_switch(&picks, &received)
+            })
+            // As `vault_create`: a pick that read the old session passes no check in the new one.
+            .inspect(|_| picks.clear())
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(PublicError::from)?;
+    // The vault is made and stays registered; it is locked again and the screen is told no.
+    refuse_unlock_closed_meanwhile(&opened, &relock, started).await?;
+    after_open(&opened);
+    run_blocking(&opened, VaultStore::snapshot).await
+}
+
+/// "Find my other vaults" (#357 4c-2): tries the passphrase on each folder the registry does not
+/// list, one derivation each, every one counted on the device-wide counter (it is a guess at
+/// those vaults). Writes nothing and opens nothing for good. Not granted to the renderer until
+/// the several-vaults screen exists.
+#[tauri::command]
+async fn vault_find_other_vaults(
+    store: State<'_, StoreHandle>,
+    throttle: State<'_, Arc<AttemptThrottle>>,
+    mut request: FindVaultsRequest,
+) -> CommandResult<FoundVaultsReply> {
+    let store = store.pin();
+    let throttle = Arc::clone(throttle.inner());
+    let passphrase = zeroize::Zeroizing::new(std::mem::take(&mut request.passphrase));
+    drop(request);
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        let started = std::cell::Cell::new(None);
+        store.find_unlisted_vaults(
+            &passphrase,
+            || {
+                let begun = throttle.begin(Attempt::Unlock, now_ms())?;
+                started.set(Some(begun));
+                Ok(())
+            },
+            |outcome| {
+                if let Some(begun) = started.take() {
+                    throttle.settle(Attempt::Unlock, begun, outcome, now_ms());
+                }
+            },
+        )
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?
+    .map_err(|error| match error {
+        vault_slots::FindError::Wait { left, .. } => PublicError::wait(left),
+        vault_slots::FindError::Vault(error) => PublicError::from(error),
+    })?;
+    Ok(FoundVaultsReply {
+        found: found.found.iter().map(|slot| slot.text()).collect(),
+        not_opened: found.not_opened,
+        empty: found.empty,
+    })
+}
+
+/// Gives the vaults a search found the names their owner chose, so they are found by name again
+/// (#357 4c-2). All or none. Not granted to the renderer yet.
+#[tauri::command]
+async fn vault_name_found_vaults(
+    store: State<'_, StoreHandle>,
+    mut request: NameFoundRequest,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let mut named = Vec::new();
+    for vault in &mut request.vaults {
+        let slot = vault_registry::SlotId::parse(&vault.id)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        named.push((slot, std::mem::take(&mut vault.name)));
+    }
+    drop(request);
+    tauri::async_runtime::spawn_blocking(move || store.register_found(&named))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 async fn vault_unlock_pdf(
     store: State<'_, StoreHandle>,
@@ -7166,7 +7449,7 @@ async fn vault_reset(
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;
     // The vault the counts were about is gone.
-    forget_vault(throttle.inner()).await;
+    forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
 }
 
@@ -7440,14 +7723,14 @@ pub fn run() {
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
             app.manage(StoreHandle::from_source(slots));
-            // Wrong tries at a secret, counted beside the vault in
-            // `attempts.json`, and read only when needed, not here.
-            app.manage(Arc::new(AttemptThrottle::new(Some(
-                app.path()
-                    .app_local_data_dir()?
-                    .join("vault-home")
-                    .join("attempts.json"),
-            ))));
+            // Wrong tries at a secret are counted for the DEVICE (#357), in `attempts.json` beside
+            // the vault registry and not inside Main's `vault-home`, and read only when needed,
+            // not here. The old file is copied over once and left where it was.
+            let data_dir = app.path().app_local_data_dir()?;
+            throttle::migrate_counts(&data_dir);
+            app.manage(Arc::new(AttemptThrottle::new(Some(throttle::counts_path(
+                &data_dir,
+            )))));
             // Notice keys (#230) live beside `vault-home` too, so no vault
             // backup holds them.
             notice_key::install(&app.path().app_local_data_dir()?);
@@ -7498,13 +7781,17 @@ pub fn run() {
             let vaults = app.state::<StoreHandle>().inner().clone();
             let picks = Arc::clone(app.state::<Arc<PendingPicks>>().inner());
             let idle_app = app.handle().clone();
+            let received = Arc::clone(app.state::<Arc<ReceivedFiles>>().inner());
             std::thread::Builder::new()
                 .name("vault-idle-lock".into())
                 .spawn(move || loop {
                     std::thread::sleep(IDLE_CHECK_INTERVAL);
-                    // The vault the screen is on at this tick, not the one at start-up.
-                    if idle_step(&idle_app, vaults.arc(), &picks, Instant::now()) {
+                    // Every vault the device has, at this tick, not the one at start-up; the screen
+                    // is told when any of them locked.
+                    if idle_step(&idle_app, &vaults.all(), &picks, Instant::now()) {
                         cancel_native_pdf(&idle_app);
+                        // A lock returns the screen to the default vault (a no-op with one).
+                        vaults.return_to_default(|| stop_work_for_switch(&picks, &received));
                     }
                 })?;
             // The background mode (M2): the tray icon, the quiet start and the lock on close.
@@ -7565,6 +7852,10 @@ pub fn run() {
             vault_passphrase_rules,
             vault_create,
             vault_unlock,
+            vault_unlock_named,
+            vault_add_vault,
+            vault_find_other_vaults,
+            vault_name_found_vaults,
             vault_lock,
             vault_touch,
             vault_set_auto_lock,
@@ -7840,6 +8131,76 @@ mod tests {
         assert_eq!(origin_for(false, true), APP_SCHEME);
         assert_eq!(origin_for(true, false), HOST_NAME);
         assert_eq!(origin_for(true, true), SECURE_HOST_NAME);
+    }
+
+    #[test]
+    fn the_main_window_opens_maximized_and_keeps_its_size_to_come_back_to() {
+        let config: tauri::Config =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let window = config.app.windows.first().unwrap();
+        // Maximized, not fullscreen: the title bar, the close button and the taskbar stay.
+        assert!(window.maximized, "the window starts maximized");
+        assert!(!window.fullscreen, "and is not fullscreen");
+        // Un-maximizing comes back to this size, which must stay a usable one.
+        assert_eq!((window.width, window.height), (1100.0, 760.0));
+        assert!(window.resizable && window.decorations);
+        assert!(window.min_width.is_some_and(|width| width <= window.width));
+        assert!(window
+            .min_height
+            .is_some_and(|height| height <= window.height));
+    }
+
+    /// Nothing sets, moves, centres or changes the main window after it is built, so showing it
+    /// again from the tray (`unminimize`, `show`, `set_focus`) brings it back as the patient left
+    /// it: maximized unless they restored it. A hide and a show keep the window's state.
+    #[test]
+    fn no_source_file_resizes_moves_or_changes_the_state_of_the_main_window() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        // Spelled in two parts so that this test does not find itself.
+        let calls: Vec<String> = [
+            ("set_", "fullscreen("),
+            ("set_", "size("),
+            ("set_", "position("),
+            ("set_", "maximized("),
+            ("set_", "min_size("),
+            ("set_", "max_size("),
+            (".", "center()"),
+            (".", "maximize()"),
+            (".", "unmaximize()"),
+            (".", "fullscreen("),
+        ]
+        .iter()
+        .map(|(head, tail)| format!("{head}{tail}"))
+        .collect();
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(files.len() > 40, "the scan found the source files");
+        let mut found = Vec::new();
+        for file in files {
+            let text = std::fs::read_to_string(&file).unwrap();
+            for call in &calls {
+                if text.contains(call.as_str()) {
+                    found.push(format!("{} has {call}", file.display()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "these change the main window after it opens; the window is made maximized by \
+             tauri.conf.json and must stay as the patient leaves it: {found:?}"
+        );
     }
 
     #[test]
@@ -8157,7 +8518,7 @@ mod tests {
             (
                 "async fn vault_create(",
                 concat!(
-                    "if created.is_ok() { forget_vault(throttle.inner()).await; ",
+                    "if created.is_ok() { forget_vault(throttle.inner(), store.arc(), store.all()).await; ",
                     "refuse_unlock_closed_meanwhile(store.arc(), &relock, started).await?; }",
                 ),
             ),
@@ -8166,12 +8527,12 @@ mod tests {
                 concat!(
                     "VaultStore::reset).await?; ",
                     "let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await; ",
-                    "forget_vault(throttle.inner()).await; Ok(true)",
+                    "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
             (
                 "async fn vault_restore(",
-                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner()).await; Ok(true)",
+                ".map_err(PublicError::of_restore)?; forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
             ),
         ] {
             let body = source.split(command).nth(1).unwrap();
@@ -8197,7 +8558,53 @@ mod tests {
         // The restore clears them at its very end, past every early return.
         let restore = source.split("async fn vault_restore(").nth(1).unwrap();
         let restore = &restore[..restore.find("\n}\n").unwrap()];
-        assert!(restore.ends_with("forget_vault(throttle.inner()).await;\n    Ok(true)"));
+        assert!(restore.ends_with(
+            "forget_vault(throttle.inner(), store.arc(), store.all()).await;\n    Ok(true)"
+        ));
+    }
+
+    /// Every command that opens a vault the owner cannot yet see closes it again if the window was
+    /// closed to the tray while it worked (#206): `started` is taken before any work and the refusal
+    /// comes after it and before the screen is given the vault. (`vault_unlock_named` is the same
+    /// gap and is listed in the PR that fixes it.)
+    #[test]
+    fn adding_a_vault_is_refused_when_the_window_was_closed_to_the_tray_meanwhile() {
+        let source = include_str!("lib.rs");
+        let body = source.split("async fn vault_add_vault(").nth(1).unwrap();
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let code = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let started = code.find("desktop_background::close_locks()").unwrap();
+        let work = code.find("spawn_blocking").unwrap();
+        let refused = code
+            .find("refuse_unlock_closed_meanwhile(&opened, &relock, started).await?")
+            .unwrap();
+        let shown = code.find("after_open(&opened)").unwrap();
+        assert!(started < work && work < refused && refused < shown);
+    }
+
+    #[test]
+    fn the_counts_are_forgotten_only_when_no_other_vault_exists_on_the_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = Arc::new(VaultStore::new(temp.path().join("this")));
+        let other = Arc::new(VaultStore::new(temp.path().join("other")));
+        let all = vec![Arc::clone(&this), Arc::clone(&other)];
+        // Alone on the device (the other slot has no vault): its counts go.
+        assert!(!other_vault_exists(&this, &all));
+        assert!(!other_vault_exists(&this, std::slice::from_ref(&this)));
+        // Another vault exists, locked or open: the counts are the device's and stay.
+        other
+            .create("river-azimuth-cobalt-sparrow-934", "FAKE Person", 1)
+            .unwrap();
+        assert!(other_vault_exists(&this, &all));
+        other.lock();
+        assert!(other_vault_exists(&this, &all));
+        // The vault asking is never counted as "another".
+        assert!(!other_vault_exists(&other, std::slice::from_ref(&other)));
     }
 
     #[test]
@@ -9034,11 +9441,12 @@ mod tests {
         let hears = screen_hears(&app);
         let picks = PendingPicks::default();
         // The idle thread's own step, the one `run` spawns.
-        assert!(!idle_step(app.handle(), &store, &picks, Instant::now()));
+        let stores = [Arc::clone(&store)];
+        assert!(!idle_step(app.handle(), &stores, &picks, Instant::now()));
         assert!(hears.recv_timeout(Duration::from_millis(200)).is_err());
         assert!(idle_step(
             app.handle(),
-            &store,
+            &stores,
             &picks,
             idle_past(Instant::now())
         ));
@@ -9099,6 +9507,65 @@ mod tests {
         assert!(!ticket.is_current());
         // Nothing to stop is not an error, and it may be called again after the vault has locked.
         stop_work_for_lock(&picks);
+    }
+
+    #[test]
+    fn the_idle_check_locks_every_vault_not_only_the_current_one() {
+        let temp = tempfile::tempdir().unwrap();
+        let (a, b) = (
+            Arc::new(VaultStore::new(temp.path().join("a"))),
+            Arc::new(VaultStore::new(temp.path().join("b"))),
+        );
+        a.create(PASSWORD, "Jamie", 1).unwrap();
+        let other = "lantern-orbit-willow-cascade-572";
+        b.create(other, "Sam", 1).unwrap();
+        let picks = PendingPicks::default();
+        let stores = [Arc::clone(&a), Arc::clone(&b)];
+        // Nothing is due yet.
+        assert!(!lock_all_if_idle(&stores, &picks, Instant::now()));
+        assert!(matches!(a.status(), Ok(VaultStatus::Unlocked)));
+        // Both are past their deadline: both lock, and one answer says so.
+        assert!(lock_all_if_idle(&stores, &picks, idle_past(Instant::now())));
+        assert!(matches!(a.status(), Ok(VaultStatus::Locked)));
+        assert!(matches!(b.status(), Ok(VaultStatus::Locked)));
+        assert!(!lock_all_if_idle(
+            &stores,
+            &picks,
+            idle_past(Instant::now())
+        ));
+    }
+
+    #[test]
+    fn a_switch_stops_the_work_of_a_lock_and_forgets_the_files_the_system_offered() {
+        let picks = PendingPicks::default();
+        let received = ReceivedFiles::default();
+        received.receive(
+            1,
+            vec![ReceivedSource::Path("/home/jamie/FAKE-offered.pdf".into())],
+        );
+        assert_eq!(received.len(), 1);
+        let record_id = Uuid::new_v4();
+        let pick_id = picks.store_export(
+            picks.session(),
+            record_id,
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+        // A lock stops the picks but does not touch what the system offered.
+        stop_work_for_lock(&picks);
+        assert_eq!(received.len(), 1);
+        // A switch does both.
+        let again = picks.store_export(
+            picks.session(),
+            record_id,
+            tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+        );
+        stop_work_for_switch(&picks, &received);
+        assert_eq!(received.len(), 0);
+        assert!(matches!(
+            picks.take_export(again, record_id),
+            Err(VaultError::NotFound)
+        ));
+        let _ = pick_id;
     }
 
     /// When the default delay and the margin after `from` run out, exactly.
@@ -9774,6 +10241,24 @@ mod tests {
             assert!(build_script.contains(&format!("\"{command}\"")));
             not_granted += usize::from(!granted);
         }
+        // Registered and compiled, but not granted to the renderer until a screen calls them
+        // (least privilege): the grant arrives with the screen that needs it.
+        const WITHHELD: &[&str] = &[
+            "vault_unlock_named",
+            "vault_add_vault",
+            "vault_find_other_vaults",
+            "vault_name_found_vaults",
+        ];
+        for &command in WITHHELD {
+            let grant = format!("allow-{}", command.replace('_', "-"));
+            assert!(
+                !permissions.contains(&grant.as_str()),
+                "{grant} is withheld until its screen exists (#357 PR 5)"
+            );
+            assert!(library.contains(&format!("fn {command}(")));
+            assert!(build_script.contains(&format!("\"{command}\"")));
+            not_granted += 1;
+        }
         assert_eq!(
             permissions.len() + not_granted,
             library.matches(&command_marker).count()
@@ -9824,6 +10309,57 @@ mod tests {
     /// `State<'_, T>`, `State<'a, T>`, `State<T>` and `tauri::State<..>`. The older, narrower scan of
     /// the VaultStore type is `no_source_file_takes_or_manages_the_store_directly` in
     /// `vault_source.rs`, and `scripts/vault-store-handle-codemod.py` rewrites what that one finds.
+    #[test]
+    fn the_named_unlock_command_is_registered_but_not_granted_until_its_screen_exists() {
+        // Least privilege (#357 PR 4b): `vault_unlock_named` is declared and compiled, so the next
+        // PR's screen only needs a grant, but nothing in the renderer may call it before then. The
+        // grant is added with the screen (PR 5) and this test is then changed with it.
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let permissions: Vec<&str> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|permission| permission.as_str().unwrap())
+            .collect();
+        assert!(
+            !permissions.contains(&"allow-vault-unlock-named"),
+            "the renderer may not call vault_unlock_named before a screen needs it"
+        );
+        assert!(include_str!("../build.rs").contains("\"vault_unlock_named\""));
+        assert!(include_str!("lib.rs").contains("async fn vault_unlock_named("));
+    }
+
+    #[test]
+    fn a_failed_named_unlock_never_reaches_the_notice_keys() {
+        // `vault_unlock_named` follows an unlock with `after_open`, which deletes the notice keys of
+        // every OTHER vault. That must happen only once the unlock SUCCEEDED, so a wrong attempt,
+        // an unknown name or a refusal leaves every vault's keys alone. The notice-key store is a
+        // process-wide singleton that a unit test cannot install, so this guards the structure (the
+        // `?` on the unlock comes before the only call); PR 5 makes the keys per vault and adds the
+        // behavior test.
+        let library = include_str!("lib.rs");
+        let production = library.split_once("\n#[cfg(test)]\nmod tests {").unwrap().0;
+        let body = production
+            .split_once("async fn vault_unlock_named(")
+            .expect("the command exists")
+            .1
+            // Built here so that this text is not itself counted as a command by the capability test.
+            .split_once(["#[tauri", "::command]"].concat().as_str())
+            .expect("another command follows it")
+            .0;
+        let unlocked = body
+            .find(".await?;")
+            .expect("the unlock's failure is returned with `?`");
+        let follow_up = body.find("after_open(").expect("a success follows up");
+        assert!(unlocked < follow_up, "after_open runs only after the `?`");
+        assert!(
+            !body[..unlocked].contains("notice_key") && !body[..unlocked].contains("after_open"),
+            "nothing before the unlock's `?` may touch the notice keys"
+        );
+        assert_eq!(body.matches("after_open(").count(), 1);
+    }
+
     #[test]
     fn every_state_a_command_asks_for_is_managed_by_the_setup() {
         const MANAGED: &[(&str, &str)] = &[

@@ -101,6 +101,19 @@ export interface VaultFolder {
   createdAtMs: number;
 }
 
+/** The patient name and birth date a clinic wrote on a document (#340), as its signed delivery
+ * says them. */
+export interface ClinicPatient {
+  name: string;
+  birthDate: string;
+  /** The visible person the clinic link is tied to, if any (it files only under them). */
+  linkPerson?: string;
+  /** The link is tied to a hidden person: it files only under them, so under no one listed. */
+  linkedToHidden?: boolean;
+  /** Everyone (by opaque id) who matches these words today; never a hidden person. */
+  matchingPeople?: string[];
+}
+
 export interface VaultRecord {
   id: string;
   profileId: string;
@@ -118,6 +131,9 @@ export interface VaultRecord {
   /** The separate exact incoming PDF, retained independently of display bytes. */
   originalPdfAvailable?: boolean;
   verifiedClinicName?: string;
+  /** What the clinic wrote as the patient, on a clinic document waiting in Shared with me, so
+   * that the patient sees why it did not file itself (#340). Never a hidden person's. */
+  clinicPatient?: ClinicPatient;
   /** When a handover file SAYS this document's delivery was checked, on the device it came
    * from (#360). The file's claim, never fact: this vault has not checked it. Present only
    * while no link of this vault to the same clinic holds the clinic's signing key. */
@@ -343,6 +359,9 @@ export interface ProfileImportPreview {
   displayName: string;
   fullName: string | null;
   birthDate: string | null;
+  /** The names the person had before: once imported they count when a clinic document is
+   * filed (#340). */
+  previousFullNames?: string[];
   documents: number;
   hidden: number;
   folders: number;

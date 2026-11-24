@@ -2396,6 +2396,7 @@ notifications-help = Lorsqu’un document de la clinique est enregistré après 
 notifications-allow = Autoriser les avis d’arrivée de documents
 notifications-blocked = Windows bloque les notifications. Vérifiez ses paramètres de notification.
 notifications-unknown = Impossible de vérifier l’autorisation de notification de Windows.
+notifications-notYetAsked = Windows n’a pas encore affiché d’avis myCarlos, il n’a donc pas encore de paramètre pour eux. Les avis sont autorisés jusqu’à ce que vous les désactiviez dans les paramètres de Windows.
 notifications-error = Ce réglage n’a pas pu être enregistré. Les avis sont désactivés pour cette session.
 notifications-unavailable = Les avis de documents ne sont pas disponibles. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
@@ -2542,7 +2543,18 @@ interface-RecordDialog-videoSavedSlow = L’enregistrement s’est arrêté car 
 interface-VideoViewer-video = Vidéo
 interface-VideoViewer-player = Lecteur vidéo : { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = Cette vidéo n’a pas pu être lue.
-interface-VideoViewer-keys = La barre d’espace lance ou met en pause. Les flèches gauche et droite avancent ou reculent de { $seconds } secondes. Haut et bas changent le volume. M coupe le son.
+interface-VideoViewer-controls = Commandes du lecteur
+interface-VideoViewer-playPause = Lecture/Pause (k)
+interface-VideoViewer-back = Reculer de { $seconds } s (←)
+interface-VideoViewer-forward = Avancer de { $seconds } s (→)
+interface-VideoViewer-backBig = Reculer de { $seconds } s (j)
+interface-VideoViewer-forwardBig = Avancer de { $seconds } s (l)
+interface-VideoViewer-volumeUp = Augmenter le volume (↑)
+interface-VideoViewer-volumeDown = Baisser le volume (↓)
+interface-VideoViewer-mute = Couper le son (m)
+interface-VideoViewer-unmute = Rétablir le son (m)
+interface-VideoViewer-start = Au début (Origine)
+interface-VideoViewer-end = À la fin (Fin)
 interface-VideoViewer-playVideo = Lire la vidéo
 interface-VideoHelp-title = Pourquoi ne puis-je pas enregistrer de vidéo ici ?
 interface-VideoHelp-engine = Pour enregistrer une vidéo, le moteur web intégré à cet appareil doit pouvoir enregistrer de la vidéo MP4 avec le son. Le moteur de cet appareil ne le permet pas.
@@ -2861,6 +2873,40 @@ portal-arrivedForHiddenNoClinic =
         [one] Un document est arrivé et se trouve dans Partagés avec moi. La personne concernée est masquée.
        *[other] { $count } documents sont arrivés et se trouvent dans Partagés avec moi. Les personnes concernées sont masquées.
     }
+
+fileUnder-button = Classer sous…
+
+fileUnder-title = Classer { $document } sous une personne
+
+fileUnder-fromClinic = De la clinique
+
+fileUnder-words = { $name }, né(e) le { $date }
+
+fileUnder-clinicWords = De la clinique : { $name }, né(e) le { $date }.
+
+fileUnder-rule = myCarlos classe un document de clinique tout seul uniquement lorsqu'une seule personne a cette date de naissance et ce nom complet (ou un ancien nom complet). Rien n'est choisi à votre place.
+
+fileUnder-person = Personne
+
+fileUnder-what-both = le nom complet « { $name } » et la date de naissance { $date }
+
+fileUnder-what-name = le nom complet « { $name } »
+
+fileUnder-what-date = la date de naissance { $date }
+
+fileUnder-saveDetails = Enregistrer aussi { $what } comme informations de { $person }, afin que les prochains documents de cette clinique soient classés sous { $person } tout seuls.
+
+fileUnder-confirm = Classer sous { $person }
+
+fileUnder-choose = Choisissez une personne
+
+fileUnder-differs = Les informations de la clinique diffèrent de celles de cette personne : aucune n'est proposée à l'enregistrement. Vérifiez qu'il s'agit bien de la bonne personne.
+
+fileUnder-saveDetailsOnly = Enregistrer aussi { $what } comme informations de { $person }.
+
+fileUnder-notOnItsOwn = Les prochains documents de cette clinique pourront rester dans Partagés avec moi : le lien de cette clinique est lié à une autre personne, ou une autre personne a déjà le même nom et la même date de naissance.
+
+handover-import-previousNames = Anciens noms dans le fichier : { $names }. Ces noms serviront aussi à classer les nouveaux documents de clinique sous cette personne.
 
 library-fileSaysChecked = Le fichier dans lequel il est arrivé indique qu'il a été contrôlé sur l'appareil d'origine, le { $date }. Ce coffre ne l'a pas contrôlé.
 

@@ -2476,6 +2476,7 @@ notifications-help = Gdy po ręcznym sprawdzeniu zostanie zapisany dokument z pr
 notifications-allow = Zezwalaj na powiadomienia o nowych dokumentach
 notifications-blocked = System Windows blokuje powiadomienia. Proszę sprawdzić ustawienia powiadomień.
 notifications-unknown = Nie można sprawdzić uprawnień do powiadomień w systemie Windows.
+notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
 notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wyłączone w tej sesji.
 notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
@@ -2622,7 +2623,18 @@ interface-RecordDialog-videoSavedSlow = Nagrywanie zatrzymano, ponieważ film ni
 interface-VideoViewer-video = Film
 interface-VideoViewer-player = Odtwarzacz filmu: { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = Nie można odtworzyć tego filmu.
-interface-VideoViewer-keys = Spacja odtwarza lub wstrzymuje. Strzałki w lewo i w prawo przewijają o { $seconds } s. Strzałki w górę i w dół zmieniają głośność. M wycisza.
+interface-VideoViewer-controls = Sterowanie odtwarzaczem
+interface-VideoViewer-playPause = Odtwórz/Wstrzymaj (k)
+interface-VideoViewer-back = Cofnij o { $seconds } s (←)
+interface-VideoViewer-forward = Do przodu o { $seconds } s (→)
+interface-VideoViewer-backBig = Cofnij o { $seconds } s (j)
+interface-VideoViewer-forwardBig = Do przodu o { $seconds } s (l)
+interface-VideoViewer-volumeUp = Głośniej (↑)
+interface-VideoViewer-volumeDown = Ciszej (↓)
+interface-VideoViewer-mute = Wycisz (m)
+interface-VideoViewer-unmute = Włącz dźwięk (m)
+interface-VideoViewer-start = Na początek (Home)
+interface-VideoViewer-end = Na koniec (End)
 interface-VideoViewer-playVideo = Odtwórz film
 interface-VideoHelp-title = Dlaczego nie mogę tu nagrać filmu?
 interface-VideoHelp-engine = Nagrywanie filmu wymaga, aby wbudowany silnik internetowy urządzenia potrafił nagrywać wideo MP4 z dźwiękiem. Silnik tego urządzenia tego nie umożliwia.
@@ -2954,6 +2966,40 @@ portal-arrivedForHiddenNoClinic =
         [few] Dotarły { $count } dokumenty, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
        *[other] Dotarło dokumentów: { $count }, które są w Udostępnione mi. Osoby, których dotyczą, są ukryte.
     }
+
+fileUnder-button = Przypisz do…
+
+fileUnder-title = Przypisz dokument { $document } do osoby
+
+fileUnder-fromClinic = Od kliniki
+
+fileUnder-words = { $name }, data urodzenia { $date }
+
+fileUnder-clinicWords = Od kliniki: { $name }, data urodzenia { $date }.
+
+fileUnder-rule = myCarlos sam przypisuje dokument z kliniki tylko wtedy, gdy dokładnie jedna osoba ma tę datę urodzenia i to pełne imię i nazwisko (lub dawne). Nic nie jest wybierane za Ciebie.
+
+fileUnder-person = Osoba
+
+fileUnder-what-both = pełne imię i nazwisko „{ $name }” oraz datę urodzenia { $date }
+
+fileUnder-what-name = pełne imię i nazwisko „{ $name }”
+
+fileUnder-what-date = datę urodzenia { $date }
+
+fileUnder-saveDetails = Zapisz także { $what } jako dane osoby { $person }, aby kolejne dokumenty z tej kliniki trafiały do osoby { $person } samodzielnie.
+
+fileUnder-confirm = Przypisz do: { $person }
+
+fileUnder-choose = Wybierz osobę
+
+fileUnder-differs = Dane kliniki różnią się od danych tej osoby, więc nie proponujemy zapisywania żadnych. Sprawdź, czy to właściwa osoba.
+
+fileUnder-saveDetailsOnly = Zapisz także { $what } jako dane osoby { $person }.
+
+fileUnder-notOnItsOwn = Kolejne dokumenty z tej kliniki mogą nadal czekać w Udostępnione mi: łącze tej kliniki jest przypisane do innej osoby albo inna osoba ma już to samo imię i nazwisko oraz datę urodzenia.
+
+handover-import-previousNames = Dawne imiona i nazwiska w pliku: { $names }. Będą one także używane do przypisywania nowych dokumentów z klinik do tej osoby.
 
 library-fileSaysChecked = Plik, w którym to dotarło, podaje, że sprawdzono to na urządzeniu źródłowym, { $date }. Ten sejf tego nie sprawdził.
 

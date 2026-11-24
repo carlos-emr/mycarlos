@@ -2396,6 +2396,7 @@ notifications-help = Cuando se guarda un documento de la clínica tras una revis
 notifications-allow = Permitir avisos de llegada de documentos
 notifications-blocked = Windows está bloqueando las notificaciones. Revise sus ajustes de notificaciones.
 notifications-unknown = No se pudo comprobar el permiso de notificaciones de Windows.
+notifications-notYetAsked = Windows aún no ha mostrado ningún aviso de myCarlos, así que no tiene un ajuste para ellos. Los avisos están permitidos hasta que los desactive en los ajustes de Windows.
 notifications-error = No se pudo guardar este ajuste. Los avisos están desactivados durante esta sesión.
 notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
 notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
@@ -2542,7 +2543,18 @@ interface-RecordDialog-videoSavedSlow = La grabación se detuvo porque el video 
 interface-VideoViewer-video = Video
 interface-VideoViewer-player = Reproductor de video: { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = No se pudo reproducir este video.
-interface-VideoViewer-keys = La barra espaciadora reproduce o pausa. Las flechas izquierda y derecha avanzan o retroceden { $seconds } segundos. Arriba y abajo cambian el volumen. M silencia.
+interface-VideoViewer-controls = Controles del reproductor
+interface-VideoViewer-playPause = Reproducir/Pausar (k)
+interface-VideoViewer-back = Retroceder { $seconds } s (←)
+interface-VideoViewer-forward = Avanzar { $seconds } s (→)
+interface-VideoViewer-backBig = Retroceder { $seconds } s (j)
+interface-VideoViewer-forwardBig = Avanzar { $seconds } s (l)
+interface-VideoViewer-volumeUp = Subir volumen (↑)
+interface-VideoViewer-volumeDown = Bajar volumen (↓)
+interface-VideoViewer-mute = Silenciar (m)
+interface-VideoViewer-unmute = Activar sonido (m)
+interface-VideoViewer-start = Al inicio (Inicio)
+interface-VideoViewer-end = Al final (Fin)
 interface-VideoViewer-playVideo = Reproducir video
 interface-VideoHelp-title = ¿Por qué no puedo grabar video aquí?
 interface-VideoHelp-engine = Para grabar video, el motor web integrado de este dispositivo debe poder grabar video MP4 con sonido. El motor de este dispositivo no lo ofrece.
@@ -2861,6 +2873,40 @@ portal-arrivedForHiddenNoClinic =
         [one] Llegó un documento y está en Compartido conmigo. La persona a la que corresponde está oculta.
        *[other] Llegaron { $count } documentos y están en Compartido conmigo. Las personas a las que corresponden están ocultas.
     }
+
+fileUnder-button = Archivar en…
+
+fileUnder-title = Archivar { $document } en una persona
+
+fileUnder-fromClinic = De la clínica
+
+fileUnder-words = { $name }, nacimiento { $date }
+
+fileUnder-clinicWords = De la clínica: { $name }, nacimiento { $date }.
+
+fileUnder-rule = myCarlos archiva un documento de una clínica por sí solo únicamente cuando exactamente una persona tiene esta fecha de nacimiento y este nombre completo (o un nombre completo anterior). No se elige nada en su lugar.
+
+fileUnder-person = Persona
+
+fileUnder-what-both = el nombre completo «{ $name }» y la fecha de nacimiento { $date }
+
+fileUnder-what-name = el nombre completo «{ $name }»
+
+fileUnder-what-date = la fecha de nacimiento { $date }
+
+fileUnder-saveDetails = Guardar también { $what } como datos de { $person }, para que los próximos documentos de esta clínica se archiven en { $person } por sí solos.
+
+fileUnder-confirm = Archivar en { $person }
+
+fileUnder-choose = Elija una persona
+
+fileUnder-differs = Los datos de la clínica difieren de los de esta persona, así que no se ofrece guardar ninguno. Compruebe que es la persona correcta.
+
+fileUnder-saveDetailsOnly = Guardar también { $what } como datos de { $person }.
+
+fileUnder-notOnItsOwn = Los próximos documentos de esta clínica pueden seguir esperando en Compartido conmigo: el enlace de esta clínica está vinculado a otra persona, o ya hay otra persona con el mismo nombre y fecha de nacimiento.
+
+handover-import-previousNames = Nombres anteriores en el archivo: { $names }. Estos nombres también se usarán para archivar documentos nuevos de clínicas en esta persona.
 
 library-fileSaysChecked = El archivo en el que llegó dice que se comprobó en el dispositivo de origen, el { $date }. Esta bóveda no lo ha comprobado.
 

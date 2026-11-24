@@ -250,6 +250,15 @@ export interface FakeVaultSetup {
   boxesAbsent?: string;
   /** People (by display name) who are hidden when the vault opens (#360). */
   hiddenPeople?: string[];
+  /** The patient the clinic's first delivery names (#340): the document arrives in Shared
+   * with me carrying these words. */
+  clinicPatient?: {
+    name: string;
+    birthDate: string;
+    linkPerson?: string;
+    linkedToHidden?: boolean;
+    matchingPeople?: string[];
+  };
   /** Documents (by name) that came in a handover file and stand on what the file says (#360):
    * they carry `fileSaysCheckedAtMs` until `__fakeVault.verifyCarried` links their clinic. */
   fileSays?: string[];
@@ -304,6 +313,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         available: boolean;
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
+        /** What the clinic wrote as the patient, on a document in Shared with me (#340). */
+        clinicPatient?: {
+          name: string;
+          birthDate: string;
+          linkPerson?: string;
+          linkedToHidden?: boolean;
+          matchingPeople?: string[];
+        };
         /** What a handover file says of this document's checking (#360). */
         fileSaysCheckedAtMs?: number;
         clinicServiceDate?: string;
@@ -1681,6 +1698,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               importedAtMs: Date.now(),
               available: true,
               verifiedClinicName: setup.clinic,
+              ...(setup.clinicPatient
+                ? { clinicPatient: { ...setup.clinicPatient } }
+                : {}),
               ...(setup.clinicServiceDate !== null
                 ? { clinicServiceDate: setup.clinicServiceDate }
                 : {}),
@@ -2153,6 +2173,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       boxesAbsent: setup.boxesAbsent ?? null,
       clinic: FAKE_CLINIC,
       clinicDocument: FAKE_CLINIC_DOCUMENT,
+      clinicPatient: setup.clinicPatient ?? null,
       resetPhrase: translate("en", "native.reset.phrase"),
       speedReport: FAKE_SPEED_REPORT,
       messages: Object.fromEntries(

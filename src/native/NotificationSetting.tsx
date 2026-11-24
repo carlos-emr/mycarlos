@@ -10,7 +10,12 @@ type NoticeStatus = {
   automaticChecksSupported?: boolean;
   automaticChecksEnabled?: boolean;
   automaticChecksPaused?: boolean;
-  permission: "unavailable" | "unknown" | "allowed" | "blocked";
+  permission:
+    | "unavailable"
+    | "unknown"
+    | "not_yet_asked"
+    | "allowed"
+    | "blocked";
 };
 
 /** What a press of "Show a test notice" came to (native `TestNotice`). */
@@ -125,6 +130,7 @@ export function NotificationSetting({
   const permissionIds = [
     status.permission === "blocked" ? `${id}-blocked` : "",
     status.permission === "unknown" ? `${id}-unknown` : "",
+    status.permission === "not_yet_asked" ? `${id}-notYetAsked` : "",
   ].filter(Boolean);
   const describedBy = (helpId: string) => [helpId, ...permissionIds].join(" ");
   // The automatic checks wait for the notices: said under their box, not only shown greyed out.
@@ -230,6 +236,9 @@ export function NotificationSetting({
         )}
         {status.permission === "unknown" && (
           <p id={`${id}-unknown`}>{t("notifications.unknown")}</p>
+        )}
+        {status.permission === "not_yet_asked" && (
+          <p id={`${id}-notYetAsked`}>{t("notifications.notYetAsked")}</p>
         )}
         {!status.available && !failed && (
           <p role="alert">{t("notifications.unavailable")}</p>

@@ -1016,6 +1016,7 @@ export const MESSAGE_KEYS = [
   "notifications.error",
   "notifications.help",
   "notifications.title",
+  "notifications.notYetAsked",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
@@ -1165,7 +1166,18 @@ export const MESSAGE_KEYS = [
   "interface.VideoViewer.video",
   "interface.VideoViewer.player",
   "interface.VideoViewer.thisVideoCouldNotBePlayed",
-  "interface.VideoViewer.keys",
+  "interface.VideoViewer.controls",
+  "interface.VideoViewer.playPause",
+  "interface.VideoViewer.back",
+  "interface.VideoViewer.forward",
+  "interface.VideoViewer.backBig",
+  "interface.VideoViewer.forwardBig",
+  "interface.VideoViewer.volumeUp",
+  "interface.VideoViewer.volumeDown",
+  "interface.VideoViewer.mute",
+  "interface.VideoViewer.unmute",
+  "interface.VideoViewer.start",
+  "interface.VideoViewer.end",
   "interface.VideoViewer.playVideo",
   "interface.VideoHelp.title",
   "interface.VideoHelp.engine",
@@ -1325,6 +1337,23 @@ export const MESSAGE_KEYS = [
   "interface.history.aboutHiddenPeople",
   "interface.history.how.personHidden",
   "portal.arrivedForHiddenNoClinic",
+  "fileUnder.button",
+  "fileUnder.title",
+  "fileUnder.fromClinic",
+  "fileUnder.words",
+  "fileUnder.clinicWords",
+  "fileUnder.rule",
+  "fileUnder.person",
+  "fileUnder.what.both",
+  "fileUnder.what.name",
+  "fileUnder.what.date",
+  "fileUnder.saveDetails",
+  "fileUnder.confirm",
+  "fileUnder.choose",
+  "fileUnder.differs",
+  "fileUnder.saveDetailsOnly",
+  "fileUnder.notOnItsOwn",
+  "handover.import.previousNames",
   "library.fileSaysChecked",
   "handover.nowVerified",
   "notifications.autoSummary",
@@ -2581,6 +2610,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.error": "notifications-error",
   "notifications.help": "notifications-help",
   "notifications.title": "notifications-title",
+  "notifications.notYetAsked": "notifications-notYetAsked",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
@@ -2756,7 +2786,18 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VideoViewer.player": "interface-VideoViewer-player",
   "interface.VideoViewer.thisVideoCouldNotBePlayed":
     "interface-VideoViewer-thisVideoCouldNotBePlayed",
-  "interface.VideoViewer.keys": "interface-VideoViewer-keys",
+  "interface.VideoViewer.controls": "interface-VideoViewer-controls",
+  "interface.VideoViewer.playPause": "interface-VideoViewer-playPause",
+  "interface.VideoViewer.back": "interface-VideoViewer-back",
+  "interface.VideoViewer.forward": "interface-VideoViewer-forward",
+  "interface.VideoViewer.backBig": "interface-VideoViewer-backBig",
+  "interface.VideoViewer.forwardBig": "interface-VideoViewer-forwardBig",
+  "interface.VideoViewer.volumeUp": "interface-VideoViewer-volumeUp",
+  "interface.VideoViewer.volumeDown": "interface-VideoViewer-volumeDown",
+  "interface.VideoViewer.mute": "interface-VideoViewer-mute",
+  "interface.VideoViewer.unmute": "interface-VideoViewer-unmute",
+  "interface.VideoViewer.start": "interface-VideoViewer-start",
+  "interface.VideoViewer.end": "interface-VideoViewer-end",
   "interface.VideoViewer.playVideo": "interface-VideoViewer-playVideo",
   "interface.VideoHelp.title": "interface-VideoHelp-title",
   "interface.VideoHelp.engine": "interface-VideoHelp-engine",
@@ -2933,6 +2974,23 @@ const FLUENT_IDS_BY_KEY = {
   "interface.history.aboutHiddenPeople": "interface-history-aboutHiddenPeople",
   "interface.history.how.personHidden": "interface-history-how-personHidden",
   "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
+  "fileUnder.button": "fileUnder-button",
+  "fileUnder.title": "fileUnder-title",
+  "fileUnder.fromClinic": "fileUnder-fromClinic",
+  "fileUnder.words": "fileUnder-words",
+  "fileUnder.clinicWords": "fileUnder-clinicWords",
+  "fileUnder.rule": "fileUnder-rule",
+  "fileUnder.person": "fileUnder-person",
+  "fileUnder.what.both": "fileUnder-what-both",
+  "fileUnder.what.name": "fileUnder-what-name",
+  "fileUnder.what.date": "fileUnder-what-date",
+  "fileUnder.saveDetails": "fileUnder-saveDetails",
+  "fileUnder.confirm": "fileUnder-confirm",
+  "fileUnder.choose": "fileUnder-choose",
+  "fileUnder.differs": "fileUnder-differs",
+  "fileUnder.saveDetailsOnly": "fileUnder-saveDetailsOnly",
+  "fileUnder.notOnItsOwn": "fileUnder-notOnItsOwn",
+  "handover.import.previousNames": "handover-import-previousNames",
   "library.fileSaysChecked": "library-fileSaysChecked",
   "handover.nowVerified": "handover-nowVerified",
   "notifications.autoSummary": "notifications-autoSummary",
@@ -4079,6 +4137,7 @@ export interface MessageArgsByKey {
   "notifications.error": undefined;
   "notifications.help": undefined;
   "notifications.title": undefined;
+  "notifications.notYetAsked": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;
@@ -4240,7 +4299,18 @@ export interface MessageArgsByKey {
   "interface.VideoViewer.video": undefined;
   "interface.VideoViewer.player": { name: FluentArgument };
   "interface.VideoViewer.thisVideoCouldNotBePlayed": undefined;
-  "interface.VideoViewer.keys": { seconds: FluentArgument };
+  "interface.VideoViewer.controls": undefined;
+  "interface.VideoViewer.playPause": undefined;
+  "interface.VideoViewer.back": { seconds: FluentArgument };
+  "interface.VideoViewer.forward": { seconds: FluentArgument };
+  "interface.VideoViewer.backBig": { seconds: FluentArgument };
+  "interface.VideoViewer.forwardBig": { seconds: FluentArgument };
+  "interface.VideoViewer.volumeUp": undefined;
+  "interface.VideoViewer.volumeDown": undefined;
+  "interface.VideoViewer.mute": undefined;
+  "interface.VideoViewer.unmute": undefined;
+  "interface.VideoViewer.start": undefined;
+  "interface.VideoViewer.end": undefined;
   "interface.VideoViewer.playVideo": undefined;
   "interface.VideoHelp.title": undefined;
   "interface.VideoHelp.engine": undefined;
@@ -4406,6 +4476,23 @@ export interface MessageArgsByKey {
   "interface.history.aboutHiddenPeople": { count: FluentArgument };
   "interface.history.how.personHidden": undefined;
   "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
+  "fileUnder.button": undefined;
+  "fileUnder.title": { document: FluentArgument };
+  "fileUnder.fromClinic": undefined;
+  "fileUnder.words": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.clinicWords": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.rule": undefined;
+  "fileUnder.person": undefined;
+  "fileUnder.what.both": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.what.name": { name: FluentArgument };
+  "fileUnder.what.date": { date: FluentArgument };
+  "fileUnder.saveDetails": { person: FluentArgument; what: FluentArgument };
+  "fileUnder.confirm": { person: FluentArgument };
+  "fileUnder.choose": undefined;
+  "fileUnder.differs": undefined;
+  "fileUnder.saveDetailsOnly": { person: FluentArgument; what: FluentArgument };
+  "fileUnder.notOnItsOwn": undefined;
+  "handover.import.previousNames": { names: FluentArgument };
   "library.fileSaysChecked": { date: FluentArgument };
   "handover.nowVerified": { clinic: FluentArgument; count: FluentArgument };
   "notifications.autoSummary": undefined;

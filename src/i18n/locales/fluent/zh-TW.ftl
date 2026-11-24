@@ -2143,6 +2143,7 @@ notifications-help = 手動檢查後，診所文件儲存至 myCarlos 時，Wind
 notifications-allow = 允許文件送達通知
 notifications-blocked = Windows 正在封鎖通知。請查看 Windows 通知設定。
 notifications-unknown = 無法檢查 Windows 通知權限。
+notifications-notYetAsked = Windows 尚未顯示過 myCarlos 的通知，因此還沒有針對它的設定。在您於 Windows 設定中將其關閉之前，通知是允許的。
 notifications-error = 無法儲存此設定。本次工作階段的通知已關閉。
 notifications-unavailable = 文件通知無法使用。請依平常方式開啟 myCarlos 查看文件。
 notifications-helpAutomatic = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
@@ -2289,7 +2290,18 @@ interface-RecordDialog-videoSavedSlow = 錄製已停止，因為影片無法足�
 interface-VideoViewer-video = 影片
 interface-VideoViewer-player = 影片播放器：{ $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = 無法播放此影片。
-interface-VideoViewer-keys = 空白鍵播放或暫停。左右方向鍵快退或快進 { $seconds } 秒。上下方向鍵調整音量。M 鍵靜音。
+interface-VideoViewer-controls = 播放器控制項
+interface-VideoViewer-playPause = 播放/暫停 (k)
+interface-VideoViewer-back = 倒退 { $seconds } 秒 (←)
+interface-VideoViewer-forward = 快轉 { $seconds } 秒 (→)
+interface-VideoViewer-backBig = 倒退 { $seconds } 秒 (j)
+interface-VideoViewer-forwardBig = 快轉 { $seconds } 秒 (l)
+interface-VideoViewer-volumeUp = 調高音量 (↑)
+interface-VideoViewer-volumeDown = 調低音量 (↓)
+interface-VideoViewer-mute = 靜音 (m)
+interface-VideoViewer-unmute = 取消靜音 (m)
+interface-VideoViewer-start = 回到開頭 (Home)
+interface-VideoViewer-end = 跳到結尾 (End)
 interface-VideoViewer-playVideo = 播放影片
 interface-VideoHelp-title = 為什麼我無法在此錄製影片？
 interface-VideoHelp-engine = 錄製影片需要此裝置內建的網頁引擎能夠錄製含聲音的 MP4 影片，而此裝置的引擎不支援。
@@ -2556,6 +2568,40 @@ interface-history-aboutHiddenPeople = 有 { $count } 筆與已隱藏的人有關
 interface-history-how-personHidden = 該人被隱藏期間歸檔到「與我分享」
 
 portal-arrivedForHiddenNoClinic = 有 { $count } 份文件已送達，目前在「與我分享」中。對應的人已被隱藏。
+
+fileUnder-button = 歸檔到…
+
+fileUnder-title = 把 { $document } 歸檔到某人
+
+fileUnder-fromClinic = 來自診所
+
+fileUnder-words = { $name }，出生日期 { $date }
+
+fileUnder-clinicWords = 來自診所：{ $name }，出生日期 { $date }。
+
+fileUnder-rule = 只有當恰好一個人擁有此出生日期和此全名（或曾用全名）時，myCarlos 才會自行歸檔診所文件。不會替您做任何選擇。
+
+fileUnder-person = 人員
+
+fileUnder-what-both = 全名「{ $name }」和出生日期 { $date }
+
+fileUnder-what-name = 全名「{ $name }」
+
+fileUnder-what-date = 出生日期 { $date }
+
+fileUnder-saveDetails = 同時將 { $what } 儲存為 { $person } 的資料，這樣此診所之後的文件會自動歸檔到 { $person }。
+
+fileUnder-confirm = 歸檔到 { $person }
+
+fileUnder-choose = 請選擇一個人
+
+fileUnder-differs = 診所的資料與此人的資料不同，因此不會提供儲存。請確認這是否是正確的人。
+
+fileUnder-saveDetailsOnly = 同時將 { $what } 儲存為 { $person } 的資料。
+
+fileUnder-notOnItsOwn = 此診所之後的文件仍可能留在「與我分享」中：此診所的連結綁定了另一個人，或另一個人已有相同的姓名和出生日期。
+
+handover-import-previousNames = 檔案中的曾用名：{ $names }。這些名字也將用於把診所的新文件歸檔到此人名下。
 
 library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來源裝置上檢查過。此保險庫沒有檢查過。
 
