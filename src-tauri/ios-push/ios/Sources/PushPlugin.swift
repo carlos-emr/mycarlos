@@ -48,6 +48,32 @@ class PushPlugin: Plugin, UNUserNotificationCenterDelegate {
     }
   }
 
+  private struct HandleArgs: Decodable {
+    let key: String
+    let value: String?
+  }
+
+  /// What the Keychain holds for this destination, if anything (the digest of the bound token).
+  @objc public func recallHandle(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(HandleArgs.self)
+    invoke.resolve(["value": HandleKeychain.read(args.key) as Any])
+  }
+
+  @objc public func rememberHandle(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(HandleArgs.self)
+    guard let value = args.value, HandleKeychain.write(args.key, value) else {
+      invoke.reject("push_handle_not_kept")
+      return
+    }
+    invoke.resolve()
+  }
+
+  @objc public func forgetHandle(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(HandleArgs.self)
+    HandleKeychain.delete(args.key)
+    invoke.resolve()
+  }
+
   /// The permission as it is now, without asking.
   @objc public func permission(_ invoke: Invoke) {
     UNUserNotificationCenter.current().getNotificationSettings { settings in

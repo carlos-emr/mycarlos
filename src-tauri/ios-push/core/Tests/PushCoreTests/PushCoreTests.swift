@@ -147,4 +147,17 @@ final class PushEnvironmentTests: XCTestCase {
       PushEnvironment.from(provisioningProfile: Data("not a profile".utf8)), "production")
     XCTAssertEqual(PushEnvironment.from(provisioningProfile: Data()), "production")
   }
+
+  func testKeychainKeepsReplacesAndForgetsAValue() {
+    let service = "ca.carlos.mycarlos.test-\(UUID().uuidString)"
+    let key = "FAKE-destination"
+    defer { HandleKeychain.delete(key, service: service) }
+    XCTAssertNil(HandleKeychain.read(key, service: service))
+    XCTAssertTrue(HandleKeychain.write(key, "aa", service: service))
+    XCTAssertEqual(HandleKeychain.read(key, service: service), "aa")
+    XCTAssertTrue(HandleKeychain.write(key, "bb", service: service))
+    XCTAssertEqual(HandleKeychain.read(key, service: service), "bb")
+    HandleKeychain.delete(key, service: service)
+    XCTAssertNil(HandleKeychain.read(key, service: service))
+  }
 }

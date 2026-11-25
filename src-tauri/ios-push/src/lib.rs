@@ -68,3 +68,42 @@ pub async fn permission<R: Runtime>(
         .await
         .map_err(failure)
 }
+
+/// What the iPhone's Keychain holds under `key` for this app (a digest the app keeps so that it
+/// does not send the same token twice), if anything. Blocks: call it off the main thread.
+pub fn recall_handle<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    key: &str,
+) -> Result<Option<String>, Failure> {
+    let push = app.try_state::<Push<R>>().ok_or(Failure::NotAnIphone)?;
+    let reply = push
+        .0
+        .run_mobile_plugin::<serde_json::Value>("recallHandle", serde_json::json!({ "key": key }))
+        .map_err(failure)?;
+    Ok(reply.get("value").and_then(|v| v.as_str()).map(str::to_owned))
+}
+
+/// Keeps `value` in the Keychain under `key` (this device only, never synced). Blocks.
+pub fn remember_handle<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    key: &str,
+    value: &str,
+) -> Result<(), Failure> {
+    let push = app.try_state::<Push<R>>().ok_or(Failure::NotAnIphone)?;
+    push.0
+        .run_mobile_plugin::<serde_json::Value>(
+            "rememberHandle",
+            serde_json::json!({ "key": key, "value": value }),
+        )
+        .map(|_| ())
+        .map_err(failure)
+}
+
+/// Removes what the Keychain holds under `key`. Blocks.
+pub fn forget_handle<R: Runtime>(app: &tauri::AppHandle<R>, key: &str) -> Result<(), Failure> {
+    let push = app.try_state::<Push<R>>().ok_or(Failure::NotAnIphone)?;
+    push.0
+        .run_mobile_plugin::<serde_json::Value>("forgetHandle", serde_json::json!({ "key": key }))
+        .map(|_| ())
+        .map_err(failure)
+}

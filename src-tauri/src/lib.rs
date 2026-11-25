@@ -53,8 +53,10 @@ mod model_limits;
 mod model_runtime;
 mod video_scheme;
 // The recording core (#359) and, in the next step, the playback address use it.
-#[cfg(any(target_os = "ios", test))]
 mod ios_push;
+mod ios_push_handles;
+#[cfg(target_os = "ios")]
+mod ios_push_native;
 #[allow(dead_code)]
 mod mp4_stream;
 mod notice_key;
@@ -3829,6 +3831,113 @@ async fn vault_set_notifications(
     tray_notices::set_notices(status.enabled);
     sync_notice_keys_soon(&store);
     Ok(status)
+}
+
+/// This run's knowledge of iPhone push: the permission the plugin last reported and why the last
+/// ask failed. In memory only.
+#[cfg(target_os = "ios")]
+fn iphone_push_state() -> &'static Arc<ios_push_handles::IosPushState> {
+    static STATE: std::sync::OnceLock<Arc<ios_push_handles::IosPushState>> =
+        std::sync::OnceLock::new();
+    STATE.get_or_init(Default::default)
+}
+
+/// The iPhone Settings switch, as it stands: whether this is an iPhone, the patient's choice and
+/// why notices are not coming. Asks the system nothing (it reads the permission without asking).
+#[cfg(target_os = "ios")]
+#[tauri::command]
+async fn vault_iphone_push_status(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+) -> CommandResult<ios_push_handles::IphonePushStatus> {
+    let state = Arc::clone(iphone_push_state());
+    if let Ok(reply) = tauri_plugin_ios_push::permission(&app).await {
+        if let Some(status) = reply.get("status").and_then(|s| s.as_str()) {
+            state.record_permission(status);
+        }
+    }
+    let store = Arc::clone(store.pin().arc());
+    let enabled = tauri::async_runtime::spawn_blocking({
+        let state = Arc::clone(&state);
+        move || {
+            store
+                .remote_notice_status(Some(&*state))
+                .map(|s| s.opted_in)
+        }
+    })
+    .await
+    .map_err(|_| VaultError::Storage)??;
+    Ok(ios_push_handles::IphonePushStatus {
+        supported: true,
+        enabled,
+        state: state.state(),
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+async fn vault_iphone_push_status() -> CommandResult<ios_push_handles::IphonePushStatus> {
+    Ok(ios_push_handles::IphonePushStatus::NOT_AN_IPHONE)
+}
+
+/// Turns notices for a closed myCarlos on or off. The system's permission question, and Apple's
+/// token, are asked for only when it is turned on.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+async fn vault_iphone_push_set(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    enabled: bool,
+) -> CommandResult<ios_push_handles::IphonePushStatus> {
+    let state = Arc::clone(iphone_push_state());
+    let token = if enabled {
+        match ios_push::request_token(&app).await {
+            Ok(token) => {
+                state.record_token();
+                Some(token)
+            }
+            Err(refusal) => {
+                state.record_refusal(refusal);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let store = Arc::clone(store.pin().arc());
+    let memory = ios_push_native::KeychainMemory(app);
+    let enabled = tauri::async_runtime::spawn_blocking({
+        let state = Arc::clone(&state);
+        move || {
+            let session = store.portal_link_ticket();
+            store.set_iphone_push(
+                enabled,
+                token.as_ref(),
+                &state,
+                &memory,
+                session,
+                &portal_client::api,
+            )?;
+            store
+                .remote_notice_status(Some(&*state))
+                .map(|status| status.opted_in)
+        }
+    })
+    .await
+    .map_err(|_| VaultError::Storage)??;
+    Ok(ios_push_handles::IphonePushStatus {
+        supported: true,
+        enabled,
+        state: state.state(),
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+async fn vault_iphone_push_set(
+    _enabled: bool,
+) -> CommandResult<ios_push_handles::IphonePushStatus> {
+    Ok(ios_push_handles::IphonePushStatus::NOT_AN_IPHONE)
 }
 
 #[tauri::command]
@@ -7871,6 +7980,8 @@ pub fn run() {
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
+            vault_iphone_push_status,
+            vault_iphone_push_set,
             vault_send_test_notice,
             vault_set_automatic_document_checks,
             vault_request_device_approval,
