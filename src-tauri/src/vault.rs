@@ -5509,6 +5509,13 @@ impl VaultStore {
         Ok(())
     }
 
+    /// A restore just counted as a whole backup from the UTC day; this is the same on the patient's
+    /// own calendar day (`YYYY-MM-DD`, as the renderer sends it), so that west of UTC a restore in
+    /// the evening is not dated tomorrow. A text that is not a day leaves the UTC day.
+    pub(crate) fn restart_backup_reminder(&self, local_date: Option<&str>) {
+        self.note_backup_made(false, local_date.and_then(day_of_date_text));
+    }
+
     /// "Not now" on the backup reminder: it stays away for [`BACKUP_SNOOZE_DAYS`] days from
     /// `today` (the patient's calendar day, `YYYY-MM-DD`). An error when the pause could not be
     /// kept, so the page does not promise it.
@@ -18531,6 +18538,35 @@ mod tests {
             Some(u32::try_from(crate::now_ms() / 86_400_000).unwrap())
         );
         assert_eq!(state.snoozed_until_day, None);
+    }
+
+    /// The restore starts the reminder from the UTC day; the patient's own day replaces it, as for a
+    /// backup saved, but only within a day of UTC (a garbled or far-off day leaves the UTC one).
+    #[test]
+    fn a_restore_restarts_the_reminder_on_the_patients_own_day() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _) = vault_with_records(&temp.path().join("vault"), &["first.pdf"]);
+        store.unlock(PASSWORD).unwrap();
+        let now = crate::now_ms();
+        let utc = day_of(now);
+        let saved = |store: &VaultStore| store.snapshot().unwrap().backup_reminder.saved_day;
+        store.restart_backup_reminder(Some(&utc_date_text(now - 86_400_000)));
+        assert_eq!(saved(&store), Some(utc - 1), "west of UTC, still yesterday");
+        store.restart_backup_reminder(Some(&utc_date_text(now + 86_400_000)));
+        assert_eq!(
+            saved(&store),
+            Some(utc + 1),
+            "east of UTC, already tomorrow"
+        );
+        for bad in [
+            None,
+            Some("not a date"),
+            Some("2001-01-01"),
+            Some("2999-01-01"),
+        ] {
+            store.restart_backup_reminder(bad);
+            assert_eq!(saved(&store), Some(utc), "{bad:?}");
+        }
     }
 
     #[test]

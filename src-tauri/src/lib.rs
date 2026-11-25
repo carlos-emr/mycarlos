@@ -816,6 +816,10 @@ struct RestoreRequest {
     recovery_key: Option<String>,
     #[serde(default)]
     replace: bool,
+    /// Today on the patient's calendar (`YYYY-MM-DD`): the backup reminder starts from it, as it
+    /// does for a backup saved (a restore counts as one).
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 impl RestoreRequest {
@@ -5202,7 +5206,10 @@ async fn vault_restore(
             open_restore_source(&app, source)?,
             request.credential()?,
             &preview,
-        )
+        )?;
+        // The restore itself started the reminder from the UTC day; the patient's own day replaces it.
+        store.restart_backup_reminder(request.local_date.as_deref());
+        Ok(())
     })
     .await
     .map_err(PublicError::of_restore)?;

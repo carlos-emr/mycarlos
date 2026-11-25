@@ -204,6 +204,9 @@ export interface FakeVaultSetup {
     status: "pending" | "refused" | "expired" | "cancelled";
     canRestart?: boolean;
   };
+  /** How many videos the vault holds, for the backup size the screen shows (and so whether a backup
+   * may leave them out). Default: none. */
+  videos?: number;
   /** The backup file a restore would choose: what it replaces on this
    * device, whether the vault here differs, the documents it holds (FAKE
    * names), and the passphrase it was made with (the vault's by default). */
@@ -372,6 +375,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         portalLinkingEnabled?: boolean;
         portalLinks?: Link[];
         sharedProfileId?: string;
+        // Days only, as the native side keeps them (the patient's own calendar days).
+        backupReminder?: {
+          savedDay?: number;
+          partialDay?: number;
+          snoozedUntilDay?: number;
+        };
       };
       type Outcome = { resolve?: unknown; reject?: unknown; pending?: true };
       type HistoryEntry = {
@@ -1716,11 +1725,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               (sum, record) => sum + record.plaintextSize,
               4096,
             );
+            const videos = setup.videos ?? 0;
             return {
-              totalBytes: bytes,
+              totalBytes: bytes + videos * 1_000_000,
               withoutVideosBytes: bytes,
-              videoBytes: 0,
-              videoCount: 0,
+              videoBytes: videos * 1_000_000,
+              videoCount: videos,
             };
           }
           case "vault_left_out_records":
@@ -1733,6 +1743,21 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             pick(request.pickId, "backup", true);
             refusePaused();
             state.backupsSaved += 1;
+            {
+              // Natively the reminder keeps the patient's day (the page sends it); a whole backup
+              // satisfies it and ends a snooze, one that left videos out is kept apart.
+              const [y, m, d] = String(request.localDate)
+                .split("-")
+                .map(Number);
+              const day = Date.UTC(y, m - 1, d) / 86_400_000;
+              const kept = (state.snapshot.backupReminder ??= {});
+              if (request.leaveVideosOut) kept.partialDay = day;
+              else {
+                kept.savedDay = day;
+                delete kept.partialDay;
+                delete kept.snoozedUntilDay;
+              }
+            }
             wrote("backupSaved", {
               place: "FAKE Backups/myCarlos backup.mycarlosbackup",
             });

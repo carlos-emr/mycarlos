@@ -1428,7 +1428,12 @@ export function createVaultBridge(): VaultBridge {
     restore: (pickId, credential, replace) =>
       invoke<boolean>("vault_restore", {
         locale: getLocale(),
-        request: { pickId, ...credential, replace },
+        request: {
+          pickId,
+          ...credential,
+          replace,
+          localDate: localDateText(new Date()),
+        },
       }),
     createProfile: (displayName, details = {}) =>
       invoke<string>("vault_create_profile", {

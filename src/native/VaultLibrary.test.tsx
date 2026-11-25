@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import { dayOf } from "./backupReminder";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -2364,7 +2365,22 @@ describe("backup reminder", () => {
   });
   const note = () =>
     screen.queryByRole("note", { name: humanText("Backup reminder") });
-  const today = Math.floor(Date.now() / DAY);
+  // The patient's own calendar day, as the native side keeps the backup and snooze days.
+  const today = dayOf(Date.now());
+  // Noon of a local day, in the device's own zone.
+  const noonOf = (day: number) =>
+    day * DAY + new Date(day * DAY).getTimezoneOffset() * 60_000 + DAY / 2;
+
+  it("does not greet the first import with the warning: one new document shows nothing, a week later or three documents show it", () => {
+    renderLibrary(withDocuments(1, undefined, Date.now()));
+    expect(note()).toBeNull();
+    cleanup();
+    renderLibrary(withDocuments(3, undefined, Date.now()));
+    expect(note()).not.toBeNull();
+    cleanup();
+    renderLibrary(withDocuments(1, undefined, noonOf(today - 8)));
+    expect(note()).not.toBeNull();
+  });
 
   it("shows for a vault with documents and no backup, says plainly what a lost computer means, and offers the backup", () => {
     renderLibrary(withDocuments());
@@ -2414,7 +2430,7 @@ describe("backup reminder", () => {
 
   it("counts documents added after the backup's day, from their own dates", () => {
     renderLibrary(
-      withDocuments(20, { savedDay: today - 2 }, (today - 1) * DAY + 1),
+      withDocuments(20, { savedDay: today - 2 }, noonOf(today - 1)),
     );
     expect(note()).toHaveHumanTextContent("20 documents have been added");
   });

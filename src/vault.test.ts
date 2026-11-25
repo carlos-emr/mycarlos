@@ -1002,7 +1002,12 @@ describe("localized native presentation contracts", () => {
         "vault_restore",
         {
           locale: "fr",
-          request: { pickId: "pick", passphrase: "FAKE", replace: true },
+          request: {
+            pickId: "pick",
+            passphrase: "FAKE",
+            replace: true,
+            localDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          },
         },
       ],
       [
