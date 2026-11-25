@@ -5892,7 +5892,7 @@ fn cancel_native_pdf(_app: &tauri::AppHandle) {
 /// none of its own. Short, with no control characters.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfLabels {
     close: String,
     previous: String,
@@ -5903,6 +5903,9 @@ struct AndroidPdfLabels {
     page: String,
     /// "Page {page} of {total}".
     page_status: String,
+    /// "Page {page} of {total} could not be shown": said, and set as the page's description, where
+    /// a page fails to render (it used to be dropped here, so the reader showed nothing).
+    page_failed: String,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -5916,6 +5919,7 @@ impl AndroidPdfLabels {
             &self.zoom_out,
             &self.page,
             &self.page_status,
+            &self.page_failed,
         ]
         .into_iter()
         .all(|label| {
@@ -6009,6 +6013,7 @@ async fn vault_read_android_pdf(
                     zoom_out: &request.labels.zoom_out,
                     page: &request.labels.page,
                     page_status: &request.labels.page_status,
+                    page_failed: &request.labels.page_failed,
                 },
                 activity,
             },
@@ -9638,7 +9643,7 @@ mod tests {
     /// it did for the recovery of a hidden person's lost document. So, for every `#[tauri::command]`
     /// in any source file, each parameter type that is a struct this crate deserializes must:
     ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
-    ///     every struct such a request holds, bar one named exception in the test); and
+    ///     every struct such a request holds); and
     ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
     ///     renderer does;
     /// and every struct such a request holds in a field is held to the same two rules.
@@ -9797,15 +9802,7 @@ mod tests {
                     definition.file
                 ));
             }
-            // The one nested struct that keeps leniency: the renderer's AndroidReaderLabels also
-            // carries `pageFailed`, a label the native reader has no field for and silently drops
-            // (reported separately); denying it would refuse the whole request.
-            let lenient = [(
-                "AndroidPdfLabels",
-                "the renderer also sends pageFailed, which it has no field for",
-            )];
-            let allowed = lenient.iter().any(|(listed, _)| listed == name);
-            if !allowed && !definition.attributes.contains("deny_unknown_fields") {
+            if !definition.attributes.contains("deny_unknown_fields") {
                 problems.push(format!(
                     "{name} ({}) needs deny_unknown_fields",
                     definition.file
@@ -9813,6 +9810,63 @@ mod tests {
             }
         }
         assert!(problems.is_empty(), "{problems:#?}");
+    }
+
+    /// The Android reader's labels cross three layers: the renderer's `AndroidReaderLabels`
+    /// (src/vault.ts), this struct, and the plugin's own. `pageFailed` was sent by the renderer and
+    /// dropped by this struct, so the reader showed nothing for a page it could not draw. The
+    /// struct now takes exactly the renderer's labels: no more, no fewer.
+    #[test]
+    fn the_android_reader_labels_are_exactly_the_renderers_eight() {
+        let renderer = include_str!("../../src/vault.ts");
+        let interface = renderer
+            .split("export interface AndroidReaderLabels {")
+            .nth(1)
+            .unwrap();
+        let interface = &interface[..interface.find('}').unwrap()];
+        let mut sent: Vec<&str> = interface
+            .lines()
+            .filter_map(|line| line.trim().split_once(':').map(|(name, _)| name.trim()))
+            .collect();
+        sent.sort_unstable();
+        assert_eq!(
+            sent,
+            [
+                "close",
+                "next",
+                "page",
+                "pageFailed",
+                "pageStatus",
+                "previous",
+                "zoomIn",
+                "zoomOut"
+            ]
+        );
+        let all = sent
+            .iter()
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let labels: AndroidPdfLabels = serde_json::from_str(&format!("{{{all}}}")).unwrap();
+        assert!(labels.valid());
+        assert_eq!(labels.page_failed, "A label");
+        // One fewer is refused (a missing label would be shown as nothing), and so is one more.
+        let fewer = sent
+            .iter()
+            .filter(|name| **name != "pageFailed")
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(serde_json::from_str::<AndroidPdfLabels>(&format!("{{{fewer}}}")).is_err());
+        assert!(
+            serde_json::from_str::<AndroidPdfLabels>(&format!(r#"{{{all},"extra":"x"}}"#)).is_err()
+        );
+        // A label that is blank or has a control character is not valid.
+        let blank: AndroidPdfLabels = serde_json::from_str(
+            &format!("{{{all}}}").replace(r#""pageFailed":"A label""#, r#""pageFailed":"""#),
+        )
+        .unwrap();
+        assert!(!blank.valid());
     }
 
     #[test]
