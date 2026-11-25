@@ -84,6 +84,7 @@ mod vault;
 mod vault_registry;
 mod vault_slots;
 mod vault_source;
+mod video_import;
 #[cfg(windows)]
 mod windows_navigation;
 
