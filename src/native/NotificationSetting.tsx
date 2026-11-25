@@ -13,6 +13,8 @@ type NoticeStatus = {
   /** This computer can show a notice (Windows today): the notice switch is an add-on offered
    * only then. The automatic checks do not depend on it. */
   noticesSupported?: boolean;
+  /** Whose words the permission lines use: "windows", "macos" or "other" (native `system`). */
+  system?: "windows" | "macos" | "other";
   permission:
     | "unavailable"
     | "unknown"
@@ -211,7 +213,11 @@ export function NotificationSetting({
             {/* Always on the page, so a screen reader hears what the press came to. */}
             <p aria-live="polite">
               {testResult === "shown"
-                ? t("notifications.testSent")
+                ? t(
+                    status.system === "macos"
+                      ? "notifications.testSentMac"
+                      : "notifications.testSent",
+                  )
                 : testResult === "tooSoon"
                   ? t("notifications.testWait")
                   : testResult === "notAllowed"
@@ -221,13 +227,25 @@ export function NotificationSetting({
                       : ""}
             </p>
             {status.permission === "blocked" && (
-              <p id={`${id}-blocked`}>{t("notifications.blocked")}</p>
+              <p id={`${id}-blocked`}>
+                {t(
+                  status.system === "macos"
+                    ? "notifications.blockedMac"
+                    : "notifications.blocked",
+                )}
+              </p>
             )}
             {status.permission === "unknown" && (
               <p id={`${id}-unknown`}>{t("notifications.unknown")}</p>
             )}
             {status.permission === "not_yet_asked" && (
-              <p id={`${id}-notYetAsked`}>{t("notifications.notYetAsked")}</p>
+              <p id={`${id}-notYetAsked`}>
+                {t(
+                  status.system === "macos"
+                    ? "notifications.notYetAskedMac"
+                    : "notifications.notYetAsked",
+                )}
+              </p>
             )}
           </>
         )}

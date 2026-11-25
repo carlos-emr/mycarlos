@@ -2148,6 +2148,8 @@ notifications-error = 无法保存此设置。本次会话的通知和自动检�
 notifications-unavailable = 这些设置目前不可用。请按通常方式打开 myCarlos 查看文档。
 notifications-helpAutomatic = myCarlos 可以在打开且已解锁时自行检查诊所的新文档。新文档随后会出现在您的记录库中。
 notifications-notYetAsked = Windows 尚未显示过 myCarlos 的通知，因此还没有针对它的设置。在您于 Windows 设置中将其关闭之前，通知是允许的。
+notifications-blockedMac = macOS 不允许 myCarlos 发送通知。请在“系统设置”的“通知”中打开。
+notifications-notYetAskedMac = 尚未询问 macOS。您打开通知时，它会询问。
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoConsent = 开启后，myCarlos 会按计划联系您诊所的门户，每次尝试至少间隔两分钟，且仅在其打开并已解锁时进行。关闭即可停止。
 notifications-noticesHelp = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
@@ -2625,6 +2627,7 @@ native-notice-test = 这是来自 myCarlos 的测试通知。
 notifications-testButton = 显示测试通知
 
 notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+notifications-testSentMac = 已发送测试通知。如果没有看到，请检查“系统设置”中的“通知”。
 
 notifications-testWait = 请等待几秒钟后再试。
 

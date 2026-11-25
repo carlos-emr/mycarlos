@@ -2366,6 +2366,8 @@ notifications-error = This setting could not be saved. Notices and automatic che
 notifications-unavailable = These settings are unavailable right now. Open myCarlos normally to check your documents.
 notifications-helpAutomatic = myCarlos can check for new clinic documents by itself while it is open and unlocked. New documents then appear in your library.
 notifications-notYetAsked = Windows has not shown a myCarlos notice yet, so it has no setting for it. Notices are allowed until you turn them off in Windows settings.
+notifications-blockedMac = macOS is not allowing notifications from myCarlos. Turn them on in System Settings, under Notifications.
+notifications-notYetAskedMac = macOS has not been asked yet. It will ask when you turn on notices.
 notifications-autoAllow = Check for clinic documents automatically while unlocked
 notifications-autoConsent = Turning this on lets myCarlos contact your clinic's portal on a schedule, at least two minutes apart, only while it is open and unlocked. Turn it off to stop.
 notifications-noticesHelp = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
@@ -2899,6 +2901,7 @@ native-notice-test = This is a test notice from myCarlos.
 notifications-testButton = Show a test notice
 
 notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+notifications-testSentMac = Test notice sent. If you do not see it, check System Settings, under Notifications.
 
 notifications-testWait = Wait a few seconds, then try again.
 

@@ -2401,6 +2401,8 @@ notifications-error = Ce réglage n’a pas pu être enregistré. Les avis et le
 notifications-unavailable = Ces réglages ne sont pas disponibles pour le moment. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = myCarlos peut vérifier lui-même les nouveaux documents de la clinique lorsqu’il est ouvert et déverrouillé. Les nouveaux documents apparaissent alors dans votre bibliothèque.
 notifications-notYetAsked = Windows n’a pas encore affiché d’avis myCarlos, il n’a donc pas encore de paramètre pour eux. Les avis sont autorisés jusqu’à ce que vous les désactiviez dans les paramètres de Windows.
+notifications-blockedMac = macOS n’autorise pas les notifications de myCarlos. Activez-les dans Réglages Système, sous Notifications.
+notifications-notYetAskedMac = macOS n’a pas encore été interrogé. Il le fera quand vous activerez les avis.
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
 notifications-autoConsent = En activant ceci, vous permettez à myCarlos de contacter le portail de votre clinique selon un calendrier, avec au moins deux minutes entre les tentatives, uniquement lorsqu’il est ouvert et déverrouillé. Désactivez-le pour l’arrêter.
 notifications-noticesHelp = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
@@ -2934,6 +2936,7 @@ native-notice-test = Ceci est un avis de test de myCarlos.
 notifications-testButton = Afficher un avis de test
 
 notifications-testSent = Avis de test envoyé. Si vous ne le voyez pas, vérifiez les paramètres de notification de Windows.
+notifications-testSentMac = Avis de test envoyé. Si vous ne le voyez pas, vérifiez Réglages Système, sous Notifications.
 
 notifications-testWait = Patientez quelques secondes, puis réessayez.
 

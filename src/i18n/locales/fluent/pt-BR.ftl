@@ -2401,6 +2401,8 @@ notifications-error = Não foi possível salvar esta configuração. Os avisos e
 notifications-unavailable = Estas configurações estão indisponíveis no momento. Abra o myCarlos normalmente para verificar seus documentos.
 notifications-helpAutomatic = O myCarlos pode verificar sozinho os documentos novos da clínica enquanto está aberto e desbloqueado. Os documentos novos aparecem então na sua biblioteca.
 notifications-notYetAsked = O Windows ainda não mostrou nenhum aviso do myCarlos, então ainda não tem uma configuração para eles. Os avisos são permitidos até que você os desative nas configurações do Windows.
+notifications-blockedMac = O macOS não está permitindo as notificações do myCarlos. Ative-as em Ajustes do Sistema, em Notificações.
+notifications-notYetAskedMac = O macOS ainda não foi consultado. Ele perguntará quando você ativar os avisos.
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
 notifications-autoConsent = Ao ativar isto, o myCarlos entra em contato com o portal da sua clínica de forma programada, com pelo menos dois minutos entre as tentativas, somente enquanto estiver aberto e desbloqueado. Desative para parar.
 notifications-noticesHelp = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
@@ -2934,6 +2936,7 @@ native-notice-test = Este é um aviso de teste do myCarlos.
 notifications-testButton = Mostrar um aviso de teste
 
 notifications-testSent = Aviso de teste enviado. Se você não o vir, verifique as configurações de notificação do Windows.
+notifications-testSentMac = Aviso de teste enviado. Se você não o vir, verifique Ajustes do Sistema, em Notificações.
 
 notifications-testWait = Aguarde alguns segundos e tente novamente.
 

@@ -8,6 +8,17 @@ use crate::ui_text::UiLocale;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// The system this build runs on, for the wording of the permission lines.
+pub(crate) const fn system_name() -> &'static str {
+    if cfg!(windows) {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "other"
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
@@ -68,6 +79,8 @@ pub struct Status {
     /// Whether this computer can show a notice at all (Windows today): the notice switch is an
     /// add-on offered only where it is true. The automatic checks do not depend on it.
     pub notices_supported: bool,
+    /// Which system's words the page uses for the permission lines ("windows", "macos", "other").
+    pub system: &'static str,
     pub last_outcome: Option<Outcome>,
 }
 
@@ -82,6 +95,7 @@ impl Status {
             automatic_checks_supported: false,
             automatic_checks_paused: false,
             notices_supported: false,
+            system: system_name(),
             last_outcome: None,
         }
     }
@@ -110,6 +124,7 @@ pub(crate) mod active {
 
     /// What the operating system said when asked whether this app may show notices.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) enum OsSetting {
         Enabled,
         /// Turned off by the person, an administrator, the app's own manifest or "do not disturb".
@@ -120,6 +135,7 @@ pub(crate) mod active {
     }
 
     /// How an answer reads. Only a definite "disabled" blocks: a failed question is "not yet asked".
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) fn permission_for(setting: OsSetting) -> Permission {
         match setting {
             OsSetting::Enabled => Permission::Allowed,
@@ -128,13 +144,33 @@ pub(crate) mod active {
         }
     }
 
+    /// How a macOS `UNAuthorizationStatus` reads: not determined (0) is "not yet asked", denied (1)
+    /// is blocked, authorized (2), provisional (3) and ephemeral (4) allow it. Anything else is not
+    /// understood, so nothing is shown.
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
+    pub(crate) fn permission_for_authorization(status: isize) -> Permission {
+        match status {
+            0 => Permission::NotYetAsked,
+            1 => Permission::Blocked,
+            2..=4 => Permission::Allowed,
+            _ => Permission::Unknown,
+        }
+    }
+
     /// Whether a notice may be tried now: yes unless the system said it is disabled.
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) fn may_show(setting: OsSetting) -> bool {
         permission_for(setting) != Permission::Blocked
     }
 
     pub trait Backend: Send + Sync {
         fn permission(&self) -> Permission;
+        /// Asks the system for permission, where it has a question to ask (macOS shows its own
+        /// prompt, once). Called when the patient turns notices on, so the prompt comes with the
+        /// choice. Where there is no question (Windows allows by default), it only reads.
+        fn request_permission(&self) -> Permission {
+            self.permission()
+        }
         /// A successful OS API acceptance, never a claim that a person saw it. `body` is the
         /// fixed catalogue sentence for the language the app last reported, never data.
         fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error>;
@@ -244,9 +280,17 @@ pub(crate) mod active {
             )
         }
 
-        /// Where the OS cannot show a notice (everything but Windows): the checks are still
+        #[cfg(target_os = "macos")]
+        pub fn new(path: PathBuf, _app_id: String) -> Self {
+            Self::load(
+                path,
+                Box::new(crate::document_notification_macos::MacBackend::new()),
+            )
+        }
+
+        /// Where the OS cannot show a notice (Linux, and any other desktop): the checks are still
         /// supported, and a notice is never attempted.
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         pub fn new(path: PathBuf, _app_id: String) -> Self {
             struct Unavailable;
             impl Backend for Unavailable {
@@ -413,6 +457,7 @@ pub(crate) mod active {
                     automatic_checks_supported: false,
                     automatic_checks_paused: false,
                     notices_supported: false,
+                    system: system_name(),
                     last_outcome: Some(Outcome::Unknown),
                 };
             };
@@ -427,6 +472,7 @@ pub(crate) mod active {
                 automatic_checks_supported: true,
                 automatic_checks_paused: false,
                 notices_supported: self.backend.permission() != Permission::Unavailable,
+                system: system_name(),
                 permission: self.backend.permission(),
                 last_outcome: guard
                     .as_ref()
@@ -467,6 +513,13 @@ pub(crate) mod active {
             // Where the OS cannot show a notice there is nothing to turn on.
             if enabled && self.backend.permission() == Permission::Unavailable {
                 return Err(Error::Unavailable);
+            }
+            if enabled {
+                // The system's own question, where it has one (macOS), is asked now: with the
+                // choice, never at launch, and before the ledger lock is taken, because the
+                // patient may take a while to answer. A refusal is not an error: the notice is
+                // saved as wanted and the status says honestly that the system blocks it.
+                self.backend.request_permission();
             }
             if !enabled {
                 // This happens before any blocking ledger write/lock.
@@ -1420,6 +1473,109 @@ pub(crate) mod active {
         fn the_not_yet_asked_state_reaches_the_page_by_its_own_name() {
             let json = serde_json::to_string(&Permission::NotYetAsked).unwrap();
             assert_eq!(json, "\"not_yet_asked\"");
+        }
+
+        #[test]
+        fn a_macos_authorization_status_reads_as_the_matching_permission() {
+            // notDetermined, denied, authorized, provisional, ephemeral, and one nobody knows.
+            assert_eq!(permission_for_authorization(0), Permission::NotYetAsked);
+            assert_eq!(permission_for_authorization(1), Permission::Blocked);
+            assert_eq!(permission_for_authorization(2), Permission::Allowed);
+            assert_eq!(permission_for_authorization(3), Permission::Allowed);
+            assert_eq!(permission_for_authorization(4), Permission::Allowed);
+            assert_eq!(permission_for_authorization(5), Permission::Unknown);
+            assert_eq!(permission_for_authorization(-1), Permission::Unknown);
+        }
+
+        /// A backend that says what it was asked: how many times the system's question was put.
+        struct Asking {
+            before: Permission,
+            after: Permission,
+            asked: Arc<AtomicU64>,
+        }
+        impl Backend for Asking {
+            fn permission(&self) -> Permission {
+                if self.asked.load(Ordering::SeqCst) > 0 {
+                    self.after
+                } else {
+                    self.before
+                }
+            }
+            fn request_permission(&self) -> Permission {
+                self.asked.fetch_add(1, Ordering::SeqCst);
+                self.after
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+
+        fn asking_runtime(
+            dir: &std::path::Path,
+            before: Permission,
+            after: Permission,
+        ) -> (Runtime, Arc<AtomicU64>) {
+            let asked = Arc::new(AtomicU64::new(0));
+            let runtime = Runtime::load(
+                dir.join("state.json"),
+                Box::new(Asking {
+                    before,
+                    after,
+                    asked: Arc::clone(&asked),
+                }),
+            );
+            (runtime, asked)
+        }
+
+        #[test]
+        fn the_system_is_asked_when_notices_are_turned_on_and_not_before() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, asked) =
+                asking_runtime(temp.path(), Permission::NotYetAsked, Permission::Allowed);
+            // Reading the status never asks: not at launch, not when the page looks.
+            assert_eq!(runtime.status().permission, Permission::NotYetAsked);
+            assert_eq!(asked.load(Ordering::SeqCst), 0);
+            // Turning notices on is the moment.
+            let status = runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+            assert!(status.enabled);
+            assert_eq!(status.permission, Permission::Allowed);
+            // Turning them off asks nothing.
+            runtime.set_enabled(false).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn a_refused_question_is_said_honestly_and_the_choice_is_still_saved() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, asked) =
+                asking_runtime(temp.path(), Permission::NotYetAsked, Permission::Blocked);
+            let status = runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+            // The patient's choice stands; the system's refusal is shown, not hidden.
+            assert!(status.enabled);
+            assert_eq!(status.permission, Permission::Blocked);
+            assert_eq!(runtime.send_test_notice(), TestNotice::Blocked);
+        }
+
+        #[test]
+        fn where_the_system_has_no_notice_to_ask_for_nothing_is_asked() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, asked) = asking_runtime(
+                temp.path(),
+                Permission::Unavailable,
+                Permission::Unavailable,
+            );
+            assert!(matches!(runtime.set_enabled(true), Err(Error::Unavailable)));
+            assert_eq!(asked.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn the_status_names_the_system_for_the_words_of_the_permission_lines() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, _) = test_runtime(temp.path(), Permission::Allowed, false);
+            let system = serde_json::to_value(runtime.status()).unwrap()["system"].clone();
+            assert!(["windows", "macos", "other"].contains(&system.as_str().unwrap()));
         }
 
         #[test]

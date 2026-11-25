@@ -2481,6 +2481,8 @@ notifications-error = Nie można zapisać tego ustawienia. Powiadomienia i autom
 notifications-unavailable = Te ustawienia są teraz niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = myCarlos może sam sprawdzać nowe dokumenty z przychodni, gdy jest otwarty i odblokowany. Nowe dokumenty pojawiają się wtedy w bibliotece.
 notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
+notifications-blockedMac = System macOS nie zezwala na powiadomienia z myCarlos. Proszę je włączyć w Ustawieniach systemowych, w sekcji Powiadomienia.
+notifications-notYetAskedMac = System macOS nie został jeszcze zapytany. Zapyta, gdy zostaną włączone powiadomienia.
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
 notifications-autoConsent = Włączenie tej opcji pozwala myCarlos łączyć się z portalem przychodni według harmonogramu, co najmniej dwie minuty między próbami, wyłącznie gdy jest otwarty i odblokowany. Wyłączenie jej zatrzymuje sprawdzanie.
 notifications-noticesHelp = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
@@ -3028,6 +3030,7 @@ native-notice-test = To jest testowe powiadomienie z myCarlos.
 notifications-testButton = Pokaż powiadomienie testowe
 
 notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+notifications-testSentMac = Wysłano powiadomienie testowe. Jeśli go nie widać, proszę sprawdzić Ustawienia systemowe, sekcję Powiadomienia.
 
 notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 

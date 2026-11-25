@@ -1016,7 +1016,9 @@ export const MESSAGE_KEYS = [
   "notifications.blocked",
   "notifications.error",
   "notifications.title",
+  "notifications.blockedMac",
   "notifications.notYetAsked",
+  "notifications.notYetAskedMac",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
@@ -1363,6 +1365,7 @@ export const MESSAGE_KEYS = [
   "native.notice.test",
   "notifications.testButton",
   "notifications.testSent",
+  "notifications.testSentMac",
   "notifications.testWait",
   "notifications.testFailed",
   "notifications.testOff",
@@ -2611,7 +2614,9 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.blocked": "notifications-blocked",
   "notifications.error": "notifications-error",
   "notifications.title": "notifications-title",
+  "notifications.blockedMac": "notifications-blockedMac",
   "notifications.notYetAsked": "notifications-notYetAsked",
+  "notifications.notYetAskedMac": "notifications-notYetAskedMac",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
@@ -3001,6 +3006,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.notice.test": "native-notice-test",
   "notifications.testButton": "notifications-testButton",
   "notifications.testSent": "notifications-testSent",
+  "notifications.testSentMac": "notifications-testSentMac",
   "notifications.testWait": "notifications-testWait",
   "notifications.testFailed": "notifications-testFailed",
   "notifications.testOff": "notifications-testOff",
@@ -4139,7 +4145,9 @@ export interface MessageArgsByKey {
   "notifications.blocked": undefined;
   "notifications.error": undefined;
   "notifications.title": undefined;
+  "notifications.blockedMac": undefined;
   "notifications.notYetAsked": undefined;
+  "notifications.notYetAskedMac": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;
@@ -4504,6 +4512,7 @@ export interface MessageArgsByKey {
   "native.notice.test": undefined;
   "notifications.testButton": undefined;
   "notifications.testSent": undefined;
+  "notifications.testSentMac": undefined;
   "notifications.testWait": undefined;
   "notifications.testFailed": undefined;
   "notifications.testOff": undefined;
