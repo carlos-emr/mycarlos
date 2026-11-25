@@ -673,7 +673,7 @@ impl From<VaultError> for PublicError {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PassphraseRulesRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -687,7 +687,7 @@ impl Drop for PassphraseRulesRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -713,13 +713,14 @@ struct HideUnavailableRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PassphraseRequest {
     passphrase: String,
 }
 
 /// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AddVaultRequest {
     name: String,
     passphrase: String,
@@ -736,6 +737,7 @@ impl Drop for AddVaultRequest {
 
 /// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FindVaultsRequest {
     passphrase: String,
 }
@@ -764,6 +766,7 @@ struct NamedFoundVault {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NameFoundRequest {
     vaults: Vec<NamedFoundVault>,
 }
@@ -778,6 +781,7 @@ impl Drop for NameFoundRequest {
 
 /// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedPassphraseRequest {
     name: String,
     passphrase: String,
@@ -810,7 +814,7 @@ struct BackupWriteRequest {
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoreRequest {
     pick_id: Uuid,
     passphrase: Option<String>,
@@ -847,7 +851,7 @@ impl Drop for RestoreRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoverRequest {
     recovery_key: String,
     new_passphrase: String,
@@ -878,13 +882,13 @@ struct RecoveryKeyGroup {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConfirmRecoveryKeyRequest {
     groups: Vec<RecoveryKeyGroup>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
@@ -899,7 +903,7 @@ impl Drop for ChangePassphraseRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NameRequest {
     display_name: String,
     #[serde(default)]
@@ -923,7 +927,7 @@ struct RenameProfileRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FolderRequest {
     profile_id: Uuid,
     parent_id: Option<Uuid>,
@@ -931,7 +935,7 @@ struct FolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateFolderRequest {
     folder_id: Uuid,
     parent_id: Option<Uuid>,
@@ -939,41 +943,41 @@ struct UpdateFolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersRequest {
     record_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameRecordRequest {
     record_id: Uuid,
     name: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersBatchRequest {
     record_ids: Vec<Uuid>,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImportRequest {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoRequest {
     record_id: Uuid,
 }
@@ -1408,7 +1412,7 @@ impl std::io::Write for LimitedBuffer {
 /// Finishes an import or export whose picker already closed. The paths the
 /// picker returned stay native, under `pick_id`; the renderer never sees them.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedImportRequest {
     pick_id: Uuid,
     profile_id: Uuid,
@@ -1416,7 +1420,7 @@ struct PickedImportRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedExportRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -1828,13 +1832,13 @@ impl PendingPicks {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordIdRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProfileIdRequest {
     profile_id: Uuid,
 }
@@ -1863,13 +1867,14 @@ struct AiAnswer<T> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AiResultRequest {
     record_id: Uuid,
     result_id: Uuid,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ResetRequest {
     confirmation: String,
 }
@@ -3432,6 +3437,7 @@ fn vault_touch(store: State<'_, StoreHandle>) {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AutoLockRequest {
     minutes: u64,
 }
@@ -4167,7 +4173,7 @@ async fn vault_recover(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BackupPickRequest {
     /// Today's date on the patient's own calendar, `YYYY-MM-DD`.
     #[serde(default)]
@@ -5523,7 +5529,7 @@ struct ReceivedState {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MoveToPersonRequest {
     record_ids: Vec<Uuid>,
     profile_id: Uuid,
@@ -5672,14 +5678,14 @@ fn accept_received_batch(
 
 /// The files the patient confirmed adding (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedAcceptRequest {
     ids: Vec<Uuid>,
 }
 
 /// The files the patient said No to (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedDiscardRequest {
     ids: Vec<Uuid>,
 }
@@ -5742,7 +5748,7 @@ async fn received_accept(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ViewPageRequest {
     record_id: Uuid,
     page: u32,
@@ -5919,7 +5925,7 @@ impl AndroidPdfLabels {
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfRequest {
     record_id: Uuid,
     labels: AndroidPdfLabels,
@@ -6037,7 +6043,7 @@ fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
 
 /// Where a quoted span of a page's text is on the page picture (#292).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PageBoxesRequest {
     record_id: Uuid,
     page: u32,
@@ -6155,7 +6161,7 @@ async fn vault_page_boxes(
 
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentTextRequest {
     record_id: Uuid,
     /// Who asks: the screen's own id, so that its cancel ends only this read.
@@ -6383,7 +6389,7 @@ async fn vault_document_text(
 
 /// Which text read to stop: the id the screen gave when it asked.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextReadCancelRequest {
     read_id: Uuid,
 }
@@ -6412,7 +6418,7 @@ async fn vault_record_known_details(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -6452,7 +6458,7 @@ async fn vault_export_text_pick(
 const MAX_EXPORT_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickedRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -6574,7 +6580,7 @@ async fn vault_export_text_picked(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportCopyRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -7064,7 +7070,7 @@ async fn vault_is_locked_pdf(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UnlockPdfRequest {
     record_id: Uuid,
     password: String,
@@ -9625,74 +9631,181 @@ mod tests {
         .is_err());
     }
 
-    /// Every request struct this file deserializes from the renderer spells its multi-word fields in
-    /// camelCase on the wire. Without `rename_all = "camelCase"` a field like `hidden_people_documents`
-    /// silently never receives the renderer's `hiddenPeopleDocuments` (unknown keys are ignored
-    /// unless the struct denies them) and takes its default; that cost a patient the recovery from
-    /// a lost document. A struct that is not a renderer request goes on the short list below, with a
-    /// reason.
+    /// What the renderer sends reaches a command through serde, which by default IGNORES a key it
+    /// does not know and fills a field it does not receive from its default: a spelling slip
+    /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
+    /// it did for the recovery of a hidden person's lost document. So, for every `#[tauri::command]`
+    /// in any source file, each parameter type that is a struct this crate deserializes must:
+    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command; and
+    ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
+    ///     renderer does;
+    /// and every struct such a request holds in a field must spell its own multi-word fields the same
+    /// way (those may leave unknown keys alone: they are values the renderer builds from its own types).
     #[test]
-    fn deserialized_structs_with_multi_word_fields_are_camel_case_on_the_wire() {
-        // (struct name, why it is not read from the renderer)
-        let not_from_the_renderer: [(&str, &str); 0] = [];
-        let source = include_str!("lib.rs");
-        let code = &source[..source.find("\n#[cfg(test)]\nmod tests {").unwrap()];
-        let mut offenders = Vec::new();
-        let mut attributes = String::new();
-        let mut lines = code.lines().peekable();
-        while let Some(line) = lines.next() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("#[") {
-                attributes.push_str(trimmed);
-                attributes.push('\n');
-                continue;
+    fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
+        use std::collections::{BTreeMap, BTreeSet};
+        struct Definition {
+            attributes: String,
+            fields: Vec<(String, String)>,
+            file: String,
+        }
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
             }
-            if trimmed.starts_with("//") {
-                continue;
-            }
-            let declaration = trimmed
-                .strip_prefix("pub(crate) ")
-                .or_else(|| trimmed.strip_prefix("pub "))
-                .unwrap_or(trimmed);
-            if let Some(rest) = declaration.strip_prefix("struct ") {
-                if attributes.contains("Deserialize") && declaration.ends_with('{') {
-                    let name = rest
-                        .split(|c: char| !c.is_alphanumeric() && c != '_')
-                        .next()
-                        .unwrap();
-                    let mut multi_word = Vec::new();
-                    for field in lines.by_ref() {
-                        let field = field.trim();
-                        if field == "}" {
-                            break;
-                        }
-                        let field = field.strip_prefix("pub ").unwrap_or(field);
-                        if let Some((field_name, _)) = field.split_once(':') {
-                            if !field_name.starts_with("//")
-                                && !field_name.starts_with('#')
-                                && field_name.contains('_')
-                            {
-                                multi_word.push(field_name.to_owned());
+        }
+        fn words(text: &str) -> Vec<&str> {
+            text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let mut definitions: BTreeMap<String, Definition> = BTreeMap::new();
+        let mut command_parameters: Vec<(String, String)> = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            let code = &text[..end];
+            let mut attributes = String::new();
+            let mut lines = code.lines().peekable();
+            while let Some(line) = lines.next() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("#[") {
+                    attributes.push_str(trimmed);
+                    attributes.push('\n');
+                    continue;
+                }
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                let declaration = trimmed
+                    .strip_prefix("pub(crate) ")
+                    .or_else(|| trimmed.strip_prefix("pub "))
+                    .unwrap_or(trimmed);
+                if attributes.contains("tauri::command") {
+                    // The parameter list, however many lines it takes.
+                    let mut signature = declaration.to_owned();
+                    while !signature.contains("->") && !signature.contains('{') {
+                        match lines.next() {
+                            Some(next) => {
+                                signature.push(' ');
+                                signature.push_str(next.trim());
                             }
+                            None => break,
                         }
                     }
-                    let listed = not_from_the_renderer
-                        .iter()
-                        .any(|(listed, _)| *listed == name);
-                    if !multi_word.is_empty()
-                        && !attributes.contains("rename_all = \"camelCase\"")
-                        && !listed
-                    {
-                        offenders.push(format!("{name} ({})", multi_word.join(", ")));
+                    if let Some(open) = signature.find('(') {
+                        let function = signature[..open]
+                            .rsplit(' ')
+                            .next()
+                            .unwrap()
+                            .trim_end_matches(|c: char| c == '<' || c == '>')
+                            .to_owned();
+                        let parameters = &signature[open..];
+                        command_parameters.push((function, parameters.to_owned()));
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("struct ") {
+                    if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                        let struct_name = rest
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .next()
+                            .unwrap()
+                            .to_owned();
+                        let mut fields = Vec::new();
+                        for field in lines.by_ref() {
+                            let field = field.trim();
+                            if field == "}" {
+                                break;
+                            }
+                            if field.starts_with("//") || field.starts_with('#') {
+                                continue;
+                            }
+                            let field = field.strip_prefix("pub ").unwrap_or(field);
+                            if let Some((field_name, field_type)) = field.split_once(':') {
+                                fields.push((
+                                    field_name.trim().to_owned(),
+                                    field_type.trim().trim_end_matches(',').to_owned(),
+                                ));
+                            }
+                        }
+                        definitions.insert(
+                            struct_name,
+                            Definition {
+                                attributes: attributes.clone(),
+                                fields,
+                                file: name.clone(),
+                            },
+                        );
+                    }
+                }
+                attributes.clear();
+            }
+        }
+        // The structs a command takes, and (for the camelCase rule only) every struct they hold.
+        let mut at_the_command = BTreeSet::new();
+        for (_, parameters) in &command_parameters {
+            for word in words(parameters) {
+                if definitions.contains_key(word) {
+                    at_the_command.insert(word.to_owned());
+                }
+            }
+        }
+        assert!(
+            at_the_command.len() >= 40,
+            "only {} command argument structs found: the scan is not reading the commands",
+            at_the_command.len()
+        );
+        let mut every = at_the_command.clone();
+        let mut pending: Vec<String> = at_the_command.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            for (_, field_type) in &definitions[&name].fields {
+                for word in words(field_type) {
+                    if definitions.contains_key(word) && every.insert(word.to_owned()) {
+                        pending.push(word.to_owned());
                     }
                 }
             }
-            attributes.clear();
         }
-        assert!(
-            offenders.is_empty(),
-            "these request structs need #[serde(rename_all = \"camelCase\")]: {offenders:?}"
-        );
+        let mut problems = Vec::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let multi_word = definition
+                .fields
+                .iter()
+                .any(|(field, _)| field.contains('_'));
+            if multi_word && !definition.attributes.contains("rename_all = \"camelCase\"") {
+                problems.push(format!(
+                    "{name} ({}) needs rename_all = \"camelCase\"",
+                    definition.file
+                ));
+            }
+            if at_the_command.contains(name)
+                && !definition.attributes.contains("deny_unknown_fields")
+            {
+                problems.push(format!(
+                    "{name} ({}) needs deny_unknown_fields",
+                    definition.file
+                ));
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
     }
 
     #[test]
