@@ -4,10 +4,15 @@
 //! that the session is still the one that sent it.
 
 use super::*;
+use crate::document_notifications::Platform;
 use crate::document_notifications::{Activation, NoticeToken, Owner, Policy};
 use crate::document_push::{
     enrollment_body, enrollment_reply, revocation_body, revocation_final, Enrollment, Exchange,
     PushOutcome, PushSource, MAX_REPLY, REVOCATIONS, SUBSCRIPTIONS,
+};
+use crate::ios_push::Token;
+use crate::ios_push_handles::{
+    binding_reply, handle_body, handle_digest, Binding, HandleMemory, HANDLES, MAX_HANDLE_REPLY,
 };
 
 /// What the vault can say about remote notices: counts only, never which clinics.
@@ -28,6 +33,21 @@ pub(crate) struct RemoteSync {
     pub(crate) enrolled: usize,
     pub(crate) forgotten: usize,
     pub(crate) revoked: usize,
+    pub(crate) waiting: usize,
+}
+
+/// What binding the iPhone token achieved. Entries still waiting are retried at a later opening.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct HandleSync {
+    /// The portal took the token.
+    pub(crate) bound: usize,
+    /// Already bound with this very token: nothing was sent.
+    pub(crate) unchanged: usize,
+    /// The portal did not know the destination: it was forgotten here, and the next opening
+    /// enrolls a new one. Not retried in this pass.
+    pub(crate) re_enroll: usize,
+    /// The portal refused what was sent (a bug); not sent again.
+    pub(crate) refused: usize,
     pub(crate) waiting: usize,
 }
 
@@ -201,6 +221,146 @@ impl VaultStore {
                     sync.forgotten += 1;
                 }
                 Enrollment::Later => sync.waiting += 1,
+            }
+        }
+        Ok(sync)
+    }
+
+    /// The patient's choice from the iPhone Settings switch. Turning it on opts in (an enrollment
+    /// for each completed link) and then binds the token Apple gave, when there is one; turning it
+    /// off queues the revocations and forgets what the Keychain remembered about each destination.
+    /// `token` is `None` when the ask was refused, timed out or failed: the choice is kept and
+    /// nothing is enrolled, because the permission the policy sees is not granted.
+    pub(crate) fn set_iphone_push(
+        &self,
+        enabled: bool,
+        token: Option<&Token>,
+        state: &crate::ios_push_handles::IosPushState,
+        memory: &dyn HandleMemory,
+        session: u64,
+        exchange: &impl Exchange,
+    ) -> Result<(RemoteSync, HandleSync), VaultError> {
+        if !enabled {
+            for id in self.iphone_destination_ids()? {
+                memory.forget(id);
+            }
+        }
+        let synced = self.set_remote_notices(enabled, state, session, exchange)?;
+        let bound = match token {
+            Some(token) if enabled => self.bind_push_handles(token, memory, session, exchange)?,
+            _ => HandleSync::default(),
+        };
+        Ok((synced, bound))
+    }
+
+    /// The ids of the iPhone destinations this vault holds, enrolled or not.
+    pub(crate) fn iphone_destination_ids(&self) -> Result<Vec<Uuid>, VaultError> {
+        let guard = self.session();
+        let open = guard.as_ref().ok_or(VaultError::Locked)?;
+        Ok(open
+            .manifest
+            .remote_notices
+            .active()
+            .iter()
+            .filter(|d| d.platform() == Platform::IosApns)
+            .map(|d| d.id())
+            .collect())
+    }
+
+    /// Enrolls what is waiting, and only then binds the iPhone token to the enrolled destinations:
+    /// the portal knows a destination only once it was enrolled, so the order is fixed.
+    // The opening-time refresh that calls this needs the app handle `after_open` does not have yet.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn sync_and_bind_push_handle(
+        &self,
+        source: &dyn PushSource,
+        token: Option<&Token>,
+        memory: &dyn HandleMemory,
+        session: u64,
+        exchange: &impl Exchange,
+    ) -> Result<(RemoteSync, HandleSync), VaultError> {
+        let synced = self.sync_remote_notices(Some(source), session, exchange)?;
+        let bound = match token {
+            Some(token) => self.bind_push_handles(token, memory, session, exchange)?,
+            None => HandleSync::default(),
+        };
+        Ok((synced, bound))
+    }
+
+    /// Sends the Apple token for each enrolled iPhone destination whose remembered digest differs
+    /// from this token's. A 200 or 201 is remembered; a 404 forgets the destination (no retry here);
+    /// a 400 is a bug and is not sent again; anything else waits for a later opening. No network
+    /// call is made under the vault lock.
+    pub(crate) fn bind_push_handles(
+        &self,
+        token: &Token,
+        memory: &dyn HandleMemory,
+        session: u64,
+        exchange: &impl Exchange,
+    ) -> Result<HandleSync, VaultError> {
+        let cancelled = || self.portal_link_ticket() != session;
+        if cancelled() {
+            return Err(VaultError::Cancelled);
+        }
+        let (destinations, links) = {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if open.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+            let policy = Self::remote_policy(&open.manifest)?;
+            let enrolled = policy
+                .saved()
+                .active()
+                .iter()
+                .filter(|d| d.platform() == Platform::IosApns && d.subscription_id().is_some())
+                .cloned()
+                .collect::<Vec<_>>();
+            (enrolled, open.manifest.portal_links.clone())
+        };
+        let mut sync = HandleSync::default();
+        for destination in destinations {
+            let digest = handle_digest(destination.id(), token);
+            if memory.recall(destination.id()) == Some(digest) {
+                sync.unchanged += 1;
+                continue;
+            }
+            let Some(link) = links.iter().find(|l| {
+                l.id == destination.owner().link_id()
+                    && l.clinic.is_some()
+                    && l.keys.device_key_id() == destination.owner().device_key_id()
+            }) else {
+                sync.waiting += 1;
+                continue;
+            };
+            let reply = match exchange(
+                link,
+                "POST",
+                HANDLES,
+                handle_body(destination.id(), token),
+                None,
+                MAX_HANDLE_REPLY,
+                &cancelled,
+            ) {
+                Ok(reply) => binding_reply(reply.status, &reply.body),
+                Err(crate::portal_link::LinkError::Cancelled) => return Err(VaultError::Cancelled),
+                Err(_) => Binding::Later,
+            };
+            match reply {
+                Binding::Bound => {
+                    // A memory that cannot keep the digest only means one more send next time.
+                    let _ = memory.remember(destination.id(), digest);
+                    sync.bound += 1;
+                }
+                Binding::ReEnroll => {
+                    memory.forget(destination.id());
+                    self.apply_remote(session, |policy| {
+                        policy.forget_destination(destination.id())
+                    })?;
+                    sync.re_enroll += 1;
+                }
+                Binding::Refused => sync.refused += 1,
+                Binding::Later => sync.waiting += 1,
             }
         }
         Ok(sync)
@@ -810,5 +970,433 @@ mod tests {
         value.as_object_mut().unwrap().remove("remoteNotices");
         let without: Manifest = serde_json::from_value(value).unwrap();
         assert!(without.remote_notices.is_empty());
+    }
+
+    // ---- the iPhone push handle (piece 1) ----
+
+    mod handles {
+        use super::*;
+        use crate::ios_push::Refusal;
+        use crate::ios_push_handles::{fake_token, FakeHandleMemory, IosPushState};
+
+        /// A FAKE portal for an iPhone: enrolls, and answers the handles route as `handles` says.
+        fn iphone_portal<'a>(
+            seen: &'a RefCell<Vec<Seen>>,
+            handles: impl Fn(&serde_json::Value) -> (u16, serde_json::Value) + 'a,
+        ) -> impl Exchange + 'a {
+            move |link: &StoredLink,
+                  method: &str,
+                  path: &str,
+                  body: Vec<u8>,
+                  anchor: Option<&str>,
+                  _max: usize,
+                  _: &dyn Fn() -> bool| {
+                assert_eq!((method, anchor), ("POST", None));
+                let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                seen.borrow_mut()
+                    .push((link.id, method.into(), path.into(), body.clone()));
+                if path == HANDLES {
+                    let (status, answer) = handles(&body);
+                    return reply(status, answer);
+                }
+                assert_eq!(path, SUBSCRIPTIONS);
+                reply(
+                    201,
+                    serde_json::json!({
+                        "subscription_id": Uuid::new_v4().to_string(),
+                        "epoch": Uuid::new_v4().to_string(),
+                        "destination_id": body["destination_id"],
+                        "platform": body["platform"],
+                        "remote_enabled": true,
+                        "remote_consent_version": 1,
+                        "permission_observed": true,
+                        "enrolled_at": "2026-11-05T00:00:00Z",
+                        "revoked": false,
+                    }),
+                )
+            }
+        }
+
+        fn allowed() -> IosPushState {
+            let state = IosPushState::default();
+            state.record_permission("authorized");
+            state
+        }
+
+        fn opted_in(store: &VaultStore, state: &IosPushState, exchange: &impl Exchange) {
+            // Opting in enrolls first; the token is bound afterwards, by `sync_and_bind_push_handle`.
+            store
+                .set_remote_notices(true, state, store.portal_link_ticket(), exchange)
+                .unwrap();
+        }
+
+        fn paths(seen: &RefCell<Vec<Seen>>) -> Vec<String> {
+            seen.borrow().iter().map(|s| s.2.clone()).collect()
+        }
+
+        #[test]
+        fn the_destination_is_enrolled_before_its_token_is_bound() {
+            let (_temp, store, links) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            let (synced, bound) = store
+                .sync_and_bind_push_handle(
+                    &state,
+                    Some(&token),
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            // Not opted in yet: nothing is enrolled, so nothing is bound.
+            assert_eq!((synced.enrolled, bound.bound), (0, 0));
+            assert!(paths(&seen).is_empty());
+
+            opted_in(&store, &state, &exchange);
+            seen.borrow_mut().clear();
+            let (_, bound) = store
+                .sync_and_bind_push_handle(
+                    &state,
+                    Some(&token),
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            assert_eq!((bound.bound, bound.unchanged), (2, 0));
+            assert!(paths(&seen).iter().all(|p| p == HANDLES));
+            // Each enrolled destination, once, signed for its own link.
+            let seen = seen.borrow().clone();
+            assert_eq!(
+                seen.iter().map(|s| s.0).collect::<Vec<_>>(),
+                links.iter().map(|l| l.id).collect::<Vec<_>>()
+            );
+            for (_, _, _, body) in &seen {
+                assert_eq!(
+                    body.as_object().unwrap().keys().collect::<Vec<_>>(),
+                    ["destination_id", "environment", "platform", "token"]
+                );
+                assert_eq!(body["platform"], "ios_apns");
+                assert_eq!(body["environment"], "sandbox");
+                assert_eq!(body["token"], "ab".repeat(32));
+            }
+        }
+
+        #[test]
+        fn enrolling_comes_first_when_both_are_owed() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            // Reserved but not yet enrolled: the portal is unreachable at opting in.
+            let down = |_: &StoredLink,
+                        _: &str,
+                        _: &str,
+                        _: Vec<u8>,
+                        _: Option<&str>,
+                        _: usize,
+                        _: &dyn Fn() -> bool| Err(LinkError::Network);
+            let _ = store.set_remote_notices(true, &state, store.portal_link_ticket(), &down);
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("production", "cd");
+            let (synced, bound) = store
+                .sync_and_bind_push_handle(
+                    &state,
+                    Some(&token),
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            assert_eq!((synced.enrolled, bound.bound), (2, 2));
+            let order = paths(&seen);
+            assert_eq!(
+                order,
+                [SUBSCRIPTIONS, SUBSCRIPTIONS, HANDLES, HANDLES],
+                "every enrollment is sent before any token"
+            );
+        }
+
+        #[test]
+        fn a_token_the_portal_already_holds_is_not_sent_again_but_a_new_one_is() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (200, serde_json::json!({})));
+            let state = allowed();
+            opted_in(&store, &state, &exchange);
+            let memory = FakeHandleMemory::default();
+            let session = || store.portal_link_ticket();
+            let first = fake_token("sandbox", "ab");
+            let bind = |token: &Token| {
+                store
+                    .bind_push_handles(token, &memory, session(), &exchange)
+                    .unwrap()
+            };
+            seen.borrow_mut().clear();
+            assert_eq!(bind(&first).bound, 2);
+            assert_eq!(seen.borrow().len(), 2);
+            // The next unlock gives the same token: nothing goes to the portal.
+            seen.borrow_mut().clear();
+            let again = bind(&first);
+            assert_eq!((again.bound, again.unchanged), (0, 2));
+            assert!(seen.borrow().is_empty());
+            // Apple handed out another token, or the build moved to production: sent again.
+            for next in [fake_token("sandbox", "cd"), fake_token("production", "ab")] {
+                seen.borrow_mut().clear();
+                assert_eq!(bind(&next).bound, 2, "{next:?}");
+                assert_eq!(seen.borrow().len(), 2);
+                assert_eq!(bind(&next).unchanged, 2);
+            }
+        }
+
+        #[test]
+        fn a_memory_that_cannot_keep_the_digest_only_means_another_send() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            opted_in(&store, &state, &exchange);
+            let memory = FakeHandleMemory::default();
+            memory
+                .refuse_writes
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let token = fake_token("sandbox", "ab");
+            for _ in 0..2 {
+                let done = store
+                    .bind_push_handles(&token, &memory, store.portal_link_ticket(), &exchange)
+                    .unwrap();
+                assert_eq!((done.bound, done.unchanged), (2, 0));
+            }
+        }
+
+        #[test]
+        fn a_404_forgets_the_destination_and_is_not_retried_and_the_next_opening_enrolls_a_new_one()
+        {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let refusing =
+                iphone_portal(&seen, |_| (404, serde_json::json!({"detail": "not found"})));
+            let state = allowed();
+            opted_in(&store, &state, &refusing);
+            let before: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            let memory = FakeHandleMemory::default();
+            for id in &before {
+                memory.remember(*id, [9; 32]);
+            }
+            let token = fake_token("sandbox", "ab");
+            seen.borrow_mut().clear();
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &refusing)
+                .unwrap();
+            assert_eq!((done.re_enroll, done.bound, done.waiting), (2, 0, 0));
+            // One request each: no retry in the same pass.
+            assert_eq!(seen.borrow().len(), 2);
+            assert!(saved(&store).active().is_empty());
+            assert!(before.iter().all(|id| memory.recall(*id).is_none()));
+            // The next opening reserves and enrolls fresh ids, then binds them.
+            let healthy = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            store
+                .set_remote_notices(true, &state, store.portal_link_ticket(), &healthy)
+                .unwrap();
+            let after: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            assert_eq!(after.len(), 2);
+            assert!(after.iter().all(|id| !before.contains(id)));
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &healthy)
+                .unwrap();
+            assert_eq!(done.bound, 2);
+        }
+
+        #[test]
+        fn a_400_is_a_bug_and_a_503_is_later_and_neither_is_remembered() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let state = allowed();
+            let ok = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            opted_in(&store, &state, &ok);
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+
+            let bug = iphone_portal(&seen, |_| {
+                (400, serde_json::json!({"code": "invalid_handle"}))
+            });
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &bug)
+                .unwrap();
+            assert_eq!((done.refused, done.waiting, done.bound), (2, 0, 0));
+            assert_eq!(saved(&store).active().len(), 2, "destinations are kept");
+
+            let busy = iphone_portal(&seen, |_| {
+                (503, serde_json::json!({"code": "handles_unavailable"}))
+            });
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &busy)
+                .unwrap();
+            assert_eq!((done.waiting, done.refused, done.bound), (2, 0, 0));
+            assert!(memory.kept.lock().unwrap().is_empty());
+
+            // Later it works: sent, then remembered.
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &ok)
+                .unwrap();
+            assert_eq!(done.bound, 2);
+            assert_eq!(memory.kept.lock().unwrap().len(), 2);
+        }
+
+        #[test]
+        fn no_answer_waits_and_an_ended_session_is_cancelled() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let state = allowed();
+            let ok = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            opted_in(&store, &state, &ok);
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            let offline = |_: &StoredLink,
+                           _: &str,
+                           _: &str,
+                           _: Vec<u8>,
+                           _: Option<&str>,
+                           _: usize,
+                           _: &dyn Fn() -> bool| Err(LinkError::Network);
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &offline)
+                .unwrap();
+            assert_eq!((done.waiting, done.bound), (2, 0));
+            let stale = store.portal_link_ticket().wrapping_add(1);
+            assert!(matches!(
+                store.bind_push_handles(&token, &memory, stale, &ok),
+                Err(VaultError::Cancelled)
+            ));
+        }
+
+        #[test]
+        fn only_enrolled_iphone_destinations_get_a_token_and_none_when_notices_are_off() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let ok = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            // Notices refused by the iPhone: the policy cannot notify, so nothing is enrolled.
+            let state = IosPushState::default();
+            state.record_refusal(Refusal::PermissionRefused);
+            store
+                .set_remote_notices(true, &state, store.portal_link_ticket(), &ok)
+                .unwrap();
+            assert!(paths(&seen).is_empty());
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &ok)
+                .unwrap();
+            assert_eq!(done, HandleSync::default());
+            assert!(paths(&seen).is_empty());
+        }
+
+        #[test]
+        fn the_token_is_never_written_into_the_vault_files() {
+            let (temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let ok = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            opted_in(&store, &state, &ok);
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &ok)
+                .unwrap();
+            let needle = "ab".repeat(32);
+            for bytes in files_under(temp.path()) {
+                assert!(
+                    !bytes.windows(needle.len()).any(|w| w == needle.as_bytes()),
+                    "the token is in a vault file"
+                );
+            }
+        }
+
+        #[test]
+        fn turning_it_on_enrolls_then_binds_and_off_revokes_and_forgets_what_was_kept() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("production", "ef");
+            let (synced, bound) = store
+                .set_iphone_push(
+                    true,
+                    Some(&token),
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            assert_eq!((synced.enrolled, bound.bound), (2, 2));
+            assert_eq!(
+                paths(&seen),
+                [SUBSCRIPTIONS, SUBSCRIPTIONS, HANDLES, HANDLES]
+            );
+            assert_eq!(memory.kept.lock().unwrap().len(), 2);
+            let ids = store.iphone_destination_ids().unwrap();
+            assert_eq!(ids.len(), 2);
+
+            seen.borrow_mut().clear();
+            let confirm = |link: &StoredLink,
+                           method: &str,
+                           path: &str,
+                           body: Vec<u8>,
+                           _: Option<&str>,
+                           _: usize,
+                           _: &dyn Fn() -> bool| {
+                assert_eq!((method, path), ("POST", REVOCATIONS));
+                let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                seen.borrow_mut()
+                    .push((link.id, method.into(), path.into(), body.clone()));
+                reply(
+                    200,
+                    serde_json::json!({"destination_id": body["destination_id"], "revoked": true}),
+                )
+            };
+            store
+                .set_iphone_push(
+                    false,
+                    None,
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &confirm,
+                )
+                .unwrap();
+            assert!(memory.kept.lock().unwrap().is_empty());
+            assert_eq!(paths(&seen), [REVOCATIONS, REVOCATIONS]);
+        }
+
+        #[test]
+        fn a_refused_ask_keeps_the_choice_and_enrolls_and_binds_nothing() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = IosPushState::default();
+            state.record_refusal(Refusal::PermissionRefused);
+            let memory = FakeHandleMemory::default();
+            let (synced, bound) = store
+                .set_iphone_push(
+                    true,
+                    None,
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            assert_eq!(
+                (synced, bound),
+                (RemoteSync::default(), HandleSync::default())
+            );
+            assert!(paths(&seen).is_empty());
+            assert!(store.remote_notice_status(Some(&state)).unwrap().opted_in);
+        }
     }
 }
