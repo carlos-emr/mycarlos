@@ -34,6 +34,8 @@ pub(crate) enum Refusal {
     /// Apple, or the plugin, could not produce one.
     Unavailable,
     /// This build has no iPhone push plugin (not an iPhone).
+    // Built only by the app piece that follows, so the test build on Linux sees it as unused.
+    #[allow(dead_code)]
     NotAnIphone,
     /// The plugin answered something this app does not accept (a malformed token or an unknown
     /// Apple service).
