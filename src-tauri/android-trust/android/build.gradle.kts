@@ -6,7 +6,10 @@ plugins {
 }
 
 // The platform verifier's Kotlin half (rustls-platform-verifier-android) is published as a Maven
-// artifact, not on Maven Central. It is fetched from its own repository and from nowhere else,
+// artifact (org.rustls:rustls-platform-verifier), not on Maven Central. The URL names a COMMIT of
+// the archive branch, not the moving branch, and the bytes are pinned too: the patcher
+// (scripts/configure-android-security.mjs) writes a Gradle dependency-verification file with the
+// SHA-256 of the .aar and .pom for this one component. It is fetched from its own repository and from nowhere else,
 // and only that group may come from there, so that repository can never serve another artifact
 // (a dependency-confusion door shut). Its version is the one in Cargo.lock: the native crate and
 // this component must be identical. The repository is added to every project of the build, not
@@ -18,11 +21,11 @@ rootProject.allprojects {
         exclusiveContent {
             forRepository {
                 maven {
-                    url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/")
+                    url = uri("https://github.com/rustls/rustls-platform-verifier/raw/1aa691352a5e0c215210dfc9a3c2f2078639dc91/android-release-support/maven/")
                 }
             }
             filter {
-                includeGroup("rustls")
+                includeGroup("org.rustls")
             }
         }
     }
@@ -67,5 +70,5 @@ android {
 
 dependencies {
     implementation(project(":tauri-android"))
-    implementation("rustls:rustls-platform-verifier:$verifierVersion")
+    implementation("org.rustls:rustls-platform-verifier:$verifierVersion")
 }

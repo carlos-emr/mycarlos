@@ -11,6 +11,56 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RULES_NAME = "mycarlos_data_extraction_rules";
+
+// The Android trust plugin fetches the platform verifier's Kotlin half from the crate authors' Maven
+// archive (src-tauri/android-trust/android/build.gradle.kts, a URL pinned to a commit). Gradle
+// checks the bytes it gets against these SHA-256 values, so a changed archive fails the build. They
+// are the hashes of the 0.2.0 files at that commit
+// (`curl -L <commit URL>/org/rustls/rustls-platform-verifier/0.2.0/rustls-platform-verifier-0.2.0.aar | sha256sum`);
+// when Cargo.lock moves rustls-platform-verifier-android, the version, the commit and the values
+// move together (scripts/android-trust-gradle.test.mjs fails until they do).
+export const VERIFIER_COMPONENT = {
+  group: "org.rustls",
+  name: "rustls-platform-verifier",
+  version: "0.2.0",
+  files: {
+    "rustls-platform-verifier-0.2.0.aar":
+      "aa021794230fbc2f0be355999e2cf67398dd563de066a2e17001ffbd0b69101b",
+    "rustls-platform-verifier-0.2.0.pom":
+      "78dcb69a1a20e91e72017de9a67104bba1874a7ecc8e6dcdfb2fe1a85de6b362",
+  },
+};
+
+/**
+ * Gradle's dependency-verification file for the generated project: the verifier component's files
+ * must match the SHA-256 values above; everything else the build fetches is trusted as before (the
+ * file verifies one component, it does not turn the whole build's resolution into a lock file).
+ */
+export function verificationMetadata(component = VERIFIER_COMPONENT) {
+  const artifacts = Object.entries(component.files)
+    .map(
+      ([file, sha256]) =>
+        `      <artifact name="${file}">\n        <sha256 value="${sha256}"/>\n      </artifact>`,
+    )
+    .join("\n");
+  const group = component.group.replaceAll(".", "\\.");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<verification-metadata xmlns="https://schema.gradle.org/dependency-verification" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://schema.gradle.org/dependency-verification https://schema.gradle.org/dependency-verification/dependency-verification-1.3.xsd">
+  <configuration>
+    <verify-metadata>false</verify-metadata>
+    <verify-signatures>false</verify-signatures>
+    <trusted-artifacts>
+      <trust group="^(?!${group}$).*" regex="true"/>
+    </trusted-artifacts>
+  </configuration>
+  <components>
+    <component group="${component.group}" name="${component.name}" version="${component.version}">
+${artifacts}
+    </component>
+  </components>
+</verification-metadata>
+`;
+}
 const DOMAINS = [
   "root",
   "file",
@@ -301,6 +351,21 @@ export async function configureAndroidSecurity(
   await mkdir(resources, { recursive: true });
   await writeFile(join(resources, `${RULES_NAME}.xml`), RULES, "utf8");
   await writeFile(manifestPath, manifest, "utf8");
+
+  // The generated Gradle project is three levels above the manifest (app/src/main).
+  const gradleDirectory = join(
+    dirname(manifestPath),
+    "..",
+    "..",
+    "..",
+    "gradle",
+  );
+  await mkdir(gradleDirectory, { recursive: true });
+  await writeFile(
+    join(gradleDirectory, "verification-metadata.xml"),
+    verificationMetadata(),
+    "utf8",
+  );
 
   const activity = await findMainActivity(join(dirname(manifestPath), "java"));
   if (!activity) {

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {
+  VERIFIER_COMPONENT,
+  verificationMetadata,
+} from "./configure-android-security.mjs";
 
 // The Gradle file of the Android trust plugin (src-tauri/android-trust/android) is the one place
 // that fetches the verifier's Kotlin half from outside Maven Central. These tests pin the supply
@@ -21,9 +25,9 @@ test("the extra Maven repository serves only the verifier's group and nothing el
   assert.match(gradle, /exclusiveContent\s*\{/);
   assert.match(
     gradle,
-    /exclusiveContent\s*\{\s*forRepository\s*\{\s*maven\s*\{\s*url = uri\("https:\/\/github\.com\/rustls\/rustls-platform-verifier\/raw\/maven-archive\/android-release-support\/maven\/"\)/s,
+    /exclusiveContent\s*\{\s*forRepository\s*\{\s*maven\s*\{\s*url = uri\("https:\/\/github\.com\/rustls\/rustls-platform-verifier\/raw\/1aa691352a5e0c215210dfc9a3c2f2078639dc91\/android-release-support\/maven\/"\)/s,
   );
-  assert.match(gradle, /filter\s*\{\s*includeGroup\("rustls"\)\s*\}/);
+  assert.match(gradle, /filter\s*\{\s*includeGroup\("org\.rustls"\)\s*\}/);
   // No second group may be admitted through that repository.
   assert.equal((gradle.match(/includeGroup/g) ?? []).length, 1);
   assert.doesNotMatch(
@@ -49,7 +53,7 @@ test("the verifier's Kotlin half is pinned to the version in Cargo.lock, not to 
   assert.match(gradle, /File\(projectDir, "\.\.\/\.\.\/Cargo\.lock"\)/);
   assert.match(
     gradle,
-    /implementation\("rustls:rustls-platform-verifier:\$verifierVersion"\)/,
+    /implementation\("org\.rustls:rustls-platform-verifier:\$verifierVersion"\)/,
   );
   // No literal version of it anywhere in the file.
   assert.doesNotMatch(gradle, /rustls-platform-verifier:\d/);
@@ -89,4 +93,35 @@ test("the plugin passes the application context, never the activity", async () =
   assert.match(kotlin, /nativeInit\(activity\.applicationContext\)/);
   assert.doesNotMatch(kotlin, /nativeInit\(activity\)/);
   assert.doesNotMatch(kotlin, /Log\.|println/);
+});
+
+test("the archive is named by a commit, never by a branch that can move", () => {
+  assert.match(gradle, /raw\/[0-9a-f]{40}\/android-release-support\/maven\//);
+  assert.doesNotMatch(gradle, /raw\/(maven-archive|main|master|HEAD)\b/);
+});
+
+test("Gradle checks the verifier's bytes: version, files and SHA-256 values travel with Cargo.lock", () => {
+  // The version the crate lock asks for is the one whose hashes are written down.
+  const at = lock.indexOf('name = "rustls-platform-verifier-android"');
+  const version = /version = "([^"]+)"/.exec(lock.slice(at))?.[1];
+  assert.equal(VERIFIER_COMPONENT.version, version);
+  assert.equal(VERIFIER_COMPONENT.group, "org.rustls");
+  assert.deepEqual(Object.keys(VERIFIER_COMPONENT.files).sort(), [
+    `rustls-platform-verifier-${version}.aar`,
+    `rustls-platform-verifier-${version}.pom`,
+  ]);
+  for (const sha256 of Object.values(VERIFIER_COMPONENT.files)) {
+    assert.match(sha256, /^[0-9a-f]{64}$/);
+  }
+  const xml = verificationMetadata();
+  for (const [file, sha256] of Object.entries(VERIFIER_COMPONENT.files)) {
+    assert.ok(xml.includes(`<artifact name="${file}">`), file);
+    assert.ok(xml.includes(`<sha256 value="${sha256}"/>`), file);
+  }
+  // Everything but that one group is trusted as before; that group has no trust of its own.
+  assert.match(
+    xml,
+    /<trust group="\^\(\?!org\\\.rustls\$\)\.\*" regex="true"\/>/,
+  );
+  assert.match(xml, /<verify-metadata>false<\/verify-metadata>/);
 });
