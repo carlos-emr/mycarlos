@@ -84,12 +84,16 @@ pub(crate) trait Bus: Send + Sync + 'static {
 /// question opens a fresh bus connection, so asking again within this time repeats the last answer.
 const PERMISSION_TTL: Duration = Duration::from_secs(15);
 
-/// What every bus call of one backend shares: at most one call at a time, and the last permission
-/// answer. A bus call that never returns (a hung notification daemon) leaves its thread and socket
-/// behind, so while one is outstanding no other is started: the answer is an immediate refusal
-/// or "Unavailable" until it ends.
+/// What every bus call of one backend shares: at most one call at a time, when it began, and the
+/// last permission answer. A bus call that never returns (a hung notification daemon) leaves its
+/// thread and socket behind, so while one is outstanding no other is started. A new call meets
+/// one of two cases: the outstanding call is younger than the timeout (an ordinary call still on
+/// its way, such as a settings poll's permission question), so it waits for it and then runs; or it
+/// is older (the daemon is hung), so it is refused at once.
 struct Gate {
     outstanding: AtomicBool,
+    /// When the outstanding call began.
+    since: Mutex<Option<Instant>>,
     permission: Mutex<Option<(Instant, Permission)>>,
     ttl: Duration,
 }
@@ -98,17 +102,40 @@ impl Gate {
     fn new(ttl: Duration) -> Self {
         Self {
             outstanding: AtomicBool::new(false),
+            since: Mutex::new(None),
             permission: Mutex::new(None),
             ttl,
         }
     }
+
+    /// How old the outstanding call is, if there is one.
+    fn age(&self) -> Option<Duration> {
+        self.since
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .map(|began| began.elapsed())
+    }
+
+    /// A permission answer, kept now. Written by the worker as its call ends, so a late success
+    /// after the caller gave up still refreshes the answer.
+    fn remember(&self, answer: Permission) {
+        *self
+            .permission
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((Instant::now(), answer));
+    }
 }
 
-/// Clears the outstanding flag when the call's thread ends, however it ends (a panic included).
+/// Clears the outstanding mark when the call's thread ends, however it ends (a panic included).
 struct Release(Arc<Gate>);
 
 impl Drop for Release {
     fn drop(&mut self) {
+        *self
+            .0
+            .since
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         self.0.outstanding.store(false, Ordering::SeqCst);
     }
 }
@@ -119,35 +146,61 @@ enum Call<T> {
     Done(T),
     /// It panicked, could not be started or did not answer in time.
     Lost,
-    /// Another call was still outstanding, so none was started.
+    /// Another call was outstanding for longer than the timeout (or the wait for a younger one
+    /// ran out), so none was started.
     Busy,
 }
 
-/// Runs `call` on its own thread and waits at most `timeout` for its answer. With another call
-/// outstanding no thread is started at all.
+/// Runs `call` on its own thread and waits at most `timeout` for its answer. `record` runs on that
+/// thread with the answer, before the outstanding mark is cleared and before the answer is sent.
+/// With another call outstanding: a young one is waited for (up to what is left of its timeout)
+/// and then this one runs; an old one means no thread is started at all.
 fn within<T: Send + 'static>(
     gate: &Arc<Gate>,
     timeout: Duration,
+    record: impl FnOnce(&T) + Send + 'static,
     call: impl FnOnce() -> T + Send + 'static,
 ) -> Call<T> {
-    if gate.outstanding.swap(true, Ordering::SeqCst) {
-        return Call::Busy;
+    let mut give_up: Option<Instant> = None;
+    while gate.outstanding.swap(true, Ordering::SeqCst) {
+        let until = match give_up {
+            Some(until) => until,
+            None => {
+                // The call that is out has this long left before it counts as hung.
+                let Some(age) = gate.age().filter(|age| *age < timeout) else {
+                    return Call::Busy;
+                };
+                let until = Instant::now() + (timeout - age);
+                give_up = Some(until);
+                until
+            }
+        };
+        if Instant::now() >= until {
+            return Call::Busy;
+        }
+        thread::sleep(Duration::from_millis(10));
     }
+    *gate
+        .since
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
     let release = Release(Arc::clone(gate));
     let (send, receive) = mpsc::channel();
     // The thread is left to finish on its own if the answer comes too late, and says so by
-    // clearing the flag when it does.
+    // clearing the mark when it does.
     let spawned = thread::Builder::new()
         .name("mycarlos-notice-bus".into())
         .spawn(move || {
-            // The flag is cleared before the answer is sent, so a caller that gets the answer and
-            // asks again at once is never turned away as "busy" by the call it just finished.
             let answer = call();
+            // Written before the mark is cleared, so the writes are ordered, and cleared before the
+            // answer is sent, so a caller that gets the answer and asks again at once is never
+            // turned away as busy by the call it just finished.
+            record(&answer);
             drop(release);
             let _ = send.send(answer);
         });
     if spawned.is_err() {
-        // The closure (and its Release) was dropped with the failed spawn, which cleared the flag.
+        // The closure (and its Release) was dropped with the failed spawn, which cleared the mark.
         return Call::Lost;
     }
     match receive.recv_timeout(timeout) {
@@ -206,23 +259,41 @@ impl<B: Bus> Backend for LinuxBackend<B> {
             }
         }
         let bus = Arc::clone(&self.bus);
-        let answer = match within(&self.gate, self.timeout, move || bus.service_present()) {
-            Call::Done(true) => Permission::Allowed,
-            Call::Done(false) | Call::Lost => Permission::Unavailable,
-            // Another call is still outstanding (a hung daemon): that is not a new answer about the
-            // bus, so the last one stands, however old, and nothing is remembered anew.
-            Call::Busy => {
-                return remembered.map_or(Permission::Unavailable, |(_, answer)| answer);
-            }
+        let started = Instant::now();
+        let gate = Arc::clone(&self.gate);
+        let recorded = move |present: &bool| {
+            gate.remember(if *present {
+                Permission::Allowed
+            } else {
+                Permission::Unavailable
+            });
         };
-        // A real answer, or a call that timed out, is kept for the TTL so that a hung bus costs
-        // one wait, not one per poll.
-        *self
-            .gate
-            .permission
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((Instant::now(), answer));
-        answer
+        match within(&self.gate, self.timeout, recorded, move || {
+            bus.service_present()
+        }) {
+            Call::Done(true) => Permission::Allowed,
+            Call::Done(false) => Permission::Unavailable,
+            // No answer in time: Unavailable, kept for the TTL so a hung bus costs one wait, not
+            // one per poll. A late answer from the same call replaces it (the worker writes
+            // after this), and one that already did is not overwritten by this.
+            Call::Lost => {
+                let mut kept = self
+                    .gate
+                    .permission
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                match *kept {
+                    Some((at, answer)) if at > started => answer,
+                    _ => {
+                        *kept = Some((Instant::now(), Permission::Unavailable));
+                        Permission::Unavailable
+                    }
+                }
+            }
+            // Another call is still outstanding (a hung daemon): that is not a new answer about
+            // the bus, so the last one stands, however old, and nothing is remembered anew.
+            Call::Busy => remembered.map_or(Permission::Unavailable, |(_, answer)| answer),
+        }
     }
 
     fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error> {
@@ -232,7 +303,12 @@ impl<B: Bus> Backend for LinuxBackend<B> {
             return Err(Error::Cancelled);
         }
         let bus = Arc::clone(&self.bus);
-        match within(&self.gate, self.timeout, move || bus.notify(&notice)) {
+        match within(
+            &self.gate,
+            self.timeout,
+            |_| {},
+            move || bus.notify(&notice),
+        ) {
             Call::Done(Ok(())) => Ok(()),
             _ => Err(Error::OsRejected),
         }
@@ -333,6 +409,8 @@ mod tests {
         Panics,
         /// A daemon that is there but refuses the notice.
         Refuses,
+        /// A healthy daemon that is a little slow to say it is there (100 ms), as a busy one is.
+        Slow,
     }
 
     struct FakeBus {
@@ -352,6 +430,10 @@ mod tests {
                     true
                 }
                 Behaviour::Panics => panic!("FAKE: the bus fell over"),
+                Behaviour::Slow => {
+                    thread::sleep(Duration::from_millis(100));
+                    true
+                }
                 Behaviour::Present | Behaviour::Refuses => true,
             }
         }
@@ -364,7 +446,7 @@ mod tests {
                 }
                 Behaviour::Panics => panic!("FAKE: the bus fell over"),
                 Behaviour::Absent | Behaviour::Refuses => Err(()),
-                Behaviour::Present => {
+                Behaviour::Present | Behaviour::Slow => {
                     self.sent.lock().unwrap().push(notice.clone());
                     Ok(())
                 }
@@ -615,5 +697,65 @@ mod tests {
         }
         assert_eq!(done.load(Ordering::SeqCst), 1);
         assert!(backend.accept(SENTENCE, &|| true).is_ok());
+    }
+
+    #[test]
+    fn a_notice_is_not_lost_because_a_permission_question_is_still_on_its_way() {
+        // A settings screen polls the permission (a bus call) just as a document arrives: the
+        // notice waits for that young call and is then shown, instead of being turned away.
+        let (backend, sent) = backend(Behaviour::Slow);
+        let backend = Arc::new(backend);
+        let poll = {
+            let backend = Arc::clone(&backend);
+            thread::spawn(move || backend.permission())
+        };
+        thread::sleep(Duration::from_millis(30));
+        let begun = Instant::now();
+        assert!(
+            backend.accept(SENTENCE, &|| true).is_ok(),
+            "the notice was lost"
+        );
+        // It waited for the poll (about 70 ms more) and then ran, well inside the timeout.
+        assert!(
+            begun.elapsed() >= Duration::from_millis(40),
+            "{:?}",
+            begun.elapsed()
+        );
+        assert!(
+            begun.elapsed() < Duration::from_millis(190),
+            "{:?}",
+            begun.elapsed()
+        );
+        assert_eq!(poll.join().unwrap(), Permission::Allowed);
+        assert_eq!(sent.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_late_answer_refreshes_the_remembered_permission() {
+        struct Late(Arc<AtomicUsize>);
+        impl Bus for Late {
+            fn service_present(&self) -> bool {
+                thread::sleep(Duration::from_millis(250));
+                self.0.fetch_add(1, Ordering::SeqCst);
+                true
+            }
+            fn notify(&self, _notice: &Notice) -> Result<(), ()> {
+                Ok(())
+            }
+        }
+        let asked = Arc::new(AtomicUsize::new(0));
+        let backend = LinuxBackend::with_bus(Late(Arc::clone(&asked)))
+            .with_timeout(Duration::from_millis(50));
+        // No answer in time: Unavailable.
+        assert_eq!(backend.permission(), Permission::Unavailable);
+        // The call ends (the bus was only slow) and its answer replaces the remembered one, so the
+        // next poll, inside the TTL, says Allowed without a new question.
+        let until = Instant::now() + Duration::from_secs(3);
+        while backend.gate.outstanding.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until);
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(backend.permission(), Permission::Allowed);
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
     }
 }
