@@ -1090,6 +1090,14 @@ pub enum VaultStatus {
     Unlocked,
 }
 
+/// What the sealed inbox's reconciliation at unlock needs from the open vault (see
+/// `VaultStore::begin_inbox_check`).
+pub(crate) struct InboxUnlock {
+    pub(crate) vault_id: Uuid,
+    pub(crate) keys: crate::sealed_inbox::InboxKeys,
+    pub(crate) record_ids: HashSet<Uuid>,
+}
+
 pub struct ImportSource {
     pub display_name: String,
     pub reader: Box<dyn Read + Send>,
@@ -1233,6 +1241,8 @@ struct UnlockedVault {
     start_recorded: bool,
     // Keep the OS lock until the session (and any operation using it) ends.
     storage_lock: Arc<File>,
+    // Whether this session has already reconciled the sealed inbox (#49): once per unlock.
+    inbox_checked: bool,
 }
 
 /// Releases admission even if the work returns an error or panics. No secrets
@@ -1862,6 +1872,7 @@ impl VaultStore {
             self.open_session(
                 &mut guard,
                 UnlockedVault {
+                    inbox_checked: false,
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms: None,
@@ -2084,6 +2095,7 @@ impl VaultStore {
             self.open_session(
                 guard,
                 UnlockedVault {
+                    inbox_checked: false,
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms,
@@ -2151,6 +2163,7 @@ impl VaultStore {
         self.open_session(
             guard,
             UnlockedVault {
+                inbox_checked: false,
                 storage_lock,
                 master_key,
                 recovery_key_set_at_ms,
@@ -3192,9 +3205,28 @@ impl VaultStore {
         now_ms: u64,
         how: &str,
     ) -> Result<ImportOutcome, VaultError> {
+        let record_ids = vec![None; sources.len()];
+        self.import_from_with_ids(profile_id, folder_ids, sources, record_ids, now_ms, how)
+    }
+
+    /// `import_from`, where a source may bring the id its record is created with (`record_ids`
+    /// is parallel to `sources`). The sealed inbox derives that id from the item (#49), so that
+    /// importing the same item twice (a crash between the manifest commit and the delete of the
+    /// item) is recognised: a source whose id is already a record of the vault, in any profile, is
+    /// counted as a skipped duplicate and its reader is never read.
+    pub(crate) fn import_from_with_ids(
+        &self,
+        profile_id: Uuid,
+        folder_ids: Vec<Uuid>,
+        sources: Vec<ImportSource>,
+        record_ids: Vec<Option<Uuid>>,
+        now_ms: u64,
+        how: &str,
+    ) -> Result<ImportOutcome, VaultError> {
         if sources.is_empty() {
             return Ok(ImportOutcome::default());
         }
+        debug_assert_eq!(sources.len(), record_ids.len());
         validate_import_count(sources.len())?;
         let mut guard = self.session();
         let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
@@ -3230,14 +3262,27 @@ impl VaultStore {
             .filter(|record| record.profile_id == profile_id)
             .map(|record| record.fingerprint.clone())
             .collect();
+        let known_record_ids: HashSet<Uuid> = unlocked
+            .manifest
+            .records
+            .iter()
+            .map(|record| record.id)
+            .collect();
+        let mut batch_record_ids = HashSet::new();
         let mut batch_fingerprints = HashSet::new();
         let mut staged = Vec::new();
         let mut skipped_duplicates = Vec::new();
         let mut unverified_signatures = Vec::new();
 
         let result = (|| {
-            for source in sources {
-                let record_id = Uuid::new_v4();
+            for (source, preset_id) in sources.into_iter().zip(record_ids) {
+                if let Some(preset) = preset_id {
+                    if known_record_ids.contains(&preset) || !batch_record_ids.insert(preset) {
+                        skipped_duplicates.push(sanitize_basename(&source.display_name));
+                        continue;
+                    }
+                }
+                let record_id = preset_id.unwrap_or_else(Uuid::new_v4);
                 let object_name = format!("{}.mcobj", Uuid::new_v4());
                 let object_path = stage.join(&object_name);
                 let mut object_key = Zeroizing::new([0_u8; 32]);
@@ -3415,6 +3460,52 @@ impl VaultStore {
     }
 
     /// The "Shared with me" profile's id for the open vault (#61).
+    /// What the unlock's reconciliation of the sealed inbox needs (#49): the vault's id, the inbox
+    /// keys (derived from the master key, dropped after use) and the ids of every record the
+    /// vault holds (an item whose derived record id is among them was imported already). Given
+    /// ONCE per unlocked session: a second call in the same session is `None`, so the work is
+    /// done at each unlock and not at each look at the list. `reopen_inbox_check` allows another
+    /// try after a failure. `Locked` when the vault is not open.
+    pub(crate) fn begin_inbox_check(&self) -> Result<Option<InboxUnlock>, VaultError> {
+        let mut guard = self.session();
+        let unlocked = guard.as_mut().ok_or(VaultError::Locked)?;
+        if unlocked.inbox_checked {
+            return Ok(None);
+        }
+        let vault_id = unlocked.manifest.vault_id;
+        let keys = crate::sealed_inbox::InboxKeys::derive(&unlocked.master_key, vault_id)
+            .map_err(|_| VaultError::Storage)?;
+        let record_ids = unlocked
+            .manifest
+            .records
+            .iter()
+            .map(|record| record.id)
+            .collect();
+        unlocked.inbox_checked = true;
+        Ok(Some(InboxUnlock {
+            vault_id,
+            keys,
+            record_ids,
+        }))
+    }
+
+    /// Lets the next look at the received files try the inbox reconciliation again.
+    pub(crate) fn reopen_inbox_check(&self) {
+        if let Some(unlocked) = self.session().as_mut() {
+            unlocked.inbox_checked = false;
+        }
+    }
+
+    /// The vault's id and inbox keys, to open a sealed item the patient confirmed.
+    pub(crate) fn inbox_keys(&self) -> Result<(Uuid, crate::sealed_inbox::InboxKeys), VaultError> {
+        let guard = self.session();
+        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
+        let vault_id = unlocked.manifest.vault_id;
+        let keys = crate::sealed_inbox::InboxKeys::derive(&unlocked.master_key, vault_id)
+            .map_err(|_| VaultError::Storage)?;
+        Ok((vault_id, keys))
+    }
+
     pub fn shared_profile(&self) -> Result<Uuid, VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
@@ -4695,6 +4786,7 @@ impl VaultStore {
             self.open_session(
                 &mut guard,
                 UnlockedVault {
+                    inbox_checked: false,
                     storage_lock,
                     master_key,
                     recovery_key_set_at_ms: header
@@ -4738,6 +4830,7 @@ impl VaultStore {
                 self.open_session(
                     &mut guard,
                     UnlockedVault {
+                        inbox_checked: false,
                         storage_lock,
                         master_key,
                         recovery_key_set_at_ms: header

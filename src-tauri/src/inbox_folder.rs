@@ -529,6 +529,20 @@ impl InboxFolder {
         Ok(plan_import(items, &self.caps, truncated))
     }
 
+    /// Where the item `id` lies in this folder (the strict name; nothing else is ever opened).
+    pub(crate) fn item_path(&self, id: &ItemId) -> PathBuf {
+        self.dir.join(item_file_name(id))
+    }
+
+    /// Deletes one item by id, after the vault commit that added its record, or when the patient
+    /// chose Remove. A missing file is not an error: it is already gone.
+    pub(crate) fn remove_item_by_id(&self, id: &ItemId) -> io::Result<()> {
+        match remove_item(self.item_path(id)) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    }
+
     /// The inbox key file, as the bytes it holds (at most one more than a key), or `None` if there
     /// is none. A file that is there and cannot be read as a plain file counts as bytes that are no
     /// key, so it is replaced and said.

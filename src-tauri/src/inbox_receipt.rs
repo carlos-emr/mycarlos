@@ -70,7 +70,7 @@ impl Sealer for LockedSealer {
             };
             let kind = match source {
                 ReceivedSource::ContentUri(_) => Source::Shared,
-                ReceivedSource::Path(_) => Source::Opened,
+                ReceivedSource::Path(_) | ReceivedSource::Inbox(_) => Source::Opened,
             };
             match folder.seal(
                 &public,
