@@ -5439,3 +5439,9 @@ button:disabled,
     box-shadow: none;
   }
 }
+
+/* The logo is a JPEG on white: multiplied, its white square disappears into the white tile. */
+.unlock-logo img,
+.titlebar-logo img {
+  mix-blend-mode: multiply;
+}
