@@ -7719,7 +7719,7 @@ pub fn run() {
                 app.config().identifier.clone(),
             ));
             // One worker for the app, ticking whichever vault the screen is on.
-            #[cfg(windows)]
+            #[cfg(desktop)]
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
             app.manage(StoreHandle::from_source(slots));
@@ -9597,6 +9597,81 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    /// The automatic document check is a desktop feature, not a Windows one: the worker, its tick
+    /// and the arrival notice all sit behind `desktop`, so Mac and Linux run the check and the
+    /// notice runtime says "nothing to show" there. A `cfg(windows)` on any of them stops the check
+    /// from ever running there while the consent is saved and shown (#473 review).
+    #[test]
+    fn the_automatic_document_check_is_gated_by_desktop_not_by_windows() {
+        let gated = |source: &str, item: &str| {
+            let at = source
+                .find(item)
+                .unwrap_or_else(|| panic!("missing {item}"));
+            let before = source[..at].trim_end_matches(' ');
+            let attributes: Vec<&str> = before
+                .lines()
+                .rev()
+                .take_while(|line| {
+                    let line = line.trim();
+                    line.starts_with("#[") || line.starts_with("///") || line.starts_with("//")
+                })
+                .filter(|line| line.trim().starts_with("#["))
+                .collect();
+            attributes
+                .iter()
+                .map(|line| line.trim().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let checks: [(&str, &str, &str); 4] = [
+            (
+                include_str!("vault_slots.rs"),
+                "pub(crate) fn start_document_collection(",
+                "start_document_collection",
+            ),
+            (
+                include_str!("vault.rs"),
+                "fn automatic_document_tick(&self)",
+                "automatic_document_tick",
+            ),
+            (
+                include_str!("vault/delivery.rs"),
+                "impl VaultStore {\n    /// Only a freshly committed local custody record",
+                "notify_local_arrival",
+            ),
+            (
+                include_str!("lib.rs"),
+                "slots.start_document_collection()?;",
+                "setup start",
+            ),
+        ];
+        for (source, item, name) in checks {
+            let attributes = gated(source, item);
+            assert!(
+                attributes.iter().any(|a| a == "#[cfg(desktop)]"),
+                "{name} must be #[cfg(desktop)], found {attributes:?}"
+            );
+            assert!(
+                !attributes.iter().any(|a| a.contains("windows")),
+                "{name} must not be gated by windows: {attributes:?}"
+            );
+        }
+        // The tick calls the check on every desktop, and the pickup calls the notice on every
+        // desktop; neither may be reached only on Windows.
+        let tick = include_str!("vault.rs");
+        let call = tick.find("self.automatic_document_tick();").unwrap();
+        assert!(tick[..call].trim_end().ends_with("#[cfg(desktop)]"));
+        let manual = include_str!("portal_pickup.rs");
+        let call = manual.find("store.notify_local_arrival(").unwrap();
+        let near = &manual[call.saturating_sub(120)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+        let pickup = include_str!("document_collection_pickup.rs");
+        let call = pickup
+            .find("store.notify_local_arrival_controlled(")
+            .unwrap();
+        let near = &pickup[call.saturating_sub(160)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
     }
 
     #[test]
