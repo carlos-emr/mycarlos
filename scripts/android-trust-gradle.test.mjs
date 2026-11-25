@@ -30,6 +30,12 @@ test("the extra Maven repository serves only the verifier's group and nothing el
     gradle,
     /includeGroupByRegex|includeModule|allowInsecureProtocol/,
   );
+  // The app module resolves the dependency, so the repository goes on every project of the build
+  // (a repository declared only in this library is not searched for the app: CI's first run).
+  assert.match(
+    gradle,
+    /rootProject\.allprojects\s*\{\s*repositories\s*\{\s*exclusiveContent\s*\{/s,
+  );
   // And no repository is declared outside the exclusive block.
   assert.equal((gradle.match(/\bmaven\s*\{/g) ?? []).length, 1);
   assert.equal(

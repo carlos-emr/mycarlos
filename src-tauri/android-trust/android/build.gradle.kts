@@ -9,16 +9,21 @@ plugins {
 // artifact, not on Maven Central. It is fetched from its own repository and from nowhere else,
 // and only that group may come from there, so that repository can never serve another artifact
 // (a dependency-confusion door shut). Its version is the one in Cargo.lock: the native crate and
-// this component must be identical.
-repositories {
-    exclusiveContent {
-        forRepository {
-            maven {
-                url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/")
+// this component must be identical. The repository is added to every project of the build, not
+// to this library alone: the app module resolves the dependency, and a repository declared in a
+// library is not searched for the app's classpath (CI's first run: "Could not find
+// rustls:rustls-platform-verifier").
+rootProject.allprojects {
+    repositories {
+        exclusiveContent {
+            forRepository {
+                maven {
+                    url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/")
+                }
             }
-        }
-        filter {
-            includeGroup("rustls")
+            filter {
+                includeGroup("rustls")
+            }
         }
     }
 }
