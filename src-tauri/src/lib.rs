@@ -760,6 +760,7 @@ struct FoundVaultsReply {
 
 /// One found vault and the name its owner now gives it.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedFoundVault {
     id: String,
     name: String,
@@ -875,7 +876,7 @@ struct RecoverResponse {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoveryKeyGroup {
     index: usize,
     value: String,
@@ -9636,11 +9637,11 @@ mod tests {
     /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
     /// it did for the recovery of a hidden person's lost document. So, for every `#[tauri::command]`
     /// in any source file, each parameter type that is a struct this crate deserializes must:
-    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command; and
+    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
+    ///     every struct such a request holds, bar one named exception in the test); and
     ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
     ///     renderer does;
-    /// and every struct such a request holds in a field must spell its own multi-word fields the same
-    /// way (those may leave unknown keys alone: they are values the renderer builds from its own types).
+    /// and every struct such a request holds in a field is held to the same two rules.
     #[test]
     fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
         use std::collections::{BTreeMap, BTreeSet};
@@ -9796,9 +9797,15 @@ mod tests {
                     definition.file
                 ));
             }
-            if at_the_command.contains(name)
-                && !definition.attributes.contains("deny_unknown_fields")
-            {
+            // The one nested struct that keeps leniency: the renderer's AndroidReaderLabels also
+            // carries `pageFailed`, a label the native reader has no field for and silently drops
+            // (reported separately); denying it would refuse the whole request.
+            let lenient = [(
+                "AndroidPdfLabels",
+                "the renderer also sends pageFailed, which it has no field for",
+            )];
+            let allowed = lenient.iter().any(|(listed, _)| listed == name);
+            if !allowed && !definition.attributes.contains("deny_unknown_fields") {
                 problems.push(format!(
                     "{name} ({}) needs deny_unknown_fields",
                     definition.file
