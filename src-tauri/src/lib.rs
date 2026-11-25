@@ -9612,27 +9612,84 @@ mod tests {
 
     /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
     /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
-    /// top-level window that can be lost behind the app while its command waits for it.
+    /// top-level window that can be lost behind the app while its command waits for it. The rules,
+    /// over every source file (not only this one), in non-test code:
+    ///   - the plugin's dialog extension (`DialogExt`) is imported in this file and nowhere else;
+    ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
+    ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
+    ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
+    ///   - `file_dialog(&` is called at exactly the nine sites there are today (a tenth must be added
+    ///     here on purpose, and a lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        /// The code before the file's own `mod tests {` (its tests may name anything), comment lines
+        /// dropped, and every space and line break removed (so a call split over lines or spaced
+        /// oddly still matches). A file with no such module is read whole.
+        fn code(text: &str) -> String {
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            text[..end]
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .split_whitespace()
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let (mut dialog_ext, mut calls, mut file_calls, mut builders, mut sites) = (0, 0, 0, 0, 0);
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let code = code(&text);
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let imports = code.matches("DialogExt").count();
+            if name != "lib.rs" {
+                assert_eq!(imports, 0, "{name} imports DialogExt");
+            }
+            dialog_ext += imports;
+            calls += code.matches(".dialog()").count();
+            file_calls += code.matches(".dialog().file()").count();
+            builders += code.matches("FileDialogBuilder::new").count();
+            sites += code.matches("file_dialog(&").count();
+        }
+        assert_eq!(dialog_ext, 1, "DialogExt is imported once, in lib.rs");
+        assert_eq!(
+            calls, 2,
+            ".dialog() is called in the helper and the native confirmation only"
+        );
+        assert_eq!(file_calls, 1, "only the helper builds a file dialog");
+        assert_eq!(builders, 0, "a file dialog builder is made directly");
+        assert_eq!(
+            sites, 9,
+            "the nine file dialog sites go through file_dialog"
+        );
+        // The helper keeps its owner.
         let source = include_str!("lib.rs");
-        let code = &source[..source.find("\nmod tests {").unwrap()];
-        let code: String = code
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("//"))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .split_whitespace()
-            .collect();
-        // Once, inside the helper itself; spacing and line breaks are ignored.
-        assert_eq!(code.matches(".dialog().file()").count(), 1);
         let helper = source.split("fn file_dialog(").nth(1).unwrap();
         let helper = &helper[..helper.find("\n}\n").unwrap()];
         assert!(helper.contains("app.dialog().file()"));
         assert!(helper.contains("set_parent(&window)"));
         assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
-        // Eight sites use it: the model picker, three saves, two more picks, the two exports.
-        assert!(source.matches("file_dialog(&").count() >= 9);
     }
 
     #[test]
