@@ -5,15 +5,23 @@
 
 use serde_json::Value;
 use std::fmt;
+use zeroize::Zeroizing;
 
 /// What Apple gave this install. The token is a secret of the device: `Debug` shows only that it is
 /// there.
-#[derive(PartialEq, Eq)]
 pub(crate) struct Token {
-    pub(crate) token: String,
+    /// Wiped from memory when dropped.
+    pub(crate) token: Zeroizing<String>,
     /// `sandbox` or `production`: which Apple push service the token belongs to.
     pub(crate) environment: String,
 }
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        *self.token == *other.token && self.environment == other.environment
+    }
+}
+impl Eq for Token {}
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -71,7 +79,7 @@ pub(crate) fn token_from_reply(reply: &Value) -> Result<Token, Refusal> {
         return Err(Refusal::Invalid);
     }
     Ok(Token {
-        token: text.to_ascii_lowercase(),
+        token: Zeroizing::new(text.to_ascii_lowercase()),
         environment: environment.to_owned(),
     })
 }
@@ -110,7 +118,7 @@ mod tests {
     #[test]
     fn only_hex_of_the_right_length_for_a_known_service_is_accepted_and_lower_cased() {
         let token = token_from_reply(&reply(&"AB".repeat(100), "production")).unwrap();
-        assert_eq!(token.token, "ab".repeat(100));
+        assert_eq!(*token.token, "ab".repeat(100));
         assert_eq!(token.environment, "production");
         for bad in [
             reply(&"ab".repeat(31), "sandbox"),

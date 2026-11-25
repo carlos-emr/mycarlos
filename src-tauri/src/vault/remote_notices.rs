@@ -13,6 +13,7 @@ use crate::document_push::{
 use crate::ios_push::Token;
 use crate::ios_push_handles::{
     binding_reply, handle_body, handle_digest, Binding, HandleMemory, HANDLES, MAX_HANDLE_REPLY,
+    SUSPECT,
 };
 
 /// What the vault can say about remote notices: counts only, never which clinics.
@@ -43,9 +44,14 @@ pub(crate) struct HandleSync {
     pub(crate) bound: usize,
     /// Already bound with this very token: nothing was sent.
     pub(crate) unchanged: usize,
-    /// The portal did not know the destination: it was forgotten here, and the next opening
-    /// enrolls a new one. Not retried in this pass.
+    /// The portal did not know the destination a second time, at a later pass: it was revoked here
+    /// (so no place is left behind) and one new one was enrolled in the same pass.
     pub(crate) re_enroll: usize,
+    /// The portal did not know the destination once: kept, and sent again at a later pass (the
+    /// answer is also the portal's refusal of a skewed or replayed request).
+    pub(crate) suspected: usize,
+    /// Even after enrolling anew, the portal holds no place for the token: Settings says so.
+    pub(crate) needs_attention: bool,
     /// The portal refused what was sent (a bug); not sent again.
     pub(crate) refused: usize,
     pub(crate) waiting: usize,
@@ -247,7 +253,9 @@ impl VaultStore {
         }
         let synced = self.set_remote_notices(enabled, state, session, exchange)?;
         let bound = match token {
-            Some(token) if enabled => self.bind_push_handles(token, memory, session, exchange)?,
+            Some(token) if enabled => {
+                self.bind_with_one_repair(token, state, memory, session, exchange, synced)?
+            }
             _ => HandleSync::default(),
         };
         Ok((synced, bound))
@@ -281,16 +289,50 @@ impl VaultStore {
     ) -> Result<(RemoteSync, HandleSync), VaultError> {
         let synced = self.sync_remote_notices(Some(source), session, exchange)?;
         let bound = match token {
-            Some(token) => self.bind_push_handles(token, memory, session, exchange)?,
+            Some(token) => {
+                self.bind_with_one_repair(token, source, memory, session, exchange, synced)?
+            }
             None => HandleSync::default(),
         };
         Ok((synced, bound))
     }
 
+    /// Binds the token. If a destination was dropped on the way (the portal did not know it when it
+    /// was enrolled, or twice when the token was bound), there is nothing left to send notices to
+    /// until a new one is reserved and enrolled: that is done once, here, and the token is bound
+    /// once more. Never in a loop. If that does not work either, `needs_attention` says so, and
+    /// Settings does not claim that notices are on.
+    fn bind_with_one_repair(
+        &self,
+        token: &Token,
+        source: &dyn PushSource,
+        memory: &dyn HandleMemory,
+        session: u64,
+        exchange: &impl Exchange,
+        synced: RemoteSync,
+    ) -> Result<HandleSync, VaultError> {
+        let mut bound = self.bind_push_handles(token, memory, session, exchange)?;
+        if synced.forgotten == 0 && bound.re_enroll == 0 {
+            return Ok(bound);
+        }
+        let again_synced = self.set_remote_notices(true, source, session, exchange)?;
+        let again = self.bind_push_handles(token, memory, session, exchange)?;
+        bound.bound += again.bound;
+        bound.unchanged += again.unchanged;
+        bound.suspected += again.suspected;
+        bound.refused += again.refused;
+        bound.waiting += again.waiting;
+        bound.needs_attention = again_synced.forgotten > 0
+            || again.re_enroll > 0
+            || again.suspected > 0
+            || again.refused > 0;
+        Ok(bound)
+    }
+
     /// Sends the Apple token for each enrolled iPhone destination whose remembered digest differs
-    /// from this token's. A 200 or 201 is remembered; a 404 forgets the destination (no retry here);
-    /// a 400 is a bug and is not sent again; anything else waits for a later opening. No network
-    /// call is made under the vault lock.
+    /// from this token's. A 200 or 201 is remembered; the first 404 is noted and kept, the second one
+    /// at a later pass revokes the destination (no retry here); a 400 is a bug and is not sent again;
+    /// anything else waits for a later opening. No network call is made under the vault lock.
     pub(crate) fn bind_push_handles(
         &self,
         token: &Token,
@@ -333,11 +375,13 @@ impl VaultStore {
                 sync.waiting += 1;
                 continue;
             };
+            // Moved out of the wiping guard into the request, which owns it from here.
+            let mut body = handle_body(destination.id(), token);
             let reply = match exchange(
                 link,
                 "POST",
                 HANDLES,
-                handle_body(destination.id(), token),
+                std::mem::take(&mut *body),
                 None,
                 MAX_HANDLE_REPLY,
                 &cancelled,
@@ -353,11 +397,19 @@ impl VaultStore {
                     sync.bound += 1;
                 }
                 Binding::ReEnroll => {
-                    memory.forget(destination.id());
-                    self.apply_remote(session, |policy| {
-                        policy.forget_destination(destination.id())
-                    })?;
-                    sync.re_enroll += 1;
+                    if memory.recall(destination.id()) == Some(SUSPECT) {
+                        // Twice: the portal does not know it. Its place there, if any, is revoked
+                        // rather than dropped, so that none is left behind.
+                        memory.forget(destination.id());
+                        self.apply_remote(session, |policy| {
+                            policy.revoke_destination(destination.id())
+                        })?;
+                        sync.re_enroll += 1;
+                    } else {
+                        // The first time is only noted: a refused assertion answers 404 as well.
+                        let _ = memory.remember(destination.id(), SUSPECT);
+                        sync.suspected += 1;
+                    }
                 }
                 Binding::Refused => sync.refused += 1,
                 Binding::Later => sync.waiting += 1,
@@ -999,6 +1051,12 @@ mod tests {
                     let (status, answer) = handles(&body);
                     return reply(status, answer);
                 }
+                if path == REVOCATIONS {
+                    return reply(
+                        200,
+                        serde_json::json!({"destination_id": body["destination_id"], "revoked": true}),
+                    );
+                }
                 assert_eq!(path, SUBSCRIPTIONS);
                 reply(
                     201,
@@ -1173,8 +1231,7 @@ mod tests {
         }
 
         #[test]
-        fn a_404_forgets_the_destination_and_is_not_retried_and_the_next_opening_enrolls_a_new_one()
-        {
+        fn the_first_404_is_only_noted_and_the_second_revokes_the_destination() {
             let (_temp, store, _) = store_with_links();
             let seen = RefCell::new(Vec::new());
             let refusing =
@@ -1188,26 +1245,144 @@ mod tests {
             }
             let token = fake_token("sandbox", "ab");
             seen.borrow_mut().clear();
+            // The first 404 may be a refused assertion (skew, replay, expiry): kept, and noted.
             let done = store
                 .bind_push_handles(&token, &memory, store.portal_link_ticket(), &refusing)
                 .unwrap();
-            assert_eq!((done.re_enroll, done.bound, done.waiting), (2, 0, 0));
+            assert_eq!(
+                (done.re_enroll, done.suspected, done.bound, done.waiting),
+                (0, 2, 0, 0)
+            );
             // One request each: no retry in the same pass.
             assert_eq!(seen.borrow().len(), 2);
-            assert!(saved(&store).active().is_empty());
-            assert!(before.iter().all(|id| memory.recall(*id).is_none()));
-            // The next opening reserves and enrolls fresh ids, then binds them.
-            let healthy = iphone_portal(&seen, |_| (201, serde_json::json!({})));
-            store
-                .set_remote_notices(true, &state, store.portal_link_ticket(), &healthy)
-                .unwrap();
-            let after: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
-            assert_eq!(after.len(), 2);
-            assert!(after.iter().all(|id| !before.contains(id)));
+            let kept: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            assert_eq!(kept, before);
+            assert!(saved(&store).revocations().is_empty());
+            assert!(before.iter().all(|id| memory.recall(*id) == Some(SUSPECT)));
+            // The second 404, at a later pass, is the portal not knowing it: revoked, not dropped.
+            seen.borrow_mut().clear();
             let done = store
-                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &healthy)
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &refusing)
+                .unwrap();
+            assert_eq!((done.re_enroll, done.suspected), (2, 0));
+            assert_eq!(seen.borrow().len(), 2);
+            assert!(saved(&store).active().is_empty());
+            let revoking: Vec<Uuid> = saved(&store).revocations().iter().map(|d| d.id()).collect();
+            assert_eq!(revoking.len(), 2);
+            assert!(before.iter().all(|id| revoking.contains(id)));
+            assert!(before.iter().all(|id| memory.recall(*id).is_none()));
+        }
+
+        #[test]
+        fn a_noted_404_is_cleared_by_a_send_that_works() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let ok = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            opted_in(&store, &state, &ok);
+            let ids: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            let memory = FakeHandleMemory::default();
+            for id in &ids {
+                memory.remember(*id, SUSPECT);
+            }
+            let token = fake_token("sandbox", "ab");
+            // A noted destination is sent again, and a good answer replaces the note.
+            let done = store
+                .bind_push_handles(&token, &memory, store.portal_link_ticket(), &ok)
                 .unwrap();
             assert_eq!(done.bound, 2);
+            assert!(ids
+                .iter()
+                .all(|id| memory.recall(*id) == Some(handle_digest(*id, &token))));
+        }
+
+        #[test]
+        fn after_a_destination_is_revoked_one_new_one_is_enrolled_and_bound_in_the_same_pass() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let state = allowed();
+            let first = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            opted_in(&store, &state, &first);
+            let old: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            // The portal knows only destinations it did not already lose.
+            let lost = old.iter().map(Uuid::to_string).collect::<Vec<_>>();
+            let portal = iphone_portal(&seen, |body| {
+                let id = body["destination_id"].as_str().unwrap().to_owned();
+                if lost.contains(&id) {
+                    (404, serde_json::json!({"detail": "not found"}))
+                } else {
+                    (201, serde_json::json!({}))
+                }
+            });
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            let pass = || {
+                store
+                    .sync_and_bind_push_handle(
+                        &state,
+                        Some(&token),
+                        &memory,
+                        store.portal_link_ticket(),
+                        &portal,
+                    )
+                    .unwrap()
+            };
+            // The first pass notes the 404s and keeps what it has.
+            let (_, bound) = pass();
+            assert_eq!(
+                (bound.suspected, bound.re_enroll, bound.needs_attention),
+                (2, 0, false)
+            );
+            // The second revokes them, enrolls two new ones and binds them, once.
+            seen.borrow_mut().clear();
+            let (_, bound) = pass();
+            assert_eq!((bound.re_enroll, bound.bound), (2, 2));
+            assert!(!bound.needs_attention);
+            let now: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            assert_eq!(now.len(), 2);
+            assert!(now.iter().all(|id| !old.contains(id)));
+            // Two lost ones, their two revocations, two enrollments, two bindings: not a loop.
+            assert_eq!(seen.borrow().len(), 8);
+            assert!(
+                saved(&store).revocations().is_empty(),
+                "and the portal confirmed them"
+            );
+        }
+
+        #[test]
+        fn when_enrolling_anew_does_not_work_either_it_is_said_and_nothing_loops() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let state = allowed();
+            let refusing =
+                iphone_portal(&seen, |_| (404, serde_json::json!({"detail": "not found"})));
+            opted_in(&store, &state, &refusing);
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            let pass = || {
+                store
+                    .sync_and_bind_push_handle(
+                        &state,
+                        Some(&token),
+                        &memory,
+                        store.portal_link_ticket(),
+                        &refusing,
+                    )
+                    .unwrap()
+                    .1
+            };
+            assert!(!pass().needs_attention);
+            seen.borrow_mut().clear();
+            let second = pass();
+            assert!(second.needs_attention);
+            // 2 lost + 2 revocations + 2 enrollments + 2 bindings of the new ones (only noted).
+            assert_eq!(seen.borrow().len(), 8);
+            assert_eq!(second.suspected, 2);
+            state.record_attention(second.needs_attention);
+            assert_eq!(
+                state.state(),
+                crate::ios_push_handles::PushState::NeedsAttention
+            );
         }
 
         #[test]
