@@ -486,6 +486,38 @@ const iosFiles = ({
     ["mycarlos", executable],
   ]);
 
+test("the push environment of a release build is production: development is refused, production is not", () => {
+  const withPush = (value, extra = "") =>
+    iosFiles({
+      profile: PROFILE(
+        `<key>get-task-allow</key><false/><key>aps-environment</key><string>${value}</string>${extra}`,
+      ),
+    });
+  // A store build's profile grants the production push service.
+  assert.deepEqual(
+    checkIosApp(withPush("production"), "store.app", EXPECTED_APP_ID),
+    [],
+  );
+  // A development grant in a release build is its own finding, whatever else the profile holds.
+  const findings = checkIosApp(
+    withPush("development"),
+    "store.app",
+    EXPECTED_APP_ID,
+  );
+  assert.deepEqual(findings, ["store.app: aps-environment is development"]);
+  assert.match(
+    checkIosApp(
+      withPush(
+        "development",
+        "<key>com.apple.developer.team-identifier</key><string>FAKE</string>",
+      ),
+      "store.app",
+      EXPECTED_APP_ID,
+    ).join(),
+    /aps-environment is development/,
+  );
+});
+
 test("a good iOS app passes, and each unsafe setting is its own finding", () => {
   assert.deepEqual(checkIosApp(iosFiles(), "good.app", EXPECTED_APP_ID), []);
   const one = (files) => checkIosApp(files, "x.app", EXPECTED_APP_ID).join("|");

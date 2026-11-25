@@ -5,6 +5,13 @@
 //   node scripts/check-ios-privacy.mjs --app X.app     also a built app: the manifest sits at the
 //                                                      bundle root, is the repository's, and the
 //                                                      app's Info.plist carries the export key
+//   ... --app X.app --build debug|release              and the app's own signed entitlements carry
+//                                                      the push environment for that build
+//                                                      (development for a debug build, production
+//                                                      for a release one: TestFlight and the store)
+//   ... --entitlements FILE                            read the entitlements from FILE (`codesign -d
+//                                                      --entitlements :- X.app`) instead of asking
+//                                                      `codesign`, which only exists on macOS
 //
 // Apple refuses an upload whose code reaches a required-reason API with no declared reason
 // (ITMS-91053) and, with no `ITSAppUsesNonExemptEncryption`, asks the export questions again at
@@ -216,6 +223,43 @@ async function read(path) {
   }
 }
 
+/**
+ * The push environment each build signs with. Apple has two push services, and a token made by one is
+ * refused by the other: a debug (development-signed) build must say `development`, a release build
+ * (TestFlight and the store) `production`. `scripts/configure-ios-privacy.mjs` writes the two values
+ * into the Xcode project; this is the check on what the built app actually carries.
+ */
+export const APS_ENVIRONMENT = { debug: "development", release: "production" };
+
+/**
+ * Problems with the entitlements text of a built app: `aps-environment` must be present, be one of
+ * Apple's two values, and (when `build` is given) be the one for that build. Without it the app
+ * cannot register for remote notifications at all.
+ */
+export function checkEntitlements(source, build) {
+  const text = stripComments(source);
+  const value = valueOf(text, "aps-environment");
+  if (value === null) {
+    return [
+      "the aps-environment entitlement is missing (the app cannot register for push notifications)",
+    ];
+  }
+  const found = /^<string>([^<]*)<\/string>$/.exec(value)?.[1];
+  if (found !== "development" && found !== "production") {
+    return ["aps-environment must be development or production"];
+  }
+  if (build === undefined) return [];
+  const wanted = APS_ENVIRONMENT[build];
+  if (wanted === undefined) {
+    return [`--build must be debug or release, not ${build}`];
+  }
+  return found === wanted
+    ? []
+    : [
+        `aps-environment is ${found}, but a ${build} build must carry ${wanted} (a token from the other Apple service is refused)`,
+      ];
+}
+
 /** A plist as XML text: a binary plist (what Xcode writes) goes through macOS's `plutil`. */
 async function readPlist(path) {
   let bytes;
@@ -231,6 +275,23 @@ async function readPlist(path) {
   });
   return converted.status === 0 ? converted.stdout : null;
 }
+
+/** The entitlements XML of a built app: from `--entitlements FILE`, else from macOS's `codesign`. */
+async function readEntitlements(app, file) {
+  if (file !== undefined) return await read(file);
+  const shown = spawnSync("codesign", ["-d", "--entitlements", ":-", app], {
+    encoding: "utf8",
+  });
+  return shown.status === 0 && shown.stdout.includes("<plist")
+    ? shown.stdout
+    : null;
+}
+
+/** The value after `flag` in `argv`, `undefined` when the flag is absent. */
+const optionOf = (argv, flag) => {
+  const at = argv.indexOf(flag);
+  return at < 0 ? undefined : (argv[at + 1] ?? "");
+};
 
 export async function run(argv, root = ROOT) {
   const problems = [];
@@ -255,6 +316,24 @@ export async function run(argv, root = ROOT) {
         problems.push(
           `${app}: PrivacyInfo.xcprivacy differs from ${MANIFEST_PATH}`,
         );
+      }
+      const build = optionOf(argv, "--build");
+      const file = optionOf(argv, "--entitlements");
+      if (build !== undefined && !(build in APS_ENVIRONMENT)) {
+        problems.push(`--build must be debug or release, not ${build}`);
+      } else {
+        const signed = await readEntitlements(app, file);
+        if (signed === null) {
+          problems.push(
+            `${app}: the signed entitlements cannot be read here (needs macOS codesign, or pass --entitlements FILE)`,
+          );
+        } else {
+          problems.push(
+            ...checkEntitlements(signed, build).map(
+              (problem) => `${app}: ${problem}`,
+            ),
+          );
+        }
       }
       const builtInfo = await readPlist(join(app, "Info.plist"));
       if (builtInfo === null) {
