@@ -9653,6 +9653,7 @@ mod tests {
         struct Definition {
             attributes: String,
             fields: Vec<(String, String)>,
+            field_attributes: Vec<String>,
             file: String,
         }
         fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
@@ -9735,20 +9736,31 @@ mod tests {
                             .unwrap()
                             .to_owned();
                         let mut fields = Vec::new();
+                        let mut field_attributes = Vec::new();
+                        let mut pending_attributes = String::new();
                         for field in lines.by_ref() {
                             let field = field.trim();
                             if field == "}" {
                                 break;
                             }
-                            if field.starts_with("//") || field.starts_with('#') {
+                            if field.starts_with('#') {
+                                pending_attributes.push_str(field);
+                                pending_attributes.push('\n');
                                 continue;
                             }
-                            let field = field.strip_prefix("pub ").unwrap_or(field);
+                            if field.starts_with("//") {
+                                continue;
+                            }
+                            let field = field
+                                .strip_prefix("pub(crate) ")
+                                .or_else(|| field.strip_prefix("pub "))
+                                .unwrap_or(field);
                             if let Some((field_name, field_type)) = field.split_once(':') {
                                 fields.push((
                                     field_name.trim().to_owned(),
                                     field_type.trim().trim_end_matches(',').to_owned(),
                                 ));
+                                field_attributes.push(std::mem::take(&mut pending_attributes));
                             }
                         }
                         definitions.insert(
@@ -9756,6 +9768,7 @@ mod tests {
                             Definition {
                                 attributes: attributes.clone(),
                                 fields,
+                                field_attributes,
                                 file: name.clone(),
                             },
                         );
@@ -9810,6 +9823,218 @@ mod tests {
             }
         }
         assert!(problems.is_empty(), "{problems:#?}");
+
+        // The contract the renderer's calls are checked against (src/vaultBridgeCommands.test.ts):
+        // every command's arguments and every struct they reach, written sorted to a checked-in
+        // file. A change to a command or a struct fails here until the file is regenerated, so
+        // the renderer's check never reads an out-of-date list.
+        #[derive(serde::Serialize, PartialEq)]
+        struct ArgumentContract {
+            optional: bool,
+            #[serde(rename = "struct")]
+            struct_name: Option<String>,
+        }
+        #[derive(serde::Serialize, PartialEq)]
+        struct CommandContract {
+            arguments: BTreeMap<String, ArgumentContract>,
+            raw: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct StructContract {
+            #[serde(rename = "denyUnknown")]
+            deny_unknown: bool,
+            fields: BTreeMap<String, ArgumentContract>,
+            open: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct Contract {
+            commands: BTreeMap<String, CommandContract>,
+            #[serde(rename = "generatedBy")]
+            generated_by: &'static str,
+            structs: BTreeMap<String, StructContract>,
+        }
+        fn camel(name: &str) -> String {
+            let mut out = String::new();
+            let mut upper = false;
+            for c in name.chars() {
+                if c == '_' {
+                    upper = true;
+                } else if upper {
+                    out.extend(c.to_uppercase());
+                    upper = false;
+                } else {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        // Whether a `#[serde(..)]` attribute in `attributes` names `word` (as a whole word).
+        fn serde_has(attributes: &str, word: &str) -> bool {
+            attributes
+                .lines()
+                .filter(|line| line.contains("serde("))
+                .any(|line| words(line).contains(&word))
+        }
+        fn split_top_level(list: &str) -> Vec<String> {
+            let mut parts = Vec::new();
+            let mut depth = 0_i32;
+            let mut current = String::new();
+            let mut previous = ' ';
+            for c in list.chars() {
+                match c {
+                    '(' | '<' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    '>' if previous != '-' => depth -= 1,
+                    _ => {}
+                }
+                if c == ',' && depth == 0 {
+                    parts.push(current.trim().to_owned());
+                    current.clear();
+                } else {
+                    current.push(c);
+                }
+                previous = c;
+            }
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_owned());
+            }
+            parts
+        }
+        let struct_in = |ty: &str| -> Option<String> {
+            words(ty)
+                .into_iter()
+                .find(|word| definitions.contains_key(*word))
+                .map(str::to_owned)
+        };
+        let mut contract = Contract {
+            commands: BTreeMap::new(),
+            generated_by: "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
+            structs: BTreeMap::new(),
+        };
+        for (function, parameters) in &command_parameters {
+            let mut depth = 0_i32;
+            let mut close = None;
+            for (index, c) in parameters.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let close = close.unwrap_or_else(|| panic!("{function}: no closing parenthesis"));
+            let mut command = CommandContract {
+                arguments: BTreeMap::new(),
+                raw: false,
+            };
+            for parameter in split_top_level(&parameters[1..close]) {
+                let (name, ty) = parameter
+                    .split_once(':')
+                    .unwrap_or_else(|| panic!("{function}: parameter {parameter:?}"));
+                // A leading underscore (an unused argument) is not part of the wire name.
+                let name = name
+                    .trim()
+                    .trim_start_matches("mut ")
+                    .trim()
+                    .trim_start_matches('_');
+                let ty = ty.trim().trim_start_matches('&').trim();
+                let injected = [
+                    "State<",
+                    "tauri::State<",
+                    "AppHandle",
+                    "tauri::AppHandle",
+                    "Window",
+                    "tauri::Window",
+                    "WebviewWindow",
+                    "tauri::WebviewWindow",
+                ]
+                .iter()
+                .any(|prefix| ty.starts_with(prefix));
+                if injected {
+                    continue;
+                }
+                if ty.starts_with("tauri::ipc::Request") {
+                    command.raw = true;
+                    continue;
+                }
+                command.arguments.insert(
+                    camel(name),
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            match contract.commands.get(function) {
+                // The same command written once for each platform (`#[cfg]`) takes the same
+                // arguments in each.
+                Some(existing) => assert!(
+                    *existing == command,
+                    "the command {function} is defined twice with different arguments"
+                ),
+                None => {
+                    contract.commands.insert(function.clone(), command);
+                }
+            }
+        }
+        for name in &every {
+            let definition = &definitions[name];
+            let camel_case = definition.attributes.contains("rename_all = \"camelCase\"");
+            let mut fields = BTreeMap::new();
+            let mut open = false;
+            for ((field, ty), field_attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(field_attributes, "skip")
+                    || serde_has(field_attributes, "skip_deserializing")
+                {
+                    continue;
+                }
+                if serde_has(field_attributes, "flatten") {
+                    open = true;
+                }
+                let key = match field_attributes.split("rename = \"").nth(1) {
+                    Some(rest) => rest.split('"').next().unwrap().to_owned(),
+                    None if camel_case => camel(field),
+                    None => field.clone(),
+                };
+                fields.insert(
+                    key,
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<")
+                            || serde_has(field_attributes, "default")
+                            || serde_has(&definition.attributes, "default"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            contract.structs.insert(
+                name.clone(),
+                StructContract {
+                    deny_unknown: definition.attributes.contains("deny_unknown_fields"),
+                    fields,
+                    open,
+                },
+            );
+        }
+        let generated = serde_json::to_string_pretty(&contract).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/command-args.json");
+        if std::env::var_os("UPDATE_COMMAND_ARGS").is_some() {
+            std::fs::write(&path, &generated).unwrap();
+        }
+        let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            checked_in == generated,
+            "src-tauri/tests/fixtures/command-args.json is out of date with the commands: \
+             regenerate it with `UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys` \
+             and commit it"
+        );
     }
 
     /// The Android reader's labels cross three layers: the renderer's `AndroidReaderLabels`
