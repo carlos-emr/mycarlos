@@ -213,6 +213,9 @@ pub(crate) enum PublicFileCheck {
 
 /// The inbox key pair of one vault, derived on demand and dropped after use.
 pub(crate) struct InboxKeys {
+    // The X25519 secret. It is wiped when dropped only because the `zeroize` feature of
+    // `x25519-dalek` is on (Cargo.toml turns it on, and feature unification gives it to `hpke`'s
+    // copy too): do not take that feature out, and look at it again if the HPKE crate changes.
     private: <K as Kem>::PrivateKey,
     public: InboxPublic,
     record_key: Zeroizing<[u8; 32]>,
@@ -1412,6 +1415,85 @@ mod tests {
             keys.record_id(&ItemId([2; 16])).to_string(),
             "02b22196-c521-4c72-aec3-2790981f1ee5"
         );
+    }
+
+    /// RFC 9180 Appendix A.2 (DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, base
+    /// mode), the RFC's own vector (from the CFRG test-vector file the `hpke` crate ships): the
+    /// recipient pair from `DeriveKeyPair`, the encapsulated key from the ephemeral key material,
+    /// and the exports the sealer takes its keys from. Without it the tests above check the code
+    /// only against itself.
+    #[test]
+    fn the_hpke_suite_matches_the_rfc_9180_appendix_a_2_vector() {
+        struct Fixed(Vec<u8>);
+        impl hpke::rand_core::RngCore for Fixed {
+            fn next_u32(&mut self) -> u32 {
+                unreachable!("the ephemeral key needs bytes only")
+            }
+            fn next_u64(&mut self) -> u64 {
+                unreachable!("the ephemeral key needs bytes only")
+            }
+            fn fill_bytes(&mut self, bytes: &mut [u8]) {
+                bytes.copy_from_slice(&self.0[..bytes.len()]);
+            }
+        }
+        impl hpke::rand_core::CryptoRng for Fixed {}
+        let unhex = |text: &str| -> Vec<u8> {
+            (0..text.len() / 2)
+                .map(|at| u8::from_str_radix(&text[at * 2..at * 2 + 2], 16).unwrap())
+                .collect()
+        };
+        let info = unhex("4f6465206f6e2061204772656369616e2055726e");
+        let ikm_e = unhex("909a9b35d3dc4713a5e72a4da274b55d3d3821a37e5d099e74a647db583a904b");
+        let ikm_r = unhex("1ac01f181fdf9f352797655161c58b75c656a6cc2716dcb66372da835542e1df");
+        let sk_r = unhex("8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb");
+        let pk_r = unhex("4310ee97d88cc1f088a5576c77ab0cf5c3ac797f3d95139c6c84b5429c59662a");
+        let enc = unhex("1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a");
+        let exports = [
+            (
+                "",
+                "4bbd6243b8bb54cec311fac9df81841b6fd61f56538a775e7c80a9f40160606e",
+            ),
+            (
+                "00",
+                "8c1df14732580e5501b00f82b10a1647b40713191b7c1240ac80e2b68808ba69",
+            ),
+            (
+                "54657374436f6e74657874",
+                "5acb09211139c43b3090489a9da433e8a30ee7188ba8b0a9a1ccf0c229283e53",
+            ),
+        ];
+
+        // DeriveKeyPair, as the inbox key uses it.
+        let (private, public) = K::derive_keypair(&ikm_r);
+        assert_eq!(private.to_bytes().as_slice(), sk_r.as_slice());
+        assert_eq!(public.to_bytes().as_slice(), pk_r.as_slice());
+
+        // The sender with the vector's ephemeral key material.
+        let (sent, sender) = hpke::setup_sender::<ChaCha20Poly1305, HkdfSha256, K, _>(
+            &OpModeS::Base,
+            &public,
+            &info,
+            &mut Fixed(ikm_e),
+        )
+        .unwrap();
+        assert_eq!(sent.to_bytes().as_slice(), enc.as_slice());
+        // The receiver from that encapsulated key.
+        let receiver = hpke::setup_receiver::<ChaCha20Poly1305, HkdfSha256, K>(
+            &OpModeR::Base,
+            &private,
+            &sent,
+            &info,
+        )
+        .unwrap();
+        for (context, expected) in exports {
+            let (context, expected) = (unhex(context), unhex(expected));
+            let mut from_sender = vec![0_u8; expected.len()];
+            let mut from_receiver = vec![0_u8; expected.len()];
+            sender.export(&context, &mut from_sender).unwrap();
+            receiver.export(&context, &mut from_receiver).unwrap();
+            assert_eq!(from_sender, expected);
+            assert_eq!(from_receiver, expected);
+        }
     }
 
     // ----- the opener's refusals of trailers no real sealer writes -----
