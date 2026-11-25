@@ -1637,6 +1637,9 @@ export function VaultLibrary({
           setOldBackupsGuide({ step: "save" });
         throw namedDamage(error, snapshot);
       }
+      // The backup reminder is kept natively and comes with the snapshot: read it again, so the
+      // note goes (or says what is left out) now. The backup itself is saved either way.
+      await refresh().catch(() => undefined);
       // After a key replacement, the file written last is the one to keep,
       // named, or when the platform gives no name, by when it was saved.
       // Its size tells it from an empty or partial file.

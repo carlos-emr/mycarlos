@@ -2183,6 +2183,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       refusedDeliveries: setup.refusedDeliveries ?? 0,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
+      videos: setup.videos ?? 0,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],

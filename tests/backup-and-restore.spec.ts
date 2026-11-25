@@ -124,7 +124,8 @@ const reminderNote = (page: import("@playwright/test").Page) =>
 
 async function backToRecords(page: import("@playwright/test").Page) {
   await sidebar(page)
-    .getByRole("button", { name: en("sidebar.myRecords"), exact: true })
+    // The button's name carries the document count ("My records 1 document").
+    .getByRole("button", { name: new RegExp(`^${en("sidebar.myRecords")}`) })
     .click();
   await expect(myRecords(page)).toBeVisible();
 }
@@ -155,6 +156,12 @@ test("the backup reminder goes after a whole backup and stays after one that lef
       { exact: true },
     ),
   ).toBeVisible();
+  // The native side was told the videos were left out.
+  expect(
+    (await fakeCalls(page, "vault_backup_picked")).map(
+      (call) => (call.request as { leaveVideosOut: boolean }).leaveVideosOut,
+    ),
+  ).toEqual([true]);
   await backToRecords(page);
   await expect(reminderNote(page)).toBeVisible();
   await expect(reminderNote(page)).toContainText(en("backupReminder.partial"));
