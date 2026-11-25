@@ -1370,8 +1370,8 @@
   "preferences.moreAutomatic",
   "preferences.moreBackground",
   "interface.received.notNow",
-  "interface.received.remove",
   "interface.received.confirmBodySealed",
   "interface.receive.inboxRemoved",
-  "interface.receive.inboxKeyChanged"
+  "interface.receive.inboxKeyChanged",
+  "interface.received.removeKept"
 ]

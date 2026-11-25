@@ -2919,9 +2919,8 @@ notifications-testOff = Notices are turned off in myCarlos. Turn them on, then t
 
 interface-received-notNow = Not now
 
-interface-received-remove = Remove
 
-interface-received-confirmBodySealed = These files were shared while myCarlos was locked and are kept here, encrypted. Nothing is added until you choose Import. Not now keeps them for up to 7 days. Remove deletes them.
+interface-received-confirmBodySealed = These files were shared while myCarlos was locked and are kept here, encrypted. Nothing is added until you choose Import. Not now keeps them for up to 7 days. Delete removes them from this device for good: this cannot be undone.
 
 interface-receive-inboxRemoved =
     { $count ->
@@ -2930,3 +2929,9 @@ interface-receive-inboxRemoved =
     }
 
 interface-receive-inboxKeyChanged = The key that keeps shared files while myCarlos is locked was changed by something else, and has been put right. Files shared since then were not kept. Share them again.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Delete the kept file
+    *[other] Delete the { $count } kept files
+    }

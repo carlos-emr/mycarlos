@@ -2063,11 +2063,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           }
           removeLabel={
             confirmReceived.some((file) => file.sealed) && bridge.removeReceived
-              ? t("interface.received.remove")
+              ? t("interface.received.removeKept", {
+                  count: confirmReceived.filter((file) => file.sealed).length,
+                })
               : undefined
           }
           onRemove={() => {
-            const ids = confirmReceived.map((file) => file.id);
+            // Delete acts on the kept (sealed) files only: another file in the same question
+            // (an "Open with" file) stays waiting and is asked about again.
+            const ids = confirmReceived
+              .filter((file) => file.sealed)
+              .map((file) => file.id);
             confirmOpen.current = false;
             setConfirmReceived(null);
             void bridge

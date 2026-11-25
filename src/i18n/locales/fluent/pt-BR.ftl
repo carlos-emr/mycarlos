@@ -2956,9 +2956,8 @@ notifications-testOff = Os avisos estão desativados no myCarlos. Ative-os e ten
 
 interface-received-notNow = Agora não
 
-interface-received-remove = Remover
 
-interface-received-confirmBodySealed = Estes arquivos foram compartilhados enquanto o myCarlos estava bloqueado e ficam guardados aqui, criptografados. Nada é adicionado até você escolher Importar. Agora não os mantém por até 7 dias. Remover os exclui.
+interface-received-confirmBodySealed = Estes arquivos foram compartilhados enquanto o myCarlos estava bloqueado e ficam guardados aqui, criptografados. Nada é adicionado até você escolher Importar. Agora não os mantém por até 7 dias. Excluir os apaga deste dispositivo para sempre: isso não pode ser desfeito.
 
 interface-receive-inboxRemoved =
     { $count ->
@@ -2968,3 +2967,10 @@ interface-receive-inboxRemoved =
     }
 
 interface-receive-inboxKeyChanged = A chave que guarda os arquivos compartilhados enquanto o myCarlos está bloqueado foi alterada por outra coisa e foi corrigida. Os arquivos compartilhados desde então não foram guardados. Compartilhe-os novamente.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Excluir o arquivo guardado
+    [many] Excluir os { $count } arquivos guardados
+    *[other] Excluir os { $count } arquivos guardados
+    }

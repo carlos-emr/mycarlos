@@ -2956,9 +2956,8 @@ notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, p
 
 interface-received-notNow = Pas maintenant
 
-interface-received-remove = Retirer
 
-interface-received-confirmBodySealed = Ces fichiers ont été partagés pendant que myCarlos était verrouillé et sont conservés ici, chiffrés. Rien n’est ajouté tant que vous n’avez pas choisi Importer. Pas maintenant les conserve jusqu’à 7 jours. Retirer les supprime.
+interface-received-confirmBodySealed = Ces fichiers ont été partagés pendant que myCarlos était verrouillé et sont conservés ici, chiffrés. Rien n’est ajouté tant que vous n’avez pas choisi Importer. Pas maintenant les conserve jusqu’à 7 jours. Supprimer les efface définitivement de cet appareil : cette action est irréversible.
 
 interface-receive-inboxRemoved =
     { $count ->
@@ -2968,3 +2967,10 @@ interface-receive-inboxRemoved =
     }
 
 interface-receive-inboxKeyChanged = La clé qui conserve les fichiers partagés pendant que myCarlos est verrouillé a été modifiée par autre chose, et a été rétablie. Les fichiers partagés depuis ne sont pas conservés. Partagez-les de nouveau.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Supprimer le fichier conservé
+    [many] Supprimer les { $count } fichiers conservés
+    *[other] Supprimer les { $count } fichiers conservés
+    }

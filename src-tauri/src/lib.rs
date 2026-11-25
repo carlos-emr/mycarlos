@@ -12310,6 +12310,30 @@ mod photo_command_tests {
     }
 
     #[test]
+    fn delete_acts_on_sealed_files_only_and_leaves_an_open_with_file_waiting() {
+        let waiting = received::ReceivedFiles::default();
+        let item = sealed_inbox::ItemId::random();
+        assert_eq!(
+            waiting.add_sealed(vec![(item, "FAKE kept.pdf".to_owned())]),
+            1
+        );
+        // An "Open with" file waits in the same question.
+        let opened = waiting
+            .add_share(vec![received::ReceivedSource::Path(
+                "/FAKE/opened.pdf".into(),
+            )])
+            .unwrap();
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        assert_eq!(ids.len(), 2);
+        // The patient chose Delete with both in the list: only the sealed one goes.
+        assert_eq!(waiting.remove_sealed(&ids), vec![item]);
+        let left = waiting.list();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, opened[0]);
+        assert!(!left[0].sealed);
+    }
+
+    #[test]
     fn an_item_that_fails_a_check_part_way_is_named_deleted_and_adds_nothing() {
         let temp = tempfile::tempdir().unwrap();
         let (store, base, vault_id, keys) = sealed_world(&temp);
