@@ -1815,8 +1815,8 @@ describe("durable vault UI", () => {
   });
 
   /** Files kept, sealed, from while the vault was locked (#49): asked about like opened ones, with
-   * Not now (kept for the next unlock) and Remove (deleted) in place of Cancel. */
-  function sealedWithVault(names: string[]) {
+   * Not now (kept for the next unlock) and Delete (the kept files are deleted) in place of Cancel. */
+  function sealedWithVault(names: string[], sealed: string[] = names) {
     const made = openedWithVault(names);
     const list = vi.mocked(made.bridge.listReceived).getMockImplementation()!;
     let removed: string[] = [];
@@ -1826,7 +1826,7 @@ describe("durable vault UI", () => {
         ...listed,
         files: listed.files
           .filter((file) => !removed.includes(file.id))
-          .map((file) => ({ ...file, sealed: true })),
+          .map((file) => ({ ...file, sealed: sealed.includes(file.name) })),
       };
     });
     made.bridge.removeReceived = vi.fn(async (ids: string[]) => {
@@ -1836,7 +1836,7 @@ describe("durable vault UI", () => {
     return made;
   }
 
-  it("asks about sealed files with Not now, Remove and Import, and Not now only forgets them for now (#49)", async () => {
+  it("asks about sealed files with Not now, Delete and Import, and Not now only forgets them for now (#49)", async () => {
     const user = userEvent.setup();
     const { bridge } = sealedWithVault(["FAKE_Sealed.pdf"]);
     render(<VaultApp bridge={bridge} />);
@@ -1847,14 +1847,16 @@ describe("durable vault UI", () => {
     expect(
       within(dialog).getByText(
         humanText(
-          /kept here, encrypted\. Nothing is added until you choose Import\. Not now keeps them for up to 7 days\. Remove deletes them\./,
+          /kept here, encrypted\. Nothing is added until you choose Import\. Not now keeps them for up to 7 days\. Delete removes them from this device for good: this cannot be undone\./,
         ),
       ),
     ).toBeVisible();
     const choices = within(dialog)
       .getAllByRole("button")
       .map((button) => humanValue(button.textContent ?? ""));
-    expect(choices).toEqual(["Not now", "Remove", "Import"].map(humanValue));
+    expect(choices).toEqual(
+      ["Not now", "Delete the kept file", "Import"].map(humanValue),
+    );
     await user.click(
       within(dialog).getByRole("button", { name: humanText("Not now") }),
     );
@@ -1866,7 +1868,7 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("Remove deletes the sealed files, adds nothing, and the question does not come back (#49)", async () => {
+  it("Delete deletes the kept files, adds nothing, and the question does not come back (#49)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sealedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
     render(<VaultApp bridge={bridge} />);
@@ -1875,7 +1877,9 @@ describe("durable vault UI", () => {
       name: humanText("Import 2 documents into Shared with me?"),
     });
     await user.click(
-      within(dialog).getByRole("button", { name: humanText("Remove") }),
+      within(dialog).getByRole("button", {
+        name: humanText("Delete the 2 kept files"),
+      }),
     );
     await waitFor(() =>
       expect(bridge.removeReceived).toHaveBeenCalledWith([
@@ -1891,7 +1895,37 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("offers Cancel, not Remove, for files that are not sealed (#49)", async () => {
+  it("Delete in a mixed question deletes only the kept files; the other file stays waiting and is asked about again (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sealedWithVault(
+      ["FAKE_Kept.pdf", "FAKE_Opened.pdf"],
+      ["FAKE_Kept.pdf"],
+    );
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    // The button says what it covers: the one kept file, not both.
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Delete the kept file"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+    // The other file is still waiting, and its own question comes back.
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("offers Cancel, not Delete, for files that are not sealed (#49)", async () => {
     const user = userEvent.setup();
     const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
     render(<VaultApp bridge={bridge} />);
@@ -1900,7 +1934,7 @@ describe("durable vault UI", () => {
       name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
     });
     expect(
-      within(dialog).queryByRole("button", { name: humanText("Remove") }),
+      within(dialog).queryByRole("button", { name: humanText(/^Delete the/) }),
     ).toBeNull();
     expect(
       within(dialog).getByRole("button", { name: humanText("Cancel") }),

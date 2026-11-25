@@ -819,7 +819,7 @@ pub enum MessageId {
     InterfaceReceivedConfirmTitleOne,
     InterfaceReceivedImport,
     InterfaceReceivedNotNow,
-    InterfaceReceivedRemove,
+    InterfaceReceivedRemoveKept,
     InterfaceRecordPresentationImaging,
     InterfaceRecordPresentationPrescription,
     InterfaceRecordPresentationTestResult,
@@ -2198,7 +2198,7 @@ impl MessageId {
         Self::InterfaceReceivedConfirmTitleOne,
         Self::InterfaceReceivedImport,
         Self::InterfaceReceivedNotNow,
-        Self::InterfaceReceivedRemove,
+        Self::InterfaceReceivedRemoveKept,
         Self::InterfaceRecordPresentationImaging,
         Self::InterfaceRecordPresentationPrescription,
         Self::InterfaceRecordPresentationTestResult,
@@ -3943,7 +3943,7 @@ impl MessageId {
             Self::InterfaceReceivedConfirmTitleOne => "interface-received-confirmTitleOne",
             Self::InterfaceReceivedImport => "interface-received-import",
             Self::InterfaceReceivedNotNow => "interface-received-notNow",
-            Self::InterfaceReceivedRemove => "interface-received-remove",
+            Self::InterfaceReceivedRemoveKept => "interface-received-removeKept",
             Self::InterfaceRecordPresentationImaging => "interface-recordPresentation-imaging",
             Self::InterfaceRecordPresentationPrescription => {
                 "interface-recordPresentation-prescription"
@@ -6406,12 +6406,12 @@ impl MessageId {
             "preferences.moreAutomatic" => Some(Self::PreferencesMoreAutomatic),
             "preferences.moreBackground" => Some(Self::PreferencesMoreBackground),
             "interface.received.notNow" => Some(Self::InterfaceReceivedNotNow),
-            "interface.received.remove" => Some(Self::InterfaceReceivedRemove),
             "interface.received.confirmBodySealed" => {
                 Some(Self::InterfaceReceivedConfirmBodySealed)
             }
             "interface.receive.inboxRemoved" => Some(Self::InterfaceReceiveInboxRemoved),
             "interface.receive.inboxKeyChanged" => Some(Self::InterfaceReceiveInboxKeyChanged),
+            "interface.received.removeKept" => Some(Self::InterfaceReceivedRemoveKept),
             _ => None,
         }
     }

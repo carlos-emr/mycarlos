@@ -1371,10 +1371,10 @@ export const MESSAGE_KEYS = [
   "preferences.moreAutomatic",
   "preferences.moreBackground",
   "interface.received.notNow",
-  "interface.received.remove",
   "interface.received.confirmBodySealed",
   "interface.receive.inboxRemoved",
   "interface.receive.inboxKeyChanged",
+  "interface.received.removeKept",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3016,11 +3016,11 @@ const FLUENT_IDS_BY_KEY = {
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
   "interface.received.notNow": "interface-received-notNow",
-  "interface.received.remove": "interface-received-remove",
   "interface.received.confirmBodySealed":
     "interface-received-confirmBodySealed",
   "interface.receive.inboxRemoved": "interface-receive-inboxRemoved",
   "interface.receive.inboxKeyChanged": "interface-receive-inboxKeyChanged",
+  "interface.received.removeKept": "interface-received-removeKept",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4527,10 +4527,10 @@ export interface MessageArgsByKey {
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
   "interface.received.notNow": undefined;
-  "interface.received.remove": undefined;
   "interface.received.confirmBodySealed": undefined;
   "interface.receive.inboxRemoved": { count: FluentArgument };
   "interface.receive.inboxKeyChanged": undefined;
+  "interface.received.removeKept": { count: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

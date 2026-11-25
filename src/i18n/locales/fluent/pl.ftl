@@ -3052,9 +3052,8 @@ notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i s
 
 interface-received-notNow = Nie teraz
 
-interface-received-remove = Usuń
 
-interface-received-confirmBodySealed = Te pliki udostępniono, gdy myCarlos był zablokowany, i są tu przechowywane w postaci zaszyfrowanej. Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Nie teraz zachowuje je do 7 dni. Usuń kasuje je.
+interface-received-confirmBodySealed = Te pliki udostępniono, gdy myCarlos był zablokowany, i są tu przechowywane w postaci zaszyfrowanej. Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Nie teraz zachowuje je do 7 dni. Usuń kasuje je z tego urządzenia na zawsze: tego nie można cofnąć.
 
 interface-receive-inboxRemoved =
     { $count ->
@@ -3065,3 +3064,11 @@ interface-receive-inboxRemoved =
     }
 
 interface-receive-inboxKeyChanged = Klucz, który przechowuje udostępnione pliki, gdy myCarlos jest zablokowany, został zmieniony przez coś innego i został naprawiony. Pliki udostępnione od tego czasu nie zostały zachowane. Udostępnij je ponownie.
+
+interface-received-removeKept =
+    { $count ->
+    [one] Usuń zachowany plik
+    [few] Usuń { $count } zachowane pliki
+    [many] Usuń { $count } zachowanych plików
+    *[other] Usuń { $count } zachowanych plików
+    }

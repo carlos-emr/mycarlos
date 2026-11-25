@@ -402,8 +402,9 @@ impl ReceivedFiles {
         added
     }
 
-    /// Forgets exactly the waiting files named, as `forget` does, and returns the sealed items
-    /// among them, so that the caller can delete them (the patient chose Remove, not Not now).
+    /// Forgets the SEALED files among those named, and returns their items so that the caller
+    /// deletes them (the patient chose Delete, not Not now). A file that is not sealed (an "Open
+    /// with" file waiting in the same question) is not touched: it stays waiting.
     pub(crate) fn remove_sealed(&self, ids: &[Uuid]) -> Vec<ItemId> {
         let mut waiting = self.waiting();
         let mut removed = Vec::new();
@@ -411,10 +412,13 @@ impl ReceivedFiles {
             if !ids.contains(id) {
                 return true;
             }
-            if let ReceivedSource::Inbox(item) = file.source {
-                removed.push(item);
+            match file.source {
+                ReceivedSource::Inbox(item) => {
+                    removed.push(item);
+                    false
+                }
+                _ => true,
             }
-            false
         });
         removed
     }
