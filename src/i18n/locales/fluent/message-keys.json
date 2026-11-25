@@ -1375,5 +1375,9 @@
   "interface.VaultLibrary.view",
   "interface.VaultLibrary.helpWithThisScreen",
   "interface.VaultLibrary.moreFor",
-  "unlock.brand.tagline"
+  "unlock.brand.tagline",
+  "reader.back",
+  "reader.panel.label",
+  "reader.panel.more",
+  "reader.panel.ai"
 ]

@@ -351,7 +351,7 @@ describe("the installed interface in the selected language", () => {
     changeLanguage("fr");
     expect(screen.getByLabelText("Mot de passe du document")).toBe(input);
     expect(input).toHaveValue("FAKE {page} à");
-    expect(screen.getByRole("button", { name: "Fermer" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retour" })).toBeVisible();
     expect(viewPage).toHaveBeenCalledTimes(calls);
   });
 

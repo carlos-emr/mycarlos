@@ -10,6 +10,7 @@ import {
   myRecords,
   sidebar,
 } from "./support/vaultFake";
+import { chooseHead } from "./support/menus";
 
 // Keeping records for more than one person: a person is added in Security
 // with their details, their details are edited, a document is moved to
@@ -180,12 +181,11 @@ test("a person is added with their details in Security, their details are edited
   ).toBeVisible();
 
   // The person's folder is renamed; their documents stay.
-  await page
-    .getByRole("button", {
-      name: en("rename.profile.action", { name: CHILD }),
-      exact: true,
-    })
+  // Rename is in the "…" menu of the person's own page.
+  await sidebar(page)
+    .getByRole("button", { name: new RegExp(`^${CHILD}`) })
     .click();
+  await chooseHead(page, en("rename.profile.action", { name: CHILD }));
   const rename = page.getByRole("dialog", {
     name: en("rename.title.profile"),
     exact: true,

@@ -2254,7 +2254,7 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     // Seen from the AI helper section (#355) while the model's status could
     // not be read: the export's text only.
     fireEvent.click(
-      within(reader).getByRole("button", { name: humanText("Close") }),
+      within(reader).getByRole("button", { name: humanText("Back") }),
     );
     fireEvent.click(
       screen.getByRole("button", { name: humanText("AI helper") }),
@@ -2332,7 +2332,7 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(1));
     const readerRead = native.documentText.mock.calls[0][1] as string;
     fireEvent.click(
-      within(reader).getByRole("button", { name: humanText("Close") }),
+      within(reader).getByRole("button", { name: humanText("Back") }),
     );
     expect(native.cancelDocumentText).toHaveBeenCalledTimes(1);
     expect(native.cancelDocumentText).toHaveBeenLastCalledWith(readerRead);

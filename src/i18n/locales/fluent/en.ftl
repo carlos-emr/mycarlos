@@ -2922,3 +2922,11 @@ notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
 
 unlock-brand-tagline = Your health documents, kept private on this device.
+
+reader-back = Back
+
+reader-panel-label = About this document
+
+reader-panel-more = More…
+
+reader-panel-ai = Explain with AI

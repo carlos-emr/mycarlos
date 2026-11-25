@@ -3051,3 +3051,11 @@ notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
 
 unlock-brand-tagline = Twoje dokumenty zdrowotne, prywatne na tym urządzeniu.
+
+reader-back = Wstecz
+
+reader-panel-label = O tym dokumencie
+
+reader-panel-more = Więcej…
+
+reader-panel-ai = Wyjaśnij z pomocą AI

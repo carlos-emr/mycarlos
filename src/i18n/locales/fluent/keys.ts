@@ -1377,6 +1377,10 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.helpWithThisScreen",
   "interface.VaultLibrary.moreFor",
   "unlock.brand.tagline",
+  "reader.back",
+  "reader.panel.label",
+  "reader.panel.more",
+  "reader.panel.ai",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3025,6 +3029,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-VaultLibrary-helpWithThisScreen",
   "interface.VaultLibrary.moreFor": "interface-VaultLibrary-moreFor",
   "unlock.brand.tagline": "unlock-brand-tagline",
+  "reader.back": "reader-back",
+  "reader.panel.label": "reader-panel-label",
+  "reader.panel.more": "reader-panel-more",
+  "reader.panel.ai": "reader-panel-ai",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4537,6 +4545,10 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.helpWithThisScreen": undefined;
   "interface.VaultLibrary.moreFor": { name: FluentArgument };
   "unlock.brand.tagline": undefined;
+  "reader.back": undefined;
+  "reader.panel.label": undefined;
+  "reader.panel.more": undefined;
+  "reader.panel.ai": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
