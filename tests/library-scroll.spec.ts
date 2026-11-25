@@ -254,8 +254,10 @@ test("Security, Preferences and Hidden scroll inside the window, as the page did
     // The page itself has nothing to scroll; the page's own content scrolls inside the window.
     expect(state.pageRoom, name).toBeLessThanOrEqual(1);
     expect(state.withinWindow, name).toBe(true);
-    expect(state.mainRoom, name).toBeGreaterThan(0);
-    // And its last control can be reached.
+    // A short section (Preferences at CI's fonts) may fit and have nothing to scroll; what must
+    // hold is that it never overflows the window without scrolling, and that its last control
+    // can be reached.
+    expect(state.mainRoom, name).toBeGreaterThanOrEqual(0);
     const last = page.locator(".app-body > main button:visible").last();
     await last.scrollIntoViewIfNeeded();
     await expect(last).toBeInViewport();
