@@ -42,6 +42,10 @@ const MAX_ZEROED: u64 = 16 * 1024 * 1024;
 /// The most chunks and samples of one removed track that are followed.
 const MAX_CHUNKS: usize = 200_000;
 const MAX_SAMPLES: u64 = 2_000_000;
+/// The most boxes the file's top level may have. A real file has a handful.
+const MAX_TOP_BOXES: usize = 4_096;
+/// The most edits (zeroed ranges and renamed boxes) a plan may hold.
+const MAX_EDITS: usize = 200_000;
 /// The largest picture, on either side.
 pub const MAX_SIDE: u32 = 7680;
 
@@ -88,6 +92,17 @@ pub struct Plan {
     zero: Vec<(u64, u64)>,
     /// Four-byte box types to write (position, type), sorted.
     types: Vec<(u64, [u8; 4])>,
+    /// The ranges of removed tracks' samples (start, length), a subset of `zero`: each must lie
+    /// inside one `mdat`.
+    removed: Vec<(u64, u64)>,
+    /// The ranges the kept tracks' samples take (start, length): no edit may touch them.
+    kept: Vec<(u64, u64)>,
+    /// A kept track's sample tables could not be read, so what it keeps is not known.
+    kept_unknown: bool,
+    /// Where each `mdat`'s payload is (start, end).
+    mdat: Vec<(u64, u64)>,
+    /// How many edits were added.
+    edits: usize,
     /// The file has a sound track.
     pub has_audio: bool,
     /// The picture's size.
@@ -103,26 +118,56 @@ impl Plan {
         self.zero.is_empty() && self.types.is_empty()
     }
 
-    /// Rename a box `free` and zero what is inside it: `start` is where the box begins, `size` its
-    /// whole length and `header` the length of its header (8 or 16).
-    fn free_box(&mut self, start: u64, size: u64, header: u64) {
-        self.types.push((start + 4, *b"free"));
-        if size > header {
-            self.zero.push((start + header, size - header));
+    /// Counts one edit, and refuses a plan that holds too many.
+    fn edit(&mut self) -> Result<(), Refusal> {
+        self.edits += 1;
+        if self.edits > MAX_EDITS {
+            return Err(Refusal::Damaged);
         }
+        Ok(())
     }
 
-    /// Sorts, merges and bounds the edits.
+    /// Rename a box `free` and zero what is inside it: `start` is where the box begins, `size` its
+    /// whole length and `header` the length of its header (8 or 16).
+    fn free_box(&mut self, start: u64, size: u64, header: u64) -> Result<(), Refusal> {
+        self.edit()?;
+        self.types.push((start + 4, *b"free"));
+        if size > header {
+            self.edit()?;
+            self.zero.push((start + header, size - header));
+        }
+        Ok(())
+    }
+
+    /// Sorts, merges, bounds and checks the edits against the file: what a removed track's samples
+    /// say must be inside the media data, and nothing a kept track keeps may be zeroed.
     fn finish(&mut self) -> Result<(), Refusal> {
+        // Removed tracks' samples must sit inside one `mdat` (not the file's own structure, and not
+        // past its end).
+        self.mdat.sort_unstable();
+        for &(start, length) in &self.removed {
+            let end = start.checked_add(length).ok_or(Refusal::Damaged)?;
+            let index = self.mdat.partition_point(|mdat| mdat.0 <= start);
+            let inside = index > 0 && end <= self.mdat[index - 1].1;
+            if !inside {
+                return Err(Refusal::Damaged);
+            }
+        }
+        // What a kept track keeps is not known: then nothing of a removed track can be told apart
+        // from it.
+        if self.kept_unknown && !self.removed.is_empty() {
+            return Err(Refusal::Damaged);
+        }
         self.types.sort_unstable();
         self.types.dedup();
         self.zero.sort_unstable();
         let mut merged: Vec<(u64, u64)> = Vec::with_capacity(self.zero.len());
         for &(start, length) in &self.zero {
+            let end = start.checked_add(length).ok_or(Refusal::Damaged)?;
             if let Some(last) = merged.last_mut() {
-                let end = last.0 + last.1;
-                if start <= end {
-                    last.1 = last.1.max(start + length - last.0);
+                let last_end = last.0 + last.1;
+                if start <= last_end {
+                    last.1 = last_end.max(end) - last.0;
                     continue;
                 }
             }
@@ -131,6 +176,26 @@ impl Plan {
         let total: u64 = merged.iter().map(|range| range.1).sum();
         if total > MAX_ZEROED {
             return Err(Refusal::Damaged);
+        }
+        // No edit may touch a byte a kept track keeps.
+        self.kept.sort_unstable();
+        let mut kept: Vec<(u64, u64)> = Vec::with_capacity(self.kept.len());
+        for &(start, length) in &self.kept {
+            let end = start.checked_add(length).ok_or(Refusal::Damaged)?;
+            if let Some(last) = kept.last_mut() {
+                if start <= last.1 {
+                    last.1 = last.1.max(end);
+                    continue;
+                }
+            }
+            kept.push((start, end));
+        }
+        for &(start, length) in &merged {
+            let end = start + length;
+            let index = kept.partition_point(|range| range.0 < end);
+            if index > 0 && kept[index - 1].1 > start {
+                return Err(Refusal::Damaged);
+            }
         }
         self.zero = merged;
         Ok(())
@@ -168,10 +233,18 @@ fn header_in(buf: &[u8], at: usize) -> Option<Header> {
 }
 
 /// The children of the box at `parent` (its payload is `buf[start..end]`): (offset, header).
-fn children(buf: &[u8], start: usize, end: usize) -> Result<Vec<(usize, Header)>, Refusal> {
+fn children(
+    buf: &[u8],
+    start: usize,
+    end: usize,
+    budget: &mut Budget,
+) -> Result<Vec<(usize, Header)>, Refusal> {
     let mut found = Vec::new();
     let mut at = start;
     while at < end {
+        // Each box is paid for as it is found, so a hostile `moov` of 8-byte boxes is refused
+        // before a list of millions is built.
+        budget.spend()?;
         let header = header_in(&buf[..end], at).ok_or(Refusal::Damaged)?;
         let next = at + header.size as usize;
         found.push((at, header));
@@ -248,14 +321,21 @@ fn skip_to_end(reader: &mut impl Read) -> Result<u64, Refusal> {
 
 /// Walks the whole file once and decides. `max_bytes` is the size limit. Nothing is decoded, and
 /// nothing is kept but the one `moov`.
-pub fn analyse(mut reader: impl Read, max_bytes: u64) -> Result<Plan, Refusal> {
+pub fn analyse(reader: impl Read, max_bytes: u64) -> Result<Plan, Refusal> {
+    // A source that never ends is cut off one byte past the limit, which then refuses it.
+    let mut reader = reader.take(max_bytes.saturating_add(1));
     let mut plan = Plan::default();
     let mut pos = 0_u64;
+    let mut top_boxes = 0_usize;
     let (mut seen_ftyp, mut seen_moov, mut seen_mdat) = (false, false, false);
     loop {
         let mut head = [0_u8; 8];
         if !read_all_or_end(&mut reader, &mut head)? {
             break;
+        }
+        top_boxes += 1;
+        if top_boxes > MAX_TOP_BOXES {
+            return Err(Refusal::Damaged);
         }
         let size32 = u32::from_be_bytes([head[0], head[1], head[2], head[3]]);
         let kind = [head[4], head[5], head[6], head[7]];
@@ -280,14 +360,21 @@ pub fn analyse(mut reader: impl Read, max_bytes: u64) -> Result<Plan, Refusal> {
             }
             size = header + skip_to_end(&mut reader)?;
             seen_mdat = true;
-            pos = pos.checked_add(size).ok_or(Refusal::TooLarge)?;
-            if pos > max_bytes {
+            let end = pos.checked_add(size).ok_or(Refusal::TooLarge)?;
+            if end > max_bytes {
                 return Err(Refusal::TooLarge);
             }
+            plan.mdat.push((pos + header, end));
+            pos = end;
             break;
         }
         if size < header {
             return Err(Refusal::Damaged);
+        }
+        // The limit is checked before the box is read, so that nothing is read for a box that does
+        // not fit.
+        if pos.checked_add(size).ok_or(Refusal::TooLarge)? > max_bytes {
+            return Err(Refusal::TooLarge);
         }
         let payload = size - header;
         match &kind {
@@ -319,6 +406,7 @@ pub fn analyse(mut reader: impl Read, max_bytes: u64) -> Result<Plan, Refusal> {
             b"mdat" => {
                 skip(&mut reader, payload)?;
                 seen_mdat = true;
+                plan.mdat.push((pos + header, pos + size));
             }
             b"free" | b"skip" | b"wide" => skip(&mut reader, payload)?,
             // A fragmented file's boxes: not an ordinary video.
@@ -330,7 +418,7 @@ pub fn analyse(mut reader: impl Read, max_bytes: u64) -> Result<Plan, Refusal> {
                     return Err(Refusal::Damaged);
                 }
                 skip(&mut reader, payload)?;
-                plan.free_box(pos, size, header);
+                plan.free_box(pos, size, header)?;
             }
         }
         pos = pos.checked_add(size).ok_or(Refusal::TooLarge)?;
@@ -346,7 +434,7 @@ pub fn analyse(mut reader: impl Read, max_bytes: u64) -> Result<Plan, Refusal> {
         });
     }
     plan.length = pos;
-    // A removed track's samples must not be where the file's own structure is.
+    // A removed track's samples must be inside the media data and clear of what is kept.
     plan.finish()?;
     Ok(plan)
 }
@@ -374,8 +462,7 @@ fn check_brand(body: &[u8]) -> Result<(), Refusal> {
 fn inspect_moov(moov: &[u8], base: u64, plan: &mut Plan) -> Result<(), Refusal> {
     let mut budget = Budget(MAX_BOXES);
     let mut found = Found::default();
-    for (at, child) in children(moov, 0, moov.len())? {
-        budget.spend()?;
+    for (at, child) in children(moov, 0, moov.len(), &mut budget)? {
         let start = base + at as u64;
         match &child.kind {
             b"trak" => {
@@ -386,7 +473,7 @@ fn inspect_moov(moov: &[u8], base: u64, plan: &mut Plan) -> Result<(), Refusal> 
                 inspect_trak(moov, at, &child, base, plan, &mut found, &mut budget)?;
             }
             // Where, with what and when: the places and devices the file names.
-            b"udta" | b"meta" | b"uuid" => plan.free_box(start, child.size, child.header),
+            b"udta" | b"meta" | b"uuid" => plan.free_box(start, child.size, child.header)?,
             // A fragmented movie, or one we cannot read without unpacking it.
             b"mvex" => return Err(Refusal::Fragmented),
             b"cmov" | b"rmra" => return Err(Refusal::External),
@@ -424,12 +511,11 @@ fn inspect_trak(
     budget: &mut Budget,
 ) -> Result<(), Refusal> {
     let (start, end) = payload_of(moov, at, trak).ok_or(Refusal::Damaged)?;
-    let parts = children(moov, start, end)?;
-    budget.spend()?;
+    let parts = children(moov, start, end, budget)?;
     // What the track is, from its handler.
     let mdia = first(&parts, b"mdia").ok_or(Refusal::Damaged)?;
     let (mdia_start, mdia_end) = payload_of(moov, mdia.0, &mdia.1).ok_or(Refusal::Damaged)?;
-    let media = children(moov, mdia_start, mdia_end)?;
+    let media = children(moov, mdia_start, mdia_end, budget)?;
     let hdlr = first(&media, b"hdlr").ok_or(Refusal::Damaged)?;
     let (h_start, h_end) = payload_of(moov, hdlr.0, &hdlr.1).ok_or(Refusal::Damaged)?;
     // version and flags, the old component type, then the handler type.
@@ -445,12 +531,12 @@ fn inspect_trak(
         }
         b"soun" => {
             found.audio += 1;
-            check_sound_track(moov, &media, budget)
+            check_sound_track(moov, &media, plan, budget)
         }
         // Anything else (a phone's location or motion track, a timecode, subtitles): removed, with the
         // bytes it keeps in `mdat`.
         _ => {
-            plan.free_box(base + at as u64, trak.size, trak.header);
+            plan.free_box(base + at as u64, trak.size, trak.header)?;
             zero_samples(moov, &media, plan, budget)
         }
     };
@@ -460,7 +546,7 @@ fn inspect_trak(
     if matches!(&handler, b"vide" | b"soun") {
         for (child_at, child) in &parts {
             if matches!(&child.kind, b"udta" | b"meta" | b"uuid") {
-                plan.free_box(base + *child_at as u64, child.size, child.header);
+                plan.free_box(base + *child_at as u64, child.size, child.header)?;
             }
         }
     }
@@ -470,13 +556,17 @@ fn inspect_trak(
 /// The boxes found inside one parent: where each starts, and its header.
 type Boxes = Vec<(usize, Header)>;
 
-fn minf_children(moov: &[u8], media: &[(usize, Header)]) -> Result<(Boxes, Boxes), Refusal> {
+fn minf_children(
+    moov: &[u8],
+    media: &[(usize, Header)],
+    budget: &mut Budget,
+) -> Result<(Boxes, Boxes), Refusal> {
     let minf = first(media, b"minf").ok_or(Refusal::Damaged)?;
     let (m_start, m_end) = payload_of(moov, minf.0, &minf.1).ok_or(Refusal::Damaged)?;
-    let parts = children(moov, m_start, m_end)?;
+    let parts = children(moov, m_start, m_end, budget)?;
     let stbl = first(&parts, b"stbl").ok_or(Refusal::Damaged)?;
     let (s_start, s_end) = payload_of(moov, stbl.0, &stbl.1).ok_or(Refusal::Damaged)?;
-    let table = children(moov, s_start, s_end)?;
+    let table = children(moov, s_start, s_end, budget)?;
     Ok((parts, table))
 }
 
@@ -497,18 +587,22 @@ fn sample_entry(moov: &[u8], table: &[(usize, Header)]) -> Result<[u8; 4], Refus
 }
 
 /// Every data reference of the track is "in this file": the flag bit of each `url ` or `urn `.
-fn check_self_contained(moov: &[u8], parts: &[(usize, Header)]) -> Result<(), Refusal> {
+fn check_self_contained(
+    moov: &[u8],
+    parts: &[(usize, Header)],
+    budget: &mut Budget,
+) -> Result<(), Refusal> {
     let Some(dinf) = first(parts, b"dinf") else {
         return Ok(());
     };
     let (d_start, d_end) = payload_of(moov, dinf.0, &dinf.1).ok_or(Refusal::Damaged)?;
-    let inside = children(moov, d_start, d_end)?;
+    let inside = children(moov, d_start, d_end, budget)?;
     let Some(dref) = first(&inside, b"dref") else {
         return Ok(());
     };
     let (r_start, r_end) = payload_of(moov, dref.0, &dref.1).ok_or(Refusal::Damaged)?;
     // version and flags, the entry count, then the entries.
-    let entries = children(moov, r_start + 8, r_end)?;
+    let entries = children(moov, r_start + 8, r_end, budget)?;
     for (entry_at, entry) in entries {
         let flags = moov
             .get(entry_at + entry.header as usize..entry_at + entry.header as usize + 4)
@@ -527,9 +621,8 @@ fn check_picture_track(
     plan: &mut Plan,
     budget: &mut Budget,
 ) -> Result<(), Refusal> {
-    budget.spend()?;
-    let (minf, table) = minf_children(moov, media)?;
-    check_self_contained(moov, &minf)?;
+    let (minf, table) = minf_children(moov, media, budget)?;
+    check_self_contained(moov, &minf, budget)?;
     match &sample_entry(moov, &table)? {
         b"avc1" | b"avc3" => {}
         b"hvc1" | b"hev1" | b"dvh1" | b"dvhe" => return Err(Refusal::Hevc),
@@ -554,21 +647,36 @@ fn check_picture_track(
     }
     plan.width = width;
     plan.height = height;
+    keep_samples(moov, &table, plan, budget)
+}
+
+/// Notes the bytes a kept track keeps, so that no edit touches them.
+fn keep_samples(
+    moov: &[u8],
+    table: &[(usize, Header)],
+    plan: &mut Plan,
+    budget: &mut Budget,
+) -> Result<(), Refusal> {
+    match sample_ranges(moov, table, budget)? {
+        Some(ranges) => plan.kept.extend(ranges),
+        None => plan.kept_unknown = true,
+    }
     Ok(())
 }
 
 fn check_sound_track(
     moov: &[u8],
     media: &[(usize, Header)],
+    plan: &mut Plan,
     budget: &mut Budget,
 ) -> Result<(), Refusal> {
-    budget.spend()?;
-    let (minf, table) = minf_children(moov, media)?;
-    check_self_contained(moov, &minf)?;
+    let (minf, table) = minf_children(moov, media, budget)?;
+    check_self_contained(moov, &minf, budget)?;
     match &sample_entry(moov, &table)? {
-        b"mp4a" => Ok(()),
-        _ => Err(Refusal::AudioCodec),
+        b"mp4a" => {}
+        _ => return Err(Refusal::AudioCodec),
     }
+    keep_samples(moov, &table, plan, budget)
 }
 
 /// The bytes a removed track keeps in `mdat`, found from its sample tables, are zeroed too.
@@ -578,13 +686,27 @@ fn zero_samples(
     plan: &mut Plan,
     budget: &mut Budget,
 ) -> Result<(), Refusal> {
-    budget.spend()?;
     // A track with no sample table keeps nothing.
-    let Ok((_, table)) = minf_children(moov, media) else {
+    let Ok((_, table)) = minf_children(moov, media, budget) else {
         return Ok(());
     };
+    for (start, length) in sample_ranges(moov, &table, budget)?.unwrap_or_default() {
+        plan.edit()?;
+        plan.zero.push((start, length));
+        plan.removed.push((start, length));
+    }
+    Ok(())
+}
+
+/// Where a track's samples are in the file, one range (start, length) for each chunk, from its
+/// sample tables; `None` when it has no tables to read. Walks the chunks once.
+fn sample_ranges(
+    moov: &[u8],
+    table: &[(usize, Header)],
+    budget: &mut Budget,
+) -> Result<Option<Vec<(u64, u64)>>, Refusal> {
     let body_of = |kind: &[u8; 4]| -> Result<Option<&[u8]>, Refusal> {
-        match first(&table, kind) {
+        match first(table, kind) {
             Some((at, header)) => {
                 let (s, e) = payload_of(moov, *at, header).ok_or(Refusal::Damaged)?;
                 Ok(moov.get(s..e))
@@ -593,14 +715,14 @@ fn zero_samples(
         }
     };
     let (Some(stsz), Some(stsc)) = (body_of(b"stsz")?, body_of(b"stsc")?) else {
-        return Ok(());
+        return Ok(None);
     };
     let offsets: Vec<u64> = if let Some(stco) = body_of(b"stco")? {
         read_offsets(stco, 4)?
     } else if let Some(co64) = body_of(b"co64")? {
         read_offsets(co64, 8)?
     } else {
-        return Ok(());
+        return Ok(None);
     };
     // Sample sizes: a fixed size, or a table.
     if stsz.len() < 12 {
@@ -646,19 +768,18 @@ fn zero_samples(
             ])),
         )
     };
+    let mut ranges = Vec::new();
     let mut next_sample = 0_u64;
+    // The run that holds a chunk is the last one starting at or before it. Chunks come in order,
+    // so the runs are walked once with a cursor, not searched again for every chunk.
+    let mut cursor = 0_usize;
     for (chunk_index, &offset) in offsets.iter().enumerate() {
+        budget.spend()?;
         let chunk_number = chunk_index as u64 + 1;
-        // The run that holds this chunk is the last one starting at or before it.
-        let mut per_chunk = 0_u64;
-        for index in 0..runs {
-            let (first_chunk, count) = run(index);
-            if first_chunk <= chunk_number {
-                per_chunk = count;
-            } else {
-                break;
-            }
+        while cursor < runs && run(cursor).0 <= chunk_number {
+            cursor += 1;
         }
+        let per_chunk = if cursor == 0 { 0 } else { run(cursor - 1).1 };
         let mut length = 0_u64;
         for _ in 0..per_chunk {
             if next_sample >= samples {
@@ -668,11 +789,11 @@ fn zero_samples(
             next_sample += 1;
         }
         if length > 0 {
-            plan.zero.push((offset, length));
+            offset.checked_add(length).ok_or(Refusal::Damaged)?;
+            ranges.push((offset, length));
         }
-        budget.spend()?;
     }
-    Ok(())
+    Ok(Some(ranges))
 }
 
 fn read_offsets(body: &[u8], width: usize) -> Result<Vec<u64>, Refusal> {
@@ -715,6 +836,9 @@ pub struct Cleaner<R> {
     inner: R,
     plan: Plan,
     pos: u64,
+    /// The first zeroed range and box type that may still touch what is read (reads go forward).
+    zero_from: usize,
+    types_from: usize,
 }
 
 impl<R: Read> Cleaner<R> {
@@ -723,6 +847,8 @@ impl<R: Read> Cleaner<R> {
             inner,
             plan,
             pos: 0,
+            zero_from: 0,
+            types_from: 0,
         }
     }
 }
@@ -734,14 +860,34 @@ impl<R: Read> Read for Cleaner<R> {
             return Ok(0);
         }
         let (from, to) = (self.pos, self.pos + n as u64);
+        // Ranges and types that end before this read are done with: the reads go forward.
+        while self.zero_from < self.plan.zero.len()
+            && self.plan.zero[self.zero_from]
+                .0
+                .saturating_add(self.plan.zero[self.zero_from].1)
+                <= from
+        {
+            self.zero_from += 1;
+        }
+        while self.types_from < self.plan.types.len()
+            && self.plan.types[self.types_from].0 + 4 <= from
+        {
+            self.types_from += 1;
+        }
         // Zeroed ranges first, then the box types, so a renamed box keeps its new name.
-        for &(start, length) in &self.plan.zero {
-            let (lo, hi) = (start.max(from), (start + length).min(to));
+        for &(start, length) in &self.plan.zero[self.zero_from..] {
+            if start >= to {
+                break;
+            }
+            let (lo, hi) = (start.max(from), start.saturating_add(length).min(to));
             if lo < hi {
                 buf[(lo - from) as usize..(hi - from) as usize].fill(0);
             }
         }
-        for &(at, kind) in &self.plan.types {
+        for &(at, kind) in &self.plan.types[self.types_from..] {
+            if at >= to {
+                break;
+            }
             for (offset, byte) in kind.iter().enumerate() {
                 let place = at + offset as u64;
                 if place >= from && place < to {
@@ -1032,15 +1178,13 @@ mod tests {
     #[test]
     fn a_hostile_track_table_cannot_point_the_clean_up_at_the_files_own_structure() {
         // A metadata track whose "sample" claims the first bytes of the file: zeroing it would
-        // destroy the ftyp. The plan is still made, but the zeroing is bounded and the file then
-        // fails its own check rather than playing.
+        // destroy the ftyp. It is refused when the plan is made, not cleaned.
         let meta_track = trak(b"meta", b"mebx", true, (0, 16));
         let file = video(false, &[], &[meta_track]);
-        let plan = analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap();
-        let mut out = Vec::new();
-        Cleaner::new(&file[..], plan).read_to_end(&mut out).unwrap();
-        assert_eq!(out.len(), file.len());
-        assert!(analyse(&out[..], MAX_VIDEO_BYTES_DESKTOP).is_err());
+        assert_eq!(
+            analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+            Refusal::Damaged
+        );
     }
 
     #[test]
@@ -1059,5 +1203,184 @@ mod tests {
             analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
             Refusal::TooBig
         );
+    }
+
+    /// A removed (metadata) track whose one chunk is at `offset` with `size`, written with a 64-bit
+    /// offset table.
+    fn meta_track_co64(offset: u64, size: u32) -> Vec<u8> {
+        let mut stbl = stsd(b"mebx");
+        let mut stsz = 0_u32.to_be_bytes().to_vec();
+        stsz.extend_from_slice(&1_u32.to_be_bytes());
+        stsz.extend_from_slice(&size.to_be_bytes());
+        stbl.extend(full(b"stsz", 0, &stsz));
+        let mut stsc = 1_u32.to_be_bytes().to_vec();
+        for value in [1_u32, 1, 1] {
+            stsc.extend_from_slice(&value.to_be_bytes());
+        }
+        stbl.extend(full(b"stsc", 0, &stsc));
+        let mut co64 = 1_u32.to_be_bytes().to_vec();
+        co64.extend_from_slice(&offset.to_be_bytes());
+        stbl.extend(full(b"co64", 0, &co64));
+        let mut minf = dref(true);
+        minf.extend(bx(b"stbl", &stbl));
+        let mut mdia = hdlr(b"meta");
+        mdia.extend(bx(b"minf", &minf));
+        let mut parts = tkhd(1920, 1080);
+        parts.extend(bx(b"mdia", &mdia));
+        bx(b"trak", &parts)
+    }
+
+    #[test]
+    fn a_removed_tracks_samples_must_sit_inside_the_media_data() {
+        let file0 = video(false, &[], &[]);
+        let start = mdat_start(&file0);
+        let end = file0.len() as u64;
+        let refused = |track: Vec<u8>| {
+            let file = video(false, &[], &[track]);
+            analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err()
+        };
+        // On the file's own boxes: the ftyp and the moov.
+        assert_eq!(
+            refused(trak(b"meta", b"mebx", true, (4, 8))),
+            Refusal::Damaged
+        );
+        assert_eq!(
+            refused(trak(b"meta", b"mebx", true, (end - 40, 8))),
+            Refusal::Damaged
+        );
+        // Past the end of the file, and one byte past the end of the media data.
+        assert_eq!(
+            refused(trak(b"meta", b"mebx", true, (4_000_000_000, 16))),
+            Refusal::Damaged
+        );
+        let mdat_end = start + 8 + 16 + 64;
+        assert_eq!(
+            refused(trak(b"meta", b"mebx", true, (mdat_end - 4, 8))),
+            Refusal::Damaged
+        );
+        // A 64-bit offset near the top of the range cannot wrap around into the file.
+        assert_eq!(refused(meta_track_co64(u64::MAX - 4, 16)), Refusal::Damaged);
+        assert_eq!(refused(meta_track_co64(u64::MAX, 1)), Refusal::Damaged);
+        // The same track inside the media data is fine.
+        let file = video(false, &[], &[trak(b"meta", b"mebx", true, (start + 8, 16))]);
+        assert!(analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).is_ok());
+    }
+
+    #[test]
+    fn a_removed_tracks_samples_cannot_cover_what_a_kept_track_keeps() {
+        let file0 = video(false, &[], &[]);
+        let start = mdat_start(&file0);
+        // The picture's samples are at start + 24 for 32 bytes, the sound's at start + 56.
+        for at in [start + 24, start + 40, start + 56, start + 20] {
+            let file = video(false, &[], &[trak(b"meta", b"mebx", true, (at, 8))]);
+            assert_eq!(
+                analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+                Refusal::Damaged,
+                "at {at}"
+            );
+        }
+        // Next to them, not on them.
+        let file = video(false, &[], &[trak(b"meta", b"mebx", true, (start + 8, 16))]);
+        assert!(analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).is_ok());
+    }
+
+    #[test]
+    fn a_file_of_endless_small_boxes_is_refused_without_a_long_list() {
+        let mut file = ftyp(b"isom");
+        for _ in 0..(MAX_TOP_BOXES + 10) {
+            file.extend_from_slice(&8_u32.to_be_bytes());
+            file.extend_from_slice(b"junk");
+        }
+        assert_eq!(
+            analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+            Refusal::Damaged
+        );
+        // A moov of tens of thousands of 8-byte boxes is refused by the budget of boxes.
+        let mut moov = full(b"mvhd", 0, &[0_u8; 96]);
+        for _ in 0..(MAX_BOXES + 10) {
+            moov.extend_from_slice(&8_u32.to_be_bytes());
+            moov.extend_from_slice(b"junk");
+        }
+        let mut file = ftyp(b"isom");
+        file.extend(bx(b"mdat", &[1_u8; 8]));
+        file.extend(bx(b"moov", &moov));
+        assert_eq!(
+            analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+            Refusal::Damaged
+        );
+    }
+
+    #[test]
+    fn a_source_that_never_ends_is_cut_off_at_the_limit() {
+        struct Endless;
+        impl Read for Endless {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                buf.fill(0);
+                Ok(buf.len())
+            }
+        }
+        // An mdat that says it runs to the end of an endless file.
+        let mut head = ftyp(b"isom");
+        head.extend_from_slice(&0_u32.to_be_bytes());
+        head.extend_from_slice(b"mdat");
+        let source = (&head[..]).chain(Endless);
+        assert_eq!(analyse(source, 1024 * 1024).unwrap_err(), Refusal::TooLarge);
+    }
+
+    #[test]
+    fn many_chunks_and_many_runs_are_walked_once() {
+        const N: u32 = 150_000;
+        // A fixed sample size of 1 byte, and N samples.
+        let mut stsz = 1_u32.to_be_bytes().to_vec();
+        stsz.extend_from_slice(&N.to_be_bytes());
+        let mut stsc = N.to_be_bytes().to_vec();
+        for chunk in 1..=N {
+            for value in [chunk, 1, 1] {
+                stsc.extend_from_slice(&value.to_be_bytes());
+            }
+        }
+        let mut stco = N.to_be_bytes().to_vec();
+        for chunk in 0..N {
+            stco.extend_from_slice(&(chunk * 2).to_be_bytes());
+        }
+        // The size is a fixed 1, so each chunk has one byte.
+        let mut moov = full(b"stsz", 0, &stsz);
+        moov.extend(full(b"stsc", 0, &stsc));
+        moov.extend(full(b"stco", 0, &stco));
+        let mut budget = Budget(usize::MAX);
+        let table = children(&moov, 0, moov.len(), &mut budget).unwrap();
+        let started = std::time::Instant::now();
+        let ranges = sample_ranges(&moov, &table, &mut budget).unwrap().unwrap();
+        assert_eq!(ranges.len(), N as usize);
+        assert_eq!(ranges[1], (2, 1));
+        assert_eq!(ranges[N as usize - 1], ((N as u64 - 1) * 2, 1));
+        // 150 thousand runs searched again for each of 150 thousand chunks would take minutes.
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_clean_up_does_the_same_in_small_reads_as_in_one() {
+        let udta = bx(b"udta", &bx(b"\xa9xyz", b"+43.6532-079.3832/"));
+        let file = video(false, &udta, &[]);
+        let plan = analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap();
+        let mut whole = Vec::new();
+        Cleaner::new(
+            &file[..],
+            analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap(),
+        )
+        .read_to_end(&mut whole)
+        .unwrap();
+        let mut cleaner = Cleaner::new(&file[..], plan);
+        let mut small = Vec::new();
+        let mut chunk = [0_u8; 7];
+        loop {
+            let n = cleaner.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+            small.extend_from_slice(&chunk[..n]);
+        }
+        assert_eq!(small, whole);
+        assert_ne!(small, file);
     }
 }
