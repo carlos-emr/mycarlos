@@ -5340,3 +5340,22 @@ button:disabled,
     font-size: 1rem;
   }
 }
+
+/* Settings as cards (Security, Preferences, AI helper): one rounded box per setting, in the
+   order the page lists them. */
+.setting-list.setting-cards {
+  display: grid;
+  gap: 14px;
+  overflow: visible;
+  border-top: 0;
+}
+.setting-cards > .setting-row {
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+.setting-cards > .setting-row h2 {
+  font-size: 1rem;
+}

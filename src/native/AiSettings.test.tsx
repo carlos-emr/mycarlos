@@ -7,7 +7,7 @@ import {
   rememberShortAiLabel,
   showFullAiLabelAgain,
 } from "../aiLabelPreference";
-import { setLocaleOverride } from "../i18n";
+import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { AiSettings } from "./AiSettings";
 
 // Synthetic model hash only.
@@ -17,6 +17,21 @@ afterEach(() => {
   showFullAiLabelAgain();
   window.localStorage.removeItem(AI_LABEL_STORAGE_KEY);
   setLocaleOverride(null);
+});
+
+describe("Settings → AI helper: the warning at the top", () => {
+  it("shows the advice that goes with every AI answer, whatever the model state, in each language", () => {
+    for (const locale of LOCALES) {
+      setLocaleOverride(locale);
+      const { unmount } = render(
+        <AiSettings aiStatus={null} onAiStatus={vi.fn()} />,
+      );
+      expect(
+        screen.getByText(translate(locale, "aiHelper.notice.adviceBody")),
+      ).toBeVisible();
+      unmount();
+    }
+  });
 });
 
 describe("Settings → AI helper: the warning on AI answers (#351)", () => {

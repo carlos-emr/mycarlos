@@ -19,11 +19,9 @@ export function PreferencesSettings() {
           <p>{t("preferences.subtitle")}</p>
         </div>
       </div>
-      <div className="setting-list">
+      <div className="setting-list setting-cards">
         <LanguageSetting />
         <AppearanceSetting />
-        <NotificationSetting />
-        <BackgroundSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
         ) : (
@@ -34,6 +32,8 @@ export function PreferencesSettings() {
             </div>
           </section>
         )}
+        <NotificationSetting />
+        <BackgroundSetting />
       </div>
     </main>
   );

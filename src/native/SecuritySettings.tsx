@@ -423,7 +423,116 @@ export function SecuritySettings({
       <p className="status-line" role="status" aria-live="polite">
         {notice}
       </p>
-      <div className="setting-list">
+      {/* Connected clinics first: what arrives is what people open this page for. */}
+      {clinicDocuments}
+      <div className="setting-list setting-cards">
+        <section className="setting-row native-backup-settings">
+          <div>
+            <h2>{translateNow("security.backup.title")}</h2>
+            <p>{translateNow("security.backup.body")}</p>
+            {sizePending && !backupSize && (
+              <p className="backup-size" role="status">
+                {translateNow("security.backup.sizeCalculating")}
+              </p>
+            )}
+            {backupSize && (
+              <>
+                <p className="backup-size" role="status">
+                  {backupSize.videoCount === 0
+                    ? translateNow("security.backup.size", {
+                        size: formatBackupSize(backupSize.totalBytes),
+                      })
+                    : leaveVideosOut
+                      ? translateNow("security.backup.sizeNoVideos", {
+                          size: formatBackupSize(backupSize.withoutVideosBytes),
+                        })
+                      : translateNow("security.backup.sizeWithVideos", {
+                          size: formatBackupSize(backupSize.totalBytes),
+                          videos: formatBackupSize(backupSize.videoBytes),
+                        })}
+                </p>
+                {backupSize.videoCount > 0 && (
+                  <>
+                    <label className="restore-choice">
+                      <input
+                        type="checkbox"
+                        checked={leaveVideosOut}
+                        onChange={(event) =>
+                          setLeaveVideosOut(event.target.checked)
+                        }
+                      />
+                      {translateNow("security.backup.leaveVideosOut")}
+                    </label>
+                    <p className="native-dialog-status">
+                      {translateNow("security.backup.leaveVideosOutHelp")}
+                    </p>
+                  </>
+                )}
+              </>
+            )}
+            <p>
+              <button
+                className="button"
+                type="button"
+                disabled={busy || readOnly}
+                onClick={() => void onSaveBackup(leaveVideosOut)}
+              >
+                {translateNow("security.backup.save")}
+              </button>
+            </p>
+            {oldBackupsGuide && (
+              <section
+                className="old-backups-guide"
+                aria-labelledby="old-backups-title"
+              >
+                <h3 id="old-backups-title">
+                  {translateNow("security.oldBackups.title")}
+                </h3>
+                <p>{translateNow("security.oldBackups.intro")}</p>
+                {oldBackupsGuide.step === "save" ? (
+                  <>
+                    <ol>
+                      <li>
+                        {readOnly
+                          ? translateNow("security.oldBackups.saveWhenWritable")
+                          : translateNow("security.oldBackups.saveNow")}{" "}
+                        {translateNow("security.oldBackups.keepCopy")}
+                      </li>
+                      <li>{translateNow("security.oldBackups.thenDelete")}</li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      {translateNow("security.oldBackups.none")}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <ol>
+                      <li>
+                        {newBackupText(oldBackupsGuide, sizesIn1024s)}{" "}
+                        {translateNow("security.oldBackups.keepCopy")}
+                      </li>
+                      <li>{translateNow("security.oldBackups.deleteOlder")}</li>
+                      <li>{translateNow("security.oldBackups.inPlace")}</li>
+                    </ol>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy}
+                      onClick={onOldBackupsGuideDone}
+                    >
+                      {translateNow("security.oldBackups.done")}
+                    </button>
+                  </>
+                )}
+              </section>
+            )}
+          </div>
+        </section>
         <section className="setting-row">
           <div>
             <h2>
@@ -548,113 +657,6 @@ export function SecuritySettings({
             </button>
           </div>
         </section>
-        <section className="setting-row native-backup-settings">
-          <div>
-            <h2>{translateNow("security.backup.title")}</h2>
-            <p>{translateNow("security.backup.body")}</p>
-            {sizePending && !backupSize && (
-              <p className="backup-size" role="status">
-                {translateNow("security.backup.sizeCalculating")}
-              </p>
-            )}
-            {backupSize && (
-              <>
-                <p className="backup-size" role="status">
-                  {backupSize.videoCount === 0
-                    ? translateNow("security.backup.size", {
-                        size: formatBackupSize(backupSize.totalBytes),
-                      })
-                    : leaveVideosOut
-                      ? translateNow("security.backup.sizeNoVideos", {
-                          size: formatBackupSize(backupSize.withoutVideosBytes),
-                        })
-                      : translateNow("security.backup.sizeWithVideos", {
-                          size: formatBackupSize(backupSize.totalBytes),
-                          videos: formatBackupSize(backupSize.videoBytes),
-                        })}
-                </p>
-                {backupSize.videoCount > 0 && (
-                  <>
-                    <label className="restore-choice">
-                      <input
-                        type="checkbox"
-                        checked={leaveVideosOut}
-                        onChange={(event) =>
-                          setLeaveVideosOut(event.target.checked)
-                        }
-                      />
-                      {translateNow("security.backup.leaveVideosOut")}
-                    </label>
-                    <p className="native-dialog-status">
-                      {translateNow("security.backup.leaveVideosOutHelp")}
-                    </p>
-                  </>
-                )}
-              </>
-            )}
-            <p>
-              <button
-                className="button"
-                type="button"
-                disabled={busy || readOnly}
-                onClick={() => void onSaveBackup(leaveVideosOut)}
-              >
-                {translateNow("security.backup.save")}
-              </button>
-            </p>
-            {oldBackupsGuide && (
-              <section
-                className="old-backups-guide"
-                aria-labelledby="old-backups-title"
-              >
-                <h3 id="old-backups-title">
-                  {translateNow("security.oldBackups.title")}
-                </h3>
-                <p>{translateNow("security.oldBackups.intro")}</p>
-                {oldBackupsGuide.step === "save" ? (
-                  <>
-                    <ol>
-                      <li>
-                        {readOnly
-                          ? translateNow("security.oldBackups.saveWhenWritable")
-                          : translateNow("security.oldBackups.saveNow")}{" "}
-                        {translateNow("security.oldBackups.keepCopy")}
-                      </li>
-                      <li>{translateNow("security.oldBackups.thenDelete")}</li>
-                    </ol>
-                    <button
-                      className="button"
-                      type="button"
-                      disabled={busy}
-                      onClick={onOldBackupsGuideDone}
-                    >
-                      {translateNow("security.oldBackups.none")}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <ol>
-                      <li>
-                        {newBackupText(oldBackupsGuide, sizesIn1024s)}{" "}
-                        {translateNow("security.oldBackups.keepCopy")}
-                      </li>
-                      <li>{translateNow("security.oldBackups.deleteOlder")}</li>
-                      <li>{translateNow("security.oldBackups.inPlace")}</li>
-                    </ol>
-                    <button
-                      className="button"
-                      type="button"
-                      disabled={busy}
-                      onClick={onOldBackupsGuideDone}
-                    >
-                      {translateNow("security.oldBackups.done")}
-                    </button>
-                  </>
-                )}
-              </section>
-            )}
-          </div>
-        </section>
         <section className="setting-row native-setting-form">
           <div>
             <div className="native-auto-lock-heading">
@@ -684,9 +686,7 @@ export function SecuritySettings({
           </div>
         </section>
       </div>
-      {/* Connected clinics, between the settings of this vault and the people in it. */}
-      {clinicDocuments}
-      <div className="setting-list">
+      <div className="setting-list setting-cards">
         <section className="setting-row native-setting-form native-profile-settings">
           <div>
             <h2>{translateNow("security.profiles.title")}</h2>

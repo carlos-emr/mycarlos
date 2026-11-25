@@ -6511,7 +6511,9 @@ describe("durable vault UI", () => {
       );
       expect(
         await screen.findByText(
-          humanText(/To import PDFs, unlock your vault and use “New”/),
+          humanText(
+            /To import PDFs, unlock your vault and use “Add document › Import a file”/,
+          ),
         ),
       ).toBeVisible();
       const urlTransfer = new DataTransfer();
