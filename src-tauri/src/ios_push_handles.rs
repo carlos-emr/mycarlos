@@ -132,7 +132,22 @@ pub(crate) trait HandleMemory: Send + Sync {
     /// which is safe (the portal replaces).
     fn remember(&self, destination: Uuid, digest: [u8; 32]) -> bool;
     fn forget(&self, destination: Uuid);
+    /// Whether the last pass for this vault found that the portal keeps no place for its notices
+    /// (`HandleSync::needs_attention`), so that Settings can say so again after a restart. One flag
+    /// beside the digests: no token and no destination in it.
+    fn attention(&self, vault: Uuid) -> bool;
+    fn set_attention(&self, vault: Uuid, on: bool);
 }
+
+/// The Keychain key of a vault's attention flag. It is not a UUID, so it never meets the key of a
+/// destination's digest.
+pub(crate) fn attention_key(vault: Uuid) -> String {
+    format!("needs-attention:{vault}")
+}
+
+/// What the Keychain holds under `attention_key` while the flag is on; the flag is off when the item
+/// is absent.
+pub(crate) const ATTENTION_ON: &str = "1";
 
 /// What Settings says about the iPhone setting, as `vault_iphone_push_status` returns it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -253,6 +268,7 @@ impl PushSource for IosPushState {
 pub(crate) struct FakeHandleMemory {
     pub(crate) kept: Mutex<std::collections::HashMap<Uuid, [u8; 32]>>,
     pub(crate) refuse_writes: std::sync::atomic::AtomicBool,
+    pub(crate) attention: Mutex<std::collections::HashSet<Uuid>>,
 }
 
 #[cfg(test)]
@@ -269,6 +285,18 @@ impl HandleMemory for FakeHandleMemory {
     }
     fn forget(&self, destination: Uuid) {
         self.kept.lock().unwrap().remove(&destination);
+    }
+    fn attention(&self, vault: Uuid) -> bool {
+        self.attention.lock().unwrap().contains(&vault)
+    }
+    fn set_attention(&self, vault: Uuid, on: bool) {
+        if on {
+            if !self.refuse_writes.load(std::sync::atomic::Ordering::SeqCst) {
+                self.attention.lock().unwrap().insert(vault);
+            }
+        } else {
+            self.attention.lock().unwrap().remove(&vault);
+        }
     }
 }
 
@@ -350,6 +378,24 @@ mod tests {
         for status in [401, 403, 409, 413, 429, 500, 502, 503] {
             assert_eq!(binding_reply(status, b"{}"), Binding::Later, "{status}");
         }
+    }
+
+    #[test]
+    fn the_attention_flag_has_a_key_of_its_own_that_no_destination_can_have() {
+        let vault = id(9);
+        let key = attention_key(vault);
+        assert_eq!(key, format!("needs-attention:{vault}"));
+        // A destination's digest is kept under a bare UUID: the two never meet.
+        assert!(Uuid::parse_str(&key).is_err());
+        assert_ne!(attention_key(id(1)), attention_key(id(2)));
+        // The flag holds no secret: a constant, never a digest, a token or a destination.
+        assert_eq!(ATTENTION_ON, "1");
+        let memory = FakeHandleMemory::default();
+        assert!(!memory.attention(vault));
+        memory.set_attention(vault, true);
+        assert!(memory.attention(vault) && !memory.attention(id(10)));
+        memory.set_attention(vault, false);
+        assert!(!memory.attention(vault));
     }
 
     #[test]
