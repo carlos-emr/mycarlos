@@ -2920,3 +2920,5 @@ notifications-testWait = Wait a few seconds, then try again.
 
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
+
+unlock-brand-tagline = Your health documents, kept private on this device.

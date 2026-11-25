@@ -2955,3 +2955,5 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
+
+unlock-brand-tagline = Vos documents de santé, gardés privés sur cet appareil.

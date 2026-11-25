@@ -5238,3 +5238,105 @@ button:disabled,
     display: block;
   }
 }
+
+/* Unlock: the whole window split in two, the brand on the left and the form on the right (the
+   screen's own language button at the top right). Where the window is narrow the brand becomes a
+   strip over the form. */
+.native-auth-split .native-auth-wrap {
+  max-width: none !important;
+  padding: 0;
+}
+.native-auth-split .native-auth-window {
+  border-radius: 0;
+  border-inline: 0;
+}
+.native-auth-split .vault-auth {
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  place-items: stretch;
+  align-content: stretch;
+  padding: 0;
+  background: var(--paper);
+}
+.unlock-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  background: var(--bulk);
+  color: var(--on-bulk);
+  text-align: center;
+}
+.unlock-logo {
+  display: grid;
+  place-items: center;
+  width: 168px;
+  height: 168px;
+  border-radius: 32px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+}
+.unlock-logo img {
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+}
+.unlock-brand-name {
+  margin: 8px 0 0;
+  font-size: 1.875rem;
+  font-weight: 700;
+}
+.unlock-brand-tagline {
+  max-width: 22rem;
+  margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.45;
+}
+.unlock-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 24px 24px;
+}
+.unlock-pane .language-corner {
+  width: 100%;
+}
+.unlock-pane .vault-card {
+  margin: auto;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+@media (max-width: 56.25em) {
+  .native-auth-split .vault-auth {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  .unlock-brand {
+    flex-direction: row;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 20px;
+    text-align: start;
+  }
+  .unlock-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+  }
+  .unlock-logo img {
+    width: 48px;
+    height: 48px;
+  }
+  .unlock-brand-name {
+    margin: 0;
+    font-size: 1.375rem;
+  }
+  .unlock-brand-tagline {
+    flex-basis: 100%;
+    max-width: none;
+    font-size: 1rem;
+  }
+}
