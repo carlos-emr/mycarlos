@@ -184,7 +184,7 @@ test("leaving the reader while its Summary reads the text stops the read", async
   );
   await expect.poll(() => aiHeld(page)).toEqual([AI_COMMANDS.documentText]);
 
-  await button(reader, en("photo.close")).click();
+  await button(reader, en("reader.back")).click();
   await expect(reader).toBeHidden();
   expect(await aiCalls(page, AI_COMMANDS.cancelText)).toHaveLength(1);
   await expect.poll(() => aiHeld(page)).toEqual([]);
@@ -290,17 +290,23 @@ test.describe("with a model on this device", () => {
     const marked = reader.locator(".native-reader-text mark");
     await expect(marked).toHaveText(fakePageText(LETTER, 2));
     await expect(marked).toBeFocused();
-    // Tab: the next control after the marked words: the Summary's "About the
-    // AI helper" button (#355), then the warning's "Don't show this again"
-    // (#351), then the summary's first Show in document; never the
-    // reader's Close at the top.
-    await page.keyboard.press("Tab");
-    await expect(
-      summaryPanel.getByRole("button", {
-        name: en("aiHelper.notice.title"),
-        exact: true,
-      }),
-    ).toBeFocused();
+    // Tab goes on from the marked words, into the panel beside the page (its facts and actions,
+    // then the AI helper's buttons) and on to the Summary's "About the AI helper" button (#355),
+    // then the warning's "Don't show this again" (#351), then the summary's first Show in
+    // document; never back to the reader's Back button at the top.
+    const about = summaryPanel.getByRole("button", {
+      name: en("aiHelper.notice.title"),
+      exact: true,
+    });
+    for (let presses = 0; presses < 8; presses++) {
+      await page.keyboard.press("Tab");
+      await expect(
+        reader.getByRole("button", { name: en("reader.back"), exact: true }),
+      ).not.toBeFocused();
+      if (await about.evaluate((node) => node === document.activeElement))
+        break;
+    }
+    await expect(about).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(
       summaryPanel.getByRole("button", {
@@ -311,7 +317,7 @@ test.describe("with a model on this device", () => {
     await page.keyboard.press("Tab");
     await expect(show.first()).toBeFocused();
     await expect(
-      reader.getByRole("button", { name: en("photo.close"), exact: true }),
+      reader.getByRole("button", { name: en("reader.back"), exact: true }),
     ).not.toBeFocused();
     // Shift+Tab from the marked words: back in the page's order. First the
     // page text's own box, which holds them and takes the focus so that the
@@ -380,7 +386,7 @@ test.describe("with a model on this device", () => {
     await holdAi(page, AI_COMMANDS.summarize);
     await firstUse(page, reader, en("ai.summary.button"));
     await expect.poll(() => aiHeld(page)).toEqual([AI_COMMANDS.summarize]);
-    await button(reader, en("photo.close")).click();
+    await button(reader, en("reader.back")).click();
     await expect(reader).toBeHidden();
     expect(await aiCalls(page, AI_COMMANDS.cancel)).toHaveLength(1);
     await expect.poll(() => aiHeld(page)).toEqual([]);

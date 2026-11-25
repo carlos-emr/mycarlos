@@ -341,7 +341,7 @@ test("restores a backup with its recovery key, then uses the same key to set a n
     path: testInfo.outputPath("key-backup-restored-reader.png"),
   });
   await reader
-    .getByRole("button", { name: en("photo.close"), exact: true })
+    .getByRole("button", { name: en("reader.back"), exact: true })
     .click();
   await expect(reader).toBeHidden();
   await expect(

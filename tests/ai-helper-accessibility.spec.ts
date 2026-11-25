@@ -213,7 +213,7 @@ test("a run that could not finish is an alert, and no model leads on by keyboard
   await page.keyboard.press("Enter"); // Continue, on the notice
   await expectAnnounced(page, en("ai.failed"));
   await screenReaderSmoke(page, "the reader, the run failed", reader);
-  await press(button(reader, en("photo.close")));
+  await press(button(reader, en("reader.back")));
   await expect(reader).toBeHidden();
 
   // A model file that failed its check reads as none: Open Preferences.
@@ -363,7 +363,7 @@ test("at 200% text in a 320 px window: the reader's panel and the model's row, w
       await button(reader, en("ai.explain.title")).click();
       await expectReflow(page, "the reader's Explain");
     }
-    await button(reader, en("photo.close")).click();
+    await button(reader, en("reader.back")).click();
 
     // The row, with the model's real-length address and a refusal shown,
     // on a page of its own (the fakes are installed once per page).

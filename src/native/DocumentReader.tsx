@@ -315,9 +315,9 @@ function ReadingDocument({
     };
   }, [showingAid]);
 
-  // When the reader scrolls (large text, small window), the page bar stays
-  // over its foot. Its height is kept as the reader's scroll padding, so that
-  // a control the focus moves to is scrolled clear of the bar, not under it.
+  // When the reader scrolls (large text, small window), the top bar (the pages and the zoom)
+  // stays over its top. Its height is kept as the reader's scroll padding, so that a control the
+  // focus moves to is scrolled clear of the bar, not under it.
   const barRef = useRef<HTMLDivElement | null>(null);
   const hasBar = pageCount !== null && !showingAid;
   useEffect(() => {
@@ -325,14 +325,14 @@ function ReadingDocument({
     const reader = dialogRef.current;
     if (!bar || !reader) return;
     const pad = () => {
-      reader.style.scrollPaddingBottom = `${bar.offsetHeight}px`;
+      reader.style.scrollPaddingTop = `${(bar.parentElement ?? bar).offsetHeight}px`;
     };
     pad();
     const observer = new ResizeObserver(pad);
-    observer.observe(bar);
+    observer.observe(bar.parentElement ?? bar);
     return () => {
       observer.disconnect();
-      reader.style.scrollPaddingBottom = "";
+      reader.style.scrollPaddingTop = "";
     };
   }, [hasBar]);
 

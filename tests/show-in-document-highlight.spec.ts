@@ -442,14 +442,22 @@ for (const [width, height] of [
     for (const index of [0, 1, 2]) {
       expect(await reachable(show.nth(index))).toBe(true);
     }
-    // The page bar and Close stay reachable at the same size.
+    // The top bar (the pages) and Back stay reachable at the same size.
     await reader.evaluate((element) => {
       element.scrollTop = 0;
     });
     expect(
       await reachable(
         reader.getByRole("button", {
-          name: en("photo.close"),
+          name: en("reader.back"),
+          exact: true,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      await reachable(
+        reader.getByRole("button", {
+          name: en("interface.DocumentReader.nextPage"),
           exact: true,
         }),
       ),
@@ -457,6 +465,7 @@ for (const [width, height] of [
     await reader.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
+    // The bar is kept at the top while the reader scrolls.
     expect(
       await reachable(
         reader.getByRole("button", {

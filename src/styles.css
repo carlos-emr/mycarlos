@@ -1082,19 +1082,17 @@ p {
   }
   /* The size buttons, then the AI helper's: centred rows of buttons at their own width. A row with
      no room for its buttons wraps. */
-  .native-reader-controls {
-    display: grid;
-    justify-items: center;
+  .native-reader-toolbar {
     padding-inline: 12px;
   }
-  .native-reader-controls .native-reader-zoom,
-  .native-reader-controls .native-reader-ai-actions {
+  .native-reader-toolbar .native-reader-zoom {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 8px;
   }
-  .native-reader-controls .button,
+  .native-reader-toolbar .button,
+  .native-reader-panel .button,
   .native-reader-pages .button {
     min-height: 44px;
     padding-inline: 8px;
@@ -4430,6 +4428,11 @@ button:disabled,
     background: ButtonFace;
     color: ButtonText;
   }
+  .menu-button-primary .menu-button-trigger:disabled {
+    border: 1px solid GrayText;
+    background: Canvas;
+    color: GrayText;
+  }
   .toggle:not(.off)::after {
     background: Canvas;
   }
@@ -5329,6 +5332,9 @@ button:disabled,
   min-height: 44px;
 }
 .native-reader-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -5359,13 +5365,17 @@ button:disabled,
   min-height: 0;
 }
 .native-reader-panel {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   min-width: 0;
   padding: 16px 18px;
   border-left: 1px solid var(--line);
   overflow: auto;
+}
+/* Nothing in the panel gives way to the rest: it scrolls instead (the summary is never squeezed). */
+.native-reader-panel > * {
+  flex-shrink: 0;
 }
 .native-reader-panel-actions,
 .native-reader-ai-actions {
@@ -5383,6 +5393,11 @@ button:disabled,
   margin: 0;
 }
 @container native-reader (max-width: 56em) {
+  /* The pages (a two-column grid) and the zoom are centred one over the other. */
+  .native-reader-toolbar {
+    flex-direction: column;
+    align-items: center;
+  }
   .native-reader-body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
@@ -5412,4 +5427,15 @@ button:disabled,
   width: 24px;
   height: 24px;
   object-fit: contain;
+}
+
+/* On a narrow window a card gives its width to what is in it (the four Appearance choices keep two
+   by two at 320px). */
+@media (max-width: 40em) {
+  .setting-cards > .setting-row {
+    padding: 14px 2px;
+    border-inline: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }

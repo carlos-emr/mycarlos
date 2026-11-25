@@ -118,7 +118,9 @@ function measure(page: Page) {
     const buttons = Array.from(bar.querySelectorAll("button"));
     // The size buttons and the AI helper's, above the page.
     const above = Array.from(
-      reader.querySelectorAll<HTMLElement>(".native-reader-controls button"),
+      reader.querySelectorAll<HTMLElement>(
+        ".native-reader-toolbar .native-reader-zoom button, .native-reader-panel .native-reader-ai-actions button",
+      ),
     );
     return {
       reader: box(reader),
@@ -131,7 +133,7 @@ function measure(page: Page) {
       }),
       // Each group above the page (size, AI helper): where its buttons reach.
       groups: Array.from(
-        reader.querySelectorAll(".native-reader-controls > span"),
+        reader.querySelectorAll(".native-reader-toolbar > .native-reader-zoom"),
         (group) => {
           const parts = Array.from(group.children, (child) =>
             child.getBoundingClientRect(),
@@ -257,7 +259,7 @@ for (const [fit, locale] of [
   [FITS[5], "fr"] as const,
   [FITS[6], "fr"] as const,
 ])
-  test(`keeps the page bar at the reader's foot at ${fit.label} (${locale})`, async ({
+  test(`keeps the page bar in the reader's top bar at ${fit.label} (${locale})`, async ({
     browser,
   }, info) => {
     test.skip(info.project.name !== "desktop", "sets its own sizes");
@@ -280,16 +282,14 @@ for (const [fit, locale] of [
         translate(locale, "interface.DocumentReader.nextPage"),
         translate(locale, "interface.DocumentReader.lastPage"),
       ]);
-      // In view at the reader's foot, even before the reader is scrolled.
+      // In view in the top bar, under the header, even before the reader is scrolled.
       expect(at.bar.left).toBeGreaterThanOrEqual(at.reader.left - 1);
       expect(at.bar.right).toBeLessThanOrEqual(at.reader.right + 1);
-      expect(at.bar.bottom).toBeLessThanOrEqual(at.reader.bottom + 1);
-      expect(at.reader.bottom - at.bar.bottom).toBeLessThanOrEqual(2);
+      expect(at.bar.top).toBeGreaterThanOrEqual(at.reader.top - 1);
+      expect(at.bar.bottom).toBeLessThanOrEqual(at.area.top + 1);
       expect(at.bar.bottom).toBeLessThanOrEqual(at.viewportHeight);
-      // The size buttons above the page: at the top left on a wide reader,
-      // centred on a narrow one (checked with the bar below).
-      if (!fit.narrow)
-        expect(at.zoom.left - at.reader.left).toBeLessThanOrEqual(24);
+      // The size buttons beside the pages on a wide reader, centred under them on a narrow
+      // one (checked with the bar below), and above the page either way.
       expect(at.zoom.bottom).toBeLessThanOrEqual(at.area.top + 1);
       // The page keeps room to be read: at least min(16em, 40vh).
       expect(at.area.height).toBeGreaterThanOrEqual(
@@ -342,18 +342,19 @@ for (const [fit, locale] of [
         await summary.focus();
         const focused = await summary.boundingBox();
         const barNow = await reader
-          .locator(".native-reader-pages")
+          .locator(".native-reader-toolbar")
           .boundingBox();
         expect(
-          focused!.y + focused!.height,
+          focused!.y,
           "focused summary under the bar",
-        ).toBeLessThanOrEqual(barNow!.y + 1);
-        // Scrolled to its end, the bar is still at the foot, under the text.
+        ).toBeGreaterThanOrEqual(barNow!.y + barNow!.height - 1);
+        // Scrolled to its end, the bar is still at the top of what is shown.
         await reader.evaluate(
           (element) => (element.scrollTop = element.scrollHeight),
         );
         const end = await measure(page);
-        expect(end.reader.bottom - end.bar.bottom).toBeLessThanOrEqual(2);
+        // (the reader's border and its sticky offset: well inside its first 12px)
+        expect(end.bar.top - end.reader.top).toBeLessThanOrEqual(12);
         await page.screenshot({
           path: info.outputPath(`d144-${fit.label}-${locale}-scrolled.png`),
         });
@@ -371,7 +372,7 @@ for (const [fit, locale] of [
     }
   });
 
-test("shows a one-page document's count only, at the reader's foot", async ({
+test("shows a one-page document's count only, in the top bar", async ({
   browser,
 }, info) => {
   test.skip(info.project.name !== "desktop", "sets its own sizes");
@@ -386,7 +387,8 @@ test("shows a one-page document's count only, at the reader's foot", async ({
     );
     await expect(bar.getByRole("button")).toHaveCount(0);
     const at = await measure(page);
-    expect(at.reader.bottom - at.bar.bottom).toBeLessThanOrEqual(2);
+    expect(at.bar.top - at.reader.top).toBeLessThanOrEqual(at.reader.height);
+    expect(at.bar.bottom).toBeLessThanOrEqual(at.area.top + 1);
   } finally {
     await context.close();
   }
@@ -567,7 +569,7 @@ test("scrolls the page's text with the keys after a click in it", async ({
 // keeps the focused text box above the page bar, even without the scroll
 // anchoring that Chromium uses to keep a focused box in place (WebKit has
 // none): the box keeps its height while the next page is drawn.
-test("keeps the text box above the bar after a turn at 360px with 200% text, without scroll anchoring", async ({
+test("keeps the text box clear of the top bar after a turn at 360px with 200% text, without scroll anchoring", async ({
   browser,
 }, info) => {
   test.skip(info.project.name !== "desktop", "sets its own sizes");
@@ -603,16 +605,15 @@ test("keeps the text box above the bar after a turn at 360px with 200% text, wit
     await expect(box).toContainText("FAKE line 1 on page 2");
     await expect(box).toBeFocused();
     const boxNow = (await box.boundingBox())!;
-    const bar = (await reader.locator(".native-reader-pages").boundingBox())!;
+    const bar = (await reader.locator(".native-reader-toolbar").boundingBox())!;
     const readerBox = (await reader.boundingBox())!;
+    expect(boxNow.y, "the text box's top is in the reader").toBeLessThanOrEqual(
+      readerBox.y + readerBox.height,
+    );
     expect(
       boxNow.y,
-      "the text box's top is in the reader",
-    ).toBeGreaterThanOrEqual(readerBox.y - 1);
-    expect(
-      boxNow.y + boxNow.height,
-      "the text box is above the page bar",
-    ).toBeLessThanOrEqual(bar.y + 1);
+      "the text box is not under the top bar",
+    ).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
     await expectTextSize(page, FITS[3].font);
   } finally {
     await context.close();
