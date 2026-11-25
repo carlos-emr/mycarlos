@@ -1166,14 +1166,14 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // The iPhone push setting: not an iPhone unless the setup says so.
           case "vault_iphone_push_status":
             return {
-              supported: setup.iphonePush !== undefined,
+              supported: setup.iphonePush !== null,
               enabled: iphonePushEnabled,
               state: setup.iphonePush?.state ?? "ok",
             };
           case "vault_iphone_push_set":
-            iphonePushEnabled = Boolean(request.enabled);
+            iphonePushEnabled = Boolean(args.enabled);
             return {
-              supported: setup.iphonePush !== undefined,
+              supported: setup.iphonePush !== null,
               enabled: iphonePushEnabled,
               state: setup.iphonePush?.state ?? "ok",
             };
@@ -2176,6 +2176,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       refusedDeliveries: setup.refusedDeliveries ?? 0,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
+      iphonePush: setup.iphonePush ?? null,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],

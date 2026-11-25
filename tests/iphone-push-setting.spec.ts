@@ -56,7 +56,9 @@ test("on an iPhone it is off, says what Apple sees, and turns on with one comman
   // Reading the status asked the system nothing.
   expect(await fakeCalls(page, "vault_iphone_push_set")).toEqual([]);
   await expectNoAxeViolations(page, "the iPhone push setting");
-  await box.check();
+  // The box follows the system's answer, so click it and wait, instead of `check()`, which expects
+  // the state to change at once.
+  await box.click();
   await expect(box).toBeChecked();
   expect(await fakeCalls(page, "vault_iphone_push_set")).toEqual([
     { enabled: true },
@@ -70,7 +72,7 @@ test("says where to allow notices when the patient said no", async ({
   const row = await preferences(page, { iphonePush: { state: "refused" } });
   await row
     .getByRole("checkbox", { name: en("iphonePush.allow"), exact: true })
-    .check();
+    .click();
   await expect(row.getByText(en("iphonePush.refused"))).toBeVisible();
   await expectNoAxeViolations(page, "the iPhone push setting");
   await expectOnlyFakedCommands(page);
