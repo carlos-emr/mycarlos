@@ -5500,6 +5500,7 @@ fn open_source_reader(
 /// profile are kept. What is stored is already clean, whatever app made the picture. Anything else
 /// is refused (`NotPdf`, worded for both kinds). A JPEG that is damaged, not a baseline or
 /// progressive image, or too large is refused as a picture (`NotPhoto`).
+#[cfg(test)]
 fn require_supported_file(
     reader: Box<dyn std::io::Read + Send>,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
@@ -5531,8 +5532,7 @@ fn open_supported_file(
                 .take(photo::MAX_PHOTO_BYTES as u64 + 1)
                 .read_to_end(&mut bytes)
                 .map_err(VaultError::from)?;
-            let (picture, cleaned) =
-                photo::clean_any(&bytes).map_err(|_| VaultError::NotPhoto)?;
+            let (picture, cleaned) = photo::clean_any(&bytes).map_err(|_| VaultError::NotPhoto)?;
             drop(bytes);
             Ok((Some(picture), Box::new(std::io::Cursor::new(cleaned))))
         }
@@ -11621,8 +11621,8 @@ mod photo_command_tests {
         let temp = tempfile::tempdir().unwrap();
         let (store, profile) = unlocked_store(&temp);
         let picture = dirty_png();
-        let (kind, reader) = open_supported_file(Box::new(std::io::Cursor::new(picture.clone())))
-            .unwrap();
+        let (kind, reader) =
+            open_supported_file(Box::new(std::io::Cursor::new(picture.clone()))).unwrap();
         assert_eq!(kind, Some(photo::PictureKind::Png));
         // A name with no suffix of its own gets the one of what it is, and a name that has it
         // keeps it.
@@ -11630,7 +11630,10 @@ mod photo_command_tests {
             picture_import_name("Screenshot 2026-11-25".to_owned(), kind),
             picture_import_name("Screenshot.PNG".to_owned(), kind),
         );
-        assert_eq!((a.as_str(), b.as_str()), ("Screenshot 2026-11-25.png", "Screenshot.PNG"));
+        assert_eq!(
+            (a.as_str(), b.as_str()),
+            ("Screenshot 2026-11-25.png", "Screenshot.PNG")
+        );
         let outcome = store
             .import(
                 profile,

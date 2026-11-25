@@ -170,13 +170,11 @@ pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     at = next;
 
     let ihdr = first.whole;
-    let (mut chrm, mut gama, mut srgb, mut plte, mut trns): (
-        Option<&[u8]>,
-        Option<&[u8]>,
-        Option<&[u8]>,
-        Option<&[u8]>,
-        Option<&[u8]>,
-    ) = (None, None, None, None, None);
+    let mut chrm: Option<&[u8]> = None;
+    let mut gama: Option<&[u8]> = None;
+    let mut srgb: Option<&[u8]> = None;
+    let mut plte: Option<&[u8]> = None;
+    let mut trns: Option<&[u8]> = None;
     let mut palette_entries = 0_usize;
     let mut idat: Vec<&[u8]> = Vec::new();
     let mut idat_over = false;
@@ -384,7 +382,12 @@ pub(crate) mod tests {
     #[test]
     fn a_picture_the_system_can_decode_has_the_same_pixels_after_cleaning() {
         let source = image::RgbaImage::from_fn(37, 23, |x, y| {
-            image::Rgba([(x * 6) as u8, (y * 10) as u8, (x + y) as u8, 255 - (x as u8)])
+            image::Rgba([
+                (x * 6) as u8,
+                (y * 10) as u8,
+                (x + y) as u8,
+                255 - (x as u8),
+            ])
         });
         let mut encoded = std::io::Cursor::new(Vec::new());
         source
@@ -513,7 +516,11 @@ pub(crate) mod tests {
             (8192, 8192),
             (8192, 6104),
         ] {
-            assert_eq!(with(width, height), Err(PhotoError::TooLarge), "{width}x{height}");
+            assert_eq!(
+                with(width, height),
+                Err(PhotoError::TooLarge),
+                "{width}x{height}"
+            );
         }
         // Up to the caps is accepted: 8192 a side, and 50 million pixels in all.
         assert!(with(8192, 6103).is_ok());
@@ -611,42 +618,243 @@ pub(crate) mod tests {
         let ok_data = chunk(b"IDAT", &pixels());
         let end = chunk(b"IEND", &[]);
         let cases: Vec<(&str, Vec<Vec<u8>>)> = vec![
-            ("no header first", vec![ok_data.clone(), header(2, 2, 8, 2), end.clone()]),
-            ("a second header", vec![header(2, 2, 8, 2), header(2, 2, 8, 2), ok_data.clone(), end.clone()]),
+            (
+                "no header first",
+                vec![ok_data.clone(), header(2, 2, 8, 2), end.clone()],
+            ),
+            (
+                "a second header",
+                vec![
+                    header(2, 2, 8, 2),
+                    header(2, 2, 8, 2),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
             ("no image data", vec![header(2, 2, 8, 2), end.clone()]),
-            ("image data split by another chunk", vec![header(2, 2, 8, 2), ok_data.clone(), chunk(b"tEXt", b"FAKE"), ok_data.clone(), end.clone()]),
-            ("an end with data", vec![header(2, 2, 8, 2), ok_data.clone(), chunk(b"IEND", &[1])]),
-            ("an unknown critical chunk", vec![header(2, 2, 8, 2), chunk(b"ZZZZ", &[]), ok_data.clone(), end.clone()]),
-            ("a type that is not letters", vec![header(2, 2, 8, 2), chunk(b"te1t", &[]), ok_data.clone(), end.clone()]),
-            ("the reserved bit set", vec![header(2, 2, 8, 2), chunk(b"tExt", &[]), ok_data.clone(), end.clone()]),
-            ("a palette after the data", vec![header(2, 2, 8, 2), ok_data.clone(), chunk(b"PLTE", &[0; 3]), end.clone()]),
-            ("a colour hint after the data", vec![header(2, 2, 8, 2), ok_data.clone(), chunk(b"gAMA", &[0; 4]), end.clone()]),
-            ("two palettes", vec![header(2, 2, 8, 2), chunk(b"PLTE", &[0; 3]), chunk(b"PLTE", &[0; 3]), ok_data.clone(), end.clone()]),
-            ("a palette of a length that is not whole colours", vec![header(2, 2, 8, 2), chunk(b"PLTE", &[0; 4]), ok_data.clone(), end.clone()]),
-            ("an indexed picture without a palette", vec![header(2, 2, 8, 3), ok_data.clone(), end.clone()]),
-            ("a palette in a grey picture", vec![header(2, 2, 8, 0), chunk(b"PLTE", &[0; 3]), ok_data.clone(), end.clone()]),
-            ("more palette entries than the depth allows", vec![header(2, 2, 1, 3), chunk(b"PLTE", &[0; 9]), ok_data.clone(), end.clone()]),
-            ("transparency in a picture with its own", vec![header(2, 2, 8, 6), chunk(b"tRNS", &[0; 2]), ok_data.clone(), end.clone()]),
-            ("transparency before the palette", vec![header(2, 2, 8, 3), chunk(b"tRNS", &[0]), chunk(b"PLTE", &[0; 3]), ok_data.clone(), end.clone()]),
-            ("a colour hint of the wrong length", vec![header(2, 2, 8, 2), chunk(b"gAMA", &[0; 3]), ok_data.clone(), end.clone()]),
-            ("two of one colour hint", vec![header(2, 2, 8, 2), chunk(b"sRGB", &[0]), chunk(b"sRGB", &[0]), ok_data.clone(), end.clone()]),
-            ("a rendering intent past the last", vec![header(2, 2, 8, 2), chunk(b"sRGB", &[4]), ok_data.clone(), end.clone()]),
-            ("two colour profiles", vec![header(2, 2, 8, 2), chunk(b"iCCP", b"a\0\0x"), chunk(b"iCCP", b"a\0\0x"), ok_data.clone(), end.clone()]),
-            ("a depth the colour type does not have", vec![header(2, 2, 4, 2), ok_data.clone(), end.clone()]),
-            ("a colour type that does not exist", vec![header(2, 2, 8, 5), ok_data.clone(), end.clone()]),
-            ("an unknown compression method", vec![chunk(b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 1, 0, 0]), ok_data.clone(), end.clone()]),
-            ("an unknown interlace method", vec![chunk(b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 0, 0, 2]), ok_data.clone(), end.clone()]),
-            ("a short header", vec![chunk(b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 0, 0]), ok_data.clone(), end.clone()]),
-            ("image data that is not a zlib stream", vec![header(2, 2, 8, 2), chunk(b"IDAT", &[1, 2, 3, 4]), end.clone()]),
-            ("image data too short to start a zlib stream", vec![header(2, 2, 8, 2), chunk(b"IDAT", &[0x78]), end.clone()]),
-            ("a zlib stream that asks for a dictionary", vec![header(2, 2, 8, 2), chunk(b"IDAT", &[0x78, 0xbb, 0, 0]), end.clone()]),
+            (
+                "image data split by another chunk",
+                vec![
+                    header(2, 2, 8, 2),
+                    ok_data.clone(),
+                    chunk(b"tEXt", b"FAKE"),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "an end with data",
+                vec![header(2, 2, 8, 2), ok_data.clone(), chunk(b"IEND", &[1])],
+            ),
+            (
+                "an unknown critical chunk",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"ZZZZ", &[]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a type that is not letters",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"te1t", &[]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "the reserved bit set",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"tExt", &[]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a palette after the data",
+                vec![
+                    header(2, 2, 8, 2),
+                    ok_data.clone(),
+                    chunk(b"PLTE", &[0; 3]),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a colour hint after the data",
+                vec![
+                    header(2, 2, 8, 2),
+                    ok_data.clone(),
+                    chunk(b"gAMA", &[0; 4]),
+                    end.clone(),
+                ],
+            ),
+            (
+                "two palettes",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"PLTE", &[0; 3]),
+                    chunk(b"PLTE", &[0; 3]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a palette of a length that is not whole colours",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"PLTE", &[0; 4]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "an indexed picture without a palette",
+                vec![header(2, 2, 8, 3), ok_data.clone(), end.clone()],
+            ),
+            (
+                "a palette in a grey picture",
+                vec![
+                    header(2, 2, 8, 0),
+                    chunk(b"PLTE", &[0; 3]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "more palette entries than the depth allows",
+                vec![
+                    header(2, 2, 1, 3),
+                    chunk(b"PLTE", &[0; 9]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "transparency in a picture with its own",
+                vec![
+                    header(2, 2, 8, 6),
+                    chunk(b"tRNS", &[0; 2]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "transparency before the palette",
+                vec![
+                    header(2, 2, 8, 3),
+                    chunk(b"tRNS", &[0]),
+                    chunk(b"PLTE", &[0; 3]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a colour hint of the wrong length",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"gAMA", &[0; 3]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "two of one colour hint",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"sRGB", &[0]),
+                    chunk(b"sRGB", &[0]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a rendering intent past the last",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"sRGB", &[4]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "two colour profiles",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"iCCP", b"a\0\0x"),
+                    chunk(b"iCCP", b"a\0\0x"),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a depth the colour type does not have",
+                vec![header(2, 2, 4, 2), ok_data.clone(), end.clone()],
+            ),
+            (
+                "a colour type that does not exist",
+                vec![header(2, 2, 8, 5), ok_data.clone(), end.clone()],
+            ),
+            (
+                "an unknown compression method",
+                vec![
+                    chunk(b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 1, 0, 0]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "an unknown interlace method",
+                vec![
+                    chunk(b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 0, 0, 2]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "a short header",
+                vec![
+                    chunk(b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 0, 0]),
+                    ok_data.clone(),
+                    end.clone(),
+                ],
+            ),
+            (
+                "image data that is not a zlib stream",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"IDAT", &[1, 2, 3, 4]),
+                    end.clone(),
+                ],
+            ),
+            (
+                "image data too short to start a zlib stream",
+                vec![header(2, 2, 8, 2), chunk(b"IDAT", &[0x78]), end.clone()],
+            ),
+            (
+                "a zlib stream that asks for a dictionary",
+                vec![
+                    header(2, 2, 8, 2),
+                    chunk(b"IDAT", &[0x78, 0xbb, 0, 0]),
+                    end.clone(),
+                ],
+            ),
         ];
         assert!(clean_png(&file(&[header(2, 2, 8, 2), ok_data.clone(), end.clone()])).is_ok());
         for (what, chunks) in cases {
             assert_eq!(clean_png(&file(&chunks)), Err(PhotoError::NotPng), "{what}");
         }
         // Not a PNG at all, by its first bytes.
-        for other in [&b""[..], b"\x89PNG", b"\x89PNG\r\n\x1a", b"GIF89a", b"\xff\xd8\xff\xe0", b"%PDF-1.7"] {
+        for other in [
+            &b""[..],
+            b"\x89PNG",
+            b"\x89PNG\r\n\x1a",
+            b"GIF89a",
+            b"\xff\xd8\xff\xe0",
+            b"%PDF-1.7",
+        ] {
             assert_eq!(clean_png(other), Err(PhotoError::NotPng));
         }
     }

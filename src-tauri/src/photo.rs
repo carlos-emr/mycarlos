@@ -42,16 +42,18 @@ impl PictureKind {
     /// Whether `name` (trimmed) is a nonempty name followed by a suffix that describes this kind:
     /// `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG, in any case.
     pub fn names(self, name: &str) -> bool {
-        name.trim().rsplit_once('.').is_some_and(|(stem, extension)| {
-            !stem.trim().is_empty()
-                && match self {
-                    Self::Jpeg => {
-                        extension.eq_ignore_ascii_case("jpg")
-                            || extension.eq_ignore_ascii_case("jpeg")
+        name.trim()
+            .rsplit_once('.')
+            .is_some_and(|(stem, extension)| {
+                !stem.trim().is_empty()
+                    && match self {
+                        Self::Jpeg => {
+                            extension.eq_ignore_ascii_case("jpg")
+                                || extension.eq_ignore_ascii_case("jpeg")
+                        }
+                        Self::Png => extension.eq_ignore_ascii_case("png"),
                     }
-                    Self::Png => extension.eq_ignore_ascii_case("png"),
-                }
-        })
+            })
     }
 
     /// The type of the `data:` URL the viewer is given.
