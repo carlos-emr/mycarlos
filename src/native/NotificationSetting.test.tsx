@@ -262,7 +262,7 @@ describe("Document notice preference", () => {
     });
     render(<NotificationSetting />);
     const checkbox = await screen.findByRole("checkbox", {
-      name: humanText("Allow document arrival notices"),
+      name: humanText("Show a notice when a document arrives"),
     });
     // Nothing was refused: the notices can be turned on, and the first one shown makes the setting.
     expect(checkbox).toBeEnabled();
