@@ -2634,3 +2634,13 @@ notifications-testWait = 请等待几秒钟后再试。
 
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
+
+interface-received-notNow = 暂不
+
+interface-received-remove = 移除
+
+interface-received-confirmBodySealed = 这些文件是在 myCarlos 锁定时分享的，已加密保存在此处。在您选择「导入」之前不会添加任何内容。选择「暂不」会将它们保留最多 7 天，选择「移除」则会删除它们。
+
+interface-receive-inboxRemoved = 有 { $count } 个为您保存的分享文件已被移除：已超过 7 天或无法读取。
+
+interface-receive-inboxKeyChanged = myCarlos 锁定时用来保存分享文件的密钥被其他程序更改，现已恢复。此后分享的文件未被保存。请重新分享。

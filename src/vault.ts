@@ -484,6 +484,9 @@ export interface ReceivedFile {
   /** Named by a program started with its path (Open with, a second launch): the patient is asked
    * before it is added. A file shared from another app is added as it arrives. */
   needsConfirm?: boolean;
+  /** Shared while the vault was locked and kept, encrypted, until now (#49): the patient may
+   * Remove it, which deletes it, where Not now keeps it for the next unlock. */
+  sealed?: boolean;
 }
 
 /** What could not be received since the page last asked. Counts only. */
@@ -497,6 +500,10 @@ export interface ReceiveNotice {
   sealed?: number;
   /** Files the inbox could not keep: it is full, the disk is, or the file could not be read. */
   notKept?: number;
+  /** Sealed files this unlock removed (past their age, or unreadable). */
+  inboxRemoved?: number;
+  /** The inbox key file was changed by something else and has been put right (#49). */
+  inboxKeyChanged?: boolean;
 }
 
 export interface ReceivedState {
@@ -883,6 +890,8 @@ export interface VaultBridge {
   acceptReceived(ids?: string[]): Promise<ReceivedAcceptOutcome>;
   /** Forgets the waiting files the patient cancelled; nothing was stored. */
   discardReceived(ids: string[]): Promise<number>;
+  /** Not now keeps sealed files for the next unlock; Remove deletes them (and forgets the rest). */
+  removeReceived?(ids: string[]): Promise<number>;
   /** Moves files to another person, into their folders. Duplicates stay at source. */
   moveToPerson(
     recordIds: string[],
@@ -1537,6 +1546,8 @@ export function createVaultBridge(): VaultBridge {
         : invoke<ReceivedAcceptOutcome>("received_accept"),
     discardReceived: (ids) =>
       invoke<number>("received_discard", { request: { ids } }),
+    removeReceived: (ids) =>
+      invoke<number>("received_remove", { request: { ids } }),
     moveToPerson: (recordIds, profileId, folderIds) =>
       invoke<MoveOutcome>("vault_move_to_person", {
         request: { recordIds, profileId, folderIds },

@@ -2953,3 +2953,18 @@ notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
+
+interface-received-notNow = Ahora no
+
+interface-received-remove = Quitar
+
+interface-received-confirmBodySealed = Estos archivos se compartieron mientras myCarlos estaba bloqueado y se guardan aquí, cifrados. No se añade nada hasta que elija Importar. Ahora no los conserva hasta 7 días. Quitar los elimina.
+
+interface-receive-inboxRemoved =
+    { $count ->
+    [one] Se eliminó un archivo compartido guardado para usted: tenía más de 7 días o no se pudo leer.
+    [many] Se eliminaron { $count } archivos compartidos guardados para usted: tenían más de 7 días o no se pudieron leer.
+    *[other] Se eliminaron { $count } archivos compartidos guardados para usted: tenían más de 7 días o no se pudieron leer.
+    }
+
+interface-receive-inboxKeyChanged = La clave que guarda los archivos compartidos mientras myCarlos está bloqueado fue cambiada por otra cosa y se ha corregido. Los archivos compartidos desde entonces no se guardaron. Compártalos de nuevo.
