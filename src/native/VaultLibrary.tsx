@@ -1012,22 +1012,23 @@ export function VaultLibrary({
   // The list's scroll region and the search row that sticks to its top (styles.css, "fits the
   // window"): the region's scroll-padding is the row's height, so that a row focused from below
   // (Shift+Tab, an arrow) is not left under the sticky row (WCAG 2.2, 2.4.11), at any text size.
-  const listRegionRef = useRef<HTMLDivElement | null>(null);
-  const searchRowRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const region = listRegionRef.current;
-    const row = searchRowRef.current;
-    if (!region || !row || typeof ResizeObserver === "undefined") return;
+  // A callback ref on the search row: it measures when the row appears and stops when it goes, so
+  // nothing here depends on which screens show it.
+  const stickyObserver = useRef<ResizeObserver | null>(null);
+  const searchRowRef = useCallback((row: HTMLDivElement | null) => {
+    stickyObserver.current?.disconnect();
+    stickyObserver.current = null;
+    const region = row?.closest<HTMLElement>(".library-list-scroll");
+    if (!row || !region || typeof ResizeObserver === "undefined") return;
     const measure = () =>
       region.style.setProperty(
         "--library-sticky-height",
         `${row.offsetHeight}px`,
       );
     measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, [section, inShared]);
+    stickyObserver.current = new ResizeObserver(measure);
+    stickyObserver.current.observe(row);
+  }, []);
   const locationSummaryId = useId();
   const locationCountId = useId();
   // Rename keeps the whole page behind it from a screen reader: the parts
@@ -2517,7 +2518,7 @@ export function VaultLibrary({
                     the search (it sticks to the top of the region) and the list, while the
                     title bar, the sidebar, the path and the head with its actions stay in view
                     (styles.css, "fits the window"). A phone's page scrolls as a whole. */}
-                <div className="library-list-scroll" ref={listRegionRef}>
+                <div className="library-list-scroll">
                   {inShared && (
                     <p className="purpose-note native-shared-intro">
                       <Icon name="info" />
