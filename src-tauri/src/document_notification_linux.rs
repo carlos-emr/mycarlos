@@ -164,6 +164,8 @@ pub(crate) struct LinuxBackend<B: Bus> {
 }
 
 impl<B: Bus> LinuxBackend<B> {
+    /// A backend over `bus` with a gate of its own (the real one is made by `new`, which shares).
+    #[cfg(test)]
     pub(crate) fn with_bus(bus: B) -> Self {
         Self::with_gate(bus, Arc::new(Gate::new(PERMISSION_TTL)))
     }
