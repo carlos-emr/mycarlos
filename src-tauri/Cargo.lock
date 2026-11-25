@@ -3225,6 +3225,7 @@ dependencies = [
  "windows",
  "x25519-dalek",
  "x509-cert",
+ "zbus",
  "zeroize",
  "zxcvbn",
 ]

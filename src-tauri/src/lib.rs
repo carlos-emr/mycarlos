@@ -13,6 +13,9 @@ mod document_collection;
 mod document_collection_pickup;
 mod document_identity;
 pub mod document_notification_runtime;
+// Compiled on Linux, and in tests on every platform (its bus is a trait, tested with a fake).
+#[cfg(any(test, target_os = "linux"))]
+mod document_notification_linux;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
