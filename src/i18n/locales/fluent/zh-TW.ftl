@@ -2645,4 +2645,6 @@ iphonePush-unavailable = 這部 iPhone 無法連線到 Apple 的通知服務。�
 
 iphonePush-timedOut = Apple 沒有及時回應。請先關閉再重新開啟此選項以重試。
 
+iphonePush-needsAttention = 無法與您的診所設定通知。請關閉後再開啟此選項。如果仍然無法使用，請告知您的診所。
+
 iphonePush-error = 無法儲存此設定。請重試。

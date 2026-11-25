@@ -18,7 +18,9 @@ export type IphonePushStatus = {
     /** The iPhone or Apple could not give this install a token. */
     | "unavailable"
     /** Apple did not answer in time. */
-    | "timedOut";
+    | "timedOut"
+    /** The portal could not be given a place for notices, even after enrolling anew. */
+    | "needsAttention";
 };
 
 const STATE_LINES = {
@@ -26,6 +28,7 @@ const STATE_LINES = {
   iosOff: "iphonePush.iosOff",
   unavailable: "iphonePush.unavailable",
   timedOut: "iphonePush.timedOut",
+  needsAttention: "iphonePush.needsAttention",
 } as const;
 
 /**

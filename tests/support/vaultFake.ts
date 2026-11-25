@@ -207,7 +207,13 @@ export interface FakeVaultSetup {
   /** An iPhone with notices for a closed myCarlos available: the setting is shown, off, and `state` says
    * why notices are not coming once it is on (the iPhone push setting). Default: not an iPhone. */
   iphonePush?: {
-    state?: "ok" | "refused" | "iosOff" | "unavailable" | "timedOut";
+    state?:
+      | "ok"
+      | "refused"
+      | "iosOff"
+      | "unavailable"
+      | "timedOut"
+      | "needsAttention";
   };
   /** The backup file a restore would choose: what it replaces on this
    * device, whether the vault here differs, the documents it holds (FAKE

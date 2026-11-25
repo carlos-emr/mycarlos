@@ -2954,4 +2954,6 @@ iphonePush-unavailable = Le service d’avis d’Apple n’a pas pu être joint 
 
 iphonePush-timedOut = Apple n’a pas répondu à temps. Désactivez puis réactivez cette option pour réessayer.
 
+iphonePush-needsAttention = Les avis n’ont pas pu être mis en place auprès de votre clinique. Désactivez puis réactivez cette option. Si cela ne fonctionne toujours pas, prévenez votre clinique.
+
 iphonePush-error = Le paramètre n’a pas pu être enregistré. Réessayez.

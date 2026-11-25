@@ -2954,4 +2954,6 @@ iphonePush-unavailable = Não foi possível acessar o serviço de avisos da Appl
 
 iphonePush-timedOut = A Apple não respondeu a tempo. Desative e ative isto novamente para tentar de novo.
 
+iphonePush-needsAttention = Não foi possível configurar os avisos com a sua clínica. Desative e ative esta opção novamente. Se ainda não funcionar, avise a sua clínica.
+
 iphonePush-error = Não foi possível salvar o ajuste. Tente novamente.

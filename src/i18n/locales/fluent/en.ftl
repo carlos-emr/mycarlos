@@ -2919,4 +2919,6 @@ iphonePush-unavailable = Apple’s notice service could not be reached from this
 
 iphonePush-timedOut = Apple did not answer in time. Turn this off and on again to try again.
 
+iphonePush-needsAttention = Notices could not be set up with your clinic. Turn this off and on again. If it still does not work, tell your clinic.
+
 iphonePush-error = The setting could not be saved. Try again.
