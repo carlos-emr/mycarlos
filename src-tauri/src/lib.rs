@@ -1265,7 +1265,9 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
         return Err(VaultError::NotPhoto);
     }
     exported?;
-    let cleaned = photo::clean_jpeg(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    // `clean_picture`: a picture the patient brought keeps its orientation and a plain colour
+    // profile (the camera's own photos have neither, so they are shown as stored).
+    let cleaned = photo::clean_picture(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
     Ok(format!(
         "data:image/jpeg;base64,{}",
         BASE64.encode(&*cleaned)
@@ -5384,10 +5386,16 @@ async fn vault_import_pick(
     .await?;
     let _open = ActivityHold::new(store.idle());
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
+        // PDF documents stay first (what the dialog shows by default); the others are one choice
+        // away. JPEG pictures only: PNG comes in a later piece, and HEIC is not accepted.
         app.dialog()
             .file()
             .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg"])
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg"])
             .blocking_pick_files()
     })
     .await
@@ -5437,7 +5445,7 @@ fn open_import_source(
     let display_name = import_display_name(&path);
     Ok(ImportSource {
         display_name,
-        reader: require_pdf(open_source_reader(app, path)?)?,
+        reader: require_supported_file(open_source_reader(app, path)?)?,
     })
 }
 
@@ -5447,7 +5455,7 @@ fn open_received_source(
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
     Ok(ImportSource {
-        reader: require_pdf(open_received_reader(app, &file)?)?,
+        reader: require_supported_file(open_received_reader(app, &file)?)?,
         display_name: file.name,
     })
 }
@@ -5483,18 +5491,38 @@ fn open_source_reader(
     Ok(Box::new(file))
 }
 
-/// Refuses a file that does not start the way a PDF does. The start is read while the file is
-/// opened, so a refused file stops the import before anything is staged.
-fn require_pdf(
+/// Says what an importable file is and gives its bytes: a PDF streams in as it is (it was checked
+/// while it was opened, so a refused file stops the import before anything is staged); a JPEG is
+/// read whole (at most a photo's size) and **cleaned first** (`photo::clean_picture`): place, time,
+/// device, thumbnail and every other block are gone, and only the orientation and a plain colour
+/// profile are kept. What is stored is already clean, whatever app made the picture. Anything else
+/// is refused (`NotPdf`, worded for both kinds). A JPEG that is damaged, not a baseline or
+/// progressive image, or too large is refused as a picture (`NotPhoto`).
+fn require_supported_file(
     reader: Box<dyn std::io::Read + Send>,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
-    received::require_pdf_header(reader).map_err(|error| {
+    let (kind, reader) = received::classify(reader).map_err(|error| {
         if received::is_not_pdf(&error) {
             VaultError::NotPdf
         } else {
             VaultError::from(error)
         }
-    })
+    })?;
+    match kind {
+        received::FileKind::Pdf => Ok(reader),
+        received::FileKind::Jpeg => {
+            use std::io::Read as _;
+            let mut bytes = Zeroizing::new(Vec::new());
+            // One byte over the cap is enough to say it is too large.
+            reader
+                .take(photo::MAX_PHOTO_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(VaultError::from)?;
+            let cleaned = photo::clean_picture(&bytes).map_err(|_| VaultError::NotPhoto)?;
+            drop(bytes);
+            Ok(Box::new(std::io::Cursor::new(cleaned)))
+        }
+    }
 }
 
 /// A picked file that cannot be opened is a problem with that file, not with
@@ -9157,15 +9185,19 @@ mod tests {
     }
 
     #[test]
-    fn a_file_that_is_not_a_pdf_is_refused_and_named() {
+    fn a_file_that_is_not_a_pdf_or_a_jpeg_is_refused_and_named() {
         let text = std::io::Cursor::new(b"FAKE plain text".to_vec());
         assert!(matches!(
-            require_pdf(Box::new(text)),
+            require_supported_file(Box::new(text)),
             Err(VaultError::NotPdf)
         ));
         let pdf = std::io::Cursor::new(b"%PDF-1.7 FAKE".to_vec());
         let mut kept = Vec::new();
-        std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(pdf)).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
         assert_eq!(kept, b"%PDF-1.7 FAKE");
         let json = serde_json::to_value(PublicError::from(VaultError::NotPdf)).unwrap();
         assert_eq!(json["code"], "not_pdf");
@@ -11450,6 +11482,130 @@ mod photo_command_tests {
         );
     }
 
+    /// A phone picture, as a test sample: the canvas JPEG (FAKE) with, after its JFIF header, an
+    /// Exif block holding a make, an orientation of 6 (turned a quarter) and a pointer to a GPS
+    /// block, and a comment with text.
+    fn phone_picture() -> Vec<u8> {
+        let mut tiff = b"MM\0\x2a\0\0\0\x08".to_vec();
+        // IFD0 at 8: Make (ASCII, at 50), Orientation (SHORT) 6, GPSInfo (LONG, at 62).
+        tiff.extend_from_slice(&[0, 3]);
+        tiff.extend_from_slice(&[0x01, 0x0f, 0, 2, 0, 0, 0, 12, 0, 0, 0, 50]);
+        tiff.extend_from_slice(&[0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0]);
+        tiff.extend_from_slice(&[0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 62]);
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"FAKE Phone\0\0");
+        // The GPS IFD: LatitudeRef "N".
+        tiff.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0, 0, 0, 0, 0]);
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend_from_slice(&tiff);
+        let segment = |code: u8, payload: &[u8]| {
+            let mut bytes = vec![0xff, code];
+            bytes.extend_from_slice(&(payload.len() as u16 + 2).to_be_bytes());
+            bytes.extend_from_slice(payload);
+            bytes
+        };
+        // Past the JFIF header (20 bytes with the start marker) and before the rest.
+        let mut bytes = CANVAS[..20].to_vec();
+        bytes.extend(segment(0xe1, &exif));
+        bytes.extend(segment(0xfe, b"FAKE comment: taken at home %PDF-1.7"));
+        bytes.extend_from_slice(&CANVAS[20..]);
+        bytes
+    }
+
+    #[test]
+    fn a_picture_the_patient_picks_is_cleaned_on_import_and_stored_clean() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = phone_picture();
+        assert!(picture.windows(10).any(|w| w == b"FAKE Phone"));
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: "IMG_0042.jpg".to_owned(),
+                    reader: require_supported_file(Box::new(std::io::Cursor::new(picture)))
+                        .unwrap(),
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "IMG_0042.jpg");
+        assert_eq!(record.media_type, "application/octet-stream");
+        let stored = exported(&store, record.id);
+        // Place, device, comment (and the "%PDF-" in it, which must not make this a PDF) are gone;
+        // the orientation is kept, in a block built here.
+        for gone in [&b"FAKE Phone"[..], b"FAKE comment", b"%PDF-", b"\x88\x25"] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert!(stored
+            .windows(8)
+            .any(|w| w == [b'E', b'x', b'i', b'f', 0, 0, b'M', b'M']));
+        assert_eq!(&stored[..2], [0xff, 0xd8]);
+        // What the picture view shows is the same cleaned picture.
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/jpeg;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        assert_eq!(record.plaintext_size, stored.len() as u64);
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_clean_jpeg_is_refused_before_anything_is_staged() {
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        // Not a picture or a PDF at all: a GIF (even named .jpg), a PNG (a later piece), HEIC, a
+        // truncated file of nothing, plain text.
+        for other in [
+            b"GIF89a FAKE".to_vec(),
+            b"\x89PNG\r\n\x1a\n FAKE".to_vec(),
+            b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec(),
+            Vec::new(),
+            b"FAKE".to_vec(),
+        ] {
+            assert!(matches!(refused(other), Some(VaultError::NotPdf)));
+        }
+        // Starts as a JPEG but is not a whole baseline or progressive picture: cut short, or
+        // only the start.
+        let whole = phone_picture();
+        for bad in [
+            whole[..whole.len() - 2].to_vec(),
+            whole[..200].to_vec(),
+            vec![0xff, 0xd8, 0xff],
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size: refused, however it starts.
+        let mut huge = vec![0xff, 0xd8, 0xff, 0xe0];
+        huge.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(huge), Some(VaultError::NotPhoto)));
+    }
+
+    #[test]
+    fn a_pdf_still_streams_in_as_it_is_and_a_jpeg_is_never_taken_for_one() {
+        // A picture with "%PDF-" in its first bytes is a picture (cleaned), never a PDF kept raw.
+        let mut sneaky = vec![0xff, 0xd8, 0xff, 0xfe, 0, 12];
+        sneaky.extend_from_slice(b"%PDF-1.7 FA");
+        assert!(matches!(
+            require_supported_file(Box::new(std::io::Cursor::new(sneaky))).err(),
+            Some(VaultError::NotPhoto)
+        ));
+        // A PDF whose own bytes include a JPEG later on is still a PDF, unchanged.
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        pdf.extend_from_slice(CANVAS);
+        let mut kept = Vec::new();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(std::io::Cursor::new(pdf.clone()))).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
+        assert_eq!(kept, pdf);
+    }
+
     #[test]
     fn native_localization_generated_photo_names_survive_store_reopen_exactly() {
         for locale in [
@@ -11657,7 +11813,10 @@ mod photo_command_tests {
         let shown = BASE64
             .decode(url.strip_prefix("data:image/jpeg;base64,").unwrap())
             .unwrap();
-        assert_eq!(shown, *photo::clean_jpeg(CANVAS).unwrap());
+        // Shown as a picture the patient brought is: the canvas photo's plain colour profile
+        // stays, the tagged Exif (place) does not.
+        assert_eq!(shown, *photo::clean_picture(CANVAS).unwrap());
+        assert!(!shown.windows(3).any(|w| w == b"GPS"));
         // What is stored is not changed by viewing it.
         assert_eq!(exported(&store, ids[0]), tagged());
 

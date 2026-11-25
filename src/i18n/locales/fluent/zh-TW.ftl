@@ -237,6 +237,8 @@ interface-UnlockPdfDialog-unlocking = 正在解鎖…
 
 interface-VaultApp-chooseFilesToImport = 選擇要匯入的檔案
 
+interface-VaultLibrary-picturesNote = 您新增的圖片會移除拍攝地點、時間和相機資訊。
+
 interface-VaultApp-finishingTheTransfer = 正在完成傳輸
 
 interface-VaultApp-lockNowAndCancelTheTransfer = 立即鎖定並取消傳輸
@@ -664,7 +666,7 @@ native-error-20 = 請選擇較不容易猜測的密語，不要使用常見密�
 
 native-error-21 = 每次匯入最多可選擇 100 個檔案。
 
-native-error-22 = 其中一個檔案不是 PDF 文件，因此沒有新增任何內容。myCarlos 只保留 PDF 文件。
+native-error-22 = 其中一個檔案既不是 PDF 文件也不是 JPEG 圖片，因此沒有新增任何內容。myCarlos 保留 PDF 文件和 JPEG 圖片。如果是 iPhone 圖片（HEIC），請改以 JPEG 分享。
 
 native-error-23 = 此文件使用密碼鎖定。請輸入病患入口網站提供的文件密碼。
 
@@ -723,6 +725,10 @@ native-error-speedTest = 速度測試尚未完成就停止了。沒有變更任�
 native-filter-backups = myCarlos 備份
 
 native-filter-pdf = PDF 文件
+
+native-filter-pictures = JPEG 圖片
+
+native-filter-pdfAndPictures = PDF 文件和 JPEG 圖片
 
 native-kit-text =
     myCarlos 復原套件

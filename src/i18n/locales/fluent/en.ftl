@@ -468,6 +468,8 @@ interface-UnlockPdfDialog-unlocking = Unlocking…
 
 interface-VaultApp-chooseFilesToImport = Choose files to import
 
+interface-VaultLibrary-picturesNote = Place, time and camera details are removed from pictures you add.
+
 interface-VaultApp-finishingTheTransfer = Finishing the transfer
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Lock now and cancel the transfer
@@ -748,7 +750,7 @@ native-error-20 = Choose a less predictable passphrase that is not based on comm
 
 native-error-21 = Choose no more than 100 files in one import.
 
-native-error-22 = One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.
+native-error-22 = One of the files is not a PDF document or a JPEG picture, so nothing was added. myCarlos keeps PDF documents and JPEG pictures. If it is an iPhone picture (HEIC), share it as a JPEG instead.
 
 native-error-23 = This document is locked with a password. Enter the document password from your patient portal.
 
@@ -807,6 +809,10 @@ native-error-speedTest = The speed test stopped before it finished. Nothing was 
 native-filter-backups = myCarlos backups
 
 native-filter-pdf = PDF documents
+
+native-filter-pictures = JPEG pictures
+
+native-filter-pdfAndPictures = PDF documents and JPEG pictures
 
 native-kit-text =
     myCarlos recovery kit

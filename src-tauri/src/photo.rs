@@ -46,6 +46,51 @@ pub fn looks_like_jpeg(bytes: &[u8]) -> bool {
 /// do not describe as a single 8-bit baseline or progressive image of at most
 /// `MAX_PHOTO_SIDE` pixels a side is refused.
 pub fn clean_jpeg(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
+    clean_core(input)
+}
+
+/// `clean_jpeg` for a picture the patient brought (imported, or shown after it was): the same
+/// walk, then two things the patient needs are put back, **rebuilt, never copied**:
+/// - the **orientation** (Exif tag 0x0112, a value 1 to 8), as the only entry of a minimal Exif
+///   block, so that a portrait photo a phone stored sideways still shows upright. An orientation
+///   of 1 (or none) needs no block. No place, time, device or thumbnail survives: the block is
+///   built here, 34 bytes, and holds nothing else.
+/// - a **plain colour profile**: one ICC profile of at most [`MAX_ICC_BYTES`] whose header and
+///   tag table are well formed and whose tags are all standard colour tags (see
+///   `plain_icc_profile`). Skin and rash colours matter in a health picture, and such a profile
+///   holds no personal data. Anything else is dropped.
+///
+/// Running it again on its own output gives the same bytes.
+pub fn clean_picture(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
+    let core = clean_core(input)?;
+    let (orientation, profile) = wanted_metadata(input);
+    let mut extra = Vec::new();
+    if let Some(orientation) = orientation {
+        extra.extend_from_slice(&orientation_block(orientation));
+    }
+    if let Some(profile) = profile {
+        extra.extend_from_slice(&icc_segment(&profile));
+    }
+    if extra.is_empty() {
+        return Ok(core);
+    }
+    // After the JFIF header, which `clean_core` writes first when the picture has a plain one.
+    let at = if core.get(2..4) == Some(&[0xff, APP0]) {
+        2 + 2 + JFIF_LENGTH
+    } else {
+        2
+    };
+    let mut output = Zeroizing::new(Vec::with_capacity(core.len() + extra.len()));
+    output.extend_from_slice(&core[..at]);
+    output.extend_from_slice(&extra);
+    output.extend_from_slice(&core[at..]);
+    if output.len() > MAX_PHOTO_BYTES {
+        return Err(PhotoError::TooLarge);
+    }
+    Ok(output)
+}
+
+fn clean_core(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     if input.len() > MAX_PHOTO_BYTES {
         return Err(PhotoError::TooLarge);
     }
@@ -148,6 +193,193 @@ pub fn clean_jpeg(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
             output.extend_from_slice(&input[start..position]);
         }
     }
+}
+
+/// The most bytes of a colour profile that is kept: it then fits in one APP2 segment.
+pub const MAX_ICC_BYTES: usize = 64 * 1024 - 64;
+const APP1: u8 = 0xe1;
+const APP2: u8 = 0xe2;
+const ICC_TAG: &[u8; 12] = b"ICC_PROFILE\0";
+
+/// The orientation (2 to 8; 1 means upright and is not worth a block) and the colour profile the
+/// header of `input` carries, read leniently: anything unreadable or odd is "none". It stops at
+/// the first scan. `clean_core` has already accepted `input` as a whole.
+fn wanted_metadata(input: &[u8]) -> (Option<u16>, Option<Vec<u8>>) {
+    let mut orientation = None;
+    let mut chunks: Vec<(u8, u8, &[u8])> = Vec::new();
+    let mut position = 2;
+    let mut exif_seen = false;
+    while input.get(position) == Some(&0xff) {
+        while input.get(position) == Some(&0xff) {
+            position += 1;
+        }
+        let Some(&code) = input.get(position) else {
+            break;
+        };
+        position += 1;
+        if code == SOS || code == EOI {
+            break;
+        }
+        let Some(length) = input
+            .get(position..position + 2)
+            .map(|bytes| usize::from(u16::from_be_bytes([bytes[0], bytes[1]])))
+            .filter(|length| *length >= 2)
+        else {
+            break;
+        };
+        let Some(payload) = input.get(position + 2..position + length) else {
+            break;
+        };
+        match code {
+            // Only the first Exif block counts.
+            APP1 if !exif_seen && payload.starts_with(b"Exif\0\0") => {
+                exif_seen = true;
+                orientation = exif_orientation(&payload[6..]).filter(|value| *value != 1);
+            }
+            APP2 if payload.starts_with(ICC_TAG) && payload.len() >= ICC_TAG.len() + 2 => {
+                let (sequence, total) = (payload[12], payload[13]);
+                chunks.push((sequence, total, &payload[14..]));
+            }
+            _ => {}
+        }
+        position += length;
+    }
+    (orientation, join_icc(chunks))
+}
+
+/// The profile in its chunks (each APP2 segment carries a sequence number and the total), when
+/// they are all there, once each, and the whole is a plain profile within the cap.
+fn join_icc(mut chunks: Vec<(u8, u8, &[u8])>) -> Option<Vec<u8>> {
+    let total = usize::from(chunks.first()?.1);
+    if total == 0
+        || total > 8
+        || chunks.len() != total
+        || chunks.iter().any(|c| usize::from(c.1) != total)
+    {
+        return None;
+    }
+    chunks.sort_by_key(|chunk| chunk.0);
+    if chunks
+        .iter()
+        .enumerate()
+        .any(|(index, chunk)| usize::from(chunk.0) != index + 1)
+    {
+        return None;
+    }
+    let profile: Vec<u8> = chunks
+        .iter()
+        .flat_map(|chunk| chunk.2.iter().copied())
+        .collect();
+    plain_icc_profile(&profile).then_some(profile)
+}
+
+/// Whether `profile` is an ordinary colour profile: at most [`MAX_ICC_BYTES`], a header that
+/// agrees with its length (signature "acsp" at 36, a version of 4 or less), a tag table that fits
+/// inside it, and **every tag one of the standard colour tags** (so no private or vendor tag can
+/// carry anything else). Text inside the description and copyright tags is the profile's own name
+/// and licence, not data about the person.
+fn plain_icc_profile(profile: &[u8]) -> bool {
+    const HEADER: usize = 128;
+    if profile.len() < HEADER + 4 || profile.len() > MAX_ICC_BYTES {
+        return false;
+    }
+    let word = |at: usize| {
+        u32::from_be_bytes([
+            profile[at],
+            profile[at + 1],
+            profile[at + 2],
+            profile[at + 3],
+        ])
+    };
+    if word(0) as usize != profile.len() || &profile[36..40] != b"acsp" || profile[8] > 4 {
+        return false;
+    }
+    let count = word(HEADER) as usize;
+    let table_end = HEADER + 4 + 12 * count;
+    if count == 0 || count > 100 || table_end > profile.len() {
+        return false;
+    }
+    const STANDARD: [&[u8; 4]; 52] = [
+        b"A2B0", b"A2B1", b"A2B2", b"B2A0", b"B2A1", b"B2A2", b"B2D0", b"B2D1", b"B2D2", b"B2D3",
+        b"D2B0", b"D2B1", b"D2B2", b"D2B3", b"bXYZ", b"bTRC", b"bkpt", b"calt", b"chad", b"chrm",
+        b"cicp", b"clro", b"clrt", b"cprt", b"desc", b"dmdd", b"dmnd", b"gamt", b"gXYZ", b"gTRC",
+        b"kTRC", b"lumi", b"meas", b"mmod", b"ncl2", b"pre0", b"pre1", b"pre2", b"resp", b"rXYZ",
+        b"rTRC", b"scrd", b"scrn", b"tech", b"vued", b"view", b"wtpt", b"ps2i", b"ps2s", b"targ",
+        b"bfd ", b"dscm",
+    ];
+    (0..count).all(|index| {
+        let entry = HEADER + 4 + 12 * index;
+        let (offset, size) = (word(entry + 4) as usize, word(entry + 8) as usize);
+        STANDARD
+            .iter()
+            .any(|tag| profile[entry..entry + 4] == tag[..])
+            && offset
+                .checked_add(size)
+                .is_some_and(|end| end <= profile.len())
+    })
+}
+
+/// The orientation of an Exif TIFF block: IFD0's tag 0x0112, a SHORT of count 1 with a value of
+/// 1 to 8. Every read is bounds-checked; anything odd is `None`.
+fn exif_orientation(tiff: &[u8]) -> Option<u16> {
+    let big = match tiff.get(..2)? {
+        b"MM" => true,
+        b"II" => false,
+        _ => return None,
+    };
+    let u16_at = |at: usize| -> Option<u16> {
+        let bytes: [u8; 2] = tiff.get(at..at + 2)?.try_into().ok()?;
+        Some(if big {
+            u16::from_be_bytes(bytes)
+        } else {
+            u16::from_le_bytes(bytes)
+        })
+    };
+    let u32_at = |at: usize| -> Option<u32> {
+        let bytes: [u8; 4] = tiff.get(at..at + 4)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(bytes)
+        } else {
+            u32::from_le_bytes(bytes)
+        })
+    };
+    if u16_at(2)? != 42 {
+        return None;
+    }
+    let ifd = usize::try_from(u32_at(4)?).ok()?;
+    let entries = usize::from(u16_at(ifd)?);
+    for index in 0..entries.min(512) {
+        let entry = ifd.checked_add(2 + 12 * index)?;
+        if u16_at(entry)? == 0x0112 {
+            // Type SHORT (3), count 1; the value sits in the first two bytes of the value field.
+            if u16_at(entry + 2)? != 3 || u32_at(entry + 4)? != 1 {
+                return None;
+            }
+            return u16_at(entry + 8).filter(|value| (1..=8).contains(value));
+        }
+    }
+    None
+}
+
+/// An Exif APP1 segment with the orientation and nothing else (big-endian TIFF, one IFD entry).
+fn orientation_block(orientation: u16) -> Vec<u8> {
+    let mut block = vec![0xff, APP1, 0x00, 0x22];
+    block.extend_from_slice(b"Exif\0\0MM\0\x2a\0\0\0\x08");
+    block.extend_from_slice(&[0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1]);
+    block.extend_from_slice(&orientation.to_be_bytes());
+    block.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    block
+}
+
+/// The profile as one APP2 segment (it is at most [`MAX_ICC_BYTES`]).
+fn icc_segment(profile: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(2 + ICC_TAG.len() + 2 + profile.len()).unwrap_or(u16::MAX);
+    let mut segment = vec![0xff, APP2];
+    segment.extend_from_slice(&length.to_be_bytes());
+    segment.extend_from_slice(ICC_TAG);
+    segment.extend_from_slice(&[1, 1]);
+    segment.extend_from_slice(profile);
+    segment
 }
 
 /// A JFIF header and nothing else: no thumbnail, and not the JFXX extension,
@@ -534,5 +766,282 @@ mod tests {
         assert!(!looks_like_jpeg(b"%PDF-1.7"));
         assert!(!looks_like_jpeg(&[0xff, SOI]));
         assert!(!looks_like_jpeg(&[0xff, 0xd9, 0xff]));
+    }
+
+    // ---- pictures the patient brings: orientation and a plain colour profile are kept ----
+
+    /// The canvas photo (no colour profile) with `segments` after its JFIF header.
+    fn with_segments(segments: &[Vec<u8>]) -> Vec<u8> {
+        let mut bytes = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+        for segment in segments {
+            bytes.extend_from_slice(segment);
+        }
+        bytes.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+        bytes
+    }
+
+    /// An Exif block as a phone writes it for a portrait photo: Make, Orientation, GPSInfo.
+    fn exif_with(orientation: u16, big_endian: bool) -> Vec<u8> {
+        let word = |value: u16| {
+            if big_endian {
+                value.to_be_bytes()
+            } else {
+                value.to_le_bytes()
+            }
+        };
+        let long = |value: u32| {
+            if big_endian {
+                value.to_be_bytes()
+            } else {
+                value.to_le_bytes()
+            }
+        };
+        let mut tiff = if big_endian {
+            b"MM".to_vec()
+        } else {
+            b"II".to_vec()
+        };
+        tiff.extend_from_slice(&word(42));
+        tiff.extend_from_slice(&long(8));
+        tiff.extend_from_slice(&word(3));
+        for (tag, kind, count, value) in [
+            (0x010f_u16, 2_u16, 12_u32, 50_u32),
+            (0x0112, 3, 1, 0),
+            (0x8825, 4, 1, 62),
+        ] {
+            tiff.extend_from_slice(&word(tag));
+            tiff.extend_from_slice(&word(kind));
+            tiff.extend_from_slice(&long(count));
+            if tag == 0x0112 {
+                tiff.extend_from_slice(&word(orientation));
+                tiff.extend_from_slice(&[0, 0]);
+            } else {
+                tiff.extend_from_slice(&long(value));
+            }
+        }
+        tiff.extend_from_slice(&long(0));
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"FAKE Phone\0\0");
+        // A GPS IFD with one entry (a latitude reference).
+        tiff.extend_from_slice(&word(1));
+        tiff.extend_from_slice(&word(1));
+        tiff.extend_from_slice(&word(2));
+        tiff.extend_from_slice(&long(2));
+        tiff.extend_from_slice(&[b'N', 0, 0, 0]);
+        tiff.extend_from_slice(&long(0));
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend_from_slice(&tiff);
+        exif
+    }
+
+    /// A small, well-formed ICC profile: the 128-byte header, a tag table of `tags` (each
+    /// pointing at 4 bytes of data) and that data. Display P3 in spirit, FAKE in content.
+    fn icc_profile(tags: &[&[u8; 4]]) -> Vec<u8> {
+        let table = 128 + 4 + 12 * tags.len();
+        let length = table + 4 * tags.len();
+        let mut profile = vec![0_u8; 128];
+        profile[0..4].copy_from_slice(&u32::try_from(length).unwrap().to_be_bytes());
+        profile[8] = 4;
+        profile[36..40].copy_from_slice(b"acsp");
+        profile.extend_from_slice(&u32::try_from(tags.len()).unwrap().to_be_bytes());
+        for (index, tag) in tags.iter().enumerate() {
+            profile.extend_from_slice(*tag);
+            profile.extend_from_slice(&u32::try_from(table + 4 * index).unwrap().to_be_bytes());
+            profile.extend_from_slice(&4_u32.to_be_bytes());
+        }
+        profile.extend_from_slice(&vec![7_u8; 4 * tags.len()]);
+        assert_eq!(profile.len(), length);
+        profile
+    }
+
+    fn icc_chunk(sequence: u8, total: u8, bytes: &[u8]) -> Vec<u8> {
+        let mut payload = b"ICC_PROFILE\0".to_vec();
+        payload.extend_from_slice(&[sequence, total]);
+        payload.extend_from_slice(bytes);
+        segment(0xe2, &payload)
+    }
+
+    #[test]
+    fn a_sideways_picture_keeps_only_its_orientation_in_a_block_built_here() {
+        for big_endian in [true, false] {
+            for orientation in 2..=8_u16 {
+                let input = with_segments(&[segment(0xe1, &exif_with(orientation, big_endian))]);
+                let cleaned = clean_picture(&input).unwrap();
+                // The orientation, as the only entry of a block of 36 bytes, after the JFIF header.
+                let mut expected = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+                expected.extend_from_slice(&orientation_block(orientation));
+                expected.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+                assert_eq!(*cleaned, expected, "{orientation} {big_endian}");
+                assert_eq!(orientation_block(orientation).len(), 36);
+                // Nothing of the original block survives: no make, no GPS.
+                assert!(!contains(&cleaned, b"FAKE Phone"));
+                assert!(!contains(&cleaned, b"\x88\x25"));
+                // Cleaning it again changes nothing.
+                assert_eq!(*clean_picture(&cleaned).unwrap(), *cleaned);
+            }
+        }
+    }
+
+    #[test]
+    fn an_upright_or_unreadable_orientation_leaves_no_block_at_all() {
+        let upright = with_segments(&[segment(0xe1, &exif_with(1, true))]);
+        assert_eq!(*clean_picture(&upright).unwrap(), *PLAIN);
+        for orientation in [0_u16, 9, 300] {
+            let odd = with_segments(&[segment(0xe1, &exif_with(orientation, true))]);
+            assert_eq!(*clean_picture(&odd).unwrap(), *PLAIN, "{orientation}");
+        }
+        // A block that is cut short, one of the wrong type, and one that is not Exif.
+        let mut cut = exif_with(6, true);
+        cut.truncate(20);
+        let mut wrong_type = exif_with(6, true);
+        wrong_type[6 + 8 + 2 + 12 + 2 + 1] = 4;
+        for payload in [
+            cut,
+            wrong_type,
+            b"Exif\0\0nonsense".to_vec(),
+            b"NotExif".to_vec(),
+        ] {
+            let input = with_segments(&[segment(0xe1, &payload)]);
+            assert_eq!(*clean_picture(&input).unwrap(), *PLAIN);
+        }
+    }
+
+    #[test]
+    fn a_plain_colour_profile_is_kept_and_anything_else_is_dropped() {
+        let plain = icc_profile(&[
+            b"desc", b"wtpt", b"rXYZ", b"gXYZ", b"bXYZ", b"rTRC", b"cprt",
+        ]);
+        let input = with_segments(&[icc_chunk(1, 1, &plain)]);
+        let cleaned = clean_picture(&input).unwrap();
+        let mut expected = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+        expected.extend_from_slice(&icc_segment(&plain));
+        expected.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+        assert_eq!(*cleaned, expected);
+        assert_eq!(*clean_picture(&cleaned).unwrap(), *cleaned);
+        // The strict cleaner (camera photos) still drops it.
+        assert_eq!(*clean_jpeg(&input).unwrap(), *PLAIN);
+
+        let mut wrong_length = plain.clone();
+        wrong_length[3] ^= 1;
+        let mut no_signature = plain.clone();
+        no_signature[36] = b'x';
+        let mut table_past_end = plain.clone();
+        table_past_end[131] = 200;
+        let mut tag_past_end = plain.clone();
+        tag_past_end[128 + 4 + 8..128 + 4 + 12].copy_from_slice(&u32::MAX.to_be_bytes());
+        for (name, profile) in [
+            ("a private tag", icc_profile(&[b"desc", b"FAKE"])),
+            ("no tags", icc_profile(&[])),
+            ("the wrong length", wrong_length),
+            ("no acsp signature", no_signature),
+            ("a table past the end", table_past_end),
+            ("a tag past the end", tag_past_end),
+            ("too short", vec![0_u8; 100]),
+            ("too big", vec![0_u8; MAX_ICC_BYTES + 1]),
+        ] {
+            let input = with_segments(&[icc_chunk(1, 1, &profile)]);
+            assert_eq!(*clean_picture(&input).unwrap(), *PLAIN, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_colour_profile_in_several_segments_is_joined_only_when_complete() {
+        let plain = icc_profile(&[b"desc", b"wtpt", b"rXYZ"]);
+        let (first, second) = plain.split_at(100);
+        let both = with_segments(&[icc_chunk(2, 2, second), icc_chunk(1, 2, first)]);
+        let mut expected = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+        expected.extend_from_slice(&icc_segment(&plain));
+        expected.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+        assert_eq!(*clean_picture(&both).unwrap(), expected);
+        for (name, chunks) in [
+            ("one missing", vec![icc_chunk(1, 2, first)]),
+            (
+                "a repeat",
+                vec![icc_chunk(1, 2, first), icc_chunk(1, 2, first)],
+            ),
+            (
+                "totals disagree",
+                vec![icc_chunk(1, 2, first), icc_chunk(2, 3, second)],
+            ),
+            ("a total of zero", vec![icc_chunk(1, 0, first)]),
+        ] {
+            assert_eq!(
+                *clean_picture(&with_segments(&chunks)).unwrap(),
+                *PLAIN,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_picture_with_place_time_and_a_profile_keeps_exactly_orientation_and_profile() {
+        let plain = icc_profile(&[b"desc", b"wtpt"]);
+        let tagged = with_segments(&[
+            segment(0xe1, &exif_with_gps()),
+            segment(0xe1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>"),
+            icc_chunk(1, 1, &plain),
+            segment(0xed, b"Photoshop 3.0\08BIM FAKE caption"),
+            segment(0xfe, b"FAKE comment: taken at home"),
+        ]);
+        let cleaned = clean_picture(&tagged).unwrap();
+        // exif_with_gps has no orientation, so only the profile comes back.
+        let mut expected = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+        expected.extend_from_slice(&icc_segment(&plain));
+        expected.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+        assert_eq!(*cleaned, expected);
+        for gone in [
+            &b"FAKE Phone"[..],
+            b"xmpmeta",
+            b"FAKE caption",
+            b"taken at home",
+        ] {
+            assert!(!contains(&cleaned, gone));
+        }
+        // And the same with an orientation: the block is ours, the original's GPS is not in it.
+        let with_both =
+            with_segments(&[segment(0xe1, &exif_with(6, true)), icc_chunk(1, 1, &plain)]);
+        let cleaned = clean_picture(&with_both).unwrap();
+        assert!(contains(&cleaned, &orientation_block(6)));
+        assert!(contains(&cleaned, &plain));
+        assert!(!contains(&cleaned, b"FAKE Phone"));
+    }
+
+    #[test]
+    fn cleaning_a_picture_never_grows_it_and_a_picture_with_nothing_to_keep_matches_the_strict_cleaner(
+    ) {
+        let plain = icc_profile(&[b"desc", b"wtpt", b"rXYZ"]);
+        let inputs = [
+            with_segments(&[segment(0xe1, &exif_with(6, true)), icc_chunk(1, 1, &plain)]),
+            with_segments(&[segment(0xe1, &exif_with(8, false))]),
+            with_segments(&[icc_chunk(1, 1, &plain)]),
+            with_metadata(&PLAIN),
+            PLAIN.clone(),
+            CANVAS_JPEG.to_vec(),
+        ];
+        for input in &inputs {
+            let cleaned = clean_picture(input).unwrap();
+            assert!(
+                cleaned.len() <= input.len(),
+                "{} > {}",
+                cleaned.len(),
+                input.len()
+            );
+            assert_eq!(*clean_picture(&cleaned).unwrap(), *cleaned);
+        }
+        // What the camera dialog stores (already cleaned strictly) is shown as it is.
+        assert_eq!(*clean_picture(&PLAIN).unwrap(), *PLAIN);
+        assert_eq!(
+            *clean_picture(&with_metadata(&PLAIN)).unwrap(),
+            *clean_jpeg(&with_metadata(&PLAIN)).unwrap()
+        );
+        // Everything the strict cleaner refuses is refused here too.
+        for refused in [
+            &b""[..],
+            b"%PDF-1.7",
+            &[0xff, 0xd8, 0xff][..],
+            &PLAIN[..PLAIN.len() - 2],
+        ] {
+            assert!(clean_picture(refused).is_err());
+        }
     }
 }

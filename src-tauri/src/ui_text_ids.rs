@@ -611,6 +611,7 @@ pub enum MessageId {
     InterfaceVaultLibraryNoLocationChosenNothingChanged,
     InterfaceVaultLibraryNoRecoveryKeyYet,
     InterfaceVaultLibraryPassphraseChanged,
+    InterfaceVaultLibraryPicturesNote,
     InterfaceVaultLibraryPrivateVault,
     InterfaceVaultLibraryRecords,
     InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere,
@@ -931,6 +932,8 @@ pub enum MessageId {
     NativeFilterBackups,
     NativeFilterModels,
     NativeFilterPdf,
+    NativeFilterPdfAndPictures,
+    NativeFilterPictures,
     NativeKitText,
     NativeNoticeArrival,
     NativeNoticeTest,
@@ -1983,6 +1986,7 @@ impl MessageId {
         Self::InterfaceVaultLibraryNoLocationChosenNothingChanged,
         Self::InterfaceVaultLibraryNoRecoveryKeyYet,
         Self::InterfaceVaultLibraryPassphraseChanged,
+        Self::InterfaceVaultLibraryPicturesNote,
         Self::InterfaceVaultLibraryPrivateVault,
         Self::InterfaceVaultLibraryRecords,
         Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere,
@@ -2303,6 +2307,8 @@ impl MessageId {
         Self::NativeFilterBackups,
         Self::NativeFilterModels,
         Self::NativeFilterPdf,
+        Self::NativeFilterPdfAndPictures,
+        Self::NativeFilterPictures,
         Self::NativeKitText,
         Self::NativeNoticeArrival,
         Self::NativeNoticeTest,
@@ -3635,6 +3641,7 @@ impl MessageId {
             Self::InterfaceVaultLibraryPassphraseChanged => {
                 "interface-VaultLibrary-passphraseChanged"
             }
+            Self::InterfaceVaultLibraryPicturesNote => "interface-VaultLibrary-picturesNote",
             Self::InterfaceVaultLibraryPrivateVault => "interface-VaultLibrary-privateVault",
             Self::InterfaceVaultLibraryRecords => "interface-VaultLibrary-records",
             Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere => {
@@ -4049,6 +4056,8 @@ impl MessageId {
             Self::NativeFilterBackups => "native-filter-backups",
             Self::NativeFilterModels => "native-filter-models",
             Self::NativeFilterPdf => "native-filter-pdf",
+            Self::NativeFilterPdfAndPictures => "native-filter-pdfAndPictures",
+            Self::NativeFilterPictures => "native-filter-pictures",
             Self::NativeKitText => "native-kit-text",
             Self::NativeNoticeArrival => "native-notice-arrival",
             Self::NativeNoticeTest => "native-notice-test",
@@ -4686,6 +4695,7 @@ impl MessageId {
             "interface.VaultApp.chooseFilesToImport" => {
                 Some(Self::InterfaceVaultAppChooseFilesToImport)
             }
+            "interface.VaultLibrary.picturesNote" => Some(Self::InterfaceVaultLibraryPicturesNote),
             "interface.VaultApp.finishingTheTransfer" => {
                 Some(Self::InterfaceVaultAppFinishingTheTransfer)
             }
@@ -5066,6 +5076,8 @@ impl MessageId {
             "native.error.speedTest" => Some(Self::NativeErrorSpeedTest),
             "native.filter.backups" => Some(Self::NativeFilterBackups),
             "native.filter.pdf" => Some(Self::NativeFilterPdf),
+            "native.filter.pictures" => Some(Self::NativeFilterPictures),
+            "native.filter.pdfAndPictures" => Some(Self::NativeFilterPdfAndPictures),
             "native.kit.text" => Some(Self::NativeKitText),
             "native.recovery.keep" => Some(Self::NativeRecoveryKeep),
             "native.recovery.replace" => Some(Self::NativeRecoveryReplace),

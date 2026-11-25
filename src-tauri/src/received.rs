@@ -148,12 +148,20 @@ pub(crate) fn is_not_pdf(error: &io::Error) -> bool {
     error.get_ref().is_some_and(|source| source.is::<NotPdf>())
 }
 
-/// Reads the start of `reader` and refuses it unless "%PDF-" begins within the first
-/// `PDF_HEADER_WINDOW` bytes. The bytes read are put back in front, so the whole file still
-/// streams into the vault.
-pub(crate) fn require_pdf_header(
+/// What a file that may be imported is, decided from its own first bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileKind {
+    Pdf,
+    Jpeg,
+}
+
+/// Reads the start of `reader` and says what it is: a JPEG when it starts FF D8 FF, a PDF when
+/// "%PDF-" begins within the first `PDF_HEADER_WINDOW` bytes, and refused (`NotPdf`) otherwise.
+/// A JPEG is decided first, so a picture that merely carries the text "%PDF-" in its metadata is
+/// still cleaned as a picture and never kept as it came. The bytes read are put back in front.
+pub(crate) fn classify(
     mut reader: Box<dyn Read + Send>,
-) -> io::Result<Box<dyn Read + Send>> {
+) -> io::Result<(FileKind, Box<dyn Read + Send>)> {
     let mut head = Vec::with_capacity(PDF_HEADER_WINDOW);
     let mut chunk = [0_u8; PDF_HEADER_WINDOW];
     while head.len() < PDF_HEADER_WINDOW {
@@ -163,10 +171,14 @@ pub(crate) fn require_pdf_header(
         }
         head.extend_from_slice(&chunk[..read]);
     }
-    if !head.windows(5).any(|window| window == b"%PDF-") {
+    let kind = if crate::photo::looks_like_jpeg(&head) {
+        FileKind::Jpeg
+    } else if head.windows(5).any(|window| window == b"%PDF-") {
+        FileKind::Pdf
+    } else {
         return Err(io::Error::new(io::ErrorKind::InvalidData, NotPdf));
-    }
-    Ok(Box::new(Cursor::new(head).chain(reader)))
+    };
+    Ok((kind, Box::new(Cursor::new(head).chain(reader))))
 }
 
 /// Why a share was refused as a whole.
@@ -576,7 +588,9 @@ mod tests {
 
     fn sniff(bytes: Vec<u8>) -> io::Result<Vec<u8>> {
         let mut out = Vec::new();
-        require_pdf_header(Box::new(Cursor::new(bytes)))?.read_to_end(&mut out)?;
+        classify(Box::new(Cursor::new(bytes)))?
+            .1
+            .read_to_end(&mut out)?;
         Ok(out)
     }
 

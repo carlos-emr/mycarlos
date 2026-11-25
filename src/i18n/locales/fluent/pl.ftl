@@ -502,6 +502,8 @@ interface-UnlockPdfDialog-unlocking = Odblokowywanie…
 
 interface-VaultApp-chooseFilesToImport = Wybierz pliki do importu
 
+interface-VaultLibrary-picturesNote = Z dodawanych obrazów usuwane są miejsce, czas i dane o aparacie.
+
 interface-VaultApp-finishingTheTransfer = Kończenie przesyłania
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Zablokuj teraz i anuluj przesyłanie
@@ -790,7 +792,7 @@ native-error-20 = Proszę wybrać trudniejsze do odgadnięcia hasło główne, k
 
 native-error-21 = Proszę wybrać najwyżej 100 plików do jednego importu.
 
-native-error-22 = Jeden z plików nie jest dokumentem PDF, więc nic nie dodano. myCarlos przechowuje tylko dokumenty PDF.
+native-error-22 = Jeden z plików nie jest dokumentem PDF ani obrazem JPEG, więc nic nie dodano. myCarlos przechowuje dokumenty PDF i obrazy JPEG. Jeśli to obraz z iPhone’a (HEIC), udostępnij go jako JPEG.
 
 native-error-23 = Ten dokument jest zabezpieczony hasłem. Proszę wpisać hasło dokumentu z portalu pacjenta.
 
@@ -849,6 +851,10 @@ native-error-speedTest = Test szybkości został przerwany przed zakończeniem. 
 native-filter-backups = Kopie zapasowe myCarlos
 
 native-filter-pdf = Dokumenty PDF
+
+native-filter-pictures = Obrazy JPEG
+
+native-filter-pdfAndPictures = Dokumenty PDF i obrazy JPEG
 
 native-kit-text =
     Zestaw odzyskiwania myCarlos
