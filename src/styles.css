@@ -5494,3 +5494,11 @@ button:disabled,
 .titlebar-logo img {
   mix-blend-mode: multiply;
 }
+
+/* Preferences > Language: the unlock screen's language button, in the card (its corner placement
+   and its card-wide width do not apply here). */
+.language-preference-control .language-corner {
+  width: auto;
+  margin: 0;
+  justify-content: flex-start;
+}

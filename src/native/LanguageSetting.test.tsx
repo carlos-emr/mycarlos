@@ -67,6 +67,8 @@ describe("saved app language", () => {
   for (const locale of LOCALES) {
     it(`switches Preferences immediately and restores ${locale} before rendering`, () => {
       render(<PreferencesSettings />);
+      // The list is the language dialog's, opened from the Language button in Preferences.
+      fireEvent.click(document.querySelector(".language-preference button")!);
       const choice = document.querySelector<HTMLInputElement>(
         `.language-choice input[value="${locale}"]`,
       )!;

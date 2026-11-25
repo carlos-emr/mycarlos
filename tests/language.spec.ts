@@ -24,13 +24,19 @@ test("language choices persist, preserve High contrast and work from the keyboar
   await page.goto("/");
   await preferences(page);
   await page.locator('.appearance-choice input[value="high-contrast"]').check();
-  const english = page.getByRole("radio", { name: "English", exact: true });
+  // Preferences shows the language in use on the unlock screen's button, which opens the same
+  // dialog: one real radio for each language, focus back on the button when it closes.
+  const opener = () => page.locator(".language-preference .language-button");
+  const dialog = () => page.locator(".native-language-dialog");
+  await expect(page.getByRole("radio", { name: "English" })).toHaveCount(0);
+  await opener().click();
+  const english = dialog().getByRole("radio", { name: "English", exact: true });
   await english.check();
   await expect(english).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await english.focus();
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("radio", { name: "Français" })).toBeFocused();
+  await expect(dialog().getByRole("radio", { name: "Français" })).toBeFocused();
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
   for (const [locale, autonym] of [
     ["en", "English"],
@@ -41,30 +47,47 @@ test("language choices persist, preserve High contrast and work from the keyboar
     ["zh-CN", "简体中文 (Mandarin)"],
     ["zh-TW", "繁體中文"],
   ] as const) {
-    const choice = page.getByRole("radio", { name: autonym, exact: true });
+    const choice = dialog().getByRole("radio", { name: autonym, exact: true });
     await choice.check();
     await expect(choice).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
-    await expect(
-      page.getByRole("heading", {
-        name: translate(locale, "sidebar.preferences"),
-        level: 1,
-      }),
-    ).toBeVisible();
   }
+  // Close: the dialog goes, the focus is back on the button, and the page speaks the language.
+  await dialog()
+    .getByRole("button", {
+      name: translate("zh-TW", "interface.AnonymizePreview.close"),
+    })
+    .click();
+  await expect(dialog()).toHaveCount(0);
+  await expect(opener()).toBeFocused();
+  await expect(
+    page.getByRole("heading", {
+      name: translate("zh-TW", "sidebar.preferences"),
+      level: 1,
+    }),
+  ).toBeVisible();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-TW");
   expect(await page.evaluate(() => Reflect.get(window, "__initialLang"))).toBe(
     "zh-TW",
   );
   await preferences(page);
-  await expect(page.getByRole("radio", { name: "繁體中文" })).toBeChecked();
+  await opener().click();
+  await expect(dialog().getByRole("radio", { name: "繁體中文" })).toBeChecked();
+  await dialog()
+    .getByRole("button", {
+      name: translate("zh-TW", "interface.AnonymizePreview.close"),
+    })
+    .click();
   await expect(
     page.locator('.appearance-choice input[value="high-contrast"]'),
   ).toBeChecked();
-  await page.locator(".language-choice input").first().check();
+  await opener().click();
+  await dialog().locator(".language-choice input").first().check();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(page.locator(".language-choice input").first()).toBeChecked();
+  await expect(
+    dialog().locator(".language-choice input").first(),
+  ).toBeChecked();
   expect(
     await page.evaluate(() => localStorage.getItem("mycarlos.language.v1")),
   ).toBeNull();
@@ -276,8 +299,8 @@ for (const width of [320, 412, 1100]) {
   });
 }
 
-// The language list in Preferences is a grid of real radio buttons: one column in a narrow
-// space or with enlarged text, two in a medium one, three in a wide one. The breakpoints are
+// The language list (in the dialog Preferences opens) is a grid of real radio buttons: one column in a narrow
+// space or with enlarged text, two in a medium one (the dialog's, even in a wide window). The breakpoints are
 // the grid's own width in rem (22rem and 40rem), so enlarged text goes to fewer columns.
 for (const [width, zoom] of [
   [320, ""],
@@ -286,7 +309,7 @@ for (const [width, zoom] of [
   [1100, "200%"],
   [320, "200%"],
 ] as const) {
-  test(`Preferences lays the language buttons out by the room they have at ${width}px${zoom ? " with text at " + zoom : ""}`, async ({
+  test(`Preferences' language dialog lays the language buttons out by the room they have at ${width}px${zoom ? " with text at " + zoom : ""}`, async ({
     page,
   }, info) => {
     test.skip(
@@ -301,7 +324,11 @@ for (const [width, zoom] of [
       await page.locator("html").evaluate((element, size) => {
         element.style.fontSize = size;
       }, zoom);
-    const group = page.getByRole("group", { name: "Language" });
+    // The list is the language dialog's, opened from Preferences' language button.
+    await page.locator(".language-preference .language-button").click();
+    const group = page
+      .locator(".native-language-dialog")
+      .getByRole("group", { name: "Language" });
     await expect(group.getByRole("radio")).toHaveCount(8);
     const layout = await group.evaluate((fieldset) => {
       const labels = [...fieldset.querySelectorAll("label")];
@@ -333,7 +360,8 @@ for (const [width, zoom] of [
       layout.room >= 40 ? 3 : layout.room >= 22 ? 2 : 1,
     );
     if (width === 320) expect(layout.columns).toBe(1);
-    if (width === 1100 && !zoom) expect(layout.columns).toBe(3);
+    // The dialog is narrower than the page: a wide window gets its two columns, not three.
+    if (width === 1100 && !zoom) expect(layout.columns).toBe(2);
     if (zoom) expect(layout.columns).toBeLessThan(3);
     expect(layout.inside).toBe(true);
     expect(layout.tallEnough).toBe(true);
