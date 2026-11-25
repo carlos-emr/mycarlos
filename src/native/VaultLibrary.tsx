@@ -18,6 +18,7 @@ import type {
   PendingRecording,
   PersonDetails,
 } from "../vault";
+import { ClinicNewStrip } from "./ClinicNewStrip";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import {
@@ -2600,6 +2601,9 @@ export function VaultLibrary({
                     </span>
                   </div>
                 </div>
+
+                {/* The "N new from your clinic" strip goes here (shows nothing until the marker lands). */}
+                <ClinicNewStrip count={0} />
 
                 {inShared && (
                   <p className="purpose-note native-shared-intro">
