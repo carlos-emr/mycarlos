@@ -686,7 +686,9 @@ fn zero_samples(
     plan: &mut Plan,
     budget: &mut Budget,
 ) -> Result<(), Refusal> {
-    // A track with no sample table keeps nothing.
+    // A track with no sample table keeps nothing. An error here is swallowed on purpose, even one
+    // that is the budget running out: the budget stays spent, so the next box or chunk of the file
+    // that asks for it is refused, and the file as a whole still fails.
     let Ok((_, table)) = minf_children(moov, media, budget) else {
         return Ok(());
     };
@@ -1349,9 +1351,12 @@ mod tests {
         moov.extend(full(b"stco", 0, &stco));
         let mut budget = Budget(usize::MAX);
         let table = children(&moov, 0, moov.len(), &mut budget).unwrap();
+        let before = budget.0;
         let started = std::time::Instant::now();
         let ranges = sample_ranges(&moov, &table, &mut budget).unwrap().unwrap();
         assert_eq!(ranges.len(), N as usize);
+        // Walked once: one box of the budget for each chunk, and not one more.
+        assert_eq!(before - budget.0, N as usize);
         assert_eq!(ranges[1], (2, 1));
         assert_eq!(ranges[N as usize - 1], ((N as u64 - 1) * 2, 1));
         // 150 thousand runs searched again for each of 150 thousand chunks would take minutes.
@@ -1382,5 +1387,78 @@ mod tests {
         }
         assert_eq!(small, whole);
         assert_ne!(small, file);
+    }
+
+    #[test]
+    fn a_plan_of_too_many_edits_is_refused_though_the_box_budget_holds() {
+        // About 110 thousand `udta` boxes of one byte each fit the budget of boxes (200 thousand)
+        // but each one is two edits (renamed, and its byte zeroed): over the edit cap.
+        let mut moov = full(b"mvhd", 0, &[0_u8; 96]);
+        moov.extend(trak(b"vide", b"avc1", true, (40, 8)));
+        for _ in 0..110_000 {
+            moov.extend(bx(b"udta", &[0_u8]));
+        }
+        const _: () = assert!(110_000 < MAX_BOXES && 110_000 * 2 > MAX_EDITS);
+        let mut file = ftyp(b"isom");
+        file.extend(bx(b"mdat", &[1_u8; 64]));
+        file.extend(bx(b"moov", &moov));
+        assert_eq!(
+            analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+            Refusal::Damaged
+        );
+        // The same file with a few of them is fine.
+        let mut few = full(b"mvhd", 0, &[0_u8; 96]);
+        few.extend(trak(b"vide", b"avc1", true, (40, 8)));
+        for _ in 0..10 {
+            few.extend(bx(b"udta", &[0_u8]));
+        }
+        let mut file = ftyp(b"isom");
+        file.extend(bx(b"mdat", &[1_u8; 64]));
+        file.extend(bx(b"moov", &few));
+        assert!(analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).is_ok());
+    }
+
+    #[test]
+    fn a_removed_range_across_the_gap_between_two_media_data_boxes_is_refused() {
+        // ftyp, mdat (64 bytes), a free box of 16, mdat (64 bytes), then the moov. The picture and
+        // the sound keep samples in the two mdat, and a removed track's chunk is placed by `chunk`.
+        let build = |chunk: (u64, u32)| {
+            let head = ftyp(b"isom").len() as u64;
+            let (first, second) = (head + 8, head + 72 + 16 + 8);
+            let mut moov = full(b"mvhd", 0, &[0_u8; 96]);
+            moov.extend(trak(b"vide", b"avc1", true, (first + 40, 8)));
+            moov.extend(trak(b"soun", b"mp4a", true, (second + 40, 8)));
+            moov.extend(trak(b"meta", b"mebx", true, chunk));
+            let mut file = ftyp(b"isom");
+            file.extend(bx(b"mdat", &[1_u8; 64]));
+            file.extend(bx(b"free", &[0_u8; 8]));
+            file.extend(bx(b"mdat", &[2_u8; 64]));
+            file.extend(bx(b"moov", &moov));
+            (file, first, second)
+        };
+        let (_, first, second) = build((0, 0));
+        // Wholly inside either media data box: fine.
+        for inside in [(first, 16), (second, 16), (first + 48, 16)] {
+            let (file, _, _) = build(inside);
+            assert!(
+                analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).is_ok(),
+                "{inside:?}"
+            );
+        }
+        // Starting in the first and ending in the second, over the free box between them.
+        let (across, _, _) = build((first + 56, 40));
+        assert_eq!(
+            analyse(&across[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+            Refusal::Damaged
+        );
+        // Over just the free box, and just past the end of the first: also refused.
+        for over in [(first + 64, 8), (first + 60, 12)] {
+            let (file, _, _) = build(over);
+            assert_eq!(
+                analyse(&file[..], MAX_VIDEO_BYTES_DESKTOP).unwrap_err(),
+                Refusal::Damaged,
+                "{over:?}"
+            );
+        }
     }
 }
