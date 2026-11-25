@@ -734,9 +734,10 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   );
   await expect(selectedChoice).toBeFocused();
   await expect(selectedChoice).toHaveCSS("outline-style", "solid");
-  const others = choices.filter({ hasNot: selectedChoice });
-  await expect(others.first()).toHaveAttribute("aria-checked", "false");
-  await expect(others.first().locator(".menu-button-tick")).toHaveText("");
+  // The other choice (Name A–Z) is not checked and has no tick.
+  const other = choices.nth(1);
+  await expect(other).toHaveAttribute("aria-checked", "false");
+  await expect(other.locator(".menu-button-tick")).toHaveText("");
   await page.keyboard.press("Escape");
   await expect(newest).toBeFocused();
   // The logo sits in the title bar, on a phone too.
