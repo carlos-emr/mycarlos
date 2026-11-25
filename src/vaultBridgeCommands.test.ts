@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import contractText from "../src-tauri/tests/fixtures/command-args.json?raw";
 import {
+  aliasesOfInvoke,
   problemsInCall,
   scanInvokes,
   shapeOfValue,
   withoutComments,
+  wrapperCommands,
   type Contract,
 } from "./test/commandContract";
 
@@ -31,6 +33,20 @@ const NAMED_AT_RUN_TIME: Record<string, number> = {
   "./native/NotificationSetting.tsx": 1,
 };
 
+// Calls that pass their arguments as a variable, not an object written in the call
+// (`invoke("name", payload)`): only the command's name can be checked. Pinned by file, like the
+// calls above, so a new one is looked at.
+const PAYLOAD_VARIABLE: Record<string, number> = {
+  "./vault.ts": 1,
+};
+
+// What `save("name", …)` and `mutate("name", …)` hand to the variable-command calls in each file.
+const WRAPPER_CALLS: Record<string, number> = {
+  "./native/AiModelSetting.tsx": 2,
+  "./native/BackgroundSetting.tsx": 2,
+  "./native/NotificationSetting.tsx": 2,
+};
+
 describe("the renderer's native calls against the commands' argument list", () => {
   it("reads the Rust side's list: its commands, their arguments and the structs they reach", () => {
     expect(Object.keys(contract.commands).length).toBeGreaterThan(100);
@@ -49,6 +65,9 @@ describe("the renderer's native calls against the commands' argument list", () =
     );
     expect(direct.size).toBeGreaterThan(40);
     for (const name of direct) {
+      // A name the Rust sources define twice with different fields cannot be told apart: it is
+      // listed as ambiguous and open (see the check below).
+      if (contract.structs[name].ambiguous) continue;
       expect(contract.structs[name].denyUnknown, name).toBe(true);
     }
   });
@@ -89,6 +108,72 @@ describe("the renderer's native calls against the commands' argument list", () =
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  it("pins the calls that pass a variable as the arguments, and checks those names", () => {
+    const payload: Record<string, number> = {};
+    for (const [path, source] of SOURCES) {
+      for (const call of scanInvokes(source)) {
+        if (call.args === "unknown") {
+          payload[path] = (payload[path] ?? 0) + 1;
+          if (call.command !== null)
+            expect(contract.commands[call.command], call.command).toBeDefined();
+        }
+      }
+    }
+    expect(payload).toEqual(PAYLOAD_VARIABLE);
+  });
+
+  it("checks the commands that reach a variable-command call through save(...) and mutate(...)", () => {
+    const literals: Record<string, number> = {};
+    for (const [path, source] of SOURCES) {
+      const named = wrapperCommands(source);
+      if (named.length === 0) continue;
+      literals[path] = named.length;
+      // The shapes the file's variable-command calls give them.
+      const shapes = scanInvokes(source)
+        .filter((call) => call.command === null)
+        .map((call) => call.args);
+      expect(shapes.length, path).toBeGreaterThan(0);
+      for (const command of named) {
+        const fits = shapes.some(
+          (args) => problemsInCall(contract, command, args).length === 0,
+        );
+        expect(fits, `${path}: ${command}`).toBe(true);
+      }
+    }
+    expect(literals).toEqual(WRAPPER_CALLS);
+  });
+
+  it("never reads invoke through a name it could not follow", () => {
+    for (const [path, source] of SOURCES) {
+      expect(aliasesOfInvoke(source), path).toEqual([]);
+    }
+    expect(aliasesOfInvoke('import { invoke as call } from "x";')).toHaveLength(
+      1,
+    );
+    expect(aliasesOfInvoke("const run = invoke;")).toHaveLength(1);
+    expect(aliasesOfInvoke("go(invoke);")).toHaveLength(1);
+    expect(aliasesOfInvoke('core.invoke("a");')).toHaveLength(1);
+    expect(aliasesOfInvoke("type T = typeof invoke;")).toHaveLength(1);
+    expect(aliasesOfInvoke("const x = invoke<void>('a'); // invoke")).toEqual(
+      [],
+    );
+  });
+
+  it("lists where the keys cannot be checked, for a reviewer to read", () => {
+    // Elements of a list of structs and an enum's variants are not looked into.
+    const entries = Object.entries(contract.blindSpots);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [command, spots] of entries) {
+      expect(contract.commands[command], command).toBeDefined();
+      expect(spots.length).toBeGreaterThan(0);
+      expect(spots).toEqual([...spots].sort());
+    }
+    // A struct the Rust sources define twice with different fields is read as open.
+    for (const [name, struct] of Object.entries(contract.structs)) {
+      if (struct.ambiguous) expect(struct.open, name).toBe(true);
+    }
   });
 
   describe("the check itself", () => {

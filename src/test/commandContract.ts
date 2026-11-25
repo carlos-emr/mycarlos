@@ -19,6 +19,8 @@ export interface ArgumentContract {
 }
 
 export interface StructContract {
+  /** Defined twice with different contents in the Rust sources: read as `open`. */
+  ambiguous: boolean;
   denyUnknown: boolean;
   fields: Record<string, ArgumentContract>;
   /** A flattened field takes keys this list cannot name. */
@@ -32,6 +34,11 @@ export interface CommandContract {
 }
 
 export interface Contract {
+  /**
+   * Where a key cannot be checked, by command: the elements of a list of structs and an enum's
+   * variants are not looked into. The Rust guard writes the list so that a reviewer reads it.
+   */
+  blindSpots: Record<string, string[]>;
   commands: Record<string, CommandContract>;
   structs: Record<string, StructContract>;
 }
@@ -343,4 +350,34 @@ export function scanInvokes(source: string): Call[] {
     }
   }
   return calls;
+}
+
+/**
+ * Ways `invoke` can be reached that `scanInvokes` does not read as a call: renamed on import,
+ * assigned, passed on, or used through the module object. None may appear in the sources, or a
+ * call could go unchecked.
+ */
+export function aliasesOfInvoke(source: string): string[] {
+  const text = withoutComments(source);
+  const found: string[] = [];
+  const patterns: [string, RegExp][] = [
+    ["renamed on import", /\binvoke\s+as\b/],
+    ["assigned", /=\s*invoke\b(?!\s*[<(])/],
+    ["passed on", /[(,]\s*invoke\s*[,)]/],
+    ["through the module", /\.\s*invoke\s*[<(]/],
+    ["by typeof", /\btypeof\s+invoke\b/],
+    ["in a list", /\[\s*invoke\s*[,\]]/],
+  ];
+  for (const [how, pattern] of patterns) {
+    if (pattern.test(text)) found.push(how);
+  }
+  return found;
+}
+
+/** The commands named as the first argument of `save("…", …)` and `mutate("…", …)` in `source`. */
+export function wrapperCommands(source: string): string[] {
+  const text = withoutComments(source);
+  return [...text.matchAll(/\b(?:save|mutate)\(\s*"([a-z0-9_]+)"/g)].map(
+    (match) => match[1],
+  );
 }

@@ -9646,6 +9646,7 @@ mod tests {
     ///     every struct such a request holds); and
     ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
     ///     renderer does;
+    ///
     /// and every struct such a request holds in a field is held to the same two rules.
     #[test]
     fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
@@ -9676,12 +9677,19 @@ mod tests {
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
             &mut files,
         );
+        // The file system's order is not the same on every machine, and a struct name defined in
+        // two files must be read the same way on all of them.
+        files.sort();
         assert!(
             files.len() > 20,
             "the source walk found {} files",
             files.len()
         );
         let mut definitions: BTreeMap<String, Definition> = BTreeMap::new();
+        // Struct names defined more than once with different contents (the first one, in file
+        // order, is the one read), and the enums commands may reach.
+        let mut conflicts: BTreeSet<String> = BTreeSet::new();
+        let mut enums: BTreeSet<String> = BTreeSet::new();
         let mut command_parameters: Vec<(String, String)> = Vec::new();
         for file in &files {
             let text = std::fs::read_to_string(file).unwrap();
@@ -9723,7 +9731,7 @@ mod tests {
                             .rsplit(' ')
                             .next()
                             .unwrap()
-                            .trim_end_matches(|c: char| c == '<' || c == '>')
+                            .trim_end_matches(['<', '>'])
                             .to_owned();
                         let parameters = &signature[open..];
                         command_parameters.push((function, parameters.to_owned()));
@@ -9757,20 +9765,40 @@ mod tests {
                                 .unwrap_or(field);
                             if let Some((field_name, field_type)) = field.split_once(':') {
                                 fields.push((
-                                    field_name.trim().to_owned(),
+                                    field_name.trim().trim_start_matches("r#").to_owned(),
                                     field_type.trim().trim_end_matches(',').to_owned(),
                                 ));
                                 field_attributes.push(std::mem::take(&mut pending_attributes));
                             }
                         }
-                        definitions.insert(
-                            struct_name,
-                            Definition {
-                                attributes: attributes.clone(),
-                                fields,
-                                field_attributes,
-                                file: name.clone(),
-                            },
+                        let definition = Definition {
+                            attributes: attributes.clone(),
+                            fields,
+                            field_attributes,
+                            file: name.clone(),
+                        };
+                        let differs = definitions.get(&struct_name).map(|first| {
+                            first.attributes != definition.attributes
+                                || first.fields != definition.fields
+                                || first.field_attributes != definition.field_attributes
+                        });
+                        match differs {
+                            None => {
+                                definitions.insert(struct_name, definition);
+                            }
+                            Some(true) => {
+                                conflicts.insert(struct_name);
+                            }
+                            Some(false) => {}
+                        }
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("enum ") {
+                    if attributes.contains("Deserialize") {
+                        enums.insert(
+                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .next()
+                                .unwrap()
+                                .to_owned(),
                         );
                     }
                 }
@@ -9781,7 +9809,7 @@ mod tests {
         let mut at_the_command = BTreeSet::new();
         for (_, parameters) in &command_parameters {
             for word in words(parameters) {
-                if definitions.contains_key(word) {
+                if definitions.contains_key(word) && !conflicts.contains(word) {
                     at_the_command.insert(word.to_owned());
                 }
             }
@@ -9796,7 +9824,10 @@ mod tests {
         while let Some(name) = pending.pop() {
             for (_, field_type) in &definitions[&name].fields {
                 for word in words(field_type) {
-                    if definitions.contains_key(word) && every.insert(word.to_owned()) {
+                    if definitions.contains_key(word)
+                        && !conflicts.contains(word)
+                        && every.insert(word.to_owned())
+                    {
                         pending.push(word.to_owned());
                     }
                 }
@@ -9841,6 +9872,8 @@ mod tests {
         }
         #[derive(serde::Serialize)]
         struct StructContract {
+            /// Defined more than once with different contents: read as `open`.
+            ambiguous: bool,
             #[serde(rename = "denyUnknown")]
             deny_unknown: bool,
             fields: BTreeMap<String, ArgumentContract>,
@@ -9848,6 +9881,10 @@ mod tests {
         }
         #[derive(serde::Serialize)]
         struct Contract {
+            /// Where a key cannot be checked (the elements of a list of structs, an enum's
+            /// variants), by command: this list is for the reviewer of a change to read.
+            #[serde(rename = "blindSpots")]
+            blind_spots: BTreeMap<String, Vec<String>>,
             commands: BTreeMap<String, CommandContract>,
             #[serde(rename = "generatedBy")]
             generated_by: &'static str,
@@ -9906,11 +9943,25 @@ mod tests {
                 .find(|word| definitions.contains_key(*word))
                 .map(str::to_owned)
         };
+        // What the list of a struct's or a command's arguments cannot say about the values it takes.
+        let unchecked = |ty: &str| -> Option<String> {
+            let words = words(ty);
+            if let Some(name) = words.iter().find(|word| enums.contains(**word)) {
+                return Some(format!("enum {name}"));
+            }
+            let several = ty.contains("Vec<") || ty.contains("Map<") || ty.contains('[');
+            if several {
+                return struct_in(ty).map(|name| format!("the elements of {name}"));
+            }
+            None
+        };
         let mut contract = Contract {
+            blind_spots: BTreeMap::new(),
             commands: BTreeMap::new(),
             generated_by: "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
             structs: BTreeMap::new(),
         };
+        let mut command_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for (function, parameters) in &command_parameters {
             let mut depth = 0_i32;
             let mut close = None;
@@ -9962,6 +10013,12 @@ mod tests {
                     command.raw = true;
                     continue;
                 }
+                if let Some(kind) = unchecked(ty) {
+                    command_blind
+                        .entry(function.clone())
+                        .or_default()
+                        .insert(format!("{}: {kind}", camel(name)));
+                }
                 command.arguments.insert(
                     camel(name),
                     ArgumentContract {
@@ -9982,11 +10039,20 @@ mod tests {
                 }
             }
         }
+        // What the list cannot model is refused, so that nobody adds it unseen.
+        let mut unmodelled = Vec::new();
+        let mut struct_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for name in &every {
             let definition = &definitions[name];
             let camel_case = definition.attributes.contains("rename_all = \"camelCase\"");
+            if serde_has(&definition.attributes, "rename_all") && !camel_case {
+                unmodelled.push(format!("{name}: a rename_all other than camelCase"));
+            }
+            if serde_has(&definition.attributes, "alias") {
+                unmodelled.push(format!("{name}: an alias"));
+            }
             let mut fields = BTreeMap::new();
-            let mut open = false;
+            let mut open = conflicts.contains(name);
             for ((field, ty), field_attributes) in
                 definition.fields.iter().zip(&definition.field_attributes)
             {
@@ -9998,11 +10064,20 @@ mod tests {
                 if serde_has(field_attributes, "flatten") {
                     open = true;
                 }
+                if field_attributes.contains("rename(") || serde_has(field_attributes, "alias") {
+                    unmodelled.push(format!("{name}.{field}: a rename(..) or an alias"));
+                }
                 let key = match field_attributes.split("rename = \"").nth(1) {
                     Some(rest) => rest.split('"').next().unwrap().to_owned(),
                     None if camel_case => camel(field),
                     None => field.clone(),
                 };
+                if let Some(kind) = unchecked(ty) {
+                    struct_blind
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(format!("{name}.{key}: {kind}"));
+                }
                 fields.insert(
                     key,
                     ArgumentContract {
@@ -10016,16 +10091,69 @@ mod tests {
             contract.structs.insert(
                 name.clone(),
                 StructContract {
+                    ambiguous: conflicts.contains(name),
                     deny_unknown: definition.attributes.contains("deny_unknown_fields"),
                     fields,
                     open,
                 },
             );
         }
+        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
+        // A struct name defined twice with different contents cannot be told apart by name: what
+        // a command or a struct reaches under that name is listed as an open, ambiguous struct,
+        // and its keys are not checked (a reviewer reads these in the file).
+        let referenced: BTreeSet<String> = contract
+            .commands
+            .values()
+            .flat_map(|command| command.arguments.values())
+            .chain(contract.structs.values().flat_map(|s| s.fields.values()))
+            .filter_map(|argument| argument.struct_name.clone())
+            .filter(|name| conflicts.contains(name))
+            .collect();
+        for name in referenced {
+            contract.structs.entry(name).or_insert(StructContract {
+                ambiguous: true,
+                deny_unknown: false,
+                fields: BTreeMap::new(),
+                open: true,
+            });
+        }
+        // For each command: what its own arguments and every struct they reach cannot check.
+        for (function, command) in &contract.commands {
+            let mut reached: BTreeSet<String> = command
+                .arguments
+                .values()
+                .filter_map(|argument| argument.struct_name.clone())
+                .collect();
+            let mut pending: Vec<String> = reached.iter().cloned().collect();
+            while let Some(name) = pending.pop() {
+                for field in contract.structs[&name].fields.values() {
+                    if let Some(inner) = &field.struct_name {
+                        if reached.insert(inner.clone()) {
+                            pending.push(inner.clone());
+                        }
+                    }
+                }
+            }
+            let mut blind = command_blind.get(function).cloned().unwrap_or_default();
+            for name in &reached {
+                blind.extend(struct_blind.get(name).cloned().unwrap_or_default());
+            }
+            if !blind.is_empty() {
+                contract
+                    .blind_spots
+                    .insert(function.clone(), blind.into_iter().collect());
+            }
+        }
         let generated = serde_json::to_string_pretty(&contract).unwrap() + "\n";
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/command-args.json");
         if std::env::var_os("UPDATE_COMMAND_ARGS").is_some() {
+            // CI must never rewrite the file and then pass: it compares.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "UPDATE_COMMAND_ARGS is refused when CI is set: regenerate the file locally and commit it"
+            );
             std::fs::write(&path, &generated).unwrap();
         }
         let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
