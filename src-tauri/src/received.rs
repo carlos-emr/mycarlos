@@ -153,11 +153,13 @@ pub(crate) fn is_not_pdf(error: &io::Error) -> bool {
 pub(crate) enum FileKind {
     Pdf,
     Jpeg,
+    Png,
 }
 
-/// Reads the start of `reader` and says what it is: a JPEG when it starts FF D8 FF, a PDF when
+/// Reads the start of `reader` and says what it is: a JPEG when it starts FF D8 FF, a PNG when it
+/// starts with the PNG signature, a PDF when
 /// "%PDF-" begins within the first `PDF_HEADER_WINDOW` bytes, and refused (`NotPdf`) otherwise.
-/// A JPEG is decided first, so a picture that merely carries the text "%PDF-" in its metadata is
+/// A picture is decided first, so a picture that merely carries the text "%PDF-" in its metadata is
 /// still cleaned as a picture and never kept as it came. The bytes read are put back in front.
 pub(crate) fn classify(
     mut reader: Box<dyn Read + Send>,
@@ -173,6 +175,8 @@ pub(crate) fn classify(
     }
     let kind = if crate::photo::looks_like_jpeg(&head) {
         FileKind::Jpeg
+    } else if crate::photo_png::looks_like_png(&head) {
+        FileKind::Png
     } else if head.windows(5).any(|window| window == b"%PDF-") {
         FileKind::Pdf
     } else {

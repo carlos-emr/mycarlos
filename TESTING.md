@@ -362,8 +362,11 @@ On every platform:
     file: it is added, and a note under the buttons says place, time and camera details are removed. Open it:
     it is shown upright (try a portrait photo a phone stored sideways). Run `exiftool` on the original: unchanged.
     **Export** it (or use a readable export) and run `exiftool` on that copy: no GPS, time, make or model, no
-    thumbnail. Then choose a **PNG**, a **HEIC** and a text file renamed `.pdf`: each is refused with a plain
-    message that names the file, and the others in the same choice are still added. Choose a JPEG renamed
+    thumbnail. Then choose a **HEIC** and a text file renamed `.pdf`: each is refused with a plain
+    message that names the file, and the others in the same choice are still added.
+    Choose a **PNG** (a screenshot; for one with text chunks, `exiftool -Comment=FAKE x.png`): it is added and
+    shown as it looks, `exiftool` on an export shows only the picture's own fields (size, depth), and an
+    animated PNG is refused as not a photo. Choose a JPEG renamed
     `.pdf`: it is cleaned as a picture, not kept as it came.
 
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network

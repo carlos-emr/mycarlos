@@ -16,8 +16,90 @@ pub const MAX_PHOTO_SIDE: u16 = 8192;
 pub enum PhotoError {
     /// Not one complete 8-bit baseline or progressive JPEG.
     NotJpeg,
-    /// Over `MAX_PHOTO_BYTES`, or over `MAX_PHOTO_SIDE` on a side.
+    /// Not one complete, well formed, still PNG (`photo_png`).
+    NotPng,
+    /// Over `MAX_PHOTO_BYTES`, or over `MAX_PHOTO_SIDE` on a side (or, for a PNG, over the pixel
+    /// cap).
     TooLarge,
+}
+
+/// A kind of picture the vault shows, decided by the file's own first bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PictureKind {
+    Jpeg,
+    Png,
+}
+
+impl PictureKind {
+    /// The suffix a picture of this kind is named with when it has none that fits.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Jpeg => ".jpg",
+            Self::Png => ".png",
+        }
+    }
+
+    /// Whether `name` (trimmed) is a nonempty name followed by a suffix that describes this kind:
+    /// `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG, in any case.
+    pub fn names(self, name: &str) -> bool {
+        name.trim().rsplit_once('.').is_some_and(|(stem, extension)| {
+            !stem.trim().is_empty()
+                && match self {
+                    Self::Jpeg => {
+                        extension.eq_ignore_ascii_case("jpg")
+                            || extension.eq_ignore_ascii_case("jpeg")
+                    }
+                    Self::Png => extension.eq_ignore_ascii_case("png"),
+                }
+        })
+    }
+
+    /// The type of the `data:` URL the viewer is given.
+    pub fn media_type(self) -> &'static str {
+        match self {
+            Self::Jpeg => "image/jpeg",
+            Self::Png => "image/png",
+        }
+    }
+}
+
+/// The kind of picture `bytes` starts as, if any: FF D8 FF is a JPEG, the 8-byte signature a PNG.
+pub fn picture_kind(bytes: &[u8]) -> Option<PictureKind> {
+    if looks_like_jpeg(bytes) {
+        Some(PictureKind::Jpeg)
+    } else if crate::photo_png::looks_like_png(bytes) {
+        Some(PictureKind::Png)
+    } else {
+        None
+    }
+}
+
+/// How many bytes at the start of a file say what kind of picture it is.
+pub const SNIFF_BYTES: usize = 8;
+
+/// Whether the first bytes seen so far (fewer than `SNIFF_BYTES` is fine) can still be the start of
+/// a JPEG or a PNG, so that a reader can stop at the first byte that cannot be.
+pub fn could_start_a_picture(prefix: &[u8]) -> bool {
+    JPEG_START.starts_with(&prefix[..prefix.len().min(JPEG_START.len())])
+        || prefix.starts_with(&JPEG_START)
+        || crate::photo_png::PNG_SIGNATURE
+            .starts_with(&prefix[..prefix.len().min(crate::photo_png::PNG_SIGNATURE.len())])
+        || prefix.starts_with(&crate::photo_png::PNG_SIGNATURE)
+}
+
+/// The cleaned picture a patient brought, and which kind it is: a JPEG goes through
+/// `clean_picture` (orientation and a plain colour profile kept), a PNG through
+/// `photo_png::clean_png` (only the chunks that draw it). The same function runs when a picture is
+/// imported and every time it is shown.
+pub fn clean_any(input: &[u8]) -> Result<(PictureKind, Zeroizing<Vec<u8>>), PhotoError> {
+    match picture_kind(input) {
+        Some(PictureKind::Jpeg) => clean_picture(input).map(|bytes| (PictureKind::Jpeg, bytes)),
+        Some(PictureKind::Png) => {
+            crate::photo_png::clean_png(input).map(|bytes| (PictureKind::Png, bytes))
+        }
+        None if input.len() > MAX_PHOTO_BYTES => Err(PhotoError::TooLarge),
+        None => Err(PhotoError::NotJpeg),
+    }
 }
 
 const SOI: u8 = 0xd8;

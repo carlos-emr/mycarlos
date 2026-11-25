@@ -750,7 +750,7 @@ native-error-20 = Choose a less predictable passphrase that is not based on comm
 
 native-error-21 = Choose no more than 100 files in one import.
 
-native-error-22 = One of the files is not a PDF document or a JPEG picture, so nothing was added. myCarlos keeps PDF documents and JPEG pictures. If it is an iPhone picture (HEIC), share it as a JPEG instead.
+native-error-22 = One of the files is not a PDF document or a JPEG or PNG picture, so nothing was added. myCarlos keeps PDF documents and JPEG and PNG pictures. If it is an iPhone picture (HEIC), share it as a JPEG instead.
 
 native-error-23 = This document is locked with a password. Enter the document password from your patient portal.
 
@@ -800,7 +800,7 @@ native-error-45 = myCarlos could not open that file. If it is in a cloud or shar
 
 native-error-46 = A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.
 
-native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.
+native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG or PNG picture (not an animated one) of at most 25 MB, 8,192 pixels on each side and 50 million pixels in all. Nothing was changed.
 
 native-error-48 = The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.
 
@@ -810,9 +810,9 @@ native-filter-backups = myCarlos backups
 
 native-filter-pdf = PDF documents
 
-native-filter-pictures = JPEG pictures
+native-filter-pictures = JPEG and PNG pictures
 
-native-filter-pdfAndPictures = PDF documents and JPEG pictures
+native-filter-pdfAndPictures = PDF documents and JPEG and PNG pictures
 
 native-kit-text =
     myCarlos recovery kit

@@ -38,7 +38,7 @@ You can also save text with identifying details removed for use elsewhere. Remov
 
 ## Copies outside the vault
 
-An imported file may remain in its original location or in the app that shared it, and a picture you add keeps its place, time and camera details there: myCarlos removes them from its own encrypted copy (it keeps only which way up the picture is and its plain colour profile) and never changes the file you chose. A readable export, exported text or recovery kit is outside the vault's protection. Other people, applications, synced folders or cloud services may receive copies depending on where you save or share it. myCarlos cannot retrieve or erase those copies.
+An imported file may remain in its original location or in the app that shared it, and a picture you add keeps its place, time and camera details there: myCarlos removes them from its own encrypted copy (from a JPEG it keeps only which way up the picture is and its plain colour profile; from a PNG, only the picture) and never changes the file you chose. A readable export, exported text or recovery kit is outside the vault's protection. Other people, applications, synced folders or cloud services may receive copies depending on where you save or share it. myCarlos cannot retrieve or erase those copies.
 
 You can save an encrypted backup. It includes retained vault information, including hidden documents and history. Protect it and the secrets that open it. Operating system backups may also keep app data, depending on the platform. Changing a passphrase or recovery key does not change older backups or vaults already set aside.
 
