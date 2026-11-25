@@ -315,8 +315,16 @@ impl VaultStore {
         if synced.forgotten == 0 && bound.re_enroll == 0 {
             return Ok(bound);
         }
+        // Only what the repair itself enrolls is bound again: a destination the pass above just
+        // noted (its first 404) must not meet its second one in the same pass.
+        let held = self.iphone_destination_ids()?;
         let again_synced = self.set_remote_notices(true, source, session, exchange)?;
-        let again = self.bind_push_handles(token, memory, session, exchange)?;
+        let fresh: Vec<Uuid> = self
+            .iphone_destination_ids()?
+            .into_iter()
+            .filter(|id| !held.contains(id))
+            .collect();
+        let again = self.bind_push_handles_for(token, memory, session, exchange, Some(&fresh))?;
         bound.bound += again.bound;
         bound.unchanged += again.unchanged;
         bound.suspected += again.suspected;
@@ -340,6 +348,18 @@ impl VaultStore {
         session: u64,
         exchange: &impl Exchange,
     ) -> Result<HandleSync, VaultError> {
+        self.bind_push_handles_for(token, memory, session, exchange, None)
+    }
+
+    /// `bind_push_handles`, for the destinations named only (`None`: every enrolled one).
+    fn bind_push_handles_for(
+        &self,
+        token: &Token,
+        memory: &dyn HandleMemory,
+        session: u64,
+        exchange: &impl Exchange,
+        only: Option<&[Uuid]>,
+    ) -> Result<HandleSync, VaultError> {
         let cancelled = || self.portal_link_ticket() != session;
         if cancelled() {
             return Err(VaultError::Cancelled);
@@ -356,6 +376,7 @@ impl VaultStore {
                 .active()
                 .iter()
                 .filter(|d| d.platform() == Platform::IosApns && d.subscription_id().is_some())
+                .filter(|d| only.is_none_or(|ids| ids.contains(&d.id())))
                 .cloned()
                 .collect::<Vec<_>>();
             (enrolled, open.manifest.portal_links.clone())
@@ -1347,6 +1368,62 @@ mod tests {
                 saved(&store).revocations().is_empty(),
                 "and the portal confirmed them"
             );
+        }
+
+        #[test]
+        fn the_repair_binds_only_what_it_enrolled_and_not_a_destination_just_noted() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let state = allowed();
+            let first = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            opted_in(&store, &state, &first);
+            let ids: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            let (lost, noted) = (ids[0], ids[1]);
+            // The portal does not know either of them; the new one it knows.
+            let portal = iphone_portal(&seen, |body| {
+                let id = body["destination_id"].as_str().unwrap();
+                if id == lost.to_string() || id == noted.to_string() {
+                    (404, serde_json::json!({"detail": "not found"}))
+                } else {
+                    (201, serde_json::json!({}))
+                }
+            });
+            // Different histories: the first has already had a 404 at an earlier pass, the second
+            // has not.
+            let memory = FakeHandleMemory::default();
+            memory.remember(lost, SUSPECT);
+            let token = fake_token("sandbox", "ab");
+            seen.borrow_mut().clear();
+            let (_, bound) = store
+                .sync_and_bind_push_handle(
+                    &state,
+                    Some(&token),
+                    &memory,
+                    store.portal_link_ticket(),
+                    &portal,
+                )
+                .unwrap();
+            // One revoked (its second 404) and replaced and bound; one noted (its first 404).
+            assert_eq!(
+                (
+                    bound.re_enroll,
+                    bound.suspected,
+                    bound.bound,
+                    bound.needs_attention
+                ),
+                (1, 1, 1, false)
+            );
+            // The noted one was asked once in the whole pass, and is still there, still noted.
+            let to_noted = seen
+                .borrow()
+                .iter()
+                .filter(|s| s.2 == HANDLES && s.3["destination_id"] == noted.to_string())
+                .count();
+            assert_eq!(to_noted, 1);
+            let active: Vec<Uuid> = saved(&store).active().iter().map(|d| d.id()).collect();
+            assert!(active.contains(&noted) && !active.contains(&lost));
+            assert_eq!(active.len(), 2);
+            assert_eq!(memory.recall(noted), Some(SUSPECT));
         }
 
         #[test]

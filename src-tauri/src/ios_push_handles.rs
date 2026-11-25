@@ -31,17 +31,29 @@ pub(crate) const MAX_HANDLE_REPLY: usize = 1024;
 /// The request body: the destination the device enrolled and its Apple token for the service the
 /// build belongs to.
 pub(crate) fn handle_body(destination: Uuid, token: &Token) -> Zeroizing<Vec<u8>> {
-    // The token is copied into the JSON value and the bytes: both are wiped when dropped, and the
-    // bytes handed to the request are the ones moved out of this guard.
-    let mut value = serde_json::json!({
-        "destination_id": destination.to_string(),
-        "platform": Platform::IosApns.wire(),
-        "environment": token.environment,
-        "token": &*token.token,
-    });
-    let bytes = Zeroizing::new(serde_json::to_vec(&value).unwrap_or_default());
-    value["token"] = serde_json::Value::Null;
-    bytes
+    // Written by hand, so that the token is never in a value that is not wiped when dropped. Every
+    // part is plain text that needs no escaping: a UUID, a service name from a fixed pair, the
+    // platform's wire name, and a token that `token_from_reply` accepted as hexadecimal only.
+    debug_assert!(token.token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    debug_assert!(matches!(
+        token.environment.as_str(),
+        "sandbox" | "production"
+    ));
+    let mut body = Zeroizing::new(Vec::with_capacity(token.token.len() + 160));
+    for part in [
+        r#"{"destination_id":""#,
+        &destination.to_string(),
+        r#"","platform":""#,
+        Platform::IosApns.wire(),
+        r#"","environment":""#,
+        &token.environment,
+        r#"","token":""#,
+        &token.token,
+        r#""}"#,
+    ] {
+        body.extend_from_slice(part.as_bytes());
+    }
+    body
 }
 
 /// What identifies a binding without being the token: a domain-separated digest over the
