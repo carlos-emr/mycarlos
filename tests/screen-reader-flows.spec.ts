@@ -49,12 +49,16 @@ test("the library: the sidebar says what it counts, controls lead with their vis
   const nav = page.getByRole("navigation", { name: "Record library" });
   await expect(nav).toMatchAriaSnapshot(`
     - navigation "Record library":
+      - button "Shared with me"
+      - text: People
       - button /^My records .?1.? document$/
+      - text: Folders
       - button /^FAKE Letters .?0.? documents$/
       - button /^FAKE Results .?1.? document$/
-      - button "Shared with me"
-      - button "Security"
-      - button "Preferences"
+      - group "Settings":
+        - button "Security"
+        - button "Preferences"
+        - button "AI helper"
   `);
   await expect(
     nav.getByRole("button", { name: /^My records/ }),

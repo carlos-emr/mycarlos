@@ -2760,6 +2760,7 @@ export function VaultLibrary({
                     align="end"
                   >
                     <span>
+                      {translateNow("interface.VaultLibrary.sortBy")}:{" "}
                       {translateNow(
                         SORT_CHOICES.find(([value]) => value === sort)?.[1] ??
                           SORT_CHOICES[0][1],
@@ -2791,6 +2792,7 @@ export function VaultLibrary({
                     align="end"
                   >
                     <span>
+                      {translateNow("interface.VaultLibrary.view")}:{" "}
                       {translateNow(
                         view === "list"
                           ? "interface.VaultLibrary.list"
