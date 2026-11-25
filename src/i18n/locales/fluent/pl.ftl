@@ -628,6 +628,12 @@ interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Na tym urządzeniu
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Nie udało się odczytać niektórych plików sejfu, a mogą być nowsze lub nieuszkodzone, więc na razie nie można nic zmieniać, w tym hasła głównego i klucza odzyskiwania. Nadal można otwierać dokumenty i zapisywać ich kopie, z wyjątkiem tych oznaczonych jako „Plik niedostępny”. Proszę sprawdzić, czy dysk z folderem danych myCarlos jest podłączony, czy żaden inny program nie blokuje folderu i czy narzędzie synchronizacji z chmurą przechowuje pliki na tym urządzeniu, a następnie zablokować i odblokować sejf.
 
+interface-VaultLibrary-view = Widok
+
+interface-VaultLibrary-helpWithThisScreen = Pomoc dla tego ekranu
+
+interface-VaultLibrary-moreFor = Więcej dla: { $name }
+
 interface-VaultLibrary-sortBy = Sortuj według
 
 interface-VaultLibrary-thatFolderIsNoLongerAvailable = Ten folder nie jest już dostępny.
@@ -1351,9 +1357,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Foldery
+
+sidebar-foldersOf = Foldery: { $name }
+
 sidebar-label = Biblioteka dokumentów
 
 sidebar-myRecords = Moje dokumenty
+
+sidebar-people = Osoby
 
 sidebar-preferences = Preferencje
 
@@ -2182,6 +2194,10 @@ interface-history-receipt-pickedUp = Przychodnia odnotowała odbiór
 interface-history-status = Stan
 
 interface-RecordDetails-anonymizeText = Przygotuj tekst dla AI…
+
+interface-AddMenu-addDocument = Dodaj dokument
+
+interface-AddMenu-importFile = Importuj plik
 
 interface-AnonymizePreview-title = Tekst bez danych identyfikujących
 

@@ -244,9 +244,10 @@ describe("the person-folder sidebar in each language", () => {
         }),
       );
       const props = {
-        profileName: "Private vault",
+        addItems: [],
+        addDisabled: false,
         people,
-        profileId: "p1",
+        profileId: "p2",
         section: "shared" as const,
         sharedNew: 2,
         onOpenShared: vi.fn(),
@@ -303,7 +304,9 @@ describe("the person-folder sidebar in each language", () => {
         }),
       );
       expect(props.onOpenPerson).toHaveBeenCalledWith("p2");
-      expect(screen.getByText(tr("sidebar.settings"))).toBeVisible();
+      expect(
+        within(nav).getByRole("group", { name: tr("sidebar.settings") }),
+      ).toBeVisible();
       expect(screen.getByText(tr("sidebar.storage"))).toBeVisible();
       expect(shown.container.querySelector(".storage small")).toHaveTextContent(
         `${tr("sidebar.documents", { count: 5 })} · ${tr("sidebar.folderCount", { count: 2 })}`,
@@ -315,8 +318,8 @@ describe("the person-folder sidebar in each language", () => {
         <LibrarySidebar
           {...props}
           people={[people[0]]}
+          profileId="p1"
           section="records"
-          profileName="FAKE Avery"
         />,
       );
       expect(

@@ -11,6 +11,7 @@ import {
   scriptFake,
   sidebar,
 } from "./support/vaultFake";
+import { addButton } from "./support/menus";
 
 // A vault whose encrypted files are partly missing opens in recovery mode:
 // changes are paused, the damaged document is marked and cannot be read, and
@@ -53,12 +54,7 @@ test("a missing file pauses changes and marks the document; hiding it is asked f
   await expect(row).toContainText(
     en("interface.VaultLibrary.damagedFileMissing"),
   );
-  await expect(
-    page.getByRole("button", {
-      name: en("interface.VaultLibrary.new"),
-      exact: true,
-    }),
-  ).toBeDisabled();
+  await expect(addButton(page)).toBeDisabled();
   const details = await openDetails(page, LETTER);
   await expect(details.getByRole("alert")).toContainText(
     en("interface.RecordDetails.thisDocumentIsDamaged"),
@@ -138,12 +134,7 @@ test("a missing file pauses changes and marks the document; hiding it is asked f
     { request: { confirmed: [FAKE_IDS.letter], hiddenPeopleDocuments: 0 } },
     { request: { confirmed: [FAKE_IDS.letter], hiddenPeopleDocuments: 0 } },
   ]);
-  await expect(
-    page.getByRole("button", {
-      name: en("interface.VaultLibrary.new"),
-      exact: true,
-    }),
-  ).toBeEnabled();
+  await expect(addButton(page)).toBeEnabled();
 
   // Security > Hidden lists it as damaged, with no Restore while its file is
   // missing.

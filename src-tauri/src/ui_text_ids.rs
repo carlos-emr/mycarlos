@@ -339,6 +339,8 @@ pub enum MessageId {
     HiddenPeopleRestored,
     HiddenPeopleSince,
     HiddenPeopleTitle,
+    InterfaceAddMenuAddDocument,
+    InterfaceAddMenuImportFile,
     InterfaceAiHelperNoticeContinue,
     InterfaceAnonymizePreviewCheckPicked,
     InterfaceAnonymizePreviewClose,
@@ -590,12 +592,14 @@ pub enum MessageId {
     InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual,
     InterfaceVaultLibraryGrid,
     InterfaceVaultLibraryGridView,
+    InterfaceVaultLibraryHelpWithThisScreen,
     InterfaceVaultLibraryHideDamagedDocuments,
     InterfaceVaultLibraryHoldAndDragADocumentOrFolder,
     InterfaceVaultLibraryIfYouForgetYourPassphraseWithoutOne,
     InterfaceVaultLibraryInsideFolder,
     InterfaceVaultLibraryList,
     InterfaceVaultLibraryListView,
+    InterfaceVaultLibraryMoreFor,
     InterfaceVaultLibraryMoveAFolderWithTheKeyboard,
     InterfaceVaultLibraryMoveFolder,
     InterfaceVaultLibraryMoveSelectedTo,
@@ -632,6 +636,7 @@ pub enum MessageId {
     InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil,
     InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
     InterfaceVaultLibraryTopLevel,
+    InterfaceVaultLibraryView,
     InterfaceVaultLibraryWorking,
     InterfaceVideoHelpEngine,
     InterfaceVideoHelpRestWorks,
@@ -1345,8 +1350,11 @@ pub enum MessageId {
     SidebarDocuments,
     SidebarFolderCount,
     SidebarFolderOfPerson,
+    SidebarFolders,
+    SidebarFoldersOf,
     SidebarLabel,
     SidebarMyRecords,
+    SidebarPeople,
     SidebarPreferences,
     SidebarSettings,
     SidebarStorage,
@@ -1711,6 +1719,8 @@ impl MessageId {
         Self::HiddenPeopleRestored,
         Self::HiddenPeopleSince,
         Self::HiddenPeopleTitle,
+        Self::InterfaceAddMenuAddDocument,
+        Self::InterfaceAddMenuImportFile,
         Self::InterfaceAiHelperNoticeContinue,
         Self::InterfaceAnonymizePreviewCheckPicked,
         Self::InterfaceAnonymizePreviewClose,
@@ -1962,12 +1972,14 @@ impl MessageId {
         Self::InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual,
         Self::InterfaceVaultLibraryGrid,
         Self::InterfaceVaultLibraryGridView,
+        Self::InterfaceVaultLibraryHelpWithThisScreen,
         Self::InterfaceVaultLibraryHideDamagedDocuments,
         Self::InterfaceVaultLibraryHoldAndDragADocumentOrFolder,
         Self::InterfaceVaultLibraryIfYouForgetYourPassphraseWithoutOne,
         Self::InterfaceVaultLibraryInsideFolder,
         Self::InterfaceVaultLibraryList,
         Self::InterfaceVaultLibraryListView,
+        Self::InterfaceVaultLibraryMoreFor,
         Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard,
         Self::InterfaceVaultLibraryMoveFolder,
         Self::InterfaceVaultLibraryMoveSelectedTo,
@@ -2004,6 +2016,7 @@ impl MessageId {
         Self::InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil,
         Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
         Self::InterfaceVaultLibraryTopLevel,
+        Self::InterfaceVaultLibraryView,
         Self::InterfaceVaultLibraryWorking,
         Self::InterfaceVideoHelpEngine,
         Self::InterfaceVideoHelpRestWorks,
@@ -2717,8 +2730,11 @@ impl MessageId {
         Self::SidebarDocuments,
         Self::SidebarFolderCount,
         Self::SidebarFolderOfPerson,
+        Self::SidebarFolders,
+        Self::SidebarFoldersOf,
         Self::SidebarLabel,
         Self::SidebarMyRecords,
+        Self::SidebarPeople,
         Self::SidebarPreferences,
         Self::SidebarSettings,
         Self::SidebarStorage,
@@ -3083,6 +3099,8 @@ impl MessageId {
             Self::HiddenPeopleRestored => "hiddenPeople-restored",
             Self::HiddenPeopleSince => "hiddenPeople-since",
             Self::HiddenPeopleTitle => "hiddenPeople-title",
+            Self::InterfaceAddMenuAddDocument => "interface-AddMenu-addDocument",
+            Self::InterfaceAddMenuImportFile => "interface-AddMenu-importFile",
             Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
             Self::InterfaceAnonymizePreviewCheckPicked => "interface-AnonymizePreview-checkPicked",
             Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
@@ -3590,6 +3608,9 @@ impl MessageId {
             }
             Self::InterfaceVaultLibraryGrid => "interface-VaultLibrary-grid",
             Self::InterfaceVaultLibraryGridView => "interface-VaultLibrary-gridView",
+            Self::InterfaceVaultLibraryHelpWithThisScreen => {
+                "interface-VaultLibrary-helpWithThisScreen"
+            }
             Self::InterfaceVaultLibraryHideDamagedDocuments => {
                 "interface-VaultLibrary-hideDamagedDocuments"
             }
@@ -3602,6 +3623,7 @@ impl MessageId {
             Self::InterfaceVaultLibraryInsideFolder => "interface-VaultLibrary-insideFolder",
             Self::InterfaceVaultLibraryList => "interface-VaultLibrary-list",
             Self::InterfaceVaultLibraryListView => "interface-VaultLibrary-listView",
+            Self::InterfaceVaultLibraryMoreFor => "interface-VaultLibrary-moreFor",
             Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard => {
                 "interface-VaultLibrary-moveAFolderWithTheKeyboard"
             }
@@ -3686,6 +3708,7 @@ impl MessageId {
                 "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault"
             }
             Self::InterfaceVaultLibraryTopLevel => "interface-VaultLibrary-topLevel",
+            Self::InterfaceVaultLibraryView => "interface-VaultLibrary-view",
             Self::InterfaceVaultLibraryWorking => "interface-VaultLibrary-working",
             Self::InterfaceVideoHelpEngine => "interface-VideoHelp-engine",
             Self::InterfaceVideoHelpRestWorks => "interface-VideoHelp-restWorks",
@@ -4463,8 +4486,11 @@ impl MessageId {
             Self::SidebarDocuments => "sidebar-documents",
             Self::SidebarFolderCount => "sidebar-folderCount",
             Self::SidebarFolderOfPerson => "sidebar-folderOfPerson",
+            Self::SidebarFolders => "sidebar-folders",
+            Self::SidebarFoldersOf => "sidebar-foldersOf",
             Self::SidebarLabel => "sidebar-label",
             Self::SidebarMyRecords => "sidebar-myRecords",
+            Self::SidebarPeople => "sidebar-people",
             Self::SidebarPreferences => "sidebar-preferences",
             Self::SidebarSettings => "sidebar-settings",
             Self::SidebarStorage => "sidebar-storage",
@@ -6382,6 +6408,16 @@ impl MessageId {
             "notifications.testOff" => Some(Self::NotificationsTestOff),
             "preferences.moreAutomatic" => Some(Self::PreferencesMoreAutomatic),
             "preferences.moreBackground" => Some(Self::PreferencesMoreBackground),
+            "interface.AddMenu.addDocument" => Some(Self::InterfaceAddMenuAddDocument),
+            "interface.AddMenu.importFile" => Some(Self::InterfaceAddMenuImportFile),
+            "sidebar.folders" => Some(Self::SidebarFolders),
+            "sidebar.foldersOf" => Some(Self::SidebarFoldersOf),
+            "sidebar.people" => Some(Self::SidebarPeople),
+            "interface.VaultLibrary.view" => Some(Self::InterfaceVaultLibraryView),
+            "interface.VaultLibrary.helpWithThisScreen" => {
+                Some(Self::InterfaceVaultLibraryHelpWithThisScreen)
+            }
+            "interface.VaultLibrary.moreFor" => Some(Self::InterfaceVaultLibraryMoreFor),
             _ => None,
         }
     }

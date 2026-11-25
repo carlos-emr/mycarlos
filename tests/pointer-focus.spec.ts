@@ -1,6 +1,7 @@
 import { messagePattern, translate } from "./support/fluent";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectOnlyFakedCommands, fakeVault } from "./support/a11y";
+import { addButton } from "./support/menus";
 
 // #90 puts focus back for keyboard users (keyboard-walk.spec.ts). A click or
 // tap in WebKit (macOS, iOS) does not focus the button pressed and takes focus
@@ -187,8 +188,12 @@ test("after typing in Search, pointer actions leave focus on the page (#90)", as
   await expect(search).toBeFocused();
   await page.keyboard.type("Letter");
 
-  const importer = page.getByRole("button", { name: "New", exact: true });
+  // The Add document menu: press the button, then its Import a file item.
+  const importer = addButton(page);
   await press(importer);
+  await press(
+    page.getByRole("menuitem", { name: "Import a file", exact: true }),
+  );
   await expect(
     page.getByText(
       messagePattern("en", "interface.notice.imported", { count: 1 }),

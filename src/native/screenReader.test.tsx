@@ -133,7 +133,8 @@ describe("the record library's sidebar, as a screen reader reads it", () => {
       setLocaleOverride(locale);
       const { container } = render(
         <LibrarySidebar
-          profileName="FAKE Avery"
+          addItems={[]}
+          addDisabled={false}
           people={[{ id: "p1", displayName: "FAKE Avery", createdAtMs: 1 }]}
           profileId="p1"
           section="hidden"

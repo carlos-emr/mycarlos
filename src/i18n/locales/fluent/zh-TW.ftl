@@ -363,6 +363,12 @@ interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = 此裝置上有些
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = 無法讀取保險庫中的部分檔案；這些檔案可能較新或仍完整，因此目前無法進行任何變更，包括變更密語和復原金鑰。您仍可開啟文件並另存副本，但標示為「檔案無法使用」的項目除外。請確認存放 myCarlos 資料夾的磁碟已連接、沒有其他程式正在使用該資料夾，且雲端同步工具已將檔案保留在此裝置上，然後鎖定並重新解鎖。
 
+interface-VaultLibrary-view = 檢視
+
+interface-VaultLibrary-helpWithThisScreen = 此畫面說明
+
+interface-VaultLibrary-moreFor = { $name } 的更多操作
+
 interface-VaultLibrary-sortBy = 排序方式
 
 interface-VaultLibrary-thatFolderIsNoLongerAvailable = 該資料夾已無法使用。
@@ -1171,9 +1177,15 @@ sidebar-folderCount = { $count } 個資料夾
 
 sidebar-folderOfPerson = { $folder }（{ $person }）
 
+sidebar-folders = 資料夾
+
+sidebar-foldersOf = { $name } 的資料夾
+
 sidebar-label = 紀錄庫
 
 sidebar-myRecords = 我的紀錄
+
+sidebar-people = 人員
 
 sidebar-preferences = 偏好設定
 
@@ -1939,6 +1951,10 @@ interface-history-receipt-pickedUp = 診所已記錄領取
 interface-history-status = 狀態
 
 interface-RecordDetails-anonymizeText = 為 AI 準備文字…
+
+interface-AddMenu-addDocument = 新增文件
+
+interface-AddMenu-importFile = 匯入檔案
 
 interface-AnonymizePreview-title = 已移除身分資訊的文字
 

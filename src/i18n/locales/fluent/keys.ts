@@ -1368,6 +1368,14 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "interface.AddMenu.addDocument",
+  "interface.AddMenu.importFile",
+  "sidebar.folders",
+  "sidebar.foldersOf",
+  "sidebar.people",
+  "interface.VaultLibrary.view",
+  "interface.VaultLibrary.helpWithThisScreen",
+  "interface.VaultLibrary.moreFor",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3006,6 +3014,15 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "interface.AddMenu.addDocument": "interface-AddMenu-addDocument",
+  "interface.AddMenu.importFile": "interface-AddMenu-importFile",
+  "sidebar.folders": "sidebar-folders",
+  "sidebar.foldersOf": "sidebar-foldersOf",
+  "sidebar.people": "sidebar-people",
+  "interface.VaultLibrary.view": "interface-VaultLibrary-view",
+  "interface.VaultLibrary.helpWithThisScreen":
+    "interface-VaultLibrary-helpWithThisScreen",
+  "interface.VaultLibrary.moreFor": "interface-VaultLibrary-moreFor",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4509,6 +4526,14 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "interface.AddMenu.addDocument": undefined;
+  "interface.AddMenu.importFile": undefined;
+  "sidebar.folders": undefined;
+  "sidebar.foldersOf": { name: FluentArgument };
+  "sidebar.people": undefined;
+  "interface.VaultLibrary.view": undefined;
+  "interface.VaultLibrary.helpWithThisScreen": undefined;
+  "interface.VaultLibrary.moreFor": { name: FluentArgument };
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

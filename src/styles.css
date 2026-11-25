@@ -600,6 +600,132 @@ p {
   color: var(--ink-faint);
   font-size: 0.875rem;
 }
+/* The Add document menu at the top of the sidebar, the people with their initials, and Settings
+   at the foot of it ("Today, decluttered"). */
+.menu-button {
+  position: relative;
+}
+.menu-button-primary {
+  margin: 0 0 12px;
+}
+.menu-button-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.menu-button-trigger:hover:not(:disabled) {
+  background: var(--canvas-2);
+}
+.menu-button-icon .menu-button-trigger {
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
+.menu-button-primary .menu-button-trigger {
+  width: 100%;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--teal);
+  color: var(--on-accent);
+  font-weight: 700;
+  text-align: left;
+}
+.menu-button-primary .menu-button-trigger:hover:not(:disabled) {
+  background: var(--teal-dark);
+}
+.menu-button-trigger:disabled {
+  opacity: 0.6;
+}
+.menu-button-label {
+  flex: 1;
+}
+.menu-button-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+.menu-button-list-start {
+  left: 0;
+}
+.menu-button-list-end {
+  right: 0;
+}
+.menu-button-primary .menu-button-list {
+  right: 0;
+  left: 0;
+}
+.menu-button-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.9375rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.menu-button-list button:hover:not(:disabled) {
+  background: var(--canvas-2);
+}
+.menu-button-tick {
+  display: inline-block;
+  width: 1em;
+  font-weight: 700;
+}
+.menu-button-list button:disabled {
+  color: var(--ink-faint);
+}
+.person-initials {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: var(--on-accent);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.person-initials::before {
+  content: attr(data-initials);
+}
+.sidebar .side-nav {
+  flex: 1 1 auto;
+}
+.sidebar .side-nav button {
+  min-height: 44px;
+}
+.side-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 .nav-label {
   padding: 14px 10px 6px;
   color: var(--ink-faint);
@@ -742,7 +868,9 @@ p {
   gap: 8px;
 }
 .library-search-row > .search {
-  flex: 1 1 20em;
+  /* Room for the box, Check, Sort, View and the help button on one line at a laptop's width; a
+     narrower row wraps them under it. */
+  flex: 1 1 12em;
   min-width: 0;
 }
 .library-search-row > .button {
@@ -5046,4 +5174,67 @@ button:disabled,
 }
 .more-about-body p:first-child {
   margin-top: 2px;
+}
+
+/* "Today, decluttered": the head with its "…" menu, the toolbar (search, Sort, View, help) and the
+   help panel, and the details reminder and clinic strip at one line each. */
+.head-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.library-search-row {
+  align-items: center;
+}
+.library-search-row .menu-button-trigger,
+.library-search-row .help-button {
+  min-height: 46px;
+}
+.help-button {
+  width: 46px;
+  padding: 0;
+  font-weight: 700;
+}
+.help-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  color: var(--ink-soft);
+}
+.help-panel p {
+  margin: 0;
+}
+.help-panel h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+.native-details-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 8px 14px;
+  font-size: 0.9375rem;
+}
+.native-details-reminder p {
+  flex: 1 1 24em;
+  margin: 0;
+}
+.native-details-reminder .button {
+  min-height: 40px;
+}
+
+/* Add document in the head: only where the sidebar (which holds the main one) is hidden. */
+.phone-add {
+  display: none;
+}
+@media (max-width: 56.25em) {
+  .phone-add {
+    display: block;
+  }
 }

@@ -8,6 +8,7 @@ import {
   openDetails,
   sidebar,
 } from "./support/vaultFake";
+import { chooseAdd } from "./support/menus";
 
 // The audit history (#71): after a session of actions, Security > Audit
 // history lists what happened, newest first, with the names as they were;
@@ -53,12 +54,7 @@ test("after adding, renaming, moving, hiding and backing up, the history lists e
 
   // The actions.
   await fakePickFiles(page, ["FAKE Scan.pdf"]);
-  await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.new"),
-      exact: true,
-    })
-    .click();
+  await chooseAdd(page, en("interface.AddMenu.importFile"));
   await expect(
     page.getByText(en("interface.notice.imported", { count: 1 }), {
       exact: true,
