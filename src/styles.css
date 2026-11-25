@@ -1016,6 +1016,17 @@ p {
 .native-reader-head-actions .button {
   max-width: 100%;
 }
+/* On a narrow window Back (and the reading-aid button) take a row, and the title with its status
+   and source line the full width under them. */
+@media (max-width: 40em) {
+  .dialog-head.native-reader-head {
+    padding-inline: 12px;
+  }
+  .native-reader-head > div {
+    flex-basis: 100%;
+    order: 1;
+  }
+}
 .native-reader-head p {
   margin: 2px 0 0;
   color: var(--ink-soft);
@@ -5237,8 +5248,9 @@ button:disabled,
   width: 168px;
   height: 168px;
   border-radius: 32px;
-  background: #fff;
-  box-shadow: 0 8px 28px rgb(0 0 0 / 22%);
+  /* The same in every theme: the logo is a picture on a light ground. */
+  background: var(--content-paper);
+  box-shadow: 0 8px 28px var(--dialog-shadow);
 }
 .unlock-logo img {
   width: 128px;
@@ -5421,7 +5433,7 @@ button:disabled,
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  background: #fff;
+  background: var(--content-paper);
 }
 .titlebar-logo img {
   width: 24px;

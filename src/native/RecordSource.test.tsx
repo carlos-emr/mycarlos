@@ -371,7 +371,7 @@ describe("a document's status before its source (#135)", () => {
     [320, "32px"],
   ] as const)
     for (const withAid of [false, true])
-      it(`keeps reader header actions before the source at ${width}px and ${text} text, ${withAid ? "with" : "without"} a reading aid, in every language`, async () => {
+      it(`keeps the reader header (Back, then the title) before the source at ${width}px and ${text} text, ${withAid ? "with" : "without"} a reading aid, in every language`, async () => {
         await page.viewport(width, 2400);
         document.documentElement.style.fontSize = text;
         useWideFont();
@@ -400,34 +400,25 @@ describe("a document's status before its source (#135)", () => {
           const title = screen.getByRole("heading", {
             name: shownRecord.displayName,
           });
-          const close = screen.getByRole("button", {
-            name: translate(locale, "photo.close"),
+          const back = screen.getByRole("button", {
+            name: translate(locale, "reader.back"),
           });
-          const actions = close.parentElement!;
           const trust = document.getElementById("reader-trust")!;
-          expectInView(actions);
-          expectInView(close);
+          expectInView(back);
           if (withAid)
             expectInView(
               screen.getByRole("button", {
                 name: translate(locale, "readingAid.open"),
               }),
             );
-          const controls = actions.getBoundingClientRect();
+          const controls = back.getBoundingClientRect();
           const heading = title.getBoundingClientRect();
-          // The actual controls occupy the title area, before the full-width
-          // status/source and date: beside the title, or on a narrow screen
-          // on a row of their own under it when the title leaves no room
-          // (#312). Never over the title.
-          expect(controls.bottom).toBeLessThanOrEqual(
-            trust.getBoundingClientRect().top + 0.5,
-          );
-          const besideTitle = Math.abs(controls.top - heading.top) <= 0.5;
+          // Back leads the header: beside the title, or on a narrow screen on a row of its own
+          // above it when the title leaves no room (#312). Never over the title.
+          const besideTitle = controls.right <= heading.left + 0.5;
           if (width > 640) expect(besideTitle).toBe(true);
-          if (besideTitle)
-            expect(controls.left).toBeGreaterThanOrEqual(heading.right - 0.5);
-          else
-            expect(controls.top).toBeGreaterThanOrEqual(heading.bottom - 0.5);
+          if (!besideTitle)
+            expect(controls.bottom).toBeLessThanOrEqual(heading.top + 0.5);
           const [, status, source] = expected(locale)[0];
           expectWholeSource(trust, status, source);
           expectInView(trust);

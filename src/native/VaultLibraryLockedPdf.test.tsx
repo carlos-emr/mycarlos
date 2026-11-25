@@ -367,7 +367,7 @@ describe("a PDF locked with a password (#54)", () => {
       undefined,
     );
     await user.click(
-      within(reader).getByRole("button", { name: humanText("Close") }),
+      within(reader).getByRole("button", { name: humanText("Back") }),
     );
     await waitFor(() => expect(bridge.cancelView).toHaveBeenCalled());
     expect(

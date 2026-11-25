@@ -239,7 +239,7 @@ describe("shared PDF suggestions use explicit Move", () => {
       await complete();
       expect(identity).toHaveBeenCalledExactlyOnceWith("s1");
       await userEvent.click(
-        within(reader).getByRole("button", { name: "Close" }),
+        within(reader).getByRole("button", { name: "Back" }),
       );
       await screen.findByRole("group", {
         name: humanText("Suggested person for FAKE Pharmacy receipt.pdf"),
