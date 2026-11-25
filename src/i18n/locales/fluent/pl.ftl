@@ -3049,3 +3049,19 @@ notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
 notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
+
+interface-received-notNow = Nie teraz
+
+interface-received-remove = Usuń
+
+interface-received-confirmBodySealed = Te pliki udostępniono, gdy myCarlos był zablokowany, i są tu przechowywane w postaci zaszyfrowanej. Nic nie zostanie dodane, dopóki nie wybierzesz Importuj. Nie teraz zachowuje je do 7 dni. Usuń kasuje je.
+
+interface-receive-inboxRemoved =
+    { $count ->
+    [one] Usunięto jeden udostępniony plik przechowywany dla Ciebie: miał ponad 7 dni lub nie dało się go odczytać.
+    [few] Usunięto { $count } udostępnione pliki przechowywane dla Ciebie: miały ponad 7 dni lub nie dało się ich odczytać.
+    [many] Usunięto { $count } udostępnionych plików przechowywanych dla Ciebie: miały ponad 7 dni lub nie dało się ich odczytać.
+    *[other] Usunięto { $count } udostępnionych plików przechowywanych dla Ciebie: miały ponad 7 dni lub nie dało się ich odczytać.
+    }
+
+interface-receive-inboxKeyChanged = Klucz, który przechowuje udostępnione pliki, gdy myCarlos jest zablokowany, został zmieniony przez coś innego i został naprawiony. Pliki udostępnione od tego czasu nie zostały zachowane. Udostępnij je ponownie.

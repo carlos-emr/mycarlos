@@ -2953,3 +2953,18 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
+
+interface-received-notNow = Pas maintenant
+
+interface-received-remove = Retirer
+
+interface-received-confirmBodySealed = Ces fichiers ont été partagés pendant que myCarlos était verrouillé et sont conservés ici, chiffrés. Rien n’est ajouté tant que vous n’avez pas choisi Importer. Pas maintenant les conserve jusqu’à 7 jours. Retirer les supprime.
+
+interface-receive-inboxRemoved =
+    { $count ->
+    [one] Un fichier partagé conservé pour vous a été supprimé : il avait plus de 7 jours ou n’a pas pu être lu.
+    [many] { $count } fichiers partagés conservés pour vous ont été supprimés : ils avaient plus de 7 jours ou n’ont pas pu être lus.
+    *[other] { $count } fichiers partagés conservés pour vous ont été supprimés : ils avaient plus de 7 jours ou n’ont pas pu être lus.
+    }
+
+interface-receive-inboxKeyChanged = La clé qui conserve les fichiers partagés pendant que myCarlos est verrouillé a été modifiée par autre chose, et a été rétablie. Les fichiers partagés depuis ne sont pas conservés. Partagez-les de nouveau.

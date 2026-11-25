@@ -13,6 +13,8 @@ export function ConfirmDialog({
   cancelLabel,
   onConfirm,
   onCancel,
+  removeLabel,
+  onRemove,
   details,
   children,
 }: {
@@ -23,6 +25,10 @@ export function ConfirmDialog({
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** A third choice that destroys what the question is about (Remove, where Cancel keeps it): shown
+   * between Cancel and the confirming button, as a danger button, only when both are given. */
+  removeLabel?: string;
+  onRemove?: () => void;
   /** Shown above the message and not read with it when the dialog opens,
    * such as a long list the title already counts. */
   details?: ReactNode;
@@ -64,6 +70,11 @@ export function ConfirmDialog({
           >
             {cancelLabel ?? t("common.cancel")}
           </button>
+          {removeLabel && onRemove && (
+            <button className="button danger" type="button" onClick={onRemove}>
+              {removeLabel}
+            </button>
+          )}
           <button
             className={danger ? "button danger" : "button primary"}
             type="button"

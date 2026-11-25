@@ -5905,7 +5905,7 @@ struct ReceivedAcceptRequest {
 
 /// The files the patient said No to (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedDiscardRequest {
     ids: Vec<Uuid>,
 }

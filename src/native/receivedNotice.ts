@@ -12,6 +12,8 @@ export function receiveNoticeText({
   refusedShares,
   sealed = 0,
   notKept = 0,
+  inboxRemoved = 0,
+  inboxKeyChanged = false,
 }: ReceiveNotice): string {
   return [
     refusedShares > 0
@@ -20,6 +22,10 @@ export function receiveNoticeText({
     dropped > 0 ? t("interface.receive.dropped", { count: dropped }) : "",
     sealed > 0 ? t("interface.receive.sealed", { count: sealed }) : "",
     notKept > 0 ? t("interface.receive.notKept", { count: notKept }) : "",
+    inboxRemoved > 0
+      ? t("interface.receive.inboxRemoved", { count: inboxRemoved })
+      : "",
+    inboxKeyChanged ? t("interface.receive.inboxKeyChanged") : "",
   ]
     .filter(Boolean)
     .join(" ");

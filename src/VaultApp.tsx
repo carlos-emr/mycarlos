@@ -2054,6 +2054,32 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 })
           }
           confirmLabel={t("interface.received.import")}
+          // Files kept from while the vault was locked (#49): Not now keeps them for the next
+          // unlock, and Remove deletes them. Other files have only Cancel.
+          cancelLabel={
+            confirmReceived.some((file) => file.sealed)
+              ? t("interface.received.notNow")
+              : undefined
+          }
+          removeLabel={
+            confirmReceived.some((file) => file.sealed) && bridge.removeReceived
+              ? t("interface.received.remove")
+              : undefined
+          }
+          onRemove={() => {
+            const ids = confirmReceived.map((file) => file.id);
+            confirmOpen.current = false;
+            setConfirmReceived(null);
+            void bridge
+              .removeReceived?.(ids)
+              .then(() =>
+                setReceived((waiting) =>
+                  waiting.filter((file) => !ids.includes(file.id)),
+                ),
+              )
+              .then(() => refreshReceivedRef.current())
+              .catch(() => undefined);
+          }}
           details={
             confirmReceived.length > 1 ? (
               <ul>
@@ -2093,7 +2119,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
               .catch(() => undefined);
           }}
         >
-          <p>{t("interface.received.confirmBody")}</p>
+          <p>
+            {t(
+              confirmReceived.some((file) => file.sealed)
+                ? "interface.received.confirmBodySealed"
+                : "interface.received.confirmBody",
+            )}
+          </p>
         </ConfirmDialog>
       )}
       <VaultLibrary

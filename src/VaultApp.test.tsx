@@ -1814,6 +1814,99 @@ describe("durable vault UI", () => {
     expect(bridge.acceptReceived).toHaveBeenCalledTimes(1);
   });
 
+  /** Files kept, sealed, from while the vault was locked (#49): asked about like opened ones, with
+   * Not now (kept for the next unlock) and Remove (deleted) in place of Cancel. */
+  function sealedWithVault(names: string[]) {
+    const made = openedWithVault(names);
+    const list = vi.mocked(made.bridge.listReceived).getMockImplementation()!;
+    let removed: string[] = [];
+    vi.mocked(made.bridge.listReceived).mockImplementation(async () => {
+      const listed = await list();
+      return {
+        ...listed,
+        files: listed.files
+          .filter((file) => !removed.includes(file.id))
+          .map((file) => ({ ...file, sealed: true })),
+      };
+    });
+    made.bridge.removeReceived = vi.fn(async (ids: string[]) => {
+      removed = [...removed, ...ids];
+      return ids.length;
+    });
+    return made;
+  }
+
+  it("asks about sealed files with Not now, Remove and Import, and Not now only forgets them for now (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = sealedWithVault(["FAKE_Sealed.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Sealed.pdf into Shared with me?"),
+    });
+    expect(
+      within(dialog).getByText(
+        humanText(
+          /kept here, encrypted\. Nothing is added until you choose Import\. Not now keeps them for up to 7 days\. Remove deletes them\./,
+        ),
+      ),
+    ).toBeVisible();
+    const choices = within(dialog)
+      .getAllByRole("button")
+      .map((button) => humanValue(button.textContent ?? ""));
+    expect(choices).toEqual(["Not now", "Remove", "Import"].map(humanValue));
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Not now") }),
+    );
+    await waitFor(() =>
+      expect(bridge.discardReceived).toHaveBeenCalledWith(["shared-1"]),
+    );
+    expect(bridge.removeReceived).not.toHaveBeenCalled();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("Remove deletes the sealed files, adds nothing, and the question does not come back (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sealedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Remove") }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeReceived).toHaveBeenCalledWith([
+        "shared-1",
+        "shared-2",
+      ]),
+    );
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("offers Cancel, not Remove, for files that are not sealed (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+    });
+    expect(
+      within(dialog).queryByRole("button", { name: humanText("Remove") }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByRole("button", { name: humanText("Cancel") }),
+    ).toBeVisible();
+  });
+
   it("Cancel forgets the opened files and stores nothing, and the question does not come back (#133)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = openedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
