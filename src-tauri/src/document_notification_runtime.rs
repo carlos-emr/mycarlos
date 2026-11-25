@@ -678,7 +678,11 @@ pub(crate) mod active {
             let Some(state) = guard.as_ref() else {
                 return;
             };
-            if !state.enabled || state.events.iter().any(|e| e.key == key) {
+            // Notices turned off or on while the permission was being asked (it is asked before the
+            // lock): the arrival is still recorded, as never accepted, so that it is not shown
+            // later either.
+            let consent_changed = self.consent_epoch.load(Ordering::Acquire) != epoch;
+            if (!state.enabled && !consent_changed) || state.events.iter().any(|e| e.key == key) {
                 return;
             }
             let mut next = state.clone();
