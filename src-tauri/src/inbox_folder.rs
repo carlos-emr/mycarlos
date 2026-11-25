@@ -83,9 +83,8 @@ pub(crate) enum Discovered {
 }
 
 /// The most directory entries one unlock's listing looks at: far above the item cap (so a real
-/// folder is always listed whole), and a bound on the walk of a flooded one.
-// Used by the importing stage (stage 3); until then only its tests call it.
-#[allow(dead_code)]
+/// folder is always listed whole), and a bound on the walk of a flooded one: every directory entry
+/// counts against it, whatever its name.
 pub(crate) const MAX_LISTED_ENTRIES: usize = 10_000;
 
 /// What an unlock may import from a folder (see `InboxFolder::import_plan`).
@@ -138,6 +137,8 @@ pub(crate) struct InboxFolder {
     dir: PathBuf,
     caps: Caps,
     free_space: fn(&Path) -> Option<u64>,
+    /// How many directory entries (of any name) one listing looks at before it stops.
+    listing_limit: usize,
 }
 
 struct Entry {
@@ -157,7 +158,14 @@ impl InboxFolder {
             dir: base.join("inbox").join(vault_id.hyphenated().to_string()),
             caps: CAPS,
             free_space: crate::disk_space::free_bytes,
+            listing_limit: MAX_LISTED_ENTRIES,
         }
+    }
+
+    #[cfg(test)]
+    fn with_listing_limit(mut self, limit: usize) -> Self {
+        self.listing_limit = limit;
+        self
     }
 
     #[cfg(test)]
@@ -264,7 +272,8 @@ impl InboxFolder {
     /// The entries that are plain files with a strict item or part name; anything else in the
     /// folder (a link, a directory, an odd name, the lock and key files) is not an entry.
     fn entries(&self) -> io::Result<Vec<Entry>> {
-        self.listed_entries(usize::MAX).map(|(entries, _)| entries)
+        self.listed_entries(self.listing_limit)
+            .map(|(entries, _)| entries)
     }
 
     /// `entries`, but stops after `limit` of them; the flag says more were there.
@@ -275,16 +284,20 @@ impl InboxFolder {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok((entries, false)),
             Err(error) => return Err(error),
         };
+        let mut scanned = 0usize;
         for entry in listing {
             let entry = entry?;
+            // Every entry counts, junk included: a folder of millions of other files is not walked
+            // in full at every unlock.
+            scanned += 1;
+            if scanned > limit {
+                return Ok((entries, true));
+            }
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
             if parse_item_name(&name).is_none() && parse_part_name(&name).is_none() {
                 continue;
-            }
-            if entries.len() >= limit {
-                return Ok((entries, true));
             }
             // `DirEntry::metadata` does not follow a link.
             let metadata = entry.metadata()?;
@@ -338,9 +351,15 @@ impl InboxFolder {
         let _lock = self.lock().map_err(|_| SealFailure::Storage)?;
         // Under the lock no sealer is mid-way, so every part here is a crash's leftover.
         self.remove_parts().map_err(|_| SealFailure::Storage)?;
+        let (listed, flooded) = self
+            .listed_entries(self.listing_limit)
+            .map_err(|_| SealFailure::Storage)?;
+        // A folder too full to be listed whole has no room that can be counted.
+        if flooded {
+            return Err(SealFailure::Refused(Refusal::InboxFull));
+        }
         let usage = usage_of(
-            self.entries()
-                .map_err(|_| SealFailure::Storage)?
+            listed
                 .iter()
                 .map(|entry| (entry.name.as_str(), entry.bytes)),
         );
@@ -369,14 +388,19 @@ impl InboxFolder {
         // room back if the folder went over.
         // The item is sealed and safe by now: a folder that cannot be listed again is not a
         // failure to report, or the patient shares the file a second time.
-        let after = self.entries().map(|entries| {
-            usage_of(
-                entries
-                    .iter()
-                    .map(|entry| (entry.name.as_str(), entry.bytes)),
-            )
-        });
-        if after.is_ok_and(|after| after.bytes > self.caps.total_bytes) {
+        let after = self
+            .listed_entries(self.listing_limit)
+            .map(|(entries, flooded)| {
+                (
+                    flooded,
+                    usage_of(
+                        entries
+                            .iter()
+                            .map(|entry| (entry.name.as_str(), entry.bytes)),
+                    ),
+                )
+            });
+        if after.is_ok_and(|(flooded, after)| flooded || after.bytes > self.caps.total_bytes) {
             let _ = remove_item(&item);
             return Err(SealFailure::Refused(Refusal::InboxFull));
         }
@@ -453,7 +477,7 @@ impl InboxFolder {
     // Used by the importing stage (stage 3); until then only its tests call it.
     #[allow(dead_code)]
     pub(crate) fn import_plan(&self) -> io::Result<ImportPlan> {
-        let (entries, truncated) = self.listed_entries(MAX_LISTED_ENTRIES)?;
+        let (entries, truncated) = self.listed_entries(self.listing_limit)?;
         let items: Vec<(String, u64, Option<u64>)> = entries
             .into_iter()
             .filter(|entry| parse_item_name(&entry.name).is_some())
@@ -795,7 +819,8 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_file_or_one_that_ends_inside_the_header_is_refused_and_leaves_no_part() {
+    fn an_empty_file_or_one_that_ends_inside_the_header_is_refused_as_not_a_pdf_before_any_part_exists(
+    ) {
         let temp = tempfile::tempdir().unwrap();
         let (folder, keys) = (folder(temp.path()), keys());
         // No bytes at all, a declared length of nothing, and a file that is only the start of the
@@ -903,6 +928,52 @@ mod tests {
         assert_eq!((entries.len(), truncated), (10, true));
         let (entries, truncated) = folder.listed_entries(usize::MAX).unwrap();
         assert_eq!((entries.len(), truncated), (CAPS.items + 20, false));
+    }
+
+    #[test]
+    fn a_folder_of_junk_is_walked_only_to_the_bound() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = InboxFolder::new(temp.path(), vault())
+            .with(CAPS, roomy)
+            .with_listing_limit(20);
+        fs::create_dir_all(folder.dir()).unwrap();
+        // Thirty files whose names are no item's: every one counts against the bound.
+        for n in 0..30 {
+            fs::write(folder.dir().join(format!("junk-{n}.txt")), b"x").unwrap();
+        }
+        let (entries, truncated) = folder.listed_entries(folder.listing_limit).unwrap();
+        assert!(entries.is_empty());
+        assert!(truncated, "the walk stopped at the bound, not after thirty");
+        let plan = folder.import_plan().unwrap();
+        assert!(plan.listing_truncated);
+        // Nothing can be counted in a folder like that, so nothing more is sealed into it.
+        let keys = keys();
+        assert_eq!(
+            seal(&folder, &keys, pdf(100)),
+            Err(SealFailure::Refused(Refusal::InboxFull))
+        );
+    }
+
+    #[test]
+    fn a_folder_flooded_with_item_names_is_listed_only_to_the_bound_everywhere() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = InboxFolder::new(temp.path(), vault())
+            .with(CAPS, roomy)
+            .with_listing_limit(20);
+        for _ in 0..30 {
+            plant(&folder, 1, 100);
+        }
+        // entries(), which the seal, the part sweep and the locked sweep use, stops at the bound.
+        assert_eq!(folder.entries().unwrap().len(), 20);
+        assert!(folder.import_plan().unwrap().listing_truncated);
+        let keys = keys();
+        assert_eq!(
+            seal(&folder, &keys, pdf(100)),
+            Err(SealFailure::Refused(Refusal::InboxFull))
+        );
+        // The locked sweep works on what it can list, and does not build more than the bound.
+        let _ = folder.sweep_locked(NOW).unwrap();
+        assert!(folder.entries().unwrap().len() <= 20);
     }
 
     #[test]
