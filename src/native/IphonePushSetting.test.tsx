@@ -88,6 +88,7 @@ describe("Notices when myCarlos is closed (iPhone)", () => {
     ["iosOff", /turned off for myCarlos in your iPhone.s Settings/],
     ["unavailable", /could not be reached from this iPhone/],
     ["timedOut", /Apple did not answer in time/],
+    ["needsAttention", /could not be set up with your clinic/],
   ] as const)(
     "says honestly why the notices are not coming (%s), apart from the others",
     async (state, words) => {

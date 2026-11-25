@@ -3048,4 +3048,6 @@ iphonePush-unavailable = Nie można połączyć się z usługą powiadomień App
 
 iphonePush-timedOut = Apple nie odpowiedziało na czas. Proszę wyłączyć i ponownie włączyć tę opcję, aby spróbować jeszcze raz.
 
+iphonePush-needsAttention = Nie udało się skonfigurować powiadomień z Twoją kliniką. Wyłącz i włącz tę opcję ponownie. Jeśli nadal nie działa, powiadom swoją klinikę.
+
 iphonePush-error = Nie udało się zapisać ustawienia. Proszę spróbować ponownie.

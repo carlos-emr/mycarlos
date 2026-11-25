@@ -1375,6 +1375,7 @@ export const MESSAGE_KEYS = [
   "iphonePush.iosOff",
   "iphonePush.unavailable",
   "iphonePush.timedOut",
+  "iphonePush.needsAttention",
   "iphonePush.error",
 ] as const;
 
@@ -3021,6 +3022,7 @@ const FLUENT_IDS_BY_KEY = {
   "iphonePush.iosOff": "iphonePush-iosOff",
   "iphonePush.unavailable": "iphonePush-unavailable",
   "iphonePush.timedOut": "iphonePush-timedOut",
+  "iphonePush.needsAttention": "iphonePush-needsAttention",
   "iphonePush.error": "iphonePush-error",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
@@ -4532,6 +4534,7 @@ export interface MessageArgsByKey {
   "iphonePush.iosOff": undefined;
   "iphonePush.unavailable": undefined;
   "iphonePush.timedOut": undefined;
+  "iphonePush.needsAttention": undefined;
   "iphonePush.error": undefined;
 }
 
