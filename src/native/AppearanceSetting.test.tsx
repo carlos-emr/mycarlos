@@ -314,16 +314,24 @@ describe("Preferences choices keep their focus ring and their words whole", () =
   }
 
   for (const width of [900, 300]) {
-    it(`never cuts the focus ring of any Appearance or Language button, in a ${width}px space`, async () => {
+    it(`never cuts the focus ring of any Appearance button, or of a language button in the dialog, in a ${width}px space`, async () => {
       const user = userEvent.setup();
       renderIn(width);
-      const radios = [
+      const appearance = [
         ...document.querySelectorAll<HTMLInputElement>(
           ".choice-segmented input, .choice-grid input",
         ),
       ];
-      expect(radios).toHaveLength(12);
-      for (const radio of radios) {
+      // The language list is not in the page: it is in the dialog the Language button opens.
+      expect(appearance).toHaveLength(4);
+      await user.click(document.querySelector(".language-preference button")!);
+      const language = [
+        ...document.querySelectorAll<HTMLInputElement>(
+          ".native-language-dialog .choice-grid input",
+        ),
+      ];
+      expect(language).toHaveLength(8);
+      for (const radio of [...appearance, ...language]) {
         // A key press first, so that focus shows as it does to a keyboard user.
         await user.keyboard("{Shift}");
         radio.focus();
