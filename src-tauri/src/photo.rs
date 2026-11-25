@@ -426,6 +426,7 @@ fn rebuild_icc(profile: &[u8]) -> Option<Vec<u8>> {
     }
     // The wanted tags, each at most once, as (signature, its bytes).
     let mut taken: Vec<([u8; 4], Vec<u8>)> = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
     for index in 0..count {
         let entry = HEADER + 4 + 12 * index;
         let signature: [u8; 4] = profile.get(entry..entry + 4)?.try_into().ok()?;
@@ -441,11 +442,20 @@ fn rebuild_icc(profile: &[u8]) -> Option<Vec<u8>> {
         }
         let offset = word(entry + 4)? as usize;
         let size = word(entry + 8)? as usize;
+        // A tag's data lies after the tag table (never in the header or the table itself) and
+        // starts on a four-byte boundary, as the format requires.
+        if offset < HEADER + 4 + 12 * count || !offset.is_multiple_of(4) {
+            return None;
+        }
         let data = profile.get(offset..offset.checked_add(size)?)?;
         if !tag_is_plain(&signature, data) {
             return None;
         }
+        ranges.push((offset, offset + size));
         taken.push((signature, data.to_vec()));
+    }
+    if !ranges_are_compatible(&ranges) {
+        return None;
     }
     for required in [
         b"rXYZ", b"gXYZ", b"bXYZ", b"rTRC", b"gTRC", b"bTRC", b"wtpt",
@@ -490,6 +500,17 @@ fn rebuild_icc(profile: &[u8]) -> Option<Vec<u8>> {
         out[offsets[index]..offsets[index] + data.len()].copy_from_slice(data);
     }
     Some(out)
+}
+
+/// Whether tags' data ranges (start, end) never overlap except by being exactly the same range:
+/// real profiles share one table between the three curves (`rTRC`, `gTRC`, `bTRC` pointing at the
+/// same data), but a range that begins inside another is not a profile that makes sense.
+fn ranges_are_compatible(ranges: &[(usize, usize)]) -> bool {
+    ranges.iter().enumerate().all(|(index, a)| {
+        ranges[index + 1..]
+            .iter()
+            .all(|b| a == b || a.1 <= b.0 || b.1 <= a.0)
+    })
 }
 
 /// A tag read from a profile, accepted only if it is exactly the kind of tag its name says and
@@ -549,8 +570,16 @@ fn tag_is_plain(signature: &[u8; 4], data: &[u8]) -> bool {
                     })
                 })
         }
-        // Colour codes: four one-byte codes.
-        b"cicp" => data.len() == 12 && is(b"cicp"),
+        // Colour codes: the primaries and the transfer function (0 to 22), the matrix (0 for RGB) and
+        // the full-range flag (0 or 1): four bytes that can say nothing else.
+        b"cicp" => {
+            data.len() == 12
+                && is(b"cicp")
+                && data[8] <= 22
+                && data[9] <= 22
+                && data[10] == 0
+                && data[11] <= 1
+        }
         _ => false,
     }
 }
@@ -1161,7 +1190,7 @@ mod tests {
             entries.push((*signature, offset, data.len()));
             body.extend_from_slice(data);
             // Padding to four bytes, and then bytes a profile reader never looks at.
-            while body.len() % 4 != 0 {
+            while !body.len().is_multiple_of(4) {
                 body.push(0);
             }
             body.extend_from_slice(b"FAKE-GAP-SECRET!");
@@ -1661,6 +1690,129 @@ mod tests {
             &PLAIN[..PLAIN.len() - 2],
         ] {
             assert!(clean_picture(refused).is_err());
+        }
+    }
+
+    /// `profile` with one more tag entry's data placed at the end, at `gap` bytes past the old end
+    /// (which is a multiple of four), under `signature`.
+    fn with_tag_at_the_end(
+        profile: &[u8],
+        signature: &[u8; 4],
+        data: &[u8],
+        gap: usize,
+    ) -> Vec<u8> {
+        let mut out = profile.to_vec();
+        let count = u32::from_be_bytes(out[128..132].try_into().unwrap()) as usize;
+        let entry = (0..count)
+            .map(|index| 132 + 12 * index)
+            .find(|entry| out[*entry..*entry + 4] == signature[..])
+            .unwrap();
+        let offset = out.len() + gap;
+        out.extend_from_slice(&vec![0; gap]);
+        out.extend_from_slice(data);
+        let length = u32::try_from(out.len()).unwrap();
+        out[0..4].copy_from_slice(&length.to_be_bytes());
+        out[entry + 4..entry + 8].copy_from_slice(&u32::try_from(offset).unwrap().to_be_bytes());
+        out[entry + 8..entry + 12]
+            .copy_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn a_tags_data_must_lie_after_the_table_on_a_four_byte_boundary() {
+        let base = phone_profile();
+        let white = xyz_tag(0.9642, 1.0, 0.8249);
+        // The same valid white point, moved to the end: aligned is accepted, a byte off is not.
+        assert!(rebuild_icc(&with_tag_at_the_end(&base, b"wtpt", &white, 0)).is_some());
+        assert!(rebuild_icc(&with_tag_at_the_end(&base, b"wtpt", &white, 4)).is_some());
+        for gap in [1, 2, 3] {
+            assert_eq!(
+                rebuild_icc(&with_tag_at_the_end(&base, b"wtpt", &white, gap)),
+                None,
+                "{gap}"
+            );
+        }
+        // A tag pointing into the header or into the tag table itself.
+        let count = u32::from_be_bytes(base[128..132].try_into().unwrap()) as usize;
+        let table_end = 128 + 4 + 12 * count;
+        for offset in [0_usize, 4, 128, 132, table_end - 4] {
+            let mut profile = base.clone();
+            let entry = (0..count)
+                .map(|index| 132 + 12 * index)
+                .find(|entry| profile[*entry..*entry + 4] == b"rXYZ"[..])
+                .unwrap();
+            profile[entry + 4..entry + 8]
+                .copy_from_slice(&u32::try_from(offset).unwrap().to_be_bytes());
+            assert_eq!(rebuild_icc(&profile), None, "{offset}");
+        }
+    }
+
+    #[test]
+    fn tag_ranges_may_be_the_same_range_but_never_partly_overlap() {
+        // Shared data (three curves on one table) is how real profiles save space.
+        assert!(ranges_are_compatible(&[
+            (200, 220),
+            (200, 220),
+            (200, 220),
+            (220, 240)
+        ]));
+        assert!(ranges_are_compatible(&[]));
+        assert!(ranges_are_compatible(&[(200, 220), (300, 310)]));
+        for overlapping in [
+            vec![(200, 220), (204, 224)],
+            vec![(200, 220), (210, 215)],
+            vec![(200, 220), (190, 201)],
+            vec![(200, 220), (200, 224)],
+        ] {
+            assert!(!ranges_are_compatible(&overlapping), "{overlapping:?}");
+        }
+        // And a real profile whose three curves point at one table (how sRGB and Display P3 are
+        // written) is still rebuilt.
+        let mut shared = phone_profile_with(&[], |tags| {
+            tags[4].1 = curv_tag(&[0, 600, 4000, 20000, 40000, 65535]);
+        });
+        let count = u32::from_be_bytes(shared[128..132].try_into().unwrap()) as usize;
+        let entry_of = |profile: &[u8], signature: &[u8; 4]| {
+            (0..count)
+                .map(|index| 132 + 12 * index)
+                .find(|entry| profile[*entry..*entry + 4] == signature[..])
+                .unwrap()
+        };
+        let red = entry_of(&shared, b"rTRC");
+        // The offset and size of the red curve, copied into the green and blue entries.
+        let red_table: Vec<u8> = shared[red + 4..red + 12].to_vec();
+        for name in [b"gTRC", b"bTRC"] {
+            let entry = entry_of(&shared, name);
+            shared[entry + 4..entry + 12].copy_from_slice(&red_table);
+        }
+        assert!(rebuild_icc(&shared).is_some());
+        // Rebuilt, each curve has its own copy.
+        let rebuilt = rebuild_icc(&shared).unwrap();
+        assert!(rebuilt.windows(4).filter(|w| *w == b"curv").count() >= 3);
+    }
+
+    #[test]
+    fn the_colour_codes_of_a_cicp_tag_are_limited_to_the_values_the_standard_gives() {
+        let cicp = |codes: [u8; 4]| {
+            let mut tag = b"cicp\0\0\0\0".to_vec();
+            tag.extend_from_slice(&codes);
+            tag
+        };
+        let with = |codes: [u8; 4]| phone_profile_with(&[(*b"cicp", cicp(codes))], |_| {});
+        // Display P3 with the PQ or the sRGB-like transfer, limited or full range.
+        for ok in [[12, 13, 0, 1], [1, 13, 0, 0], [22, 22, 0, 1], [0, 0, 0, 0]] {
+            let rebuilt = rebuild_icc(&with(ok)).expect("allowed codes");
+            assert!(contains(&rebuilt, &cicp(ok)));
+        }
+        for bad in [
+            [23, 13, 0, 1],
+            [1, 23, 0, 1],
+            [255, 13, 0, 1],
+            [1, 13, 1, 1],
+            [1, 13, 0, 2],
+            [0xde, 0xad, 0xbe, 0xef],
+        ] {
+            assert_eq!(rebuild_icc(&with(bad)), None, "{bad:?}");
         }
     }
 }
