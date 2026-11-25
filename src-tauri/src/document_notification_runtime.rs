@@ -158,6 +158,18 @@ pub(crate) mod active {
         }
     }
 
+    /// Whether a macOS notice may be posted for what the system says now. Only an allowed answer
+    /// does: a posting never asks the question (that is `Backend::request_permission`, asked when
+    /// the patient turns notices on), so a not-yet-asked, blocked or unknown answer is refused.
+    #[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+    pub(crate) fn may_post(permission: Permission) -> Result<(), Error> {
+        if permission == Permission::Allowed {
+            Ok(())
+        } else {
+            Err(Error::OsRejected)
+        }
+    }
+
     /// Whether a notice may be tried now: yes unless the system said it is disabled.
     #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) fn may_show(setting: OsSetting) -> bool {
@@ -448,6 +460,10 @@ pub(crate) mod active {
             if !self.supported {
                 return Status::unavailable();
             }
+            // Asked once, and before the state lock is taken: on Linux the answer comes from a bus
+            // call that can take its full timeout, and the lock must not be held across it (turning
+            // notices off, or an arrival, would wait behind a status poll).
+            let permission = self.backend.permission();
             let Ok(guard) = self.state.lock() else {
                 return Status {
                     supported: true,
@@ -472,9 +488,9 @@ pub(crate) mod active {
                 }),
                 automatic_checks_supported: true,
                 automatic_checks_paused: false,
-                notices_supported: self.backend.permission() != Permission::Unavailable,
+                notices_supported: permission != Permission::Unavailable,
                 system: system_name(),
-                permission: self.backend.permission(),
+                permission,
                 last_outcome: guard
                     .as_ref()
                     .and_then(|s| s.events.last().map(|e| e.outcome)),
@@ -577,6 +593,10 @@ pub(crate) mod active {
             if !self.supported {
                 return TestNotice::NotAllowed;
             }
+            // Asked before the state lock is taken: on a Mac the answer is a round trip of up to
+            // five seconds, and nothing else may wait behind it. Only the notice itself is posted
+            // with the lock held (`accept` is bounded and never asks).
+            let permission = self.backend.permission();
             let Ok(guard) = self.state.lock() else {
                 return TestNotice::Failed;
             };
@@ -597,7 +617,7 @@ pub(crate) mod active {
                 }
                 *last = Some(std::time::Instant::now());
             }
-            match self.backend.permission() {
+            match permission {
                 Permission::Allowed | Permission::NotYetAsked => {
                     match (self.test_notice)(state.locale) {
                         Some(body) => {
@@ -649,6 +669,9 @@ pub(crate) mod active {
                 return;
             };
             let key = format!("{:x}", Sha256::digest(identity));
+            // Asked before the state lock is taken (see `send_test_notice`); only `accept`, which
+            // is bounded and never asks, runs with the lock held.
+            let permission = self.backend.permission();
             let Ok(mut guard) = self.state.lock() else {
                 return;
             };
@@ -676,7 +699,7 @@ pub(crate) mod active {
                 return;
             }
             // Serialize the opt-out and side effect. No detached task can revive a disabled notice.
-            let outcome = match self.backend.permission() {
+            let outcome = match permission {
                 Permission::Allowed | Permission::NotYetAsked if current() => {
                     match (self.notice)(next.locale) {
                         Some(body) => match self.backend.accept(&body, &current) {
@@ -1517,8 +1540,9 @@ pub(crate) mod active {
                 self.asked.fetch_add(1, Ordering::SeqCst);
                 self.after
             }
+            // Posts as the macOS backend does: only on an allowed answer, and never asking.
             fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
-                Ok(())
+                may_post(self.permission())
             }
         }
 
@@ -1580,6 +1604,48 @@ pub(crate) mod active {
             );
             assert!(matches!(runtime.set_enabled(true), Err(Error::Unavailable)));
             assert_eq!(asked.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn only_an_allowed_answer_lets_a_notice_be_posted_and_posting_never_asks() {
+            assert!(may_post(Permission::Allowed).is_ok());
+            for permission in [
+                Permission::NotYetAsked,
+                Permission::Blocked,
+                Permission::Unknown,
+                Permission::Unavailable,
+            ] {
+                assert!(matches!(may_post(permission), Err(Error::OsRejected)));
+            }
+        }
+
+        #[test]
+        fn an_arrival_or_a_test_notice_before_the_question_is_answered_never_asks_it() {
+            let temp = tempfile::tempdir().unwrap();
+            // The patient turned notices on and left macOS's question unanswered.
+            let (runtime, asked) = asking_runtime(
+                temp.path(),
+                Permission::NotYetAsked,
+                Permission::NotYetAsked,
+            );
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+            let device = "A".repeat(43);
+            runtime.arrived(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &device,
+                &Uuid::new_v4().to_string(),
+                Uuid::new_v4(),
+                || true,
+            );
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::Failed));
+            assert_eq!(runtime.send_test_notice(), TestNotice::Failed);
+            assert_eq!(
+                asked.load(Ordering::SeqCst),
+                1,
+                "only turning notices on asks the system"
+            );
         }
 
         #[test]

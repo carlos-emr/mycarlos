@@ -14,7 +14,7 @@
 //! (`document_notification_runtime::active::permission_for_authorization`), and CI's macOS job
 //! compiles this file.
 use crate::document_notification_runtime::{
-    active::{permission_for_authorization, Backend},
+    active::{may_post, permission_for_authorization, Backend},
     Error, Permission,
 };
 use block2::RcBlock;
@@ -197,13 +197,11 @@ impl Backend for MacBackend {
         if !self.bundled {
             return Err(Error::Unavailable);
         }
-        // A notice pressed for before the question was asked asks it here, in context.
-        if self.permission() == Permission::NotYetAsked {
-            self.request_permission();
-        }
-        if self.permission() != Permission::Allowed {
-            return Err(Error::OsRejected);
-        }
+        // Never asks: an arrival in the background, or the Test button, must not raise macOS's
+        // "Allow notifications?" and hold a wait for an answer nobody is there to give. The question
+        // is asked only when the patient turns notices on (`request_permission`, from
+        // `set_enabled`).
+        may_post(self.permission())?;
         let center = center().ok_or(Error::Unavailable)?;
         let (content_class, request_class) = (
             AnyClass::get(c"UNMutableNotificationContent").ok_or(Error::Unavailable)?,
