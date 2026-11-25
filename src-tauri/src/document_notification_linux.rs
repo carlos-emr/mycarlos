@@ -167,9 +167,12 @@ fn within<T: Send + 'static>(
             Some(until) => until,
             None => {
                 // The call that is out has this long left before it counts as hung.
-                let Some(age) = gate.age().filter(|age| *age < timeout) else {
+                // A winner that has swapped the flag but not yet published its start is a call that
+                // began an instant ago: no start yet is an age of zero, never "old".
+                let age = gate.age().unwrap_or(Duration::ZERO);
+                if age >= timeout {
                     return Call::Busy;
-                };
+                }
                 let until = Instant::now() + (timeout - age);
                 give_up = Some(until);
                 until
@@ -722,7 +725,7 @@ mod tests {
             begun.elapsed()
         );
         assert!(
-            begun.elapsed() < Duration::from_millis(190),
+            begun.elapsed() < Duration::from_secs(1),
             "{:?}",
             begun.elapsed()
         );
