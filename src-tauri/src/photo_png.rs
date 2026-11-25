@@ -288,11 +288,11 @@ pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A chunk as it is in a file: length, type, data and CRC.
-    fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    pub(crate) fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
         let mut bytes = (data.len() as u32).to_be_bytes().to_vec();
         bytes.extend_from_slice(kind);
         bytes.extend_from_slice(data);
@@ -301,7 +301,7 @@ mod tests {
     }
 
     /// `raw` as a zlib stream of stored blocks (what a decoder reads back as `raw`).
-    fn zlib_stored(raw: &[u8]) -> Vec<u8> {
+    pub(crate) fn zlib_stored(raw: &[u8]) -> Vec<u8> {
         let mut out = vec![0x78, 0x01];
         let blocks: Vec<&[u8]> = if raw.is_empty() {
             vec![&[][..]]
@@ -323,14 +323,14 @@ mod tests {
         out
     }
 
-    fn header(width: u32, height: u32, depth: u8, color: u8) -> Vec<u8> {
+    pub(crate) fn header(width: u32, height: u32, depth: u8, color: u8) -> Vec<u8> {
         let mut data = width.to_be_bytes().to_vec();
         data.extend_from_slice(&height.to_be_bytes());
         data.extend_from_slice(&[depth, color, 0, 0, 0]);
         chunk(b"IHDR", &data)
     }
 
-    fn file(chunks: &[Vec<u8>]) -> Vec<u8> {
+    pub(crate) fn file(chunks: &[Vec<u8>]) -> Vec<u8> {
         let mut bytes = PNG_SIGNATURE.to_vec();
         for one in chunks {
             bytes.extend_from_slice(one);
@@ -339,11 +339,11 @@ mod tests {
     }
 
     /// A 2 by 2 picture in 8-bit RGB (FAKE pixels): one filter byte and six bytes a row.
-    fn pixels() -> Vec<u8> {
+    pub(crate) fn pixels() -> Vec<u8> {
         zlib_stored(&[0, 255, 0, 0, 0, 255, 0, 0, 0, 0, 255, 255, 255, 0])
     }
 
-    fn plain() -> Vec<Vec<u8>> {
+    pub(crate) fn plain() -> Vec<Vec<u8>> {
         vec![
             header(2, 2, 8, 2),
             chunk(b"IDAT", &pixels()),

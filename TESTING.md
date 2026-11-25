@@ -368,6 +368,10 @@ On every platform:
     shown as it looks, `exiftool` on an export shows only the picture's own fields (size, depth), and an
     animated PNG is refused as not a photo. Choose a JPEG renamed
     `.pdf`: it is cleaned as a picture, not kept as it came.
+    Try **real phone files**: one from a Pixel and one from a Samsung (they append an Ultra HDR gain map
+    after the picture) and one JPEG exported from an iPhone (Photos, Options, Most Compatible). Each must be
+    added, shown upright, and have no place or time left (`exiftool` on the export); the brightness may look
+    slightly flatter (the gain map is not kept).
 
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
