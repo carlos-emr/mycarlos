@@ -2,10 +2,11 @@
 // Checks the iOS privacy and export-compliance files (#422).
 //
 //   node scripts/check-ios-privacy.mjs                 the repository's files
-//   node scripts/check-ios-privacy.mjs --app X.app     also a built app: the manifest sits at the
+//   node scripts/check-ios-privacy.mjs --app X.app --build debug|release
+//                                                      also a built app: the manifest sits at the
 //                                                      bundle root, is the repository's, and the
-//                                                      app's Info.plist carries the export key
-//   ... --app X.app --build debug|release              and the app's own signed entitlements carry
+//                                                      app's Info.plist carries the export key;
+//                                                      the app's own signed entitlements carry
 //                                                      the push environment for that build
 //                                                      (development for a debug build, production
 //                                                      for a release one: TestFlight and the store)
@@ -224,6 +225,28 @@ async function read(path) {
 }
 
 /**
+ * The value after `<key>name</key>` where that key sits directly in the plist's top-level dictionary
+ * (an entitlement is a top-level key; the same word nested inside another entitlement's value is not
+ * one), as a raw XML fragment, or null when there is no such key.
+ */
+function topLevelValue(text, name) {
+  let depth = 0;
+  let wanted = false;
+  for (const tag of text.matchAll(
+    /<(dict|array)\s*\/>|<(dict|array)>|<\/(dict|array)>|<key>([^<]*)<\/key>|<string>[^<]*<\/string>|<(?:true|false)\s*\/>|<(?:integer|real|date|data)>[^<]*<\/(?:integer|real|date|data)>/g,
+  )) {
+    if (tag[2]) depth++;
+    else if (tag[3]) depth--;
+    else if (tag[4] !== undefined) wanted = depth === 1 && tag[4] === name;
+    if (tag[4] !== undefined) continue;
+    // Whatever follows the key is its value.
+    if (wanted && !tag[3]) return tag[0];
+    wanted = false;
+  }
+  return null;
+}
+
+/**
  * The push environment each build signs with. Apple has two push services, and a token made by one is
  * refused by the other: a debug (development-signed) build must say `development`, a release build
  * (TestFlight and the store) `production`. `scripts/configure-ios-privacy.mjs` writes the two values
@@ -238,7 +261,7 @@ export const APS_ENVIRONMENT = { debug: "development", release: "production" };
  */
 export function checkEntitlements(source, build) {
   const text = stripComments(source);
-  const value = valueOf(text, "aps-environment");
+  const value = topLevelValue(text, "aps-environment");
   if (value === null) {
     return [
       "the aps-environment entitlement is missing (the app cannot register for push notifications)",
@@ -302,6 +325,15 @@ export async function run(argv, root = ROOT) {
   if (info === null) problems.push(`${INFO_PLIST_PATH} not found`);
   else problems.push(...checkInfoPlist(info));
   const at = argv.indexOf("--app");
+  // These two only mean something for a built app: given without one they would check nothing and
+  // pass, so a CI step that forgot `--app` is refused instead.
+  if (at < 0) {
+    for (const flag of ["--build", "--entitlements"]) {
+      if (argv.includes(flag)) {
+        problems.push(`${flag} is only for a built app: pass --app X.app too`);
+      }
+    }
+  }
   if (at >= 0) {
     const app = argv[at + 1];
     if (!app) {
@@ -319,7 +351,12 @@ export async function run(argv, root = ROOT) {
       }
       const build = optionOf(argv, "--build");
       const file = optionOf(argv, "--entitlements");
-      if (build !== undefined && !(build in APS_ENVIRONMENT)) {
+      if (build === undefined) {
+        // Without the kind of build, any value of the two would pass.
+        problems.push(
+          "pass --build debug or --build release with --app: the push environment depends on it",
+        );
+      } else if (!(build in APS_ENVIRONMENT)) {
         problems.push(`--build must be debug or release, not ${build}`);
       } else {
         const signed = await readEntitlements(app, file);

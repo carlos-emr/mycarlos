@@ -199,7 +199,14 @@ test("a built app must carry the repository's manifest at its root and the expor
     // The signed entitlements come from a file here (on a Mac, from `codesign`).
     const signed = join(directory, "signed.plist");
     await writeFile(signed, entitlements("production"));
-    const withSigned = ["--app", app, "--entitlements", signed];
+    const withSigned = [
+      "--app",
+      app,
+      "--build",
+      "release",
+      "--entitlements",
+      signed,
+    ];
     assert.deepEqual(await run(withSigned), []);
     await writeFile(
       join(app, "PrivacyInfo.xcprivacy"),
@@ -536,4 +543,90 @@ test("the entitlement files and the project fragment are written into the genera
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("the build flags are not silently ignored: they need --app, and --app needs --build", async () => {
+  // A CI step that forgot --app must fail, not pass having checked nothing.
+  assert.match(
+    (await run(["--build", "release"])).join(),
+    /--build is only for a built app/,
+  );
+  assert.match(
+    (await run(["--entitlements", "/nonexistent/signed.plist"])).join(),
+    /--entitlements is only for a built app/,
+  );
+  assert.match(
+    (await run(["--build", "debug", "--entitlements", "x"])).join(),
+    /--build is only for a built app.*--entitlements is only for a built app/,
+  );
+  // No flag, no problem: the repository's own files.
+  assert.deepEqual(await run([]), []);
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-ios-flags-"));
+  try {
+    const app = join(directory, "myCarlos.app");
+    await mkdir(app);
+    await writeFile(join(app, "PrivacyInfo.xcprivacy"), await manifest());
+    await writeFile(
+      join(app, "Info.plist"),
+      await readFile(INFO_PLIST_PATH, "utf8"),
+    );
+    const signed = join(directory, "signed.plist");
+    await writeFile(signed, entitlements("production"));
+    // A built app with good files but no --build: any push value would pass, so it is refused.
+    assert.match(
+      (await run(["--app", app, "--entitlements", signed])).join(),
+      /pass --build debug or --build release with --app/,
+    );
+    assert.deepEqual(
+      await run(["--app", app, "--build", "release", "--entitlements", signed]),
+      [],
+    );
+    // --build with no value after it is not a build.
+    assert.match(
+      (await run(["--app", app, "--entitlements", signed, "--build"])).join(),
+      /--build must be debug or release, not /,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("aps-environment counts only as a top-level entitlement, not inside another value", () => {
+  const nested = (environment) =>
+    `<?xml version="1.0"?><plist version="1.0"><dict><key>com.example.nested</key><dict><key>aps-environment</key><string>${environment}</string></dict><key>com.example.list</key><array><dict><key>aps-environment</key><string>${environment}</string></dict></array></dict></plist>`;
+  assert.match(
+    checkEntitlements(nested("production"), "release").join(),
+    /missing/,
+  );
+  assert.match(checkEntitlements(nested("development")).join(), /missing/);
+  // The top-level one is found after nested values, whatever they hold.
+  const both = `<plist version="1.0"><dict><key>x</key><dict><key>aps-environment</key><string>development</string></dict><key>aps-environment</key><string>production</string></dict></plist>`;
+  assert.deepEqual(checkEntitlements(both, "release"), []);
+  assert.match(
+    checkEntitlements(both, "debug").join(),
+    /is production, but a debug build must carry development/,
+  );
+  // A key that is not a string value is not an environment.
+  assert.match(
+    checkEntitlements(
+      "<plist><dict><key>aps-environment</key><true/></dict></plist>",
+    ).join(),
+    /development or production/,
+  );
+  assert.match(
+    checkEntitlements(
+      "<plist><dict><key>aps-environment</key><array/></dict></plist>",
+    ).join(),
+    /development or production/,
+  );
+  // An empty entitlements dictionary has none.
+  assert.match(checkEntitlements("<plist><dict/></plist>").join(), /missing/);
+  // The first top-level key decides, however many follow.
+  assert.deepEqual(
+    checkEntitlements(
+      `<plist><dict><key>get-task-allow</key><true/><key>aps-environment</key><string>production</string></dict></plist>`,
+      "release",
+    ),
+    [],
+  );
 });
