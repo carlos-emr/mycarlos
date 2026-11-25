@@ -4780,7 +4780,7 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
-    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7", false);
     expect(
       await screen.findByText(
         humanText(
@@ -5745,7 +5745,7 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
-    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9");
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9", false);
     // Named by the patient's own date.
     const today = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
