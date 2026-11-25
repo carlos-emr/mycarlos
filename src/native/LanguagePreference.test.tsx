@@ -78,4 +78,27 @@ describe("Preferences > Language: the unlock screen's dialog, behind one button"
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(opener).toHaveFocus();
   });
+
+  it("keeps Tab and Shift+Tab inside the dialog, wrapping from the last control to the first and back", async () => {
+    setLocaleOverride("en");
+    const user = userEvent.setup();
+    render(<LanguagePreference />);
+    await user.click(
+      screen.getByRole("button", { name: "English (Language)" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Language" });
+    const close = within(dialog).getByRole("button", { name: "Close" });
+    // A radio group is one Tab stop: the chosen language.
+    const first = within(dialog).getByRole("radio", { checked: true });
+    close.focus();
+    await user.tab();
+    expect(first).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(close).toHaveFocus();
+    // Neither key ever leaves the dialog.
+    for (let step = 0; step < 14; step += 1) {
+      await user.tab();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+  });
 });

@@ -51,6 +51,12 @@ test("language choices persist, preserve High contrast and work from the keyboar
     await choice.check();
     await expect(choice).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
+    // The dialog speaks the chosen language: its own title is the translated word.
+    await expect(
+      dialog().getByRole("heading", {
+        name: translate(locale, "language.title"),
+      }),
+    ).toBeVisible();
   }
   // Close: the dialog goes, the focus is back on the button, and the page speaks the language.
   await dialog()
