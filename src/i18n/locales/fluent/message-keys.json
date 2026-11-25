@@ -363,6 +363,7 @@
   "native.error.speedTest",
   "native.filter.backups",
   "native.filter.pdf",
+  "native.filter.video",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",

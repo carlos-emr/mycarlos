@@ -1461,6 +1461,9 @@ struct PendingPicks {
     /// document's save to take: gone once saved, at lock, and when the
     /// document is hidden.
     ai_answers: KeptAnswers,
+    /// The picked video being added, if one is: its progress and the patient's Cancel. At most
+    /// one at a time (a copy of up to 2 GiB is not run twice at once).
+    video_import: Mutex<Option<Arc<vault::VideoImportJob>>>,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1662,6 +1665,39 @@ impl<T> PickTable<T> {
 }
 
 impl PendingPicks {
+    /// Starts the one picked-video import, or refuses (`Invalid`) while another is running.
+    fn start_video_import(&self) -> Result<Arc<vault::VideoImportJob>, VaultError> {
+        let mut slot = self
+            .video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_some() {
+            return Err(VaultError::Invalid);
+        }
+        let job = vault::VideoImportJob::new();
+        *slot = Some(Arc::clone(&job));
+        Ok(job)
+    }
+
+    /// Ends the import that `job` was, on every path.
+    fn end_video_import(&self, job: &Arc<vault::VideoImportJob>) {
+        let mut slot = self
+            .video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.as_ref().is_some_and(|held| Arc::ptr_eq(held, job)) {
+            *slot = None;
+        }
+    }
+
+    /// The running import's job, for its progress and its Cancel.
+    fn video_import_job(&self) -> Option<Arc<vault::VideoImportJob>> {
+        self.video_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// Issues a preview ticket for a text read; any earlier ticket for the
     /// same record ends.
     fn store_text(&self, session: u64, ticket: TextTicket) -> Uuid {
@@ -5431,6 +5467,110 @@ async fn vault_import_picked(
     .await
 }
 
+/// Opens the picker for one video. Returns the id of the chosen file, or `None` when the picker
+/// was cancelled. Adding it is `vault_import_video_picked`.
+#[tauri::command]
+async fn vault_import_video_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<Uuid>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    // Refuse before the picker opens, as for documents.
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let filter = locale.text(MessageId::NativeFilterVideo)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter(&filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    Ok(Some(picks.store_import(session, request, vec![path])))
+}
+
+/// Adds the picked video: checked, cleaned of the places and devices it names, and sealed, or
+/// refused with a reason (an answer, not an error). The patient can watch it with
+/// `vault_video_import_progress` and stop it with `vault_video_import_cancel`.
+#[tauri::command]
+async fn vault_import_video_picked(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: PickedImportRequest,
+) -> CommandResult<vault::PickedVideoOutcome> {
+    let store = store.pin();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let picked_for = ImportRequest {
+        profile_id: request.profile_id,
+        folder_ids: request.folder_ids.clone(),
+    };
+    let mut paths = picks.take_import(request.pick_id, &picked_for)?;
+    let (Some(path), true) = (paths.pop(), paths.is_empty()) else {
+        return Err(VaultError::ImportBatchLimit.into());
+    };
+    let job = picks.start_video_import()?;
+    let running = Arc::clone(&job);
+    let result = run_blocking(store.arc(), move |store| {
+        let name = import_display_name(&path);
+        let idle = Arc::clone(store.idle());
+        // Opening a source can block (a network path, or a provider that fetches the file first).
+        let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+            let _opening = Opening::new(&idle);
+            open_source_reader(&app, path.clone())
+        };
+        store.import_picked_video(
+            vault::PickedVideoRequest {
+                profile_id: request.profile_id,
+                folder_ids: request.folder_ids,
+                display_name: name,
+                max_bytes: video_import::max_video_bytes(),
+                now_ms: now_ms(),
+            },
+            &open,
+            &running,
+        )
+    })
+    .await;
+    picks.end_video_import(&job);
+    result
+}
+
+/// How far the picked video's import has come: `idle` when none is running.
+#[tauri::command]
+fn vault_video_import_progress(picks: State<'_, Arc<PendingPicks>>) -> vault::VideoImportProgress {
+    picks.video_import_job().map_or(
+        vault::VideoImportProgress {
+            stage: vault::VideoImportStage::Idle,
+            done_bytes: 0,
+            total_bytes: 0,
+        },
+        |job| job.progress(),
+    )
+}
+
+/// The patient's Cancel: stops the running import at its next read, and nothing is stored.
+#[tauri::command]
+fn vault_video_import_cancel(picks: State<'_, Arc<PendingPicks>>) {
+    if let Some(job) = picks.video_import_job() {
+        job.cancel();
+    }
+}
+
 fn open_import_source(
     app: &tauri::AppHandle,
     path: tauri_plugin_fs::FilePath,
@@ -7906,6 +8046,10 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            vault_import_video_pick,
+            vault_import_video_picked,
+            vault_video_import_progress,
+            vault_video_import_cancel,
             received_list,
             received_accept,
             received_discard,

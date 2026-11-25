@@ -724,6 +724,8 @@ native-filter-backups = myCarlos 备份
 
 native-filter-pdf = PDF 文档
 
+native-filter-video = 视频（MP4 或 MOV）
+
 native-kit-text =
     myCarlos 恢复工具包
 

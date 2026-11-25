@@ -364,6 +364,7 @@ export const MESSAGE_KEYS = [
   "native.error.speedTest",
   "native.filter.backups",
   "native.filter.pdf",
+  "native.filter.video",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -1841,6 +1842,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.error.speedTest": "native-error-speedTest",
   "native.filter.backups": "native-filter-backups",
   "native.filter.pdf": "native-filter-pdf",
+  "native.filter.video": "native-filter-video",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -3435,6 +3437,7 @@ export interface MessageArgsByKey {
   "native.error.speedTest": undefined;
   "native.filter.backups": undefined;
   "native.filter.pdf": undefined;
+  "native.filter.video": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;

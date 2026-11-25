@@ -850,6 +850,8 @@ native-filter-backups = Kopie zapasowe myCarlos
 
 native-filter-pdf = Dokumenty PDF
 
+native-filter-video = Filmy (MP4 lub MOV)
+
 native-kit-text =
     Zestaw odzyskiwania myCarlos
 

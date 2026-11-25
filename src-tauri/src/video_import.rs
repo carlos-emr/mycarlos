@@ -19,15 +19,21 @@
 //!
 //! Version 1 plays H.264 with AAC in an MP4 or QuickTime file. HEVC and the rest are refused with a
 //! reason of their own.
-// Nothing calls this yet: the import command that uses it comes in a later piece.
-#![allow(dead_code)]
-
 use std::io::{self, Read};
 
 /// The most a video may take on a computer.
 pub const MAX_VIDEO_BYTES_DESKTOP: u64 = 2 * 1024 * 1024 * 1024;
 /// The most a video may take on a phone.
 pub const MAX_VIDEO_BYTES_MOBILE: u64 = 1024 * 1024 * 1024;
+/// The most a video may take on this device: 2 GiB on a computer, 1 GiB on a phone.
+pub const fn max_video_bytes() -> u64 {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        MAX_VIDEO_BYTES_MOBILE
+    } else {
+        MAX_VIDEO_BYTES_DESKTOP
+    }
+}
+
 /// The most a `ftyp` may take. Real ones take 20 to 40 bytes.
 const MAX_FTYP: usize = 4 * 1024;
 /// The most a `moov` may take. Its sample tables grow with the length of the video: an hour of phone
@@ -50,7 +56,8 @@ const MAX_EDITS: usize = 200_000;
 pub const MAX_SIDE: u32 = 7680;
 
 /// Why a video is refused. Each has its own plain words for the patient.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Refusal {
     /// Not an MP4 or QuickTime video at all (including HEIC photos and voice memos).
     NotVideo,
@@ -114,6 +121,7 @@ pub struct Plan {
 
 impl Plan {
     /// Whether anything has to change: a clean file passes through untouched.
+    #[cfg(test)]
     pub fn is_clean(&self) -> bool {
         self.zero.is_empty() && self.types.is_empty()
     }
@@ -903,23 +911,23 @@ impl<R: Read> Read for Cleaner<R> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn bx(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    pub(crate) fn bx(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut out = ((payload.len() + 8) as u32).to_be_bytes().to_vec();
         out.extend_from_slice(kind);
         out.extend_from_slice(payload);
         out
     }
 
-    fn full(kind: &[u8; 4], flags: u32, payload: &[u8]) -> Vec<u8> {
+    pub(crate) fn full(kind: &[u8; 4], flags: u32, payload: &[u8]) -> Vec<u8> {
         let mut body = flags.to_be_bytes().to_vec();
         body.extend_from_slice(payload);
         bx(kind, &body)
     }
 
-    fn ftyp(major: &[u8; 4]) -> Vec<u8> {
+    pub(crate) fn ftyp(major: &[u8; 4]) -> Vec<u8> {
         let mut body = major.to_vec();
         body.extend_from_slice(&[0, 0, 0, 0]);
         body.extend_from_slice(b"isom");
@@ -988,7 +996,7 @@ mod tests {
     const MARK: &[u8; 16] = b"PLACE+43.65-79.4";
 
     /// The file's bytes: ftyp, mdat (holding the marker, then the video's own bytes) and the moov.
-    fn video(moov_first: bool, extra_moov: &[u8], extra_tracks: &[Vec<u8>]) -> Vec<u8> {
+    pub(crate) fn video(moov_first: bool, extra_moov: &[u8], extra_tracks: &[Vec<u8>]) -> Vec<u8> {
         let ftyp = ftyp(b"isom");
         // mdat: the marker for the metadata track, then 64 bytes of "video".
         let mut mdat_payload = MARK.to_vec();

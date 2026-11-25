@@ -1386,11 +1386,11 @@ impl VaultStore {
         })
     }
 
-    /// The records that were added with the camera, from the history: the
-    /// Imported events whose way is `camera`. This is the origin of a video:
-    /// only myCarlos's own recording (and its photos, which are JPEGs) is added
-    /// that way, and nothing is called a video because of what its bytes look
-    /// like (an iPhone's HEIC photo, an M4A voice memo, a camera raw file and
+    /// The records that were added as a video, from the history: the Imported
+    /// events whose way is `camera` (myCarlos's own recording, and its photos,
+    /// which are JPEGs) or `pickedVideo` (a video the patient picked, which
+    /// passed the structure check when it was added). This is the origin of a
+    /// video, and nothing is called a video because of what its bytes look like (an iPhone's HEIC photo, an M4A voice memo, a camera raw file and
     /// even a PDF can carry `ftyp` where an MP4 does). A record whose history
     /// piece is damaged is not named here: it is then not offered as a video
     /// and not left out of a backup, which keeps it.
@@ -1427,7 +1427,10 @@ impl VaultStore {
                 .chain(view.later.iter())
                 .filter(|entry| {
                     entry.event == HistoryEvent::Imported
-                        && entry.how.as_deref() == Some(RECORDING_HOW)
+                        && matches!(
+                            entry.how.as_deref(),
+                            Some(RECORDING_HOW | super::picked_video::PICKED_VIDEO_HOW)
+                        )
                 })
                 .filter_map(|entry| entry.record_id)
                 .collect(),
