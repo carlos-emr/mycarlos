@@ -57,6 +57,29 @@ pub(crate) struct HandleSync {
     pub(crate) waiting: usize,
 }
 
+/// The flag after a pass: `needs_attention` sets it; a pass that bound the token, or found it
+/// already bound, clears it; a pass that learned nothing about the portal (offline, waiting, the
+/// patient said no) leaves it as it was.
+pub(crate) fn attention_after(prior: bool, pass: &HandleSync) -> bool {
+    if pass.needs_attention {
+        true
+    } else if pass.bound + pass.unchanged > 0 {
+        false
+    } else {
+        prior
+    }
+}
+
+/// Whether a failed refresh is something the patient should look at. A vault that locked meanwhile,
+/// a session that ended (a lock and an unlock in between) and a recovery session are not failures of
+/// notices; everything else (the vault's own storage, a manifest that does not read) is.
+fn failure_needs_a_look(error: &VaultError) -> bool {
+    !matches!(
+        error,
+        VaultError::Cancelled | VaultError::Locked | VaultError::RecoveryMode
+    )
+}
+
 impl VaultStore {
     fn remote_policy(manifest: &Manifest) -> Result<Policy, VaultError> {
         Policy::new(manifest.remote_notices.clone()).map_err(|_| VaultError::Corrupt)
@@ -277,8 +300,6 @@ impl VaultStore {
 
     /// Enrolls what is waiting, and only then binds the iPhone token to the enrolled destinations:
     /// the portal knows a destination only once it was enrolled, so the order is fixed.
-    // The opening-time refresh that calls this needs the app handle `after_open` does not have yet.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn sync_and_bind_push_handle(
         &self,
         source: &dyn PushSource,
@@ -295,6 +316,102 @@ impl VaultStore {
             None => HandleSync::default(),
         };
         Ok((synced, bound))
+    }
+
+    /// The first step of the refresh at opening: reads the vault's remembered attention flag into
+    /// `state` (so Settings is right before any network call, and one vault's flag never shows on
+    /// another), and says whether there is anything to refresh at all: the vault is open (not in
+    /// recovery) and the patient has remote notices on. Asks Apple and the portal nothing.
+    pub(crate) fn iphone_push_refresh_due(
+        &self,
+        state: &crate::ios_push_handles::IosPushState,
+        memory: &dyn HandleMemory,
+    ) -> bool {
+        let guard = self.session();
+        let Some(open) = guard.as_ref() else {
+            return false;
+        };
+        state.record_attention(memory.attention(open.manifest.vault_id));
+        open.recovery.is_none() && open.manifest.remote_notices.opted_in()
+    }
+
+    /// Keeps the attention flag (in `state` for Settings, in `memory` across restarts) as the pass
+    /// that just ran leaves it; off whenever notices are off.
+    pub(crate) fn settle_attention(
+        &self,
+        enabled: bool,
+        pass: &HandleSync,
+        state: &crate::ios_push_handles::IosPushState,
+        memory: &dyn HandleMemory,
+    ) {
+        let Some(vault) = self.open_vault_id() else {
+            return;
+        };
+        let prior = memory.attention(vault);
+        let now = enabled && attention_after(prior, pass);
+        state.record_attention(now);
+        if now != prior {
+            memory.set_attention(vault, now);
+        }
+    }
+
+    /// The refresh at opening, while remote notices are on: the destination for each completed link
+    /// is made good (enrolled, and a new one reserved for a link left with none), and the token
+    /// Apple just gave is bound to each enrolled destination whose remembered digest differs, with
+    /// the one repair `bind_with_one_repair` allows. `token` is `None` when Apple gave none (the
+    /// reason is in `state`): nothing is bound, and what is remembered stays.
+    ///
+    /// Nothing here is an unlock error. A vault that is locked meanwhile, a session that ended or a
+    /// recovery session passes silently as the error it is; any other failure sets the attention
+    /// flag (Settings says that notices need a look) and is returned for the caller to drop.
+    /// Offline or a portal that answers later is only "waiting": the next opening tries again.
+    pub(crate) fn refresh_push_handle(
+        &self,
+        token: Option<&Token>,
+        state: &crate::ios_push_handles::IosPushState,
+        memory: &dyn HandleMemory,
+        session: u64,
+        exchange: &impl Exchange,
+    ) -> Result<HandleSync, VaultError> {
+        let (vault, missing) = {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if open.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+            let policy = Self::remote_policy(&open.manifest)?;
+            if !policy.saved().opted_in() {
+                return Ok(HandleSync::default());
+            }
+            let missing = open
+                .manifest
+                .portal_links
+                .iter()
+                .any(|l| l.clinic.is_some() && policy.destination_for(l.id).is_none());
+            (open.manifest.vault_id, missing)
+        };
+        let result = if missing {
+            // A link with no destination (a new link, or one the portal did not know twice): the
+            // same reserve, enrol and bind as turning the switch on.
+            self.set_iphone_push(true, token, state, memory, session, exchange)
+                .map(|(_, bound)| bound)
+        } else {
+            self.sync_and_bind_push_handle(state, token, memory, session, exchange)
+                .map(|(_, bound)| bound)
+        };
+        match result {
+            Ok(pass) => {
+                self.settle_attention(true, &pass, state, memory);
+                Ok(pass)
+            }
+            Err(error) => {
+                if failure_needs_a_look(&error) {
+                    state.record_attention(true);
+                    memory.set_attention(vault, true);
+                }
+                Err(error)
+            }
+        }
     }
 
     /// Binds the token. If a destination was dropped on the way (the portal did not know it when it
@@ -1649,6 +1766,284 @@ mod tests {
             );
             assert!(paths(&seen).is_empty());
             assert!(store.remote_notice_status(Some(&state)).unwrap().opted_in);
+        }
+        // ---- the refresh at opening ----
+
+        fn refresh(
+            store: &VaultStore,
+            token: Option<&Token>,
+            state: &IosPushState,
+            memory: &FakeHandleMemory,
+            exchange: &impl Exchange,
+        ) -> Result<HandleSync, VaultError> {
+            store.refresh_push_handle(token, state, memory, store.portal_link_ticket(), exchange)
+        }
+
+        #[test]
+        fn the_opening_refresh_sends_the_token_only_when_its_digest_changed() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let first = fake_token("sandbox", "ab");
+            store
+                .set_iphone_push(
+                    true,
+                    Some(&first),
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            // The next opening: Apple gives the same token, and nothing goes to the portal.
+            seen.borrow_mut().clear();
+            let same = refresh(&store, Some(&first), &state, &memory, &exchange).unwrap();
+            assert_eq!((same.bound, same.unchanged), (0, 2));
+            assert!(seen.borrow().is_empty());
+            // Another token (or the other Apple service): one send for each destination.
+            for next in [fake_token("sandbox", "cd"), fake_token("production", "cd")] {
+                seen.borrow_mut().clear();
+                let moved = refresh(&store, Some(&next), &state, &memory, &exchange).unwrap();
+                assert_eq!((moved.bound, moved.unchanged), (2, 0));
+                assert_eq!(paths(&seen), [HANDLES, HANDLES]);
+                // The token is in the request body only, never in what the vault keeps.
+                assert!(!files_under(_temp.path())
+                    .iter()
+                    .any(|file| file.windows(4).any(|w| w == b"cdcd")));
+            }
+            assert!(!state
+                .state()
+                .eq(&crate::ios_push_handles::PushState::NeedsAttention));
+        }
+
+        #[test]
+        fn the_opening_refresh_does_nothing_while_notices_are_off() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            assert!(!store.iphone_push_refresh_due(&state, &memory));
+            let done = refresh(&store, Some(&token), &state, &memory, &exchange).unwrap();
+            assert_eq!(done, HandleSync::default());
+            assert!(paths(&seen).is_empty());
+            assert!(memory.kept.lock().unwrap().is_empty());
+            assert!(store.iphone_destination_ids().unwrap().is_empty());
+        }
+
+        #[test]
+        fn the_refresh_is_due_only_for_an_open_vault_with_notices_on() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            assert!(!store.iphone_push_refresh_due(&state, &memory));
+            opted_in(&store, &state, &exchange);
+            assert!(store.iphone_push_refresh_due(&state, &memory));
+            store.lock();
+            assert!(!store.iphone_push_refresh_due(&state, &memory));
+            assert!(matches!(
+                refresh(&store, None, &state, &memory, &exchange),
+                Err(VaultError::Locked)
+            ));
+        }
+
+        #[test]
+        fn no_token_binds_nothing_and_what_is_remembered_stays() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            store
+                .set_iphone_push(
+                    true,
+                    Some(&token),
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            let kept = memory.kept.lock().unwrap().clone();
+            seen.borrow_mut().clear();
+            // Apple gave none this time (the reason is in `state`).
+            state.record_refusal(Refusal::TimedOut);
+            let done = refresh(&store, None, &state, &memory, &exchange).unwrap();
+            assert_eq!(done, HandleSync::default());
+            assert!(paths(&seen).is_empty());
+            assert_eq!(*memory.kept.lock().unwrap(), kept);
+            // Settings says why, and nothing is said to need attention.
+            assert_eq!(state.state(), crate::ios_push_handles::PushState::TimedOut);
+        }
+
+        #[test]
+        fn the_attention_flag_is_kept_across_a_restart_and_a_working_pass_clears_it() {
+            let (_temp, store, _) = store_with_links();
+            let vault = store.open_vault_id().unwrap();
+            let seen = RefCell::new(Vec::new());
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            let refusing =
+                iphone_portal(&seen, |_| (404, serde_json::json!({"detail": "not found"})));
+            opted_in(&store, &state, &refusing);
+            // The first 404 is only noted; the second repairs once and then says so.
+            let first = refresh(&store, Some(&token), &state, &memory, &refusing).unwrap();
+            assert!(!first.needs_attention);
+            assert!(!memory.attention(vault));
+            let second = refresh(&store, Some(&token), &state, &memory, &refusing).unwrap();
+            assert!(second.needs_attention);
+            assert!(memory.attention(vault));
+            assert_eq!(
+                state.state(),
+                crate::ios_push_handles::PushState::NeedsAttention
+            );
+            // A restart: a fresh state reads the flag at opening, before any network call.
+            let restarted = allowed();
+            assert_eq!(restarted.state(), crate::ios_push_handles::PushState::Ok);
+            assert!(store.iphone_push_refresh_due(&restarted, &memory));
+            assert_eq!(
+                restarted.state(),
+                crate::ios_push_handles::PushState::NeedsAttention
+            );
+            // A pass that learns nothing (the portal does not answer in time) leaves it on.
+            let unreachable =
+                |_: &StoredLink,
+                 _: &str,
+                 _: &str,
+                 _: Vec<u8>,
+                 _: Option<&str>,
+                 _: usize,
+                 _: &dyn Fn() -> bool| { Err(LinkError::Network) };
+            let waiting = refresh(&store, Some(&token), &restarted, &memory, &unreachable).unwrap();
+            assert_eq!((waiting.bound, waiting.unchanged), (0, 0));
+            assert!(memory.attention(vault));
+            // The portal works again: the token is bound, and the flag is cleared everywhere.
+            let working = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let healed = refresh(&store, Some(&token), &restarted, &memory, &working).unwrap();
+            assert!(healed.bound + healed.unchanged > 0);
+            assert!(!memory.attention(vault));
+            assert_eq!(restarted.state(), crate::ios_push_handles::PushState::Ok);
+        }
+
+        #[test]
+        fn a_link_left_with_no_destination_gets_a_new_one_at_the_next_opening() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            store
+                .set_iphone_push(
+                    true,
+                    Some(&token),
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            // The portal did not know one destination twice: it was revoked here, and nothing
+            // replaced it (a pass that could not).
+            let lost = store.iphone_destination_ids().unwrap()[0];
+            store
+                .apply_remote(store.portal_link_ticket(), |policy| {
+                    policy.revoke_destination(lost)
+                })
+                .unwrap();
+            memory.forget(lost);
+            assert_eq!(store.iphone_destination_ids().unwrap().len(), 1);
+            seen.borrow_mut().clear();
+            let done = refresh(&store, Some(&token), &state, &memory, &exchange).unwrap();
+            // Its revocation, a new destination enrolled, and the token bound to it alone.
+            let mut sent = paths(&seen);
+            sent.sort();
+            assert_eq!(sent, [HANDLES, REVOCATIONS, SUBSCRIPTIONS]);
+            assert_eq!((done.bound, done.unchanged), (1, 1));
+            let now = store.iphone_destination_ids().unwrap();
+            assert_eq!(now.len(), 2);
+            assert!(!now.contains(&lost));
+            assert!(!done.needs_attention);
+        }
+
+        #[test]
+        fn turning_notices_off_clears_the_flag_and_a_refresh_without_a_session_sets_none() {
+            let (_temp, store, _) = store_with_links();
+            let vault = store.open_vault_id().unwrap();
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            memory.set_attention(vault, true);
+            state.record_attention(true);
+            let off = HandleSync::default();
+            store.settle_attention(false, &off, &state, &memory);
+            assert!(!memory.attention(vault));
+            assert_eq!(state.state(), crate::ios_push_handles::PushState::Ok);
+            // On, with a pass that says so: set in both places.
+            let needs = HandleSync {
+                needs_attention: true,
+                ..HandleSync::default()
+            };
+            store.settle_attention(true, &needs, &state, &memory);
+            assert!(memory.attention(vault));
+            assert_eq!(
+                state.state(),
+                crate::ios_push_handles::PushState::NeedsAttention
+            );
+            // A locked vault has no id to key the flag by: nothing is written.
+            store.lock();
+            memory.set_attention(vault, false);
+            store.settle_attention(true, &needs, &state, &memory);
+            assert!(!memory.attention(vault));
+        }
+
+        #[test]
+        fn what_a_pass_does_to_the_flag_and_which_failures_set_it() {
+            let none = HandleSync::default();
+            let bound = HandleSync { bound: 1, ..none };
+            let unchanged = HandleSync {
+                unchanged: 2,
+                ..none
+            };
+            let attention = HandleSync {
+                needs_attention: true,
+                bound: 1,
+                ..none
+            };
+            let waiting = HandleSync {
+                waiting: 2,
+                suspected: 1,
+                refused: 1,
+                ..none
+            };
+            for prior in [false, true] {
+                assert!(attention_after(prior, &attention), "needs attention wins");
+                assert!(!attention_after(prior, &bound));
+                assert!(!attention_after(prior, &unchanged));
+                // Learned nothing about the portal: as it was.
+                assert_eq!(attention_after(prior, &none), prior);
+                assert_eq!(attention_after(prior, &waiting), prior);
+            }
+            for quiet in [
+                VaultError::Cancelled,
+                VaultError::Locked,
+                VaultError::RecoveryMode,
+            ] {
+                assert!(!failure_needs_a_look(&quiet), "{quiet:?}");
+            }
+            for loud in [
+                VaultError::Storage,
+                VaultError::Corrupt,
+                VaultError::Invalid,
+            ] {
+                assert!(failure_needs_a_look(&loud), "{loud:?}");
+            }
         }
     }
 }
