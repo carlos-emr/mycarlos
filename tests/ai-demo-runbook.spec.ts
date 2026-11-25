@@ -18,6 +18,7 @@ import {
   fakeVaultWith,
   myRecords,
 } from "./support/vaultFake";
+import { chooseAdd } from "./support/menus";
 
 // The demo runbook (kept outside the repo), step by step: Preferences → AI
 // helper → Download the default model → Installed →
@@ -195,7 +196,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
     .first()
     .click();
   await fakePickFiles(page, DOCUMENTS);
-  await (await named(page.locator("body"), "New", "step 5")).click();
+  await chooseAdd(page, "Import a file");
   for (const name of DOCUMENTS)
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 

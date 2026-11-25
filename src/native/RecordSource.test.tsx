@@ -326,12 +326,19 @@ describe("a document's status before its source (#135)", () => {
           setLocaleOverride(locale);
           const view = renderLibrary();
           for (const layout of ["list", "grid"]) {
-            if (layout === "grid")
+            if (layout === "grid") {
+              // The View menu: a button named "View: List" in this language, and its Grid choice.
               fireEvent.click(
                 screen.getByRole("button", {
-                  name: translate(locale, "interface.VaultLibrary.gridView"),
+                  name: `${translate(locale, "interface.VaultLibrary.view")}: ${translate(locale, "interface.VaultLibrary.list")}`,
                 }),
               );
+              fireEvent.click(
+                screen.getByRole("menuitemradio", {
+                  name: translate(locale, "interface.VaultLibrary.grid"),
+                }),
+              );
+            }
             for (const [shownRecord, status, source] of expected(locale)) {
               const item = row(locale, shownRecord);
               const { shown, from } = parts(item, status, source);

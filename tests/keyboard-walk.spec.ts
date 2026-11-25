@@ -1,5 +1,6 @@
 import { messagePattern, translate } from "./support/fluent";
 import { expect, test, type Locator } from "@playwright/test";
+import { addButton } from "./support/menus";
 import {
   dialogByKeyboard,
   expectAnnounced,
@@ -234,7 +235,10 @@ test("the library works from the keyboard alone: open, move and search", async (
   await expectAnnounced(page, "1 document moved.");
 
   // A new folder, named with the keyboard.
-  await page.getByRole("button", { name: "New folder" }).focus();
+  // The Add document menu: Enter opens it with its first item focused; Down reaches New folder.
+  await addButton(page).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("menuitem", { name: "New folder", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.keyboard.type("FAKE Older");
   await page.keyboard.press("Enter");
@@ -298,15 +302,14 @@ test("focus is never left on the page itself after an action (#90)", async ({
   await expect(page.getByRole("heading", { name: "My records" })).toBeVisible();
   await after("unlocking", heading);
 
-  await page.getByRole("button", { name: "New", exact: true }).focus();
+  // Import a file is the menu's first item: Enter opens the menu on it, Enter chooses it.
+  await addButton(page).focus();
+  await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();
-  await after(
-    "an import",
-    page.getByRole("button", { name: "New", exact: true }),
-  );
+  await after("an import", addButton(page));
 
   await page
     .getByRole("button", { name: "FAKE Letter.pdf", exact: true })

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { expectOnlyFakedCommands } from "./support/a11y";
+import { addButton, chooseAdd } from "./support/menus";
 import { translate } from "./support/fluent";
 import {
   FAKE_IDS,
@@ -53,7 +54,7 @@ for (const [computerLocale, expectedName] of [
       );
       await fakeVaultWith(page, { start: "unlocked" });
       await page.goto("/");
-      await page.getByRole("button", { name: "Take a photo" }).click();
+      await chooseAdd(page, "Take a photo");
       const camera = page.getByRole("dialog", { name: "Take a photo" });
       await expect(
         camera.getByText(
@@ -165,7 +166,7 @@ test("says how to allow the camera when it is refused", async ({
   // No camera permission is granted, so Chromium refuses the request.
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
-  await page.getByRole("button", { name: "Take a photo" }).click();
+  await chooseAdd(page, "Take a photo");
   const camera = page.getByRole("dialog", { name: "Take a photo" });
   await camera.getByRole("button", { name: "Use the camera" }).click();
   await expect(camera.getByRole("alert")).toHaveText(
@@ -182,9 +183,8 @@ test("says how to allow the camera when it is refused", async ({
   ).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("camera-refused.png") });
   await camera.getByRole("button", { name: "Close" }).click();
-  await expect(
-    page.getByRole("button", { name: "Take a photo" }),
-  ).toBeFocused();
+  // The photo is an item of the Add document menu, which gives the focus back to its button.
+  await expect(addButton(page)).toBeFocused();
   expect(await fakeCalls(page, "vault_save_photo")).toEqual([]);
   await expectOnlyFakedCommands(page);
 });
@@ -197,7 +197,7 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
   await context.grantPermissions(["camera"]);
   await fakeVaultWith(page, { start: "unlocked", platform: "android" });
   await page.goto("/");
-  await page.getByRole("button", { name: "Take a photo" }).click();
+  await chooseAdd(page, "Take a photo");
   const camera = page.getByRole("dialog", { name: "Take a photo" });
   await expect(
     camera.getByText(
@@ -226,7 +226,7 @@ test("on a phone, says the phone asks once, takes a photo and says where to allo
   // Refused: where to allow it on the phone.
   await context.clearPermissions();
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Take a photo" }).click();
+  await chooseAdd(page, "Take a photo");
   await expect(camera.getByRole("alert")).toHaveText(
     translate("en", "interface.camera.denied", {
       help: translate(
@@ -255,7 +255,7 @@ test.describe("computer locale en-US, twice", () => {
     await fakeVaultWith(page, { start: "unlocked" });
     await page.goto("/");
     const take = async (again: boolean) => {
-      await page.getByRole("button", { name: "Take a photo" }).click();
+      await chooseAdd(page, "Take a photo");
       const camera = page.getByRole("dialog", { name: "Take a photo" });
       const use = camera.getByRole("button", { name: "Use the camera" });
       // Once the camera is allowed, the next time it goes live at once.

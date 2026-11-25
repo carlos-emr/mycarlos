@@ -611,6 +611,12 @@ interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Faltan algunos arc
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = No se pudieron leer algunos archivos de la bóveda y podrían ser más recientes o estar intactos. Por ahora no se puede cambiar nada, ni siquiera la frase de contraseña o la clave de recuperación. Sus documentos se pueden seguir abriendo y guardando como copias, excepto los marcados como «Archivo no disponible». Compruebe que la unidad que contiene la carpeta de datos de myCarlos esté conectada, que ningún otro programa esté usando la carpeta y que una herramienta de sincronización en la nube conserve sus archivos en este dispositivo. Después, bloquee y desbloquee de nuevo.
 
+interface-VaultLibrary-view = Vista
+
+interface-VaultLibrary-helpWithThisScreen = Ayuda sobre esta pantalla
+
+interface-VaultLibrary-moreFor = Más acciones para { $name }
+
 interface-VaultLibrary-sortBy = Ordenar por
 
 interface-VaultLibrary-thatFolderIsNoLongerAvailable = Esa carpeta ya no está disponible.
@@ -1321,9 +1327,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Carpetas
+
+sidebar-foldersOf = Carpetas de { $name }
+
 sidebar-label = Biblioteca de documentos
 
 sidebar-myRecords = Mis documentos
+
+sidebar-people = Personas
 
 sidebar-preferences = Preferencias
 
@@ -2138,6 +2150,10 @@ interface-history-receipt-pickedUp = La clínica registró la recogida
 interface-history-status = Estado
 
 interface-RecordDetails-anonymizeText = Preparar el texto para una IA…
+
+interface-AddMenu-addDocument = Añadir documento
+
+interface-AddMenu-importFile = Importar un archivo
 
 interface-AnonymizePreview-title = Texto sin los datos identificativos
 

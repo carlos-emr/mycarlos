@@ -594,6 +594,12 @@ interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Some encrypted fil
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Some of the vault's files could not be read, and they may be newer or intact, so nothing can be changed for now, including your passphrase and recovery key. Your documents can still be opened and saved as copies, except any marked “File unavailable”. Check that the drive holding the myCarlos data folder is connected, that no other program holds the folder, and that a cloud sync tool keeps its files on this device, then lock and unlock again.
 
+interface-VaultLibrary-view = View
+
+interface-VaultLibrary-helpWithThisScreen = Help with this screen
+
+interface-VaultLibrary-moreFor = More for { $name }
+
 interface-VaultLibrary-sortBy = Sort by
 
 interface-VaultLibrary-thatFolderIsNoLongerAvailable = That folder is no longer available.
@@ -1291,9 +1297,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Folders
+
+sidebar-foldersOf = { $name }’s folders
+
 sidebar-label = Record library
 
 sidebar-myRecords = My records
+
+sidebar-people = People
 
 sidebar-preferences = Preferences
 
@@ -2103,6 +2115,10 @@ interface-history-receipt-pickedUp = The clinic recorded the pickup
 interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Prepare text for an AI…
+
+interface-AddMenu-addDocument = Add document
+
+interface-AddMenu-importFile = Import a file
 
 interface-AnonymizePreview-title = Text with identifying details removed
 

@@ -1366,5 +1366,13 @@
   "notifications.testFailed",
   "notifications.testOff",
   "preferences.moreAutomatic",
-  "preferences.moreBackground"
+  "preferences.moreBackground",
+  "interface.AddMenu.addDocument",
+  "interface.AddMenu.importFile",
+  "sidebar.folders",
+  "sidebar.foldersOf",
+  "sidebar.people",
+  "interface.VaultLibrary.view",
+  "interface.VaultLibrary.helpWithThisScreen",
+  "interface.VaultLibrary.moreFor"
 ]

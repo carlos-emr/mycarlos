@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
 import { LOCALES, setLocaleOverride, translate, type Locale } from "./index";
+import { addMenuItemNow, importMenuItem } from "../test/menus";
 import VaultApp from "../VaultApp";
 import { VaultLibrary } from "../native/VaultLibrary";
 import { DocumentReader } from "../native/DocumentReader";
@@ -114,7 +115,7 @@ describe("the installed interface in the selected language", () => {
     library();
     const search = screen.getByRole("searchbox");
     fireEvent.change(search, { target: { value: "FAKE {count}" } });
-    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    fireEvent.click(addMenuItemNow("New folder"));
     const draft = screen.getByLabelText("Folder name");
     fireEvent.change(draft, {
       target: { value: "FAKE {name} Shared with me" },
@@ -155,12 +156,7 @@ describe("the installed interface in the selected language", () => {
     setLocaleOverride("en");
     const native = bridge();
     render(<VaultApp bridge={native} />);
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "New",
-        description: "Choose files to import",
-      }),
-    );
+    fireEvent.click(await importMenuItem());
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
         "No files selected. Nothing changed.",
@@ -177,28 +173,24 @@ describe("the installed interface in the selected language", () => {
     expect(native.pickImportFiles).toHaveBeenCalledTimes(1);
   });
 
-  it("names the import button by the word it shows, and describes what it does, in every language", async () => {
+  it("names the Add document button and its Import item by the words they show, in every language", async () => {
     setLocaleOverride("en");
     render(<VaultApp bridge={bridge()} />);
-    const button = await screen.findByRole("button", {
-      name: "New",
-      description: "Choose files to import",
-    });
+    await importMenuItem();
     for (const locale of LOCALES) {
       changeLanguage(locale);
-      const shown = translate(locale, "interface.VaultLibrary.new");
-      // WCAG 2.5.3: the name is the word on the button; what it does is its
-      // description, so voice control finds it by what it shows.
-      expect(button).toHaveTextContent(shown);
+      // WCAG 2.5.3: each name is the words shown; the menu is still open across the change.
+      const add = screen.getByRole("button", {
+        name: translate(locale, "interface.AddMenu.addDocument"),
+      });
+      expect(add).toHaveTextContent(
+        translate(locale, "interface.AddMenu.addDocument"),
+      );
       expect(
-        screen.getByRole("button", {
-          name: shown,
-          description: translate(
-            locale,
-            "interface.VaultApp.chooseFilesToImport",
-          ),
+        screen.getByRole("menuitem", {
+          name: translate(locale, "interface.AddMenu.importFile"),
         }),
-      ).toBe(button);
+      ).toBeVisible();
     }
   });
 
@@ -213,31 +205,30 @@ describe("the installed interface in the selected language", () => {
     );
     native.importPickedFiles = vi.fn();
     render(<VaultApp bridge={native} />);
-    const button = await screen.findByRole("button", {
-      name: "New",
-      description: "Choose files to import",
+    const item = await importMenuItem();
+    const button = screen.getByRole("button", {
+      name: translate("en", "interface.AddMenu.addDocument"),
     });
-    fireEvent.click(button);
+    fireEvent.click(item);
     expect(button).toBeDisabled();
 
     changeLanguage("pl");
-    // Working: named by what it shows, still described by what it does.
-    expect(
-      screen.getByRole("button", {
-        name: "Przetwarzanie…",
-        description: translate("pl", "interface.VaultApp.chooseFilesToImport"),
-      }),
-    ).toBe(button);
+    // Working: named by what it shows.
+    expect(screen.getByRole("button", { name: "Przetwarzanie…" })).toBe(button);
     expect(button).toHaveTextContent("Przetwarzanie…");
     await act(async () => finishPicking(null));
     await waitFor(() => expect(button).toBeEnabled());
     expect(screen.getByRole("status")).toHaveTextContent(
       "Nie wybrano plików. Nic się nie zmieniło.",
     );
-    expect(button).toHaveTextContent("Nowy");
+    expect(button).toHaveTextContent(
+      translate("pl", "interface.AddMenu.addDocument"),
+    );
 
     changeLanguage("pt-BR");
-    expect(button).toHaveTextContent("Novo");
+    expect(button).toHaveTextContent(
+      translate("pt-BR", "interface.AddMenu.addDocument"),
+    );
     expect(screen.getByRole("status")).toHaveTextContent(
       "Nenhum arquivo selecionado. Nada mudou.",
     );
@@ -272,11 +263,11 @@ describe("the installed interface in the selected language", () => {
       }),
     );
     render(<VaultApp bridge={native} />);
-    const button = await screen.findByRole("button", {
-      name: "New",
-      description: "Choose files to import",
+    const item = await importMenuItem();
+    const button = screen.getByRole("button", {
+      name: translate("en", "interface.AddMenu.addDocument"),
     });
-    fireEvent.click(button);
+    fireEvent.click(item);
     await waitFor(() =>
       expect(native.importPickedFiles).toHaveBeenCalledExactlyOnceWith(
         "FAKE pick",
@@ -298,14 +289,18 @@ describe("the installed interface in the selected language", () => {
     expect(visibleText(status.textContent ?? "")).toBe(
       "Zaszyfrowano i dodano 1 dokument. Pominięto 2 duplikaty.",
     );
-    expect(button).toHaveTextContent("Nowy");
+    expect(button).toHaveTextContent(
+      translate("pl", "interface.AddMenu.addDocument"),
+    );
     expect(screen.getByText("FAKE Newly imported.pdf")).toBeVisible();
 
     changeLanguage("pt-BR");
     expect(visibleText(status.textContent ?? "")).toBe(
       "1 documento criptografado e adicionado. 2 duplicatas ignoradas.",
     );
-    expect(button).toHaveTextContent("Novo");
+    expect(button).toHaveTextContent(
+      translate("pt-BR", "interface.AddMenu.addDocument"),
+    );
     expect(native.pickImportFiles).toHaveBeenCalledExactlyOnceWith(
       "person",
       [],
@@ -326,12 +321,7 @@ describe("the installed interface in the selected language", () => {
       noteKey: "native.backup.noteEmptied",
     });
     render(<VaultApp bridge={native} />);
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "New",
-        description: "Choose files to import",
-      }),
-    );
+    fireEvent.click(await importMenuItem());
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
         "The backup could not be saved there.",

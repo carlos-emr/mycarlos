@@ -9,6 +9,7 @@ import {
 import { userEvent } from "vitest/browser";
 import { describe, expect, it, vi } from "vitest";
 import { humanText } from "../test/humanText";
+import { toolbarMenuItemNow } from "../test/menus";
 import {
   birthDateGroup,
   birthDateValue,
@@ -308,7 +309,7 @@ describe("shared PDF suggestions use explicit Move", () => {
     await screen.findByRole("group", {
       name: humanText("Suggested person for FAKE Referral letter.pdf"),
     });
-    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    fireEvent.click(toolbarMenuItemNow("View", "Grid"));
     expect(
       screen.queryByRole("group", { name: /Suggested person/ }),
     ).toBeNull();

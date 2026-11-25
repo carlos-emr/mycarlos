@@ -1,4 +1,12 @@
 import { humanText, humanValue } from "./test/humanText";
+import {
+  addMenuItemNow,
+  chooseAdd,
+  chooseToolbar,
+  headMenuItemNow,
+  importMenuItem,
+  importMenuItemNow,
+} from "./test/menus";
 import { birthDateGroup, enterBirthDate } from "./test/birthDate";
 import {
   act,
@@ -43,12 +51,6 @@ import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import type { ModelSummary } from "./ai/types";
 import { FAKE_MODEL, fakeDocumentText } from "./test/fakeLocalModel";
 import { setLocaleOverride, translate } from "./i18n";
-
-// The library's import button: named by its visible word, described by what it does.
-const IMPORT_BUTTON = {
-  name: "New",
-  description: humanText("Choose files to import"),
-};
 
 // One fake native runtime: stamp and clone when data is captured, before delivery.
 let snapshotSequence = 1;
@@ -355,11 +357,7 @@ async function expectNothingKeptAfterUnlock() {
 // finishes the import, which lets the held lock proceed.
 async function holdLockForImport(bridge: VaultBridge, finish: () => void) {
   const user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("button", {
-      ...IMPORT_BUTTON,
-    }),
-  );
+  await user.click(await importMenuItem());
   await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
   const visibility = vi
     .spyOn(document, "visibilityState", "get")
@@ -1071,11 +1069,7 @@ describe("durable vault UI", () => {
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
-    await user.click(
-      await screen.findByRole("button", {
-        ...IMPORT_BUTTON,
-      }),
-    );
+    await user.click(await importMenuItem());
 
     expect(await screen.findByText(humanText("report.pdf"))).toBeVisible();
     expect(
@@ -1491,12 +1485,12 @@ describe("durable vault UI", () => {
       name: humanText("Shared with me, 2 new"),
     });
     // With one person it sits beside My records, at the top level and in no
-    // one's records (Ben, 21 Oct).
+    // one's records (Ben, 21 Oct); above the people, under Add document.
     const mine = within(
       screen.getByRole("navigation", { name: humanText("Record library") }),
     ).getByRole("button", { name: humanText(/^My records/) });
     expect(
-      mine.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING,
+      mine.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
     expect(folder.style.paddingLeft).toBe("");
 
@@ -1515,9 +1509,11 @@ describe("durable vault UI", () => {
         screen.getByRole("button", { name: humanText("Shared with me") }),
       ).toBeVisible(),
     );
-    // Nothing is made in it.
-    for (const name of ["New", "New folder"])
-      expect(screen.queryByRole("button", { name })).toBeNull();
+    // Nothing is made in it: the Add document menu is closed, and choosing from it leaves Shared
+    // for the person's own folders first (see the sidebar tests).
+    expect(
+      screen.getByRole("button", { name: humanText("Add document") }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText(humanText("New folder"))).toBeNull();
 
     await user.click(
@@ -1888,8 +1884,8 @@ describe("durable vault UI", () => {
     const folder = await screen.findByRole("button", {
       name: humanText("Shared with me, 1 new"),
     });
-    // Each person is a top-level folder, and Shared with me is one beside
-    // them, after both and inside neither (Ben, 21 Oct).
+    // Each person is a top-level entry, and Shared with me is one beside
+    // them, before both and inside neither (Ben, 21 Oct).
     const sidebar = folder.closest("aside")!;
     const library = within(sidebar).getByRole("navigation", {
       name: humanText("Record library"),
@@ -1902,7 +1898,7 @@ describe("durable vault UI", () => {
     for (const person of people)
       expect(
         person.compareDocumentPosition(folder) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
+          Node.DOCUMENT_POSITION_PRECEDING,
       ).toBeTruthy();
     expect(folder.style.paddingLeft).toBe("");
     expect(
@@ -1966,7 +1962,7 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
-  it("with several people, lists every person's folders, and counts the whole vault while Shared with me is open (#61)", async () => {
+  it("with several people, lists the open person's folders, and counts the whole vault while Shared with me is open (#61)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = sharedVault(
       ["Jamie", "Morgan"],
@@ -2004,14 +2000,14 @@ describe("durable vault UI", () => {
       Array.from(library.querySelectorAll(".native-nav-name")).map(
         (name) => name.textContent,
       );
-    // Jamie's folder sits under Jamie; the footer counts Jamie's.
-    expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
+    // Shared with me, the people, then Jamie's folders (the open person's); the footer counts Jamie's.
+    expect(names()).toEqual(["Shared with me", "Jamie", "Morgan", "FAKE Labs"]);
     expect(footer()).toHaveHumanTextContent("0 documents · 1 folder");
 
     await user.click(shared);
     await screen.findByRole("heading", { name: humanText("Shared with me") });
-    // The tree stays; the footer counts the whole vault, as it is no one's.
-    expect(names()).toEqual(["Jamie", "FAKE Labs", "Morgan", "Shared with me"]);
+    // The folders stay; the footer counts the whole vault, as it is no one's.
+    expect(names()).toEqual(["Shared with me", "Jamie", "Morgan", "FAKE Labs"]);
     expect(footer()).toHaveHumanTextContent("2 documents · 1 folder");
 
     await user.click(
@@ -2106,6 +2102,9 @@ describe("durable vault UI", () => {
     ).toBe("profile-2");
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
     // A folder still belongs to its original person.
+    fireEvent.click(
+      within(library()).getByRole("button", { name: humanText(/^Jamie/) }),
+    );
     const folderDrag = dragTransfer();
     fireDragEvent(
       "dragstart",
@@ -2125,30 +2124,9 @@ describe("durable vault UI", () => {
     ).toBeVisible();
     expect(bridge.moveToPerson).toHaveBeenCalledTimes(1);
     expect(bridge.updateFolder).not.toHaveBeenCalled();
-
-    // From Shared with me, dropped on Morgan's folder: it goes to Morgan.
-    await user.click(
-      within(library()).getByRole("button", {
-        name: humanText(/^Shared with me/),
-      }),
-    );
-    const file = await screen.findByRole("article", {
-      name: humanText("FAKE_Scan.pdf document"),
-    });
-    const moved = dragTransfer();
-    fireDragEvent("dragstart", file, { dataTransfer: moved });
-    const forms = within(library()).getByRole("button", {
-      name: humanText(/^FAKE School forms/),
-    });
-    fireDragEvent("dragover", forms, { dataTransfer: moved });
-    fireDragEvent("drop", forms, { dataTransfer: moved });
-    await waitFor(() =>
-      expect(bridge.moveToPerson).toHaveBeenCalledWith(
-        ["record-shared-1"],
-        "profile-2",
-        ["folder-2"],
-      ),
-    );
+    // Only the chosen person's folders are listed in the sidebar, so a document from Shared with me
+    // cannot be dropped on another person's folder: it goes to the person (see the Shared test
+    // above) and is filed from there, or from its details with Move to.
   });
 
   it.each([null, "folder-2"])(
@@ -3048,7 +3026,8 @@ describe("durable vault UI", () => {
       }),
     ).toBeNull();
     expect(screen.queryByText("FAKE_Old_bridge.pdf")).toBeNull();
-    expect(screen.getAllByText("FAKE New Person").length).toBeGreaterThan(0);
+    // The new bridge's one person is shown by their initials in the sidebar.
+    expect(document.querySelector('[data-initials="FN"]')).not.toBeNull();
   });
 
   it("does not restore an old share notice or new badge after locking during refresh (#53)", async () => {
@@ -3858,10 +3837,7 @@ describe("durable vault UI", () => {
           name: humanText("FAKE Parent, open folder"),
         }),
       );
-      if (view === "grid")
-        await user.click(
-          screen.getByRole("button", { name: humanText("Grid view") }),
-        );
+      if (view === "grid") await chooseToolbar(user, "View", "Grid");
       await user.click(
         screen.getByRole("button", {
           name: humanText("Rename folder FAKE Old folder"),
@@ -5347,9 +5323,7 @@ describe("durable vault UI", () => {
       expect(
         await screen.findByText(humanText("FAKE_Results.pdf")),
       ).toBeVisible();
-      const choose = screen.getByRole("button", {
-        ...IMPORT_BUTTON,
-      });
+      const choose = await importMenuItem();
       await user.click(choose);
       await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(choose).toBeEnabled());
@@ -5404,9 +5378,7 @@ describe("durable vault UI", () => {
     expect(
       await screen.findByText(humanText("FAKE_NewRuntime.pdf")),
     ).toBeVisible();
-    const choose = screen.getByRole("button", {
-      ...IMPORT_BUTTON,
-    });
+    const choose = await importMenuItem();
     await user.click(choose);
     expect(
       await screen.findByText(humanText("FAKE_LaterRuntime.pdf")),
@@ -6119,12 +6091,9 @@ describe("durable vault UI", () => {
     await act(async () => {
       render(<VaultApp bridge={bridge} />);
     });
+    const importItem = importMenuItemNow();
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      fireEvent.click(importItem);
     });
     await act(async () => {
       visibilityState = "hidden";
@@ -6259,12 +6228,9 @@ describe("durable vault UI", () => {
       );
       await unlockWithoutWaiting();
       // A picker opened at once, before the result was written.
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       await passAnnounceDelay();
       // Nothing is written behind the picker.
@@ -6292,12 +6258,9 @@ describe("durable vault UI", () => {
       await lockWithHeldOutcome(bridge);
       await unlockWithoutWaiting();
       // An operation started at once reports first.
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       await passAnnounceDelay();
       expect(screen.getByRole("status")).toHaveHumanTextContent(
@@ -6511,9 +6474,7 @@ describe("durable vault UI", () => {
         name: humanText("FAKE Parent, open folder"),
       }),
     );
-    expect(
-      screen.getByRole("button", { name: humanText("Rename folder") }),
-    ).toBeDisabled();
+    expect(headMenuItemNow("Rename folder")).toBeDisabled();
     await user.click(
       screen.getByRole("button", {
         name: humanText("Details for FAKE Old.pdf"),
@@ -6592,11 +6553,7 @@ describe("durable vault UI", () => {
     try {
       render(<VaultApp bridge={bridge} />);
 
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(importPickedFiles).toHaveBeenCalled());
       await act(async () => {
         visibilityState = "hidden";
@@ -6629,11 +6586,7 @@ describe("durable vault UI", () => {
       await expectOutcomeAfterUnlock("1 document encrypted and added.");
 
       // The held lock is spent: a transfer in the next session does not lock.
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await act(async () =>
         finishImport({ imported: [], skippedDuplicates: [] }),
       );
@@ -6682,15 +6635,11 @@ describe("durable vault UI", () => {
       lock: vi.fn(async () => cancelImport(CANCELLED)),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(
-      await screen.findByRole("button", {
-        ...IMPORT_BUTTON,
-      }),
-    );
+    await user.click(await importMenuItem());
     expect(
       await screen.findByText(humanText("1 document encrypted and added.")),
     ).toBeVisible();
-    await user.click(screen.getByRole("button", IMPORT_BUTTON));
+    await user.click(await importMenuItem());
     await waitFor(() =>
       expect(bridge.importPickedFiles).toHaveBeenCalledTimes(2),
     );
@@ -6725,11 +6674,7 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -6974,11 +6919,7 @@ describe("durable vault UI", () => {
       .mockImplementation(() => visibilityState);
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
 
       await act(async () => {
@@ -7035,11 +6976,7 @@ describe("durable vault UI", () => {
       try {
         window.localStorage.removeItem("mycarlos.cameraExplained.v1");
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            name: humanText("Take a photo"),
-          }),
-        );
+        await chooseAdd(user, "Take a photo");
         await user.click(
           screen.getByRole("button", { name: humanText("Use the camera") }),
         );
@@ -7100,11 +7037,7 @@ describe("durable vault UI", () => {
       .mockImplementation(() => visibilityState);
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(pickImportFiles).toHaveBeenCalled());
       await act(async () => {
         visibilityState = "hidden";
@@ -7142,12 +7075,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       await act(async () => vi.advanceTimersByTime(6 * 60 * 1000));
       expect(bridge.lock).not.toHaveBeenCalled();
@@ -7167,12 +7097,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       // A walked-away desktop dialog: the grace period, then the delay.
       await act(async () => vi.advanceTimersByTime(15 * 60 * 1000));
@@ -7200,12 +7127,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       // Suspended under Android's picker, then away from it for an hour.
       vi.setSystemTime(Date.now() + 60 * 60 * 1000);
@@ -7233,12 +7157,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       // Timers do not run while the page is suspended under Android's picker
       // activity, so no recheck sees the picker open.
@@ -7715,11 +7636,7 @@ describe("durable vault UI", () => {
         }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(
-      await screen.findByRole("button", {
-        ...IMPORT_BUTTON,
-      }),
-    );
+    await user.click(await importMenuItem());
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
     await user.click(
       screen.getByRole("button", { name: humanText(/Lock now/) }),
@@ -7767,11 +7684,7 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -7834,11 +7747,7 @@ describe("durable vault UI", () => {
       );
       await user.click(screen.getByRole("button", { name: "Unlock" }));
       await screen.findByRole("heading", { name: "My records" });
-      await user.click(
-        screen.getByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -7895,12 +7804,9 @@ describe("durable vault UI", () => {
         await act(async () => {
           render(<VaultApp bridge={bridge} />);
         });
+        const importItem = importMenuItemNow();
         await act(async () => {
-          fireEvent.click(
-            screen.getByRole("button", {
-              ...IMPORT_BUTTON,
-            }),
-          );
+          fireEvent.click(importItem);
         });
         const finish = () =>
           act(async () =>
@@ -7961,12 +7867,9 @@ describe("durable vault UI", () => {
         await act(async () => {
           render(<VaultApp bridge={bridge} />);
         });
+        const importItem = importMenuItemNow();
         await act(async () => {
-          fireEvent.click(
-            screen.getByRole("button", {
-              ...IMPORT_BUTTON,
-            }),
-          );
+          fireEvent.click(importItem);
         });
         const finish = () =>
           act(async () =>
@@ -8004,12 +7907,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       expect(bridge.importPickedFiles).toHaveBeenCalledOnce();
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
@@ -8030,12 +7930,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
@@ -8071,12 +7968,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       await act(async () =>
@@ -8116,12 +8010,9 @@ describe("durable vault UI", () => {
           humanText("Vault unlocked. 1 document encrypted and added."),
         ),
       ).toBeVisible();
+      const secondImportItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(secondImportItem);
       });
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000));
       expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
@@ -8165,11 +8056,7 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -8272,12 +8159,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       expect(bridge.importPickedFiles).toHaveBeenCalled();
       // Lock now succeeds, and the app is hidden before the screen updates.
@@ -8314,12 +8198,9 @@ describe("durable vault UI", () => {
       await act(async () => {
         render(<VaultApp bridge={bridge} />);
       });
+      const importItem = importMenuItemNow();
       await act(async () => {
-        fireEvent.click(
-          screen.getByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        fireEvent.click(importItem);
       });
       expect(bridge.importPickedFiles).toHaveBeenCalled();
       await act(async () => vi.advanceTimersByTime(5 * 60 * 1000 - 1000));
@@ -8348,9 +8229,7 @@ describe("durable vault UI", () => {
       status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(
-      await screen.findByRole("button", { name: humanText("New folder") }),
-    );
+    await chooseAdd(user, "New folder");
     await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
     await user.click(screen.getByRole("button", { name: humanText("Create") }));
     expect(
@@ -8387,11 +8266,7 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -8415,11 +8290,7 @@ describe("durable vault UI", () => {
       .mockReturnValue("visible");
     try {
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       visibility.mockReturnValue("hidden");
       await act(async () => {
@@ -8616,11 +8487,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -8676,11 +8543,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -8737,11 +8600,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -8802,11 +8661,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -8966,11 +8821,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -9069,11 +8920,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -9172,11 +9019,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -9275,11 +9118,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -9378,11 +9217,7 @@ describe("durable vault UI", () => {
         .mockReturnValue("visible");
       try {
         render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", {
-            ...IMPORT_BUTTON,
-          }),
-        );
+        await user.click(await importMenuItem());
         await waitFor(() =>
           expect(bridge.importPickedFiles).toHaveBeenCalled(),
         );
@@ -9426,9 +9261,7 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(
-      await screen.findByRole("button", { name: humanText("New folder") }),
-    );
+    await chooseAdd(user, "New folder");
     await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
     await user.click(screen.getByRole("button", { name: humanText("Create") }));
     expect(
@@ -9453,11 +9286,7 @@ describe("durable vault UI", () => {
         importPickedFiles: vi.fn(() => new Promise<never>(() => undefined)),
       });
       render(<VaultApp bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
-      );
+      await user.click(await importMenuItem());
       await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
       if (shown) expect(screen.getByText(humanText(IOS_PAUSE))).toBeVisible();
       else
@@ -9475,7 +9304,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(await screen.findByRole("button", IMPORT_BUTTON));
+    await user.click(await importMenuItem());
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
     // Locking is what cancels streaming I/O, so it must stay reachable.
     expect(
@@ -9673,11 +9502,7 @@ describe("durable vault UI", () => {
     });
     render(<VaultApp bridge={bridge} />);
 
-    await user.click(
-      await screen.findByRole("button", {
-        ...IMPORT_BUTTON,
-      }),
-    );
+    await user.click(await importMenuItem());
     await waitFor(() =>
       expect(screen.getByRole("status")).not.toBeEmptyDOMElement(),
     );
@@ -9962,9 +9787,7 @@ describe("durable vault UI", () => {
       let view: ReturnType<typeof render> | undefined;
       try {
         view = render(<VaultApp bridge={bridge} />);
-        await user.click(
-          await screen.findByRole("button", { name: humanText("New folder") }),
-        );
+        await chooseAdd(user, "New folder");
         const name = screen.getByLabelText(humanText("Folder name"));
         await user.type(name, "FAKE First folder");
         const create = screen.getByRole("button", {
@@ -9999,9 +9822,7 @@ describe("durable vault UI", () => {
         // If the successful create closed it, reopen it first.
         if (!screen.queryByLabelText(humanText("Folder name"))) {
           await act(async () => {
-            await user.click(
-              screen.getByRole("button", { name: humanText("New folder") }),
-            );
+            await chooseAdd(user, "New folder");
           });
         }
         expect(screen.getByLabelText(humanText("Folder name"))).toHaveValue(
@@ -10027,9 +9848,7 @@ describe("durable vault UI", () => {
       }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(
-      await screen.findByRole("button", { name: humanText("New folder") }),
-    );
+    await chooseAdd(user, "New folder");
     await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
     await user.click(screen.getByRole("button", { name: humanText("Create") }));
     expect(
@@ -10053,9 +9872,7 @@ describe("durable vault UI", () => {
       ),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(
-      await screen.findByRole("button", { name: humanText("New folder") }),
-    );
+    await chooseAdd(user, "New folder");
     await user.type(screen.getByLabelText(humanText("Folder name")), "Labs");
     await user.click(screen.getByRole("button", { name: humanText("Create") }));
     await user.click(
@@ -10941,9 +10758,7 @@ describe("durable vault UI", () => {
         "1 damaged document hidden. It is listed under Hidden. The vault accepts changes again.",
       ),
     );
-    expect(
-      screen.getByRole("button", { name: humanText("New folder") }),
-    ).toBeEnabled();
+    expect(addMenuItemNow("New folder")).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Security" }));
     await user.click(
       screen.getByRole("button", { name: humanText(/^Hidden/) }),
@@ -11074,9 +10889,7 @@ describe("durable vault UI", () => {
     expect(
       screen.queryByText(humanText("FAKE_Lost.pdf")),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: humanText("New folder") }),
-    ).toBeEnabled();
+    expect(addMenuItemNow("New folder")).toBeEnabled();
   });
 
   it("does not claim the vault accepts changes when removal left it read-only", async () => {
@@ -11370,7 +11183,9 @@ describe("durable vault UI", () => {
     expect(screen.getByRole("alert")).toHaveHumanTextContent(
       "Changes are paused.",
     );
-    expect(screen.getByRole("button", IMPORT_BUTTON)).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: humanText("Add document") }),
+    ).toBeDisabled();
   });
 
   it("has no automatically detectable WCAG A or AA violations in durable states", async () => {
@@ -11773,7 +11588,7 @@ describe("the app's notices in the language in use (#46)", () => {
         humanText(
           // findByText collapses the no-break spaces inside « » to spaces.
           translate("fr", "notice.dropRefused", {
-            button: translate("fr", "interface.VaultLibrary.new"),
+            button: `${translate("fr", "interface.AddMenu.addDocument")} › ${translate("fr", "interface.AddMenu.importFile")}`,
           }).replace(/\s+/g, " "),
         ),
       ),
@@ -12290,7 +12105,7 @@ describe("clinic connection operations", () => {
       await user.click(
         screen.getAllByRole("button", { name: /^My records/ })[0],
       );
-      await user.click(screen.getByRole("button", IMPORT_BUTTON));
+      await user.click(await importMenuItem());
       await waitFor(() =>
         expect(
           stage === "picker"
@@ -12392,7 +12207,7 @@ describe("clinic connection operations", () => {
       await user.click(
         screen.getAllByRole("button", { name: /^My records/ })[0],
       );
-      await user.click(screen.getByRole("button", { name: "Take a photo" }));
+      await chooseAdd(user, "Take a photo");
       const shutter = screen.getByRole("button", { name: "Take photo" });
       await waitFor(() => expect(shutter).toBeEnabled());
       fireEvent.click(shutter);
@@ -12562,7 +12377,7 @@ describe("clinic connection operations", () => {
     await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
     const user = userEvent.setup();
     await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
-    await user.click(screen.getByRole("button", IMPORT_BUTTON));
+    await user.click(await importMenuItem());
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     current = { ...clinicSnapshot, portalLinks: [connectedLink] };
     await act(async () =>
@@ -12686,7 +12501,7 @@ describe("clinic connection operations", () => {
     // The third request must have entered before the picker is opened.
     await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(3));
     await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
-    await user.click(screen.getByRole("button", IMPORT_BUTTON));
+    await user.click(await importMenuItem());
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     expect(bridge.connectPortal).toHaveBeenCalledTimes(3);
     await act(async () => refuseLater({ code: "portal_busy" }));
@@ -13579,9 +13394,7 @@ describe("automatic clinic approval checks in the app (#131)", () => {
       await pass(0);
       expect(bridge.snapshot).toHaveBeenCalledTimes(reads + 1);
       expect(
-        screen.getByRole("button", {
-          ...IMPORT_BUTTON,
-        }),
+        screen.getByRole("button", { name: humanText("Add document") }),
       ).toBeDisabled();
       expect(bridge.lock).not.toHaveBeenCalled();
     },
@@ -15007,11 +14820,7 @@ describe("Automatic arrival snapshot ownership", () => {
     await screen.findByRole("heading", { name: humanText("My records") });
     act(() => window.dispatchEvent(new Event("focus")));
     await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
-    await user.click(
-      screen.getByRole("button", {
-        ...IMPORT_BUTTON,
-      }),
-    );
+    await user.click(await importMenuItem());
     await screen.findByText(humanText("FAKE newer manual.pdf"));
     await act(async () => finishAutomatic());
     expect(screen.getByText(humanText("FAKE newer manual.pdf"))).toBeVisible();
@@ -15045,11 +14854,7 @@ describe("Automatic arrival snapshot ownership", () => {
     });
     render(<VaultApp bridge={bridge} />);
     await screen.findByRole("heading", { name: humanText("My records") });
-    await user.click(
-      screen.getByRole("button", {
-        ...IMPORT_BUTTON,
-      }),
-    );
+    await user.click(await importMenuItem());
     await waitFor(() => expect(snapshot).toHaveBeenCalledTimes(2));
     await act(async () => window.dispatchEvent(new Event("focus")));
     await screen.findByText(humanText("FAKE newer automatic.pdf"));
@@ -15560,12 +15365,7 @@ describe("the vault locked natively: closed to the tray, Quit or the native idle
       render(<VaultApp bridge={bridge} />);
     });
     const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole("button", {
-        // The import button is named "New" now (#149); "Choose files to import" is its description.
-        name: humanText("New"),
-      }),
-    );
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
 
     await act(async () => say({ by: "closed" }));

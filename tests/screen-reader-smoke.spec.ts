@@ -7,6 +7,7 @@ import {
   recordAnnouncements,
   screenReaderSmoke,
 } from "./support/a11y";
+import { chooseAdd } from "./support/menus";
 
 // Screen-reader smoke (#70 step 3): on each vault screen and dialog, axe finds
 // nothing, every control has a name in the browser's accessibility tree, and
@@ -82,7 +83,7 @@ test("unlocking, the library and its dialogs are named, ordered and read out", a
   await screenReaderSmoke(page, "library");
 
   // Files arriving: an import's result.
-  await page.getByRole("button", { name: "New", exact: true }).click();
+  await chooseAdd(page, "Import a file");
   await expect(
     page.getByRole("button", { name: "FAKE Scan.pdf", exact: true }),
   ).toBeVisible();

@@ -611,6 +611,12 @@ interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Alguns arquivos cr
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Não foi possível ler alguns arquivos do cofre, e eles podem ser mais recentes ou estar intactos, então nada pode ser alterado por enquanto, incluindo sua frase secreta e sua chave de recuperação. Você ainda pode abrir documentos e salvar cópias, exceto os marcados como “Arquivo indisponível”. Verifique se a unidade que contém a pasta de dados do myCarlos está conectada, se nenhum outro programa está usando a pasta e se a ferramenta de sincronização com a nuvem mantém os arquivos neste dispositivo. Depois, bloqueie e desbloqueie o cofre.
 
+interface-VaultLibrary-view = Visualização
+
+interface-VaultLibrary-helpWithThisScreen = Ajuda sobre esta tela
+
+interface-VaultLibrary-moreFor = Mais ações para { $name }
+
 interface-VaultLibrary-sortBy = Ordenar por
 
 interface-VaultLibrary-thatFolderIsNoLongerAvailable = Essa pasta não está mais disponível.
@@ -1321,9 +1327,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Pastas
+
+sidebar-foldersOf = Pastas de { $name }
+
 sidebar-label = Biblioteca de documentos
 
 sidebar-myRecords = Meus documentos
+
+sidebar-people = Pessoas
 
 sidebar-preferences = Preferências
 
@@ -2138,6 +2150,10 @@ interface-history-receipt-pickedUp = A clínica registrou a retirada
 interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Preparar o texto para uma IA…
+
+interface-AddMenu-addDocument = Adicionar documento
+
+interface-AddMenu-importFile = Importar um arquivo
 
 interface-AnonymizePreview-title = Texto sem os dados de identificação
 

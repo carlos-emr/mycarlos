@@ -611,6 +611,12 @@ interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Certains fichiers 
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Certains fichiers du coffre-fort n’ont pas pu être lus et pourraient être plus récents ou intacts. Aucune modification n’est donc possible pour le moment, y compris celle de votre phrase secrète ou de votre clé de récupération. Vous pouvez toujours ouvrir vos documents et en enregistrer des copies, sauf ceux indiqués comme « Fichier indisponible ». Vérifiez que le lecteur contenant le dossier de données myCarlos est connecté, qu’aucun autre programme n’utilise ce dossier et qu’un outil de synchronisation infonuagique conserve ses fichiers sur cet appareil, puis verrouillez et déverrouillez de nouveau.
 
+interface-VaultLibrary-view = Affichage
+
+interface-VaultLibrary-helpWithThisScreen = Aide sur cet écran
+
+interface-VaultLibrary-moreFor = Plus d’actions pour { $name }
+
 interface-VaultLibrary-sortBy = Trier par
 
 interface-VaultLibrary-thatFolderIsNoLongerAvailable = Ce dossier n’est plus disponible.
@@ -1321,9 +1327,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Dossiers
+
+sidebar-foldersOf = Dossiers de { $name }
+
 sidebar-label = Bibliothèque de documents
 
 sidebar-myRecords = Mes documents
+
+sidebar-people = Personnes
 
 sidebar-preferences = Préférences
 
@@ -2138,6 +2150,10 @@ interface-history-receipt-pickedUp = La clinique a enregistré la réception du 
 interface-history-status = État
 
 interface-RecordDetails-anonymizeText = Préparer le texte pour une IA…
+
+interface-AddMenu-addDocument = Ajouter un document
+
+interface-AddMenu-importFile = Importer un fichier
 
 interface-AnonymizePreview-title = Texte sans les détails identifiants
 

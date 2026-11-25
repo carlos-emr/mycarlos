@@ -19,6 +19,11 @@ import type {
 } from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
+import {
+  AddDocumentMenu,
+  MenuButton,
+  type AddMenuItem,
+} from "./AddDocumentMenu";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
 import { sharedAddedText } from "./receivedNotice";
 import {
@@ -442,6 +447,14 @@ export function VaultLibrary({
     recordId: string;
   } | null>(null);
   const [confirmHideDamaged, setConfirmHideDamaged] = useState(false);
+  // The person the head's "…" menu is asking to hide (the same question Security asks), and the
+  // help panel under the search (what the two instruction lines said, and the folder move that
+  // needs no mouse).
+  const [hidePersonAsk, setHidePersonAsk] = useState<PatientProfile | null>(
+    null,
+  );
+  const [showHelp, setShowHelp] = useState(false);
+  const helpPanelId = useId();
   // Setting up a recovery key. A vault just created starts with its key, which
   // must be set up before the library can be used. A vault unlocked without
   // one is offered a key, which can be left for later: the setup opens on the
@@ -748,6 +761,7 @@ export function VaultLibrary({
       cameraOpen ||
       videoUiOpen ||
       confirmHideDamaged ||
+      hidePersonAsk ||
       recoverySetup ||
       (section !== "records" && !inShared),
   );
@@ -1014,7 +1028,6 @@ export function VaultLibrary({
   // Rename keeps the whole page behind it from a screen reader: the parts
   // inert for every dialog, and the banner as well (#121).
   const renaming = Boolean(renameTarget);
-  const sortLabelId = useId();
   const libraryRef = useRef<HTMLDivElement | null>(null);
   // Library actions put focus back only after keyboard use. The recovery key
   // setup asks for it however it was closed, as its opener may be gone.
@@ -1032,6 +1045,7 @@ export function VaultLibrary({
         videoUiOpen ||
         confirmation ||
         confirmHideDamaged ||
+        hidePersonAsk ||
         recoverySetup ||
         profileDialogOpen,
     ),
@@ -1069,6 +1083,7 @@ export function VaultLibrary({
       shownPhoto ||
       confirmation ||
       confirmHideDamaged ||
+      hidePersonAsk ||
       recoverySetup ||
       profileDialogOpen ||
       clinicDialogOpen ||
@@ -1100,6 +1115,7 @@ export function VaultLibrary({
     busy,
     confirmation,
     confirmHideDamaged,
+    hidePersonAsk,
     notice,
     profileId,
     dialogResult,
@@ -1200,9 +1216,12 @@ export function VaultLibrary({
     if (inShared && sharedNew > 0) onSharedSeen?.();
   }, [inShared, onSharedSeen, sharedNew]);
 
-  const importFiles = () =>
+  const importFiles = (inFolder?: string | null) =>
     run(async () => {
-      const folderIds = currentFolderId ? [currentFolderId] : [];
+      // From another section (the Add menu is always there), the files go to the person's top
+      // level, which is then shown.
+      const folderId = inFolder === undefined ? currentFolderId : inFolder;
+      const folderIds = folderId ? [folderId] : [];
       const pickId = await bridge.pickImportFiles(profileId, folderIds);
       if (!pickId) {
         setNotice(
@@ -1985,9 +2004,198 @@ export function VaultLibrary({
     : profile
       ? personFolderName(profile, people)
       : translateNow("sidebar.myRecords");
+  // The Add document menu (sidebar): what can be put in here. It is always on the screen, so from
+  // any other section a choice first shows the open person's top level, where the result lands.
+  const addHere = (action: () => void) => () => {
+    if (section !== "records") openPerson(profileId, null);
+    action();
+  };
+  const addItems: AddMenuItem[] = [
+    {
+      id: "import",
+      label: translateNow("interface.AddMenu.importFile"),
+      icon: "plus",
+      disabled: busy || readOnly || !profileId,
+      onChoose: () => {
+        if (section !== "records") openPerson(profileId, null);
+        void importFiles(section === "records" ? undefined : null);
+      },
+    },
+    ...(cameraPlatform
+      ? [
+          {
+            id: "photo",
+            label: translateNow("interface.CameraDialog.takeAPhoto"),
+            icon: "camera" as const,
+            disabled: busy || readOnly || !profileId,
+            onChoose: addHere(() => {
+              // The camera window shows the library's notice for a save's result: the one
+              // before it is not about the photo.
+              setNotice("");
+              setCameraOpen(true);
+            }),
+          },
+        ]
+      : []),
+    ...(cameraPlatform &&
+    typeof bridge.videoStart === "function" &&
+    videoRecording
+      ? [
+          {
+            id: "video",
+            label: translateNow("interface.RecordDialog.recordAVideo"),
+            icon: "video" as const,
+            disabled: busy || readOnly || !profileId,
+            onChoose: addHere(() => {
+              setNotice("");
+              setRecordOpen(true);
+            }),
+          },
+        ]
+      : []),
+    {
+      id: "folder",
+      label: translateNow("interface.VaultLibrary.newFolder"),
+      icon: "folder-plus",
+      disabled: readOnly,
+      onChoose: addHere(() => setShowFolderForm(true)),
+    },
+  ];
   const locationTitle = inShared
     ? rootLocationTitle
     : (currentFolder?.name ?? rootLocationTitle);
+
+  // The head's "…" menu (next to the heading): what can be done to this person or folder.
+  const headItems: AddMenuItem[] = [];
+  if (!inShared && currentFolder)
+    headItems.push({
+      id: "rename",
+      label: translateNow("rename.title.folder"),
+      disabled: busy || readOnly,
+      onChoose: () => renameFolder(currentFolder),
+    });
+  if (!inShared && !currentFolder && profile) {
+    headItems.push({
+      id: "rename",
+      label: t("rename.profile.action", { name: profile.displayName }),
+      disabled: busy || readOnly,
+      onChoose: () =>
+        setRenameTarget({
+          kind: "profile",
+          id: profile.id,
+          name: profile.displayName,
+        }),
+    });
+    if (bridge.updateProfileDetails)
+      headItems.push({
+        id: "details",
+        label: translateNow("personDetails.edit"),
+        disabled: busy,
+        onChoose: () => {
+          setDetailsFor({ profileId: profile.id });
+          openSecurity();
+        },
+      });
+    if (bridge.hideProfile)
+      headItems.push({
+        id: "hide",
+        label: t("hiddenPeople.hideFor", { name: profile.displayName }),
+        // The last person shown cannot be hidden, as in Security.
+        disabled: busy || readOnly || people.length <= 1,
+        onChoose: () => setHidePersonAsk(profile),
+      });
+  }
+  const headMenu =
+    headItems.length > 0 ? (
+      <MenuButton
+        label={t("interface.VaultLibrary.moreFor", { name: locationTitle })}
+        items={headItems}
+        variant="icon"
+      >
+        <Icon name="more" />
+      </MenuButton>
+    ) : null;
+  // The help panel the "?" opens under the search: the line that says how to move things, why
+  // there is no video button where there is none, and moving a folder with the keyboard.
+  const helpPanel = (
+    <section
+      id={helpPanelId}
+      className="help-panel"
+      aria-label={translateNow("interface.VaultLibrary.helpWithThisScreen")}
+    >
+      <p>
+        {translateNow("interface.VaultLibrary.holdAndDragADocumentOrFolder")}
+      </p>
+      {cameraPlatform &&
+        typeof bridge.videoStart === "function" &&
+        !videoRecording && (
+          <p className="video-unavailable">
+            <span>{translateNow("interface.RecordDialog.unavailable")}</span>
+            <button
+              className="link-action"
+              type="button"
+              onClick={() => setWhyNoVideoOpen(true)}
+            >
+              {translateNow("interface.RecordDialog.why")}
+            </button>
+          </p>
+        )}
+      {folders.length > 0 && !inShared && (
+        <section
+          className="native-folder-move"
+          aria-labelledby={`${helpPanelId}-move`}
+        >
+          <h3 id={`${helpPanelId}-move`}>
+            {translateNow("interface.VaultLibrary.moveAFolderWithTheKeyboard")}
+          </h3>
+          <div>
+            <label>
+              {translateNow("interface.RecordDetails.folder")}
+              <select
+                value={folderToMoveId}
+                onChange={(event) => {
+                  setFolderToMoveId(event.target.value);
+                  // The destination list excludes the chosen folder.
+                  setFolderDestinationId("");
+                }}
+              >
+                <option value="">
+                  {translateNow("interface.VaultLibrary.chooseAFolder")}
+                </option>
+                {folders.map((folder) => (
+                  <option value={folder.id} key={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {translateNow("interface.VaultLibrary.destination")}
+              <select
+                value={folderDestinationId}
+                onChange={(event) => setFolderDestinationId(event.target.value)}
+              >
+                <option value="">{translateNow("sidebar.myRecords")}</option>
+                {folderDestinations.map((folder) => (
+                  <option value={folder.id} key={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly || !folderToMoveId}
+              onClick={() => void moveFolder()}
+            >
+              {translateNow("interface.VaultLibrary.moveFolder")}
+            </button>
+          </div>
+        </section>
+      )}
+    </section>
+  );
   // Read with the heading when it takes focus: where the reader is, with what
   // the place holds, in words a screen reader says plainly (#121).
   const documentCount = translateNow("interface.count.documents", {
@@ -2058,6 +2266,7 @@ export function VaultLibrary({
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
+                hidePersonAsk ||
                 recoverySetup,
             )}
           >
@@ -2100,6 +2309,7 @@ export function VaultLibrary({
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
+                hidePersonAsk ||
                 recoverySetup,
             )}
           >
@@ -2150,19 +2360,11 @@ export function VaultLibrary({
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
+                hidePersonAsk ||
                 recoverySetup,
             )}
           >
             <LibrarySidebar
-              profileName={
-                (!inShared &&
-                  !(
-                    section === "hidden" &&
-                    hiddenLocationProfileId === sharedProfileId
-                  ) &&
-                  profile?.displayName) ||
-                translateNow("interface.VaultLibrary.privateVault")
-              }
               people={people}
               profileId={profileId}
               section={section}
@@ -2183,6 +2385,9 @@ export function VaultLibrary({
                   .length,
                 folders: snapshot.folders.length,
               }}
+              addItems={addItems}
+              addDisabled={readOnly}
+              addWorking={busy}
               onOpenShared={openShared}
               onOpenSecurity={openSecurity}
               onOpenPreferences={() => setSection("preferences")}
@@ -2321,17 +2526,30 @@ export function VaultLibrary({
                 </div>
                 <div className="main-head">
                   <div>
-                    <h1
-                      ref={pageHeadingRef}
-                      tabIndex={-1}
-                      // While a search is on, the line under it, which counts
-                      // what was found, not what the place holds.
-                      aria-describedby={
-                        normalizedQuery ? locationCountId : locationSummaryId
-                      }
-                    >
-                      {locationTitle}
-                    </h1>
+                    <div className="head-title-row">
+                      <h1
+                        ref={pageHeadingRef}
+                        tabIndex={-1}
+                        // While a search is on, the line under it, which counts
+                        // what was found, not what the place holds.
+                        aria-describedby={
+                          normalizedQuery ? locationCountId : locationSummaryId
+                        }
+                      >
+                        {locationTitle}
+                      </h1>
+                      {headMenu}
+                      {/* The sidebar, and the Add document menu in it, is hidden on a phone's
+                          width: this copy is shown there instead (and hidden by the style
+                          wherever the sidebar is shown, so only one is ever reachable). */}
+                      <div className="phone-add">
+                        <AddDocumentMenu
+                          items={addItems}
+                          disabled={readOnly}
+                          working={busy}
+                        />
+                      </div>
+                    </div>
                     {/* Only the heading's description: the line under it
                         shows the same counts. */}
                     <p
@@ -2368,130 +2586,6 @@ export function VaultLibrary({
                           )}
                     </p>
                   </div>
-                  {/* Shared with me is one fixed folder: files arrive in it
-                      by themselves, and nothing else is made in it. */}
-                  {!inShared && (
-                    <div className="head-actions">
-                      {currentFolder && (
-                        <button
-                          className="button"
-                          type="button"
-                          disabled={busy || readOnly}
-                          onClick={() => renameFolder(currentFolder)}
-                        >
-                          {translateNow("rename.title.folder")}
-                        </button>
-                      )}
-                      {!currentFolder && profile && (
-                        <button
-                          className="button native-person-rename"
-                          type="button"
-                          disabled={busy || readOnly}
-                          onClick={() =>
-                            setRenameTarget({
-                              kind: "profile",
-                              id: profile.id,
-                              name: profile.displayName,
-                            })
-                          }
-                        >
-                          {t("rename.profile.action", {
-                            name: profile.displayName,
-                          })}
-                        </button>
-                      )}
-                      <button
-                        className="button"
-                        type="button"
-                        disabled={readOnly}
-                        onClick={() => setShowFolderForm((current) => !current)}
-                      >
-                        <Icon name="folder-plus" />
-                        <span>
-                          {translateNow("interface.VaultLibrary.newFolder")}
-                        </span>
-                      </button>
-                      {cameraPlatform && (
-                        <button
-                          className="button"
-                          type="button"
-                          disabled={busy || readOnly || !profileId}
-                          onClick={() => {
-                            // The camera window shows the library's notice for
-                            // a save's result: the one before it, such as
-                            // "Vault unlocked.", is not about the photo.
-                            setNotice("");
-                            setCameraOpen(true);
-                          }}
-                        >
-                          <Icon name="camera" />
-                          <span>
-                            {translateNow("interface.CameraDialog.takeAPhoto")}
-                          </span>
-                        </button>
-                      )}
-                      {cameraPlatform &&
-                        typeof bridge.videoStart === "function" &&
-                        videoRecording && (
-                          <button
-                            className="button"
-                            type="button"
-                            disabled={busy || readOnly || !profileId}
-                            onClick={() => {
-                              setNotice("");
-                              setRecordOpen(true);
-                            }}
-                          >
-                            <Icon name="video" />
-                            <span>
-                              {translateNow(
-                                "interface.RecordDialog.recordAVideo",
-                              )}
-                            </span>
-                          </button>
-                        )}
-                      {cameraPlatform &&
-                        typeof bridge.videoStart === "function" &&
-                        !videoRecording && (
-                          // Where the button would be, a line says why it is not
-                          // (Ben, Q4b): the camera works, video does not.
-                          <span className="video-unavailable">
-                            <span>
-                              {translateNow(
-                                "interface.RecordDialog.unavailable",
-                              )}
-                            </span>
-                            <button
-                              className="link-action"
-                              type="button"
-                              onClick={() => setWhyNoVideoOpen(true)}
-                            >
-                              {translateNow("interface.RecordDialog.why")}
-                            </button>
-                          </span>
-                        )}
-                      <button
-                        className="button primary"
-                        type="button"
-                        disabled={busy || readOnly || !profileId}
-                        onClick={() => void importFiles()}
-                        // The name is the visible word ("New"); what it does
-                        // is the description, so voice control still finds it
-                        // by what it shows (WCAG 2.5.3).
-                        aria-describedby="native-import-hint"
-                      >
-                        <Icon name="plus" />
-                        <span>
-                          {busy
-                            ? translateNow("interface.VaultLibrary.working")
-                            : translateNow("interface.VaultLibrary.new")}
-                        </span>
-                      </button>
-                      <span id="native-import-hint" hidden>
-                        {translateNow("interface.VaultApp.chooseFilesToImport")}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 {inShared && (
@@ -2552,66 +2646,6 @@ export function VaultLibrary({
                       {translateNow("common.cancel")}
                     </button>
                   </form>
-                )}
-
-                {folders.length > 0 && !inShared && (
-                  <details className="native-folder-move">
-                    <summary>
-                      {translateNow(
-                        "interface.VaultLibrary.moveAFolderWithTheKeyboard",
-                      )}
-                    </summary>
-                    <div>
-                      <label>
-                        {translateNow("interface.RecordDetails.folder")}
-                        <select
-                          value={folderToMoveId}
-                          onChange={(event) => {
-                            setFolderToMoveId(event.target.value);
-                            // The destination list excludes the chosen folder.
-                            setFolderDestinationId("");
-                          }}
-                        >
-                          <option value="">
-                            {translateNow(
-                              "interface.VaultLibrary.chooseAFolder",
-                            )}
-                          </option>
-                          {folders.map((folder) => (
-                            <option value={folder.id} key={folder.id}>
-                              {folder.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        {translateNow("interface.VaultLibrary.destination")}
-                        <select
-                          value={folderDestinationId}
-                          onChange={(event) =>
-                            setFolderDestinationId(event.target.value)
-                          }
-                        >
-                          <option value="">
-                            {translateNow("sidebar.myRecords")}
-                          </option>
-                          {folderDestinations.map((folder) => (
-                            <option value={folder.id} key={folder.id}>
-                              {folder.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        className="button"
-                        type="button"
-                        disabled={busy || readOnly || !folderToMoveId}
-                        onClick={() => void moveFolder()}
-                      >
-                        {translateNow("interface.VaultLibrary.moveFolder")}
-                      </button>
-                    </div>
-                  </details>
                 )}
 
                 {snapshot.recovery === "lostObjects" && (
@@ -2714,6 +2748,69 @@ export function VaultLibrary({
                       placeholder={searchLabel}
                     />
                   </label>
+                  <MenuButton
+                    label={translateNow("interface.VaultLibrary.sortBy")}
+                    buttonName={`${translateNow("interface.VaultLibrary.sortBy")}: ${translateNow(SORT_CHOICES.find(([value]) => value === sort)?.[1] ?? SORT_CHOICES[0][1])}`}
+                    items={SORT_CHOICES.map(([value, label]) => ({
+                      id: value,
+                      label: translateNow(label),
+                      checked: sort === value,
+                      onChoose: () => setSort(value),
+                    }))}
+                    align="end"
+                  >
+                    <span>
+                      {translateNow(
+                        SORT_CHOICES.find(([value]) => value === sort)?.[1] ??
+                          SORT_CHOICES[0][1],
+                      )}
+                    </span>
+                    <span aria-hidden="true">▾</span>
+                  </MenuButton>
+                  <MenuButton
+                    label={translateNow(
+                      "interface.VaultLibrary.chooseRecordView",
+                    )}
+                    buttonName={`${translateNow("interface.VaultLibrary.view")}: ${translateNow(view === "list" ? "interface.VaultLibrary.list" : "interface.VaultLibrary.grid")}`}
+                    items={[
+                      {
+                        id: "list",
+                        label: translateNow("interface.VaultLibrary.list"),
+                        icon: "list",
+                        checked: view === "list",
+                        onChoose: () => setView("list"),
+                      },
+                      {
+                        id: "grid",
+                        label: translateNow("interface.VaultLibrary.grid"),
+                        icon: "grid",
+                        checked: view === "grid",
+                        onChoose: () => setView("grid"),
+                      },
+                    ]}
+                    align="end"
+                  >
+                    <span>
+                      {translateNow(
+                        view === "list"
+                          ? "interface.VaultLibrary.list"
+                          : "interface.VaultLibrary.grid",
+                      )}
+                    </span>
+                    <span aria-hidden="true">▾</span>
+                  </MenuButton>
+                  <button
+                    className="button help-button"
+                    type="button"
+                    aria-label={translateNow(
+                      "interface.VaultLibrary.helpWithThisScreen",
+                    )}
+                    aria-expanded={showHelp}
+                    aria-controls={showHelp ? helpPanelId : undefined}
+                    onClick={() => setShowHelp((now) => !now)}
+                  >
+                    ?
+                  </button>
                   {inShared && (
                     <PortalDocuments
                       compact
@@ -2729,76 +2826,7 @@ export function VaultLibrary({
                     />
                   )}
                 </div>
-                <div className="viewbar">
-                  <span className="native-location-chip">
-                    {currentFolder
-                      ? translateNow("interface.VaultLibrary.insideFolder")
-                      : translateNow("interface.VaultLibrary.topLevel")}
-                  </span>
-                  <span className="native-drag-hint">
-                    {translateNow(
-                      "interface.VaultLibrary.holdAndDragADocumentOrFolder",
-                    )}
-                  </span>
-                  <div className="view-controls">
-                    {/* Both choices in view, with words (#67), each its own
-                        Tab stop under a label that stays in view and names
-                        the group (#121). */}
-                    <div
-                      className="native-sort-choice"
-                      role="group"
-                      aria-labelledby={sortLabelId}
-                    >
-                      <span className="native-sort-label" id={sortLabelId}>
-                        {translateNow("interface.VaultLibrary.sortBy")}
-                      </span>
-                      <span className="segment native-sort-segment">
-                        {SORT_CHOICES.map(([value, label]) => (
-                          <button
-                            className={sort === value ? "selected" : ""}
-                            type="button"
-                            key={value}
-                            aria-pressed={sort === value}
-                            onClick={() => setSort(value)}
-                          >
-                            {translateNow(label)}
-                          </button>
-                        ))}
-                      </span>
-                    </div>
-                    <span
-                      className="segment native-view-segment"
-                      aria-label={translateNow(
-                        "interface.VaultLibrary.chooseRecordView",
-                      )}
-                    >
-                      <button
-                        className={view === "list" ? "selected" : ""}
-                        type="button"
-                        aria-label={translateNow(
-                          "interface.VaultLibrary.listView",
-                        )}
-                        aria-pressed={view === "list"}
-                        onClick={() => setView("list")}
-                      >
-                        <Icon name="list" />
-                        {translateNow("interface.VaultLibrary.list")}
-                      </button>
-                      <button
-                        className={view === "grid" ? "selected" : ""}
-                        type="button"
-                        aria-label={translateNow(
-                          "interface.VaultLibrary.gridView",
-                        )}
-                        aria-pressed={view === "grid"}
-                        onClick={() => setView("grid")}
-                      >
-                        <Icon name="grid" />
-                        {translateNow("interface.VaultLibrary.grid")}
-                      </button>
-                    </span>
-                  </div>
-                </div>
+                {showHelp && helpPanel}
 
                 {selectedIds.length > 0 && (
                   <div className="bulkbar" role="status">
@@ -3528,6 +3556,26 @@ export function VaultLibrary({
                 setAiNotice(null);
               }}
             />
+          )}
+          {hidePersonAsk && (
+            <ConfirmDialog
+              title={t("hiddenPeople.confirm.title", {
+                name: hidePersonAsk.displayName,
+              })}
+              confirmLabel={t("hiddenPeople.confirm.hide", {
+                name: hidePersonAsk.displayName,
+              })}
+              onConfirm={() => {
+                const asked = hidePersonAsk;
+                setHidePersonAsk(null);
+                hidePerson(asked.id);
+              }}
+              onCancel={() => setHidePersonAsk(null)}
+            >
+              {t("hiddenPeople.confirm.body", {
+                name: hidePersonAsk.displayName,
+              })}
+            </ConfirmDialog>
           )}
           {confirmHideDamaged && (
             <ConfirmDialog

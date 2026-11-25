@@ -1,6 +1,7 @@
 import { translate } from "./support/fluent";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { addButton, chooseToolbar } from "./support/menus";
 
 async function fakeVault(
   page: Page,
@@ -435,9 +436,7 @@ test("manual high contrast persists with readable controls and yields to OS colo
   await accessible(page);
   await screenshot(page, info, "manual-high-contrast-preferences");
   await section(page, info, "records");
-  await expect(
-    page.getByRole("button", { name: "New", exact: true }),
-  ).toBeDisabled();
+  await expect(addButton(page)).toBeDisabled();
   await contrast(page, text, "color", 7);
   await contrast(page, fields, "border-top-color", 3);
   await page.reload();
@@ -616,7 +615,7 @@ for (const theme of ["light", "dark"] as const) {
     await accessible(page);
     await screenshot(page, info, `${theme}-selected-bulk`);
     await selected.click();
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await chooseToolbar(page, "View", "Grid");
     await contrast(page, text);
     await accessible(page);
     await screenshot(page, info, `${theme}-grid`);
@@ -815,7 +814,7 @@ test("paper preview content stays unchanged when the app theme changes", async (
 }, info) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
-  await page.getByRole("button", { name: "Grid view", exact: true }).click();
+  await chooseToolbar(page, "View", "Grid");
   const thumbnail = page.locator(".paper-preview").first();
   await expect(thumbnail.locator("i").first()).toHaveCSS(
     "background-color",
@@ -840,7 +839,7 @@ test("paper preview content stays unchanged when the app theme changes", async (
     (await page.screenshot({ clip: thumbnailClip })).equals(originalThumbnail),
   ).toBe(true);
   await page.emulateMedia({ colorScheme: "light", forcedColors: "none" });
-  await page.getByRole("button", { name: "List view", exact: true }).click();
+  await chooseToolbar(page, "View", "List");
   await page
     .getByRole("button", {
       name: "Bloodwork — cholesterol and liver panel",

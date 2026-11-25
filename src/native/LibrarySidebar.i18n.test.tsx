@@ -6,7 +6,8 @@ import { LibrarySidebar } from "./LibrarySidebar";
 
 function sidebarProps(): ComponentProps<typeof LibrarySidebar> {
   return {
-    profileName: "FAKE vault",
+    addItems: [],
+    addDisabled: false,
     people: [
       { id: "p1", displayName: "FAKE Avery", createdAtMs: 1 },
       { id: "p2", displayName: "FAKE Blake", createdAtMs: 2 },

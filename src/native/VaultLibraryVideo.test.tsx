@@ -1,4 +1,5 @@
 import { humanText } from "../test/humanText";
+import { addMenuItemNow, queryAddMenuItem } from "../test/menus";
 import { useTextState } from "../i18n";
 import {
   act,
@@ -123,15 +124,17 @@ function renderLibrary(
   return bridge;
 }
 
+const openHelp = () =>
+  fireEvent.click(
+    screen.getByRole("button", { name: humanText("Help with this screen") }),
+  );
+
 describe("video in the library", () => {
   it("offers Record a video where the webview records MP4, and no explaining line", () => {
     renderLibrary(base);
-    expect(
-      screen.getByRole("button", { name: humanText("Record a video") }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    ).toBeEnabled();
+    expect(addMenuItemNow("Record a video")).toBeEnabled();
+    expect(addMenuItemNow("Take a photo")).toBeEnabled();
+    openHelp();
     expect(
       screen.queryByText(
         humanText("Video recording isn't available on this device."),
@@ -142,13 +145,11 @@ describe("video in the library", () => {
   it("says so, where the button would be, when it cannot, with a Why? that explains", async () => {
     mp4 = false;
     renderLibrary(base);
-    expect(
-      screen.queryByRole("button", { name: humanText("Record a video") }),
-    ).toBeNull();
+    expect(queryAddMenuItem("Record a video")).toBeNull();
     // The camera for photos is unaffected.
-    expect(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    ).toBeEnabled();
+    expect(addMenuItemNow("Take a photo")).toBeEnabled();
+    // The line that says why is in the help the "?" opens.
+    openHelp();
     expect(
       screen.getByText(
         humanText("Video recording isn't available on this device."),
@@ -176,9 +177,7 @@ describe("video in the library", () => {
 
   it("opens the recording dialog from the add menu and records nothing yet", () => {
     const bridge = renderLibrary(base);
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Record a video") }),
-    );
+    fireEvent.click(addMenuItemNow("Record a video"));
     expect(
       screen.getByRole("dialog", { name: humanText("Record a video") }),
     ).toBeVisible();
