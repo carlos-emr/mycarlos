@@ -1,7 +1,9 @@
 //! The iPhone push token, as the app takes it from the plugin (`tauri-plugin-ios-push`): what makes
 //! a token acceptable, which Apple service it is for, and why a refusal happened. The plugin itself
 //! only compiles for iOS; this part is plain Rust and is tested everywhere.
-#![cfg_attr(not(test), allow(dead_code))]
+// Some of this is used only on an iPhone, or by the app piece that follows (a variant is built only
+// there), so a Linux build, tests included, would otherwise call it dead code.
+#![allow(dead_code)]
 
 use serde_json::Value;
 use std::fmt;
