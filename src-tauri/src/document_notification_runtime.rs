@@ -123,8 +123,7 @@ pub(crate) mod active {
     const MAX_EVENTS: usize = 512;
 
     /// What the operating system said when asked whether this app may show notices. Only the
-    /// Windows backend asks (and the tests): elsewhere there is no notice to ask about.
-    #[cfg(any(test, windows))]
+    /// Windows and macOS backends ask (and the tests): elsewhere there is no notice to ask about.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) enum OsSetting {
