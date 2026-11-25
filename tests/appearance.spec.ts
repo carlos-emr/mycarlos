@@ -720,9 +720,8 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await page.keyboard.press("Shift+Tab");
   await expect(newest).toBeFocused();
   expect(await ring()).not.toBe(atRest);
-  // A phone shows no sidebar, so no brand mark.
-  if (info.project.name !== "phone")
-    await expect(page.locator(".brand-mark .icon")).toBeVisible();
+  // The logo sits in the title bar, on a phone too.
+  await expect(page.locator(".titlebar-logo img")).toBeVisible();
   await contrast(page, ".icon", "stroke", 3);
   await accessible(page);
   await readableOnBackplate(page);
@@ -812,7 +811,7 @@ test("paper preview content stays unchanged when the app theme changes", async (
 }, info) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
-  await chooseToolbar(page, "View", "Grid");
+  await page.getByRole("button", { name: "Grid view", exact: true }).click();
   const thumbnail = page.locator(".paper-preview").first();
   await expect(thumbnail.locator("i").first()).toHaveCSS(
     "background-color",
@@ -837,7 +836,7 @@ test("paper preview content stays unchanged when the app theme changes", async (
     (await page.screenshot({ clip: thumbnailClip })).equals(originalThumbnail),
   ).toBe(true);
   await page.emulateMedia({ colorScheme: "light", forcedColors: "none" });
-  await chooseToolbar(page, "View", "List");
+  await page.getByRole("button", { name: "List view", exact: true }).click();
   await page
     .getByRole("button", {
       name: "Bloodwork — cholesterol and liver panel",

@@ -342,7 +342,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
       );
     }
     // Step 10: Close.
-    await (await named(reader, "Close", "step 10")).click();
+    await (await named(reader, "Back", "step 10")).click();
     await expect(reader).toBeHidden();
   }
   await expectOnlyFakedCommands(page);
