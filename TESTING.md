@@ -366,7 +366,7 @@ On every platform:
     message that names the file, and the others in the same choice are still added.
     Choose a **PNG** (a screenshot; for one with text chunks, `exiftool -Comment=FAKE x.png`): it is added and
     shown as it looks, `exiftool` on an export shows only the picture's own fields (size, depth), and an
-    animated PNG is refused as not a photo. Choose a JPEG renamed
+    animated PNG is refused as not a photo. An iPhone screenshot (Display P3) keeps its colours: the stored copy shows no shift against the original. A PNG whose picture data is damaged (flip a byte in the middle of the file, then fix its checksum, or use a deliberately truncated stream with correct chunk checksums) is added and then does not show; hide it from its details. This is expected: the picture data is checked for its header, not decoded. Choose a JPEG renamed
     `.pdf`: it is cleaned as a picture, not kept as it came.
     Try **real phone files**: one from a Pixel and one from a Samsung (they append an Ultra HDR gain map
     after the picture) and one JPEG exported from an iPhone (Photos, Options, Most Compatible). Each must be

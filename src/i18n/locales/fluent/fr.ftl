@@ -821,7 +821,7 @@ native-error-45 = myCarlos n’a pas pu ouvrir ce fichier. S’il se trouve dans
 
 native-error-46 = Un document du coffre-fort est endommagé et ne peut plus être lu; aucune sauvegarde n’a donc été enregistrée. Rien n’a été modifié.
 
-native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG ou PNG complète (non animée) d’au plus 25 MB, de 8 192 pixels par côté et de 50 millions de pixels au total. Rien n’a été modifié.
+native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG ou PNG complète (non animée) d’au plus 25 MB, de 8 192 pixels par côté et de 50 millions de pixels au total (24 millions sur un téléphone). Rien n’a été modifié.
 
 native-error-48 = La sauvegarde a été vérifiée, mais la restauration n’est pas terminée. Fermez myCarlos et ouvrez-le de nouveau pour terminer. Ouvrez ensuite le coffre-fort avec la phrase secrète ou la clé de récupération de la sauvegarde.
 

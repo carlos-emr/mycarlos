@@ -4,10 +4,13 @@
 //! written holding **only the chunks that draw the picture**: IHDR, PLTE, tRNS, the colour hints
 //! gAMA, cHRM and sRGB, the IDAT data and IEND. Text (tEXt, zTXt, iTXt), the Exif block (eXIf), the
 //! time (tIME), the print size (pHYs), background, palette hints, every unknown ancillary chunk and
-//! anything after IEND are dropped. The embedded colour profile (iCCP) is dropped too: a JPEG's
+//! anything after IEND are dropped. The embedded colour profile (iCCP) is never copied: a JPEG's
 //! profile can be checked field by field, but a PNG's is deflate-compressed, and reading it would
-//! need an inflater on the path from an untrusted file. An animated PNG (acTL, fcTL, fdAT) is
-//! refused. What is kept is copied byte for byte, so what the system's own decoder draws is what the
+//! need an inflater on the path from an untrusted file. Its NAME is not compressed, though, so the
+//! two names phones use are told apart without reading the profile: exactly "Display P3" is
+//! replaced by a fixed cICP chunk (primaries 12, transfer 13, matrix 0, full range) and exactly
+//! "sRGB" by a fixed sRGB chunk; any other profile is dropped and the picture shows as sRGB. An
+//! animated PNG (acTL, fcTL, fdAT) is refused. What is kept is copied byte for byte, so what the system's own decoder draws is what the
 //! patient chose, and cleaning its own output gives the same bytes.
 //!
 //! The size is bounded before anything could be drawn: at most `MAX_PHOTO_SIDE` pixels a side and
@@ -20,8 +23,19 @@ use zeroize::Zeroizing;
 
 /// How every PNG starts.
 pub const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
-/// The most pixels a picture may declare (width times height).
-pub const MAX_PICTURE_PIXELS: u64 = 50_000_000;
+/// The most pixels a picture may declare (width times height) on a computer.
+pub const MAX_PICTURE_PIXELS_DESKTOP: u64 = 50_000_000;
+/// The most on a phone, which has less memory to decode into.
+pub const MAX_PICTURE_PIXELS_MOBILE: u64 = 24_000_000;
+/// The most that applies on this device.
+pub const MAX_PICTURE_PIXELS: u64 = if cfg!(any(target_os = "android", target_os = "ios")) {
+    MAX_PICTURE_PIXELS_MOBILE
+} else {
+    MAX_PICTURE_PIXELS_DESKTOP
+};
+/// The colour codes a Display P3 picture is given: primaries 12 (P3 with a D65 white), transfer 13
+/// (the sRGB curve), matrix 0 (RGB), full range.
+const CICP_DISPLAY_P3: [u8; 4] = [12, 13, 0, 1];
 /// The most a chunk's length field may say (the PNG specification's own limit).
 const MAX_CHUNK_LENGTH: usize = 0x7fff_ffff;
 
@@ -58,6 +72,15 @@ fn crc32(parts: &[&[u8]]) -> u32 {
         }
     }
     !crc
+}
+
+/// A chunk this module writes itself.
+fn chunk_of(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut bytes = (data.len() as u32).to_be_bytes().to_vec();
+    bytes.extend_from_slice(kind);
+    bytes.extend_from_slice(data);
+    bytes.extend_from_slice(&crc32(&[kind, data]).to_be_bytes());
+    bytes
 }
 
 /// One chunk of the file, after its length and CRC were checked.
@@ -104,13 +127,41 @@ fn next_chunk(input: &[u8], at: usize) -> Result<(Chunk<'_>, usize), PhotoError>
     Ok((Chunk { kind, data, whole }, end))
 }
 
+/// What a colour profile's name says it is: the two names phones write, and anything else.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProfileName {
+    DisplayP3,
+    Srgb,
+    Other,
+}
+
+/// The profile an iCCP chunk's data names, read from its uncompressed start only: a keyword of
+/// 1 to 79 bytes, a zero byte, the compression method (0) and a compressed profile that is at
+/// least a zlib header and a checksum long. The name must be exactly "Display P3" or "sRGB":
+/// anything else, a name with a stray byte, and a chunk that is not built that way, is `Other`.
+/// The compressed profile itself is not read, so a profile that does not match its name is
+/// replaced by what the name says; nothing of its bytes is carried.
+fn profile_name_of(data: &[u8]) -> ProfileName {
+    let Some(end) = data.iter().position(|byte| *byte == 0) else {
+        return ProfileName::Other;
+    };
+    if end == 0 || end > 79 || data.get(end + 1) != Some(&0) || data.len() < end + 2 + 6 {
+        return ProfileName::Other;
+    }
+    match &data[..end] {
+        b"Display P3" => ProfileName::DisplayP3,
+        b"sRGB" => ProfileName::Srgb,
+        _ => ProfileName::Other,
+    }
+}
+
 /// What the header says about the picture.
 struct Header {
     color_type: u8,
     bit_depth: u8,
 }
 
-fn parse_header(data: &[u8]) -> Result<Header, PhotoError> {
+fn parse_header(data: &[u8], max_pixels: u64) -> Result<Header, PhotoError> {
     if data.len() != 13 {
         return Err(PhotoError::NotPng);
     }
@@ -132,7 +183,7 @@ fn parse_header(data: &[u8]) -> Result<Header, PhotoError> {
     }
     if width > u32::from(MAX_PHOTO_SIDE)
         || height > u32::from(MAX_PHOTO_SIDE)
-        || u64::from(width) * u64::from(height) > MAX_PICTURE_PIXELS
+        || u64::from(width) * u64::from(height) > max_pixels
     {
         return Err(PhotoError::TooLarge);
     }
@@ -155,6 +206,11 @@ fn zlib_header(first: u8, second: u8) -> bool {
 /// `TooLarge` for a file or a declared size over the caps, `NotPng` for anything else that is not
 /// one complete, well formed, still PNG.
 pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
+    clean_png_within(input, MAX_PICTURE_PIXELS)
+}
+
+/// `clean_png` with the pixel cap named (the tests run both devices' caps).
+pub fn clean_png_within(input: &[u8], max_pixels: u64) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     if input.len() > MAX_PHOTO_BYTES {
         return Err(PhotoError::TooLarge);
     }
@@ -166,7 +222,7 @@ pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     if &first.kind != b"IHDR" {
         return Err(PhotoError::NotPng);
     }
-    let header = parse_header(first.data)?;
+    let header = parse_header(first.data, max_pixels)?;
     at = next;
 
     let ihdr = first.whole;
@@ -175,12 +231,14 @@ pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     let mut srgb: Option<&[u8]> = None;
     let mut plte: Option<&[u8]> = None;
     let mut trns: Option<&[u8]> = None;
+    let mut cicp: Option<&[u8]> = None;
+    let mut seen_icc = false;
+    let mut profile_name = ProfileName::Other;
     let mut palette_entries = 0_usize;
     let mut idat: Vec<&[u8]> = Vec::new();
     let mut idat_over = false;
     let mut zlib_start = Vec::with_capacity(2);
     let mut end: Option<&[u8]> = None;
-    let mut seen_icc = false;
     while end.is_none() {
         let (chunk, next) = next_chunk(input, at)?;
         at = next;
@@ -232,12 +290,24 @@ pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
                 }
                 srgb = Some(chunk.whole);
             }
-            // Dropped, but still once and before the image data, as a decoder would insist.
+            // Never copied (see the module's description), but still once and before the image
+            // data, as a decoder would insist. Only its uncompressed name is looked at.
             b"iCCP" => {
                 if started || seen_icc {
                     return Err(PhotoError::NotPng);
                 }
                 seen_icc = true;
+                profile_name = profile_name_of(chunk.data);
+            }
+            // Colour codes: kept when they are ones the standard gives, as for a JPEG's.
+            b"cICP" => {
+                let &[primaries, transfer, matrix, range] = chunk.data else {
+                    return Err(PhotoError::NotPng);
+                };
+                if once(&cicp) || primaries > 22 || transfer > 22 || matrix != 0 || range > 1 {
+                    return Err(PhotoError::NotPng);
+                }
+                cicp = Some(chunk.whole);
             }
             b"IDAT" => {
                 if idat_over || (header.color_type == 3 && plte.is_none()) {
@@ -275,7 +345,34 @@ pub fn clean_png(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     output.extend_from_slice(&PNG_SIGNATURE);
     output.extend_from_slice(ihdr);
     // The order the specification gives: colour hints, palette, transparency, image data, end.
-    for chunk in [chrm, gama, srgb, plte, trns].into_iter().flatten() {
+    // What the picture's profile says, when the file gave no colour codes of its own: Display P3
+    // is a fixed cICP chunk, sRGB a fixed sRGB chunk. Colour codes, from the file or from a
+    // profile named Display P3, take the place of the other colour hints, as a decoder prefers them.
+    let p3 = chunk_of(b"cICP", &CICP_DISPLAY_P3);
+    let srgb_fixed = chunk_of(b"sRGB", &[0]);
+    let codes: Option<&[u8]> = match (cicp, profile_name) {
+        (Some(own), _) => Some(own),
+        (None, ProfileName::DisplayP3) => Some(&p3),
+        _ => None,
+    };
+    let rendering: Option<&[u8]> = match (codes, srgb, profile_name) {
+        (Some(_), _, _) => None,
+        (None, Some(own), _) => Some(own),
+        (None, None, ProfileName::Srgb) => Some(&srgb_fixed),
+        _ => None,
+    };
+    let hints = codes.is_none();
+    for chunk in [
+        chrm.filter(|_| hints),
+        gama.filter(|_| hints),
+        codes,
+        rendering,
+        plte,
+        trns,
+    ]
+    .into_iter()
+    .flatten()
+    {
         output.extend_from_slice(chunk);
     }
     for chunk in idat {
@@ -897,9 +994,9 @@ pub(crate) mod tests {
 
     #[test]
     fn cleaning_never_grows_a_file_never_panics_and_gives_the_same_bytes_again() {
-        let kinds_pool: [&[u8; 4]; 16] = [
+        let kinds_pool: [&[u8; 4]; 17] = [
             b"IHDR", b"PLTE", b"tRNS", b"gAMA", b"cHRM", b"sRGB", b"iCCP", b"IDAT", b"IEND",
-            b"tEXt", b"eXIf", b"tIME", b"acTL", b"prVt", b"ZZZZ", b"pHYs",
+            b"cICP", b"tEXt", b"eXIf", b"tIME", b"acTL", b"prVt", b"ZZZZ", b"pHYs",
         ];
         let mut rng = Lcg(0x5eed);
         let (mut accepted, mut refused) = (0, 0);
@@ -942,8 +1039,11 @@ pub(crate) mod tests {
                     assert_eq!(list.last().map(String::as_str), Some("IEND"));
                     for kept in &list {
                         assert!(
-                            ["IHDR", "PLTE", "tRNS", "gAMA", "cHRM", "sRGB", "IDAT", "IEND"]
-                                .contains(&kept.as_str()),
+                            [
+                                "IHDR", "PLTE", "tRNS", "gAMA", "cHRM", "sRGB", "cICP", "IDAT",
+                                "IEND"
+                            ]
+                            .contains(&kept.as_str()),
                             "{kept}"
                         );
                     }
@@ -953,5 +1053,154 @@ pub(crate) mod tests {
         }
         // The generator reaches both outcomes, so neither half of this test is empty.
         assert!(accepted > 100 && refused > 100, "{accepted} {refused}");
+    }
+
+    /// An iCCP chunk: a name, the zero byte, the compression method and some "profile" bytes.
+    fn iccp(name: &[u8], method: u8, profile: &[u8]) -> Vec<u8> {
+        let mut data = name.to_vec();
+        data.extend_from_slice(&[0, method]);
+        data.extend_from_slice(profile);
+        chunk(b"iCCP", &data)
+    }
+
+    fn cleaned_with(extra: Vec<Vec<u8>>) -> Vec<u8> {
+        clean_png(&file(&insert_after_header(&plain(), extra)))
+            .unwrap()
+            .to_vec()
+    }
+
+    /// The data of the first chunk of `kind` in a cleaned file.
+    fn data_of(bytes: &[u8], kind: &[u8; 4]) -> Option<Vec<u8>> {
+        let mut at = PNG_SIGNATURE.len();
+        while at < bytes.len() {
+            let (one, next) = next_chunk(bytes, at).unwrap();
+            if &one.kind == kind {
+                return Some(one.data.to_vec());
+            }
+            at = next;
+        }
+        None
+    }
+
+    #[test]
+    fn a_profile_named_display_p3_becomes_a_fixed_colour_codes_chunk() {
+        let profile = [0x78, 0x9c, b'F', b'A', b'K', b'E', 1, 2, 3, 4, 5, 6];
+        // The hints a phone also writes are replaced, as the colour codes come first.
+        let cleaned = cleaned_with(vec![
+            iccp(b"Display P3", 0, &profile),
+            chunk(b"sRGB", &[0]),
+            chunk(b"gAMA", &[0, 1, 0x86, 0xa0]),
+        ]);
+        assert_eq!(kinds(&cleaned), ["IHDR", "cICP", "IDAT", "IEND"]);
+        assert_eq!(data_of(&cleaned, b"cICP").unwrap(), [12, 13, 0, 1]);
+        assert!(!contains(&cleaned, b"Display") && !contains(&cleaned, b"FAKE"));
+        assert_eq!(*clean_png(&cleaned).unwrap(), cleaned);
+    }
+
+    #[test]
+    fn a_profile_named_srgb_becomes_a_fixed_srgb_chunk_once() {
+        let profile = [0x78, 0x9c, b'F', b'A', b'K', b'E', 1, 2, 3, 4, 5, 6];
+        let cleaned = cleaned_with(vec![iccp(b"sRGB", 0, &profile)]);
+        assert_eq!(kinds(&cleaned), ["IHDR", "sRGB", "IDAT", "IEND"]);
+        assert_eq!(data_of(&cleaned, b"sRGB").unwrap(), [0]);
+        assert!(!contains(&cleaned, b"FAKE"));
+        // A file that also has its own sRGB chunk (any intent) does not get a second one.
+        let both = cleaned_with(vec![iccp(b"sRGB", 0, &profile), chunk(b"sRGB", &[2])]);
+        assert_eq!(kinds(&both), ["IHDR", "sRGB", "IDAT", "IEND"]);
+        assert_eq!(data_of(&both, b"sRGB").unwrap(), [2]);
+        // With colour codes of its own the file keeps them, and nothing is added.
+        let own = cleaned_with(vec![
+            iccp(b"sRGB", 0, &profile),
+            chunk(b"cICP", &[1, 13, 0, 0]),
+        ]);
+        assert_eq!(kinds(&own), ["IHDR", "cICP", "IDAT", "IEND"]);
+        assert_eq!(data_of(&own, b"cICP").unwrap(), [1, 13, 0, 0]);
+    }
+
+    #[test]
+    fn any_other_profile_or_a_name_that_is_not_exactly_one_of_two_is_dropped() {
+        let profile = [0x78, 0x9c, b'F', b'A', b'K', b'E', 1, 2, 3, 4, 5, 6];
+        for name in [
+            &b"FAKE Camera Profile"[..],
+            b"Adobe RGB (1998)",
+            b"sRGB IEC61966-2.1",
+            b"display p3",
+            b"Display P3 ",
+            b" Display P3",
+            b"Display-P3",
+            b"DisplayP3",
+            b"SRGB",
+            b"srgb",
+            b"sRGB\xff",
+            b"Display P3\x01",
+            b"",
+        ] {
+            let cleaned = cleaned_with(vec![iccp(name, 0, &profile)]);
+            assert_eq!(kinds(&cleaned), ["IHDR", "IDAT", "IEND"], "{name:?}");
+            assert!(!contains(&cleaned, b"FAKE"), "{name:?}");
+        }
+        // A chunk that is not built as one: no end to the name, a name over 79 bytes, a
+        // compression method that is not 0, no room for a profile, a stray byte after the name.
+        let mut no_end = b"sRGB".to_vec();
+        no_end.extend_from_slice(&[b'x'; 8]);
+        let long = [&[b'a'; 80][..], &[0, 0], &profile[..]].concat();
+        for bad in [
+            chunk(b"iCCP", &no_end),
+            chunk(b"iCCP", &long),
+            iccp(b"sRGB", 1, &profile),
+            iccp(b"sRGB", 0, &profile[..3]),
+            iccp(b"Display P3", 0, &[]),
+            chunk(b"iCCP", b"sRGB\0"),
+            chunk(b"iCCP", b"Display P3\0\0\0"),
+        ] {
+            let cleaned = cleaned_with(vec![bad]);
+            assert_eq!(kinds(&cleaned), ["IHDR", "IDAT", "IEND"]);
+        }
+        // Two colour profiles, or one after the image data, are still refused.
+        let mut two = plain();
+        two.splice(
+            1..1,
+            [iccp(b"sRGB", 0, &profile), iccp(b"sRGB", 0, &profile)],
+        );
+        assert_eq!(clean_png(&file(&two)), Err(PhotoError::NotPng));
+        // The colour codes' own limits.
+        for bad in [[23, 13, 0, 1], [1, 23, 0, 1], [1, 13, 1, 1], [1, 13, 0, 2]] {
+            let mut codes = plain();
+            codes.insert(1, chunk(b"cICP", &bad));
+            assert_eq!(clean_png(&file(&codes)), Err(PhotoError::NotPng), "{bad:?}");
+        }
+        let mut short = plain();
+        short.insert(1, chunk(b"cICP", &[1, 13, 0]));
+        assert_eq!(clean_png(&file(&short)), Err(PhotoError::NotPng));
+    }
+
+    #[test]
+    fn a_phone_allows_fewer_pixels_than_a_computer() {
+        let with = |max: u64, width: u32, height: u32| {
+            let mut chunks = plain();
+            chunks[0] = header(width, height, 8, 2);
+            clean_png_within(&file(&chunks), max)
+        };
+        // 8192 x 2929 is 23,994,368 pixels, 8192 x 2930 is 24,002,560.
+        assert!(with(MAX_PICTURE_PIXELS_MOBILE, 8192, 2929).is_ok());
+        assert_eq!(
+            with(MAX_PICTURE_PIXELS_MOBILE, 8192, 2930),
+            Err(PhotoError::TooLarge)
+        );
+        assert!(with(MAX_PICTURE_PIXELS_DESKTOP, 8192, 2930).is_ok());
+        assert!(with(MAX_PICTURE_PIXELS_DESKTOP, 8192, 6103).is_ok());
+        assert_eq!(
+            with(MAX_PICTURE_PIXELS_DESKTOP, 8192, 6104),
+            Err(PhotoError::TooLarge)
+        );
+        // This build's cap is the one for its device.
+        assert_eq!(
+            MAX_PICTURE_PIXELS,
+            if cfg!(any(target_os = "android", target_os = "ios")) {
+                24_000_000
+            } else {
+                50_000_000
+            }
+        );
     }
 }

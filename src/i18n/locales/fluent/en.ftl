@@ -800,7 +800,7 @@ native-error-45 = myCarlos could not open that file. If it is in a cloud or shar
 
 native-error-46 = A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.
 
-native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG or PNG picture (not an animated one) of at most 25 MB, 8,192 pixels on each side and 50 million pixels in all. Nothing was changed.
+native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG or PNG picture (not an animated one) of at most 25 MB, 8,192 pixels on each side and 50 million pixels in all (24 million on a phone). Nothing was changed.
 
 native-error-48 = The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.
 
