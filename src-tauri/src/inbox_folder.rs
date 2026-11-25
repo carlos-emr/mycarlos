@@ -82,6 +82,57 @@ pub(crate) enum Discovered {
     Several,
 }
 
+/// The most directory entries one unlock's listing looks at: far above the item cap (so a real
+/// folder is always listed whole), and a bound on the walk of a flooded one.
+// Used by the importing stage (stage 3); until then only its tests call it.
+#[allow(dead_code)]
+pub(crate) const MAX_LISTED_ENTRIES: usize = 10_000;
+
+/// What an unlock may import from a folder (see `InboxFolder::import_plan`).
+// Used by the importing stage (stage 3); until then only its tests call it.
+#[allow(dead_code)]
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ImportPlan {
+    /// Item file names to open, oldest first.
+    pub(crate) take: Vec<String>,
+    /// Items refused for the caps, never opened.
+    pub(crate) refused: usize,
+    /// The listing stopped at its bound: there were more entries than were looked at.
+    pub(crate) listing_truncated: bool,
+}
+
+/// Picks, from `(name, bytes, file time)` of items, the oldest first (an unknown time counts as
+/// the newest, then the name), while both the item count and the running total of bytes stay
+/// within the caps; every other item is refused. Pure: it reads nothing.
+// Used by the importing stage (stage 3); until then only its tests call it.
+#[allow(dead_code)]
+fn plan_import(
+    mut items: Vec<(String, u64, Option<u64>)>,
+    caps: &Caps,
+    listing_truncated: bool,
+) -> ImportPlan {
+    items.sort_by(|a, b| (a.2.unwrap_or(u64::MAX), &a.0).cmp(&(b.2.unwrap_or(u64::MAX), &b.0)));
+    let mut plan = ImportPlan {
+        listing_truncated,
+        ..ImportPlan::default()
+    };
+    let mut total = 0u64;
+    for (name, bytes, _) in items {
+        let fits = plan.take.len() < caps.items
+            && bytes <= caps.file_bytes
+            && total
+                .checked_add(bytes)
+                .is_some_and(|sum| sum <= caps.total_bytes);
+        if fits {
+            total += bytes;
+            plan.take.push(name);
+        } else {
+            plan.refused += 1;
+        }
+    }
+    plan
+}
+
 /// One inbox folder, of one vault.
 pub(crate) struct InboxFolder {
     dir: PathBuf,
@@ -213,10 +264,15 @@ impl InboxFolder {
     /// The entries that are plain files with a strict item or part name; anything else in the
     /// folder (a link, a directory, an odd name, the lock and key files) is not an entry.
     fn entries(&self) -> io::Result<Vec<Entry>> {
+        self.listed_entries(usize::MAX).map(|(entries, _)| entries)
+    }
+
+    /// `entries`, but stops after `limit` of them; the flag says more were there.
+    fn listed_entries(&self, limit: usize) -> io::Result<(Vec<Entry>, bool)> {
         let mut entries = Vec::new();
         let listing = match fs::read_dir(&self.dir) {
             Ok(listing) => listing,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(entries),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok((entries, false)),
             Err(error) => return Err(error),
         };
         for entry in listing {
@@ -226,6 +282,9 @@ impl InboxFolder {
             };
             if parse_item_name(&name).is_none() && parse_part_name(&name).is_none() {
                 continue;
+            }
+            if entries.len() >= limit {
+                return Ok((entries, true));
             }
             // `DirEntry::metadata` does not follow a link.
             let metadata = entry.metadata()?;
@@ -245,7 +304,7 @@ impl InboxFolder {
                 modified,
             });
         }
-        Ok(entries)
+        Ok((entries, false))
     }
 
     /// Seals `input` into the folder for `public`: the PDF check first (nothing is written for
@@ -384,6 +443,23 @@ impl InboxFolder {
             }
         }
         Ok(removed)
+    }
+
+    /// What an unlock may read from this folder, decided from the listing alone (nothing is
+    /// opened): anyone who can write the folder can also fill it, so the importing stage takes at
+    /// most the item count and the total bytes the caps allow, oldest first, and counts the rest
+    /// as refused without reading a byte of them. The listing is itself bounded
+    /// (`MAX_LISTED_ENTRIES`), so a flooded folder costs a bounded walk.
+    // Used by the importing stage (stage 3); until then only its tests call it.
+    #[allow(dead_code)]
+    pub(crate) fn import_plan(&self) -> io::Result<ImportPlan> {
+        let (entries, truncated) = self.listed_entries(MAX_LISTED_ENTRIES)?;
+        let items: Vec<(String, u64, Option<u64>)> = entries
+            .into_iter()
+            .filter(|entry| parse_item_name(&entry.name).is_some())
+            .map(|entry| (entry.name, entry.bytes, entry.modified))
+            .collect();
+        Ok(plan_import(items, &self.caps, truncated))
     }
 
     /// What a locked app may remove with no key: part-sealed leftovers, and items far past their
@@ -716,6 +792,117 @@ mod tests {
         assert!(!names(&folder)
             .iter()
             .any(|n| n.ends_with(".part") || n.ends_with(".mcin")));
+    }
+
+    #[test]
+    fn an_empty_file_or_one_that_ends_inside_the_header_is_refused_and_leaves_no_part() {
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        // No bytes at all, a declared length of nothing, and a file that is only the start of the
+        // PDF header ("%PD"): each is refused, and none leaves a part or an item behind.
+        for (input, declared) in [
+            (Vec::new(), None),
+            (Vec::new(), Some(0)),
+            (b"%PD".to_vec(), None),
+        ] {
+            let result = folder.seal(
+                keys.public(),
+                Box::new(Cursor::new(input.clone())),
+                "a.pdf",
+                Source::Shared,
+                declared,
+                NOW,
+                &|| false,
+            );
+            assert!(
+                matches!(
+                    result,
+                    Err(SealFailure::NotPdf | SealFailure::Size(InboxError::Empty))
+                ),
+                "{input:?} {declared:?}: {result:?}"
+            );
+            assert!(
+                !names(&folder)
+                    .iter()
+                    .any(|n| n.ends_with(".part") || n.ends_with(".mcin")),
+                "nothing left behind for {input:?} {declared:?}"
+            );
+        }
+    }
+
+    /// An item-named file of `bytes` zero-filled bytes, with a file time: it is not a sealed
+    /// item at all, which is the point: a plan never opens what it lists.
+    fn plant(folder: &InboxFolder, bytes: usize, modified: u64) -> String {
+        fs::create_dir_all(folder.dir()).unwrap();
+        let name = item_file_name(&ItemId::random());
+        let path = folder.dir().join(&name);
+        fs::write(&path, vec![0u8; bytes]).unwrap();
+        let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_modified(UNIX_EPOCH + std::time::Duration::from_secs(modified))
+            .unwrap();
+        name
+    }
+
+    #[test]
+    fn an_unlock_takes_the_oldest_items_up_to_the_count_cap_and_refuses_the_rest_unread() {
+        let temp = tempfile::tempdir().unwrap();
+        let caps = Caps { items: 3, ..CAPS };
+        let folder = InboxFolder::new(temp.path(), vault()).with(caps, roomy);
+        // Six items that no key could open: a plan that tried to read one would fail.
+        let mut planted: Vec<(String, u64)> = (1..=6u64)
+            .map(|age| (plant(&folder, 100, 1_000 + age), 1_000 + age))
+            .collect();
+        planted.sort_by_key(|(_, modified)| *modified);
+        let plan = folder.import_plan().unwrap();
+        assert_eq!(
+            plan.take,
+            planted[..3]
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>(),
+            "the three oldest"
+        );
+        assert_eq!(plan.refused, 3);
+        assert!(!plan.listing_truncated);
+    }
+
+    #[test]
+    fn an_unlock_stops_at_the_total_byte_cap_and_at_the_file_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let caps = Caps {
+            items: 10,
+            total_bytes: 1_000,
+            file_bytes: 600,
+            ..CAPS
+        };
+        let folder = InboxFolder::new(temp.path(), vault()).with(caps, roomy);
+        let first = plant(&folder, 500, 10);
+        let second = plant(&folder, 400, 20);
+        let over_total = plant(&folder, 300, 30);
+        let over_file = plant(&folder, 700, 5);
+        let plan = folder.import_plan().unwrap();
+        // The 700-byte file is over the file cap whatever its age; then 500 + 400 fit under 1 000
+        // and the 300 does not.
+        assert_eq!(plan.take, vec![first, second]);
+        assert_eq!(plan.refused, 2);
+        let _ = (over_total, over_file);
+    }
+
+    #[test]
+    fn a_flooded_folder_is_listed_to_a_bound_and_only_what_is_asked_of_it_is_taken() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = InboxFolder::new(temp.path(), vault()).with(CAPS, roomy);
+        for _ in 0..(CAPS.items + 20) {
+            plant(&folder, 1, 100);
+        }
+        let plan = folder.import_plan().unwrap();
+        assert_eq!(plan.take.len(), CAPS.items);
+        assert_eq!(plan.refused, 20);
+        // The walk itself is bounded: a pure check of the bound's meaning.
+        let (entries, truncated) = folder.listed_entries(10).unwrap();
+        assert_eq!((entries.len(), truncated), (10, true));
+        let (entries, truncated) = folder.listed_entries(usize::MAX).unwrap();
+        assert_eq!((entries.len(), truncated), (CAPS.items + 20, false));
     }
 
     #[test]
