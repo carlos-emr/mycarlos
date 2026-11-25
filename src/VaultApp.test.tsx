@@ -4767,6 +4767,47 @@ describe("durable vault UI", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("tells the native save to leave the videos out only when the box is ticked", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-3"),
+      backupSize: vi.fn().mockResolvedValue({
+        totalBytes: 5000,
+        withoutVideosBytes: 1000,
+        videoBytes: 4000,
+        videoCount: 2,
+      }),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    const save = () =>
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") });
+    const box = await screen.findByRole("checkbox", {
+      name: humanText(/Leave videos out/i),
+    });
+    // Left as it is, the backup holds everything: the native save is told so.
+    await user.click(save());
+    await waitFor(() =>
+      expect(bridge.saveBackupToPicked).toHaveBeenLastCalledWith(
+        "pick-3",
+        false,
+      ),
+    );
+    // Ticked, it is told to leave them out (this was dropped on the way before).
+    await user.click(box);
+    await user.click(save());
+    await waitFor(() =>
+      expect(bridge.saveBackupToPicked).toHaveBeenLastCalledWith(
+        "pick-3",
+        true,
+      ),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledTimes(2);
+  });
+
   it("saves an encrypted backup from Security as a transfer", async () => {
     const user = userEvent.setup();
     const bridge = nativeBridge({
@@ -4780,7 +4821,7 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
-    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7", false);
     expect(
       await screen.findByText(
         humanText(
@@ -5745,7 +5786,7 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
-    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9");
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-9", false);
     // Named by the patient's own date.
     const today = new Date();
     const pad = (value: number) => String(value).padStart(2, "0");
