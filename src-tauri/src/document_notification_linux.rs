@@ -154,7 +154,9 @@ enum Call<T> {
 /// Runs `call` on its own thread and waits at most `timeout` for its answer. `record` runs on that
 /// thread with the answer, before the outstanding mark is cleared and before the answer is sent.
 /// With another call outstanding: a young one is waited for (up to what is left of its timeout)
-/// and then this one runs; an old one means no thread is started at all.
+/// and then this one runs; an old one means no thread is started at all. Waiting callers poll, so
+/// with three or more at once the one that gets the free flag is whoever swaps first, not the one
+/// that waited longest: each is still bounded by the timeout, and a notice is rare, so this is left.
 fn within<T: Send + 'static>(
     gate: &Arc<Gate>,
     timeout: Duration,
@@ -760,5 +762,30 @@ mod tests {
         }
         assert_eq!(backend.permission(), Permission::Allowed);
         assert_eq!(asked.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_call_that_has_begun_but_not_yet_published_its_start_is_waited_for_not_refused() {
+        // The exact window: the flag is set, and the start time is not written yet.
+        let (backend, _, _) = counted(Behaviour::Present);
+        backend.gate.outstanding.store(true, Ordering::SeqCst);
+        assert!(backend.gate.age().is_none());
+        let gate = Arc::clone(&backend.gate);
+        let finishing = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            gate.outstanding.store(false, Ordering::SeqCst);
+        });
+        let began = Instant::now();
+        let outcome = within(&backend.gate, Duration::from_millis(200), |_| {}, || 7);
+        assert!(
+            matches!(outcome, Call::Done(7)),
+            "refused as busy in the window"
+        );
+        assert!(
+            began.elapsed() >= Duration::from_millis(40),
+            "{:?}",
+            began.elapsed()
+        );
+        finishing.join().unwrap();
     }
 }
