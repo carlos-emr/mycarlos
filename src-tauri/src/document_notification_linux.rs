@@ -16,7 +16,14 @@
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 use crate::document_notification_runtime::{active::Backend, Error, Permission};
-use std::{sync::mpsc, sync::Arc, thread, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex, OnceLock,
+    },
+    thread,
+    time::{Duration, Instant},
+};
 
 /// What the notice calls the application: the only text besides the fixed sentence.
 const APP_NAME: &str = "myCarlos";
@@ -73,34 +80,99 @@ pub(crate) trait Bus: Send + Sync + 'static {
     fn notify(&self, notice: &Notice) -> Result<(), ()>;
 }
 
-/// Runs `call` on its own thread and waits at most `timeout` for its answer. A panic, or no
-/// answer in time, is `None`: the caller treats both as "could not".
+/// How long a permission answer is kept: a settings screen polls the status, and each real
+/// question opens a fresh bus connection, so asking again within this time repeats the last answer.
+const PERMISSION_TTL: Duration = Duration::from_secs(15);
+
+/// What every bus call of one backend shares: at most one call at a time, and the last permission
+/// answer. A bus call that never returns (a hung notification daemon) leaves its thread and socket
+/// behind, so while one is outstanding no other is started: the answer is an immediate refusal
+/// or "Unavailable" until it ends.
+struct Gate {
+    outstanding: AtomicBool,
+    permission: Mutex<Option<(Instant, Permission)>>,
+    ttl: Duration,
+}
+
+impl Gate {
+    fn new(ttl: Duration) -> Self {
+        Self {
+            outstanding: AtomicBool::new(false),
+            permission: Mutex::new(None),
+            ttl,
+        }
+    }
+}
+
+/// Clears the outstanding flag when the call's thread ends, however it ends (a panic included).
+struct Release(Arc<Gate>);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        self.0.outstanding.store(false, Ordering::SeqCst);
+    }
+}
+
+/// How one bus call ended.
+enum Call<T> {
+    /// It answered in time.
+    Done(T),
+    /// It panicked, could not be started or did not answer in time.
+    Lost,
+    /// Another call was still outstanding, so none was started.
+    Busy,
+}
+
+/// Runs `call` on its own thread and waits at most `timeout` for its answer. With another call
+/// outstanding no thread is started at all.
 fn within<T: Send + 'static>(
+    gate: &Arc<Gate>,
     timeout: Duration,
     call: impl FnOnce() -> T + Send + 'static,
-) -> Option<T> {
+) -> Call<T> {
+    if gate.outstanding.swap(true, Ordering::SeqCst) {
+        return Call::Busy;
+    }
+    let release = Release(Arc::clone(gate));
     let (send, receive) = mpsc::channel();
-    // The thread is left to finish on its own if the answer comes too late.
-    thread::Builder::new()
+    // The thread is left to finish on its own if the answer comes too late, and says so by
+    // clearing the flag when it does.
+    let spawned = thread::Builder::new()
         .name("mycarlos-notice-bus".into())
         .spawn(move || {
-            let _ = send.send(call());
-        })
-        .ok()?;
-    receive.recv_timeout(timeout).ok()
+            // The flag is cleared before the answer is sent, so a caller that gets the answer and
+            // asks again at once is never turned away as "busy" by the call it just finished.
+            let answer = call();
+            drop(release);
+            let _ = send.send(answer);
+        });
+    if spawned.is_err() {
+        // The closure (and its Release) was dropped with the failed spawn, which cleared the flag.
+        return Call::Lost;
+    }
+    match receive.recv_timeout(timeout) {
+        Ok(answer) => Call::Done(answer),
+        Err(_) => Call::Lost,
+    }
 }
 
 /// The notice runtime's backend for a Linux desktop.
 pub(crate) struct LinuxBackend<B: Bus> {
     bus: Arc<B>,
     timeout: Duration,
+    gate: Arc<Gate>,
 }
 
 impl<B: Bus> LinuxBackend<B> {
     pub(crate) fn with_bus(bus: B) -> Self {
+        Self::with_gate(bus, Arc::new(Gate::new(PERMISSION_TTL)))
+    }
+
+    fn with_gate(bus: B, gate: Arc<Gate>) -> Self {
         Self {
             bus: Arc::new(bus),
             timeout: CALL_TIMEOUT,
+            gate,
         }
     }
 
@@ -109,15 +181,46 @@ impl<B: Bus> LinuxBackend<B> {
         self.timeout = timeout;
         self
     }
+
+    #[cfg(test)]
+    fn with_permission_ttl(self, ttl: Duration) -> Self {
+        Self {
+            gate: Arc::new(Gate::new(ttl)),
+            ..self
+        }
+    }
 }
 
 impl<B: Bus> Backend for LinuxBackend<B> {
     fn permission(&self) -> Permission {
-        let bus = Arc::clone(&self.bus);
-        match within(self.timeout, move || bus.service_present()) {
-            Some(true) => Permission::Allowed,
-            _ => Permission::Unavailable,
+        let remembered = *self
+            .gate
+            .permission
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some((at, answer)) = remembered {
+            if at.elapsed() < self.gate.ttl {
+                return answer;
+            }
         }
+        let bus = Arc::clone(&self.bus);
+        let answer = match within(&self.gate, self.timeout, move || bus.service_present()) {
+            Call::Done(true) => Permission::Allowed,
+            Call::Done(false) | Call::Lost => Permission::Unavailable,
+            // Another call is still outstanding (a hung daemon): that is not a new answer about the
+            // bus, so the last one stands, however old, and nothing is remembered anew.
+            Call::Busy => {
+                return remembered.map_or(Permission::Unavailable, |(_, answer)| answer);
+            }
+        };
+        // A real answer, or a call that timed out, is kept for the TTL so that a hung bus costs
+        // one wait, not one per poll.
+        *self
+            .gate
+            .permission
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((Instant::now(), answer));
+        answer
     }
 
     fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error> {
@@ -127,8 +230,8 @@ impl<B: Bus> Backend for LinuxBackend<B> {
             return Err(Error::Cancelled);
         }
         let bus = Arc::clone(&self.bus);
-        match within(self.timeout, move || bus.notify(&notice)) {
-            Some(Ok(())) => Ok(()),
+        match within(&self.gate, self.timeout, move || bus.notify(&notice)) {
+            Call::Done(Ok(())) => Ok(()),
             _ => Err(Error::OsRejected),
         }
     }
@@ -197,8 +300,12 @@ mod session {
 
 #[cfg(target_os = "linux")]
 impl LinuxBackend<Session> {
+    /// The real backend. Every one made here shares one gate: the tray makes a new backend for
+    /// each notice, and a hung daemon must still count as one outstanding call across them.
     pub(crate) fn new() -> Self {
-        Self::with_bus(Session)
+        static SHARED: OnceLock<Arc<Gate>> = OnceLock::new();
+        let gate = SHARED.get_or_init(|| Arc::new(Gate::new(PERMISSION_TTL)));
+        Self::with_gate(Session, Arc::clone(gate))
     }
 }
 
@@ -230,6 +337,7 @@ mod tests {
         behaviour: Behaviour,
         sent: Arc<Mutex<Vec<Notice>>>,
         presence_asked: Arc<AtomicUsize>,
+        notify_asked: Arc<AtomicUsize>,
     }
 
     impl Bus for FakeBus {
@@ -246,6 +354,7 @@ mod tests {
             }
         }
         fn notify(&self, notice: &Notice) -> Result<(), ()> {
+            self.notify_asked.fetch_add(1, Ordering::SeqCst);
             match self.behaviour {
                 Behaviour::Hangs => {
                     thread::sleep(Duration::from_secs(5));
@@ -267,9 +376,26 @@ mod tests {
             behaviour,
             sent: Arc::clone(&sent),
             presence_asked: Arc::new(AtomicUsize::new(0)),
+            notify_asked: Arc::new(AtomicUsize::new(0)),
         })
         .with_timeout(Duration::from_millis(200));
         (backend, sent)
+    }
+
+    /// A backend over a bus whose question and notice counters the test keeps.
+    fn counted(
+        behaviour: Behaviour,
+    ) -> (LinuxBackend<FakeBus>, Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        let presence_asked = Arc::new(AtomicUsize::new(0));
+        let notify_asked = Arc::new(AtomicUsize::new(0));
+        let backend = LinuxBackend::with_bus(FakeBus {
+            behaviour,
+            sent: Arc::new(Mutex::new(Vec::new())),
+            presence_asked: Arc::clone(&presence_asked),
+            notify_asked: Arc::clone(&notify_asked),
+        })
+        .with_timeout(Duration::from_millis(200));
+        (backend, presence_asked, notify_asked)
     }
 
     const SENTENCE: &str = "A new document is waiting. Unlock myCarlos to see it.";
@@ -376,5 +502,116 @@ mod tests {
             backend.accept(SENTENCE, &|| true),
             Err(Error::OsRejected)
         ));
+    }
+
+    #[test]
+    fn the_permission_answer_is_remembered_for_its_ttl_and_asked_again_after_it() {
+        let (backend, asked, _) = counted(Behaviour::Present);
+        let backend = backend.with_permission_ttl(Duration::from_millis(150));
+        for _ in 0..5 {
+            assert_eq!(backend.permission(), Permission::Allowed);
+        }
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            1,
+            "five polls, one bus question"
+        );
+        thread::sleep(Duration::from_millis(250));
+        assert_eq!(backend.permission(), Permission::Allowed);
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            2,
+            "asked again once the answer is old"
+        );
+    }
+
+    #[test]
+    fn a_hung_bus_costs_one_wait_and_one_thread_not_one_per_poll_or_notice() {
+        let (backend, asked, notified) = counted(Behaviour::Hangs);
+        let started = Instant::now();
+        // The first question waits its timeout and is Unavailable.
+        assert_eq!(backend.permission(), Permission::Unavailable);
+        let first = started.elapsed();
+        assert!(first >= Duration::from_millis(150), "{first:?}");
+        // The next polls are answered at once from memory, without another question.
+        for _ in 0..5 {
+            assert_eq!(backend.permission(), Permission::Unavailable);
+        }
+        // A notice while the call is still outstanding is turned away at once, with no new thread.
+        let before_notice = Instant::now();
+        assert!(matches!(
+            backend.accept(SENTENCE, &|| true),
+            Err(Error::OsRejected)
+        ));
+        assert!(
+            before_notice.elapsed() < Duration::from_millis(100),
+            "{:?}",
+            before_notice.elapsed()
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        assert_eq!(notified.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn while_a_call_is_outstanding_the_last_permission_answer_stands() {
+        let (backend, asked, _) = counted(Behaviour::Present);
+        let backend = backend.with_permission_ttl(Duration::ZERO);
+        assert_eq!(backend.permission(), Permission::Allowed);
+        // Another call is out (as a hung daemon leaves it): no new question, the last answer.
+        backend.gate.outstanding.store(true, Ordering::SeqCst);
+        assert_eq!(backend.permission(), Permission::Allowed);
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        // With no answer yet there is nothing to stand: Unavailable.
+        let (fresh, _, _) = counted(Behaviour::Present);
+        fresh.gate.outstanding.store(true, Ordering::SeqCst);
+        assert_eq!(fresh.permission(), Permission::Unavailable);
+    }
+
+    #[test]
+    fn the_outstanding_mark_ends_with_the_call_even_when_the_call_panics() {
+        let (backend, _asked, _) = counted(Behaviour::Panics);
+        assert_eq!(backend.permission(), Permission::Unavailable);
+        assert!(!backend.gate.outstanding.load(Ordering::SeqCst));
+        let (backend, sent) = backend_present_after_answer();
+        assert!(backend.accept(SENTENCE, &|| true).is_ok());
+        assert!(!backend.gate.outstanding.load(Ordering::SeqCst));
+        assert_eq!(sent.lock().unwrap().len(), 1);
+    }
+
+    /// Permission, then a notice straight after: the first call's mark is gone by the time its
+    /// answer is back, so the second is never turned away as busy.
+    fn backend_present_after_answer() -> (LinuxBackend<FakeBus>, Arc<Mutex<Vec<Notice>>>) {
+        let (backend, sent) = backend(Behaviour::Present);
+        assert_eq!(backend.permission(), Permission::Allowed);
+        (backend, sent)
+    }
+
+    #[test]
+    fn a_call_that_ends_late_frees_the_bus_for_the_next() {
+        // `Hangs` sleeps five seconds, far past any wait here; use a short own bus instead.
+        struct Slow(Arc<AtomicUsize>);
+        impl Bus for Slow {
+            fn service_present(&self) -> bool {
+                thread::sleep(Duration::from_millis(300));
+                self.0.fetch_add(1, Ordering::SeqCst);
+                true
+            }
+            fn notify(&self, _notice: &Notice) -> Result<(), ()> {
+                Ok(())
+            }
+        }
+        let done = Arc::new(AtomicUsize::new(0));
+        let backend = LinuxBackend::with_bus(Slow(Arc::clone(&done)))
+            .with_timeout(Duration::from_millis(50))
+            .with_permission_ttl(Duration::ZERO);
+        assert_eq!(backend.permission(), Permission::Unavailable, "timed out");
+        assert!(backend.gate.outstanding.load(Ordering::SeqCst));
+        let until = Instant::now() + Duration::from_secs(3);
+        while backend.gate.outstanding.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the late call never freed the bus");
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(done.load(Ordering::SeqCst), 1);
+        assert!(backend.accept(SENTENCE, &|| true).is_ok());
     }
 }

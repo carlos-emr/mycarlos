@@ -418,6 +418,10 @@ pub(crate) mod active {
             if !self.supported {
                 return Status::unavailable();
             }
+            // Asked once, and before the state lock is taken: on Linux the answer comes from a bus
+            // call that can take its full timeout, and the lock must not be held across it (turning
+            // notices off, or an arrival, would wait behind a status poll).
+            let permission = self.backend.permission();
             let Ok(guard) = self.state.lock() else {
                 return Status {
                     supported: true,
@@ -441,8 +445,8 @@ pub(crate) mod active {
                 }),
                 automatic_checks_supported: true,
                 automatic_checks_paused: false,
-                notices_supported: self.backend.permission() != Permission::Unavailable,
-                permission: self.backend.permission(),
+                notices_supported: permission != Permission::Unavailable,
+                permission,
                 last_outcome: guard
                     .as_ref()
                     .and_then(|s| s.events.last().map(|e| e.outcome)),
@@ -1287,6 +1291,52 @@ pub(crate) mod active {
                 }
             }
         }
+        /// A backend that counts how often the permission is asked, and whether the runtime's
+        /// state lock was free while it was.
+        struct Counting {
+            asked: Arc<AtomicUsize>,
+            state_free: Arc<Mutex<Option<bool>>>,
+            runtime: Arc<std::sync::OnceLock<std::sync::Weak<Runtime>>>,
+        }
+        impl Backend for Counting {
+            fn permission(&self) -> Permission {
+                self.asked.fetch_add(1, Ordering::SeqCst);
+                if let Some(runtime) = self.runtime.get().and_then(std::sync::Weak::upgrade) {
+                    *self.state_free.lock().unwrap() = Some(runtime.state.try_lock().is_ok());
+                }
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn status_asks_the_permission_once_and_not_while_holding_the_state_lock() {
+            let dir = tempfile::tempdir().unwrap();
+            let asked = Arc::new(AtomicUsize::new(0));
+            let state_free = Arc::new(Mutex::new(None));
+            let cell = Arc::new(std::sync::OnceLock::new());
+            let runtime = Arc::new(Runtime::load(
+                dir.path().join("state.json"),
+                Box::new(Counting {
+                    asked: Arc::clone(&asked),
+                    state_free: Arc::clone(&state_free),
+                    runtime: Arc::clone(&cell),
+                }),
+            ));
+            cell.set(Arc::downgrade(&runtime)).ok().unwrap();
+            let status = runtime.status();
+            assert_eq!(status.permission, Permission::Allowed);
+            assert!(status.notices_supported);
+            assert_eq!(asked.load(Ordering::SeqCst), 1, "one question per status");
+            assert_eq!(
+                *state_free.lock().unwrap(),
+                Some(true),
+                "the state lock is free while the backend is asked"
+            );
+        }
+
         fn test_runtime(
             dir: &std::path::Path,
             permission: Permission,
