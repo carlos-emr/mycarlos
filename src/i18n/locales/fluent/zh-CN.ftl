@@ -2646,3 +2646,5 @@ notifications-testWait = 请等待几秒钟后再试。
 
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
+
+unlock-brand-tagline = 您的健康文档，私密保存在此设备上。

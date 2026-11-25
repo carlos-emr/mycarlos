@@ -1,3 +1,4 @@
+import carlosLogo from "../brand/carlos-logo.jpg";
 import { LanguageButton } from "./LanguageButton";
 import {
   PersonDetailsOrLater,
@@ -50,16 +51,23 @@ const FRAME_STATES = {
 export function VaultAuthFrame({
   state,
   language = false,
+  split = false,
   children,
 }: {
   state: keyof typeof FRAME_STATES;
   /** The language button, for the screens that have no list of their own. */
   language?: boolean;
+  /** The unlock screen: the window is split in two, the brand on the left and the form on the
+   * right, and fills the whole window instead of sitting in a card (the language button is then
+   * the screen's own, at its top right). */
+  split?: boolean;
   children: ReactNode;
 }) {
   const { t } = useI18n();
   return (
-    <div className="evaluation-page native-vault-page">
+    <div
+      className={`evaluation-page native-vault-page${split ? " native-auth-split" : ""}`}
+    >
       <div className="evaluation-banner" role="note">
         <strong>{t("frame.banner.title")}</strong>
         <span>{t("frame.banner.body")}</span>
@@ -390,6 +398,18 @@ export function UnlockVault({
   // or the recovery key and erase controls under "Forgot your passphrase?".
   const [source, setSource] = useState<"unlock" | "forgot">("unlock");
   const passphraseRef = useRef<HTMLInputElement | null>(null);
+  // Show the passphrase as text while typing it (#69, as on the set-up screens); never kept after
+  // it is sent.
+  const [showPassphrase, setShowPassphrase] = useState(false);
+  // Shown text must not wait on screen, or in an app switcher's picture.
+  useEffect(() => {
+    const hideWhenHidden = () => {
+      if (document.visibilityState === "hidden") setShowPassphrase(false);
+    };
+    document.addEventListener("visibilitychange", hideWhenHidden);
+    return () =>
+      document.removeEventListener("visibilitychange", hideWhenHidden);
+  }, []);
   const unlockNotice = source === "unlock" ? notice : "";
   // No vault passphrase can be longer, so say so instead of sending it to a
   // native refusal that can only report invalid input.
@@ -399,91 +419,111 @@ export function UnlockVault({
     if (tooLong) return;
     const secret = passphrase;
     setPassphrase("");
+    setShowPassphrase(false);
     setSource("unlock");
     void onUnlock(secret);
   };
   return (
-    <VaultAuthFrame state="Locked" language>
-      <section className="vault-card" aria-labelledby="unlock-title">
-        <p className="vault-kicker">{t("auth.kicker")}</p>
-        <h1 id="unlock-title">{t("unlock.title")}</h1>
-        <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
-        {/* A document waiting at a clinic (#230): one fixed sentence, nothing about it. */}
-        {trayWaiting && (
-          <p className="native-received-waiting" role="status">
-            {t("native.tray.waiting")}
-          </p>
-        )}
-        {/* Shared files waiting: a count, never a name, since whoever is
+    <VaultAuthFrame state="Locked" split>
+      <aside className="unlock-brand">
+        {/* The logo is decoration: the name under it says what it is. */}
+        <span className="unlock-logo">
+          <img src={carlosLogo} alt="" width="120" height="120" />
+        </span>
+        <p className="unlock-brand-name">myCarlos</p>
+        <p className="unlock-brand-tagline">{t("unlock.brand.tagline")}</p>
+      </aside>
+      <div className="unlock-pane">
+        <LanguageButton />
+        <section className="vault-card" aria-labelledby="unlock-title">
+          <p className="vault-kicker">{t("auth.kicker")}</p>
+          <h1 id="unlock-title">{t("unlock.title")}</h1>
+          <p>{t("unlock.autoLock", { count: autoLockMinutes })}</p>
+          {/* A document waiting at a clinic (#230): one fixed sentence, nothing about it. */}
+          {trayWaiting && (
+            <p className="native-received-waiting" role="status">
+              {t("native.tray.waiting")}
+            </p>
+          )}
+          {/* Shared files waiting: a count, never a name, since whoever is
             looking on has not unlocked. */}
-        {waiting > 0 && (
-          <p className="native-received-waiting">
-            {waiting === 1
-              ? t("unlock.waiting.one", {
-                  folder: t("interface.LibrarySidebar.sharedWithMe"),
-                })
-              : t("unlock.waiting", {
-                  count: waiting,
-                  folder: t("interface.LibrarySidebar.sharedWithMe"),
-                })}
-          </p>
-        )}
-        <form onSubmit={submit}>
-          <label>
-            {t("passphrase.label")}
-            <SecretInput
-              aria-label={t("passphrase.label")}
-              ref={passphraseRef}
-              autoFocus
-              required
-              type="password"
-              autoComplete="current-password"
-              aria-describedby={unlockNotice ? AUTH_NOTICE_ID : undefined}
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
+          {waiting > 0 && (
+            <p className="native-received-waiting">
+              {waiting === 1
+                ? t("unlock.waiting.one", {
+                    folder: t("interface.LibrarySidebar.sharedWithMe"),
+                  })
+                : t("unlock.waiting", {
+                    count: waiting,
+                    folder: t("interface.LibrarySidebar.sharedWithMe"),
+                  })}
+            </p>
+          )}
+          <form onSubmit={submit}>
+            <label>
+              {t("passphrase.label")}
+              <SecretInput
+                aria-label={t("passphrase.label")}
+                ref={passphraseRef}
+                autoFocus
+                required
+                type={showPassphrase ? "text" : "password"}
+                autoComplete={showPassphrase ? "off" : "current-password"}
+                aria-describedby={unlockNotice ? AUTH_NOTICE_ID : undefined}
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+              />
+            </label>
+            <button
+              className="button show-secret"
+              type="button"
+              aria-pressed={showPassphrase}
+              onClick={() => setShowPassphrase((current) => !current)}
+            >
+              {t("passphrase.show")}
+            </button>
+            {tooLong && <p role="alert">{t("passphrase.longerThanAny")}</p>}
+            <AuthNotice notice={unlockNotice} />
+            <button className="button primary" disabled={busy || tooLong}>
+              {t("unlock.submit")}
+            </button>
+          </form>
+          <details className="vault-reset">
+            <summary>{t("unlock.forgot.summary")}</summary>
+            <RecoverWithKey
+              busy={busy}
+              notice={source === "forgot" ? notice : ""}
+              onRecover={(recoveryKey, newPassphrase) => {
+                setSource("forgot");
+                return onRecover(recoveryKey, newPassphrase);
+              }}
             />
-          </label>
-          {tooLong && <p role="alert">{t("passphrase.longerThanAny")}</p>}
-          <AuthNotice notice={unlockNotice} />
-          <button className="button primary" disabled={busy || tooLong}>
-            {t("unlock.submit")}
-          </button>
-        </form>
-        <details className="vault-reset">
-          <summary>{t("unlock.forgot.summary")}</summary>
-          <RecoverWithKey
-            busy={busy}
-            notice={source === "forgot" ? notice : ""}
-            onRecover={(recoveryKey, newPassphrase) => {
-              setSource("forgot");
-              return onRecover(recoveryKey, newPassphrase);
-            }}
-          />
-          <h2 className="vault-reset-heading">{t("unlock.noKey.heading")}</h2>
-          <p>{t("unlock.noKey.body")}</p>
-          <ResetConfirmation
-            busy={busy}
-            actionLabel={t("reset.submit")}
-            onReset={(confirmation) => {
-              setSource("forgot");
-              return onReset(confirmation);
-            }}
-          />
-        </details>
-        <details className="vault-reset">
-          <summary>{t("restore.summary")}</summary>
-          <RestoreBackup
-            bridge={restoreBridge}
-            onRestored={() => {
-              // Its message belongs by the Passphrase field, which is next,
-              // and the button that had focus is gone.
-              setSource("unlock");
-              onRestored();
-              passphraseRef.current?.focus();
-            }}
-          />
-        </details>
-      </section>
+            <h2 className="vault-reset-heading">{t("unlock.noKey.heading")}</h2>
+            <p>{t("unlock.noKey.body")}</p>
+            <ResetConfirmation
+              busy={busy}
+              actionLabel={t("reset.submit")}
+              onReset={(confirmation) => {
+                setSource("forgot");
+                return onReset(confirmation);
+              }}
+            />
+          </details>
+          <details className="vault-reset">
+            <summary>{t("restore.summary")}</summary>
+            <RestoreBackup
+              bridge={restoreBridge}
+              onRestored={() => {
+                // Its message belongs by the Passphrase field, which is next,
+                // and the button that had focus is gone.
+                setSource("unlock");
+                onRestored();
+                passphraseRef.current?.focus();
+              }}
+            />
+          </details>
+        </section>
+      </div>
     </VaultAuthFrame>
   );
 }

@@ -596,6 +596,85 @@ describe("UnlockVault", () => {
     expect(unlock).toBeEnabled();
   });
 
+  it("shows the passphrase as text on request, keeps it out of autofill and spell checking, and hides it when the app is hidden or the passphrase is sent", () => {
+    const onUnlock = vi.fn().mockResolvedValue(undefined);
+    render(
+      <UnlockVault
+        busy={false}
+        notice=""
+        autoLockMinutes={5}
+        onUnlock={onUnlock}
+        onRecover={vi.fn()}
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onReset={vi.fn()}
+      />,
+    );
+    const passphrase = screen.getByLabelText(humanText("Passphrase"));
+    const show = screen.getByRole("button", {
+      name: humanText("Show passphrase"),
+    });
+    expect(passphrase).toHaveAttribute("type", "password");
+    expect(passphrase).toHaveAttribute("autocomplete", "current-password");
+    expect(show).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(show);
+    expect(passphrase).toHaveAttribute("type", "text");
+    expect(passphrase).toHaveAttribute("autocomplete", "off");
+    expect(passphrase).toHaveAttribute("spellcheck", "false");
+    expect(show).toHaveAttribute("aria-pressed", "true");
+    // Hidden again when the app goes to the background.
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    try {
+      fireEvent(document, new Event("visibilitychange"));
+    } finally {
+      visibility.mockRestore();
+    }
+    expect(passphrase).toHaveAttribute("type", "password");
+    // And after it is sent.
+    fireEvent.click(show);
+    fireEvent.change(passphrase, {
+      target: { value: "FAKE river passphrase" },
+    });
+    fireEvent.submit(passphrase.closest("form")!);
+    expect(onUnlock).toHaveBeenCalledExactlyOnceWith("FAKE river passphrase");
+    expect(passphrase).toHaveAttribute("type", "password");
+    expect(passphrase).toHaveValue("");
+  });
+
+  it("is split in two: the brand on the left, the form on the right with the language button at its top right", () => {
+    const onUnlock = vi.fn();
+    render(
+      <UnlockVault
+        busy={false}
+        notice=""
+        autoLockMinutes={5}
+        onUnlock={onUnlock}
+        onRecover={vi.fn()}
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onReset={vi.fn()}
+      />,
+    );
+    const brand = document.querySelector(".unlock-brand") as HTMLElement;
+    const pane = document.querySelector(".unlock-pane") as HTMLElement;
+    expect(brand).toHaveHumanTextContent("myCarlos");
+    // The logo is decoration (the name beside it says what it is).
+    expect(brand.querySelector("img")).toHaveAttribute("alt", "");
+    expect(brand.getBoundingClientRect().right).toBeLessThanOrEqual(
+      pane.getBoundingClientRect().left + 1,
+    );
+    const language = pane.querySelector(".language-button") as HTMLElement;
+    const card = pane.querySelector(".vault-card") as HTMLElement;
+    expect(language.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      card.getBoundingClientRect().top + 1,
+    );
+    expect(language.getBoundingClientRect().right).toBeGreaterThan(
+      card.getBoundingClientRect().right - 8,
+    );
+  });
+
   it("keeps its status line on the page, so that a new message is read out", () => {
     const props = {
       busy: false,

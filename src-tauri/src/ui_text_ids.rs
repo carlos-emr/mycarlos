@@ -1372,6 +1372,7 @@ pub enum MessageId {
     TextSizeSmallest,
     TextSizeTitle,
     UnlockAutoLock,
+    UnlockBrandTagline,
     UnlockForgotSummary,
     UnlockNoKeyBody,
     UnlockNoKeyHeading,
@@ -2752,6 +2753,7 @@ impl MessageId {
         Self::TextSizeSmallest,
         Self::TextSizeTitle,
         Self::UnlockAutoLock,
+        Self::UnlockBrandTagline,
         Self::UnlockForgotSummary,
         Self::UnlockNoKeyBody,
         Self::UnlockNoKeyHeading,
@@ -4508,6 +4510,7 @@ impl MessageId {
             Self::TextSizeSmallest => "textSize-smallest",
             Self::TextSizeTitle => "textSize-title",
             Self::UnlockAutoLock => "unlock-autoLock",
+            Self::UnlockBrandTagline => "unlock-brand-tagline",
             Self::UnlockForgotSummary => "unlock-forgot-summary",
             Self::UnlockNoKeyBody => "unlock-noKey-body",
             Self::UnlockNoKeyHeading => "unlock-noKey-heading",
@@ -6418,6 +6421,7 @@ impl MessageId {
                 Some(Self::InterfaceVaultLibraryHelpWithThisScreen)
             }
             "interface.VaultLibrary.moreFor" => Some(Self::InterfaceVaultLibraryMoreFor),
+            "unlock.brand.tagline" => Some(Self::UnlockBrandTagline),
             _ => None,
         }
     }
