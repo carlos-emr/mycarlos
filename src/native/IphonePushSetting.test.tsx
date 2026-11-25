@@ -158,6 +158,38 @@ describe("Notices when myCarlos is closed (iPhone)", () => {
     );
   });
 
+  it("a return from the iPhone's permission question does not make the change's own answer stale, and the status is read once after", async () => {
+    const user = userEvent.setup();
+    let finish: (value: IphonePushStatus) => void = () => {};
+    let statusReads = 0;
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "vault_iphone_push_set")
+        return new Promise<IphonePushStatus>((resolve) => {
+          finish = resolve;
+        });
+      statusReads += 1;
+      return statusReads === 1
+        ? off
+        : ({ supported: true, enabled: true, state: "refused" } as const);
+    });
+    render(<IphonePushSetting />);
+    const checkbox = await box();
+    expect(statusReads).toBe(1);
+    await user.click(checkbox);
+    // The system's question took the app out of the foreground and back: focus fires meanwhile.
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+    expect(statusReads).toBe(1);
+    expect(checkbox).toBeDisabled();
+    finish({ supported: true, enabled: true, state: "refused" });
+    // The answer to the change is shown (not discarded), then the status is read once.
+    expect(
+      await screen.findByText(humanText(/You did not allow notices/)),
+    ).toBeVisible();
+    await waitFor(() => expect(statusReads).toBe(2));
+    expect(checkbox).toBeEnabled();
+  });
+
   it("has no accessibility violations, with and without a reason", async () => {
     native.invoke.mockResolvedValue({
       supported: true,

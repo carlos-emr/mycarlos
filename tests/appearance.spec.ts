@@ -34,6 +34,8 @@ async function fakeVault(
               automaticChecksPaused: false,
               lastOutcome: null,
             };
+          if (command === "vault_iphone_push_status")
+            return { supported: false, enabled: false, state: "ok" };
           if (command === "vault_snapshot")
             return {
               capture: { epoch: captureEpoch, sequence: ++captureSequence },
@@ -392,6 +394,7 @@ test("remembers appearance and follows live system changes without vault mutatio
         ![
           "vault_status",
           "vault_notification_status",
+          "vault_iphone_push_status",
           "vault_snapshot",
           "vault_touch",
           "vault_set_auto_lock",
