@@ -5154,8 +5154,25 @@ button:disabled,
    help panel, and the details reminder and clinic strip at one line each. */
 .head-title-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+/* Large text on a phone: the Add button's words wrap inside it, and it never runs past the window. */
+.phone-add {
+  min-width: 0;
+  max-width: 100%;
+}
+.phone-add .menu-button-primary {
+  margin: 0;
+}
+.phone-add .menu-button-trigger {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  padding-block: 6px;
+  white-space: normal;
+  text-align: start;
 }
 .library-search-row {
   align-items: center;
