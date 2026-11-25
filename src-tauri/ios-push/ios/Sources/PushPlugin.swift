@@ -93,7 +93,13 @@ class PushPlugin: Plugin, UNUserNotificationCenterDelegate {
     withCompletionHandler completionHandler:
       @escaping (UNNotificationPresentationOptions) -> Void
   ) {
-    completionHandler([.banner, .list])
+    // `.banner` and `.list` came with iOS 14; the app asks for 14.5, but the generated project's own
+    // deployment target decides what compiles, so the older option is named as well.
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .list])
+    } else {
+      completionHandler([.alert])
+    }
   }
 }
 
