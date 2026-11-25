@@ -3910,7 +3910,7 @@ async fn vault_iphone_push_set(
         let state = Arc::clone(&state);
         move || {
             let session = store.portal_link_ticket();
-            store.set_iphone_push(
+            let (_, bound) = store.set_iphone_push(
                 enabled,
                 token.as_ref(),
                 &state,
@@ -3918,6 +3918,8 @@ async fn vault_iphone_push_set(
                 session,
                 &portal_client::api,
             )?;
+            // Settings says so when no place for notices could be left at the portal.
+            state.record_attention(bound.needs_attention);
             store
                 .remote_notice_status(Some(&*state))
                 .map(|status| status.opted_in)
@@ -7556,6 +7558,20 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    // The Keychain's digests of the iPhone push handles go with the vault. Best effort: the
+    // destinations are known only while the vault is open, and a digest is not the token.
+    #[cfg(target_os = "ios")]
+    {
+        let ids = store.iphone_destination_ids().unwrap_or_default();
+        let memory = ios_push_native::KeychainMemory(app.clone());
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            use ios_push_handles::HandleMemory as _;
+            for id in ids {
+                memory.forget(id);
+            }
+        })
+        .await;
+    }
     run_blocking(store.arc(), VaultStore::reset).await?;
     // Its notice keys go with it (#230).
     let _ = tauri::async_runtime::spawn_blocking(notice_key::after_reset).await;

@@ -22,6 +22,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 pub(crate) const HANDLES: &str = "/api/mycarlos/availability/handles";
 /// The answer is `{}`; anything bigger is not the portal.
@@ -29,14 +30,18 @@ pub(crate) const MAX_HANDLE_REPLY: usize = 1024;
 
 /// The request body: the destination the device enrolled and its Apple token for the service the
 /// build belongs to.
-pub(crate) fn handle_body(destination: Uuid, token: &Token) -> Vec<u8> {
-    serde_json::to_vec(&serde_json::json!({
+pub(crate) fn handle_body(destination: Uuid, token: &Token) -> Zeroizing<Vec<u8>> {
+    // The token is copied into the JSON value and the bytes: both are wiped when dropped, and the
+    // bytes handed to the request are the ones moved out of this guard.
+    let mut value = serde_json::json!({
         "destination_id": destination.to_string(),
         "platform": Platform::IosApns.wire(),
         "environment": token.environment,
-        "token": token.token,
-    }))
-    .unwrap_or_default()
+        "token": &*token.token,
+    });
+    let bytes = Zeroizing::new(serde_json::to_vec(&value).unwrap_or_default());
+    value["token"] = serde_json::Value::Null;
+    bytes
 }
 
 /// What identifies a binding without being the token: a domain-separated digest over the
@@ -75,9 +80,10 @@ pub(crate) fn digest_from_hex(text: &str) -> Option<[u8; 32]> {
 pub(crate) enum Binding {
     /// The portal holds this token for the destination (201 new, 200 replaced).
     Bound,
-    /// 404: the destination is unknown to the portal (or the assertion was refused). The
-    /// destination is forgotten here so that the next opening enrolls a fresh one; this pass does
-    /// not retry.
+    /// 404: the portal does not know the destination, or refused the device's signed request
+    /// (clock skew, a replay, an expired assertion, all of which answer 404 too). Never retried in a
+    /// loop: the first one is only noted (`SUSPECT`) and kept as it is; a second one at a later
+    /// pass means the destination is gone, and it is revoked and enrolled anew.
     ReEnroll,
     /// 400: the portal refused what the device sent (`invalid_handle`, `invalid_environment`,
     /// `invalid_platform`). That is a bug in the app, never fixed by sending it again.
@@ -98,6 +104,13 @@ pub(crate) fn binding_reply(status: u16, body: &[u8]) -> Binding {
         _ => Binding::Later,
     }
 }
+
+/// What the memory holds in place of a digest after the portal answered 404 for a destination
+/// once. A 404 can also mean a refused device assertion (clock skew, a replay, an expired one), so
+/// the first one is only noted; a second 404 at a later pass is the portal not knowing the
+/// destination. It is not any digest (a SHA-256 is never all ones), so a noted destination is sent
+/// again, and a successful send replaces it.
+pub(crate) const SUSPECT: [u8; 32] = [0xFF; 32];
 
 /// The device's memory of what the portal holds, one digest per destination. On an iPhone it is the
 /// Keychain (through the plugin); tests use a fake.
@@ -122,6 +135,9 @@ pub(crate) enum PushState {
     Unavailable,
     /// Apple did not answer in time.
     TimedOut,
+    /// Everything on the iPhone is in order, but the portal does not keep a place for notices: it
+    /// did not know the destination twice, and enrolling a new one did not work either.
+    NeedsAttention,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -154,6 +170,8 @@ pub(crate) fn permission_from_status(status: &str) -> Permission {
 struct Observed {
     permission: Permission,
     refusal: Option<Refusal>,
+    /// The last pass could not bind the token to a place at the portal, even after enrolling anew.
+    attention: bool,
 }
 
 /// What this run knows about iPhone push: the permission the plugin last reported and why the last
@@ -188,6 +206,11 @@ impl IosPushState {
         seen.refusal = None;
     }
 
+    /// Whether the last pass could not leave a place for notices at the portal.
+    pub(crate) fn record_attention(&self, attention: bool) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).attention = attention;
+    }
+
     pub(crate) fn state(&self) -> PushState {
         let seen = self.0.lock().unwrap_or_else(|e| e.into_inner());
         match seen.refusal {
@@ -197,6 +220,7 @@ impl IosPushState {
                 PushState::Unavailable
             }
             None if seen.permission == Permission::Denied => PushState::IosOff,
+            None if seen.attention => PushState::NeedsAttention,
             None => PushState::Ok,
         }
     }
@@ -256,7 +280,8 @@ mod tests {
     #[test]
     fn the_body_names_the_destination_the_service_and_the_token_and_nothing_else() {
         let token = fake_token("sandbox", "ab");
-        let body: serde_json::Value = serde_json::from_slice(&handle_body(id(7), &token)).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_slice(&handle_body(id(7), &token)[..]).unwrap();
         assert_eq!(
             body,
             serde_json::json!({
