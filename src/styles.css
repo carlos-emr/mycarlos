@@ -985,46 +985,66 @@ p {
   height: 92vh;
   container: native-reader / inline-size;
 }
-/* The reader's header (RestReader): Back first, then the title with its status and source line and
-   the service date under it, then the reading-aid button at the end. A row that wraps: a long
-   title keeps its whole width (it wraps, it is never cut, #311) and the buttons move around it on
-   a narrow window. Two classes, so that this wins over .dialog-head's flex row, which comes later. */
+/* The reader's header (RestReader): Back, the title and the reading-aid button on one row, and the
+   status and source line and the service date under them across the whole header (#135), so that
+   the buttons never squeeze them into a narrow column. A long title wraps, it is never cut (#311).
+   Two classes, so that this wins over .dialog-head's flex row, which comes later. */
 .dialog-head.native-reader-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 12px;
 }
 .native-reader-head > div {
-  flex: 1 1 12em;
-  min-width: 0;
+  display: contents;
+}
+.native-reader-head > div > * {
+  grid-column: 1 / -1;
+}
+.native-reader-back {
+  grid-column: 1;
+  grid-row: 1;
 }
 .dialog-head.native-reader-head h2 {
+  grid-column: 2;
+  grid-row: 1;
   white-space: normal;
   overflow: visible;
   overflow-wrap: anywhere;
 }
 .native-reader-head-actions {
+  grid-column: 3;
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  margin-inline-start: auto;
   min-width: 0;
   max-width: 100%;
 }
 .native-reader-head-actions .button {
   max-width: 100%;
 }
-/* On a narrow window Back (and the reading-aid button) take a row, and the title with its status
-   and source line the full width under them. */
+/* On a narrow window Back and the reading-aid button take the first row (Back at the start, the
+   aid at the end), and the title takes the whole row under them. */
 @media (max-width: 40em) {
   .dialog-head.native-reader-head {
+    grid-template-columns: auto minmax(0, 1fr);
     padding-inline: 12px;
   }
-  .native-reader-head > div {
-    flex-basis: 100%;
-    order: 1;
+  .native-reader-head-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    margin-block-start: 6px;
+  }
+  .native-reader-head-actions:empty {
+    display: none;
+  }
+  .dialog-head.native-reader-head h2 {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-block: 6px;
   }
 }
 .native-reader-head p {
@@ -5182,8 +5202,8 @@ button:disabled,
   min-height: 46px;
 }
 .help-button {
-  width: 46px;
-  padding: 0;
+  min-width: 46px;
+  padding: 0 12px;
   font-weight: 700;
 }
 .help-panel {

@@ -720,6 +720,25 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await page.keyboard.press("Shift+Tab");
   await expect(newest).toBeFocused();
   expect(await ring()).not.toBe(atRest);
+  // With the menu open, the selected choice is told apart from the focused one by more than
+  // colour: it is checked (aria-checked) and carries a tick; the focused item has its own ring (#121).
+  await page.keyboard.press("Enter");
+  const choices = page.getByRole("menuitemradio");
+  const selectedChoice = choices.filter({
+    has: page.locator(".menu-button-tick", { hasText: "✓" }),
+  });
+  await expect(selectedChoice).toHaveCount(1);
+  await expect(selectedChoice).toHaveAttribute("aria-checked", "true");
+  await expect(selectedChoice).toContainText(
+    translate("en", "interface.VaultLibrary.newestFirst"),
+  );
+  await expect(selectedChoice).toBeFocused();
+  await expect(selectedChoice).toHaveCSS("outline-style", "solid");
+  const others = choices.filter({ hasNot: selectedChoice });
+  await expect(others.first()).toHaveAttribute("aria-checked", "false");
+  await expect(others.first().locator(".menu-button-tick")).toHaveText("");
+  await page.keyboard.press("Escape");
+  await expect(newest).toBeFocused();
   // The logo sits in the title bar, on a phone too.
   await expect(page.locator(".titlebar-logo img")).toBeVisible();
   await contrast(page, ".icon", "stroke", 3);

@@ -592,6 +592,8 @@ pub enum MessageId {
     InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual,
     InterfaceVaultLibraryGrid,
     InterfaceVaultLibraryGridView,
+    InterfaceVaultLibraryHelp,
+    InterfaceVaultLibraryHelpButtonName,
     InterfaceVaultLibraryHelpWithThisScreen,
     InterfaceVaultLibraryHideDamagedDocuments,
     InterfaceVaultLibraryHoldAndDragADocumentOrFolder,
@@ -1977,6 +1979,8 @@ impl MessageId {
         Self::InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual,
         Self::InterfaceVaultLibraryGrid,
         Self::InterfaceVaultLibraryGridView,
+        Self::InterfaceVaultLibraryHelp,
+        Self::InterfaceVaultLibraryHelpButtonName,
         Self::InterfaceVaultLibraryHelpWithThisScreen,
         Self::InterfaceVaultLibraryHideDamagedDocuments,
         Self::InterfaceVaultLibraryHoldAndDragADocumentOrFolder,
@@ -3618,6 +3622,8 @@ impl MessageId {
             }
             Self::InterfaceVaultLibraryGrid => "interface-VaultLibrary-grid",
             Self::InterfaceVaultLibraryGridView => "interface-VaultLibrary-gridView",
+            Self::InterfaceVaultLibraryHelp => "interface-VaultLibrary-help",
+            Self::InterfaceVaultLibraryHelpButtonName => "interface-VaultLibrary-helpButtonName",
             Self::InterfaceVaultLibraryHelpWithThisScreen => {
                 "interface-VaultLibrary-helpWithThisScreen"
             }
@@ -6438,6 +6444,10 @@ impl MessageId {
             "reader.panel.label" => Some(Self::ReaderPanelLabel),
             "reader.panel.more" => Some(Self::ReaderPanelMore),
             "reader.panel.ai" => Some(Self::ReaderPanelAi),
+            "interface.VaultLibrary.help" => Some(Self::InterfaceVaultLibraryHelp),
+            "interface.VaultLibrary.helpButtonName" => {
+                Some(Self::InterfaceVaultLibraryHelpButtonName)
+            }
             _ => None,
         }
     }

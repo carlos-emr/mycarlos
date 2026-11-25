@@ -1255,6 +1255,16 @@ describe("the reader's Back button (#311, #312)", () => {
                 heading.top < shut.bottom - 1 &&
                 heading.bottom > shut.top + 1;
               expect(overlapsBack).toBe(false);
+              // #312: Back is on the title's first line when the window is wide, and on a row of
+              // its own above the title when it is narrow; the status and source line are always
+              // under both (never beside Back, never over it).
+              const trust = document.getElementById("reader-trust")!;
+              expect(shut.bottom).toBeLessThanOrEqual(
+                trust.getBoundingClientRect().top + 0.5,
+              );
+              if (width > 640)
+                expect(Math.abs(shut.top - heading.top)).toBeLessThanOrEqual(1);
+              else expect(shut.bottom).toBeLessThanOrEqual(heading.top + 0.5);
 
               if (aid) {
                 const opened = within(head)
@@ -1264,6 +1274,22 @@ describe("the reader's Back button (#311, #312)", () => {
                   .getBoundingClientRect();
                 expect(opened.left).toBeGreaterThanOrEqual(0);
                 expect(opened.right).toBeLessThanOrEqual(window.innerWidth);
+                // The reading-aid button is on Back's row, at the end, on a wide window, and on
+                // the row under Back on a narrow one; over neither the title nor the status line.
+                expect(opened.bottom).toBeLessThanOrEqual(
+                  document
+                    .getElementById("reader-trust")!
+                    .getBoundingClientRect().top + 0.5,
+                );
+                if (width > 640) {
+                  expect(Math.abs(opened.top - shut.top)).toBeLessThanOrEqual(
+                    1,
+                  );
+                  if (direction === "rtl")
+                    expect(opened.right).toBeLessThanOrEqual(shut.left);
+                  else expect(opened.left).toBeGreaterThanOrEqual(shut.right);
+                } else
+                  expect(opened.top).toBeGreaterThanOrEqual(shut.bottom - 0.5);
               }
               unmount();
             }

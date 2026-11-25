@@ -774,7 +774,7 @@ describe("VaultLibrary moving and selecting without dragging (#67)", () => {
   it("says how to move without dragging, in the help the question mark opens", () => {
     renderLibrary(withRecord);
     fireEvent.click(
-      screen.getByRole("button", { name: humanText("Help with this screen") }),
+      screen.getByRole("button", { name: humanText("Help: this screen") }),
     );
     expect(
       screen.getByText(

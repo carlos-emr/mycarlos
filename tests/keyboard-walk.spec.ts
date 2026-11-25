@@ -254,7 +254,7 @@ test("the library works from the keyboard alone: open, move and search", async (
     page.getByRole("heading", { name: "My records", level: 1 }),
   ).toBeFocused();
   // The keyboard way to move a folder is in the help the "?" button opens.
-  await page.getByRole("button", { name: "Help with this screen" }).focus();
+  await page.getByRole("button", { name: "Help: this screen" }).focus();
   await page.keyboard.press("Enter");
   await walk(page, "library, folder move shown");
   await page.getByRole("combobox", { name: "Folder", exact: true }).focus();
@@ -345,7 +345,7 @@ test("focus is never left on the page itself after an action (#90)", async ({
   ).toBeHidden();
   await after("a move with the selection bar", heading);
 
-  await page.getByRole("button", { name: "Help with this screen" }).focus();
+  await page.getByRole("button", { name: "Help: this screen" }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Folder", exact: true }).focus();
   await page.keyboard.press("ArrowDown");

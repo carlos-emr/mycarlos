@@ -1379,5 +1379,7 @@
   "reader.back",
   "reader.panel.label",
   "reader.panel.more",
-  "reader.panel.ai"
+  "reader.panel.ai",
+  "interface.VaultLibrary.help",
+  "interface.VaultLibrary.helpButtonName"
 ]

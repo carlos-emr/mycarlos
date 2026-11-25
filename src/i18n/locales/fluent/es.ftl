@@ -2965,3 +2965,7 @@ reader-panel-label = Sobre este documento
 reader-panel-more = Más…
 
 reader-panel-ai = Explicar con IA
+
+interface-VaultLibrary-help = Ayuda
+
+interface-VaultLibrary-helpButtonName = Ayuda: esta pantalla
