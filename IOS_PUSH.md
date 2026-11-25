@@ -54,10 +54,9 @@ Without the entitlement `registerForRemoteNotifications` fails and the app repor
   as permanent and does not retry, so a push signed with a key Apple has already revoked is lost, not retried.
   The portal's own steps are in its `docs/apns-key-operations.md`.
 
-## What the portal still lacks: HTTP/2
-APNs accepts HTTP/2 only. **The portal has no HTTP/2 client today and refuses to start with push turned on until
-one is added** (a candidate is `httpx[http2]`; adding it is Ben's dependency decision). This also blocks the
-real-phone test below, so it comes before any delivery to a phone.
+## HTTP/2
+The portal sends over HTTP/2 with `httpx2[http2]` (carlos-portal #123); a portal built without the extra refuses to
+start with push on (`apns_http2_unavailable`).
 
 ## What Apple and the portal see, and the label
 See the new row in `PRIVACY_NOTICE_DRAFT.md`: Apple sees the push token and the app, the time of each push, the
