@@ -2957,3 +2957,11 @@ notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
 
 unlock-brand-tagline = Vos documents de santé, gardés privés sur cet appareil.
+
+reader-back = Retour
+
+reader-panel-label = À propos de ce document
+
+reader-panel-more = Plus…
+
+reader-panel-ai = Expliquer avec l’IA

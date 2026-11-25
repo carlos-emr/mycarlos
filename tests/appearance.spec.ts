@@ -1,7 +1,7 @@
 import { translate } from "./support/fluent";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { addButton, chooseToolbar } from "./support/menus";
+import { addButton, chooseToolbar, toolbarButton } from "./support/menus";
 
 async function fakeVault(
   page: Page,
@@ -705,11 +705,9 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await expect(selected).toHaveCSS("outline-style", "solid");
   await expect(selected).toHaveCSS("opacity", "1");
   await expect(selected).toHaveCSS("box-shadow", "none");
-  // A selected sort choice shows focus differently from its selection (#121).
-  const newest = page.getByRole("button", {
-    name: translate("en", "interface.VaultLibrary.newestFirst"),
-  });
-  await expect(newest).toHaveAttribute("aria-pressed", "true");
+  // The Sort menu button shows focus visibly in forced colours (#121).
+  const newest = toolbarButton(page, "Sort by");
+  await expect(newest).toHaveAttribute("aria-haspopup", "menu");
   const ring = () =>
     newest.evaluate((element) => {
       const style = getComputedStyle(element);

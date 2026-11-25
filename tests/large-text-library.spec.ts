@@ -225,12 +225,13 @@ for (const width of [360, 320])
         ).toBeVisible();
         for (const problem of await cutOrOutside(page))
           problems.push(`${locale}: ${problem}`);
-        // #121: "Sort by" stays in view, in the language in use, and names
-        // its two choices.
+        // #121: "Sort by" stays in view, in the language in use, and names its choice.
         const label = translate(locale, "interface.VaultLibrary.sortBy");
-        const sort = page.getByRole("group", { name: label, exact: true });
-        await expect(sort.getByText(label, { exact: true })).toBeVisible();
-        await expect(sort.getByRole("button")).toHaveCount(2);
+        const sort = page.getByRole("button", {
+          name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+        });
+        await expect(sort).toBeVisible();
+        await expect(sort).toHaveAttribute("aria-haspopup", "menu");
       } finally {
         await context.close();
       }

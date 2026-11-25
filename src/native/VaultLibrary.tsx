@@ -1,3 +1,4 @@
+import carlosLogo from "../brand/carlos-logo.jpg";
 import { missingDetails } from "./PersonDetails";
 import {
   useTextState,
@@ -2270,7 +2271,13 @@ export function VaultLibrary({
                 recoverySetup,
             )}
           >
-            <span className="window-title">myCarlos</span>
+            <span className="window-title">
+              {/* The logo is decoration: the name beside it says what it is. */}
+              <span className="titlebar-logo">
+                <img src={carlosLogo} alt="" width="24" height="24" />
+              </span>
+              myCarlos
+            </span>
             {/* The pill shows the vault's state, then the button. The button
                 shows exactly the words it is named by, "Lock now", so voice
                 control's "click Lock now" works in every language and the
@@ -3487,6 +3494,27 @@ export function VaultLibrary({
             <DocumentReader
               record={readerRecord}
               startWithAid={readerShowsAid}
+              placeLabel={
+                readerRecord.folderIds
+                  .map((id) => folders.find((folder) => folder.id === id)?.name)
+                  .filter(Boolean)
+                  .join(", ") ||
+                (people.some((person) => person.id === readerRecord.profileId)
+                  ? translateNow("sidebar.myRecords")
+                  : translateNow("interface.LibrarySidebar.sharedWithMe"))
+              }
+              onSaveCopy={() => {
+                // The save-a-copy question is asked over the library, so the reader steps aside.
+                setReaderRecordId(null);
+                setConfirmation({
+                  action: "export",
+                  recordId: readerRecord.id,
+                });
+              }}
+              onMore={() => {
+                setReaderRecordId(null);
+                setActiveRecordId(readerRecord.id);
+              }}
               onOpenOriginal={
                 androidPdfReader ? () => setReaderShowsAid(false) : undefined
               }

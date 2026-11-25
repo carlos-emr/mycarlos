@@ -8,7 +8,6 @@ import {
   type TestInfo,
 } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { chooseToolbar, toolbarButton } from "./support/menus";
 
 // WCAG 2.0, 2.1 and 2.2 A and AA, as in smoke.spec.ts.
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -572,11 +571,10 @@ test("opens a non-first preview record from Grid with 200% default text and retu
       ).toBe(true);
     };
 
-    // View is a menu button that names its current choice.
-    const view = toolbarButton(shown, "View");
-    await expectReachable(view);
-    await chooseToolbar(shown, "View", "Grid");
-    await expect(view).toHaveAccessibleName("View: Grid");
+    const grid = shown.getByRole("button", { name: "Grid view", exact: true });
+    await expectReachable(grid);
+    await grid.click();
+    await expect(grid).toHaveAttribute("aria-pressed", "true");
     const tiles = shown.locator(".file-grid");
     await expect(tiles).toBeVisible();
 
@@ -604,9 +602,11 @@ test("opens a non-first preview record from Grid with 200% default text and retu
     await close.click();
     await expect(dialog).toHaveCount(0);
 
-    await expectReachable(view);
-    await chooseToolbar(shown, "View", "List");
-    await expect(view).toHaveAccessibleName("View: List");
+    const list = shown.getByRole("button", { name: "List view", exact: true });
+    await expectReachable(list);
+    await list.click();
+    await expect(list).toHaveAttribute("aria-pressed", "true");
+    await expect(grid).toHaveAttribute("aria-pressed", "false");
     await expect(shown.locator(".filelist")).toBeVisible();
     await expect(tiles).toHaveCount(0);
     await expect(

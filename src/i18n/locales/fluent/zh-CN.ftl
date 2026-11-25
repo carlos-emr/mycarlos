@@ -2648,3 +2648,11 @@ notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
 
 unlock-brand-tagline = 您的健康文档，私密保存在此设备上。
+
+reader-back = 返回
+
+reader-panel-label = 关于此文档
+
+reader-panel-more = 更多…
+
+reader-panel-ai = 用 AI 解释
