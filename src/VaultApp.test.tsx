@@ -3332,7 +3332,7 @@ describe("durable vault UI", () => {
       undefined,
     );
     await user.click(
-      within(reader).getByRole("button", { name: humanText("Close") }),
+      within(reader).getByRole("button", { name: humanText("Back") }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
