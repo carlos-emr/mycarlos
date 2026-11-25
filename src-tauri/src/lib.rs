@@ -5512,7 +5512,10 @@ fn require_supported_file(
         received::FileKind::Pdf => Ok(reader),
         received::FileKind::Jpeg => {
             use std::io::Read as _;
-            let mut bytes = Zeroizing::new(Vec::new());
+            // Room for the most a picture may be (and one byte over, which is enough to say it is
+            // too large) from the start: a buffer that grows leaves outgrown copies of a health
+            // picture behind, which nothing wipes.
+            let mut bytes = Zeroizing::new(Vec::with_capacity(photo::MAX_PHOTO_BYTES + 1));
             // One byte over the cap is enough to say it is too large.
             reader
                 .take(photo::MAX_PHOTO_BYTES as u64 + 1)
