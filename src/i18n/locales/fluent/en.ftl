@@ -289,6 +289,7 @@ interface-notice-movedMany =
 interface-notice-movedNamed = { $name } moved to { $where }.
 
 interface-notice-notPdf = { $name } is not a PDF document, so myCarlos did not add it. For now only PDF documents can be shared to myCarlos.
+interface-notice-receivedNotOpened = { $name } could not be opened or read, so myCarlos did not add it. Share it again if you still need it.
 
 interface-notice-pdfUnlocked = An unlocked copy was added. The locked original is now called { $name }.
 
@@ -1691,6 +1692,14 @@ interface-history-event-profileCreated = Patient profile added
 
 interface-history-event-profileDetailsChanged = Personal details changed
 
+interface-history-event-profileExported = Patient profile exported
+
+interface-history-event-profileHidden = Patient profile hidden
+
+interface-history-event-profileRestored = Patient profile restored
+
+interface-history-event-profileImported = Patient profile added from a handover file
+
 interface-history-event-readingAidFiled = Reading aid saved
 
 interface-history-event-recoveryKeySet = Recovery key set up
@@ -2366,6 +2375,7 @@ notifications-help = When a clinic document is saved after a manual check, Windo
 notifications-allow = Allow document arrival notices
 notifications-blocked = Windows is blocking notifications. Review its notification settings.
 notifications-unknown = Windows notification permission could not be checked.
+notifications-notYetAsked = Windows has not shown a myCarlos notice yet, so it has no setting for it. Notices are allowed until you turn them off in Windows settings.
 notifications-error = This setting could not be saved. Notices are off for this session.
 notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
 notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
@@ -2512,7 +2522,18 @@ interface-RecordDialog-videoSavedSlow = Recording stopped because the video coul
 interface-VideoViewer-video = Video
 interface-VideoViewer-player = Video player: { $name }
 interface-VideoViewer-thisVideoCouldNotBePlayed = This video could not be played.
-interface-VideoViewer-keys = Space plays or pauses. Left and right arrows skip { $seconds } seconds. Up and down change the volume. M mutes.
+interface-VideoViewer-controls = Player controls
+interface-VideoViewer-playPause = Play/Pause (k)
+interface-VideoViewer-back = Back { $seconds } s (←)
+interface-VideoViewer-forward = Forward { $seconds } s (→)
+interface-VideoViewer-backBig = Back { $seconds } s (j)
+interface-VideoViewer-forwardBig = Forward { $seconds } s (l)
+interface-VideoViewer-volumeUp = Volume up (↑)
+interface-VideoViewer-volumeDown = Volume down (↓)
+interface-VideoViewer-mute = Mute (m)
+interface-VideoViewer-unmute = Unmute (m)
+interface-VideoViewer-start = To the start (Home)
+interface-VideoViewer-end = To the end (End)
 interface-VideoViewer-playVideo = Play video
 interface-VideoHelp-title = Why can't I record video here?
 interface-VideoHelp-engine = Recording a video needs this device's built-in web engine to record MP4 video with sound. This device's engine does not offer that.
@@ -2546,3 +2567,352 @@ security-backup-leaveVideosOutHelp = The backup will not contain your videos. If
 restore-leftOut = This backup was made without videos. Restoring it brings back everything else, and your videos will not be there. They are listed with the hidden documents, as files that are missing.
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
+
+handover-section-title = Hand a person's records over
+
+handover-section-body = Copy one person's documents into a file for another device, for example to give a child their own records. The file has its own key and does not change your vault. You can also add a person from a file someone gave you.
+
+handover-export-button = Hand records over…
+
+handover-import-button = Add a person from a file…
+
+handover-close = Close
+
+handover-export-title = Hand a person's records over
+
+handover-export-about = This makes a file holding one person's documents, with a key of its own, for another device to read. Nothing in your vault changes.
+
+handover-export-caution = This copies health records. A letter may name other people, such as a parent or guardian, and each document is copied whole and unedited. Check that the person who will open the file is the right one and can read it.
+
+handover-export-person = Whose records
+
+handover-export-history = Include the history of these documents (when they were added, renamed or moved)
+
+handover-export-keyKind-legend = How the file is locked
+
+handover-export-keyKind-generated = A key myCarlos makes (recommended)
+
+handover-export-keyKind-passphrase = A passphrase I choose
+
+handover-export-passphrase = Passphrase for the file
+
+handover-export-passphraseHint = At least 15 characters, and not easy to guess. It must not be your vault's passphrase or your recovery key.
+
+handover-export-continue = Continue
+
+handover-export-preparing = Preparing…
+
+handover-export-keyTitle = Write down the key for this file
+
+handover-export-keyBody = Anyone who has the file and this key can read these records. Give the key to the person separately from the file. myCarlos does not keep it: if it is lost, make the file again.
+
+handover-export-keyLabel = Key for the file
+
+handover-export-keyGroup = Group { $number }: { $characters }
+
+handover-export-copy = Copy the key
+
+handover-export-copied = Key copied. If nothing else is copied meanwhile, it is cleared from the clipboard in a minute.
+
+handover-export-copyFailed = The key could not be copied. Write it down instead.
+
+handover-export-keySaved = I have written the key down or put it somewhere safe
+
+handover-export-saveTitle = Save the file
+
+handover-export-summary = The file will hold { $name }'s records:
+
+handover-export-apart = Keep the file and the key apart.
+
+handover-export-provider = On some phones, if saving fails the place you chose can be left empty or incomplete. If that happens, delete that file and try again.
+
+handover-export-chooseWhere = Choose where to save…
+
+handover-export-saving = Saving and checking the file…
+
+handover-export-noLocation = No place was chosen. Nothing was saved.
+
+handover-export-doneTitle = File saved
+
+handover-export-done =
+    { $count ->
+        [one] Saved one document for { $name }, and read the file back to check it.
+       *[other] Saved { $count } documents for { $name }, and read the file back to check it.
+    }
+
+handover-export-doneApart = Keep the file and the key apart. This file does not change your vault.
+
+handover-export-hideOffer = Hide { $name } in this vault
+
+handover-export-leftOut =
+    { $count ->
+        [one] One document left out because its file cannot be read.
+       *[other] { $count } documents left out because their files cannot be read.
+    }
+
+handover-export-evidenceLeftOut =
+    { $count ->
+        [one] The clinic's signature could not be included for one document (the document itself is in the file).
+       *[other] The clinic's signature could not be included for { $count } documents (the documents themselves are in the file).
+    }
+
+handover-count-documents = Documents: { $count }
+
+handover-count-hidden = Hidden by you: { $count }
+
+handover-count-folders = Folders: { $count }
+
+handover-count-answers = AI helper answers: { $count }
+
+handover-count-evidence = Documents with a clinic's signed delivery: { $count }
+
+handover-count-size = Size: { $size }
+
+handover-import-title = Add a person from a file
+
+handover-import-about = Choose a file someone gave you, and have the key or passphrase they gave you ready. The person arrives as a new person; nothing already here is changed.
+
+handover-import-choose = Choose the file…
+
+handover-import-noFile = No file was chosen. Nothing changed.
+
+handover-import-keyTitle = Open the file
+
+handover-import-key = Key
+
+handover-import-passphrase = Passphrase
+
+handover-import-keyHint = Seven groups of four letters and numbers. Capitals, spaces and dashes do not matter.
+
+handover-import-passphraseHint = The passphrase whoever made the file chose for it.
+
+handover-import-open = Open the file
+
+handover-import-opening = Opening…
+
+handover-import-error-typo = That key does not look right. Check it against what you were given.
+
+handover-import-error-recovery = That is a recovery key, not the key for this file. Ask for the key made for the file.
+
+handover-import-error-wrong = That does not open this file.
+
+handover-import-error-newer = This file was made by a newer myCarlos. Update myCarlos and try again.
+
+handover-import-error-damaged = This file is incomplete, has been changed, or cannot be added here. Ask for a new copy.
+
+handover-import-previewTitle = What the file says
+
+handover-import-says = The file says it holds the records of { $name }.
+
+handover-import-birth = Born { $date }, as whoever made the file recorded it.
+
+handover-import-madeOn = Made on { $date }.
+
+handover-import-evidenceNote = Some documents carry a clinic's signed delivery. Until you link this device to that clinic, myCarlos can only say that they were checked on the device that made the file, not that this clinic vouches for them.
+
+handover-import-duplicate-legend = You may already have this person
+
+handover-import-duplicate-package = You have already added this file here.
+
+handover-import-duplicate-content =
+    { $count ->
+        [one] One of the documents in this file has exactly the same contents as a document you already have under another person here.
+       *[other] { $count } of the documents in this file have exactly the same contents as documents you already have under another person here.
+    }
+
+handover-import-duplicate-anyway = Add it as another person anyway
+
+handover-import-nameLabel = What to call this person here
+
+handover-import-add = Add this person
+
+handover-import-adding = Adding and checking the records…
+
+handover-import-doneTitle = Done
+
+handover-import-done =
+    { $count ->
+        [one] Added one document for { $name }.
+       *[other] Added { $count } documents for { $name }.
+    }
+
+handover-import-doneAnswers =
+    { $count ->
+        [one] One AI helper answer came with them, marked as from an imported file.
+       *[other] { $count } AI helper answers came with them, marked as from an imported file.
+    }
+
+handover-import-doneEvidence = Clinic documents show only what could be checked here. To have them checked with the clinic's key on this device, link this device to the clinic.
+
+handover-import-doneDropped =
+    { $count ->
+        [one] One item in the file was left out because it did not meet this vault's rules.
+       *[other] { $count } items in the file were left out because they did not meet this vault's rules.
+    }
+
+handover-import-receipt = Receipt code:
+
+handover-import-receiptNote = You can give this code to whoever made the file. It shows that someone who had the file and its key opened the whole file and read it through. It does not show that the records were added anywhere, or that your copy is still safe.
+
+handover-import-nothingNew = Nothing was added: this vault already has this person.
+
+handover-importedAnswer = From an imported file
+
+handover-export-leavingWarning = Stay in myCarlos while this key is shown. Switching to another app locks your vault, and this key stops working: you would start again and get a new one.
+
+handover-export-leave-title = Leave without saving a file?
+
+handover-export-leave-body = No file has been saved. The key on this screen will stop working, so do not hand it to anyone. To hand the records over, start again and you will get a new key.
+
+handover-export-leave-confirm = Leave
+
+
+handover-export-error-weak = That passphrase cannot be used. It may be too easy to guess, contain the person's name, or be too much like your vault's passphrase or recovery key. Choose another.
+
+handover-unfinished = A handover was not finished. Any key you copied or wrote down opens nothing. To hand the records over, start again to get a new key.
+
+native-error-49 = This unlocked session has already tried the most passphrases it can for a file. Lock myCarlos and unlock it again to keep trying, or let myCarlos make a key for the file instead.
+
+native-error-50 = At least one person has to stay in the library, so the last one cannot be hidden. Add another person first.
+
+hiddenPeople-title = Hidden people
+
+hiddenPeople-body = People you have hidden are out of the library, search and the AI helper. Nothing is deleted: they stay in this vault and in your backups. Anyone who knows your passphrase can bring them back.
+
+hiddenPeople-list = Hidden people
+
+hiddenPeople-since = hidden on { $date }
+
+hiddenPeople-documents =
+    { $count ->
+        [one] { $count } document
+       *[other] { $count } documents
+    }
+
+hiddenPeople-restore = Restore
+
+hiddenPeople-restoreFor = Restore { $name }
+
+hiddenPeople-handOver = Hand over…
+
+hiddenPeople-handOverFor = Hand { $name }'s records over
+
+hiddenPeople-hide = Hide
+
+hiddenPeople-hideFor = Hide { $name }
+
+hiddenPeople-lastPerson = At least one person has to stay in the library.
+
+hiddenPeople-confirm-title = Hide { $name }?
+
+hiddenPeople-confirm-body = This hides { $name } and all their documents in myCarlos. Nothing is deleted. They stay in this vault and in your backups, and you can bring them back at any time under Hidden people. Hiding does not stop anyone who knows your passphrase from restoring them.
+
+hiddenPeople-confirm-hide = Hide { $name }
+
+hiddenPeople-hidden = { $name } is now hidden.
+
+hiddenPeople-restored = { $name } is back in the library.
+
+hiddenPeople-arrived-title = Move the new documents to { $name }?
+
+hiddenPeople-arrived-body =
+    { $count ->
+        [one] While { $name } was hidden, { $count } document arrived for them and is in Shared with me. Move it to { $name }?
+       *[other] While { $name } was hidden, { $count } documents arrived for them and are in Shared with me. Move them to { $name }?
+    }
+
+hiddenPeople-arrived-move = Move to { $name }
+
+hiddenPeople-arrived-leave = Leave in Shared with me
+
+hiddenPeople-arrived-list = Documents that arrived
+
+portal-arrivedForHidden =
+    { $count ->
+        [one] A document arrived from { $clinic } and is in Shared with me. The person it is for is hidden.
+       *[other] { $count } documents arrived from { $clinic } and are in Shared with me. The people they are for are hidden.
+    }
+
+hiddenPeople-damagedToo =
+    { $count ->
+        [one] This also hides { $count } damaged document of a hidden person. It is not listed here, so that who is hidden is not shown.
+       *[other] This also hides { $count } damaged documents of hidden people. They are not listed here, so that who is hidden is not shown.
+    }
+
+interface-history-aboutHiddenPeople =
+    { $count ->
+        [one] { $count } entry about a hidden person is not shown. It is kept, and shown again when the person is restored.
+       *[other] { $count } entries about hidden people are not shown. They are kept, and shown again when the people are restored.
+    }
+
+interface-history-how-personHidden = Filed in Shared with me while the person was hidden
+
+portal-arrivedForHiddenNoClinic =
+    { $count ->
+        [one] A document arrived and is in Shared with me. The person it is for is hidden.
+       *[other] { $count } documents arrived and are in Shared with me. The people they are for are hidden.
+    }
+
+fileUnder-button = File under…
+
+fileUnder-title = File { $document } under a person
+
+fileUnder-fromClinic = From the clinic
+
+fileUnder-words = { $name }, born { $date }
+
+fileUnder-clinicWords = From the clinic: { $name }, born { $date }.
+
+fileUnder-rule = myCarlos files a clinic document on its own only when exactly one person has this birth date and this full name (or a previous full name). Nothing is chosen for you.
+
+fileUnder-person = Person
+
+fileUnder-what-both = the full name “{ $name }” and the birth date { $date }
+
+fileUnder-what-name = the full name “{ $name }”
+
+fileUnder-what-date = the birth date { $date }
+
+fileUnder-saveDetails = Also save { $what } as the details of { $person }, so that the next documents from this clinic are filed under { $person } on their own.
+
+fileUnder-confirm = File under { $person }
+
+fileUnder-choose = Choose a person
+
+fileUnder-differs = The clinic's details differ from this person's, so none are offered to be saved. Check that this is the right person.
+
+fileUnder-saveDetailsOnly = Also save { $what } as the details of { $person }.
+
+fileUnder-notOnItsOwn = The next documents from this clinic may still wait in Shared with me: this clinic's link is tied to another person, or another person already has the same name and birth date.
+
+handover-import-previousNames = Previous names in the file: { $names }. These names will also be used to file new clinic documents under this person.
+
+library-fileSaysChecked = The file this came in says it was checked on the device it came from, on { $date }. This vault has not checked it.
+
+handover-nowVerified =
+    { $count ->
+        [one] { $count } document that came in a handover file is now verified with { $clinic }, whose key this vault holds.
+       *[other] { $count } documents that came in a handover file are now verified with { $clinic }, whose key this vault holds.
+    }
+
+
+notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+
+background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
+
+background-startAtLoginSummary = myCarlos can start when you sign in to this computer. With the choice above on, it starts quietly in the background with your vault locked.
+
+preferences-moreAutomatic = More about automatic checks
+
+preferences-moreBackground = More about running in the background
+
+native-notice-test = This is a test notice from myCarlos.
+
+notifications-testButton = Show a test notice
+
+notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+
+notifications-testWait = Wait a few seconds, then try again.
+
+notifications-testFailed = The test notice could not be shown.
+notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.

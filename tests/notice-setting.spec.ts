@@ -6,6 +6,7 @@ import {
   failNextNoticeSave,
   fakeNoticesWith,
   noticeCalls,
+  setTestNoticeResult,
   type FakeNoticeStatus,
 } from "./support/noticeFake";
 import { fakeVaultWith, myRecords, sidebar } from "./support/vaultFake";
@@ -98,6 +99,7 @@ test("turning the notices off turns the automatic checks off too", async ({
 for (const [permission, key] of [
   ["blocked", "notifications.blocked"],
   ["unknown", "notifications.unknown"],
+  ["not_yet_asked", "notifications.notYetAsked"],
 ] as const) {
   test(`a ${permission} Windows permission is said, and read with each box`, async ({
     page,
@@ -146,4 +148,51 @@ test("paused automatic checks say how to start them again", async ({
   await expect(row.getByRole("status")).toHaveText(
     en("notifications.autoPaused"),
   );
+});
+
+const testButton = (row: Locator) =>
+  row.getByRole("button", {
+    name: en("notifications.testButton"),
+    exact: true,
+  });
+
+test("Show a test notice is off until notices are allowed, then shows what happened", async ({
+  page,
+}) => {
+  const row = await preferences(page, { enabled: false });
+  await expect(testButton(row)).toBeDisabled();
+  await box(row, "notifications.allow").check();
+  await expect(testButton(row)).toBeEnabled();
+  await testButton(row).click();
+  await expect(row.getByText(en("notifications.testSent"))).toBeVisible();
+  expect(
+    (await noticeCalls(page)).filter(
+      (call) => call.command === "vault_send_test_notice",
+    ),
+  ).toEqual([{ command: "vault_send_test_notice", args: {} }]);
+  // The result is told to a screen reader as a polite live region.
+  await expect(
+    row.locator("[aria-live=polite]", {
+      hasText: en("notifications.testSent"),
+    }),
+  ).toBeVisible();
+  await expectOnlyFakedCommands(page);
+});
+
+test("Show a test notice says when Windows is blocking notices, and when to wait or that it failed", async ({
+  page,
+}) => {
+  const row = await preferences(page, { enabled: true });
+  await setTestNoticeResult(page, "blocked");
+  await testButton(row).click();
+  await expect(row.getByText(en("notifications.blocked"))).toBeVisible();
+  await setTestNoticeResult(page, "tooSoon");
+  await testButton(row).click();
+  await expect(row.getByText(en("notifications.testWait"))).toBeVisible();
+  await setTestNoticeResult(page, "notAllowed");
+  await testButton(row).click();
+  await expect(row.getByText(en("notifications.testOff"))).toBeVisible();
+  await setTestNoticeResult(page, "failed");
+  await testButton(row).click();
+  await expect(row.getByText(en("notifications.testFailed"))).toBeVisible();
 });
