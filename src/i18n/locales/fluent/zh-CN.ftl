@@ -2656,3 +2656,7 @@ reader-panel-label = 关于此文档
 reader-panel-more = 更多…
 
 reader-panel-ai = 用 AI 解释
+
+interface-VaultLibrary-help = 帮助
+
+interface-VaultLibrary-helpButtonName = 帮助：本页

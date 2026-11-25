@@ -3059,3 +3059,7 @@ reader-panel-label = O tym dokumencie
 reader-panel-more = Więcej…
 
 reader-panel-ai = Wyjaśnij z pomocą AI
+
+interface-VaultLibrary-help = Pomoc
+
+interface-VaultLibrary-helpButtonName = Pomoc: ten ekran

@@ -415,6 +415,18 @@ describe("a document's status before its source (#135)", () => {
           const heading = title.getBoundingClientRect();
           // Back leads the header: beside the title, or on a narrow screen on a row of its own
           // above it when the title leaves no room (#312). Never over the title.
+          // The actions never overlap the status/source row under them.
+          expect(controls.bottom).toBeLessThanOrEqual(
+            trust.getBoundingClientRect().top + 0.5,
+          );
+          if (withAid)
+            expect(
+              screen
+                .getByRole("button", {
+                  name: translate(locale, "readingAid.open"),
+                })
+                .getBoundingClientRect().bottom,
+            ).toBeLessThanOrEqual(trust.getBoundingClientRect().top + 0.5);
           const besideTitle = controls.right <= heading.left + 0.5;
           if (width > 640) expect(besideTitle).toBe(true);
           if (!besideTitle)

@@ -2930,3 +2930,7 @@ reader-panel-label = About this document
 reader-panel-more = More…
 
 reader-panel-ai = Explain with AI
+
+interface-VaultLibrary-help = Help
+
+interface-VaultLibrary-helpButtonName = Help: this screen

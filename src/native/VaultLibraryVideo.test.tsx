@@ -126,7 +126,7 @@ function renderLibrary(
 
 const openHelp = () =>
   fireEvent.click(
-    screen.getByRole("button", { name: humanText("Help with this screen") }),
+    screen.getByRole("button", { name: humanText("Help: this screen") }),
   );
 
 describe("video in the library", () => {

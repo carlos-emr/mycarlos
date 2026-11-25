@@ -2592,6 +2592,12 @@ export function VaultLibrary({
                             },
                           )}
                     </p>
+                    {/* Where this is: the top of the person's records, or inside a folder. */}
+                    <span className="native-location-chip">
+                      {currentFolder
+                        ? translateNow("interface.VaultLibrary.insideFolder")
+                        : translateNow("interface.VaultLibrary.topLevel")}
+                    </span>
                   </div>
                 </div>
 
@@ -2811,14 +2817,15 @@ export function VaultLibrary({
                   <button
                     className="button help-button"
                     type="button"
+                    // The name starts with the word the button shows (WCAG 2.5.3).
                     aria-label={translateNow(
-                      "interface.VaultLibrary.helpWithThisScreen",
+                      "interface.VaultLibrary.helpButtonName",
                     )}
                     aria-expanded={showHelp}
                     aria-controls={showHelp ? helpPanelId : undefined}
                     onClick={() => setShowHelp((now) => !now)}
                   >
-                    ?
+                    {translateNow("interface.VaultLibrary.help")}
                   </button>
                   {inShared && (
                     <PortalDocuments

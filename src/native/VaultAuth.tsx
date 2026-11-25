@@ -425,14 +425,14 @@ export function UnlockVault({
   };
   return (
     <VaultAuthFrame state="Locked" split>
-      <aside className="unlock-brand">
+      <div className="unlock-brand">
         {/* The logo is decoration: the name under it says what it is. */}
         <span className="unlock-logo">
-          <img src={carlosLogo} alt="" width="120" height="120" />
+          <img src={carlosLogo} alt="" width="128" height="128" />
         </span>
         <p className="unlock-brand-name">myCarlos</p>
         <p className="unlock-brand-tagline">{t("unlock.brand.tagline")}</p>
-      </aside>
+      </div>
       <div className="unlock-pane">
         <LanguageButton />
         <section className="vault-card" aria-labelledby="unlock-title">

@@ -2656,3 +2656,7 @@ reader-panel-label = 關於此文件
 reader-panel-more = 更多…
 
 reader-panel-ai = 用 AI 解釋
+
+interface-VaultLibrary-help = 說明
+
+interface-VaultLibrary-helpButtonName = 說明：此畫面

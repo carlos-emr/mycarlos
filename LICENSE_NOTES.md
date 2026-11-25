@@ -64,6 +64,7 @@ licence**: the AGPL does not grant any right to it. Anyone who forks or redistri
 another name replaces it (the files are listed in [src-tauri/icons/source/README.md](src-tauri/icons/source/README.md):
 `src-tauri/icons/`, including `android/` and `ios/`, and the copy kept under `source/`). Its origin is the
 CARLOS GitHub organisation's picture, 460 px (`src-tauri/icons/source/carlos-logo-460.jpg`).
+The same picture is bundled for the screens as `src/brand/carlos-logo.jpg` (the unlock screen and the title bar), under the same terms: a fork replaces it too.
 
 ## Open: app stores
 

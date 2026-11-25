@@ -390,7 +390,7 @@ describe("targets and text sizes in the app (#67)", () => {
   it("shows body text at 16px", () => {
     renderLibrary();
     // The drag hint is in the help the question mark opens.
-    press("Help with this screen");
+    press("Help: this screen");
     for (const element of [
       screen.getByText(humanText(/Hold and drag a document or folder/)),
       screen.getByRole("button", { name: humanText("FAKE Results.pdf") }),
