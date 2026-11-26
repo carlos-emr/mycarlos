@@ -588,9 +588,11 @@ mod tests {
     }
 
     #[test]
-    fn the_permission_answer_is_remembered_for_its_ttl_and_asked_again_after_it() {
+    fn the_permission_answer_is_remembered_for_its_ttl() {
+        // A TTL no test run can outlast (an hour), so the polls cannot straddle its end however slow
+        // the machine is; a TTL measured in milliseconds made this fail on a loaded runner.
         let (backend, asked, _) = counted(Behaviour::Present);
-        let backend = backend.with_permission_ttl(Duration::from_millis(150));
+        let backend = backend.with_permission_ttl(Duration::from_secs(3600));
         for _ in 0..5 {
             assert_eq!(backend.permission(), Permission::Allowed);
         }
@@ -599,13 +601,58 @@ mod tests {
             1,
             "five polls, one bus question"
         );
-        thread::sleep(Duration::from_millis(250));
+    }
+
+    #[test]
+    fn the_permission_is_asked_again_once_the_remembered_answer_is_old() {
+        // A TTL of nothing: every remembered answer is already old, so no clock decides it.
+        let (backend, asked, _) = counted(Behaviour::Present);
+        let backend = backend.with_permission_ttl(Duration::ZERO);
+        assert_eq!(backend.permission(), Permission::Allowed);
         assert_eq!(backend.permission(), Permission::Allowed);
         assert_eq!(
             asked.load(Ordering::SeqCst),
             2,
             "asked again once the answer is old"
         );
+    }
+
+    /// A bus whose permission question is held until the test lets it answer (and counts it when it
+    /// does): "a late answer" is then something the test arranges, not a race against a sleep.
+    struct Held {
+        release: Mutex<mpsc::Receiver<()>>,
+        answered: Arc<AtomicUsize>,
+    }
+    impl Bus for Held {
+        fn service_present(&self) -> bool {
+            // Blocks until the test releases the question (or drops the sender).
+            let _ = self.release.lock().unwrap().recv();
+            self.answered.fetch_add(1, Ordering::SeqCst);
+            true
+        }
+        fn notify(&self, _notice: &Notice) -> Result<(), ()> {
+            Ok(())
+        }
+    }
+    fn held_bus() -> (Held, mpsc::Sender<()>, Arc<AtomicUsize>) {
+        let (release, wait) = mpsc::channel();
+        let answered = Arc::new(AtomicUsize::new(0));
+        (
+            Held {
+                release: Mutex::new(wait),
+                answered: Arc::clone(&answered),
+            },
+            release,
+            answered,
+        )
+    }
+    /// Waits, with a deadline that only a bug reaches, until the call that was out has ended.
+    fn wait_until_free(gate: &Gate) {
+        let until = Instant::now() + Duration::from_secs(30);
+        while gate.outstanding.load(Ordering::SeqCst) {
+            assert!(Instant::now() < until, "the late call never freed the bus");
+            thread::sleep(Duration::from_millis(5));
+        }
     }
 
     #[test]
@@ -672,30 +719,18 @@ mod tests {
 
     #[test]
     fn a_call_that_ends_late_frees_the_bus_for_the_next() {
-        // `Hangs` sleeps five seconds, far past any wait here; use a short own bus instead.
-        struct Slow(Arc<AtomicUsize>);
-        impl Bus for Slow {
-            fn service_present(&self) -> bool {
-                thread::sleep(Duration::from_millis(300));
-                self.0.fetch_add(1, Ordering::SeqCst);
-                true
-            }
-            fn notify(&self, _notice: &Notice) -> Result<(), ()> {
-                Ok(())
-            }
-        }
-        let done = Arc::new(AtomicUsize::new(0));
-        let backend = LinuxBackend::with_bus(Slow(Arc::clone(&done)))
+        // The question is held until the test lets it answer, so it cannot answer inside the wait
+        // however fast the machine is: the caller gives up first, then the answer comes.
+        let (bus, release, answered) = held_bus();
+        let backend = LinuxBackend::with_bus(bus)
             .with_timeout(Duration::from_millis(50))
             .with_permission_ttl(Duration::ZERO);
         assert_eq!(backend.permission(), Permission::Unavailable, "timed out");
         assert!(backend.gate.outstanding.load(Ordering::SeqCst));
-        let until = Instant::now() + Duration::from_secs(3);
-        while backend.gate.outstanding.load(Ordering::SeqCst) {
-            assert!(Instant::now() < until, "the late call never freed the bus");
-            thread::sleep(Duration::from_millis(20));
-        }
-        assert_eq!(done.load(Ordering::SeqCst), 1);
+        assert_eq!(answered.load(Ordering::SeqCst), 0);
+        release.send(()).unwrap();
+        wait_until_free(&backend.gate);
+        assert_eq!(answered.load(Ordering::SeqCst), 1);
         assert!(backend.accept(SENTENCE, &|| true).is_ok());
     }
 
@@ -772,31 +807,18 @@ mod tests {
 
     #[test]
     fn a_late_answer_refreshes_the_remembered_permission() {
-        struct Late(Arc<AtomicUsize>);
-        impl Bus for Late {
-            fn service_present(&self) -> bool {
-                thread::sleep(Duration::from_millis(250));
-                self.0.fetch_add(1, Ordering::SeqCst);
-                true
-            }
-            fn notify(&self, _notice: &Notice) -> Result<(), ()> {
-                Ok(())
-            }
-        }
-        let asked = Arc::new(AtomicUsize::new(0));
-        let backend = LinuxBackend::with_bus(Late(Arc::clone(&asked)))
-            .with_timeout(Duration::from_millis(50));
+        // Held until the test lets it answer, so the caller has certainly given up first.
+        let (bus, release, answered) = held_bus();
+        let backend = LinuxBackend::with_bus(bus).with_timeout(Duration::from_millis(50));
         // No answer in time: Unavailable.
         assert_eq!(backend.permission(), Permission::Unavailable);
+        assert_eq!(answered.load(Ordering::SeqCst), 0);
         // The call ends (the bus was only slow) and its answer replaces the remembered one, so the
         // next poll, inside the TTL, says Allowed without a new question.
-        let until = Instant::now() + Duration::from_secs(3);
-        while backend.gate.outstanding.load(Ordering::SeqCst) {
-            assert!(Instant::now() < until);
-            thread::sleep(Duration::from_millis(10));
-        }
+        release.send(()).unwrap();
+        wait_until_free(&backend.gate);
         assert_eq!(backend.permission(), Permission::Allowed);
-        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        assert_eq!(answered.load(Ordering::SeqCst), 1);
     }
 
     #[test]
