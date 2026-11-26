@@ -1860,11 +1860,11 @@ aiHelper-resultLabelInfo = What “AI draft” means
 
 ai-label-settingsTitle = Warning on AI answers
 
-ai-label-settingsBody = Each AI answer says it was written by AI and may be wrong. After “Don't show this again”, a short “AI draft” tag stands in for the full sentence. The tag is never removed. The choice is kept on this device, and starts over if the model or the tool changes.
+ai-label-settingsBody = AI answers can be wrong. Each one says so. If you choose “Don't show this again” on an answer, later answers show a short “AI draft” label instead of the full sentence.
 
 ai-label-settingsShowFull = Show the full warning again
 
-ai-label-settingsFullShown = The full warning is shown on every AI answer.
+ai-label-settingsFullBack = The full warning is back on every AI answer.
 
 ai-label-settingsShortShown = A short “AI draft” tag is shown on the AI answers you chose it for.
 
@@ -2884,7 +2884,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Automatic checks run only while myCarlos is open and unlocked.
+notifications-autoSummary = myCarlos collects new clinic documents on its own only while it is open and unlocked. While it is locked in the background, it can only tell you that something is waiting.
 
 background-keepRunningSummary = myCarlos can stay in the background after you close its window. Your vault locks as the window closes.
 

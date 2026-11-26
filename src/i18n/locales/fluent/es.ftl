@@ -1896,11 +1896,11 @@ aiHelper-resultLabelInfo = Qué significa «Borrador de IA»
 
 ai-label-settingsTitle = Aviso en las respuestas de la IA
 
-ai-label-settingsBody = Cada respuesta de la IA indica que fue escrita por IA y que puede contener errores. Tras «No volver a mostrar», una etiqueta corta «Borrador de IA» sustituye la frase completa. La etiqueta nunca se quita. La elección se guarda en este dispositivo y vuelve a empezar si cambia el modelo o la herramienta.
+ai-label-settingsBody = Las respuestas de la IA pueden contener errores, y cada una lo indica. Si en una respuesta elige «No volver a mostrar», las respuestas siguientes muestran una etiqueta corta «Borrador de IA» en lugar de la frase completa.
 
 ai-label-settingsShowFull = Mostrar de nuevo el aviso completo
 
-ai-label-settingsFullShown = El aviso completo se muestra en cada respuesta de la IA.
+ai-label-settingsFullBack = El aviso completo vuelve a mostrarse en cada respuesta de la IA.
 
 ai-label-settingsShortShown = Se muestra una etiqueta corta «Borrador de IA» en las respuestas de la IA en las que la eligió.
 
@@ -2919,7 +2919,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Las comprobaciones automáticas solo se hacen mientras myCarlos está abierto y desbloqueado.
+notifications-autoSummary = myCarlos solo recoge por sí mismo los documentos nuevos de la clínica mientras está abierto y desbloqueado. Mientras está bloqueado en segundo plano, solo puede avisarle de que hay algo esperando.
 
 background-keepRunningSummary = myCarlos puede seguir en segundo plano después de cerrar su ventana. Su bóveda se bloquea al cerrarse la ventana.
 

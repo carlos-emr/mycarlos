@@ -1708,11 +1708,11 @@ aiHelper-resultLabelInfo = “AI 草稿”是什么意思
 
 ai-label-settingsTitle = AI 回答上的提示
 
-ai-label-settingsBody = 每条 AI 回答都会说明由 AI 撰写、可能有误。选择“不再显示”后，完整的句子会由简短的“AI 草稿”标签代替。标签不会被移除。此选择保存在本设备上，模型或工具更换后会重新开始。
+ai-label-settingsBody = AI 回答可能有误，每条回答都会这样说明。如果您在某条回答上选择“不再显示”，之后的回答会显示简短的“AI 草稿”标签，而不是完整的句子。
 
 ai-label-settingsShowFull = 再次显示完整提示
 
-ai-label-settingsFullShown = 每条 AI 回答都显示完整提示。
+ai-label-settingsFullBack = 完整警告已恢复显示在每条 AI 回答上。
 
 ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的“AI 草稿”标签。
 
@@ -2610,7 +2610,7 @@ library-fileSaysChecked = 随之而来的文件称，它已于 { $date } 在来�
 handover-nowVerified = 通过移交文件到来的 { $count } 份文档现已通过 { $clinic } 验证，此保险库持有其密钥。
 
 
-notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
+notifications-autoSummary = myCarlos 仅在打开且已解锁时才会自行收取诊所的新文档。在后台处于锁定状态时，它只能告诉您有内容在等待。
 
 background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
 
