@@ -7917,7 +7917,7 @@ async fn vault_reset(
     }
     picks.clear();
     // The id the vault has now, for its notice keys after it is gone (#357).
-    let reset_id = store.arc().notice_key_vault().id();
+    let reset_id = run_blocking(store.arc(), |vault| Ok(vault.notice_key_vault().id())).await?;
     run_blocking(store.arc(), VaultStore::reset).await?;
     // Its notice keys go with it (#230); another vault's stay (#357).
     wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await;
