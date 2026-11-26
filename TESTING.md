@@ -287,7 +287,7 @@ On every platform:
    **Replace key** and **Cancel**. Choose **Keep current key**, or **Cancel**, once: the setup stays
    open and says the current key still works. Check again and choose **Replace key**: the old key
    then stops working, and **Security** shows the steps for older backups. Choose **Save encrypted
-   backup…**: the suggested name has the date and the key's label, and after saving, the steps
+   backup…**: the suggested name has the date and no key label, and after saving, the steps
    name that file to keep and say to delete every other backup (on Android, which gives no name,
    they give the time it was saved instead). Replace the key once more with "I just want a new
    key": the app says to keep the old kit safe, and says nothing about deleting backups. The vault

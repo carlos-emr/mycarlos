@@ -340,7 +340,7 @@ describe("SecuritySettings recovery key", () => {
     renderSettings({
       oldBackupsGuide: {
         step: "delete",
-        keep: "myCarlos backup 2026-09-30 7F3A",
+        keep: "myCarlos backup 2026-09-30",
         savedAtMs: 1,
         bytes: 2048,
       },
@@ -352,7 +352,7 @@ describe("SecuritySettings recovery key", () => {
     // Kept, with a copy away from this device; the rest are older.
     const steps = within(guide).getAllByRole("listitem");
     expect(steps[0]).toHaveHumanTextContent(
-      `Your new backup is “myCarlos backup 2026-09-30 7F3A” (2 kB, ${(2048).toLocaleString()} bytes). Keep it, or a copy of it, somewhere other than this device`,
+      `Your new backup is “myCarlos backup 2026-09-30” (2 kB, ${(2048).toLocaleString()} bytes). Keep it, or a copy of it, somewhere other than this device`,
     );
     expect(steps[1]).toHaveHumanTextContent(
       "other than the new one and its copies",
@@ -370,7 +370,7 @@ describe("SecuritySettings recovery key", () => {
       sizesIn1024s: true,
       oldBackupsGuide: {
         step: "delete",
-        keep: "myCarlos backup 2026-09-30 7F3A",
+        keep: "myCarlos backup 2026-09-30",
         savedAtMs: 1,
         bytes: 600_000,
       },

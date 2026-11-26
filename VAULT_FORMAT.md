@@ -707,9 +707,9 @@ backed up, since what it shows may not be what it holds. Saving streams with con
 transfer the automatic lock waits for, to a file the patient picks (never inside the vault home),
 replaced atomically only once complete. The name suggested for it carries the date it is saved, on
 the patient's own calendar (the page gives it as `YYYY-MM-DD`, checked natively, with the UTC date
-if it gives none), and the label of the vault's recovery key, if it has one (`myCarlos backup
-2026-09-30 7F3A.mycarlosbackup`), so that backups from different days or keys do not take each
-other's place. A saved backup reports the name of the file written, where the platform says it,
+if it gives none), as `myCarlos backup 2026-09-30.mycarlosbackup`, so that backups from different
+days do not take each other's place. It does not carry the vault's recovery key label: two backups
+saved on one day, under an old key and a new one, are offered the same name. A saved backup reports the name of the file written, where the platform says it,
 and its size.
 A backup that fails for want of space, a storage error, unreadable files or a lock says that none
 was saved and to keep the older ones. On Android, the picker makes a new document or hands back an

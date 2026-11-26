@@ -1734,7 +1734,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               place: "FAKE Backups/myCarlos backup.mycarlosbackup",
             });
             return {
-              name: `myCarlos backup FAKE ${setup.keyLabel}.mycarlosbackup`,
+              name: "myCarlos backup FAKE.mycarlosbackup",
               bytes: 4096 * state.backupsSaved,
             };
           // --- Handing a person's records over, and adding one from a file (#360) ---

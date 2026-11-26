@@ -5719,7 +5719,7 @@ describe("durable vault UI", () => {
       recoveryKeySetAtMs: 9,
       recoveryKeyLabel: "7F3A",
     };
-    const written = "myCarlos backup 2026-09-30 7F3A.mycarlosbackup";
+    const written = "myCarlos backup 2026-09-30.mycarlosbackup";
     const { user, bridge, typeKeyBack } = await showKeyInSetup(5, {
       confirmRecoveryKey: vi
         .fn()

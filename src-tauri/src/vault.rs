@@ -4493,19 +4493,15 @@ impl VaultStore {
 
     /// The name suggested for a backup's file: the date it is saved, as the
     /// patient's own calendar gives it (`YYYY-MM-DD`, already checked; the
-    /// caller falls back to the UTC date), and the label of the vault's
-    /// recovery key, if it has one. Backups saved on different days, or
-    /// under different keys, then do not take each other's place.
+    /// caller falls back to the UTC date). The vault's recovery key label is
+    /// not in it: backups saved on different days do not take each other's
+    /// place, but two saved on one day, under an old key and a new one, are
+    /// offered the same name (what happens to an earlier file of that name is
+    /// the platform's save dialog's to decide).
     pub fn backup_file_name(&self, date: &str) -> Result<String, VaultError> {
         let guard = self.session();
-        let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        Ok(match unlocked.recovery_key_id {
-            Some(key_id) => format!(
-                "myCarlos backup {date} {}.mycarlosbackup",
-                recovery_key_label(key_id)
-            ),
-            None => format!("myCarlos backup {date}.mycarlosbackup"),
-        })
+        guard.as_ref().ok_or(VaultError::Locked)?;
+        Ok(format!("myCarlos backup {date}.mycarlosbackup"))
     }
 
     /// Saves the recovery kit to a file the patient chose, as an export is
@@ -14488,7 +14484,7 @@ mod tests {
     }
 
     #[test]
-    fn a_backup_is_named_by_its_date_and_the_key_it_opens_with() {
+    fn a_backup_is_named_by_its_date_and_not_by_its_key() {
         let temp = tempfile::tempdir().unwrap();
         let store = VaultStore::new(temp.path().join("vault"));
         assert!(matches!(
@@ -14500,11 +14496,12 @@ mod tests {
             store.backup_file_name("2026-09-28").unwrap(),
             "myCarlos backup 2026-09-28.mycarlosbackup"
         );
+        // A vault with a recovery key gets the same name: the label is not in it.
         set_up_recovery_key(&store, 2);
-        let label = store.snapshot().unwrap().recovery_key_label.unwrap();
+        assert!(store.snapshot().unwrap().recovery_key_label.is_some());
         assert_eq!(
             store.backup_file_name("2026-09-28").unwrap(),
-            format!("myCarlos backup 2026-09-28 {label}.mycarlosbackup")
+            "myCarlos backup 2026-09-28.mycarlosbackup"
         );
         assert_eq!(utc_date_text(1_790_553_600_000), "2026-09-28");
     }
