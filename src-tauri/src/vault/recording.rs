@@ -55,6 +55,9 @@ pub(crate) const MAX_RECORDING_PIECE: usize = 8 * 1024 * 1024;
 pub(super) struct VideoOrigins {
     any: HashSet<Uuid>,
     picked: HashSet<Uuid>,
+    /// The whole history was read. When it was not, a record missing here may only be one whose
+    /// piece could not be read.
+    pub(super) complete: bool,
 }
 
 impl VideoOrigins {
@@ -1458,6 +1461,7 @@ impl VaultStore {
                 _ => {}
             }
         }
+        origins.complete = view.complete;
         let found = Arc::new(origins);
         *self
             .camera_made
