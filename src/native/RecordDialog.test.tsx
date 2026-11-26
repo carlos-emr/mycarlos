@@ -286,6 +286,68 @@ describe("RecordDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  /** The real recorder says "pause" some time after pause() returns; the fake says it at once.
+   * This one says it only when told, so a piece can arrive in between. */
+  const pauseEventLate = () => {
+    const live = recorder();
+    live.pause = function (this: FakeRecorder) {
+      this.state = "paused";
+      this.calls.push("pause");
+    };
+    return () => live.dispatchEvent(new Event("pause"));
+  };
+
+  it("keeps a piece that comes before the pause event when the recorder gave up its pieces first (control)", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    const pauseEvent = pauseEventLate();
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(bridge.videoPause).toHaveBeenCalledWith("recording-1"),
+    );
+    // requestData() emitted one piece; the moment of the pause is still being gathered, so
+    // this one is kept too.
+    act(() => recorder().emit(new Blob([new Uint8Array(10).fill(5)])));
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(2));
+    act(() => {
+      pauseEvent();
+    });
+  });
+
+  it("still pauses when the recorder cannot say what it has so far, keeps nothing that comes while paused, and the pieces keep going after resuming", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    recorder().requestData = () => {
+      throw new DOMException("FAKE not ready", "InvalidStateError");
+    };
+    const pauseEvent = pauseEventLate();
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(bridge.videoPause).toHaveBeenCalledWith("recording-1"),
+    );
+    expect(recorder().calls).toEqual(["start", "pause"]);
+    expect(
+      screen.getByText("Paused", { selector: ".record-badge span" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+    // Nothing was asked for at the pause, so no piece is owed for it: one that comes before the
+    // recorder has said it paused is not kept (nothing is recorded while paused).
+    act(() => recorder().emit(new Blob([new Uint8Array(10).fill(5)])));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bridge.videoAppend).not.toHaveBeenCalled();
+    act(() => {
+      pauseEvent();
+    });
+    // After resuming, a piece the recorder cuts is sent: nothing is left waiting for one that
+    // was never asked for.
+    fireEvent.click(button("Resume recording"));
+    await waitFor(() =>
+      expect(bridge.videoResume).toHaveBeenCalledWith("recording-1"),
+    );
+    act(() => recorder().emit(new Blob([new Uint8Array(10).fill(5)])));
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(1));
+  });
+
   it("pauses without ending the video, says so aloud, and the camera and microphone stay on", async () => {
     const bridge = fakeBridge();
     await recording(bridge);
