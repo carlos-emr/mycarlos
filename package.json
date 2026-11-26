@@ -21,6 +21,8 @@
     "test:dev-data": "node --test scripts/generate-fake-dev-data.test.mjs",
     "test:android-security": "node --test scripts/configure-android-security.test.mjs",
     "check:android-release": "node scripts/check-android-release-settings.mjs",
+    "check:android-page-alignment": "node scripts/check-android-page-alignment.mjs",
+    "test:android-page-alignment": "node --test scripts/check-android-page-alignment.test.mjs",
     "test:android-release-settings": "node --test scripts/check-android-release-settings.test.mjs",
     "test:android-portal-fixture": "python3 scripts/android-portal-fixture.test.py",
     "check:release-safety": "node scripts/check-release-safety.mjs",

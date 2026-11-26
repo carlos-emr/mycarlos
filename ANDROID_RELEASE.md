@@ -23,3 +23,34 @@ change `MIN_SDK` in the script, the three places above and `PRODUCT_DECISIONS.md
 Run locally: `npm run check:android-release` (source files) and `npm run test:android-release-settings`.
 The CI steps are in the patch `mycarlos-422-1-android-pins-workflow-20261124.patch` (a change under
 `.github/` is Ben's to apply).
+
+## 16 KB memory pages
+
+Google Play refuses updates that do not support 16 KB pages from 1 February 2027 (apps that target
+Android 15 or newer, on 64-bit devices). `scripts/check-android-page-alignment.mjs` checks the built
+files, not the settings:
+
+```text
+npm run check:android-page-alignment -- path/to/app.apk
+npm run check:android-page-alignment -- path/to/app.aab
+npm run check:android-page-alignment -- src-tauri/gen/android/app/src/main/jniLibs
+```
+
+For every 64-bit library (`arm64-v8a`, `x86_64`; the 32-bit ABIs are not subject to the rule) it
+checks that:
+
+1. every `PT_LOAD` segment of the ELF file has an alignment of at least 16 KB, which an NDK from r28 gives
+   by default (older NDKs, and prebuilt libraries, may not);
+2. in an APK, a library stored uncompressed starts at a multiple of 16 KB (`zipalign -P 16`, which the
+   Android Gradle plugin does from 8.5.1). A compressed entry has no such rule. An AAB is checked for the
+   ELF alignment only, because Play aligns the APKs it builds from it.
+
+It refuses an archive in which it finds no 64-bit library, so a changed folder layout cannot make it pass
+by checking nothing. The tests build small ELF files and zips; the script's reading was also compared
+with `readelf` on a real library.
+
+CI: the step after `tauri android build` is in the patch
+`mycarlos-422-2-android-16kb-workflow-20261124.patch` (apply it after the first one). If a library ever
+fails, the fix is the NDK (r28 or newer, pinned above) or, for a prebuilt library, a rebuilt one; a
+linker flag (`-Wl,-z,max-page-size=16384`) is the fallback, and is not set today because the pinned NDK
+already does it.
