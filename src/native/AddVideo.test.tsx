@@ -425,6 +425,74 @@ describe("useAddVideo, by itself", () => {
     expect(onAdded).toHaveBeenCalledWith("r1");
   });
 
+  it("forgets everything on reset (the vault locked): a late failure of the stopped import and a stale answer do not show after the next unlock", async () => {
+    const stopped = later<VideoImportResult>();
+    const bridge = bridgeFor(stopped.promise);
+    const { result } = renderHook(() => useAddVideo({ bridge }));
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.start("person-1", []);
+    });
+    await vi.waitFor(() => expect(result.current.working).toBe(true));
+    // The lock: the screens reset the state, and the import, stopped natively, ends in failure.
+    act(() => result.current.reset());
+    expect(result.current.working).toBe(false);
+    await act(async () => {
+      bridge.importPickedVideo.mockRejectedValueOnce({ code: "locked" });
+      stopped.finish({ result: "duplicate" });
+      await first;
+    });
+    expect(result.current.outcome).toBeNull();
+    expect(result.current.working).toBe(false);
+    // After the unlock a new import is taken and reports as usual.
+    bridge.importPickedVideo.mockResolvedValueOnce({
+      result: "imported",
+      recordId: "r2",
+    });
+    await act(async () => {
+      await result.current.start("person-1", []);
+    });
+    expect(result.current.outcome).toEqual({ kind: "added" });
+    // And a finished import's answer does not outlive a lock either.
+    act(() => result.current.reset());
+    expect(result.current.outcome).toBeNull();
+  });
+
+  it("shows no alert and no status after a lock and an unlock, with the screen on", async () => {
+    setLocaleOverride("en");
+    const user = userEvent.setup();
+    const stopped = later<VideoImportResult>();
+    const bridge = bridgeFor(stopped.promise);
+    bridge.importPickedVideo.mockImplementation(() =>
+      stopped.promise.then(() => {
+        throw { code: "locked" };
+      }),
+    );
+    function Locking() {
+      const add = useAddVideo({ bridge });
+      return (
+        <>
+          <AddVideoButton add={add} profileId="p" folderIds={[]} />
+          <AddVideoStatus add={add} />
+          <button type="button" onClick={add.reset}>
+            Lock
+          </button>
+        </>
+      );
+    }
+    render(<Locking />);
+    await user.click(screen.getByRole("button", { name: "Add a video" }));
+    await screen.findByRole("group", { name: "Adding the video" });
+    await user.click(screen.getByRole("button", { name: "Lock" }));
+    expect(screen.queryByRole("group")).toBeNull();
+    act(() => stopped.finish({ result: "duplicate" }));
+    // Time for the stopped import to end in its failure; nothing of it is shown.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(alert()).toBeEmptyDOMElement();
+    expect(status()).toBeEmptyDOMElement();
+    expect(screen.getByRole("button", { name: "Add a video" })).toBeEnabled();
+  });
+
   it("cannot add on a bridge without the video methods, and says nothing then", async () => {
     const { result } = renderHook(() => useAddVideo({ bridge: {} }));
     expect(result.current.canAdd).toBe(false);

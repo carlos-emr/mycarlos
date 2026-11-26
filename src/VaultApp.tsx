@@ -896,6 +896,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     bridge: trackedBridge,
     onAdded: () => void refresh(),
   });
+  // A lock stops an import natively. What it left (a failure, a stale "added") must not show after
+  // the next unlock.
+  const resetAddVideo = addVideo.reset;
+  useEffect(() => {
+    if (status === "locked") resetAddVideo();
+  }, [status, resetAddVideo]);
 
   useEffect(() => {
     if (status !== "unlocked") return;

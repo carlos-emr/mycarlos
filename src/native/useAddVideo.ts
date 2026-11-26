@@ -29,6 +29,10 @@ export interface AddVideoApi {
   start(profileId: string, folderIds: string[]): Promise<void>;
   /** Stops the import at its next read; nothing is stored. */
   cancel(): void;
+  /** Forgets everything: the vault locked, so what an import left (a "locked" failure, a stale
+   * "added") must not show after the next unlock. An import still running is let go: whatever it
+   * ends with is ignored. */
+  reset(): void;
   working: boolean;
   cancelling: boolean;
   progress: VideoImportProgress | null;
@@ -66,6 +70,8 @@ export function useAddVideo({
   const mounted = useRef(true);
   const running = useRef(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Counts resets: an import that began before one never touches what came after it.
+  const epoch = useRef(0);
   // The latest bridge and callback, read when they are needed (a render in between must not
   // restart the work).
   const bridgeRef = useRef(bridge);
@@ -95,6 +101,8 @@ export function useAddVideo({
     )
       return;
     running.current = true;
+    const mine = epoch.current;
+    const mineStill = () => mounted.current && epoch.current === mine;
     setOutcome(null);
     setCancelling(false);
     setProgress(null);
@@ -102,12 +110,12 @@ export function useAddVideo({
     try {
       const pickId = await current.pickImportVideo(profileId, folderIds);
       if (!pickId) return;
-      if (current.videoImportProgress) {
+      if (current.videoImportProgress && epoch.current === mine) {
         timer.current = setInterval(() => {
           void bridgeRef.current
             .videoImportProgress?.()
             .then((now) => {
-              if (mounted.current) setProgress(now);
+              if (mineStill()) setProgress(now);
             })
             .catch(() => undefined);
         }, POLL_MS);
@@ -117,6 +125,7 @@ export function useAddVideo({
         profileId,
         folderIds,
       );
+      if (epoch.current !== mine) return;
       if (result.result === "imported") {
         // Even if the screen that started it is gone: the library shows the video.
         addedRef.current?.(result.recordId);
@@ -129,17 +138,30 @@ export function useAddVideo({
         );
       }
     } catch (error) {
-      if (mounted.current)
+      if (mineStill())
         setOutcome({ kind: "failed", text: vaultErrorMessage(error) });
     } finally {
-      stopPolling();
-      running.current = false;
-      if (mounted.current) {
-        setWorking(false);
-        setCancelling(false);
-        setProgress(null);
+      // A reset already cleared everything (and may have started another import): not this one's.
+      if (epoch.current === mine) {
+        stopPolling();
+        running.current = false;
+        if (mounted.current) {
+          setWorking(false);
+          setCancelling(false);
+          setProgress(null);
+        }
       }
     }
+  }, []);
+
+  const reset = useCallback(() => {
+    epoch.current += 1;
+    stopPolling();
+    running.current = false;
+    setWorking(false);
+    setCancelling(false);
+    setProgress(null);
+    setOutcome(null);
   }, []);
 
   const cancel = useCallback(() => {
@@ -151,6 +173,7 @@ export function useAddVideo({
     canAdd: canAddVideo(bridge),
     start,
     cancel,
+    reset,
     working,
     cancelling,
     progress,
