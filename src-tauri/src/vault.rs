@@ -4545,7 +4545,7 @@ impl VaultStore {
             use std::os::windows::fs::OpenOptionsExt;
             options.attributes(FILE_ATTRIBUTE_NOT_CONTENT_INDEXED);
         }
-        let stage = SaveStage::begin(&self.root, destination)?;
+        let stage = SaveStage::begin_journaled(&self.root, destination)?;
         AtomicFile::new_with_tmpdir(destination, AllowOverwrite, stage.dir())
             .write_with_options(
                 |file| {
@@ -9016,9 +9016,14 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
 /// which keeps another instance out while a session is open, and skips what is in flight here, so
 /// it cannot remove the live save of another instance (see `remove_abandoned_exports`).
 ///
-/// The folder is made beside the destination, so the rename stays on one volume as it was. If
-/// the vault's own disk cannot take the journal entry, the save still runs, as an export does.
-/// Dropping it removes the folder and then the entry.
+/// The folder is made beside the destination, so the rename stays on one volume as it was.
+/// `begin` goes on without a journal entry if the vault's own disk cannot take it, as an export
+/// does: what such a save leaves after a crash is encrypted (a backup, a package). `begin_journaled`
+/// refuses instead, for the recovery kit, whose temporary file holds the key in the clear: an
+/// unjournaled stage is the very leftover nothing would clean.
+///
+/// Dropping it removes the folder and then the entry. A release build aborts on a panic and does
+/// not run `Drop` (a debug build's panic does); the next start's sweep removes the folder then.
 pub(crate) struct SaveStage {
     dir: PathBuf,
     entry: Option<PathBuf>,
@@ -9026,12 +9031,27 @@ pub(crate) struct SaveStage {
 }
 
 impl SaveStage {
+    /// A stage for a save whose temporary file is encrypted; see the type's documentation.
     pub(crate) fn begin(root: &Path, destination: &Path) -> Result<Self, VaultError> {
+        Self::make(root, destination, false)
+    }
+
+    /// A stage for a save whose temporary file is readable: refused (and nothing made) when the
+    /// journal cannot take its entry.
+    pub(crate) fn begin_journaled(root: &Path, destination: &Path) -> Result<Self, VaultError> {
+        Self::make(root, destination, true)
+    }
+
+    fn make(root: &Path, destination: &Path, journal_required: bool) -> Result<Self, VaultError> {
         let parent = destination.parent().ok_or(VaultError::Invalid)?;
         let id = Uuid::new_v4();
         let in_flight = ExportInFlight::new(id);
         let dir = parent.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
-        let entry = journal_export(root, id, &dir).ok();
+        let entry = if journal_required {
+            Some(journal_export(root, id, &dir)?)
+        } else {
+            journal_export(root, id, &dir).ok()
+        };
         if let Err(error) = create_stage_dir(&dir) {
             if let Some(entry) = &entry {
                 let _ = remove_owned_file(entry, Removable::ExportStage);

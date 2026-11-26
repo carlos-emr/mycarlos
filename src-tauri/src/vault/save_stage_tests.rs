@@ -116,6 +116,35 @@ fn a_save_that_fails_leaves_no_folder_and_no_journal_entry_and_the_place_as_it_w
     assert_eq!(journal_entries(&f.root), 0);
 }
 
+/// Makes the journal unwritable: a file where its folder should be.
+fn break_the_journal(f: &Fixture) -> PathBuf {
+    let journal = vault_home(&f.root).unwrap().join(EXPORT_JOURNAL);
+    fs::write(&journal, b"FAKE-NOT-A-FOLDER").unwrap();
+    journal
+}
+
+#[test]
+fn a_kit_is_refused_when_the_journal_cannot_take_its_entry_and_nothing_is_left_behind() {
+    let f = fixture();
+    f.store.begin_recovery_key(PASSWORD).unwrap();
+    let journal = break_the_journal(&f);
+    let kit = f.out.join("kit.txt");
+    assert!(f.store.save_recovery_kit(&kit, 1).is_err());
+    // No file, no stage (an unjournaled one would hold the key where nothing would clean it), and
+    // the journal as it was.
+    assert!(names_in(&f.out).is_empty());
+    assert_eq!(fs::read(&journal).unwrap(), b"FAKE-NOT-A-FOLDER");
+}
+
+#[test]
+fn a_backup_still_goes_ahead_when_the_journal_cannot_take_its_entry_as_its_file_is_encrypted() {
+    let f = fixture();
+    break_the_journal(&f);
+    let backup = f.out.join("b.mycarlosbackup");
+    f.store.backup_atomic(&backup, 3).unwrap();
+    assert_eq!(names_in(&f.out), ["b.mycarlosbackup"]);
+}
+
 #[test]
 fn a_save_the_process_died_in_is_removed_at_the_next_start_with_its_partly_written_file() {
     let f = fixture();
