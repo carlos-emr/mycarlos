@@ -1368,6 +1368,15 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "iphonePush.title",
+  "iphonePush.allow",
+  "iphonePush.help",
+  "iphonePush.refused",
+  "iphonePush.iosOff",
+  "iphonePush.unavailable",
+  "iphonePush.timedOut",
+  "iphonePush.needsAttention",
+  "iphonePush.error",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3006,6 +3015,15 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "iphonePush.title": "iphonePush-title",
+  "iphonePush.allow": "iphonePush-allow",
+  "iphonePush.help": "iphonePush-help",
+  "iphonePush.refused": "iphonePush-refused",
+  "iphonePush.iosOff": "iphonePush-iosOff",
+  "iphonePush.unavailable": "iphonePush-unavailable",
+  "iphonePush.timedOut": "iphonePush-timedOut",
+  "iphonePush.needsAttention": "iphonePush-needsAttention",
+  "iphonePush.error": "iphonePush-error",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4509,6 +4527,15 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "iphonePush.title": undefined;
+  "iphonePush.allow": undefined;
+  "iphonePush.help": undefined;
+  "iphonePush.refused": undefined;
+  "iphonePush.iosOff": undefined;
+  "iphonePush.unavailable": undefined;
+  "iphonePush.timedOut": undefined;
+  "iphonePush.needsAttention": undefined;
+  "iphonePush.error": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

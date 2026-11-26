@@ -2630,3 +2630,21 @@ notifications-testWait = 請等候幾秒鐘後再試一次。
 
 notifications-testFailed = 無法顯示測試通知。
 notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。
+
+iphonePush-title = myCarlos 關閉時的通知
+
+iphonePush-allow = 在 myCarlos 關閉時顯示通知（iPhone）
+
+iphonePush-help = 當診所有文件要給您時，即使 myCarlos 已關閉，Apple 的推播服務也會在這部 iPhone 上顯示一則通知。通知只說明有一份文件在等待。Apple 能看到何時送出推播，但看不到其中的內容。此選項在您開啟之前保持關閉，開啟時 iPhone 會請求您的許可。
+
+iphonePush-refused = iPhone 詢問時，您沒有允許通知。若要允許，請在 iPhone 上開啟「設定」，選擇「通知」，再選擇 myCarlos，並開啟「允許通知」。然後再次開啟此選項。
+
+iphonePush-iosOff = myCarlos 的通知在 iPhone 的「設定」中已關閉。若要允許，請開啟「設定」，選擇「通知」，再選擇 myCarlos，並開啟「允許通知」。
+
+iphonePush-unavailable = 這部 iPhone 無法連線到 Apple 的通知服務。請稍後再試。
+
+iphonePush-timedOut = Apple 沒有及時回應。請先關閉再重新開啟此選項以重試。
+
+iphonePush-needsAttention = 無法與您的診所設定通知。請關閉後再開啟此選項。如果仍然無法使用，請告知您的診所。
+
+iphonePush-error = 無法儲存此設定。請重試。

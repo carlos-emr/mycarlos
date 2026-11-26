@@ -2939,3 +2939,21 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
+
+iphonePush-title = Avis lorsque myCarlos est fermé
+
+iphonePush-allow = Afficher des avis lorsque myCarlos est fermé (iPhone)
+
+iphonePush-help = Lorsqu’une clinique a un document pour vous, le service de notifications push d’Apple affiche un avis sur cet iPhone même si myCarlos est fermé. L’avis indique seulement qu’un document vous attend. Apple voit quand une notification est envoyée, jamais ce qu’elle contient. Cette option est désactivée tant que vous ne l’activez pas, et l’iPhone vous demande alors votre autorisation.
+
+iphonePush-refused = Vous n’avez pas autorisé les avis lorsque l’iPhone vous l’a demandé. Pour les autoriser, ouvrez Réglages sur votre iPhone, choisissez Notifications, puis myCarlos, et activez Autoriser les notifications. Activez ensuite cette option de nouveau.
+
+iphonePush-iosOff = Les avis de myCarlos sont désactivés dans les Réglages de votre iPhone. Pour les autoriser, ouvrez Réglages, choisissez Notifications, puis myCarlos, et activez Autoriser les notifications.
+
+iphonePush-unavailable = Le service d’avis d’Apple n’a pas pu être joint depuis cet iPhone. Réessayez plus tard.
+
+iphonePush-timedOut = Apple n’a pas répondu à temps. Désactivez puis réactivez cette option pour réessayer.
+
+iphonePush-needsAttention = Les avis n’ont pas pu être mis en place auprès de votre clinique. Désactivez puis réactivez cette option. Si cela ne fonctionne toujours pas, prévenez votre clinique.
+
+iphonePush-error = Le paramètre n’a pas pu être enregistré. Réessayez.
