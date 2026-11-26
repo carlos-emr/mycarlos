@@ -120,6 +120,7 @@ export const MESSAGE_KEYS = [
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking",
   "interface.VaultApp.chooseFilesToImport",
+  "interface.VaultLibrary.picturesNote",
   "interface.VaultApp.finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer",
   "interface.VaultApp.myCarlosCouldNotLockTheVaultIts",
@@ -364,6 +365,8 @@ export const MESSAGE_KEYS = [
   "native.error.speedTest",
   "native.filter.backups",
   "native.filter.pdf",
+  "native.filter.pictures",
+  "native.filter.pdfAndPictures",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -1550,6 +1553,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.UnlockPdfDialog.unlocking": "interface-UnlockPdfDialog-unlocking",
   "interface.VaultApp.chooseFilesToImport":
     "interface-VaultApp-chooseFilesToImport",
+  "interface.VaultLibrary.picturesNote": "interface-VaultLibrary-picturesNote",
   "interface.VaultApp.finishingTheTransfer":
     "interface-VaultApp-finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer":
@@ -1862,6 +1866,8 @@ const FLUENT_IDS_BY_KEY = {
   "native.error.speedTest": "native-error-speedTest",
   "native.filter.backups": "native-filter-backups",
   "native.filter.pdf": "native-filter-pdf",
+  "native.filter.pictures": "native-filter-pictures",
+  "native.filter.pdfAndPictures": "native-filter-pdfAndPictures",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -3196,6 +3202,7 @@ export interface MessageArgsByKey {
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword": undefined;
   "interface.UnlockPdfDialog.unlocking": undefined;
   "interface.VaultApp.chooseFilesToImport": undefined;
+  "interface.VaultLibrary.picturesNote": undefined;
   "interface.VaultApp.finishingTheTransfer": undefined;
   "interface.VaultApp.lockNowAndCancelTheTransfer": undefined;
   "interface.VaultApp.myCarlosCouldNotLockTheVaultIts": undefined;
@@ -3486,6 +3493,8 @@ export interface MessageArgsByKey {
   "native.error.speedTest": undefined;
   "native.filter.backups": undefined;
   "native.filter.pdf": undefined;
+  "native.filter.pictures": undefined;
+  "native.filter.pdfAndPictures": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;

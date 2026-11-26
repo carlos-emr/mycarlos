@@ -2494,6 +2494,15 @@ export function VaultLibrary({
                   )}
                 </div>
 
+                {!readOnly && profileId && (
+                  <p className="purpose-note native-pictures-note">
+                    <Icon name="info" />
+                    <span>
+                      {translateNow("interface.VaultLibrary.picturesNote")}
+                    </span>
+                  </p>
+                )}
+
                 {inShared && (
                   <p className="purpose-note native-shared-intro">
                     <Icon name="info" />

@@ -485,6 +485,8 @@ interface-UnlockPdfDialog-unlocking = Desbloqueando…
 
 interface-VaultApp-chooseFilesToImport = Escolha os arquivos para importar
 
+interface-VaultLibrary-picturesNote = O local, a hora e os dados da câmera são removidos das imagens que você adiciona.
+
 interface-VaultApp-finishingTheTransfer = Concluindo a transferência
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Bloquear agora e cancelar a transferência
@@ -769,7 +771,7 @@ native-error-20 = Escolha uma frase secreta menos previsível que não seja base
 
 native-error-21 = Escolha no máximo 100 arquivos em uma importação.
 
-native-error-22 = Um dos arquivos não é um documento PDF, então nada foi adicionado. O myCarlos guarda apenas documentos PDF.
+native-error-22 = Um dos arquivos não é um documento PDF nem uma imagem JPEG ou PNG, então nada foi adicionado. O myCarlos guarda documentos PDF e imagens JPEG e PNG. Se for uma imagem de iPhone (HEIC), compartilhe-a como JPEG.
 
 native-error-23 = Este documento está protegido por senha. Digite a senha do documento que está no seu portal do paciente.
 
@@ -819,7 +821,7 @@ native-error-45 = O myCarlos não conseguiu abrir esse arquivo. Se ele estiver e
 
 native-error-46 = Um documento no cofre está danificado e não pode mais ser lido, então nenhuma cópia de segurança foi salva. Nada foi alterado.
 
-native-error-47 = Esta não é uma foto que o myCarlos pode salvar ou mostrar: ela precisa ser uma imagem JPEG completa de no máximo 25 MB e 8.192 pixels de cada lado. Nada foi alterado.
+native-error-47 = Esta não é uma foto que o myCarlos pode salvar ou mostrar: ela precisa ser uma imagem JPEG ou PNG completa (não animada) de no máximo 25 MB, 8.192 pixels de cada lado e 50 milhões de pixels no total (24 milhões em um telefone). Nada foi alterado.
 
 native-error-48 = A cópia de segurança foi verificada, mas a restauração não terminou. Feche o myCarlos e abra-o de novo para concluir. Depois, abra o cofre com a frase secreta ou a chave de recuperação da cópia de segurança.
 
@@ -828,6 +830,10 @@ native-error-speedTest = O teste de velocidade parou antes de terminar. Nada foi
 native-filter-backups = Cópias de segurança do myCarlos
 
 native-filter-pdf = Documentos PDF
+
+native-filter-pictures = Imagens JPEG e PNG
+
+native-filter-pdfAndPictures = Documentos PDF e imagens JPEG e PNG
 
 native-kit-text =
     Kit de recuperação do myCarlos
