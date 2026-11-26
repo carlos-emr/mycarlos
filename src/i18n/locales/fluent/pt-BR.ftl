@@ -485,6 +485,8 @@ interface-UnlockPdfDialog-unlocking = Desbloqueando…
 
 interface-VaultApp-chooseFilesToImport = Escolha os arquivos para importar
 
+interface-VaultLibrary-picturesNote = O local, a hora e os dados da câmera são removidos das imagens que você adiciona.
+
 interface-VaultApp-finishingTheTransfer = Concluindo a transferência
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Bloquear agora e cancelar a transferência
@@ -769,7 +771,7 @@ native-error-20 = Escolha uma frase secreta menos previsível que não seja base
 
 native-error-21 = Escolha no máximo 100 arquivos em uma importação.
 
-native-error-22 = Um dos arquivos não é um documento PDF, então nada foi adicionado. O myCarlos guarda apenas documentos PDF.
+native-error-22 = Um dos arquivos não é um documento PDF nem uma imagem JPEG ou PNG, então nada foi adicionado. O myCarlos guarda documentos PDF e imagens JPEG e PNG. Se for uma imagem de iPhone (HEIC), compartilhe-a como JPEG.
 
 native-error-23 = Este documento está protegido por senha. Digite a senha do documento que está no seu portal do paciente.
 
@@ -819,7 +821,7 @@ native-error-45 = O myCarlos não conseguiu abrir esse arquivo. Se ele estiver e
 
 native-error-46 = Um documento no cofre está danificado e não pode mais ser lido, então nenhuma cópia de segurança foi salva. Nada foi alterado.
 
-native-error-47 = Esta não é uma foto que o myCarlos pode salvar ou mostrar: ela precisa ser uma imagem JPEG completa de no máximo 25 MB e 8.192 pixels de cada lado. Nada foi alterado.
+native-error-47 = Esta não é uma foto que o myCarlos pode salvar ou mostrar: ela precisa ser uma imagem JPEG ou PNG completa (não animada) de no máximo 25 MB, 8.192 pixels de cada lado e 50 milhões de pixels no total (24 milhões em um telefone). Nada foi alterado.
 
 native-error-48 = A cópia de segurança foi verificada, mas a restauração não terminou. Feche o myCarlos e abra-o de novo para concluir. Depois, abra o cofre com a frase secreta ou a chave de recuperação da cópia de segurança.
 
@@ -830,6 +832,9 @@ native-filter-backups = Cópias de segurança do myCarlos
 native-filter-pdf = Documentos PDF
 
 native-filter-video = Vídeos (MP4 ou MOV)
+native-filter-pictures = Imagens JPEG e PNG
+
+native-filter-pdfAndPictures = Documentos PDF e imagens JPEG e PNG
 
 native-kit-text =
     Kit de recuperação do myCarlos
@@ -2412,22 +2417,24 @@ interface-AiHelperNotice-continue = Continuar
 
 interface-AnonymizePreview-footerNote = O arquivo terminará com esta linha:
 
-notifications-title = Avisos após verificar documentos
-notifications-help = Quando um documento da clínica é salvo após uma verificação manual, o Windows pode mostrar um aviso genérico. Abra o myCarlos normalmente para lê-lo. Os documentos não são verificados automaticamente.
-notifications-allow = Permitir avisos de chegada de documentos
+notifications-title = Verificação de documentos
+notifications-allow = Mostrar um aviso quando um documento chegar
 notifications-blocked = O Windows está bloqueando as notificações. Verifique as configurações de notificação.
 notifications-unknown = Não foi possível verificar a permissão de notificações do Windows.
+notifications-error = Não foi possível salvar esta configuração. Os avisos e as verificações automáticas estão desativados nesta sessão.
+notifications-unavailable = Estas configurações estão indisponíveis no momento. Abra o myCarlos normalmente para verificar seus documentos.
+notifications-helpAutomatic = O myCarlos pode verificar sozinho os documentos novos da clínica enquanto está aberto e desbloqueado. Os documentos novos aparecem então na sua biblioteca.
 notifications-notYetAsked = O Windows ainda não mostrou nenhum aviso do myCarlos, então ainda não tem uma configuração para eles. Os avisos são permitidos até que você os desative nas configurações do Windows.
-notifications-error = Não foi possível salvar esta configuração. Os avisos estão desativados nesta sessão.
-notifications-unavailable = Os avisos de documentos estão indisponíveis. Abra o myCarlos normalmente para verificar seus documentos.
-notifications-helpAutomatic = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
+notifications-blockedMac = O macOS não está permitindo as notificações do myCarlos. Ative-as em Ajustes do Sistema, em Notificações.
+notifications-notYetAskedMac = O macOS ainda não foi consultado. Ele perguntará quando você ativar os avisos.
 notifications-autoAllow = Buscar documentos das clínicas automaticamente enquanto o cofre estiver desbloqueado
-notifications-autoNeedsNotices = Primeiro permita os avisos de chegada de documentos para ativar esta opção.
-notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. As consultas podem continuar se o Windows bloquear os avisos. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas.
+notifications-autoConsent = Ao ativar isto, o myCarlos entra em contato com o portal da sua clínica de forma programada, com pelo menos dois minutos entre as tentativas, somente enquanto estiver aberto e desbloqueado. Desative para parar.
+notifications-noticesHelp = O Windows pode mostrar um aviso genérico depois que um documento da clínica for salvo. Abra o myCarlos normalmente para lê-lo.
+notifications-autoHelp = Com sua permissão, o myCarlos consulta os vínculos salvos e aprovados das clínicas enquanto este aplicativo está aberto e o cofre está desbloqueado, com pelo menos dois minutos entre as tentativas. Os documentos novos aparecem na sua biblioteca. Bloquear o cofre ou fechar o aplicativo interrompe novas consultas. Os avisos são uma escolha à parte e não são necessários para isso.
 notifications-autoPaused = É preciso fazer uma consulta manual para continuar as consultas automáticas. Abra Clínicas conectadas e escolha Verificar novos documentos.
 notifications-checkBusy = Uma consulta de documentos está sendo interrompida. Escolha Verificar novos documentos novamente em instantes.
-noticesStep-title = Avisos da sua clínica
-noticesStep-intro = Sua clínica está vinculada. O myCarlos pode avisar quando chegar um documento novo. Nada é ativado a menos que você marque.
+noticesStep-title = Documentos da sua clínica
+noticesStep-intro = Sua clínica está vinculada. O myCarlos pode verificar os documentos novos para você e mostrar um aviso quando um chegar, em um computador que possa fazê-lo. Nada é ativado a menos que você marque.
 noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, em { $preferences }: { $notices }.
 noticesStep-done = Concluído
 noticesStep-notNow = Agora não
@@ -2963,6 +2970,7 @@ native-notice-test = Este é um aviso de teste do myCarlos.
 notifications-testButton = Mostrar um aviso de teste
 
 notifications-testSent = Aviso de teste enviado. Se você não o vir, verifique as configurações de notificação do Windows.
+notifications-testSentMac = Aviso de teste enviado. Se você não o vir, verifique Ajustes do Sistema, em Notificações.
 
 notifications-testWait = Aguarde alguns segundos e tente novamente.
 

@@ -468,6 +468,8 @@ interface-UnlockPdfDialog-unlocking = Unlocking…
 
 interface-VaultApp-chooseFilesToImport = Choose files to import
 
+interface-VaultLibrary-picturesNote = Place, time and camera details are removed from pictures you add.
+
 interface-VaultApp-finishingTheTransfer = Finishing the transfer
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Lock now and cancel the transfer
@@ -748,7 +750,7 @@ native-error-20 = Choose a less predictable passphrase that is not based on comm
 
 native-error-21 = Choose no more than 100 files in one import.
 
-native-error-22 = One of the files is not a PDF document, so nothing was added. myCarlos keeps PDF documents only.
+native-error-22 = One of the files is not a PDF document or a JPEG or PNG picture, so nothing was added. myCarlos keeps PDF documents and JPEG and PNG pictures. If it is an iPhone picture (HEIC), share it as a JPEG instead.
 
 native-error-23 = This document is locked with a password. Enter the document password from your patient portal.
 
@@ -798,7 +800,7 @@ native-error-45 = myCarlos could not open that file. If it is in a cloud or shar
 
 native-error-46 = A document in the vault is damaged and can no longer be read, so no backup was saved. Nothing was changed.
 
-native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG picture of at most 25 MB and 8,192 pixels on each side. Nothing was changed.
+native-error-47 = This is not a photo myCarlos can save or show: it must be a complete JPEG or PNG picture (not an animated one) of at most 25 MB, 8,192 pixels on each side and 50 million pixels in all (24 million on a phone). Nothing was changed.
 
 native-error-48 = The backup was checked, but restoring it has not finished. Close myCarlos and open it again to finish. Then open the vault with the backup's passphrase or recovery key.
 
@@ -809,6 +811,9 @@ native-filter-backups = myCarlos backups
 native-filter-pdf = PDF documents
 
 native-filter-video = Videos (MP4 or MOV)
+native-filter-pictures = JPEG and PNG pictures
+
+native-filter-pdfAndPictures = PDF documents and JPEG and PNG pictures
 
 native-kit-text =
     myCarlos recovery kit
@@ -2377,22 +2382,24 @@ interface-AiHelperNotice-continue = Continue
 
 interface-AnonymizePreview-footerNote = The file will end with this line:
 
-notifications-title = Notices after document checks
-notifications-help = When a clinic document is saved after a manual check, Windows can show a generic notice. Open myCarlos normally to read it. Documents are not checked automatically.
-notifications-allow = Allow document arrival notices
+notifications-title = Checking for documents
+notifications-allow = Show a notice when a document arrives
 notifications-blocked = Windows is blocking notifications. Review its notification settings.
 notifications-unknown = Windows notification permission could not be checked.
+notifications-error = This setting could not be saved. Notices and automatic checks are off for this session.
+notifications-unavailable = These settings are unavailable right now. Open myCarlos normally to check your documents.
+notifications-helpAutomatic = myCarlos can check for new clinic documents by itself while it is open and unlocked. New documents then appear in your library.
 notifications-notYetAsked = Windows has not shown a myCarlos notice yet, so it has no setting for it. Notices are allowed until you turn them off in Windows settings.
-notifications-error = This setting could not be saved. Notices are off for this session.
-notifications-unavailable = Document notices are unavailable. Open myCarlos normally to check your documents.
-notifications-helpAutomatic = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
+notifications-blockedMac = macOS is not allowing notifications from myCarlos. Turn them on in System Settings, under Notifications.
+notifications-notYetAskedMac = macOS has not been asked yet. It will ask when you turn on notices.
 notifications-autoAllow = Check for clinic documents automatically while unlocked
-notifications-autoNeedsNotices = Allow document arrival notices first to turn this on.
-notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. Checks can continue if Windows blocks notices. Locking the vault or closing the app stops further checks.
+notifications-autoConsent = Turning this on lets myCarlos contact your clinic's portal on a schedule, at least two minutes apart, only while it is open and unlocked. Turn it off to stop.
+notifications-noticesHelp = Windows can show a generic notice after a clinic document is saved. Open myCarlos normally to read it.
+notifications-autoHelp = With your permission, myCarlos checks saved, approved clinic links while this app is open and the vault is unlocked, with at least two minutes between attempts. New documents appear in your library. Locking the vault or closing the app stops further checks. Notices are a separate choice and are not needed for this.
 notifications-autoPaused = Automatic checks need a manual check to continue. Open Connected clinics and choose Check for new documents.
 notifications-checkBusy = A document check is stopping. Choose Check for new documents again in a moment.
-noticesStep-title = Notices from your clinic
-noticesStep-intro = Your clinic is linked. myCarlos can let you know when a new document arrives. Nothing is turned on unless you tick it.
+noticesStep-title = Documents from your clinic
+noticesStep-intro = Your clinic is linked. myCarlos can check for new documents for you, and show a notice when one arrives on a computer that can. Nothing is turned on unless you tick it.
 noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
 noticesStep-done = Done
 noticesStep-notNow = Not now
@@ -2928,6 +2935,7 @@ native-notice-test = This is a test notice from myCarlos.
 notifications-testButton = Show a test notice
 
 notifications-testSent = Test notice sent. If you do not see it, check Windows notification settings.
+notifications-testSentMac = Test notice sent. If you do not see it, check System Settings, under Notifications.
 
 notifications-testWait = Wait a few seconds, then try again.
 

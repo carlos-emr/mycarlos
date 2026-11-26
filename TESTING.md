@@ -357,6 +357,22 @@ On every platform:
       choose **Cancel**, or the vault locks.
     - **TalkBack or VoiceOver:** the shutter is read as "Take photo", and after a photo the focus
       is on **Use photo**. At the largest text size, every button can be reached.
+12a. **Pictures from files.** Take a FAKE JPEG that carries a place and time (a phone photo with Location on,
+    or one made with `exiftool -GPSLatitude=1 -GPSLongitude=1 -DateTimeOriginal=...`) and choose **New** and that
+    file: it is added, and a note under the buttons says place, time and camera details are removed. Open it:
+    it is shown upright (try a portrait photo a phone stored sideways). Run `exiftool` on the original: unchanged.
+    **Export** it (or use a readable export) and run `exiftool` on that copy: no GPS, time, make or model, no
+    thumbnail. Then choose a **HEIC** and a text file renamed `.pdf`: each is refused with a plain
+    message that names the file, and the others in the same choice are still added.
+    Choose a **PNG** (a screenshot; for one with text chunks, `exiftool -Comment=FAKE x.png`): it is added and
+    shown as it looks, `exiftool` on an export shows only the picture's own fields (size, depth), and an
+    animated PNG is refused as not a photo. An iPhone screenshot (Display P3) keeps its colours: the stored copy shows no shift against the original. A PNG whose picture data is damaged (flip a byte in the middle of the file, then fix its checksum, or use a deliberately truncated stream with correct chunk checksums) is added and then does not show; hide it from its details. This is expected: the picture data is checked for its header, not decoded. Choose a JPEG renamed
+    `.pdf`: it is cleaned as a picture, not kept as it came.
+    Try **real phone files**: one from a Pixel and one from a Samsung (they append an Ultra HDR gain map
+    after the picture) and one JPEG exported from an iPhone (Photos, Options, Most Compatible). Each must be
+    added, shown upright, and have no place or time left (`exiftool` on the export); the brightness may look
+    slightly flatter (the gain map is not kept).
+
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should

@@ -148,7 +148,7 @@ describe("the text the operating system shows for myCarlos", () => {
     ]);
   });
 
-  it("is handed to the system's notification call from three places in all, each given a catalogue sentence", () => {
+  it("is handed to the system's notification call from five places in all, each given a catalogue sentence", () => {
     // `Backend::accept(text, still_current)` is the one call that reaches a toast, a freedesktop
     // notice or a macOS notification. Every native source is read (a new backend or a new caller
     // in another file is seen), not only the runtime's; the two-argument form is that call (the
@@ -168,7 +168,10 @@ describe("the text the operating system shows for myCarlos", () => {
     expect(calls).toEqual([
       "document_notification_runtime.rs &body",
       "document_notification_runtime.rs &body",
-      // The tray poller's Windows toast for "a document is waiting" while locked.
+      // The tray poller's toast for "a document is waiting" while locked: one for each platform's
+      // backend (Windows, Linux, macOS), each given the same `text`.
+      "tray_poller.rs text",
+      "tray_poller.rs text",
       "tray_poller.rs text",
     ]);
     // That `text` is only ever what `act_on` shows: the waiting sentence of the catalogue.
@@ -257,6 +260,8 @@ describe("the text the operating system shows for myCarlos", () => {
     "NativeFilterBackups",
     "NativeFilterModels",
     "NativeFilterPdf",
+    "NativeFilterPdfAndPictures",
+    "NativeFilterPictures",
     "NativeFilterVideo",
     "NativeKitText",
     "NativeNoticeArrival",

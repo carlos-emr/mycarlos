@@ -502,6 +502,8 @@ interface-UnlockPdfDialog-unlocking = Odblokowywanie…
 
 interface-VaultApp-chooseFilesToImport = Wybierz pliki do importu
 
+interface-VaultLibrary-picturesNote = Z dodawanych obrazów usuwane są miejsce, czas i dane o aparacie.
+
 interface-VaultApp-finishingTheTransfer = Kończenie przesyłania
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Zablokuj teraz i anuluj przesyłanie
@@ -790,7 +792,7 @@ native-error-20 = Proszę wybrać trudniejsze do odgadnięcia hasło główne, k
 
 native-error-21 = Proszę wybrać najwyżej 100 plików do jednego importu.
 
-native-error-22 = Jeden z plików nie jest dokumentem PDF, więc nic nie dodano. myCarlos przechowuje tylko dokumenty PDF.
+native-error-22 = Jeden z plików nie jest dokumentem PDF ani obrazem JPEG lub PNG, więc nic nie dodano. myCarlos przechowuje dokumenty PDF oraz obrazy JPEG i PNG. Jeśli to obraz z iPhone’a (HEIC), udostępnij go jako JPEG.
 
 native-error-23 = Ten dokument jest zabezpieczony hasłem. Proszę wpisać hasło dokumentu z portalu pacjenta.
 
@@ -840,7 +842,7 @@ native-error-45 = myCarlos nie mógł otworzyć tego pliku. Jeśli znajduje się
 
 native-error-46 = Dokument w sejfie jest uszkodzony i nie można go już odczytać, więc nie zapisano kopii zapasowej. Nic nie zostało zmienione.
 
-native-error-47 = To nie jest zdjęcie, które myCarlos może zapisać lub wyświetlić: musi być kompletnym obrazem JPEG o rozmiarze najwyżej 25 MB i wymiarach najwyżej 8 192 pikseli na każdym boku. Nic nie zostało zmienione.
+native-error-47 = To nie jest zdjęcie, które myCarlos może zapisać lub wyświetlić: musi być kompletnym obrazem JPEG lub PNG (nieanimowanym) o rozmiarze najwyżej 25 MB, wymiarach najwyżej 8 192 pikseli na każdym boku i najwyżej 50 milionach pikseli łącznie (24 milionach na telefonie). Nic nie zostało zmienione.
 
 native-error-48 = Kopia zapasowa została sprawdzona, ale przywracanie nie zostało ukończone. Proszę zamknąć i ponownie otworzyć myCarlos, aby je dokończyć. Następnie proszę otworzyć sejf hasłem głównym lub kluczem odzyskiwania z kopii zapasowej.
 
@@ -851,6 +853,9 @@ native-filter-backups = Kopie zapasowe myCarlos
 native-filter-pdf = Dokumenty PDF
 
 native-filter-video = Filmy (MP4 lub MOV)
+native-filter-pictures = Obrazy JPEG i PNG
+
+native-filter-pdfAndPictures = Dokumenty PDF oraz obrazy JPEG i PNG
 
 native-kit-text =
     Zestaw odzyskiwania myCarlos
@@ -2492,22 +2497,24 @@ interface-AiHelperNotice-continue = Dalej
 
 interface-AnonymizePreview-footerNote = Plik będzie kończył się tym wierszem:
 
-notifications-title = Powiadomienia po sprawdzeniu dokumentów
-notifications-help = Gdy po ręcznym sprawdzeniu zostanie zapisany dokument z przychodni, system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument. Dokumenty nie są sprawdzane automatycznie.
-notifications-allow = Zezwalaj na powiadomienia o nowych dokumentach
+notifications-title = Sprawdzanie dokumentów
+notifications-allow = Pokazuj powiadomienie o nowym dokumencie
 notifications-blocked = System Windows blokuje powiadomienia. Proszę sprawdzić ustawienia powiadomień.
 notifications-unknown = Nie można sprawdzić uprawnień do powiadomień w systemie Windows.
+notifications-error = Nie można zapisać tego ustawienia. Powiadomienia i automatyczne sprawdzanie są wyłączone w tej sesji.
+notifications-unavailable = Te ustawienia są teraz niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
+notifications-helpAutomatic = myCarlos może sam sprawdzać nowe dokumenty z przychodni, gdy jest otwarty i odblokowany. Nowe dokumenty pojawiają się wtedy w bibliotece.
 notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
-notifications-error = Nie można zapisać tego ustawienia. Powiadomienia są wyłączone w tej sesji.
-notifications-unavailable = Powiadomienia o dokumentach są niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
-notifications-helpAutomatic = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
+notifications-blockedMac = System macOS nie zezwala na powiadomienia z myCarlos. Proszę je włączyć w Ustawieniach systemowych, w sekcji Powiadomienia.
+notifications-notYetAskedMac = System macOS nie został jeszcze zapytany. Zapyta, gdy zostaną włączone powiadomienia.
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
-notifications-autoNeedsNotices = Aby to włączyć, najpierw należy zezwolić na powiadomienia o nowych dokumentach.
-notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Sprawdzanie może trwać, gdy Windows blokuje powiadomienia. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie.
+notifications-autoConsent = Włączenie tej opcji pozwala myCarlos łączyć się z portalem przychodni według harmonogramu, co najmniej dwie minuty między próbami, wyłącznie gdy jest otwarty i odblokowany. Wyłączenie jej zatrzymuje sprawdzanie.
+notifications-noticesHelp = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
+notifications-autoHelp = Po wyrażeniu zgody myCarlos sprawdza zapisane i zatwierdzone połączenia z przychodniami, gdy ta aplikacja jest otwarta, a sejf odblokowany. Między próbami upływają co najmniej dwie minuty. Nowe dokumenty pojawiają się w bibliotece. Zablokowanie sejfu lub zamknięcie aplikacji zatrzymuje dalsze sprawdzanie. Powiadomienia to osobny wybór i nie są do tego potrzebne.
 notifications-autoPaused = Aby kontynuować automatyczne sprawdzanie, potrzebne jest sprawdzenie ręczne. Proszę otworzyć sekcję „Połączone przychodnie” i wybrać „Sprawdź nowe dokumenty”.
 notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za chwilę ponownie wybrać „Sprawdź nowe dokumenty”.
-noticesStep-title = Powiadomienia z przychodni
-noticesStep-intro = Przychodnia jest połączona. myCarlos może powiadamiać o nowych dokumentach. Nic nie zostanie włączone bez zaznaczenia.
+noticesStep-title = Dokumenty z przychodni
+noticesStep-intro = Przychodnia jest połączona. myCarlos może sprawdzać nowe dokumenty za Państwa i pokazywać powiadomienie o nowym dokumencie na komputerze, który to umożliwia. Nic nie zostanie włączone bez zaznaczenia.
 noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $notices }”.
 noticesStep-done = Gotowe
 noticesStep-notNow = Nie teraz
@@ -3057,6 +3064,7 @@ native-notice-test = To jest testowe powiadomienie z myCarlos.
 notifications-testButton = Pokaż powiadomienie testowe
 
 notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+notifications-testSentMac = Wysłano powiadomienie testowe. Jeśli go nie widać, proszę sprawdzić Ustawienia systemowe, sekcję Powiadomienia.
 
 notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 

@@ -237,6 +237,8 @@ interface-UnlockPdfDialog-unlocking = 正在解锁…
 
 interface-VaultApp-chooseFilesToImport = 选择要导入的文件
 
+interface-VaultLibrary-picturesNote = 您添加的图片会去掉拍摄地点、时间和相机信息。
+
 interface-VaultApp-finishingTheTransfer = 正在完成传输
 
 interface-VaultApp-lockNowAndCancelTheTransfer = 立即锁定并取消传输
@@ -664,7 +666,7 @@ native-error-20 = 请选择较不容易猜测的密码短语，不要使用常�
 
 native-error-21 = 每次导入最多可选择 100 个文件。
 
-native-error-22 = 其中一个文件不是 PDF 文档，因此没有添加任何内容。myCarlos 只保留 PDF 文档。
+native-error-22 = 其中一个文件既不是 PDF 文档也不是 JPEG 或 PNG 图片，因此没有添加任何内容。myCarlos 保留 PDF 文档以及 JPEG 和 PNG 图片。如果是 iPhone 图片（HEIC），请改为以 JPEG 分享。
 
 native-error-23 = 此文档使用密码锁定。请输入患者门户网站提供的文档密码。
 
@@ -714,7 +716,7 @@ native-error-45 = myCarlos 无法打开该文件。如果文件位于云端或�
 
 native-error-46 = 保险库中的文档已损毁且无法再读取，因此没有保存备份。没有变更任何内容。
 
-native-error-47 = myCarlos 无法保存或显示此相片：相片必须是完整的 JPEG 图片、大小不得超过 25 MB，且每边不得超过 8,192 像素。没有变更任何内容。
+native-error-47 = myCarlos 无法保存或显示此相片：相片必须是完整的 JPEG 或 PNG 图片（不能是动画）、大小不得超过 25 MB，每边不得超过 8,192 像素，总计不得超过 5,000 万像素（手机上为 2,400 万）。没有变更任何内容。
 
 native-error-48 = 备份已检查，但还原作业尚未完成。请关闭 myCarlos 再重新打开以完成作业，接着使用创建备份时的密码短语或恢复密钥打开保险库。
 
@@ -725,6 +727,9 @@ native-filter-backups = myCarlos 备份
 native-filter-pdf = PDF 文档
 
 native-filter-video = 视频（MP4 或 MOV）
+native-filter-pictures = JPEG 和 PNG 图片
+
+native-filter-pdfAndPictures = PDF 文档以及 JPEG 和 PNG 图片
 
 native-kit-text =
     myCarlos 恢复工具包
@@ -2159,22 +2164,24 @@ interface-AiHelperNotice-continue = 继续
 
 interface-AnonymizePreview-footerNote = 文件将以这一行结尾：
 
-notifications-title = 检查文档后的通知
-notifications-help = 手动检查后，诊所文档保存到 myCarlos 时，Windows 可显示一条通用通知。请按通常方式打开 myCarlos 阅读文档。系统不会自动检查文档。
-notifications-allow = 允许文档到达通知
+notifications-title = 检查文档
+notifications-allow = 文档到达时显示通知
 notifications-blocked = Windows 正在阻止通知。请查看 Windows 通知设置。
 notifications-unknown = 无法检查 Windows 通知权限。
+notifications-error = 无法保存此设置。本次会话的通知和自动检查已关闭。
+notifications-unavailable = 这些设置目前不可用。请按通常方式打开 myCarlos 查看文档。
+notifications-helpAutomatic = myCarlos 可以在打开且已解锁时自行检查诊所的新文档。新文档随后会出现在您的记录库中。
 notifications-notYetAsked = Windows 尚未显示过 myCarlos 的通知，因此还没有针对它的设置。在您于 Windows 设置中将其关闭之前，通知是允许的。
-notifications-error = 无法保存此设置。本次会话的通知已关闭。
-notifications-unavailable = 文档通知不可用。请按通常方式打开 myCarlos 查看文档。
-notifications-helpAutomatic = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
+notifications-blockedMac = macOS 不允许 myCarlos 发送通知。请在“系统设置”的“通知”中打开。
+notifications-notYetAskedMac = 尚未询问 macOS。您打开通知时，它会询问。
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
-notifications-autoNeedsNotices = 请先允许文档到达通知，才能开启此选项。
-notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。即使 Windows 阻止通知，检查仍可继续。锁定保险库或关闭应用会停止后续检查。
+notifications-autoConsent = 开启后，myCarlos 会按计划联系您诊所的门户，每次尝试至少间隔两分钟，且仅在其打开并已解锁时进行。关闭即可停止。
+notifications-noticesHelp = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
+notifications-autoHelp = 经您同意，myCarlos 会在此应用打开且保险库解锁时检查已保存并获批准的诊所连接，每次尝试至少间隔两分钟。新文档会出现在您的记录库中。锁定保险库或关闭应用会停止后续检查。通知是另一项单独的选择，与此无关。
 notifications-autoPaused = 需要手动检查一次才能继续自动检查。请打开“已连接的诊所”并选择“检查新文档”。
 notifications-checkBusy = 正在停止文档检查。请稍后再次选择“检查新文档”。
-noticesStep-title = 来自诊所的通知
-noticesStep-intro = 您的诊所已关联。myCarlos 可以在新文档到达时通知您。除非您勾选，否则不会开启任何选项。
+noticesStep-title = 来自诊所的文档
+noticesStep-intro = 您的诊所已关联。myCarlos 可以为您检查新文档，并在可显示通知的电脑上于新文档到达时通知您。除非您勾选，否则不会开启任何选项。
 noticesStep-later = 您随时可以在 { $settings } 的 { $preferences } 中变更这些设置：{ $notices }。
 noticesStep-done = 完成
 noticesStep-notNow = 暂不
@@ -2654,6 +2661,7 @@ native-notice-test = 这是来自 myCarlos 的测试通知。
 notifications-testButton = 显示测试通知
 
 notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+notifications-testSentMac = 已发送测试通知。如果没有看到，请检查“系统设置”中的“通知”。
 
 notifications-testWait = 请等待几秒钟后再试。
 

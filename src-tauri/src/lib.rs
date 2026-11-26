@@ -12,7 +12,12 @@ mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection_pickup;
 mod document_identity;
+#[cfg(target_os = "macos")]
+mod document_notification_macos;
 pub mod document_notification_runtime;
+// Compiled on Linux, and in tests on every platform (its bus is a trait, tested with a fake).
+#[cfg(any(test, target_os = "linux"))]
+mod document_notification_linux;
 #[cfg(windows)]
 mod document_notification_windows;
 pub mod document_notifications;
@@ -62,6 +67,7 @@ mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod photo_png;
 mod portal_approval;
 mod portal_client;
 mod portal_delivery;
@@ -674,7 +680,7 @@ impl From<VaultError> for PublicError {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PassphraseRulesRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -688,7 +694,7 @@ impl Drop for PassphraseRulesRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -714,13 +720,14 @@ struct HideUnavailableRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PassphraseRequest {
     passphrase: String,
 }
 
 /// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AddVaultRequest {
     name: String,
     passphrase: String,
@@ -737,6 +744,7 @@ impl Drop for AddVaultRequest {
 
 /// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FindVaultsRequest {
     passphrase: String,
 }
@@ -759,12 +767,14 @@ struct FoundVaultsReply {
 
 /// One found vault and the name its owner now gives it.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedFoundVault {
     id: String,
     name: String,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NameFoundRequest {
     vaults: Vec<NamedFoundVault>,
 }
@@ -779,6 +789,7 @@ impl Drop for NameFoundRequest {
 
 /// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedPassphraseRequest {
     name: String,
     passphrase: String,
@@ -811,7 +822,7 @@ struct BackupWriteRequest {
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoreRequest {
     pick_id: Uuid,
     passphrase: Option<String>,
@@ -848,7 +859,7 @@ impl Drop for RestoreRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoverRequest {
     recovery_key: String,
     new_passphrase: String,
@@ -872,20 +883,20 @@ struct RecoverResponse {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoveryKeyGroup {
     index: usize,
     value: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConfirmRecoveryKeyRequest {
     groups: Vec<RecoveryKeyGroup>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
@@ -900,7 +911,7 @@ impl Drop for ChangePassphraseRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NameRequest {
     display_name: String,
     #[serde(default)]
@@ -924,7 +935,7 @@ struct RenameProfileRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FolderRequest {
     profile_id: Uuid,
     parent_id: Option<Uuid>,
@@ -932,7 +943,7 @@ struct FolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateFolderRequest {
     folder_id: Uuid,
     parent_id: Option<Uuid>,
@@ -940,41 +951,41 @@ struct UpdateFolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersRequest {
     record_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameRecordRequest {
     record_id: Uuid,
     name: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersBatchRequest {
     record_ids: Vec<Uuid>,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImportRequest {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoRequest {
     record_id: Uuid,
 }
@@ -1130,11 +1141,11 @@ impl std::io::Write for PhotoBuffer {
             self.bytes = larger;
         }
         self.bytes.extend_from_slice(data);
-        // FF D8 FF, as far as the bytes so far go.
-        let seen = self.bytes.len().min(photo::JPEG_START.len());
-        if self.bytes[..seen] != photo::JPEG_START[..seen] {
+        // FF D8 FF (a JPEG) or the PNG signature, as far as the bytes so far go.
+        let seen = self.bytes.len().min(photo::SNIFF_BYTES);
+        if !photo::could_start_a_picture(&self.bytes[..seen]) {
             self.refused = true;
-            return Err(std::io::Error::other("not a JPEG"));
+            return Err(std::io::Error::other("not a JPEG or a PNG"));
         }
         Ok(data.len())
     }
@@ -1144,38 +1155,8 @@ impl std::io::Write for PhotoBuffer {
     }
 }
 
-/// The first bytes of a record's file, and no more: once it has them, it stops
-/// the export, so only the first chunk is decrypted.
-#[derive(Default)]
-struct FileStart {
-    bytes: [u8; photo::JPEG_START.len()],
-    seen: usize,
-}
-
-impl FileStart {
-    fn complete(&self) -> bool {
-        self.seen == self.bytes.len()
-    }
-}
-
-impl std::io::Write for FileStart {
-    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        let take = data.len().min(self.bytes.len() - self.seen);
-        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
-        self.seen += take;
-        if self.complete() {
-            Err(std::io::Error::other("the first bytes are read"))
-        } else {
-            Ok(data.len())
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-/// The first `N` bytes of a record's file, and no more (as `FileStart`).
+/// The first `N` bytes of a record's file, and no more: once it has them, it stops the export, so
+/// only the first chunk is decrypted.
 struct FileStartN<const N: usize> {
     bytes: [u8; N],
     seen: usize,
@@ -1213,22 +1194,30 @@ impl<const N: usize> std::io::Write for FileStartN<N> {
     }
 }
 
-/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
-/// called. A document's details ask this before offering View photo, so the
-/// photo itself stays here until the patient asks to see it; `view_photo` then
-/// checks the whole file.
-fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
-    let mut start = FileStart::default();
+/// Which picture a record's file starts as (a JPEG: FF D8 FF; a PNG: its 8-byte signature),
+/// whatever it is called. A document's details ask this before offering View photo, so the photo
+/// itself stays here until the patient asks to see it; `view_photo` then checks the whole file.
+fn photo_kind(
+    store: &VaultStore,
+    record_id: Uuid,
+) -> Result<Option<photo::PictureKind>, VaultError> {
+    let mut start = FileStartN::<{ photo::SNIFF_BYTES }>::default();
     let exported = store.read_for_view(record_id, &mut start);
-    if start.complete() {
-        return Ok(start.bytes == photo::JPEG_START);
+    // A file shorter than eight bytes can still be a (too short) JPEG start; `picture_kind` looks
+    // only at what was read.
+    if start.complete() || exported.is_ok() {
+        return Ok(photo::picture_kind(&start.bytes[..start.seen]));
     }
-    // Shorter than three bytes, or not read at all.
-    exported.map(|()| false)
+    exported.map(|()| None)
 }
 
-/// A photo's name must still describe its JPEG bytes. Ordinary PDF renames
-/// retain the vault's existing metadata-only checks.
+/// Whether a record's file starts as a picture does (see `photo_kind`).
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    photo_kind(store, record_id).map(|kind| kind.is_some())
+}
+
+/// A photo's name must still describe its bytes: `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG.
+/// Ordinary PDF renames retain the vault's existing metadata-only checks.
 fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<(), VaultError> {
     let old_name = store
         .snapshot()?
@@ -1240,29 +1229,24 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
     // A failed probe establishes no format. Keep the existing metadata-only
     // rename policy for an unreadable/unknown file, rather than requiring a
     // readable object just to edit its name.
-    if !old_name.trim().to_ascii_lowercase().ends_with(".pdf")
-        && is_photo(store, record_id).unwrap_or(false)
-    {
-        let valid_jpeg_name = name
-            .trim()
-            .rsplit_once('.')
-            .is_some_and(|(stem, extension)| {
-                !stem.trim().is_empty()
-                    && (extension.eq_ignore_ascii_case("jpg")
-                        || extension.eq_ignore_ascii_case("jpeg"))
-            });
-        if !valid_jpeg_name {
+    let kind = if old_name.trim().to_ascii_lowercase().ends_with(".pdf") {
+        None
+    } else {
+        photo_kind(store, record_id).unwrap_or(None)
+    };
+    if let Some(kind) = kind {
+        if !kind.names(name) {
             return Err(VaultError::Invalid);
         }
     }
     store.rename_record(record_id, name)
 }
 
-/// The photo a record holds, as a `data:image/jpeg` URL for the photo view
-/// (the CSP allows `data:` images). The file's own bytes decide: it must start
-/// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
-/// checks as a photo being saved, which also drop any metadata from what is
-/// shown. The record is unchanged.
+/// The picture a record holds, as a `data:image/jpeg` or `data:image/png` URL for the photo view
+/// (the CSP allows `data:` images). The file's own bytes decide: it must start with the JPEG
+/// marker FF D8 FF or the PNG signature, whatever it is called, and pass the same checks as a
+/// picture being imported, which also drop any metadata from what is shown. The record is
+/// unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
     let exported = store.read_for_view(record_id, &mut buffer);
@@ -1270,9 +1254,13 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
         return Err(VaultError::NotPhoto);
     }
     exported?;
-    let cleaned = photo::clean_jpeg(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    // `clean_any`: a picture the patient brought keeps what draws it (a JPEG also its orientation
+    // and a plain colour profile; the camera's own photos have neither, so they are shown as
+    // stored).
+    let (kind, cleaned) = photo::clean_any(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
     Ok(format!(
-        "data:image/jpeg;base64,{}",
+        "data:{};base64,{}",
+        kind.media_type(),
         BASE64.encode(&*cleaned)
     ))
 }
@@ -1409,7 +1397,7 @@ impl std::io::Write for LimitedBuffer {
 /// Finishes an import or export whose picker already closed. The paths the
 /// picker returned stay native, under `pick_id`; the renderer never sees them.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedImportRequest {
     pick_id: Uuid,
     profile_id: Uuid,
@@ -1417,7 +1405,7 @@ struct PickedImportRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedExportRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -2018,13 +2006,13 @@ impl PendingPicks {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordIdRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProfileIdRequest {
     profile_id: Uuid,
 }
@@ -2053,13 +2041,14 @@ struct AiAnswer<T> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AiResultRequest {
     record_id: Uuid,
     result_id: Uuid,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ResetRequest {
     confirmation: String,
 }
@@ -2087,6 +2076,9 @@ fn now_ms() -> u64 {
 /// segment is percent-encoded, and for Android document providers it is a
 /// document id that either embeds the storage path ("primary:Documents/labs.pdf")
 /// or is opaque ("msf:31").
+/// The name given to a picked document whose Android id holds no file name.
+const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
+
 fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
@@ -2101,21 +2093,42 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
-    // The picker offers only PDFs, so a tail that does not end in ".pdf" is
-    // part of an opaque id rather than a name. The fallback keeps the extension
+    // The picker offers only PDFs and pictures, so a tail that does not end in
+    // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
     // so that an export still suggests a file the platform can open.
     // A document id is "<root>:<path>". Only the first colon separates them; a
     // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
     let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
     let name = path.rsplit('/').next().unwrap_or_default();
-    let is_pdf_name = name
-        .rsplit_once('.')
-        .is_some_and(|(stem, extension)| !stem.is_empty() && extension.eq_ignore_ascii_case("pdf"));
-    if is_pdf_name {
+    let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && ["pdf", "jpg", "jpeg", "png"]
+                .iter()
+                .any(|accepted| extension.eq_ignore_ascii_case(accepted))
+    });
+    if is_file_name {
         name.to_owned()
     } else {
-        "Imported document.pdf".to_owned()
+        IMPORTED_DOCUMENT_NAME.to_owned()
     }
+}
+
+/// The name an imported picture is stored under: the name it came with when that already ends
+/// the way its kind does (`.jpg` or `.jpeg` for a JPEG, `.png` for a PNG), otherwise with the
+/// suffix of what it is added, so the stored name always describes the stored bytes (a rename
+/// keeps it that way, `rename_document`). The stand-in name an opaque Android document id gets
+/// (`Imported document.pdf`) is replaced, so that a picture is never named as a PDF.
+fn picture_import_name(name: String, kind: Option<photo::PictureKind>) -> String {
+    let Some(kind) = kind else {
+        return name;
+    };
+    if kind.names(&name) {
+        return name;
+    }
+    if name == IMPORTED_DOCUMENT_NAME {
+        return format!("Imported picture{}", kind.extension());
+    }
+    format!("{name}{}", kind.extension())
 }
 
 #[tauri::command]
@@ -3636,6 +3649,7 @@ fn vault_touch(store: State<'_, StoreHandle>) {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AutoLockRequest {
     minutes: u64,
 }
@@ -4399,7 +4413,7 @@ async fn vault_recover(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BackupPickRequest {
     /// Today's date on the patient's own calendar, `YYYY-MM-DD`.
     #[serde(default)]
@@ -5620,9 +5634,15 @@ async fn vault_import_pick(
     .await?;
     let _open = ActivityHold::new(store.idle());
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
+        // PDF documents stay first (what the dialog shows by default); the others are one choice
+        // away. JPEG and PNG pictures only: HEIC is not accepted.
         file_dialog(&app)
             .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -5774,9 +5794,10 @@ fn open_import_source(
     path: tauri_plugin_fs::FilePath,
 ) -> Result<ImportSource, VaultError> {
     let display_name = import_display_name(&path);
+    let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
-        display_name,
-        reader: require_pdf(open_source_reader(app, path)?)?,
+        display_name: picture_import_name(display_name, kind),
+        reader,
     })
 }
 
@@ -5785,9 +5806,10 @@ fn open_received_source(
     app: &tauri::AppHandle,
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
+    let (kind, reader) = open_supported_file(open_received_reader(app, &file)?)?;
     Ok(ImportSource {
-        reader: require_pdf(open_received_reader(app, &file)?)?,
-        display_name: file.name,
+        reader,
+        display_name: picture_import_name(file.name, kind),
     })
 }
 
@@ -5822,18 +5844,50 @@ fn open_source_reader(
     Ok(Box::new(file))
 }
 
-/// Refuses a file that does not start the way a PDF does. The start is read while the file is
-/// opened, so a refused file stops the import before anything is staged.
-fn require_pdf(
+/// Says what an importable file is and gives its bytes: a PDF streams in as it is (it was checked
+/// while it was opened, so a refused file stops the import before anything is staged); a JPEG is
+/// read whole (at most a photo's size) and **cleaned first** (`photo::clean_picture`): place, time,
+/// device, thumbnail and every other block are gone, and only the orientation and a plain colour
+/// profile are kept. What is stored is already clean, whatever app made the picture. Anything else
+/// is refused (`NotPdf`, worded for both kinds). A JPEG that is damaged, not a baseline or
+/// progressive image, or too large is refused as a picture (`NotPhoto`).
+#[cfg(test)]
+fn require_supported_file(
     reader: Box<dyn std::io::Read + Send>,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
-    received::require_pdf_header(reader).map_err(|error| {
+    open_supported_file(reader).map(|(_, reader)| reader)
+}
+
+/// `require_supported_file`, also saying which picture it was (`None` for a PDF), so that the
+/// import can name the picture for what it is (`picture_import_name`).
+fn open_supported_file(
+    reader: Box<dyn std::io::Read + Send>,
+) -> Result<(Option<photo::PictureKind>, Box<dyn std::io::Read + Send>), VaultError> {
+    let (kind, reader) = received::classify(reader).map_err(|error| {
         if received::is_not_pdf(&error) {
             VaultError::NotPdf
         } else {
             VaultError::from(error)
         }
-    })
+    })?;
+    match kind {
+        received::FileKind::Pdf => Ok((None, reader)),
+        received::FileKind::Jpeg | received::FileKind::Png => {
+            use std::io::Read as _;
+            // Room for the most a picture may be (and one byte over, which is enough to say it is
+            // too large) from the start: a buffer that grows leaves outgrown copies of a health
+            // picture behind, which nothing wipes.
+            let mut bytes = Zeroizing::new(Vec::with_capacity(photo::MAX_PHOTO_BYTES + 1));
+            // One byte over the cap is enough to say it is too large.
+            reader
+                .take(photo::MAX_PHOTO_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(VaultError::from)?;
+            let (picture, cleaned) = photo::clean_any(&bytes).map_err(|_| VaultError::NotPhoto)?;
+            drop(bytes);
+            Ok((Some(picture), Box::new(std::io::Cursor::new(cleaned))))
+        }
+    }
 }
 
 /// A picked file that cannot be opened is a problem with that file, not with
@@ -5858,7 +5912,7 @@ struct ReceivedState {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MoveToPersonRequest {
     record_ids: Vec<Uuid>,
     profile_id: Uuid,
@@ -6007,14 +6061,14 @@ fn accept_received_batch(
 
 /// The files the patient confirmed adding (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedAcceptRequest {
     ids: Vec<Uuid>,
 }
 
 /// The files the patient said No to (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedDiscardRequest {
     ids: Vec<Uuid>,
 }
@@ -6077,7 +6131,7 @@ async fn received_accept(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ViewPageRequest {
     record_id: Uuid,
     page: u32,
@@ -6232,7 +6286,7 @@ fn cancel_native_pdf(_app: &tauri::AppHandle) {
 /// none of its own. Short, with no control characters.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfLabels {
     close: String,
     previous: String,
@@ -6243,6 +6297,9 @@ struct AndroidPdfLabels {
     page: String,
     /// "Page {page} of {total}".
     page_status: String,
+    /// "Page {page} of {total} could not be shown": said, and set as the page's description, where
+    /// a page fails to render (it used to be dropped here, so the reader showed nothing).
+    page_failed: String,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -6256,6 +6313,7 @@ impl AndroidPdfLabels {
             &self.zoom_out,
             &self.page,
             &self.page_status,
+            &self.page_failed,
         ]
         .into_iter()
         .all(|label| {
@@ -6266,7 +6324,7 @@ impl AndroidPdfLabels {
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfRequest {
     record_id: Uuid,
     labels: AndroidPdfLabels,
@@ -6349,6 +6407,7 @@ async fn vault_read_android_pdf(
                     zoom_out: &request.labels.zoom_out,
                     page: &request.labels.page,
                     page_status: &request.labels.page_status,
+                    page_failed: &request.labels.page_failed,
                 },
                 activity,
             },
@@ -6384,7 +6443,7 @@ fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
 
 /// Where a quoted span of a page's text is on the page picture (#292).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PageBoxesRequest {
     record_id: Uuid,
     page: u32,
@@ -6502,7 +6561,7 @@ async fn vault_page_boxes(
 
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentTextRequest {
     record_id: Uuid,
     /// Who asks: the screen's own id, so that its cancel ends only this read.
@@ -6730,7 +6789,7 @@ async fn vault_document_text(
 
 /// Which text read to stop: the id the screen gave when it asked.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextReadCancelRequest {
     read_id: Uuid,
 }
@@ -6759,7 +6818,7 @@ async fn vault_record_known_details(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -6798,7 +6857,7 @@ async fn vault_export_text_pick(
 const MAX_EXPORT_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickedRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -6920,7 +6979,7 @@ async fn vault_export_text_picked(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportCopyRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -7421,7 +7480,7 @@ async fn vault_is_locked_pdf(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UnlockPdfRequest {
     record_id: Uuid,
     password: String,
@@ -8086,7 +8145,7 @@ pub fn run() {
                 app.config().identifier.clone(),
             ));
             // One worker for the app, ticking whichever vault the screen is on.
-            #[cfg(windows)]
+            #[cfg(desktop)]
             slots.start_document_collection()?;
             // Commands ask the handle for "the" vault.
             app.manage(StoreHandle::from_source(slots));
@@ -9529,15 +9588,19 @@ mod tests {
     }
 
     #[test]
-    fn a_file_that_is_not_a_pdf_is_refused_and_named() {
+    fn a_file_that_is_not_a_pdf_or_a_jpeg_is_refused_and_named() {
         let text = std::io::Cursor::new(b"FAKE plain text".to_vec());
         assert!(matches!(
-            require_pdf(Box::new(text)),
+            require_supported_file(Box::new(text)),
             Err(VaultError::NotPdf)
         ));
         let pdf = std::io::Cursor::new(b"%PDF-1.7 FAKE".to_vec());
         let mut kept = Vec::new();
-        std::io::Read::read_to_end(&mut require_pdf(Box::new(pdf)).unwrap(), &mut kept).unwrap();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(pdf)).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
         assert_eq!(kept, b"%PDF-1.7 FAKE");
         let json = serde_json::to_value(PublicError::from(VaultError::NotPdf)).unwrap();
         assert_eq!(json["code"], "not_pdf");
@@ -9971,6 +10034,81 @@ mod tests {
         assert!(!store.idle().is_due(due_at(armed_at)));
     }
 
+    /// The automatic document check is a desktop feature, not a Windows one: the worker, its tick
+    /// and the arrival notice all sit behind `desktop`, so Mac and Linux run the check and the
+    /// notice runtime says "nothing to show" there. A `cfg(windows)` on any of them stops the check
+    /// from ever running there while the consent is saved and shown (#473 review).
+    #[test]
+    fn the_automatic_document_check_is_gated_by_desktop_not_by_windows() {
+        let gated = |source: &str, item: &str| {
+            let at = source
+                .find(item)
+                .unwrap_or_else(|| panic!("missing {item}"));
+            let before = source[..at].trim_end_matches(' ');
+            let attributes: Vec<&str> = before
+                .lines()
+                .rev()
+                .take_while(|line| {
+                    let line = line.trim();
+                    line.starts_with("#[") || line.starts_with("///") || line.starts_with("//")
+                })
+                .filter(|line| line.trim().starts_with("#["))
+                .collect();
+            attributes
+                .iter()
+                .map(|line| line.trim().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let checks: [(&str, &str, &str); 4] = [
+            (
+                include_str!("vault_slots.rs"),
+                "pub(crate) fn start_document_collection(",
+                "start_document_collection",
+            ),
+            (
+                include_str!("vault.rs"),
+                "fn automatic_document_tick(&self)",
+                "automatic_document_tick",
+            ),
+            (
+                include_str!("vault/delivery.rs"),
+                "impl VaultStore {\n    /// Only a freshly committed local custody record",
+                "notify_local_arrival",
+            ),
+            (
+                include_str!("lib.rs"),
+                "slots.start_document_collection()?;",
+                "setup start",
+            ),
+        ];
+        for (source, item, name) in checks {
+            let attributes = gated(source, item);
+            assert!(
+                attributes.iter().any(|a| a == "#[cfg(desktop)]"),
+                "{name} must be #[cfg(desktop)], found {attributes:?}"
+            );
+            assert!(
+                !attributes.iter().any(|a| a.contains("windows")),
+                "{name} must not be gated by windows: {attributes:?}"
+            );
+        }
+        // The tick calls the check on every desktop, and the pickup calls the notice on every
+        // desktop; neither may be reached only on Windows.
+        let tick = include_str!("vault.rs");
+        let call = tick.find("self.automatic_document_tick();").unwrap();
+        assert!(tick[..call].trim_end().ends_with("#[cfg(desktop)]"));
+        let manual = include_str!("portal_pickup.rs");
+        let call = manual.find("store.notify_local_arrival(").unwrap();
+        let near = &manual[call.saturating_sub(120)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+        let pickup = include_str!("document_collection_pickup.rs");
+        let call = pickup
+            .find("store.notify_local_arrival_controlled(")
+            .unwrap();
+        let near = &pickup[call.saturating_sub(160)..call];
+        assert!(near.contains("#[cfg(desktop)]") && !near.contains("cfg(windows)"));
+    }
+
     /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
     /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
     /// top-level window that can be lost behind the app while its command waits for it. The rules,
@@ -10075,74 +10213,742 @@ mod tests {
         .is_err());
     }
 
-    /// Every request struct this file deserializes from the renderer spells its multi-word fields in
-    /// camelCase on the wire. Without `rename_all = "camelCase"` a field like `hidden_people_documents`
-    /// silently never receives the renderer's `hiddenPeopleDocuments` (unknown keys are ignored
-    /// unless the struct denies them) and takes its default; that cost a patient the recovery from
-    /// a lost document. A struct that is not a renderer request goes on the short list below, with a
-    /// reason.
+    /// What the renderer sends reaches a command through serde, which by default IGNORES a key it
+    /// does not know and fills a field it does not receive from its default: a spelling slip
+    /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
+    /// it did for the recovery of a hidden person's lost document. So, for every Tauri command
+    /// (a function under the command attribute) in any source file, each parameter type that is a
+    /// struct this crate deserializes must:
+    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
+    ///     every struct such a request holds); and
+    ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
+    ///     renderer does.
+    ///
+    /// Every struct such a request holds in a field is held to the same two rules. The attribute is
+    /// not spelled out here: `production_webview_configuration_has_no_development_network_access`
+    /// counts its exact text in this file, and a quoted copy would add one to the count.
     #[test]
-    fn deserialized_structs_with_multi_word_fields_are_camel_case_on_the_wire() {
-        // (struct name, why it is not read from the renderer)
-        let not_from_the_renderer: [(&str, &str); 0] = [];
-        let source = include_str!("lib.rs");
-        let code = &source[..source.find("\n#[cfg(test)]\nmod tests {").unwrap()];
-        let mut offenders = Vec::new();
-        let mut attributes = String::new();
-        let mut lines = code.lines().peekable();
-        while let Some(line) = lines.next() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("#[") {
-                attributes.push_str(trimmed);
-                attributes.push('\n');
-                continue;
+    fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
+        use std::collections::{BTreeMap, BTreeSet};
+        struct Definition {
+            attributes: String,
+            fields: Vec<(String, String)>,
+            field_attributes: Vec<String>,
+            file: String,
+        }
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
             }
-            if trimmed.starts_with("//") {
-                continue;
-            }
-            let declaration = trimmed
-                .strip_prefix("pub(crate) ")
-                .or_else(|| trimmed.strip_prefix("pub "))
-                .unwrap_or(trimmed);
-            if let Some(rest) = declaration.strip_prefix("struct ") {
-                if attributes.contains("Deserialize") && declaration.ends_with('{') {
-                    let name = rest
-                        .split(|c: char| !c.is_alphanumeric() && c != '_')
-                        .next()
-                        .unwrap();
-                    let mut multi_word = Vec::new();
-                    for field in lines.by_ref() {
-                        let field = field.trim();
-                        if field == "}" {
-                            break;
-                        }
-                        let field = field.strip_prefix("pub ").unwrap_or(field);
-                        if let Some((field_name, _)) = field.split_once(':') {
-                            if !field_name.starts_with("//")
-                                && !field_name.starts_with('#')
-                                && field_name.contains('_')
-                            {
-                                multi_word.push(field_name.to_owned());
+        }
+        fn words(text: &str) -> Vec<&str> {
+            text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        // The file system's order is not the same on every machine, and a struct name defined in
+        // two files must be read the same way on all of them.
+        files.sort();
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let mut definitions: BTreeMap<String, Definition> = BTreeMap::new();
+        // Struct names defined more than once with different contents (the first one, in file
+        // order, is the one read), and the enums commands may reach.
+        let mut conflicts: BTreeSet<String> = BTreeSet::new();
+        let mut enums: BTreeSet<String> = BTreeSet::new();
+        // The other copies of a conflicting name: each is checked on its own below, since the
+        // contract can only name one.
+        let mut conflict_copies: Vec<(String, Definition)> = Vec::new();
+        // Types with a hand-written `impl Deserialize`: what it accepts is not in the source's
+        // attributes, so a command may not take one.
+        let mut manual_impls: BTreeSet<String> = BTreeSet::new();
+        let mut command_parameters: Vec<(String, String)> = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            let code = &text[..end];
+            let mut attributes = String::new();
+            let mut lines = code.lines().peekable();
+            while let Some(line) = lines.next() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("#[") {
+                    attributes.push_str(trimmed);
+                    attributes.push('\n');
+                    continue;
+                }
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                let declaration = trimmed
+                    .strip_prefix("pub(crate) ")
+                    .or_else(|| trimmed.strip_prefix("pub "))
+                    .unwrap_or(trimmed);
+                if attributes.contains("tauri::command") {
+                    // The parameter list, however many lines it takes.
+                    let mut signature = declaration.to_owned();
+                    while !signature.contains("->") && !signature.contains('{') {
+                        match lines.next() {
+                            Some(next) => {
+                                signature.push(' ');
+                                signature.push_str(next.trim());
                             }
+                            None => break,
                         }
                     }
-                    let listed = not_from_the_renderer
-                        .iter()
-                        .any(|(listed, _)| *listed == name);
-                    if !multi_word.is_empty()
-                        && !attributes.contains("rename_all = \"camelCase\"")
-                        && !listed
+                    if let Some(open) = signature.find('(') {
+                        let function = signature[..open]
+                            .rsplit(' ')
+                            .next()
+                            .unwrap()
+                            .trim_end_matches(['<', '>'])
+                            .to_owned();
+                        let parameters = &signature[open..];
+                        command_parameters.push((function, parameters.to_owned()));
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("struct ") {
+                    if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                        let struct_name = rest
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .next()
+                            .unwrap()
+                            .to_owned();
+                        let mut fields = Vec::new();
+                        let mut field_attributes = Vec::new();
+                        let mut pending_attributes = String::new();
+                        for field in lines.by_ref() {
+                            let field = field.trim();
+                            if field == "}" {
+                                break;
+                            }
+                            if field.starts_with('#') {
+                                pending_attributes.push_str(field);
+                                pending_attributes.push('\n');
+                                continue;
+                            }
+                            if field.starts_with("//") {
+                                continue;
+                            }
+                            let field = field
+                                .strip_prefix("pub(crate) ")
+                                .or_else(|| field.strip_prefix("pub "))
+                                .unwrap_or(field);
+                            if let Some((field_name, field_type)) = field.split_once(':') {
+                                fields.push((
+                                    field_name.trim().trim_start_matches("r#").to_owned(),
+                                    field_type.trim().trim_end_matches(',').to_owned(),
+                                ));
+                                field_attributes.push(std::mem::take(&mut pending_attributes));
+                            }
+                        }
+                        let definition = Definition {
+                            attributes: attributes.clone(),
+                            fields,
+                            field_attributes,
+                            file: name.clone(),
+                        };
+                        let differs = definitions.get(&struct_name).map(|first| {
+                            first.attributes != definition.attributes
+                                || first.fields != definition.fields
+                                || first.field_attributes != definition.field_attributes
+                        });
+                        match differs {
+                            None => {
+                                definitions.insert(struct_name, definition);
+                            }
+                            Some(true) => {
+                                conflicts.insert(struct_name.clone());
+                                conflict_copies.push((struct_name, definition));
+                            }
+                            Some(false) => {}
+                        }
+                    }
+                } else if declaration.starts_with("impl") && declaration.contains("Deserialize<") {
+                    // Whatever the lifetime is called (`'de`, `'a`, `'__de`, `'_`) and however the
+                    // trait is named (`Deserialize`, `serde::Deserialize`, `serde::de::Deserialize`).
+                    for part in declaration.split("Deserialize<").skip(1) {
+                        if let Some((_, rest)) = part.split_once("> for ") {
+                            manual_impls.insert(
+                                rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .next()
+                                    .unwrap()
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("enum ") {
+                    if attributes.contains("Deserialize") {
+                        enums.insert(
+                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .next()
+                                .unwrap()
+                                .to_owned(),
+                        );
+                    }
+                }
+                attributes.clear();
+            }
+        }
+        // The structs a command takes, and (for the camelCase rule only) every struct they hold.
+        let mut at_the_command = BTreeSet::new();
+        for (_, parameters) in &command_parameters {
+            for word in words(parameters) {
+                if definitions.contains_key(word) && !conflicts.contains(word) {
+                    at_the_command.insert(word.to_owned());
+                }
+            }
+        }
+        assert!(
+            at_the_command.len() >= 40,
+            "only {} command argument structs found: the scan is not reading the commands",
+            at_the_command.len()
+        );
+        let mut every = at_the_command.clone();
+        let mut pending: Vec<String> = at_the_command.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            for (_, field_type) in &definitions[&name].fields {
+                for word in words(field_type) {
+                    if definitions.contains_key(word)
+                        && !conflicts.contains(word)
+                        && every.insert(word.to_owned())
                     {
-                        offenders.push(format!("{name} ({})", multi_word.join(", ")));
+                        pending.push(word.to_owned());
                     }
                 }
             }
-            attributes.clear();
         }
+        let mut problems = Vec::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let multi_word = definition
+                .fields
+                .iter()
+                .any(|(field, _)| field.contains('_'));
+            if multi_word && !definition.attributes.contains("rename_all = \"camelCase\"") {
+                problems.push(format!(
+                    "{name} ({}) needs rename_all = \"camelCase\"",
+                    definition.file
+                ));
+            }
+            if !definition.attributes.contains("deny_unknown_fields") {
+                problems.push(format!(
+                    "{name} ({}) needs deny_unknown_fields",
+                    definition.file
+                ));
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
+
+        // The contract the renderer's calls are checked against (src/commandArgumentContract.test.ts):
+        // every command's arguments and every struct they reach, written sorted to a checked-in
+        // file. A change to a command or a struct fails here until the file is regenerated, so
+        // the renderer's check never reads an out-of-date list.
+        #[derive(serde::Serialize, PartialEq)]
+        struct ArgumentContract {
+            optional: bool,
+            #[serde(rename = "struct")]
+            struct_name: Option<String>,
+        }
+        #[derive(serde::Serialize, PartialEq)]
+        struct CommandContract {
+            arguments: BTreeMap<String, ArgumentContract>,
+            raw: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct StructContract {
+            /// Defined more than once with different contents: read as `open`.
+            ambiguous: bool,
+            #[serde(rename = "denyUnknown")]
+            deny_unknown: bool,
+            fields: BTreeMap<String, ArgumentContract>,
+            open: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct Contract {
+            /// Where a key cannot be checked (the elements of a list of structs, an enum's
+            /// variants), by command: this list is for the reviewer of a change to read.
+            #[serde(rename = "blindSpots")]
+            blind_spots: BTreeMap<String, Vec<String>>,
+            commands: BTreeMap<String, CommandContract>,
+            #[serde(rename = "generatedBy")]
+            generated_by: &'static str,
+            structs: BTreeMap<String, StructContract>,
+        }
+        fn camel(name: &str) -> String {
+            let mut out = String::new();
+            let mut upper = false;
+            for c in name.chars() {
+                if c == '_' {
+                    upper = true;
+                } else if upper {
+                    out.extend(c.to_uppercase());
+                    upper = false;
+                } else {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        // Whether a `#[serde(..)]` attribute in `attributes` names `word` (as a whole word).
+        fn serde_has(attributes: &str, word: &str) -> bool {
+            attributes
+                .lines()
+                .filter(|line| line.contains("serde("))
+                .any(|line| words(line).contains(&word))
+        }
+        fn split_top_level(list: &str) -> Vec<String> {
+            let mut parts = Vec::new();
+            let mut depth = 0_i32;
+            let mut current = String::new();
+            let mut previous = ' ';
+            for c in list.chars() {
+                match c {
+                    '(' | '<' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    '>' if previous != '-' => depth -= 1,
+                    _ => {}
+                }
+                if c == ',' && depth == 0 {
+                    parts.push(current.trim().to_owned());
+                    current.clear();
+                } else {
+                    current.push(c);
+                }
+                previous = c;
+            }
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_owned());
+            }
+            parts
+        }
+        let struct_in = |ty: &str| -> Option<String> {
+            words(ty)
+                .into_iter()
+                .find(|word| definitions.contains_key(*word))
+                .map(str::to_owned)
+        };
+        // What the list of a struct's or a command's arguments cannot say about the values it takes.
+        let unchecked = |ty: &str| -> Option<String> {
+            let words = words(ty);
+            if let Some(name) = words.iter().find(|word| enums.contains(**word)) {
+                return Some(format!("enum {name}"));
+            }
+            let several = ty.contains("Vec<") || ty.contains("Map<") || ty.contains('[');
+            if several {
+                return struct_in(ty).map(|name| format!("the elements of {name}"));
+            }
+            None
+        };
+        let mut contract = Contract {
+            blind_spots: BTreeMap::new(),
+            commands: BTreeMap::new(),
+            generated_by: "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
+            structs: BTreeMap::new(),
+        };
+        let mut command_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (function, parameters) in &command_parameters {
+            let mut depth = 0_i32;
+            let mut close = None;
+            for (index, c) in parameters.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let close = close.unwrap_or_else(|| panic!("{function}: no closing parenthesis"));
+            let mut command = CommandContract {
+                arguments: BTreeMap::new(),
+                raw: false,
+            };
+            for parameter in split_top_level(&parameters[1..close]) {
+                let (name, ty) = parameter
+                    .split_once(':')
+                    .unwrap_or_else(|| panic!("{function}: parameter {parameter:?}"));
+                // A leading underscore (an unused argument) is not part of the wire name.
+                let name = name
+                    .trim()
+                    .trim_start_matches("mut ")
+                    .trim()
+                    .trim_start_matches('_');
+                let ty = ty.trim().trim_start_matches('&').trim();
+                let injected = [
+                    "State<",
+                    "tauri::State<",
+                    "AppHandle",
+                    "tauri::AppHandle",
+                    "Window",
+                    "tauri::Window",
+                    "WebviewWindow",
+                    "tauri::WebviewWindow",
+                ]
+                .iter()
+                .any(|prefix| ty.starts_with(prefix));
+                if injected {
+                    continue;
+                }
+                if ty.starts_with("tauri::ipc::Request") {
+                    command.raw = true;
+                    continue;
+                }
+                if let Some(kind) = unchecked(ty) {
+                    command_blind
+                        .entry(function.clone())
+                        .or_default()
+                        .insert(format!("{}: {kind}", camel(name)));
+                }
+                command.arguments.insert(
+                    camel(name),
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            match contract.commands.get(function) {
+                // The same command written once for each platform (`#[cfg]`) takes the same
+                // arguments in each.
+                Some(existing) => assert!(
+                    *existing == command,
+                    "the command {function} is defined twice with different arguments"
+                ),
+                None => {
+                    contract.commands.insert(function.clone(), command);
+                }
+            }
+        }
+        // A custom deserializer (or a conversion through another type) decides what is accepted
+        // where the list cannot see it. The few that only validate a list or accept a null are
+        // named here; any other is refused until it is modelled and named.
+        const REVIEWED_DESERIALIZERS: [(&str, &str, &str, &str); 3] = [
+            (
+                "Page",
+                "document_collection_pickup.rs",
+                "next_cursor",
+                "nullable",
+            ),
+            (
+                "ProfileDetails",
+                "vault.rs",
+                "previous_full_names",
+                "present_previous_names",
+            ),
+            (
+                "SaveAiResultRequest",
+                "lib.rs",
+                "sources",
+                "summary_contract::deserialize_sources",
+            ),
+        ];
+        let custom_deserializers = |name: &str, definition: &Definition| -> Vec<String> {
+            let mut found = Vec::new();
+            for word in ["from", "try_from", "remote"] {
+                if serde_has(&definition.attributes, word) {
+                    found.push(format!("{name}: serde({word}) on the struct"));
+                }
+            }
+            // `flatten` defeats `deny_unknown_fields` (serde does not enforce it on a struct that
+            // flattens another), and `serde_as` / `serde_with` change what is accepted where the
+            // list cannot see it: a command argument may use none of them.
+            for attributes in
+                std::iter::once(&definition.attributes).chain(&definition.field_attributes)
+            {
+                if attributes.contains("#[serde_as") || attributes.contains("#[serde_with") {
+                    found.push(format!("{name}: serde_as or serde_with"));
+                }
+            }
+            for ((field, _), attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(attributes, "flatten") {
+                    found.push(format!(
+                        "{name}.{field}: serde(flatten) defeats deny_unknown_fields"
+                    ));
+                }
+                for word in ["with", "deserialize_with", "from", "try_from", "remote"] {
+                    if !serde_has(attributes, word) {
+                        continue;
+                    }
+                    let function = attributes
+                        .split("deserialize_with = \"")
+                        .nth(1)
+                        .and_then(|rest| rest.split('"').next());
+                    let reviewed = word == "deserialize_with"
+                        && function.is_some_and(|f| {
+                            REVIEWED_DESERIALIZERS.contains(&(
+                                name,
+                                definition.file.as_str(),
+                                field.as_str(),
+                                f,
+                            ))
+                        });
+                    if !reviewed {
+                        found.push(format!("{name}.{field}: serde({word}) on a field"));
+                    }
+                }
+            }
+            for (field, ty) in &definition.fields {
+                if let Some(word) = words(ty).into_iter().find(|w| manual_impls.contains(*w)) {
+                    found.push(format!(
+                        "{name}.{field}: {word} has a hand-written Deserialize"
+                    ));
+                }
+            }
+            found
+        };
+        // What the list cannot model is refused, so that nobody adds it unseen.
+        let mut unmodelled = Vec::new();
+        let mut struct_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let camel_case = definition.attributes.contains("rename_all = \"camelCase\"");
+            if serde_has(&definition.attributes, "rename_all") && !camel_case {
+                unmodelled.push(format!("{name}: a rename_all other than camelCase"));
+            }
+            if serde_has(&definition.attributes, "alias") {
+                unmodelled.push(format!("{name}: an alias"));
+            }
+            unmodelled.extend(custom_deserializers(name, definition));
+            let mut fields = BTreeMap::new();
+            let mut open = conflicts.contains(name);
+            for ((field, ty), field_attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(field_attributes, "skip")
+                    || serde_has(field_attributes, "skip_deserializing")
+                {
+                    continue;
+                }
+                if serde_has(field_attributes, "flatten") {
+                    open = true;
+                }
+                if field_attributes.contains("rename(") || serde_has(field_attributes, "alias") {
+                    unmodelled.push(format!("{name}.{field}: a rename(..) or an alias"));
+                }
+                let key = match field_attributes.split("rename = \"").nth(1) {
+                    Some(rest) => rest.split('"').next().unwrap().to_owned(),
+                    None if camel_case => camel(field),
+                    None => field.clone(),
+                };
+                if let Some(kind) = unchecked(ty) {
+                    struct_blind
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(format!("{name}.{key}: {kind}"));
+                }
+                fields.insert(
+                    key,
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<")
+                            || serde_has(field_attributes, "default")
+                            || serde_has(&definition.attributes, "default"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            contract.structs.insert(
+                name.clone(),
+                StructContract {
+                    ambiguous: conflicts.contains(name),
+                    deny_unknown: definition.attributes.contains("deny_unknown_fields"),
+                    fields,
+                    open,
+                },
+            );
+        }
+        // A command that takes a type with a hand-written `impl Deserialize` itself.
+        for (function, parameters) in &command_parameters {
+            if let Some(word) = words(parameters)
+                .into_iter()
+                .find(|w| manual_impls.contains(*w))
+            {
+                unmodelled.push(format!("{function}: {word} has a hand-written Deserialize"));
+            }
+        }
+        // A struct name defined twice with different contents cannot be told apart by name: what
+        // a command or a struct reaches under that name is listed as an open, ambiguous struct,
+        // and its keys are not checked (a reviewer reads these in the file). So that it is not an
+        // escape from the rules, EVERY copy is held to them here.
+        let referenced: BTreeSet<String> = contract
+            .commands
+            .values()
+            .flat_map(|command| command.arguments.values())
+            .chain(contract.structs.values().flat_map(|s| s.fields.values()))
+            .filter_map(|argument| argument.struct_name.clone())
+            .filter(|name| conflicts.contains(name))
+            .collect();
+        // A copy of a conflicting name that is not what a command takes but the portal's own
+        // answer, which arrives in the portal's snake_case: it is held to `deny_unknown_fields`
+        // like the others but not to camelCase.
+        const PORTAL_ANSWERS: [(&str, &str); 1] = [("Page", "document_collection_pickup.rs")];
+        for name in &referenced {
+            let copies = std::iter::once(&definitions[name]).chain(
+                conflict_copies
+                    .iter()
+                    .filter(|(copy, _)| copy == name)
+                    .map(|(_, definition)| definition),
+            );
+            for copy in copies {
+                let multi_word = copy.fields.iter().any(|(field, _)| field.contains('_'));
+                let camel_case = copy.attributes.contains("rename_all = \"camelCase\"");
+                if !copy.attributes.contains("deny_unknown_fields") {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs deny_unknown_fields",
+                        copy.file
+                    ));
+                }
+                let portal_answer = PORTAL_ANSWERS.contains(&(name.as_str(), copy.file.as_str()));
+                if (multi_word && !camel_case && !portal_answer)
+                    || (serde_has(&copy.attributes, "rename_all") && !camel_case)
+                {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs rename_all = \"camelCase\" or none",
+                        copy.file
+                    ));
+                }
+                if serde_has(&copy.attributes, "alias")
+                    || copy
+                        .field_attributes
+                        .iter()
+                        .any(|a| a.contains("rename(") || serde_has(a, "alias"))
+                {
+                    unmodelled.push(format!("{name} ({}): a rename(..) or an alias", copy.file));
+                }
+                unmodelled.extend(custom_deserializers(name, copy));
+            }
+        }
+        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
+        for name in referenced {
+            contract.structs.entry(name).or_insert(StructContract {
+                ambiguous: true,
+                deny_unknown: false,
+                fields: BTreeMap::new(),
+                open: true,
+            });
+        }
+        // For each command: what its own arguments and every struct they reach cannot check.
+        for (function, command) in &contract.commands {
+            let mut reached: BTreeSet<String> = command
+                .arguments
+                .values()
+                .filter_map(|argument| argument.struct_name.clone())
+                .collect();
+            let mut pending: Vec<String> = reached.iter().cloned().collect();
+            while let Some(name) = pending.pop() {
+                for field in contract.structs[&name].fields.values() {
+                    if let Some(inner) = &field.struct_name {
+                        if reached.insert(inner.clone()) {
+                            pending.push(inner.clone());
+                        }
+                    }
+                }
+            }
+            let mut blind = command_blind.get(function).cloned().unwrap_or_default();
+            for name in &reached {
+                blind.extend(struct_blind.get(name).cloned().unwrap_or_default());
+            }
+            if !blind.is_empty() {
+                contract
+                    .blind_spots
+                    .insert(function.clone(), blind.into_iter().collect());
+            }
+        }
+        let generated = serde_json::to_string_pretty(&contract).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/command-args.json");
+        if std::env::var_os("UPDATE_COMMAND_ARGS").is_some() {
+            // CI must never rewrite the file and then pass: it compares.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "UPDATE_COMMAND_ARGS is refused when CI is set: regenerate the file locally and commit it"
+            );
+            std::fs::write(&path, &generated).unwrap();
+        }
+        let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
         assert!(
-            offenders.is_empty(),
-            "these request structs need #[serde(rename_all = \"camelCase\")]: {offenders:?}"
+            checked_in == generated,
+            "src-tauri/tests/fixtures/command-args.json is out of date with the commands: \
+             regenerate it with `UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys` \
+             and commit it"
         );
+    }
+
+    /// The Android reader's labels cross three layers: the renderer's `AndroidReaderLabels`
+    /// (src/vault.ts), this struct, and the plugin's own. `pageFailed` was sent by the renderer and
+    /// dropped by this struct, so the reader showed nothing for a page it could not draw. The
+    /// struct now takes exactly the renderer's labels: no more, no fewer.
+    #[test]
+    fn the_android_reader_labels_are_exactly_the_renderers_eight() {
+        let renderer = include_str!("../../src/vault.ts");
+        let interface = renderer
+            .split("export interface AndroidReaderLabels {")
+            .nth(1)
+            .unwrap();
+        let interface = &interface[..interface.find('}').unwrap()];
+        let mut sent: Vec<&str> = interface
+            .lines()
+            .filter_map(|line| line.trim().split_once(':').map(|(name, _)| name.trim()))
+            .collect();
+        sent.sort_unstable();
+        assert_eq!(
+            sent,
+            [
+                "close",
+                "next",
+                "page",
+                "pageFailed",
+                "pageStatus",
+                "previous",
+                "zoomIn",
+                "zoomOut"
+            ]
+        );
+        let all = sent
+            .iter()
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let labels: AndroidPdfLabels = serde_json::from_str(&format!("{{{all}}}")).unwrap();
+        assert!(labels.valid());
+        assert_eq!(labels.page_failed, "A label");
+        // One fewer is refused (a missing label would be shown as nothing), and so is one more.
+        let fewer = sent
+            .iter()
+            .filter(|name| **name != "pageFailed")
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(serde_json::from_str::<AndroidPdfLabels>(&format!("{{{fewer}}}")).is_err());
+        assert!(
+            serde_json::from_str::<AndroidPdfLabels>(&format!(r#"{{{all},"extra":"x"}}"#)).is_err()
+        );
+        // A label that is blank or has a control character is not valid.
+        let blank: AndroidPdfLabels = serde_json::from_str(
+            &format!("{{{all}}}").replace(r#""pageFailed":"A label""#, r#""pageFailed":"""#),
+        )
+        .unwrap();
+        assert!(!blank.valid());
     }
 
     #[test]
@@ -11996,6 +12802,266 @@ mod photo_command_tests {
         );
     }
 
+    /// A phone picture, as a test sample: the canvas JPEG (FAKE) with, after its JFIF header, an
+    /// Exif block holding a make, an orientation of 6 (turned a quarter) and a pointer to a GPS
+    /// block, and a comment with text.
+    fn phone_picture() -> Vec<u8> {
+        let mut tiff = b"MM\0\x2a\0\0\0\x08".to_vec();
+        // IFD0 at 8: Make (ASCII, at 50), Orientation (SHORT) 6, GPSInfo (LONG, at 62).
+        tiff.extend_from_slice(&[0, 3]);
+        tiff.extend_from_slice(&[0x01, 0x0f, 0, 2, 0, 0, 0, 12, 0, 0, 0, 50]);
+        tiff.extend_from_slice(&[0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0]);
+        tiff.extend_from_slice(&[0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 62]);
+        tiff.extend_from_slice(&[0, 0, 0, 0]);
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"FAKE Phone\0\0");
+        // The GPS IFD: LatitudeRef "N".
+        tiff.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0, 0, 0, 0, 0]);
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend_from_slice(&tiff);
+        let segment = |code: u8, payload: &[u8]| {
+            let mut bytes = vec![0xff, code];
+            bytes.extend_from_slice(&(payload.len() as u16 + 2).to_be_bytes());
+            bytes.extend_from_slice(payload);
+            bytes
+        };
+        // Past the JFIF header (20 bytes with the start marker) and before the rest.
+        let mut bytes = CANVAS[..20].to_vec();
+        bytes.extend(segment(0xe1, &exif));
+        bytes.extend(segment(0xfe, b"FAKE comment: taken at home %PDF-1.7"));
+        bytes.extend_from_slice(&CANVAS[20..]);
+        bytes
+    }
+
+    #[test]
+    fn a_picture_the_patient_picks_is_cleaned_on_import_and_stored_clean() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = phone_picture();
+        assert!(picture.windows(10).any(|w| w == b"FAKE Phone"));
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: "IMG_0042.jpg".to_owned(),
+                    reader: require_supported_file(Box::new(std::io::Cursor::new(picture)))
+                        .unwrap(),
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "IMG_0042.jpg");
+        assert_eq!(record.media_type, "application/octet-stream");
+        let stored = exported(&store, record.id);
+        // Place, device, comment (and the "%PDF-" in it, which must not make this a PDF) are gone;
+        // the orientation is kept, in a block built here.
+        for gone in [&b"FAKE Phone"[..], b"FAKE comment", b"%PDF-", b"\x88\x25"] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert!(stored
+            .windows(8)
+            .any(|w| w == [b'E', b'x', b'i', b'f', 0, 0, b'M', b'M']));
+        assert_eq!(&stored[..2], [0xff, 0xd8]);
+        // What the picture view shows is the same cleaned picture.
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/jpeg;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        assert_eq!(record.plaintext_size, stored.len() as u64);
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_clean_jpeg_is_refused_before_anything_is_staged() {
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        // Not a picture or a PDF at all: a GIF (even named .jpg), HEIC, a truncated file of
+        // nothing, plain text.
+        for other in [
+            b"GIF89a FAKE".to_vec(),
+            b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec(),
+            Vec::new(),
+            b"FAKE".to_vec(),
+        ] {
+            assert!(matches!(refused(other), Some(VaultError::NotPdf)));
+        }
+        // Starts as a JPEG but is not a whole baseline or progressive picture: cut short, or
+        // only the start.
+        let whole = phone_picture();
+        for bad in [
+            whole[..whole.len() - 2].to_vec(),
+            whole[..200].to_vec(),
+            vec![0xff, 0xd8, 0xff],
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size: refused, however it starts.
+        let mut huge = vec![0xff, 0xd8, 0xff, 0xe0];
+        huge.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(huge), Some(VaultError::NotPhoto)));
+    }
+
+    /// A PNG as a patient might bring it, as a test sample: a 2 by 2 picture with, after its
+    /// header, text with a FAKE place, time and camera, an Exif block and a time chunk, and bytes
+    /// after its end.
+    fn dirty_png() -> Vec<u8> {
+        use crate::photo_png::tests::{chunk, file, header, pixels};
+        let mut bytes = file(&[
+            header(2, 2, 8, 2),
+            chunk(b"tEXt", b"Location\0FAKE place 51.05,-114.07"),
+            chunk(b"zTXt", b"Comment\0\0FAKE camera Phone X"),
+            chunk(b"eXIf", b"MM\0*\0\0\0\x08FAKE Make GPS"),
+            chunk(b"tIME", &[7, 234, 11, 25, 12, 30, 0]),
+            chunk(b"IDAT", &pixels()),
+            chunk(b"IEND", &[]),
+        ]);
+        bytes.extend_from_slice(b"FAKE hidden after the end");
+        bytes
+    }
+
+    #[test]
+    fn a_png_the_patient_picks_is_cleaned_on_import_stored_clean_and_named_png() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = dirty_png();
+        let (kind, reader) =
+            open_supported_file(Box::new(std::io::Cursor::new(picture.clone()))).unwrap();
+        assert_eq!(kind, Some(photo::PictureKind::Png));
+        // A name with no suffix of its own gets the one of what it is, and a name that has it
+        // keeps it.
+        let (a, b) = (
+            picture_import_name("Screenshot 2026-11-25".to_owned(), kind),
+            picture_import_name("Screenshot.PNG".to_owned(), kind),
+        );
+        assert_eq!(
+            (a.as_str(), b.as_str()),
+            ("Screenshot 2026-11-25.png", "Screenshot.PNG")
+        );
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: a,
+                    reader,
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "Screenshot 2026-11-25.png");
+        let stored = exported(&store, record.id);
+        for gone in [
+            &b"FAKE"[..],
+            b"Location",
+            b"tEXt",
+            b"zTXt",
+            b"eXIf",
+            b"tIME",
+            b"hidden",
+        ] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert_eq!(&stored[..8], &crate::photo_png::PNG_SIGNATURE);
+        // The vault knows it is a picture, which kind, and shows exactly what it stored.
+        assert_eq!(
+            photo_kind(&store, record.id).unwrap(),
+            Some(photo::PictureKind::Png)
+        );
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/png;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        // A rename keeps a PNG a `.png`, and refuses a suffix that says another kind.
+        rename_document(&store, record.id, "Letter.png").unwrap();
+        for wrong in ["Letter.jpg", "Letter.jpeg", "Letter", ".png", "Letter.pdf"] {
+            assert!(
+                matches!(
+                    rename_document(&store, record.id, wrong),
+                    Err(VaultError::Invalid)
+                ),
+                "{wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_png_that_is_damaged_animated_or_too_large_is_refused_before_anything_is_staged() {
+        use crate::photo_png::tests::{chunk, file, header, plain};
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        let whole = dirty_png();
+        let mut animated = plain();
+        animated.insert(1, chunk(b"acTL", &[0, 0, 0, 2, 0, 0, 0, 0]));
+        let mut huge = plain();
+        huge[0] = header(60_000, 60_000, 8, 2);
+        let mut no_data = plain();
+        no_data.remove(1);
+        for bad in [
+            whole[..whole.len() - 30].to_vec(),
+            whole[..20].to_vec(),
+            b"\x89PNG\r\n\x1a\n".to_vec(),
+            file(&animated),
+            file(&huge),
+            file(&no_data),
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size, however it starts.
+        let mut over = file(&plain());
+        over.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(over), Some(VaultError::NotPhoto)));
+    }
+
+    #[test]
+    fn a_picture_is_named_for_what_it_is_and_never_as_a_pdf() {
+        use photo::PictureKind::{Jpeg, Png};
+        let named = |name: &str, kind| picture_import_name(name.to_owned(), kind);
+        // A PDF's name is not touched.
+        assert_eq!(named("Scan", None), "Scan");
+        assert_eq!(named("Letter.pdf", None), "Letter.pdf");
+        for (name, kind, want) in [
+            ("IMG_1.jpg", Some(Jpeg), "IMG_1.jpg"),
+            ("IMG_1.JPEG", Some(Jpeg), "IMG_1.JPEG"),
+            ("IMG_1", Some(Jpeg), "IMG_1.jpg"),
+            ("shot.png", Some(Jpeg), "shot.png.jpg"),
+            ("shot.png", Some(Png), "shot.png"),
+            ("shot.jpg", Some(Png), "shot.jpg.png"),
+            ("shot", Some(Png), "shot.png"),
+            (".png", Some(Png), ".png.png"),
+            ("Imported document.pdf", Some(Png), "Imported picture.png"),
+            ("Imported document.pdf", Some(Jpeg), "Imported picture.jpg"),
+        ] {
+            assert_eq!(named(name, kind), want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pdf_still_streams_in_as_it_is_and_a_jpeg_is_never_taken_for_one() {
+        // A picture with "%PDF-" in its first bytes is a picture (cleaned), never a PDF kept raw.
+        let mut sneaky = vec![0xff, 0xd8, 0xff, 0xfe, 0, 12];
+        sneaky.extend_from_slice(b"%PDF-1.7 FA");
+        assert!(matches!(
+            require_supported_file(Box::new(std::io::Cursor::new(sneaky))).err(),
+            Some(VaultError::NotPhoto)
+        ));
+        // A PDF whose own bytes include a JPEG later on is still a PDF, unchanged.
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        pdf.extend_from_slice(CANVAS);
+        let mut kept = Vec::new();
+        std::io::Read::read_to_end(
+            &mut require_supported_file(Box::new(std::io::Cursor::new(pdf.clone()))).unwrap(),
+            &mut kept,
+        )
+        .unwrap();
+        assert_eq!(kept, pdf);
+    }
+
     #[test]
     fn native_localization_generated_photo_names_survive_store_reopen_exactly() {
         for locale in [
@@ -12203,7 +13269,10 @@ mod photo_command_tests {
         let shown = BASE64
             .decode(url.strip_prefix("data:image/jpeg;base64,").unwrap())
             .unwrap();
-        assert_eq!(shown, *photo::clean_jpeg(CANVAS).unwrap());
+        // Shown as a picture the patient brought is: the canvas photo's plain colour profile
+        // stays, the tagged Exif (place) does not.
+        assert_eq!(shown, *photo::clean_picture(CANVAS).unwrap());
+        assert!(!shown.windows(3).any(|w| w == b"GPS"));
         // What is stored is not changed by viewing it.
         assert_eq!(exported(&store, ids[0]), tagged());
 
@@ -12262,7 +13331,7 @@ mod photo_command_tests {
         assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
 
         // It stops the export once it has three bytes.
-        let mut start = FileStart::default();
+        let mut start = FileStartN::<3>::default();
         assert_eq!(start.write(&[0xff]).unwrap(), 1);
         assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
         assert!(start.complete());
