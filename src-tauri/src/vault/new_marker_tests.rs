@@ -257,3 +257,65 @@ fn the_state_is_per_vault_not_shared_by_two_vaults_on_one_device() {
     };
     assert_ne!(context(&one), context(&two));
 }
+
+#[test]
+fn setting_the_vault_aside_removes_its_own_seen_file_and_no_other() {
+    for locked in [false, true] {
+        let (_temp, store, id) = vault(5_000, 1_000);
+        assert!(is_new(&store, id));
+        let path = seen_file(&store);
+        assert!(path.exists());
+        // Another vault's file, beside the same folder: it is not this vault's to remove.
+        let other = path.with_file_name(new_marker::file_name(Uuid::new_v4()));
+        std::fs::write(&other, b"another vault's").unwrap();
+        if locked {
+            store.lock();
+        }
+        store.reset().unwrap();
+        assert!(!path.exists(), "locked: {locked}");
+        assert!(other.exists(), "locked: {locked}");
+    }
+}
+
+#[test]
+fn a_file_that_cannot_be_read_for_now_is_not_written_over() {
+    // The slot is told the file is unreadable by a folder in its place being a symlink-free
+    // directory: `load` calls that damaged, so the unreadable case is reached by permissions.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let (_temp, store, id) = vault(5_000, 1_000);
+        let path = seen_file(&store);
+        store.mark_seen(&[id]).unwrap();
+        let sealed = std::fs::read(&path).unwrap();
+        store.lock();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Running as root can read it anyway: nothing to check then.
+        if std::fs::read(&path).is_err() {
+            store.unlock(PASSWORD).unwrap();
+            // This session starts at "now" in memory and leaves the file as it was.
+            assert!(!is_new(&store, id));
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            assert_eq!(std::fs::read(&path).unwrap(), sealed);
+        }
+    }
+}
+
+#[test]
+fn a_clock_that_ran_ahead_does_not_hide_a_document_filed_after_mark_all() {
+    let now = new_marker::now_ms();
+    // The delivery was stamped a day ahead of the clock.
+    let (_temp, store, id) = vault(now + 86_400_000, 1_000);
+    assert!(is_new(&store, id));
+    store.mark_all_seen().unwrap();
+    // The one that was marked stays seen.
+    assert!(!is_new(&store, id));
+    // "Seen up to" is not past now: a document stamped an hour from now would be new.
+    let guard = store.session();
+    let unlocked = guard.as_ref().unwrap();
+    let state = unlocked
+        .new_marker
+        .state(&store.new_marker_context(unlocked), now);
+    assert!(state.seen_up_to_ms() <= new_marker::now_ms());
+    assert!(state.is_new(Uuid::new_v4(), now + 3_600_000));
+}

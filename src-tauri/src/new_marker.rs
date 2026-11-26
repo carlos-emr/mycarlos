@@ -102,8 +102,9 @@ impl SeenState {
     }
 
     /// Records that the patient opened these documents. `newest_ms` is the time of the newest
-    /// document there is, for the one case in which the list is full. Returns whether anything
-    /// changed.
+    /// document there is, for the one case in which the list is full: then everything up to the
+    /// newest is taken as seen, rather than forgetting which documents were opened. Returns
+    /// whether anything changed.
     pub(crate) fn mark_opened(&mut self, ids: &[Uuid], newest_ms: u64) -> bool {
         let before = self.clone();
         for id in ids {
@@ -112,17 +113,33 @@ impl SeenState {
             }
         }
         if self.opened.len() > MAX_OPENED {
-            self.mark_all(newest_ms);
+            self.seen_up_to_ms = self.seen_up_to_ms.max(newest_ms);
+            self.opened.clear();
         }
         *self != before
     }
 
-    /// "Mark all as seen": everything filed so far, which is everything up to `newest_ms` and up
-    /// stops being new.
-    pub(crate) fn mark_all(&mut self, newest_ms: u64) -> bool {
+    /// "Mark all as seen": every document in `filed` (an id and the time it was filed) stops being
+    /// new. "Seen up to" moves to the newest of them but never past `now_ms`, so that a clock that
+    /// ran ahead cannot hide documents that arrive later; a document stamped after that (filed
+    /// while the clock was ahead) is put in the opened list instead, so the one the patient just
+    /// marked does not come back. When that list would be full, everything up to the newest is
+    /// taken as seen.
+    pub(crate) fn mark_all(&mut self, filed: &[(Uuid, u64)], now_ms: u64) -> bool {
         let before = self.clone();
-        self.seen_up_to_ms = self.seen_up_to_ms.max(newest_ms);
-        self.opened.clear();
+        let newest = filed.iter().map(|(_, at)| *at).max().unwrap_or(0);
+        self.seen_up_to_ms = self.seen_up_to_ms.max(newest.min(now_ms));
+        let later: Vec<Uuid> = filed
+            .iter()
+            .filter(|(_, at)| *at > self.seen_up_to_ms)
+            .map(|(id, _)| *id)
+            .collect();
+        if later.len() > MAX_OPENED {
+            self.seen_up_to_ms = self.seen_up_to_ms.max(newest);
+            self.opened.clear();
+        } else {
+            self.opened = later;
+        }
         *self != before
     }
 
@@ -138,7 +155,7 @@ impl SeenState {
         self.opened.len() != before
     }
 
-    /// The "seen up to" time, for tests and for "Mark all as seen" to start from.
+    /// The "seen up to" time.
     #[cfg(test)]
     pub(crate) fn seen_up_to_ms(&self) -> u64 {
         self.seen_up_to_ms
@@ -323,6 +340,12 @@ impl Slot {
                 .and_then(|home| path_beside(home, context.vault_id));
             let state = match path.as_deref().map(|path| load(path, &key)) {
                 Some(Ok(state)) => state,
+                // A file that could not be read at all (a passing input or output error) is left
+                // as it is: this session starts at "now" in memory, and the file is not written
+                // over, so the next unlock can read it again.
+                Some(Err(LoadError::Unreadable)) => SeenState::starting_at(now_ms),
+                // Missing or not ours: start at "now" and write that at once, so that "now" stays
+                // where it was put.
                 _ => {
                     let fresh = SeenState::starting_at(now_ms);
                     if let Some(path) = &path {
@@ -394,14 +417,43 @@ mod tests {
     fn mark_all_moves_seen_up_to_past_everything_and_empties_the_list() {
         let mut state = SeenState::starting_at(1_000);
         state.mark_opened(&[id(1), id(2)], 9_000);
-        assert!(state.mark_all(7_000));
+        assert!(state.mark_all(&[(id(1), 5_000), (id(2), 7_000)], 8_000));
         assert_eq!(state.seen_up_to_ms(), 7_000);
         assert!(state.opened().is_empty());
         assert!(!state.is_new(id(3), 7_000));
         assert!(state.is_new(id(3), 7_001));
-        // It never goes back, whatever newest it is given.
-        assert!(!state.mark_all(3_000));
+        // It never goes back, whatever it is given.
+        assert!(!state.mark_all(&[(id(1), 3_000)], 8_000));
         assert_eq!(state.seen_up_to_ms(), 7_000);
+    }
+
+    #[test]
+    fn a_clock_that_ran_ahead_cannot_hide_a_document_that_arrives_later() {
+        let mut state = SeenState::starting_at(1_000);
+        // Two documents were filed while the clock was a day ahead; it is 5,000 now.
+        let ahead = 5_000 + 86_400_000;
+        assert!(state.mark_all(&[(id(1), 4_000), (id(2), ahead)], 5_000));
+        // "Seen up to" is not past now, so a document filed at 6,000 is new...
+        assert_eq!(state.seen_up_to_ms(), 5_000);
+        assert!(state.is_new(id(3), 6_000));
+        // ...and the one the patient marked, stamped in the future, does not come back.
+        assert!(!state.is_new(id(2), ahead));
+        assert!(!state.is_new(id(1), 4_000));
+        assert_eq!(state.opened(), [id(2)]);
+        // Marking again with nothing newer changes nothing.
+        assert!(!state.mark_all(&[(id(1), 4_000), (id(2), ahead)], 5_000));
+    }
+
+    #[test]
+    fn marking_all_with_more_future_documents_than_the_list_holds_takes_everything_as_seen() {
+        let mut state = SeenState::starting_at(0);
+        let filed: Vec<(Uuid, u64)> = (0..(MAX_OPENED as u128 + 1))
+            .map(|n| (id(n), 90_000))
+            .collect();
+        assert!(state.mark_all(&filed, 5_000));
+        assert!(state.opened().is_empty());
+        assert_eq!(state.seen_up_to_ms(), 90_000);
+        assert!(!state.is_new(id(1), 90_000));
     }
 
     #[test]

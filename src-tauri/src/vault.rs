@@ -2301,18 +2301,13 @@ impl VaultStore {
     pub fn mark_all_seen(&self) -> Result<(), VaultError> {
         let guard = self.session();
         let unlocked = guard.as_ref().ok_or(VaultError::Locked)?;
-        let newest = new_marker_candidates(unlocked)
-            .values()
-            .copied()
-            .max()
-            .unwrap_or(0);
+        let filed: Vec<(Uuid, u64)> = new_marker_candidates(unlocked).into_iter().collect();
+        let now = crate::new_marker::now_ms();
         unlocked
             .new_marker
-            .update(
-                &self.new_marker_context(unlocked),
-                crate::new_marker::now_ms(),
-                |state| state.mark_all(newest),
-            )
+            .update(&self.new_marker_context(unlocked), now, |state| {
+                state.mark_all(&filed, now)
+            })
             .map_err(|_| VaultError::Storage)
     }
 
@@ -4884,6 +4879,18 @@ impl VaultStore {
                 .with_place(&set_aside_name(&target));
             record_in_session(&self.root, unlocked, vec![entry]);
         }
+        // The id of the vault being set aside, for the small file kept beside it (the New
+        // marker): known from the session when it is open, and from the header (which is not
+        // secret) when it is not.
+        let vault_id = guard
+            .as_ref()
+            .map(|unlocked| unlocked.manifest.vault_id)
+            .or_else(|| {
+                read_header_files(&self.root)
+                    .candidates
+                    .first()
+                    .map(|header| header.vault_id)
+            });
         // A recording in progress is parked in the vault being set aside, and its
         // keys dropped, before the session goes: it must not write into a vault
         // that is no longer where it was.
@@ -4904,6 +4911,16 @@ impl VaultStore {
         fail_at_test_boundary("reset.before-set-aside")?;
         set_aside_to(&self.root, &target)?;
         terminate_at_test_boundary("reset.after-set-aside");
+        // What the patient had looked at in a vault that is set aside goes with it: best effort, and
+        // only the file named for that vault.
+        if let Some(vault_id) = vault_id {
+            if let Some(path) = vault_home(&self.root)
+                .ok()
+                .and_then(|home| crate::new_marker::path_beside(home, vault_id))
+            {
+                let _ = remove_owned_file(path, Removable::SeenMarker);
+            }
+        }
         *self
             .last_set_aside
             .lock()
@@ -9482,6 +9499,9 @@ enum Removable {
     /// recording's object that recovery found nothing complete in (#359).
     #[allow(dead_code)] // constructed by the recording core, which has no caller yet
     Recording,
+    /// The small file that remembers which clinic documents were opened (`new_marker.rs`), when
+    /// the vault it belonged to is set aside.
+    SeenMarker,
 }
 
 /// The one place a file is removed (#71); `kind` says what it is.
