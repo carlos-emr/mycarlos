@@ -1161,6 +1161,9 @@ pub(crate) fn without_kept_terms(text: &str, hits: Vec<Hit>, kept: &[Hit]) -> Ve
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

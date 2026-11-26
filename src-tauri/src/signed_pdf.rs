@@ -616,6 +616,9 @@ fn write_canonical(value: &serde_json::Value, out: &mut Vec<u8>) -> Option<()> {
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use base64::engine::general_purpose::STANDARD;
