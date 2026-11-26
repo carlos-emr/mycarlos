@@ -171,6 +171,53 @@ describe("hiding a person from the head menu", () => {
     );
   });
 
+  it("a hidden person's documents leave the selection and an open details dialog closes, so none stays chosen or open", async () => {
+    const { bridge } = mount();
+    const tick = () =>
+      screen.getByRole("button", {
+        name: humanText(en("library.select", { name: "FAKE Blood test.pdf" })),
+      });
+    fireEvent.click(tick());
+    expect(tick()).toHaveAttribute("aria-pressed", "true");
+    // Open that document's details.
+    fireEvent.click(
+      screen.getByRole("button", { name: /^FAKE Blood test\.pdf/ }),
+    );
+    const details = await screen.findByRole("dialog", {
+      name: /FAKE Blood test\.pdf/,
+    });
+    expect(details).toBeVisible();
+    // The pointer cannot reach the head menu under the dialog, but the state must be cleared
+    // whichever way hiding is started (the handover's "hide after" also starts it), so the menu
+    // button is pressed directly.
+    const more = document.querySelector<HTMLButtonElement>(
+      'button[aria-label^="More for"]',
+    )!;
+    fireEvent.click(more);
+    fireEvent.click(
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[role^="menuitem"]'),
+      ).find((item) => /^Hide /.test(item.textContent ?? ""))!,
+    );
+    fireEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: humanText(
+          en("hiddenPeople.confirm.hide", { name: "FAKE Avery" }),
+        ),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.hideProfile).toHaveBeenCalledExactlyOnceWith("profile-1"),
+    );
+    // Nothing of the hidden person stays chosen or open.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: /FAKE Blood test\.pdf/ }),
+      ).toBeNull(),
+    );
+    expect(tick()).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("is not offered for the last person the library shows, and not when the vault cannot hide", () => {
     const only: VaultSnapshot = { ...base, profiles: [base.profiles[0]] };
     mount(only);
