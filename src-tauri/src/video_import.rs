@@ -997,10 +997,23 @@ pub(crate) mod tests {
 
     /// The file's bytes: ftyp, mdat (holding the marker, then the video's own bytes) and the moov.
     pub(crate) fn video(moov_first: bool, extra_moov: &[u8], extra_tracks: &[Vec<u8>]) -> Vec<u8> {
+        video_padded(moov_first, extra_moov, extra_tracks, 0)
+    }
+
+    /// `video`, with `padding` more bytes at the end of the media data (no track points at them),
+    /// for a file that spans several stored frames.
+    pub(crate) fn video_padded(
+        moov_first: bool,
+        extra_moov: &[u8],
+        extra_tracks: &[Vec<u8>],
+        padding: usize,
+    ) -> Vec<u8> {
         let ftyp = ftyp(b"isom");
         // mdat: the marker for the metadata track, then 64 bytes of "video".
         let mut mdat_payload = MARK.to_vec();
         mdat_payload.extend_from_slice(&[7_u8; 64]);
+        // Bytes in the media data that no track points at, each one a different value.
+        mdat_payload.extend((0..padding).map(|n| (n % 251) as u8));
         let mdat = bx(b"mdat", &mdat_payload);
         let build_moov = |mdat_start: u64| {
             let mut moov = full(b"mvhd", 0, &[0_u8; 96]);

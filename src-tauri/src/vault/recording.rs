@@ -49,8 +49,28 @@ const MAX_JOURNAL_BYTES: usize = 64 * 1024;
 /// The most one piece from the webview may be. Pieces are about a second of
 /// video; a larger one is refused, not buffered.
 pub(crate) const MAX_RECORDING_PIECE: usize = 8 * 1024 * 1024;
-/// Which history the camera-made records were read from, and them.
-pub(super) type CameraMade = ((Uuid, u64, String), Arc<HashSet<Uuid>>);
+/// The records the history says were added as a video, and which of them were picked from the
+/// patient's files (an ordinary MP4) rather than recorded (a fragmented one with an index).
+#[derive(Debug, Default)]
+pub(super) struct VideoOrigins {
+    any: HashSet<Uuid>,
+    picked: HashSet<Uuid>,
+}
+
+impl VideoOrigins {
+    /// Recorded or picked.
+    pub(super) fn contains(&self, id: &Uuid) -> bool {
+        self.any.contains(id)
+    }
+
+    /// Picked from the patient's files: stored as the ordinary MP4 it came in as.
+    pub(super) fn is_picked(&self, id: &Uuid) -> bool {
+        self.picked.contains(id)
+    }
+}
+
+/// Which history the video records were read from, and them.
+pub(super) type CameraMade = ((Uuid, u64, String), Arc<VideoOrigins>);
 
 /// The label the history gives a recording: the same as a photo taken in the app.
 const RECORDING_HOW: &str = "camera";
@@ -1403,7 +1423,7 @@ impl VaultStore {
     pub(super) fn camera_made_records(
         &self,
         unlocked: &UnlockedVault,
-    ) -> Result<Arc<HashSet<Uuid>>, VaultError> {
+    ) -> Result<Arc<VideoOrigins>, VaultError> {
         let history = &unlocked.manifest.history;
         let key = (
             unlocked.manifest.vault_id,
@@ -1421,20 +1441,24 @@ impl VaultStore {
             }
         }
         let view = self.history_view_in_session(unlocked)?;
-        let found: Arc<HashSet<Uuid>> = Arc::new(
-            view.entries
-                .iter()
-                .chain(view.later.iter())
-                .filter(|entry| {
-                    entry.event == HistoryEvent::Imported
-                        && matches!(
-                            entry.how.as_deref(),
-                            Some(RECORDING_HOW | super::picked_video::PICKED_VIDEO_HOW)
-                        )
-                })
-                .filter_map(|entry| entry.record_id)
-                .collect(),
-        );
+        let mut origins = VideoOrigins::default();
+        for entry in view.entries.iter().chain(view.later.iter()) {
+            if entry.event != HistoryEvent::Imported {
+                continue;
+            }
+            let Some(id) = entry.record_id else { continue };
+            match entry.how.as_deref() {
+                Some(RECORDING_HOW) => {
+                    origins.any.insert(id);
+                }
+                Some(super::picked_video::PICKED_VIDEO_HOW) => {
+                    origins.any.insert(id);
+                    origins.picked.insert(id);
+                }
+                _ => {}
+            }
+        }
+        let found = Arc::new(origins);
         *self
             .camera_made
             .lock()

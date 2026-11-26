@@ -103,6 +103,7 @@ impl VideoImportJob {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "result", rename_all = "camelCase")]
 pub enum PickedVideoOutcome {
+    #[serde(rename_all = "camelCase")]
     Imported {
         record_id: Uuid,
     },
@@ -126,14 +127,18 @@ pub struct PickedVideoRequest {
 }
 
 /// Reads the source for one pass: counts what moves (the progress), keeps the idle timer awake,
-/// stops at Cancel, and hashes what it reads. In the second pass it ends with an error unless the
-/// bytes are the ones the first pass saw.
+/// stops at Cancel, and hashes what it reads. In the second pass it is held to what the first pass
+/// saw: it takes no byte past the checked length (so a file that is still growing is stopped at
+/// once, not copied in full), and ends with an error unless it ends at that length with the same
+/// bytes.
 struct JobReader {
     inner: Box<dyn Read + Send>,
     job: Arc<VideoImportJob>,
     idle: Arc<IdleDeadline>,
     hash: Sha256,
-    expect: Option<[u8; 32]>,
+    /// The first pass's digest and length; set for the second pass only.
+    expect: Option<([u8; 32], u64)>,
+    seen: u64,
     ended: bool,
 }
 
@@ -142,7 +147,7 @@ impl JobReader {
         inner: Box<dyn Read + Send>,
         job: &Arc<VideoImportJob>,
         idle: &Arc<IdleDeadline>,
-        expect: Option<[u8; 32]>,
+        expect: Option<([u8; 32], u64)>,
     ) -> Self {
         Self {
             inner,
@@ -150,12 +155,22 @@ impl JobReader {
             idle: Arc::clone(idle),
             hash: Sha256::new(),
             expect,
+            seen: 0,
             ended: false,
         }
     }
 
     fn digest(&self) -> [u8; 32] {
         self.hash.clone().finalize().into()
+    }
+
+    /// The file is not the one that was checked.
+    fn changed(&self) -> io::Error {
+        self.job.changed.store(true, Ordering::Release);
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the file changed while it was added",
+        )
     }
 }
 
@@ -164,23 +179,31 @@ impl Read for JobReader {
         if self.job.is_cancelled() {
             return Err(cancelled_io_error());
         }
-        let count = self.inner.read(buffer)?;
+        // At most one byte past the checked length: enough to tell that the file grew.
+        let room = match self.expect {
+            Some((_, length)) => {
+                let left = usize::try_from(length - self.seen.min(length)).unwrap_or(usize::MAX);
+                buffer.len().min(left.saturating_add(1))
+            }
+            None => buffer.len(),
+        };
+        let count = self.inner.read(&mut buffer[..room])?;
         if count > 0 {
+            self.seen += count as u64;
+            if self.expect.is_some_and(|(_, length)| self.seen > length) {
+                return Err(self.changed());
+            }
             self.hash.update(&buffer[..count]);
             self.job.done.fetch_add(count as u64, Ordering::AcqRel);
             // A copy that is moving keeps the vault unlocked, however slowly.
             self.idle.touch(Instant::now());
-        } else if !self.ended {
+        } else if !self.ended && !buffer.is_empty() {
             self.ended = true;
             if self
                 .expect
-                .is_some_and(|expected| expected != self.digest())
+                .is_some_and(|(digest, length)| self.seen != length || digest != self.digest())
             {
-                self.job.changed.store(true, Ordering::Release);
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "the file changed while it was added",
-                ));
+                return Err(self.changed());
             }
         }
         Ok(count)
@@ -234,7 +257,12 @@ impl VaultStore {
             return Err(VaultError::NoSpace);
         }
         job.begin(STAGE_STORING, plan.length);
-        let copy = JobReader::new(open()?, job, &self.idle, Some(checked.digest()));
+        let copy = JobReader::new(
+            open()?,
+            job,
+            &self.idle,
+            Some((checked.digest(), plan.length)),
+        );
         let source = ImportSource {
             display_name,
             reader: Box::new(Cleaner::new(copy, plan)),
@@ -293,6 +321,52 @@ mod tests {
             display_name: name.to_owned(),
             max_bytes,
             now_ms: 5,
+        }
+    }
+
+    #[test]
+    fn the_outcome_and_the_progress_are_said_to_the_page_in_camel_case() {
+        let id = Uuid::nil();
+        let said = |value: &PickedVideoOutcome| serde_json::to_value(value).unwrap();
+        assert_eq!(
+            said(&PickedVideoOutcome::Imported { record_id: id }),
+            serde_json::json!({"result": "imported", "recordId": id.to_string()})
+        );
+        assert_eq!(
+            said(&PickedVideoOutcome::Refused {
+                reason: Refusal::Hevc
+            }),
+            serde_json::json!({"result": "refused", "reason": "hevc"})
+        );
+        assert_eq!(
+            said(&PickedVideoOutcome::Duplicate),
+            serde_json::json!({"result": "duplicate"})
+        );
+        assert_eq!(
+            said(&PickedVideoOutcome::Cancelled),
+            serde_json::json!({"result": "cancelled"})
+        );
+        let job = VideoImportJob::new();
+        job.begin(STAGE_STORING, 10);
+        assert_eq!(
+            serde_json::to_value(job.progress()).unwrap(),
+            serde_json::json!({"stage": "storing", "doneBytes": 0, "totalBytes": 10})
+        );
+        // Every refusal has a name of its own for the page to put words to.
+        for (reason, name) in [
+            (Refusal::NotVideo, "notVideo"),
+            (Refusal::Hevc, "hevc"),
+            (Refusal::VideoCodec, "videoCodec"),
+            (Refusal::AudioCodec, "audioCodec"),
+            (Refusal::NoVideo, "noVideo"),
+            (Refusal::TooManyTracks, "tooManyTracks"),
+            (Refusal::External, "external"),
+            (Refusal::Fragmented, "fragmented"),
+            (Refusal::TooBig, "tooBig"),
+            (Refusal::TooLarge, "tooLarge"),
+            (Refusal::Damaged, "damaged"),
+        ] {
+            assert_eq!(serde_json::to_value(reason).unwrap(), name);
         }
     }
 
@@ -617,5 +691,120 @@ mod tests {
             add(&store, profile, tagged(), &job),
             Err(VaultError::Locked)
         ));
+    }
+
+    /// Counts the bytes taken from it.
+    struct Counted {
+        inner: Cursor<Vec<u8>>,
+        taken: Arc<AtomicU64>,
+    }
+
+    impl Read for Counted {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let count = self.inner.read(buffer)?;
+            self.taken.fetch_add(count as u64, Ordering::SeqCst);
+            Ok(count)
+        }
+    }
+
+    /// A source that is `checked` the first time it is opened and `second` after that.
+    fn changing(
+        checked: Vec<u8>,
+        second: Vec<u8>,
+        taken: Arc<AtomicU64>,
+    ) -> impl Fn() -> Result<Box<dyn Read + Send>, VaultError> {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        move || {
+            let first = calls.fetch_add(1, Ordering::SeqCst) == 0;
+            let bytes = if first { &checked } else { &second };
+            Ok(Box::new(Counted {
+                inner: Cursor::new(bytes.clone()),
+                taken: if first {
+                    Arc::new(AtomicU64::new(0))
+                } else {
+                    Arc::clone(&taken)
+                },
+            }))
+        }
+    }
+
+    #[test]
+    fn a_file_that_grows_between_the_passes_is_stopped_at_once_not_copied_in_full() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let before = objects_in(temp.path());
+        let checked = tagged();
+        // A download that is still arriving: the second time it is opened it has a big tail.
+        let mut grown = checked.clone();
+        grown.extend(std::iter::repeat_n(7_u8, 8 * 1024 * 1024));
+        let taken = Arc::new(AtomicU64::new(0));
+        let open = changing(checked.clone(), grown, Arc::clone(&taken));
+        let job = VideoImportJob::new();
+        let outcome = store
+            .import_picked_video(request(profile, "FAKE clip.mp4", CAP), &open, &job)
+            .unwrap();
+        assert_eq!(
+            outcome,
+            PickedVideoOutcome::Refused {
+                reason: Refusal::Damaged
+            }
+        );
+        // It took the checked length and one byte more, not the tail.
+        assert!(
+            taken.load(Ordering::SeqCst) <= checked.len() as u64 + 1,
+            "{} of {}",
+            taken.load(Ordering::SeqCst),
+            checked.len()
+        );
+        leaves_nothing(temp.path(), &store, 0, before);
+    }
+
+    #[test]
+    fn a_file_cut_short_between_the_passes_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = new_store(temp.path());
+        let before = objects_in(temp.path());
+        let checked = tagged();
+        let short = checked[..checked.len() - 5].to_vec();
+        let open = changing(checked, short, Arc::new(AtomicU64::new(0)));
+        let job = VideoImportJob::new();
+        assert_eq!(
+            store
+                .import_picked_video(request(profile, "FAKE clip.mp4", CAP), &open, &job)
+                .unwrap(),
+            PickedVideoOutcome::Refused {
+                reason: Refusal::Damaged
+            }
+        );
+        leaves_nothing(temp.path(), &store, 0, before);
+    }
+
+    #[test]
+    fn a_failure_while_storing_leaves_nothing_and_is_an_error_not_a_refusal() {
+        for boundary in [
+            &["object.after-chunk-write"][..],
+            &["import.objects-sync"][..],
+            &["manifest.before-first-write"][..],
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let (store, profile) = new_store(temp.path());
+            let before = objects_in(temp.path());
+            let job = VideoImportJob::new();
+            let failing = FailAtForTest::boundary(boundary);
+            assert!(
+                matches!(
+                    add(&store, profile, tagged(), &job),
+                    Err(VaultError::NoSpace)
+                ),
+                "{boundary:?}"
+            );
+            drop(failing);
+            leaves_nothing(temp.path(), &store, 0, before);
+            // And the next try, with room again, goes in.
+            assert!(matches!(
+                add(&store, profile, tagged(), &job).unwrap(),
+                PickedVideoOutcome::Imported { .. }
+            ));
+        }
     }
 }
