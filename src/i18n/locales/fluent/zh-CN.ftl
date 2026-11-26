@@ -309,6 +309,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = 使用键盘移动文件夹
 
 interface-VaultLibrary-moveFolder = 移动文件夹
 
+interface-VaultLibrary-moveFolderItem = 移动文件夹…
+
 interface-VaultLibrary-moveSelectedTo = 将所选项目移至
 
 interface-VaultLibrary-moveTheSelectedDocuments = 移动所选文档。

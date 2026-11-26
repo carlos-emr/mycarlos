@@ -315,26 +315,28 @@ function ReadingDocument({
     };
   }, [showingAid]);
 
-  // When the reader scrolls (large text, small window), the top bar (the pages and the zoom)
-  // stays over its top. Its height is kept as the reader's scroll padding, so that a control the
-  // focus moves to is scrolled clear of the bar, not under it.
+  // When the reader scrolls (large text, small window), the top toolbar stays over its top. Its
+  // height is kept as the reader's scroll padding, so that a control the focus moves to is
+  // scrolled clear of it, not under it. The toolbar is there whenever the original is shown (its
+  // zoom row too), also while the first page loads, while the document asks for its password and
+  // when a page fails, so the padding follows the toolbar, not the page bar inside it.
   const barRef = useRef<HTMLDivElement | null>(null);
   const hasBar = pageCount !== null && !showingAid;
   useEffect(() => {
-    const bar = barRef.current;
+    const toolbar = barRef.current;
     const reader = dialogRef.current;
-    if (!bar || !reader) return;
+    if (!toolbar || !reader) return;
     const pad = () => {
-      reader.style.scrollPaddingTop = `${(bar.parentElement ?? bar).offsetHeight}px`;
+      reader.style.scrollPaddingTop = `${toolbar.offsetHeight}px`;
     };
     pad();
     const observer = new ResizeObserver(pad);
-    observer.observe(bar.parentElement ?? bar);
+    observer.observe(toolbar);
     return () => {
       observer.disconnect();
       reader.style.scrollPaddingTop = "";
     };
-  }, [hasBar]);
+  }, [showingAid]);
 
   const remember = (key: string, result: ViewedPage) =>
     cacheDrawnPage(drawn.current, key, result);
@@ -441,7 +443,7 @@ function ReadingDocument({
   };
   // The text box keeps its height while the next page is drawn. Emptied, it
   // would let a scrolling reader scroll up, and the new text would then come
-  // back under the page bar (WebKit has no scroll anchoring to keep the
+  // back under the top toolbar (WebKit has no scroll anchoring to keep the
   // focused box in place).
   const textHeight = useRef(0);
   useLayoutEffect(() => {
@@ -740,14 +742,12 @@ function ReadingDocument({
           <>
             {/* The top bar (RestReader): the pages, then the zoom. The back button is in the header
                 above, and what can be done with the document is in the panel beside the page. */}
-            <div className="native-reader-toolbar">
-              {/* D144: the page bar, kept in view at the reader's foot, after
-                everything it turns. In words, not arrows. On a narrow reader
-                the count is on top, then Previous | Next, then First | Last
-                (styles.css); the order read out stays this one. */}
+            <div className="native-reader-toolbar" ref={barRef}>
+              {/* The page bar, in the sticky toolbar over the reader's top. In words, not
+                arrows. On a narrow reader the count is on top, then Previous | Next, then
+                First | Last (styles.css); the order read out stays this one. */}
               {hasBar && (
                 <div
-                  ref={barRef}
                   className={
                     turnsPages
                       ? "native-reader-pages"
