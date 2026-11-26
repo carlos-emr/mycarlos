@@ -251,6 +251,13 @@ document. The patient can type any other name.
   the patient to agree, and asks again in a separate system window (see section 8) before it does
   anything.
 - Deleting a document in myCarlos does not delete it from backups made before.
+- **What the file shows to someone without the key** (audit of 26 Nov 2026, read from the source and
+  not run on macOS or Windows: `out-of-vault-files-audit-20261126.md`): the number of records and each
+  document's exact size; a vault id that is the same in every backup of that vault; the time it was
+  saved, to the millisecond; roughly how many changes the vault has had; which videos were left
+  out; and, in the suggested file name, the recovery key's short label (which links the backup to
+  the kits). No name, title or text. Rounding the time, padding the sizes and leaving the label out
+  of the name are not done: today, and an open question (question 21).
 
 ## 6. The recovery key, and readable copies
 
@@ -260,7 +267,14 @@ prints a "kit": a plain text file or page holding the key, a short label and a d
 names. **Anyone who finds the kit can open the vault** with it, so it must be kept like a house
 key. Printing sends the key through the computer's print system, which may keep a copy for a
 while. The patient can replace the key; the old one then stops opening the vault, but still opens
-backups saved before (the app tells the patient what to do about them).
+backups saved before (the app tells the patient what to do about them). The last 2 of the 28
+characters are a **check** (10 bits made from the key, a hash with a label that differs for a
+recovery key and a hand-over key): a typed-back key whose check does not fit is called a typo
+before anything is tried. It is not secret and does not weaken the key (the protection is the
+128-bit key). A mistyped key passes the check by chance 1 time in 1,024: it is then tried and
+fails, and at unlock that counts as one wrong try. A longer check would be a format change; the
+note recommends against it (`key-check-rates-20261126.md`): today, and an open question
+(question 22).
 
 **Readable copies ("Save a copy").** Because the app cannot show a document yet, saving a readable
 (unencrypted) copy, to a place the patient chooses, is the only way to read one, send it to
@@ -280,6 +294,36 @@ leaves depends on the system:
 - On iPhone, and on Macs where the app runs in Apple's app sandbox (as App Store apps do), it has
   not been confirmed that the app may create that folder; if it may not, saving a readable copy
   fails there.
+
+**Other files the app writes outside the vault** (audit of 26 Nov 2026, from the source:
+`out-of-vault-files-audit-20261126.md`). What each shows to someone who has the file but not the
+key, today:
+
+- **Recovery kit (`.txt`):** the key itself, by design. Nothing keeps it out of search indexes or
+  cloud-synced folders: no code sets an operating-system "not indexed" or "do not sync" mark on
+  any file the app writes (#533, in review, sets the "not indexed" mark on Windows for the kit).
+- **Single-document export:** the suggested file name is the document's own name, which can be a
+  person's, a clinic's or a test's name.
+- **Hand-over package (`.mycarlosprofile`):** the number of objects and their exact sizes, whether a
+  key or a passphrase protects it (and the passphrase's salt and cost), and the date in the
+  name. No time, vault id, person or device.
+- **Export stage folder (`.mycarlos-export-<id>`):** shows that myCarlos saved here, and when; it
+  stays after a crash until the next start (above). The readable copy and the text export write
+  their temporary file inside it. The temporary file carries neither the document's name nor the
+  destination's.
+- **A kit, a backup or a hand-over package is not in the stage folder.** These three saves write
+  through a hidden `.atomicwrite…` folder beside the chosen place. A crash during one leaves that
+  folder with a partly written file, and **nothing removes it**: for a kit that is part of the
+  key's text; for a backup or a hand-over package, part of an encrypted file. #533 (in review)
+  moves those temporary files into the journaled stage, so the next start removes them.
+- **De-identified text export:** a fixed, localised name ("Anonymized text.txt"), so it shows the
+  app's language, and the text's length.
+- **`attempts.json` (the app's own folder, 0600 on Unix):** how many wrong tries of each kind, the
+  time of the last one, and how often a count was cleared. No vault id.
+
+On Unix these files are created with mode 0600; on Windows the mode is not set, so they take the
+folder's permissions (not verified). Whether to add the marks, change the default names or clear
+the stage folders sooner is not decided: today, and an open question (question 21).
 
 ## 7. What leaves the device
 
@@ -324,7 +368,7 @@ connection pieces #493, #478 and #503, Android; *requires #478, merged before th
 lines above describe an app that is not linked. When a patient links a clinic the app contacts that clinic's portal and only it (NET-01):
 the address the patient typed or scanned, over HTTPS (clear text is refused on every platform), with
 the device's own certificate trust. On Android that is the phone's system authorities only: an
-authority a person, a piece of malware or a device manager installed is not trusted (NET-05), and a debug
+authority a person, a piece of malware or a device manager installed is not trusted (NET-06), and a debug
 build trusts one more, a FAKE test authority that exists only in debug builds, which is a property
 of test builds and not of a build for patients. The portal and anyone watching the network learn
 what any such request shows, the IP address the phone is reached from and the time, plus the fields
@@ -333,7 +377,7 @@ the app sends: the opaque ids and the per-link device key id listed in `SECURITY
 are opened only inside the vault. On Android there is no background checker yet: the app contacts
 the portal when the patient asks (links a clinic, or checks for documents), and once after unlocking
 when a notice is owed; a request still running when the app goes to the background or the vault locks is
-dropped (NET-07). **Not yet verified on a phone:** a real connection from an Android phone has not
+dropped (NET-08). **Not yet verified on a phone:** a real connection from an Android phone has not
 been run (TESTING.md, "Linking a clinic on Android").
 
 **Tray notices (built in #230, after the tray #206; Portal contract merged in carlos-portal#88).**
@@ -358,6 +402,40 @@ backups. Portal revocation may wait while the device is offline, as explained in
 guide. Where the app has no supported OS credential-store adapter, there are no tray notices.
 The Windows adapter is described in #270; Linux and macOS adapters remain future work. Details:
 `VAULT_FORMAT.md` ("Settings kept outside the vault"), `SECURITY_OPERATIONS.md` ("Tray notices").
+
+**What a clinic portal receives (audit of 26 Nov 2026, from the source; no traffic was captured:
+`portal-send-audit-20261126.md`).** One HTTPS client makes every request to a portal (HTTPS only,
+no redirect, retry, proxy or referrer; the only other client is the AI model download, a plain GET
+to the model host). Each request carries a `Content-Type` and one signed
+assertion header, and nothing else: **no User-Agent**, `Authorization`, cookie or `Accept-Encoding`
+(a test pins this: #532, in review). No error report is sent back anywhere. The bodies hold keys, random ids,
+hashes and times: the link request (the one-use code, split into two fields: its first 8 characters
+as the link id and the rest as the code; the two public keys; the device's name),
+the approval request and its 6-digit clinic code (the check digits never leave), delivery
+receipts (the document's and the sealed copy's SHA-256, the pick-up time), the push destination's
+random id (**no** Apple or Google token), and the waiting key. **No person's name, document title,
+file name, recovery key, hand-over key or passphrase is sent.** Three things are worth knowing:
+
+- **The device name is free text** the patient types ("Name for this device", at most 64
+  characters), sent to the clinic being linked and kept by its portal. A patient could type a
+  person's name. The link form's help line asks for a device name, not a person's (#532, in
+  review): today, and an open question whether more is needed.
+- The portal learns **when** a document was picked up, its **hashes**, when the device is online and
+  its IP address, as any HTTPS server does. This is the delivery protocol's own evidence.
+- `vault_head_link` is an HMAC of the vault's history head under a key from the device key: the
+  portal can see **that** the vault changed between two requests, never what changed.
+
+**What an operating-system notice says.** Every text the app can post to the operating system (the
+arrival notice, the test notice, the tray's menu, tooltip and waiting notice, and the Windows toast
+the tray poller makes) is **one fixed sentence from the app's own message catalogue**, never a
+person's name, a document title, a clinic name or a file name; guard tests pin the catalogue, every
+place that hands text to the system, and the tray's call sites (#525, in review). The Windows
+toast's first line is the constant "myCarlos" (the Linux and macOS notices, #488 and #495, in
+review, do the same with their title or summary line, and will need the same guard tests when they
+merge). On an iPhone (the notice stack in #479 and #480, in
+review) the push carries only a message key, and the phone looks the sentence up in **its own
+system language**: a patient who set myCarlos to French on an English phone gets the English
+sentence. That is today, and an open question (question 24).
 
 ## 8. How it is protected
 
@@ -430,6 +508,13 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   up to a minute). It slows guessing only through the app on the device, not against a copied
   vault or backup, and whoever can change or delete the file where the app counts wrong tries, or
   set the device clock forward, can undo it.
+- **A copied de-identified text stays on the clipboard after the vault locks.** The AI helper's
+  "Copy text" puts the approved text on the system clipboard, with a warning that a copy can stay on
+  the device (Windows clipboard history, clipboard sync) and that the app cannot take it back.
+  Nothing clears it when the vault locks or after a while, unlike a copied hand-over key, which the
+  app takes off the clipboard after a minute or when the dialog ends. The remover has run on that text, but removing details is never perfect
+  (THREAT_MODEL.md, AI-01), and it is still health text. Whether to clear it after a while is
+  today, and an open question (question 23).
 - **Not yet checked:** system logs, crash files, the app-switcher preview images, "recent files"
   lists, memory the system writes to disk, notifications, the clipboard (including clipboards that
   sync between devices, such as Windows' cloud clipboard and Apple's Universal Clipboard) and
@@ -500,6 +585,20 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 20. **Turning the export on:** #72 asked for a Settings switch that turns the cloud way on. The
     design has none: each export is chosen for one document, after a preview and a save dialog.
     Is that enough, or should it also be switched on first?
+21. **Files outside the vault (section 6) and the backup's trailer (section 5):** should the app
+    round a backup's save time to the day, drop the key's label from its suggested name, mark the
+    recovery kit "not indexed" (Windows) and warn against synced folders, suggest a neutral name
+    for a single-document export, and clear leftover stage folders sooner? Padding object sizes is
+    a format change that the audit's author would not make. Not decided.
+22. **The 10-bit check on recovery and hand-over keys (section 6):** a mistyped key passes it 1 time
+    in 1,024. Lengthening it would be a format change for printed kits already handed out; the
+    note recommends no change and a gentler message when a hand-over box gets a recovery key. Not
+    decided.
+23. **The clipboard (section 9):** should "Copy text" of a de-identified text be cleared after a
+    while, or when the vault locks, as a copied hand-over key is?
+24. **Notice language on an iPhone (section 7):** the phone shows the notice in its own system
+    language, not the one set in myCarlos. Acceptable, or should the app ask for a
+    language-matched sentence?
 
 ### Reading a stored PDF on Android (#358)
 
