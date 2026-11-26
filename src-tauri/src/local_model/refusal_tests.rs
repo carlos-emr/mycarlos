@@ -1,5 +1,4 @@
-//! The model store's refusal and bound rules that `local_model`'s own tests do not reach (coverage
-//! batch 1): the words the renderer maps, and what the store does with the small files kept beside
+//! The model store's refusal and bound rules that `local_model`'s own tests do not reach: the words the renderer maps, and what the store does with the small files kept beside
 //! its folder when another program has put something else there. FAKE files only.
 
 use super::*;

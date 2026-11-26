@@ -1,4 +1,4 @@
-//! The reasons a quote's place on the page picture can be absent (coverage batch 2): their numbers
+//! The reasons a quote's place on the page picture can be absent: their numbers
 //! cross the helper's pipe and their names reach the app's answer, so both are a contract.
 
 use super::*;

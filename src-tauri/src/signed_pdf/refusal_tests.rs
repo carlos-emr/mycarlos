@@ -1,4 +1,4 @@
-//! The signed-PDF check's refusals that `signed_pdf`'s own tests do not reach (coverage batch 1).
+//! The signed-PDF check's refusals that `signed_pdf`'s own tests do not reach.
 //!
 //! A document CARLOS signed is only "Verified" if one CMS SignedData in the signature gap has
 //! exactly the agreed shape. These tests take the pinned CARLOS fixture's good document and change
@@ -73,12 +73,47 @@ fn good() -> Good {
 
 impl Good {
     fn verdict(&self, pdf: &[u8]) -> Result<Verdict, Refusal> {
+        self.verdict_with(pdf, &self.layout)
+    }
+
+    fn verdict_with(&self, pdf: &[u8], layout: &SignatureLayout) -> Result<Verdict, Refusal> {
         check(
             pdf,
-            &self.layout,
+            layout,
             self.manifest.as_deref(),
             std::slice::from_ref(&self.link),
         )
+    }
+
+    /// The same document with `hex` in the signature gap: the signed bytes (everything outside
+    /// the gap) are unchanged, and the layout says where the gap now ends.
+    fn with_gap(&self, hex: &str) -> (Vec<u8>, SignatureLayout) {
+        let [a, b, c, d] = self.layout.byte_ranges[0];
+        let mut pdf = self.pdf[..=b].to_vec();
+        pdf.extend_from_slice(hex.as_bytes());
+        pdf.extend_from_slice(&self.pdf[c - 1..]);
+        let layout = SignatureLayout {
+            byte_ranges: vec![[a, b, b + 1 + hex.len() + 1, d]],
+            ..self.layout.clone()
+        };
+        (pdf, layout)
+    }
+
+    /// The length of the DER at the start of the CMS bytes (what is left is the zero padding).
+    fn der_len(cms: &[u8]) -> usize {
+        let length_bytes = usize::from(cms[1] & 0x7f);
+        2 + length_bytes
+            + cms[2..2 + length_bytes]
+                .iter()
+                .fold(0_usize, |length, byte| (length << 8) | usize::from(*byte))
+    }
+
+    /// The good CMS padded with zeros to `bytes` bytes, as upper-case hex.
+    fn padded_hex(&self, bytes: usize) -> String {
+        let mut cms = self.cms();
+        cms.truncate(Self::der_len(&cms));
+        cms.resize(bytes, 0);
+        cms.iter().map(|byte| format!("{byte:02X}")).collect()
     }
 
     /// The CMS bytes in the gap (DER, then the zero padding).
@@ -202,13 +237,7 @@ fn a_signer_key_that_is_not_an_ec_p256_key_is_not_p256() {
 fn a_signature_value_or_a_message_digest_that_is_changed_is_a_bad_signature() {
     let good = good();
     let mut cms = good.cms();
-    let used = {
-        let der_length = usize::from(cms[1] & 0x7f);
-        2 + der_length
-            + cms[2..2 + der_length]
-                .iter()
-                .fold(0_usize, |n, byte| (n << 8) | usize::from(*byte))
-    };
+    let used = Good::der_len(&cms);
     // The last byte of the DER is inside the signature value: it no longer verifies.
     let mut signature = cms.clone();
     signature[used - 1] ^= 0x01;
@@ -262,53 +291,45 @@ fn a_signer_that_names_no_certificate_in_the_set_is_a_bad_signature() {
 }
 
 #[test]
-fn an_oversized_or_odd_signature_gap_is_refused_before_it_is_read() {
-    // A file whose signature range is one `<...>` gap and nothing else: the contents are judged
-    // on their size and their hex before any CMS is parsed.
-    let build = |hex: &str| {
-        let mut pdf = b"%PDF-1.7\n".to_vec();
-        let b = pdf.len();
-        pdf.push(b'<');
-        pdf.extend_from_slice(hex.as_bytes());
-        pdf.push(b'>');
-        let c = pdf.len();
-        pdf.extend_from_slice(b"\n%%EOF\n");
-        let layout = SignatureLayout {
-            byte_ranges: vec![[0, b, c, pdf.len() - c]],
-            update_after_signature: false,
-            encrypted: false,
-        };
-        (pdf, layout)
-    };
-    let check_it = |hex: &str| {
-        let (pdf, layout) = build(hex);
-        check_signature(&pdf, &layout).map(|_| ())
-    };
-    // More bytes than a CARLOS signature may hold (one past the limit), and an odd number of digits.
-    assert_eq!(
-        check_it(&"0".repeat((MAX_CONTENTS_BYTES + 1) * 2)),
-        Err(Refusal::BadContents)
-    );
-    assert_eq!(check_it("ABC"), Err(Refusal::BadContents));
-    // Exactly the limit passes the size check and fails later, on what it holds.
-    assert_eq!(
-        check_it(&"0".repeat(MAX_CONTENTS_BYTES * 2)),
-        Err(Refusal::BadContents)
-    );
-    // Not an `<...>` pair: the unsigned bytes around the gap are never hex.
-    let (mut pdf, layout) = build("00");
-    let [_, b, c, _] = layout.byte_ranges[0];
-    pdf[b] = b'[';
-    assert_eq!(
-        check_signature(&pdf, &layout).map(|_| ()),
-        Err(Refusal::BadContents)
-    );
-    pdf[b] = b'<';
-    pdf[c - 1] = b')';
-    assert_eq!(
-        check_signature(&pdf, &layout).map(|_| ()),
-        Err(Refusal::BadContents)
-    );
+fn the_gap_must_be_hex_between_the_right_delimiters_and_within_the_size_limit() {
+    // Every case is the good document with ONE change, so that the check named is the only thing
+    // that can refuse it: without it each of these would still verify.
+    let good = good();
+    let [_, b, c, _] = good.layout.byte_ranges[0];
+    assert!(matches!(good.verdict(&good.pdf), Ok(Verdict::Verified { .. })));
+    // The delimiters are outside the signed bytes, so only the delimiter check refuses them.
+    for (at, wrong) in [(b, b'['), (c - 1, b')')] {
+        let mut pdf = good.pdf.clone();
+        pdf[at] = wrong;
+        assert_eq!(good.verdict(&pdf), Err(Refusal::BadContents), "byte {at}");
+    }
+    // Zero padding up to the limit is the same signature, and one more byte of it is too much.
+    for (bytes, allowed) in [
+        (MAX_CONTENTS_BYTES - 1, true),
+        (MAX_CONTENTS_BYTES, true),
+        (MAX_CONTENTS_BYTES + 1, false),
+    ] {
+        let (pdf, layout) = good.with_gap(&good.padded_hex(bytes));
+        let verdict = good.verdict_with(&pdf, &layout);
+        if allowed {
+            assert!(matches!(verdict, Ok(Verdict::Verified { .. })), "{bytes}: {verdict:?}");
+        } else {
+            assert_eq!(verdict, Err(Refusal::BadContents), "{bytes}");
+        }
+    }
+    // An odd number of digits, and digits that are not hex.
+    let hex = good.padded_hex(good.cms().len());
+    let (pdf, layout) = good.with_gap(&hex[..hex.len() - 1]);
+    assert_eq!(good.verdict_with(&pdf, &layout), Err(Refusal::BadContents));
+    for bad in ["ZZ", "0G", "  "] {
+        let mut garbled = hex.clone();
+        garbled.replace_range(..2, bad);
+        let (pdf, layout) = good.with_gap(&garbled);
+        assert_eq!(good.verdict_with(&pdf, &layout), Err(Refusal::BadContents), "{bad:?}");
+    }
+    // The unchanged gap, rebuilt the same way, still verifies: the helper changes nothing else.
+    let (pdf, layout) = good.with_gap(&hex);
+    assert!(matches!(good.verdict_with(&pdf, &layout), Ok(Verdict::Verified { .. })));
 }
 
 #[test]

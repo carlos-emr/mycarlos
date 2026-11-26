@@ -1,5 +1,4 @@
-//! The de-identification re-check's matching rules that `text_recheck`'s own tests do not reach
-//! (coverage batch 1).
+//! The de-identification re-check's matching rules that `text_recheck`'s own tests do not reach.
 //!
 //! The re-check runs on the text a page claims to have cleaned and refuses to save or copy while a
 //! vault name or a birth date is still in it. It must not be beaten by writing the same name with

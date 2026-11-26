@@ -1,4 +1,4 @@
-//! The MP4 reader's refusals that `mp4_stream`'s own tests do not reach (coverage batch 1).
+//! The MP4 reader's refusals that `mp4_stream`'s own tests do not reach.
 //!
 //! A recording's bytes come from the webview's muxer, and the stored file is read back for
 //! playback, so every length and every field in a `moov`, a `moof` and the trailing index is
@@ -115,11 +115,8 @@ fn a_child_box_that_is_too_short_or_runs_past_its_parent_is_malformed() {
     // A child that claims more than the parent holds.
     let past_end = [0, 0, 1, 0, b'f', b'r', b'e', b'e', 1, 2, 3, 4];
     assert_eq!(refused_moov(boxed(b"moov", &past_end)), Mp4Error::Malformed);
-    // The same inside a track.
-    let inner = trak_of(&[]);
-    let mut damaged = inner.clone();
-    damaged.extend_from_slice(&[0, 0, 0, 3, b'x', b'x', b'x', b'x']);
-    let damaged = boxed(b"trak", &damaged[8..]);
+    // The same inside a track: its one child is 3 bytes long.
+    let damaged = boxed(b"trak", &[0, 0, 0, 3, b'x', b'x', b'x', b'x']);
     assert_eq!(refused_moov(moov_of(&[damaged])), Mp4Error::Malformed);
 }
 

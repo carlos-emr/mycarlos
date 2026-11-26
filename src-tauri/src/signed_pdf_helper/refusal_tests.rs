@@ -1,5 +1,5 @@
 //! The signed-PDF helper's structure checks and its pipe protocol, beyond what `signed_pdf_helper`'s
-//! own tests reach (coverage batch 3).
+//! own tests reach.
 //!
 //! The helper runs in the confined child and reads a PDF that anybody may have made. Before the main
 //! process sends a password for the attachment, the helper's report must say that the file holds
@@ -341,7 +341,12 @@ fn a_name_tree_that_is_odd_long_or_ambiguous_is_refused() {
         ]),
         Err(Refusal::BadManifest)
     );
-    // More than 256 entries.
+    // 256 entries are allowed (none of them a name), 257 are odd and 258 are over the limit.
+    assert_eq!(case(&|_| vec![Object::Integer(0); 256]), Ok(None));
+    assert_eq!(
+        case(&|_| vec![Object::Integer(0); 257]),
+        Err(Refusal::BadManifest)
+    );
     assert_eq!(
         case(&|_| vec![Object::Integer(0); 258]),
         Err(Refusal::BadManifest)
@@ -388,7 +393,8 @@ fn a_name_tree_past_its_bounds_is_refused() {
         let root = dict(vec![("Kids", Object::Array(vec![reference(inner)]))]);
         manifest(&base.with_names(root).doc)
     };
-    assert_eq!(chain(14), Ok(None));
+    // The deepest allowed is 16 levels: a chain of 15 wrappers reaches it, 16 wrappers do not.
+    assert_eq!(chain(15), Ok(None));
     assert_eq!(chain(16), Err(Refusal::BadManifest));
 }
 
@@ -399,7 +405,7 @@ fn the_catalog_must_associate_the_attachment_once_and_the_stream_must_be_an_embe
             fixture.manifest_entries(vec![Fixture::file_name(), reference(fixture.filespec)]);
         fixture.with_names(node)
     };
-    // Not associated at all, listed twice, and more than 128 entries.
+    // Not associated at all, and listed twice.
     let mut none = fixture();
     none.catalog_mut().remove(b"AF");
     assert_eq!(manifest(&named(none).doc), Err(Refusal::BadManifest));
@@ -409,12 +415,20 @@ fn the_catalog_must_associate_the_attachment_once_and_the_stream_must_be_an_embe
         .catalog_mut()
         .set("AF", Object::Array(vec![file.clone(), file.clone()]));
     assert_eq!(manifest(&named(twice).doc), Err(Refusal::BadManifest));
-    let mut many = fixture();
-    let file = reference(many.filespec);
-    let mut list = vec![file];
-    list.extend((0..128).map(|_| Object::Integer(0)));
-    many.catalog_mut().set("AF", Object::Array(list));
-    assert_eq!(manifest(&named(many).doc), Err(Refusal::BadManifest));
+    // The associated-files list may hold 128 entries (the file and 127 others), not 129.
+    for (others, allowed) in [(127_usize, true), (128, false)] {
+        let mut many = fixture();
+        let file = reference(many.filespec);
+        let mut list = vec![file];
+        list.extend((0..others).map(|_| Object::Integer(0)));
+        many.catalog_mut().set("AF", Object::Array(list));
+        let read = manifest(&named(many).doc);
+        if allowed {
+            assert!(matches!(read, Ok(Some(_))), "{others}: {read:?}");
+        } else {
+            assert_eq!(read, Err(Refusal::BadManifest), "{others}");
+        }
+    }
     // The attached stream is not typed as an embedded file.
     let mut untyped = fixture();
     let stream = embedded_stream(&untyped);

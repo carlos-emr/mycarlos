@@ -1,5 +1,5 @@
 //! The PDF helper's pipe protocol for a page and for a quote's boxes, beyond what `pdf_view`'s own
-//! tests reach (coverage batch 3).
+//! tests reach.
 //!
 //! The parent never trusts what the confined helper writes back: the picture must be an RGBA8 PNG
 //! of exactly the size declared and is encoded again from its pixels, every length has a limit,

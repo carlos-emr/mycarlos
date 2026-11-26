@@ -1,5 +1,4 @@
-//! The summary byte contract's refusals that `summary_contract`'s own tests do not reach (coverage
-//! batch 2): the cardinality bounds, the edit reservation, the source-span bounds and the decoder's
+//! The summary byte contract's refusals that `summary_contract`'s own tests do not reach: the cardinality bounds, the edit reservation, the source-span bounds and the decoder's
 //! bound on a collection. FAKE text only.
 
 use super::*;
