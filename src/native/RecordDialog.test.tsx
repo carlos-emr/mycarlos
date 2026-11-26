@@ -286,6 +286,31 @@ describe("RecordDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("still pauses when the recorder cannot say what it has so far, and the pieces keep going to the vault after", async () => {
+    const bridge = fakeBridge();
+    await recording(bridge);
+    recorder().requestData = () => {
+      throw new DOMException("FAKE not ready", "InvalidStateError");
+    };
+    fireEvent.click(button("Pause recording"));
+    await waitFor(() =>
+      expect(bridge.videoPause).toHaveBeenCalledWith("recording-1"),
+    );
+    expect(recorder().calls).toEqual(["start", "pause"]);
+    expect(
+      screen.getByText("Paused", { selector: ".record-badge span" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+    // After resuming, a piece the recorder cuts is sent: nothing is left waiting for one that
+    // was never asked for.
+    fireEvent.click(button("Resume recording"));
+    await waitFor(() =>
+      expect(bridge.videoResume).toHaveBeenCalledWith("recording-1"),
+    );
+    act(() => recorder().emit(new Blob([new Uint8Array(10).fill(5)])));
+    await waitFor(() => expect(bridge.videoAppend).toHaveBeenCalledTimes(1));
+  });
+
   it("pauses without ending the video, says so aloud, and the camera and microphone stay on", async () => {
     const bridge = fakeBridge();
     await recording(bridge);

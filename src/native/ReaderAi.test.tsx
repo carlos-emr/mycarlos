@@ -204,6 +204,29 @@ describe("the reader's AI helper", () => {
     expect(screen.queryByRole("region", { name: "Explain a term" })).toBeNull();
   });
 
+  it("treats a helper that cannot say what is installed as not installed, asks no model, and leads to Preferences", async () => {
+    const model = fakeLocalModel();
+    model.status = vi.fn().mockRejectedValue(new Error("FAKE status failure"));
+    const { onOpenPreferences, loadText } = renderReader(model);
+    await firstPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    const panel = screen.getByRole("region", {
+      name: "Summary in plain words",
+    });
+    expect(
+      await within(panel).findByText("The AI helper isn't on this device yet"),
+    ).toBeVisible();
+    // Nothing of the failure is shown, and nothing was read or asked.
+    expect(screen.queryByText(/FAKE status failure/)).toBeNull();
+    expect(loadText).not.toHaveBeenCalled();
+    expect(model.calls).toHaveLength(0);
+    await user.click(
+      within(panel).getByRole("button", { name: "Open AI helper settings" }),
+    );
+    expect(onOpenPreferences).toHaveBeenCalledTimes(1);
+  });
+
   it("labels a summary as AI's, and links only the sentences found in the document", async () => {
     const model = fakeLocalModel({
       sentences: () => [
