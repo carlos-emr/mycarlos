@@ -169,7 +169,8 @@ pub(crate) const MAX_PAGE_TEXT_BYTES: usize = 256 * 1024;
 const MAX_PNG_BYTES: usize = 96 * 1024 * 1024;
 
 /// One page, as shown.
-#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub(crate) struct Page {
     pub(crate) page_count: u32,
     pub(crate) width: u32,
@@ -180,6 +181,7 @@ pub(crate) struct Page {
     /// Reader-only extraction retaining supported vertical line movements.
     pub(crate) readable_text: String,
 }
+redact_debug!(Page);
 
 /// What asking the helper for a page came to.
 #[cfg_attr(mobile, allow(dead_code))] // Computers only: phones cannot start the helper.

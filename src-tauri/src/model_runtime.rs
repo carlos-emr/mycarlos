@@ -131,7 +131,8 @@ pub(crate) struct SummarizeRequest {
 }
 
 /// An explain request from the renderer.
-#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ExplainRequest {
     pub(crate) term: String,
@@ -141,6 +142,7 @@ pub(crate) struct ExplainRequest {
     #[serde(default)]
     pub(crate) record_id: Option<uuid::Uuid>,
 }
+redact_debug!(ExplainRequest);
 
 /// A summary sentence's place in the document, as the reader found its quote (`SourceSpan` in
 /// src/ai/types.ts): the page's index and the span on it.
@@ -180,7 +182,8 @@ pub(crate) fn summary_read_pages(
 /// An answer as the runtime gave it, kept natively for the document's save (#212). The save
 /// names it by document, tool, language and term; page code adds only a summary's source
 /// places, so the words, the model and the flags the vault keeps are the runtime's own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum KeptAnswer {
     Summary {
         sentences: Vec<Sentence>,
@@ -209,6 +212,7 @@ pub(crate) enum KeptAnswer {
         created_at: u64,
     },
 }
+redact_debug!(KeptAnswer);
 
 impl KeptAnswer {
     /// What the vault is told about this answer, and its bytes as the reader keeps them
@@ -325,11 +329,13 @@ pub(crate) fn tail_is_last_page(tail_page: Option<u32>, page_count: Option<u32>)
     Some(tail_page?.checked_add(1)? == page_count?)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ExplainResult {
     pub(crate) text: String,
     pub(crate) model: ModelInfo,
 }
+redact_debug!(ExplainResult);
 
 /// What loading the model in use once says (D218), as the settings are told: it runs here, it
 /// cannot run here, there is not enough free memory to try it now, or its file is damaged.

@@ -105,12 +105,14 @@ pub fn kind_ok(kind: &str) -> bool {
         && !version.is_empty()
         && version.bytes().all(|b| b.is_ascii_digit())
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Patient {
     pub name: String,
     pub birth_date: String,
 }
+redact_debug!(Patient);
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
@@ -122,7 +124,8 @@ pub struct Document {
     pub size: u64,
     pub sha256: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub v: u8,
@@ -139,6 +142,7 @@ pub struct Manifest {
     pub expires_at: u64,
     pub kid: String,
 }
+redact_debug!(Manifest);
 
 pub struct Opened {
     pub manifest: Manifest,

@@ -421,11 +421,13 @@ pub(crate) enum RunnerError {
 }
 
 /// One page of a document's text, by its index from 0.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,
 }
+redact_debug!(Page);
 
 /// A summary request: the pages in order, as the reader read them.
 #[derive(Debug, Clone, Serialize)]
@@ -438,11 +440,13 @@ pub(crate) struct SummaryRequest {
 
 /// One sentence of a summary: the words, and the words of the document it
 /// rests on, verbatim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Sentence {
     pub(crate) text: String,
     pub(crate) quote: String,
 }
+redact_debug!(Sentence);
 
 /// The stages of a summary as the reader is told them: the helper reads the prompt, then
 /// writes the sentences; then the app checks the answer (the runner's own stage).

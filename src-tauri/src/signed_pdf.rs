@@ -128,7 +128,8 @@ pub(crate) fn authenticate(
 }
 
 /// What CARLOS put inside the signed revision (A3's manifest note).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub v: u8,
@@ -149,8 +150,10 @@ pub struct Manifest {
     pub patient: ManifestPatient,
     pub document: ManifestDocument,
 }
+redact_debug!(Manifest);
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestPatient {
     #[serde(deserialize_with = "present_nullable")]
@@ -158,6 +161,7 @@ pub struct ManifestPatient {
     #[serde(deserialize_with = "present_nullable")]
     pub birth_date: Option<String>,
 }
+redact_debug!(ManifestPatient);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]

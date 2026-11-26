@@ -1,3 +1,18 @@
+/// `Debug` for a type that holds names, document text, an answer, a token or a code: a test build
+/// derives it (so an assertion failure shows the values), and a release build prints only the
+/// type's name, so a panic, a `{:?}` or an error chain can never carry them out. Use it after the
+/// type, with `#[cfg_attr(test, derive(Debug))]` in place of `Debug` in its derive list.
+macro_rules! redact_debug {
+    ($($type:ident),+ $(,)?) => {$(
+        #[cfg(not(test))]
+        impl ::std::fmt::Debug for $type {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                formatter.write_str(concat!(stringify!($type), " { .. }"))
+            }
+        }
+    )+};
+}
+
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
 mod ui_text;
@@ -978,13 +993,15 @@ struct PhotoRequest {
 /// photo request's body (see `split_photo_request`), as JSON
 /// `{"profileId", "folderIds", "name"}`. Custom headers do not reach the app
 /// on Windows (WebView2), so nothing rides in them.
-#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoTarget {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
     name: String,
 }
+redact_debug!(PhotoTarget);
 
 /// The most a photo request's target may take, before the JPEG.
 const MAX_PHOTO_TARGET_BYTES: usize = 4096;
@@ -1306,12 +1323,14 @@ fn locked_original_name(name: &str) -> String {
 }
 
 /// What unlocking a PDF did: the unlocked copy, and the original's new name.
-#[derive(Debug, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UnlockedPdf {
     record_id: Uuid,
     original_name: String,
 }
+redact_debug!(UnlockedPdf);
 
 /// Unlocks a stored PDF with the password the patient typed (#54). The
 /// document is opened by the PDF helper (`unlock`, `pdf_unlock::unlock_in_helper`
