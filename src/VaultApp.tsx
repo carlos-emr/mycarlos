@@ -1977,10 +1977,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         onReset={(confirmation) =>
           run(async () => {
             if (await bridge.reset(confirmation)) {
-              pendingOutcomeRef.current = null;
-              pendingSharedOutcomeRef.current = null;
-              rememberUnfinishedRecoveryKey(null);
-              rememberOldBackupsGuide(null);
+              // The one path for "this vault is gone", as for a restore over it: it forgets
+              // every note held for the vault's next unlock (the unfinished handover too, which
+              // this path used to leave to be told at the next vault's unlock).
+              forgetReplacedVault();
               // Starting again starts with the comfort settings, as a fresh
               // start of the app does.
               setComfortChosen(false);
