@@ -595,6 +595,15 @@
       },
       "raw": false
     },
+    "vault_portal_remove_link": {
+      "arguments": {
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
     "vault_profile_export_pick": {
       "arguments": {
         "request": {
