@@ -9690,6 +9690,12 @@ mod tests {
         // order, is the one read), and the enums commands may reach.
         let mut conflicts: BTreeSet<String> = BTreeSet::new();
         let mut enums: BTreeSet<String> = BTreeSet::new();
+        // The other copies of a conflicting name: each is checked on its own below, since the
+        // contract can only name one.
+        let mut conflict_copies: Vec<(String, Definition)> = Vec::new();
+        // Types with a hand-written `impl Deserialize`: what it accepts is not in the source's
+        // attributes, so a command may not take one.
+        let mut manual_impls: BTreeSet<String> = BTreeSet::new();
         let mut command_parameters: Vec<(String, String)> = Vec::new();
         for file in &files {
             let text = std::fs::read_to_string(file).unwrap();
@@ -9787,10 +9793,22 @@ mod tests {
                                 definitions.insert(struct_name, definition);
                             }
                             Some(true) => {
-                                conflicts.insert(struct_name);
+                                conflicts.insert(struct_name.clone());
+                                conflict_copies.push((struct_name, definition));
                             }
                             Some(false) => {}
                         }
+                    }
+                } else if declaration.starts_with("impl")
+                    && declaration.contains("Deserialize<'de> for ")
+                {
+                    if let Some(rest) = declaration.split("Deserialize<'de> for ").nth(1) {
+                        manual_impls.insert(
+                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .next()
+                                .unwrap()
+                                .to_owned(),
+                        );
                     }
                 } else if let Some(rest) = declaration.strip_prefix("enum ") {
                     if attributes.contains("Deserialize") {
@@ -10039,6 +10057,49 @@ mod tests {
                 }
             }
         }
+        // A custom deserializer (or a conversion through another type) decides what is accepted
+        // where the list cannot see it. The few that only validate a list or accept a null are
+        // named here; any other is refused until it is modelled and named.
+        const REVIEWED_DESERIALIZERS: [(&str, &str); 3] = [
+            ("Page", "nullable"),
+            ("ProfileDetails", "present_previous_names"),
+            (
+                "SaveAiResultRequest",
+                "summary_contract::deserialize_sources",
+            ),
+        ];
+        let custom_deserializers = |name: &str, definition: &Definition| -> Vec<String> {
+            let mut found = Vec::new();
+            for word in ["from", "try_from", "remote"] {
+                if serde_has(&definition.attributes, word) {
+                    found.push(format!("{name}: serde({word}) on the struct"));
+                }
+            }
+            for attributes in &definition.field_attributes {
+                for word in ["with", "deserialize_with", "from", "try_from", "remote"] {
+                    if !serde_has(attributes, word) {
+                        continue;
+                    }
+                    let function = attributes
+                        .split("deserialize_with = \"")
+                        .nth(1)
+                        .and_then(|rest| rest.split('"').next());
+                    let reviewed = word == "deserialize_with"
+                        && function.is_some_and(|f| REVIEWED_DESERIALIZERS.contains(&(name, f)));
+                    if !reviewed {
+                        found.push(format!("{name}: serde({word}) on a field"));
+                    }
+                }
+            }
+            for (field, ty) in &definition.fields {
+                if let Some(word) = words(ty).into_iter().find(|w| manual_impls.contains(*w)) {
+                    found.push(format!(
+                        "{name}.{field}: {word} has a hand-written Deserialize"
+                    ));
+                }
+            }
+            found
+        };
         // What the list cannot model is refused, so that nobody adds it unseen.
         let mut unmodelled = Vec::new();
         let mut struct_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -10051,6 +10112,7 @@ mod tests {
             if serde_has(&definition.attributes, "alias") {
                 unmodelled.push(format!("{name}: an alias"));
             }
+            unmodelled.extend(custom_deserializers(name, definition));
             let mut fields = BTreeMap::new();
             let mut open = conflicts.contains(name);
             for ((field, ty), field_attributes) in
@@ -10098,10 +10160,19 @@ mod tests {
                 },
             );
         }
-        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
+        // A command that takes a type with a hand-written `impl Deserialize` itself.
+        for (function, parameters) in &command_parameters {
+            if let Some(word) = words(parameters)
+                .into_iter()
+                .find(|w| manual_impls.contains(*w))
+            {
+                unmodelled.push(format!("{function}: {word} has a hand-written Deserialize"));
+            }
+        }
         // A struct name defined twice with different contents cannot be told apart by name: what
         // a command or a struct reaches under that name is listed as an open, ambiguous struct,
-        // and its keys are not checked (a reviewer reads these in the file).
+        // and its keys are not checked (a reviewer reads these in the file). So that it is not an
+        // escape from the rules, EVERY copy is held to them here.
         let referenced: BTreeSet<String> = contract
             .commands
             .values()
@@ -10110,6 +10181,47 @@ mod tests {
             .filter_map(|argument| argument.struct_name.clone())
             .filter(|name| conflicts.contains(name))
             .collect();
+        // A copy of a conflicting name that is not what a command takes but the portal's own
+        // answer, which arrives in the portal's snake_case: it is held to `deny_unknown_fields`
+        // like the others but not to camelCase.
+        const PORTAL_ANSWERS: [(&str, &str); 1] = [("Page", "document_collection_pickup.rs")];
+        for name in &referenced {
+            let copies = std::iter::once(&definitions[name]).chain(
+                conflict_copies
+                    .iter()
+                    .filter(|(copy, _)| copy == name)
+                    .map(|(_, definition)| definition),
+            );
+            for copy in copies {
+                let multi_word = copy.fields.iter().any(|(field, _)| field.contains('_'));
+                let camel_case = copy.attributes.contains("rename_all = \"camelCase\"");
+                if !copy.attributes.contains("deny_unknown_fields") {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs deny_unknown_fields",
+                        copy.file
+                    ));
+                }
+                let portal_answer = PORTAL_ANSWERS.contains(&(name.as_str(), copy.file.as_str()));
+                if (multi_word && !camel_case && !portal_answer)
+                    || (serde_has(&copy.attributes, "rename_all") && !camel_case)
+                {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs rename_all = \"camelCase\" or none",
+                        copy.file
+                    ));
+                }
+                if serde_has(&copy.attributes, "alias")
+                    || copy
+                        .field_attributes
+                        .iter()
+                        .any(|a| a.contains("rename(") || serde_has(a, "alias"))
+                {
+                    unmodelled.push(format!("{name} ({}): a rename(..) or an alias", copy.file));
+                }
+                unmodelled.extend(custom_deserializers(name, copy));
+            }
+        }
+        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
         for name in referenced {
             contract.structs.entry(name).or_insert(StructContract {
                 ambiguous: true,

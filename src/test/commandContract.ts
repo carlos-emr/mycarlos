@@ -367,6 +367,10 @@ export function aliasesOfInvoke(source: string): string[] {
     ["through the module", /\.\s*invoke\s*[<(]/],
     ["by typeof", /\btypeof\s+invoke\b/],
     ["in a list", /\[\s*invoke\s*[,\]]/],
+    ["through call, apply or bind", /\binvoke\s*\.\s*(?:call|apply|bind)\b/],
+    ["through optional call", /\binvoke\s*\?\.\s*\(/],
+    ["exported", /\bexport\s*\{[^}]*\binvoke\b/],
+    [".apply or .bind on it", /\binvoke\b[^;\n]*\.\s*(?:apply|bind)\s*\(/],
   ];
   for (const [how, pattern] of patterns) {
     if (pattern.test(text)) found.push(how);

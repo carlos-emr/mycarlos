@@ -47,6 +47,28 @@ const WRAPPER_CALLS: Record<string, number> = {
   "./native/NotificationSetting.tsx": 2,
 };
 
+// The commands whose arguments reach something the list cannot look into (the elements of a list
+// of structs, an enum's variants), by name. A new one is a reviewed edit of this list: read the
+// "blindSpots" entry the Rust guard wrote for it first.
+const BLIND_SPOT_COMMANDS = [
+  "ai_model_add_picked",
+  "ai_summarize",
+  "background_report_locale",
+  "background_status",
+  "vault_ai_result_save",
+  "vault_export_text_copy",
+  "vault_export_text_pick",
+  "vault_export_text_picked",
+  "vault_import_pick",
+  "vault_name_found_vaults",
+  "vault_notification_status",
+  "vault_recovery_key_confirm",
+  "vault_recovery_kit_save",
+  "vault_reset",
+  "vault_restore",
+  "vault_restore_pick",
+];
+
 describe("the renderer's native calls against the commands' argument list", () => {
   it("reads the Rust side's list: its commands, their arguments and the structs they reach", () => {
     expect(Object.keys(contract.commands).length).toBeGreaterThan(100);
@@ -156,6 +178,20 @@ describe("the renderer's native calls against the commands' argument list", () =
     expect(aliasesOfInvoke("go(invoke);")).toHaveLength(1);
     expect(aliasesOfInvoke('core.invoke("a");')).toHaveLength(1);
     expect(aliasesOfInvoke("type T = typeof invoke;")).toHaveLength(1);
+    expect(aliasesOfInvoke("invoke.call(null, 'a');").length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      aliasesOfInvoke("invoke.apply(null, ['a']);").length,
+    ).toBeGreaterThan(0);
+    expect(
+      aliasesOfInvoke("const f = invoke.bind(null);").length,
+    ).toBeGreaterThan(0);
+    expect(aliasesOfInvoke("invoke?.('a');").length).toBeGreaterThan(0);
+    expect(aliasesOfInvoke("export { invoke };").length).toBeGreaterThan(0);
+    expect(
+      aliasesOfInvoke("export { other, invoke as run };").length,
+    ).toBeGreaterThan(0);
     expect(aliasesOfInvoke("const x = invoke<void>('a'); // invoke")).toEqual(
       [],
     );
@@ -164,7 +200,9 @@ describe("the renderer's native calls against the commands' argument list", () =
   it("lists where the keys cannot be checked, for a reviewer to read", () => {
     // Elements of a list of structs and an enum's variants are not looked into.
     const entries = Object.entries(contract.blindSpots);
-    expect(entries.length).toBeGreaterThan(0);
+    expect(Object.keys(contract.blindSpots).sort()).toEqual(
+      BLIND_SPOT_COMMANDS,
+    );
     for (const [command, spots] of entries) {
       expect(contract.commands[command], command).toBeDefined();
       expect(spots.length).toBeGreaterThan(0);
