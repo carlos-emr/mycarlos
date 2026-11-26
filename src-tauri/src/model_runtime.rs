@@ -2084,7 +2084,9 @@ pub mod engine_testing {
     /// prints just its name in a release build, and this function must not move into app code.
     fn words(error: &RunnerError) -> String {
         match error {
-            RunnerError::Start(words) | RunnerError::Protocol(words) | RunnerError::Model(words) => {
+            RunnerError::Start(words)
+            | RunnerError::Protocol(words)
+            | RunnerError::Model(words) => {
                 format!("{}: {words}", error.code())
             }
             RunnerError::Budget {
