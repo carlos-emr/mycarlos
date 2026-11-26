@@ -2030,12 +2030,8 @@ mod tests {
         // the parent has left is refused, in a track and in a fragment, and with the claim made
         // good it parses (so it is the claim, not the box, that is refused).
         let overrun = vec![0, 0, 0, 200, b'm', b'i', b'n', b'f'];
-        let mdia = |tail: &[u8]| {
-            boxed(
-                b"mdia",
-                &[good_mdhd(), good_hdlr(), tail.to_vec()].concat(),
-            )
-        };
+        let mdia =
+            |tail: &[u8]| boxed(b"mdia", &[good_mdhd(), good_hdlr(), tail.to_vec()].concat());
         let movie = |tail: &[u8]| {
             let track = boxed(b"trak", &[good_tkhd(), mdia(tail)].concat());
             push_all(&[ftyp(), moov_of(&[track])].concat()).map(|_| ())
@@ -2047,12 +2043,7 @@ mod tests {
                 &[
                     ftyp(),
                     moov(),
-                    fragment_of(&[traf_of(&[
-                        tfhd_of(0, &[]),
-                        tfdt0(),
-                        trun_sizes(1),
-                        tail,
-                    ])]),
+                    fragment_of(&[traf_of(&[tfhd_of(0, &[]), tfdt0(), trun_sizes(1), tail])]),
                 ]
                 .concat(),
             )
