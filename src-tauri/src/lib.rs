@@ -8687,7 +8687,7 @@ mod tests {
     #[test]
     fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
         let utc = 1_790_553_600_000; // 2026-09-28 UTC
-        // The document's name never reaches the dialog, whoever it names.
+                                     // The document's name never reaches the dialog, whoever it names.
         for (own, expected) in [
             ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
             ("Photo.jpg", "Document 2026-11-26.jpg"),
@@ -8742,9 +8742,10 @@ mod tests {
         let without: ExportRequest =
             serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
         assert!(without.local_date.is_none());
-        let with: ExportRequest =
-            serde_json::from_str(&format!(r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#))
-                .unwrap();
+        let with: ExportRequest = serde_json::from_str(&format!(
+            r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#
+        ))
+        .unwrap();
         assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
     }
 

@@ -1300,6 +1300,10 @@
       "ambiguous": false,
       "denyUnknown": true,
       "fields": {
+        "localDate": {
+          "optional": true,
+          "struct": null
+        },
         "recordId": {
           "optional": false,
           "struct": null
