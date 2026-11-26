@@ -422,6 +422,7 @@ pub(crate) enum RunnerError {
 
 /// One page of a document's text, by its index from 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,

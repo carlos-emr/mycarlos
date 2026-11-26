@@ -1,0 +1,2184 @@
+{
+  "blindSpots": {
+    "ai_model_add_picked": [
+      "locale: enum UiLocale"
+    ],
+    "ai_summarize": [
+      "SummarizeRequest.pages: the elements of Page"
+    ],
+    "background_report_locale": [
+      "locale: enum UiLocale"
+    ],
+    "background_status": [
+      "locale: enum UiLocale"
+    ],
+    "vault_ai_result_save": [
+      "SaveAiResultRequest.sources: the elements of SourceSpan"
+    ],
+    "vault_export_text_copy": [
+      "TextExportCopyRequest.kept: the elements of Hit",
+      "locale: enum UiLocale"
+    ],
+    "vault_export_text_pick": [
+      "locale: enum UiLocale"
+    ],
+    "vault_export_text_picked": [
+      "TextExportPickedRequest.kept: the elements of Hit",
+      "locale: enum UiLocale"
+    ],
+    "vault_import_pick": [
+      "locale: enum UiLocale"
+    ],
+    "vault_name_found_vaults": [
+      "NameFoundRequest.vaults: the elements of NamedFoundVault"
+    ],
+    "vault_notification_status": [
+      "locale: enum UiLocale"
+    ],
+    "vault_recovery_key_confirm": [
+      "ConfirmRecoveryKeyRequest.groups: the elements of RecoveryKeyGroup",
+      "locale: enum UiLocale"
+    ],
+    "vault_recovery_kit_save": [
+      "locale: enum UiLocale"
+    ],
+    "vault_reset": [
+      "locale: enum UiLocale"
+    ],
+    "vault_restore": [
+      "locale: enum UiLocale"
+    ],
+    "vault_restore_pick": [
+      "locale: enum UiLocale"
+    ]
+  },
+  "commands": {
+    "ai_cancel": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_explain": {
+      "arguments": {
+        "answerId": {
+          "optional": false,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "ExplainRequest"
+        }
+      },
+      "raw": false
+    },
+    "ai_model_add_active": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_model_add_cancel": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_model_add_picked": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "ai_model_catalog": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_model_check": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ModelIndexRequest"
+        }
+      },
+      "raw": false
+    },
+    "ai_model_download": {
+      "arguments": {
+        "request": {
+          "optional": true,
+          "struct": "ModelIndexRequest"
+        }
+      },
+      "raw": false
+    },
+    "ai_model_limits": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_model_remove": {
+      "arguments": {
+        "request": {
+          "optional": true,
+          "struct": "ModelIndexRequest"
+        }
+      },
+      "raw": false
+    },
+    "ai_model_speed": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_model_status": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_model_use": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ModelIndexRequest"
+        }
+      },
+      "raw": false
+    },
+    "ai_models": {
+      "arguments": {},
+      "raw": false
+    },
+    "ai_speed_check": {
+      "arguments": {
+        "answerId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "ai_summarize": {
+      "arguments": {
+        "answerId": {
+          "optional": false,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "SummarizeRequest"
+        }
+      },
+      "raw": false
+    },
+    "background_report_locale": {
+      "arguments": {
+        "locale": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "background_set_keep_running": {
+      "arguments": {
+        "enabled": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "background_set_start_at_login": {
+      "arguments": {
+        "enabled": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "background_status": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "kdf_benchmark": {
+      "arguments": {},
+      "raw": false
+    },
+    "received_accept": {
+      "arguments": {
+        "request": {
+          "optional": true,
+          "struct": "ReceivedAcceptRequest"
+        }
+      },
+      "raw": false
+    },
+    "received_discard": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ReceivedDiscardRequest"
+        }
+      },
+      "raw": false
+    },
+    "received_list": {
+      "arguments": {},
+      "raw": false
+    },
+    "runtime_info": {
+      "arguments": {},
+      "raw": false
+    },
+    "tray_waiting_status": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_add_vault": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "AddVaultRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_ai_result_read": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "AiResultRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_ai_result_save": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "SaveAiResultRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_ai_results": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RecordIdRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_assign_folders": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "AssignFoldersRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_assign_folders_batch": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "AssignFoldersBatchRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_backup_pick": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "BackupPickRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_backup_picked": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "BackupWriteRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_backup_size": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_change_passphrase": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ChangePassphraseRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_check_documents": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_create": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "CreateVaultRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_create_folder": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "FolderRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_create_profile": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "NameRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_document_text": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "DocumentTextRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_document_text_cancel": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "TextReadCancelRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_export_pick": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ExportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_export_picked": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PickedExportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_export_text_copy": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "TextExportCopyRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_export_text_pick": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "TextExportPickRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_export_text_picked": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "TextExportPickedRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_find_other_vaults": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "FindVaultsRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_forget_refused_deliveries": {
+      "arguments": {
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_hide_profile": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileIdRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_hide_record": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RecordIdRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_hide_unavailable_records": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "HideUnavailableRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_history": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_import_pick": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "ImportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_import_picked": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PickedImportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_is_locked_pdf": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PhotoRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_is_photo": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PhotoRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_is_video": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoRecordRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_left_out_records": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_lock": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_move_to_person": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "MoveToPersonRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_name_found_vaults": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "NameFoundRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_notification_status": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_page_boxes": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PageBoxesRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_passphrase_rules": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PassphraseRulesRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_portal_connect": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PortalLinkRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_portal_link": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PortalLinkRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_portal_remove_link": {
+      "arguments": {
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_export_pick": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileExportPickRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_export_picked": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfilePickRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_export_prepare": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileExportPrepareRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_import": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileImportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_import_inspect": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileImportInspectRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_import_key_kind": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileImportKeyRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_profile_import_pick": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_read_android_pdf": {
+      "arguments": {
+        "activity": {
+          "optional": false,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "AndroidPdfRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_record_known_details": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RecordIdRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_recover": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RecoverRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_recovery_key_begin": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PassphraseRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_recovery_key_cancel": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_recovery_key_confirm": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "ConfirmRecoveryKeyRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_recovery_key_label": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_recovery_kit_save": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_refresh_device_approval": {
+      "arguments": {
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_rename_profile": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RenameProfileRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_rename_record": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RenameRecordRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_request_device_approval": {
+      "arguments": {
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_reset": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "ResetRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_restart_device_approval": {
+      "arguments": {
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_restore": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "RestoreRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_restore_inspect": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RestoreRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_restore_pick": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_restore_profile": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileIdRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_save_photo": {
+      "arguments": {},
+      "raw": true
+    },
+    "vault_send_test_notice": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_set_auto_lock": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "AutoLockRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_set_automatic_document_checks": {
+      "arguments": {
+        "enabled": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_set_notifications": {
+      "arguments": {
+        "enabled": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_shared_identity": {
+      "arguments": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_snapshot": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_status": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_submit_approval_code": {
+      "arguments": {
+        "code": {
+          "optional": false,
+          "struct": null
+        },
+        "linkId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_touch": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_unhide_record": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "RecordIdRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_unlock": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PassphraseRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_unlock_named": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "NamedPassphraseRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_unlock_pdf": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "UnlockPdfRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_update_folder": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "UpdateFolderRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_update_profile_details": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ProfileDetailsRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_append": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoAppendRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_close": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoCloseRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_open": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoRecordRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_pause": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoRecordingRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_pending": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_video_recover": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoRecoverRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_resume": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoRecordingRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_space": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_video_start": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoStartRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_video_stop": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "VideoRecordingRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_view_cancel": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_view_page": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "ViewPageRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_view_photo": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PhotoRequest"
+        }
+      },
+      "raw": false
+    }
+  },
+  "generatedBy": "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
+  "structs": {
+    "AddVaultRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "initialProfileName": {
+          "optional": false,
+          "struct": null
+        },
+        "name": {
+          "optional": false,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "AiResultRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "resultId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "AndroidPdfLabels": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "close": {
+          "optional": false,
+          "struct": null
+        },
+        "next": {
+          "optional": false,
+          "struct": null
+        },
+        "page": {
+          "optional": false,
+          "struct": null
+        },
+        "pageFailed": {
+          "optional": false,
+          "struct": null
+        },
+        "pageStatus": {
+          "optional": false,
+          "struct": null
+        },
+        "previous": {
+          "optional": false,
+          "struct": null
+        },
+        "zoomIn": {
+          "optional": false,
+          "struct": null
+        },
+        "zoomOut": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "AndroidPdfRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "labels": {
+          "optional": false,
+          "struct": "AndroidPdfLabels"
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "AssignFoldersBatchRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderIds": {
+          "optional": false,
+          "struct": null
+        },
+        "recordIds": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "AssignFoldersRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderIds": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "AutoLockRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "minutes": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "BackupPickRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "localDate": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "BackupWriteRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "leaveVideosOut": {
+          "optional": true,
+          "struct": null
+        },
+        "pickId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ChangePassphraseRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "currentPassphrase": {
+          "optional": false,
+          "struct": null
+        },
+        "newPassphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ConfirmRecoveryKeyRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "groups": {
+          "optional": false,
+          "struct": "RecoveryKeyGroup"
+        }
+      },
+      "open": false
+    },
+    "CreateVaultRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "initialProfileName": {
+          "optional": false,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "DocumentTextRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "password": {
+          "optional": true,
+          "struct": null
+        },
+        "readId": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ExplainRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "context": {
+          "optional": false,
+          "struct": null
+        },
+        "lang": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": true,
+          "struct": null
+        },
+        "term": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ExportRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "FindVaultsRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "FolderRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "name": {
+          "optional": false,
+          "struct": null
+        },
+        "parentId": {
+          "optional": true,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "HideUnavailableRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "confirmed": {
+          "optional": false,
+          "struct": null
+        },
+        "hiddenPeopleDocuments": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "Hit": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "end": {
+          "optional": false,
+          "struct": null
+        },
+        "start": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ImportRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderIds": {
+          "optional": false,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ModelIndexRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "index": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "MoveToPersonRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderIds": {
+          "optional": false,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        },
+        "recordIds": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "NameFoundRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "vaults": {
+          "optional": false,
+          "struct": "NamedFoundVault"
+        }
+      },
+      "open": false
+    },
+    "NameRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "details": {
+          "optional": true,
+          "struct": "ProfileDetails"
+        },
+        "displayName": {
+          "optional": false,
+          "struct": null
+        },
+        "today": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "NamedFoundVault": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "id": {
+          "optional": false,
+          "struct": null
+        },
+        "name": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "NamedPassphraseRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "name": {
+          "optional": false,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "Page": {
+      "ambiguous": true,
+      "denyUnknown": false,
+      "fields": {},
+      "open": true
+    },
+    "PageBoxesRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "end": {
+          "optional": false,
+          "struct": null
+        },
+        "page": {
+          "optional": false,
+          "struct": null
+        },
+        "password": {
+          "optional": true,
+          "struct": null
+        },
+        "quoted": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "start": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "PassphraseRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "PassphraseRulesRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "initialProfileName": {
+          "optional": false,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "PhotoRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "PickedExportRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "pickId": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "PickedImportRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderIds": {
+          "optional": false,
+          "struct": null
+        },
+        "pickId": {
+          "optional": false,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "PortalLinkRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "code": {
+          "optional": false,
+          "struct": null
+        },
+        "deviceName": {
+          "optional": false,
+          "struct": null
+        },
+        "portalBase": {
+          "optional": false,
+          "struct": null
+        },
+        "profileId": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileDetails": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "birthDate": {
+          "optional": true,
+          "struct": null
+        },
+        "fullName": {
+          "optional": true,
+          "struct": null
+        },
+        "previousFullNames": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileDetailsRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "details": {
+          "optional": false,
+          "struct": "ProfileDetails"
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        },
+        "today": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileExportPickRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "exportId": {
+          "optional": false,
+          "struct": null
+        },
+        "localDate": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileExportPrepareRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "includeHistory": {
+          "optional": false,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": true,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileIdRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileImportInspectRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "key": {
+          "optional": true,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": true,
+          "struct": null
+        },
+        "pickId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileImportKeyRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "pickId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfileImportRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "allowDuplicate": {
+          "optional": true,
+          "struct": null
+        },
+        "displayName": {
+          "optional": true,
+          "struct": null
+        },
+        "key": {
+          "optional": true,
+          "struct": null
+        },
+        "passphrase": {
+          "optional": true,
+          "struct": null
+        },
+        "pickId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ProfilePickRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "pickId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ReceivedAcceptRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "ids": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ReceivedDiscardRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "ids": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RecordIdRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RecoverRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "newPassphrase": {
+          "optional": false,
+          "struct": null
+        },
+        "recoveryKey": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RecoveryKeyGroup": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "index": {
+          "optional": false,
+          "struct": null
+        },
+        "value": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RenameProfileRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "displayName": {
+          "optional": false,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RenameRecordRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "name": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ResetRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "confirmation": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "RestoreRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "passphrase": {
+          "optional": true,
+          "struct": null
+        },
+        "pickId": {
+          "optional": false,
+          "struct": null
+        },
+        "recoveryKey": {
+          "optional": true,
+          "struct": null
+        },
+        "replace": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "SaveAiResultRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "keptId": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "sources": {
+          "optional": true,
+          "struct": "SourceSpan"
+        }
+      },
+      "open": false
+    },
+    "SourceSpan": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "end": {
+          "optional": false,
+          "struct": null
+        },
+        "page": {
+          "optional": false,
+          "struct": null
+        },
+        "start": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "Speed": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "answerMilliTps": {
+          "optional": false,
+          "struct": null
+        },
+        "promptMilliTps": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "SummarizeRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "lang": {
+          "optional": false,
+          "struct": null
+        },
+        "pageCount": {
+          "optional": true,
+          "struct": null
+        },
+        "pages": {
+          "optional": false,
+          "struct": "Page"
+        },
+        "recordId": {
+          "optional": true,
+          "struct": null
+        },
+        "ticket": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "TextExportCopyRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "kept": {
+          "optional": true,
+          "struct": "Hit"
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "text": {
+          "optional": false,
+          "struct": null
+        },
+        "ticket": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "TextExportPickRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "ticket": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "TextExportPickedRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "kept": {
+          "optional": true,
+          "struct": "Hit"
+        },
+        "pickId": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "text": {
+          "optional": false,
+          "struct": null
+        },
+        "ticket": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "TextReadCancelRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "readId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "UnlockPdfRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "password": {
+          "optional": false,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "UpdateFolderRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderId": {
+          "optional": false,
+          "struct": null
+        },
+        "name": {
+          "optional": false,
+          "struct": null
+        },
+        "parentId": {
+          "optional": true,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "VideoAppendRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "data": {
+          "optional": false,
+          "struct": null
+        },
+        "recordingId": {
+          "optional": false,
+          "struct": null
+        },
+        "sequence": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "VideoCloseRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "token": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "VideoRecordRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "VideoRecordingRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordingId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "VideoRecoverRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "keep": {
+          "optional": false,
+          "struct": null
+        },
+        "recordingId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "VideoStartRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "folderIds": {
+          "optional": false,
+          "struct": null
+        },
+        "name": {
+          "optional": false,
+          "struct": null
+        },
+        "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "ViewPageRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "page": {
+          "optional": false,
+          "struct": null
+        },
+        "password": {
+          "optional": true,
+          "struct": null
+        },
+        "recordId": {
+          "optional": false,
+          "struct": null
+        },
+        "width": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    }
+  }
+}

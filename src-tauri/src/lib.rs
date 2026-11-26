@@ -678,7 +678,7 @@ impl From<VaultError> for PublicError {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PassphraseRulesRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -692,7 +692,7 @@ impl Drop for PassphraseRulesRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateVaultRequest {
     passphrase: String,
     initial_profile_name: String,
@@ -718,13 +718,14 @@ struct HideUnavailableRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PassphraseRequest {
     passphrase: String,
 }
 
 /// Add a vault (#357 4c): the name it will be found by, its passphrase and its first person.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AddVaultRequest {
     name: String,
     passphrase: String,
@@ -741,6 +742,7 @@ impl Drop for AddVaultRequest {
 
 /// "Find my other vaults" (#357 4c-2): the one passphrase tried on every folder the registry does not list.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FindVaultsRequest {
     passphrase: String,
 }
@@ -763,12 +765,14 @@ struct FoundVaultsReply {
 
 /// One found vault and the name its owner now gives it.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedFoundVault {
     id: String,
     name: String,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NameFoundRequest {
     vaults: Vec<NamedFoundVault>,
 }
@@ -783,6 +787,7 @@ impl Drop for NameFoundRequest {
 
 /// Unlock by name (#357): whose vault, and its passphrase. An empty name is the default vault.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct NamedPassphraseRequest {
     name: String,
     passphrase: String,
@@ -815,7 +820,7 @@ struct BackupWriteRequest {
 
 /// The passphrase a backup was made with, or its recovery key: exactly one.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoreRequest {
     pick_id: Uuid,
     passphrase: Option<String>,
@@ -852,7 +857,7 @@ impl Drop for RestoreRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoverRequest {
     recovery_key: String,
     new_passphrase: String,
@@ -876,20 +881,20 @@ struct RecoverResponse {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecoveryKeyGroup {
     index: usize,
     value: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConfirmRecoveryKeyRequest {
     groups: Vec<RecoveryKeyGroup>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChangePassphraseRequest {
     current_passphrase: String,
     new_passphrase: String,
@@ -904,7 +909,7 @@ impl Drop for ChangePassphraseRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct NameRequest {
     display_name: String,
     #[serde(default)]
@@ -928,7 +933,7 @@ struct RenameProfileRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FolderRequest {
     profile_id: Uuid,
     parent_id: Option<Uuid>,
@@ -936,7 +941,7 @@ struct FolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateFolderRequest {
     folder_id: Uuid,
     parent_id: Option<Uuid>,
@@ -944,41 +949,41 @@ struct UpdateFolderRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersRequest {
     record_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameRecordRequest {
     record_id: Uuid,
     name: String,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AssignFoldersBatchRequest {
     record_ids: Vec<Uuid>,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImportRequest {
     profile_id: Uuid,
     folder_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ExportRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PhotoRequest {
     record_id: Uuid,
 }
@@ -1413,7 +1418,7 @@ impl std::io::Write for LimitedBuffer {
 /// Finishes an import or export whose picker already closed. The paths the
 /// picker returned stay native, under `pick_id`; the renderer never sees them.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedImportRequest {
     pick_id: Uuid,
     profile_id: Uuid,
@@ -1421,7 +1426,7 @@ struct PickedImportRequest {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PickedExportRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -1986,13 +1991,13 @@ impl PendingPicks {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RecordIdRequest {
     record_id: Uuid,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProfileIdRequest {
     profile_id: Uuid,
 }
@@ -2021,13 +2026,14 @@ struct AiAnswer<T> {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AiResultRequest {
     record_id: Uuid,
     result_id: Uuid,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ResetRequest {
     confirmation: String,
 }
@@ -3604,6 +3610,7 @@ fn vault_touch(store: State<'_, StoreHandle>) {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AutoLockRequest {
     minutes: u64,
 }
@@ -4367,7 +4374,7 @@ async fn vault_recover(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BackupPickRequest {
     /// Today's date on the patient's own calendar, `YYYY-MM-DD`.
     #[serde(default)]
@@ -5722,7 +5729,7 @@ struct ReceivedState {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MoveToPersonRequest {
     record_ids: Vec<Uuid>,
     profile_id: Uuid,
@@ -5871,14 +5878,14 @@ fn accept_received_batch(
 
 /// The files the patient confirmed adding (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedAcceptRequest {
     ids: Vec<Uuid>,
 }
 
 /// The files the patient said No to (#133).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReceivedDiscardRequest {
     ids: Vec<Uuid>,
 }
@@ -5941,7 +5948,7 @@ async fn received_accept(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ViewPageRequest {
     record_id: Uuid,
     page: u32,
@@ -6096,7 +6103,7 @@ fn cancel_native_pdf(_app: &tauri::AppHandle) {
 /// none of its own. Short, with no control characters.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfLabels {
     close: String,
     previous: String,
@@ -6107,6 +6114,9 @@ struct AndroidPdfLabels {
     page: String,
     /// "Page {page} of {total}".
     page_status: String,
+    /// "Page {page} of {total} could not be shown": said, and set as the page's description, where
+    /// a page fails to render (it used to be dropped here, so the reader showed nothing).
+    page_failed: String,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -6120,6 +6130,7 @@ impl AndroidPdfLabels {
             &self.zoom_out,
             &self.page,
             &self.page_status,
+            &self.page_failed,
         ]
         .into_iter()
         .all(|label| {
@@ -6130,7 +6141,7 @@ impl AndroidPdfLabels {
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AndroidPdfRequest {
     record_id: Uuid,
     labels: AndroidPdfLabels,
@@ -6213,6 +6224,7 @@ async fn vault_read_android_pdf(
                     zoom_out: &request.labels.zoom_out,
                     page: &request.labels.page,
                     page_status: &request.labels.page_status,
+                    page_failed: &request.labels.page_failed,
                 },
                 activity,
             },
@@ -6248,7 +6260,7 @@ fn memfd_size(fd: &std::os::fd::OwnedFd) -> u64 {
 
 /// Where a quoted span of a page's text is on the page picture (#292).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PageBoxesRequest {
     record_id: Uuid,
     page: u32,
@@ -6366,7 +6378,7 @@ async fn vault_page_boxes(
 
 /// A document's whole text for the AI helper (#72 part B, AI-10).
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DocumentTextRequest {
     record_id: Uuid,
     /// Who asks: the screen's own id, so that its cancel ends only this read.
@@ -6594,7 +6606,7 @@ async fn vault_document_text(
 
 /// Which text read to stop: the id the screen gave when it asked.
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextReadCancelRequest {
     read_id: Uuid,
 }
@@ -6623,7 +6635,7 @@ async fn vault_record_known_details(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -6662,7 +6674,7 @@ async fn vault_export_text_pick(
 const MAX_EXPORT_TEXT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportPickedRequest {
     pick_id: Uuid,
     record_id: Uuid,
@@ -6784,7 +6796,7 @@ async fn vault_export_text_picked(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TextExportCopyRequest {
     record_id: Uuid,
     ticket: Uuid,
@@ -7285,7 +7297,7 @@ async fn vault_is_locked_pdf(
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UnlockPdfRequest {
     record_id: Uuid,
     password: String,
@@ -10010,74 +10022,742 @@ mod tests {
         .is_err());
     }
 
-    /// Every request struct this file deserializes from the renderer spells its multi-word fields in
-    /// camelCase on the wire. Without `rename_all = "camelCase"` a field like `hidden_people_documents`
-    /// silently never receives the renderer's `hiddenPeopleDocuments` (unknown keys are ignored
-    /// unless the struct denies them) and takes its default; that cost a patient the recovery from
-    /// a lost document. A struct that is not a renderer request goes on the short list below, with a
-    /// reason.
+    /// What the renderer sends reaches a command through serde, which by default IGNORES a key it
+    /// does not know and fills a field it does not receive from its default: a spelling slip
+    /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
+    /// it did for the recovery of a hidden person's lost document. So, for every Tauri command
+    /// (a function under the command attribute) in any source file, each parameter type that is a
+    /// struct this crate deserializes must:
+    ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
+    ///     every struct such a request holds); and
+    ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
+    ///     renderer does.
+    ///
+    /// Every struct such a request holds in a field is held to the same two rules. The attribute is
+    /// not spelled out here: `production_webview_configuration_has_no_development_network_access`
+    /// counts its exact text in this file, and a quoted copy would add one to the count.
     #[test]
-    fn deserialized_structs_with_multi_word_fields_are_camel_case_on_the_wire() {
-        // (struct name, why it is not read from the renderer)
-        let not_from_the_renderer: [(&str, &str); 0] = [];
-        let source = include_str!("lib.rs");
-        let code = &source[..source.find("\n#[cfg(test)]\nmod tests {").unwrap()];
-        let mut offenders = Vec::new();
-        let mut attributes = String::new();
-        let mut lines = code.lines().peekable();
-        while let Some(line) = lines.next() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("#[") {
-                attributes.push_str(trimmed);
-                attributes.push('\n');
-                continue;
+    fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
+        use std::collections::{BTreeMap, BTreeSet};
+        struct Definition {
+            attributes: String,
+            fields: Vec<(String, String)>,
+            field_attributes: Vec<String>,
+            file: String,
+        }
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
             }
-            if trimmed.starts_with("//") {
-                continue;
-            }
-            let declaration = trimmed
-                .strip_prefix("pub(crate) ")
-                .or_else(|| trimmed.strip_prefix("pub "))
-                .unwrap_or(trimmed);
-            if let Some(rest) = declaration.strip_prefix("struct ") {
-                if attributes.contains("Deserialize") && declaration.ends_with('{') {
-                    let name = rest
-                        .split(|c: char| !c.is_alphanumeric() && c != '_')
-                        .next()
-                        .unwrap();
-                    let mut multi_word = Vec::new();
-                    for field in lines.by_ref() {
-                        let field = field.trim();
-                        if field == "}" {
-                            break;
-                        }
-                        let field = field.strip_prefix("pub ").unwrap_or(field);
-                        if let Some((field_name, _)) = field.split_once(':') {
-                            if !field_name.starts_with("//")
-                                && !field_name.starts_with('#')
-                                && field_name.contains('_')
-                            {
-                                multi_word.push(field_name.to_owned());
+        }
+        fn words(text: &str) -> Vec<&str> {
+            text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|word| !word.is_empty())
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        // The file system's order is not the same on every machine, and a struct name defined in
+        // two files must be read the same way on all of them.
+        files.sort();
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let mut definitions: BTreeMap<String, Definition> = BTreeMap::new();
+        // Struct names defined more than once with different contents (the first one, in file
+        // order, is the one read), and the enums commands may reach.
+        let mut conflicts: BTreeSet<String> = BTreeSet::new();
+        let mut enums: BTreeSet<String> = BTreeSet::new();
+        // The other copies of a conflicting name: each is checked on its own below, since the
+        // contract can only name one.
+        let mut conflict_copies: Vec<(String, Definition)> = Vec::new();
+        // Types with a hand-written `impl Deserialize`: what it accepts is not in the source's
+        // attributes, so a command may not take one.
+        let mut manual_impls: BTreeSet<String> = BTreeSet::new();
+        let mut command_parameters: Vec<(String, String)> = Vec::new();
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            let code = &text[..end];
+            let mut attributes = String::new();
+            let mut lines = code.lines().peekable();
+            while let Some(line) = lines.next() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("#[") {
+                    attributes.push_str(trimmed);
+                    attributes.push('\n');
+                    continue;
+                }
+                if trimmed.starts_with("//") {
+                    continue;
+                }
+                let declaration = trimmed
+                    .strip_prefix("pub(crate) ")
+                    .or_else(|| trimmed.strip_prefix("pub "))
+                    .unwrap_or(trimmed);
+                if attributes.contains("tauri::command") {
+                    // The parameter list, however many lines it takes.
+                    let mut signature = declaration.to_owned();
+                    while !signature.contains("->") && !signature.contains('{') {
+                        match lines.next() {
+                            Some(next) => {
+                                signature.push(' ');
+                                signature.push_str(next.trim());
                             }
+                            None => break,
                         }
                     }
-                    let listed = not_from_the_renderer
-                        .iter()
-                        .any(|(listed, _)| *listed == name);
-                    if !multi_word.is_empty()
-                        && !attributes.contains("rename_all = \"camelCase\"")
-                        && !listed
+                    if let Some(open) = signature.find('(') {
+                        let function = signature[..open]
+                            .rsplit(' ')
+                            .next()
+                            .unwrap()
+                            .trim_end_matches(['<', '>'])
+                            .to_owned();
+                        let parameters = &signature[open..];
+                        command_parameters.push((function, parameters.to_owned()));
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("struct ") {
+                    if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                        let struct_name = rest
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .next()
+                            .unwrap()
+                            .to_owned();
+                        let mut fields = Vec::new();
+                        let mut field_attributes = Vec::new();
+                        let mut pending_attributes = String::new();
+                        for field in lines.by_ref() {
+                            let field = field.trim();
+                            if field == "}" {
+                                break;
+                            }
+                            if field.starts_with('#') {
+                                pending_attributes.push_str(field);
+                                pending_attributes.push('\n');
+                                continue;
+                            }
+                            if field.starts_with("//") {
+                                continue;
+                            }
+                            let field = field
+                                .strip_prefix("pub(crate) ")
+                                .or_else(|| field.strip_prefix("pub "))
+                                .unwrap_or(field);
+                            if let Some((field_name, field_type)) = field.split_once(':') {
+                                fields.push((
+                                    field_name.trim().trim_start_matches("r#").to_owned(),
+                                    field_type.trim().trim_end_matches(',').to_owned(),
+                                ));
+                                field_attributes.push(std::mem::take(&mut pending_attributes));
+                            }
+                        }
+                        let definition = Definition {
+                            attributes: attributes.clone(),
+                            fields,
+                            field_attributes,
+                            file: name.clone(),
+                        };
+                        let differs = definitions.get(&struct_name).map(|first| {
+                            first.attributes != definition.attributes
+                                || first.fields != definition.fields
+                                || first.field_attributes != definition.field_attributes
+                        });
+                        match differs {
+                            None => {
+                                definitions.insert(struct_name, definition);
+                            }
+                            Some(true) => {
+                                conflicts.insert(struct_name.clone());
+                                conflict_copies.push((struct_name, definition));
+                            }
+                            Some(false) => {}
+                        }
+                    }
+                } else if declaration.starts_with("impl") && declaration.contains("Deserialize<") {
+                    // Whatever the lifetime is called (`'de`, `'a`, `'__de`, `'_`) and however the
+                    // trait is named (`Deserialize`, `serde::Deserialize`, `serde::de::Deserialize`).
+                    for part in declaration.split("Deserialize<").skip(1) {
+                        if let Some((_, rest)) = part.split_once("> for ") {
+                            manual_impls.insert(
+                                rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .next()
+                                    .unwrap()
+                                    .to_owned(),
+                            );
+                        }
+                    }
+                } else if let Some(rest) = declaration.strip_prefix("enum ") {
+                    if attributes.contains("Deserialize") {
+                        enums.insert(
+                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .next()
+                                .unwrap()
+                                .to_owned(),
+                        );
+                    }
+                }
+                attributes.clear();
+            }
+        }
+        // The structs a command takes, and (for the camelCase rule only) every struct they hold.
+        let mut at_the_command = BTreeSet::new();
+        for (_, parameters) in &command_parameters {
+            for word in words(parameters) {
+                if definitions.contains_key(word) && !conflicts.contains(word) {
+                    at_the_command.insert(word.to_owned());
+                }
+            }
+        }
+        assert!(
+            at_the_command.len() >= 40,
+            "only {} command argument structs found: the scan is not reading the commands",
+            at_the_command.len()
+        );
+        let mut every = at_the_command.clone();
+        let mut pending: Vec<String> = at_the_command.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            for (_, field_type) in &definitions[&name].fields {
+                for word in words(field_type) {
+                    if definitions.contains_key(word)
+                        && !conflicts.contains(word)
+                        && every.insert(word.to_owned())
                     {
-                        offenders.push(format!("{name} ({})", multi_word.join(", ")));
+                        pending.push(word.to_owned());
                     }
                 }
             }
-            attributes.clear();
         }
+        let mut problems = Vec::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let multi_word = definition
+                .fields
+                .iter()
+                .any(|(field, _)| field.contains('_'));
+            if multi_word && !definition.attributes.contains("rename_all = \"camelCase\"") {
+                problems.push(format!(
+                    "{name} ({}) needs rename_all = \"camelCase\"",
+                    definition.file
+                ));
+            }
+            if !definition.attributes.contains("deny_unknown_fields") {
+                problems.push(format!(
+                    "{name} ({}) needs deny_unknown_fields",
+                    definition.file
+                ));
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
+
+        // The contract the renderer's calls are checked against (src/commandArgumentContract.test.ts):
+        // every command's arguments and every struct they reach, written sorted to a checked-in
+        // file. A change to a command or a struct fails here until the file is regenerated, so
+        // the renderer's check never reads an out-of-date list.
+        #[derive(serde::Serialize, PartialEq)]
+        struct ArgumentContract {
+            optional: bool,
+            #[serde(rename = "struct")]
+            struct_name: Option<String>,
+        }
+        #[derive(serde::Serialize, PartialEq)]
+        struct CommandContract {
+            arguments: BTreeMap<String, ArgumentContract>,
+            raw: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct StructContract {
+            /// Defined more than once with different contents: read as `open`.
+            ambiguous: bool,
+            #[serde(rename = "denyUnknown")]
+            deny_unknown: bool,
+            fields: BTreeMap<String, ArgumentContract>,
+            open: bool,
+        }
+        #[derive(serde::Serialize)]
+        struct Contract {
+            /// Where a key cannot be checked (the elements of a list of structs, an enum's
+            /// variants), by command: this list is for the reviewer of a change to read.
+            #[serde(rename = "blindSpots")]
+            blind_spots: BTreeMap<String, Vec<String>>,
+            commands: BTreeMap<String, CommandContract>,
+            #[serde(rename = "generatedBy")]
+            generated_by: &'static str,
+            structs: BTreeMap<String, StructContract>,
+        }
+        fn camel(name: &str) -> String {
+            let mut out = String::new();
+            let mut upper = false;
+            for c in name.chars() {
+                if c == '_' {
+                    upper = true;
+                } else if upper {
+                    out.extend(c.to_uppercase());
+                    upper = false;
+                } else {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        // Whether a `#[serde(..)]` attribute in `attributes` names `word` (as a whole word).
+        fn serde_has(attributes: &str, word: &str) -> bool {
+            attributes
+                .lines()
+                .filter(|line| line.contains("serde("))
+                .any(|line| words(line).contains(&word))
+        }
+        fn split_top_level(list: &str) -> Vec<String> {
+            let mut parts = Vec::new();
+            let mut depth = 0_i32;
+            let mut current = String::new();
+            let mut previous = ' ';
+            for c in list.chars() {
+                match c {
+                    '(' | '<' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    '>' if previous != '-' => depth -= 1,
+                    _ => {}
+                }
+                if c == ',' && depth == 0 {
+                    parts.push(current.trim().to_owned());
+                    current.clear();
+                } else {
+                    current.push(c);
+                }
+                previous = c;
+            }
+            if !current.trim().is_empty() {
+                parts.push(current.trim().to_owned());
+            }
+            parts
+        }
+        let struct_in = |ty: &str| -> Option<String> {
+            words(ty)
+                .into_iter()
+                .find(|word| definitions.contains_key(*word))
+                .map(str::to_owned)
+        };
+        // What the list of a struct's or a command's arguments cannot say about the values it takes.
+        let unchecked = |ty: &str| -> Option<String> {
+            let words = words(ty);
+            if let Some(name) = words.iter().find(|word| enums.contains(**word)) {
+                return Some(format!("enum {name}"));
+            }
+            let several = ty.contains("Vec<") || ty.contains("Map<") || ty.contains('[');
+            if several {
+                return struct_in(ty).map(|name| format!("the elements of {name}"));
+            }
+            None
+        };
+        let mut contract = Contract {
+            blind_spots: BTreeMap::new(),
+            commands: BTreeMap::new(),
+            generated_by: "the guard test every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire in src-tauri/src/lib.rs; regenerate with UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys",
+            structs: BTreeMap::new(),
+        };
+        let mut command_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (function, parameters) in &command_parameters {
+            let mut depth = 0_i32;
+            let mut close = None;
+            for (index, c) in parameters.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let close = close.unwrap_or_else(|| panic!("{function}: no closing parenthesis"));
+            let mut command = CommandContract {
+                arguments: BTreeMap::new(),
+                raw: false,
+            };
+            for parameter in split_top_level(&parameters[1..close]) {
+                let (name, ty) = parameter
+                    .split_once(':')
+                    .unwrap_or_else(|| panic!("{function}: parameter {parameter:?}"));
+                // A leading underscore (an unused argument) is not part of the wire name.
+                let name = name
+                    .trim()
+                    .trim_start_matches("mut ")
+                    .trim()
+                    .trim_start_matches('_');
+                let ty = ty.trim().trim_start_matches('&').trim();
+                let injected = [
+                    "State<",
+                    "tauri::State<",
+                    "AppHandle",
+                    "tauri::AppHandle",
+                    "Window",
+                    "tauri::Window",
+                    "WebviewWindow",
+                    "tauri::WebviewWindow",
+                ]
+                .iter()
+                .any(|prefix| ty.starts_with(prefix));
+                if injected {
+                    continue;
+                }
+                if ty.starts_with("tauri::ipc::Request") {
+                    command.raw = true;
+                    continue;
+                }
+                if let Some(kind) = unchecked(ty) {
+                    command_blind
+                        .entry(function.clone())
+                        .or_default()
+                        .insert(format!("{}: {kind}", camel(name)));
+                }
+                command.arguments.insert(
+                    camel(name),
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            match contract.commands.get(function) {
+                // The same command written once for each platform (`#[cfg]`) takes the same
+                // arguments in each.
+                Some(existing) => assert!(
+                    *existing == command,
+                    "the command {function} is defined twice with different arguments"
+                ),
+                None => {
+                    contract.commands.insert(function.clone(), command);
+                }
+            }
+        }
+        // A custom deserializer (or a conversion through another type) decides what is accepted
+        // where the list cannot see it. The few that only validate a list or accept a null are
+        // named here; any other is refused until it is modelled and named.
+        const REVIEWED_DESERIALIZERS: [(&str, &str, &str, &str); 3] = [
+            (
+                "Page",
+                "document_collection_pickup.rs",
+                "next_cursor",
+                "nullable",
+            ),
+            (
+                "ProfileDetails",
+                "vault.rs",
+                "previous_full_names",
+                "present_previous_names",
+            ),
+            (
+                "SaveAiResultRequest",
+                "lib.rs",
+                "sources",
+                "summary_contract::deserialize_sources",
+            ),
+        ];
+        let custom_deserializers = |name: &str, definition: &Definition| -> Vec<String> {
+            let mut found = Vec::new();
+            for word in ["from", "try_from", "remote"] {
+                if serde_has(&definition.attributes, word) {
+                    found.push(format!("{name}: serde({word}) on the struct"));
+                }
+            }
+            // `flatten` defeats `deny_unknown_fields` (serde does not enforce it on a struct that
+            // flattens another), and `serde_as` / `serde_with` change what is accepted where the
+            // list cannot see it: a command argument may use none of them.
+            for attributes in
+                std::iter::once(&definition.attributes).chain(&definition.field_attributes)
+            {
+                if attributes.contains("#[serde_as") || attributes.contains("#[serde_with") {
+                    found.push(format!("{name}: serde_as or serde_with"));
+                }
+            }
+            for ((field, _), attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(attributes, "flatten") {
+                    found.push(format!(
+                        "{name}.{field}: serde(flatten) defeats deny_unknown_fields"
+                    ));
+                }
+                for word in ["with", "deserialize_with", "from", "try_from", "remote"] {
+                    if !serde_has(attributes, word) {
+                        continue;
+                    }
+                    let function = attributes
+                        .split("deserialize_with = \"")
+                        .nth(1)
+                        .and_then(|rest| rest.split('"').next());
+                    let reviewed = word == "deserialize_with"
+                        && function.is_some_and(|f| {
+                            REVIEWED_DESERIALIZERS.contains(&(
+                                name,
+                                definition.file.as_str(),
+                                field.as_str(),
+                                f,
+                            ))
+                        });
+                    if !reviewed {
+                        found.push(format!("{name}.{field}: serde({word}) on a field"));
+                    }
+                }
+            }
+            for (field, ty) in &definition.fields {
+                if let Some(word) = words(ty).into_iter().find(|w| manual_impls.contains(*w)) {
+                    found.push(format!(
+                        "{name}.{field}: {word} has a hand-written Deserialize"
+                    ));
+                }
+            }
+            found
+        };
+        // What the list cannot model is refused, so that nobody adds it unseen.
+        let mut unmodelled = Vec::new();
+        let mut struct_blind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for name in &every {
+            let definition = &definitions[name];
+            let camel_case = definition.attributes.contains("rename_all = \"camelCase\"");
+            if serde_has(&definition.attributes, "rename_all") && !camel_case {
+                unmodelled.push(format!("{name}: a rename_all other than camelCase"));
+            }
+            if serde_has(&definition.attributes, "alias") {
+                unmodelled.push(format!("{name}: an alias"));
+            }
+            unmodelled.extend(custom_deserializers(name, definition));
+            let mut fields = BTreeMap::new();
+            let mut open = conflicts.contains(name);
+            for ((field, ty), field_attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(field_attributes, "skip")
+                    || serde_has(field_attributes, "skip_deserializing")
+                {
+                    continue;
+                }
+                if serde_has(field_attributes, "flatten") {
+                    open = true;
+                }
+                if field_attributes.contains("rename(") || serde_has(field_attributes, "alias") {
+                    unmodelled.push(format!("{name}.{field}: a rename(..) or an alias"));
+                }
+                let key = match field_attributes.split("rename = \"").nth(1) {
+                    Some(rest) => rest.split('"').next().unwrap().to_owned(),
+                    None if camel_case => camel(field),
+                    None => field.clone(),
+                };
+                if let Some(kind) = unchecked(ty) {
+                    struct_blind
+                        .entry(name.clone())
+                        .or_default()
+                        .insert(format!("{name}.{key}: {kind}"));
+                }
+                fields.insert(
+                    key,
+                    ArgumentContract {
+                        optional: ty.starts_with("Option<")
+                            || serde_has(field_attributes, "default")
+                            || serde_has(&definition.attributes, "default"),
+                        struct_name: struct_in(ty),
+                    },
+                );
+            }
+            contract.structs.insert(
+                name.clone(),
+                StructContract {
+                    ambiguous: conflicts.contains(name),
+                    deny_unknown: definition.attributes.contains("deny_unknown_fields"),
+                    fields,
+                    open,
+                },
+            );
+        }
+        // A command that takes a type with a hand-written `impl Deserialize` itself.
+        for (function, parameters) in &command_parameters {
+            if let Some(word) = words(parameters)
+                .into_iter()
+                .find(|w| manual_impls.contains(*w))
+            {
+                unmodelled.push(format!("{function}: {word} has a hand-written Deserialize"));
+            }
+        }
+        // A struct name defined twice with different contents cannot be told apart by name: what
+        // a command or a struct reaches under that name is listed as an open, ambiguous struct,
+        // and its keys are not checked (a reviewer reads these in the file). So that it is not an
+        // escape from the rules, EVERY copy is held to them here.
+        let referenced: BTreeSet<String> = contract
+            .commands
+            .values()
+            .flat_map(|command| command.arguments.values())
+            .chain(contract.structs.values().flat_map(|s| s.fields.values()))
+            .filter_map(|argument| argument.struct_name.clone())
+            .filter(|name| conflicts.contains(name))
+            .collect();
+        // A copy of a conflicting name that is not what a command takes but the portal's own
+        // answer, which arrives in the portal's snake_case: it is held to `deny_unknown_fields`
+        // like the others but not to camelCase.
+        const PORTAL_ANSWERS: [(&str, &str); 1] = [("Page", "document_collection_pickup.rs")];
+        for name in &referenced {
+            let copies = std::iter::once(&definitions[name]).chain(
+                conflict_copies
+                    .iter()
+                    .filter(|(copy, _)| copy == name)
+                    .map(|(_, definition)| definition),
+            );
+            for copy in copies {
+                let multi_word = copy.fields.iter().any(|(field, _)| field.contains('_'));
+                let camel_case = copy.attributes.contains("rename_all = \"camelCase\"");
+                if !copy.attributes.contains("deny_unknown_fields") {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs deny_unknown_fields",
+                        copy.file
+                    ));
+                }
+                let portal_answer = PORTAL_ANSWERS.contains(&(name.as_str(), copy.file.as_str()));
+                if (multi_word && !camel_case && !portal_answer)
+                    || (serde_has(&copy.attributes, "rename_all") && !camel_case)
+                {
+                    unmodelled.push(format!(
+                        "{name} ({}, one of several): needs rename_all = \"camelCase\" or none",
+                        copy.file
+                    ));
+                }
+                if serde_has(&copy.attributes, "alias")
+                    || copy
+                        .field_attributes
+                        .iter()
+                        .any(|a| a.contains("rename(") || serde_has(a, "alias"))
+                {
+                    unmodelled.push(format!("{name} ({}): a rename(..) or an alias", copy.file));
+                }
+                unmodelled.extend(custom_deserializers(name, copy));
+            }
+        }
+        assert!(unmodelled.is_empty(), "{unmodelled:#?}");
+        for name in referenced {
+            contract.structs.entry(name).or_insert(StructContract {
+                ambiguous: true,
+                deny_unknown: false,
+                fields: BTreeMap::new(),
+                open: true,
+            });
+        }
+        // For each command: what its own arguments and every struct they reach cannot check.
+        for (function, command) in &contract.commands {
+            let mut reached: BTreeSet<String> = command
+                .arguments
+                .values()
+                .filter_map(|argument| argument.struct_name.clone())
+                .collect();
+            let mut pending: Vec<String> = reached.iter().cloned().collect();
+            while let Some(name) = pending.pop() {
+                for field in contract.structs[&name].fields.values() {
+                    if let Some(inner) = &field.struct_name {
+                        if reached.insert(inner.clone()) {
+                            pending.push(inner.clone());
+                        }
+                    }
+                }
+            }
+            let mut blind = command_blind.get(function).cloned().unwrap_or_default();
+            for name in &reached {
+                blind.extend(struct_blind.get(name).cloned().unwrap_or_default());
+            }
+            if !blind.is_empty() {
+                contract
+                    .blind_spots
+                    .insert(function.clone(), blind.into_iter().collect());
+            }
+        }
+        let generated = serde_json::to_string_pretty(&contract).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/command-args.json");
+        if std::env::var_os("UPDATE_COMMAND_ARGS").is_some() {
+            // CI must never rewrite the file and then pass: it compares.
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "UPDATE_COMMAND_ARGS is refused when CI is set: regenerate the file locally and commit it"
+            );
+            std::fs::write(&path, &generated).unwrap();
+        }
+        let checked_in = std::fs::read_to_string(&path).unwrap_or_default();
         assert!(
-            offenders.is_empty(),
-            "these request structs need #[serde(rename_all = \"camelCase\")]: {offenders:?}"
+            checked_in == generated,
+            "src-tauri/tests/fixtures/command-args.json is out of date with the commands: \
+             regenerate it with `UPDATE_COMMAND_ARGS=1 cargo test every_command_argument_denies_unknown_keys` \
+             and commit it"
         );
+    }
+
+    /// The Android reader's labels cross three layers: the renderer's `AndroidReaderLabels`
+    /// (src/vault.ts), this struct, and the plugin's own. `pageFailed` was sent by the renderer and
+    /// dropped by this struct, so the reader showed nothing for a page it could not draw. The
+    /// struct now takes exactly the renderer's labels: no more, no fewer.
+    #[test]
+    fn the_android_reader_labels_are_exactly_the_renderers_eight() {
+        let renderer = include_str!("../../src/vault.ts");
+        let interface = renderer
+            .split("export interface AndroidReaderLabels {")
+            .nth(1)
+            .unwrap();
+        let interface = &interface[..interface.find('}').unwrap()];
+        let mut sent: Vec<&str> = interface
+            .lines()
+            .filter_map(|line| line.trim().split_once(':').map(|(name, _)| name.trim()))
+            .collect();
+        sent.sort_unstable();
+        assert_eq!(
+            sent,
+            [
+                "close",
+                "next",
+                "page",
+                "pageFailed",
+                "pageStatus",
+                "previous",
+                "zoomIn",
+                "zoomOut"
+            ]
+        );
+        let all = sent
+            .iter()
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let labels: AndroidPdfLabels = serde_json::from_str(&format!("{{{all}}}")).unwrap();
+        assert!(labels.valid());
+        assert_eq!(labels.page_failed, "A label");
+        // One fewer is refused (a missing label would be shown as nothing), and so is one more.
+        let fewer = sent
+            .iter()
+            .filter(|name| **name != "pageFailed")
+            .map(|name| format!(r#""{name}":"A label""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(serde_json::from_str::<AndroidPdfLabels>(&format!("{{{fewer}}}")).is_err());
+        assert!(
+            serde_json::from_str::<AndroidPdfLabels>(&format!(r#"{{{all},"extra":"x"}}"#)).is_err()
+        );
+        // A label that is blank or has a control character is not valid.
+        let blank: AndroidPdfLabels = serde_json::from_str(
+            &format!("{{{all}}}").replace(r#""pageFailed":"A label""#, r#""pageFailed":"""#),
+        )
+        .unwrap();
+        assert!(!blank.valid());
     }
 
     #[test]
