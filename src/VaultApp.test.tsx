@@ -17489,7 +17489,11 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     render(<VaultApp bridge={bridge} />);
     await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
-    expect(screen.getByText(humanText("Working…"))).toBeVisible();
+    // In the overhaul the Add document button says "Working…" too, beside the status line: more
+    // than one place says it, so the check is that the state is shown, not that it is shown once.
+    expect(screen.getAllByText(humanText("Working…")).length).toBeGreaterThan(
+      0,
+    );
     await act(async () => pick.settle(null));
     expect(
       await screen.findByText(humanText("No files selected. Nothing changed.")),
@@ -17592,7 +17596,9 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     await waitFor(() => expect(pickImportFiles).toHaveBeenCalledTimes(2));
     // The first session's picker ends while the new one is still open: the new one is still working.
     await act(async () => first.settle(null));
-    expect(screen.getByText(humanText("Working…"))).toBeVisible();
+    expect(screen.getAllByText(humanText("Working…")).length).toBeGreaterThan(
+      0,
+    );
     await act(async () => second.settle(null));
     await waitFor(() => expect(newButton()).toBeEnabled());
   });
