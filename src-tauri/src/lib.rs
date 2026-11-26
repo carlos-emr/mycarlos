@@ -966,6 +966,10 @@ struct ImportRequest {
 #[serde(rename_all = "camelCase")]
 struct ExportRequest {
     record_id: Uuid,
+    /// Today's date on the patient's own calendar, `YYYY-MM-DD`, for the name the save dialog
+    /// suggests. Optional: an older caller that sends none gets the UTC date.
+    #[serde(default)]
+    local_date: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -4181,6 +4185,27 @@ fn is_plain_date(text: &str) -> bool {
         })
 }
 
+/// The name a single-document export suggests in the save dialog: "Document <date>" plus the
+/// document's own extension, never the document's name, which can be a person's, a clinic's or a
+/// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
+/// so a patient who wants the original name can type it. The date is the patient's own day where
+/// the renderer gives one that reads as a date, else the UTC date; the extension is kept only
+/// when it is 1 to 8 ASCII letters or digits, so nothing odd reaches a file name.
+fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    let date = local_date
+        .filter(|date| is_plain_date(date))
+        .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
+    match display_name.rsplit_once('.') {
+        Some((_, extension))
+            if (1..=8).contains(&extension.len())
+                && extension.bytes().all(|byte| byte.is_ascii_alphanumeric()) =>
+        {
+            format!("Document {date}.{extension}")
+        }
+        _ => format!("Document {date}"),
+    }
+}
+
 /// What a saved backup was: the name of the file written, where the
 /// platform says it, and how many bytes it holds, which tells a complete
 /// file from an empty or partial one.
@@ -6660,8 +6685,8 @@ fn receive_opened(app: &tauri::AppHandle, urls: &[Url]) {
     received.receive(urls.len(), sources);
 }
 
-/// Opens the save picker with the record's name. Returns the id of the chosen
-/// destination, or `None` when the picker was cancelled. The copy itself is
+/// Opens the save picker with a neutral suggested name (see `export_suggested_name`). Returns the
+/// id of the chosen destination, or `None` when the picker was cancelled. The copy itself is
 /// written by `vault_export_picked`.
 #[tauri::command]
 async fn vault_export_pick(
@@ -6672,9 +6697,15 @@ async fn vault_export_pick(
 ) -> CommandResult<Option<Uuid>> {
     let store = store.pin();
     let record_id = request.record_id;
+    let local_date = request.local_date;
     let session = picks.session();
-    let suggested_name =
-        run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
+    // `export_name` still refuses a lost or hidden record before a picker opens; only its answer
+    // (the document's own name) is not what the dialog is given.
+    let suggested_name = export_suggested_name(
+        &run_blocking(store.arc(), move |store| store.export_name(record_id)).await?,
+        local_date.as_deref(),
+        now_ms(),
+    );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
@@ -8402,6 +8433,62 @@ mod tests {
         ] {
             assert!(!is_plain_date(text), "{text}");
         }
+    }
+
+    #[test]
+    fn a_single_document_export_suggests_a_neutral_name_with_the_documents_own_extension() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        // The document's name never reaches the dialog, whoever it names.
+        for (own, expected) in [
+            ("FAKE Ana Lopez referral.pdf", "Document 2026-11-26.pdf"),
+            ("Photo.jpg", "Document 2026-11-26.jpg"),
+            ("Holiday.JPEG", "Document 2026-11-26.JPEG"),
+            ("scan.final.png", "Document 2026-11-26.png"),
+            (".jpg", "Document 2026-11-26.jpg"),
+            ("no extension at all", "Document 2026-11-26"),
+            ("ends with a dot.", "Document 2026-11-26"),
+            ("odd.é", "Document 2026-11-26"),
+            ("long.extensions9", "Document 2026-11-26"),
+            ("slash.p/f", "Document 2026-11-26"),
+            ("dots.p.d.f", "Document 2026-11-26.f"),
+        ] {
+            let name = export_suggested_name(own, Some("2026-11-26"), utc);
+            assert_eq!(name, expected, "{own}");
+            assert!(!name.to_lowercase().contains("ana"), "{own}");
+        }
+    }
+
+    #[test]
+    fn a_single_document_export_names_the_patients_own_day_or_else_the_utc_day() {
+        let utc = 1_790_553_600_000; // 2026-09-28 UTC
+        assert_eq!(
+            export_suggested_name("a.pdf", Some("2026-09-27"), utc),
+            "Document 2026-09-27.pdf"
+        );
+        // A date that does not read as a date is never put in a file name.
+        for text in ["../2026-09-27", "2026-9-27", "2026-09-27\\x", ""] {
+            assert_eq!(
+                export_suggested_name("a.pdf", Some(text), utc),
+                "Document 2026-09-28.pdf",
+                "{text}"
+            );
+        }
+        assert_eq!(
+            export_suggested_name("a.pdf", None, utc),
+            "Document 2026-09-28.pdf"
+        );
+    }
+
+    #[test]
+    fn an_export_request_without_a_date_still_reads() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let without: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}"}}"#)).unwrap();
+        assert!(without.local_date.is_none());
+        let with: ExportRequest =
+            serde_json::from_str(&format!(r#"{{"recordId":"{id}","localDate":"2026-11-26"}}"#))
+                .unwrap();
+        assert_eq!(with.local_date.as_deref(), Some("2026-11-26"));
     }
 
     #[test]
