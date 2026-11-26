@@ -35,6 +35,7 @@ import type {
   PersonDetails,
   ReceivedAcceptOutcome,
   SavedBackup,
+  SavedProfileExport,
   VaultBridge,
   VaultSnapshot,
   ViewedPage,
@@ -4788,6 +4789,160 @@ describe("durable vault UI", () => {
         ),
       ),
     ).toBeVisible();
+  });
+
+  /** An unlocked vault, the hand-over dialog taken as far as the file being written: that save
+   * stays pending until `finishSave` is called. A lock takes 50 ms; the page can be hidden. */
+  async function handOverSavePending() {
+    const user = userEvent.setup();
+    let finishSave: (saved: SavedProfileExport) => void = () => {};
+    let failSave: (error: unknown) => void = () => {};
+    const summaryOfOne = () => ({
+      documents: 1,
+      hidden: 0,
+      folders: 0,
+      aiAnswers: 0,
+      withClinicEvidence: 0,
+      leftOutDamaged: 0,
+      evidenceLeftOut: 0,
+      historyEntries: 0,
+      plaintextBytes: 100,
+    });
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      prepareProfileExport: vi.fn().mockResolvedValue({
+        exportId: "export-1",
+        generatedKey: "ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345",
+        summary: summaryOfOne(),
+      }),
+      pickProfileExportDestination: vi.fn().mockResolvedValue("pick-4"),
+      saveProfileExportToPicked: vi.fn(
+        () =>
+          new Promise<SavedProfileExport>((resolve, reject) => {
+            finishSave = resolve;
+            failSave = reject;
+          }),
+      ),
+      lock: vi.fn(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 50)),
+      ),
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Hand records over…") }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Continue") }),
+    );
+    await user.click(
+      await within(dialog).findByRole("checkbox", {
+        name: humanText(/I have written the key down/),
+      }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: humanText("Continue") }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Choose where to save…"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.saveProfileExportToPicked).toHaveBeenCalledWith("pick-4"),
+    );
+    const setVisibility = (state: DocumentVisibilityState) =>
+      act(async () => {
+        visibilityState = state;
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    const finish = () =>
+      act(async () =>
+        finishSave({
+          name: "FAKE.mycarloshandover",
+          bytes: 10,
+          summary: summaryOfOne(),
+        }),
+      );
+    const fail = () =>
+      act(async () => failSave({ code: "export_failed", message: "FAKE" }));
+    return { bridge, setVisibility, finish, fail };
+  }
+
+  it("holds a lock for a person's records being saved to a file, then locks when the file is written", async () => {
+    const { bridge, setVisibility, finish } = await handOverSavePending();
+    await setVisibility("hidden");
+    // Locking now would cancel the write: content is hidden and the lock is owed.
+    expect(bridge.lock).not.toHaveBeenCalled();
+    expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
+    // Coming back does not show the library again: the lock is still owed.
+    await setVisibility("visible");
+    expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
+    await finish();
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    expect(
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("a file that could not be written frees the hold too: a page hidden afterwards locks, and one hidden meanwhile locks when it fails", async () => {
+    const first = await handOverSavePending();
+    await first.fail();
+    await first.setVisibility("hidden");
+    await waitFor(() => expect(first.bridge.lock).toHaveBeenCalledOnce());
+    cleanup();
+    const second = await handOverSavePending();
+    await second.setVisibility("hidden");
+    expect(second.bridge.lock).not.toHaveBeenCalled();
+    await second.fail();
+    await waitFor(() => expect(second.bridge.lock).toHaveBeenCalledOnce());
+  });
+
+  it("locks a page hidden after an encrypted backup was written (the same shape through run)", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      lock: vi.fn(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 50)),
+      ),
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    await screen.findByText(humanText(/Encrypted backup saved/));
+    await act(async () => {
+      visibilityState = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+  });
+
+  it("locks a page hidden after the file was written: the write is over, nothing is owed", async () => {
+    const { bridge, setVisibility, finish } = await handOverSavePending();
+    await finish();
+    await setVisibility("hidden");
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
   });
 
   it("names the damaged document that stopped a backup", async () => {

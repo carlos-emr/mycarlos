@@ -822,6 +822,20 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
       return start();
     };
+    // The hand-over dialogs (a person's records saved to a file, or added from one) call the
+    // bridge themselves, not through `run`, so nothing else would end their operation: the hold
+    // would stay "a transfer ran" for good, and an automatic lock would hide the screen but
+    // never lock the vault. Bracketed here as `run` brackets its own: when the last operation
+    // is over the hold is freed, and a lock owed meanwhile now happens.
+    const handover = async <T,>(start: () => Promise<T>): Promise<T> => {
+      transferHold.operationStarted();
+      try {
+        return await transfer(start);
+      } finally {
+        if (transferHold.operationEnded() && lockHeldRef.current)
+          requestLock(true);
+      }
+    };
     return {
       ...bridge,
       // A check for new documents in this session, the patient's own or the
@@ -848,9 +862,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       pickProfileExportDestination: (exportId, localDate) =>
         track(bridge.pickProfileExportDestination(exportId, localDate)),
       saveProfileExportToPicked: (pickId) =>
-        transfer(() => bridge.saveProfileExportToPicked(pickId)),
+        handover(() => bridge.saveProfileExportToPicked(pickId)),
       pickProfileImportSource: () => track(bridge.pickProfileImportSource()),
-      importProfile: (request) => transfer(() => bridge.importProfile(request)),
+      importProfile: (request) => handover(() => bridge.importProfile(request)),
       pickRestoreSource: () => track(bridge.pickRestoreSource()),
       restore: async (pickId, credential, replace) => {
         try {
@@ -877,7 +891,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           bridge.aiExplain(term, context, lang, recordId, answerId),
         ),
     };
-  }, [answering, bridge, track, transferHold]);
+  }, [answering, bridge, requestLock, track, transferHold]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
