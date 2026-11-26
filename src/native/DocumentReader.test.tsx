@@ -817,6 +817,30 @@ describe("the document reader", () => {
     }
   });
 
+  it("keeps the reader's scroll padding at the top toolbar's height while the first page loads and while the password is asked for (review of #489, agent 4)", async () => {
+    const paddingIsToolbar = () => {
+      const reader = screen.getByRole("dialog", {
+        name: humanText("FAKE_Bloodwork.pdf"),
+      });
+      const toolbar = reader.querySelector<HTMLElement>(
+        ".native-reader-toolbar",
+      )!;
+      expect(toolbar.offsetHeight).toBeGreaterThan(0);
+      // So a field the focus is sent to is scrolled clear of the sticky toolbar, not under it.
+      expect(reader.style.scrollPaddingTop).toBe(`${toolbar.offsetHeight}px`);
+    };
+    // The first page is still being drawn: no page count yet, so no page bar.
+    const loading = renderReader(
+      vi.fn(() => new Promise<ViewedPage>(() => undefined)),
+    );
+    paddingIsToolbar();
+    loading.unmount();
+    // The document asks for its password: still no page bar.
+    renderReader(vi.fn().mockRejectedValue(refusal("pdf_locked")));
+    await screen.findByLabelText(humanText("Document password"));
+    paddingIsToolbar();
+  });
+
   it("starts a new cache and password session when the document changes", async () => {
     let unlockFirst!: (value: ViewedPage) => void;
     const first = vi
