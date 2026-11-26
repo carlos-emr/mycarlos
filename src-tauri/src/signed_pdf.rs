@@ -388,7 +388,7 @@ fn verify_cms(contents: &[u8], digest: &[u8]) -> Result<SignedBy, Refusal> {
     }
     let digest_algorithm: AlgorithmIdentifierOwned =
         digest_algorithm.decode_as().map_err(|_| Bad)?;
-    if false {
+    if digest_algorithm.oid != ID_SHA256 {
         return Err(Bad);
     }
     // CARLOS names its signer by issuer and serial number.
