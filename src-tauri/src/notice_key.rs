@@ -323,9 +323,21 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         self.wipe(|entry| entry.vault_id == vault_id && !links.contains(&entry.link_id))
     }
 
-    /// The keys of any other vault, when `vault_id` is unlocked.
+    /// The keys of every vault that is not one of `vault_ids`: the vaults this device holds (#357).
+    /// A key made in a vault that has since been set aside, erased or replaced belongs to none of
+    /// them and goes; a key of another vault the device still holds stays.
+    pub(crate) fn keep_only_vaults(
+        &self,
+        vault_ids: &std::collections::HashSet<Uuid>,
+    ) -> Result<Wiped, NoticeKeyError> {
+        self.wipe(|entry| !vault_ids.contains(&entry.vault_id))
+    }
+
+    /// `keep_only_vaults` for a device that has the one vault `vault_id`, which is what every
+    /// device had before several vaults (kept for the tests that pin that case).
+    #[cfg(test)]
     pub(crate) fn keep_only_vault(&self, vault_id: Uuid) -> Result<Wiped, NoticeKeyError> {
-        self.wipe(|entry| entry.vault_id != vault_id)
+        self.keep_only_vaults(&std::collections::HashSet::from([vault_id]))
     }
 
     fn read(&self) -> Result<Vec<Option<NoticeKeyEntry>>, NoticeKeyError> {
@@ -511,14 +523,16 @@ pub(crate) fn kept() -> Option<&'static NoticeKeys<Box<dyn WrapKeyStore>>> {
     KEPT.get()
 }
 
-/// After a vault opens: every other vault's keys go (`keep_only_vault`). Keys ARE made now
+/// After a vault opens: the keys of any vault the device no longer holds go
+/// (`keep_only_vaults`); `held` is every vault it does hold, the opened one included. A device with
+/// one vault passes just that one, so it still wipes every other key, as it always did. With
+/// several vaults a switch no longer wipes the others' keys (#357). Keys ARE made now
 /// (`VaultStore::sync_notice_keys`), and this wipe does not tell a Portal that a key is finished
 /// (the sync does that, for the open vault's own stale keys, through `tray_notices::sync_keys`), so
-/// the first vault's enrollments are left to lapse on the Portal's side. The several-vaults screen
-/// (#357 PR 5) replaces this with keys kept per vault; a test pins today's behavior until then.
-pub(crate) fn after_open(vault_id: Uuid) {
+/// a vault set aside leaves its enrollments to lapse on the Portal's side.
+pub(crate) fn after_open(held: &std::collections::HashSet<Uuid>) {
     if let Some(keys) = kept() {
-        let _ = keys.keep_only_vault(vault_id);
+        let _ = keys.keep_only_vaults(held);
     }
 }
 
@@ -538,10 +552,21 @@ pub(crate) fn after_link_removed(link_id: Uuid) {
     }
 }
 
-/// After the vault is reset (set aside for a new one): every key goes.
-pub(crate) fn after_reset() {
-    if let Some(keys) = kept() {
-        let _ = keys.wipe_all();
+/// After the vault is reset (set aside for a new one): its keys go, and with them every key of a
+/// vault the device does not hold. `others` is the ids of the OTHER vaults the device holds: none
+/// (the one-vault device) wipes every key, as it always did. `None` means an other vault's id could
+/// not be read, so nothing is wiped now (a key is kept rather than guessed about); the reset
+/// vault's keys belong to no vault the device holds, and the next `after_open` wipes them.
+pub(crate) fn after_reset(others: Option<&std::collections::HashSet<Uuid>>) {
+    let Some(keys) = kept() else { return };
+    match others {
+        Some(others) if others.is_empty() => {
+            let _ = keys.wipe_all();
+        }
+        Some(others) => {
+            let _ = keys.keep_only_vaults(others);
+        }
+        None => {}
     }
 }
 
@@ -997,12 +1022,10 @@ mod tests {
         assert_eq!(keys.entries().unwrap().len(), 3);
     }
 
-    /// Pins what an unlock of another vault does TODAY, so the change that gives each vault its
-    /// own keys (the multi-vault screen, #357 PR 5) has to change this test knowingly: opening a
-    /// vault wipes every OTHER vault's keys (`after_open` calls `keep_only_vault`), so on a device
-    /// with two vaults, switching from one to the other and back leaves neither with a key, and
-    /// the wrap key goes with the last one. The keys are not owed to the Portal in that case
-    /// (nothing revokes them), which is why this has to be fixed before any screen offers a name.
+    /// Pins what an open does on a device with ONE vault (`keep_only_vault` is
+    /// `keep_only_vaults` with just that vault): every key of any other vault id goes, and the
+    /// wrap key goes with the last key. A device with several vaults passes all of them, which
+    /// keeps each one's keys (`opening_one_of_two_held_vaults_keeps_both_vaults_keys`).
     #[test]
     fn opening_another_vault_today_wipes_the_first_vaults_keys_and_the_last_takes_the_os_item() {
         let (_temp, keys) = keys();
@@ -1019,6 +1042,69 @@ mod tests {
         assert!(keys.store.get().unwrap().is_none());
         // Opening a vault with no keys of its own and none of anyone's changes nothing.
         assert_eq!(keys.keep_only_vault(uuid(1)), Ok(Wiped::default()));
+    }
+
+    fn key_ids_of(keys: &NoticeKeys<FakeWrapKeyStore>) -> Vec<String> {
+        let mut ids: Vec<String> = keys
+            .entries()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.key_id.clone())
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// Several vaults (#357): opening one passes every vault the device holds, so switching
+    /// between them, in any order and as often as the owner likes, keeps each one's keys and the
+    /// wrap key.
+    #[test]
+    fn opening_one_of_two_held_vaults_keeps_both_vaults_keys() {
+        let (_temp, keys) = keys();
+        let a = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+        let b = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
+        let mut both = vec![a, b];
+        both.sort();
+        let held = std::collections::HashSet::from([uuid(1), uuid(2)]);
+        for _ in 0..3 {
+            // Vault 1 opens, then vault 2, then 1 again: the same two vaults are held each time.
+            assert_eq!(keys.keep_only_vaults(&held), Ok(Wiped::default()));
+            assert_eq!(key_ids_of(&keys), both);
+        }
+        assert!(keys.store.get().unwrap().is_some());
+    }
+
+    /// A key of a vault the device no longer holds (one that was set aside or replaced) goes at the
+    /// next open, and only it.
+    #[test]
+    fn opening_a_vault_wipes_only_the_keys_of_vaults_the_device_no_longer_holds() {
+        let (_temp, keys) = keys();
+        let a = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+        let b = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
+        let gone = keys.make_for(uuid(3), uuid(30), ORIGIN).unwrap().key_id;
+        let held = std::collections::HashSet::from([uuid(1), uuid(2)]);
+        assert_eq!(keys.keep_only_vaults(&held).unwrap().key_ids, vec![gone]);
+        let mut both = vec![a, b];
+        both.sort();
+        assert_eq!(key_ids_of(&keys), both);
+        assert!(keys.store.get().unwrap().is_some());
+    }
+
+    /// The reset of vault 1 on a device that holds vault 2 too: 1's keys go (it is no longer one of
+    /// the vaults the device holds, `others` = {2}), 2's stay, and the wrap key stays with them.
+    #[test]
+    fn the_reset_of_one_vault_wipes_its_keys_and_keeps_another_vaults() {
+        let (_temp, keys) = keys();
+        let a = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+        let b = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
+        let others = std::collections::HashSet::from([uuid(2)]);
+        assert_eq!(keys.keep_only_vaults(&others).unwrap().key_ids, vec![a]);
+        assert_eq!(key_ids_of(&keys), vec![b]);
+        assert!(keys.store.get().unwrap().is_some());
+        // With no other vault, it is the whole wipe, and the wrap key goes.
+        assert_eq!(keys.wipe_all().unwrap().key_ids.len(), 1);
+        assert_eq!(keys.entries(), Ok(vec![]));
+        assert!(keys.store.get().unwrap().is_none());
     }
 
     #[test]

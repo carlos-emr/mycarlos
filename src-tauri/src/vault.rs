@@ -9715,6 +9715,24 @@ impl VaultStore {
         self.session().as_ref().map(|open| open.manifest.vault_id)
     }
 
+    /// The id the notice keys of this vault carry, whether it is open or locked: the open vault's
+    /// own, else the one its header says (the header names the vault in the clear). `None` when
+    /// neither is there (no vault here, or a header that cannot be read), which the caller reads as
+    /// "cannot tell", never as "no keys" (#357: another vault's keys are kept, not guessed about).
+    pub(crate) fn vault_id_for_notice_keys(&self) -> Option<Uuid> {
+        self.open_vault_id().or_else(|| {
+            let files = read_header_files(&self.root);
+            let id = files.candidates.first()?.vault_id;
+            // The header slots of one vault name one id; two ids are a folder that cannot be read
+            // as one vault.
+            files
+                .candidates
+                .iter()
+                .all(|header| header.vault_id == id)
+                .then_some(id)
+        })
+    }
+
     /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the
     /// vault id and its links under ONE session guard and doing the wipe inside it, so a lock in
     /// between cannot turn into a sweep with an empty link set that wipes every live key. Returns
