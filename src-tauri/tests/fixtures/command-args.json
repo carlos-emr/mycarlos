@@ -29,6 +29,9 @@
     "vault_import_pick": [
       "locale: enum UiLocale"
     ],
+    "vault_import_video_pick": [
+      "locale: enum UiLocale"
+    ],
     "vault_name_found_vaults": [
       "NameFoundRequest.vaults: the elements of NamedFoundVault"
     ],
@@ -489,6 +492,28 @@
       "raw": false
     },
     "vault_import_picked": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "PickedImportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_import_video_pick": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "ImportRequest"
+        }
+      },
+      "raw": false
+    },
+    "vault_import_video_picked": {
       "arguments": {
         "request": {
           "optional": false,
@@ -969,6 +994,14 @@
           "struct": "VideoCloseRequest"
         }
       },
+      "raw": false
+    },
+    "vault_video_import_cancel": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_video_import_progress": {
+      "arguments": {},
       "raw": false
     },
     "vault_video_open": {
