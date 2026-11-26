@@ -5689,10 +5689,18 @@ async fn vault_import_picked(
 /// by `vault_import_video_picked`), or a choice no import takes. A refusal is an answer, not an
 /// error, and nothing is kept for it: the page says why in a fixed sentence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum AnyPick {
-    Documents { pick_id: Uuid },
-    Video { pick_id: Uuid },
+    Documents {
+        pick_id: Uuid,
+    },
+    Video {
+        pick_id: Uuid,
+    },
     /// A video is added on its own, with its own progress and Cancel: it was chosen with other
     /// files, or with another video.
     VideoAlone,
@@ -5746,7 +5754,10 @@ async fn vault_import_any_pick(
         // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
         // PNG pictures only: HEIC is not accepted.
         file_dialog(&app)
-            .add_filter(&all_filter, &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"])
+            .add_filter(
+                &all_filter,
+                &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"],
+            )
             .add_filter(&pdf_filter, &["pdf"])
             .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
             .add_filter(&video_filter, &["mp4", "m4v", "mov"])
@@ -8516,7 +8527,16 @@ mod tests {
         for name in ["a.mp4", "A.MP4", "clip.M4V", "x.y.mov", "Scan 10:30.MoV"] {
             assert!(is_video_name(name), "{name}");
         }
-        for name in ["a.pdf", "mp4", ".mp4x", "a.mp4.pdf", "movie", "a.jpeg", "", "a."] {
+        for name in [
+            "a.pdf",
+            "mp4",
+            ".mp4x",
+            "a.mp4.pdf",
+            "movie",
+            "a.jpeg",
+            "",
+            "a.",
+        ] {
             // ".mp4x" and "mp4" are not videos; "a.mp4.pdf" ends in pdf
             assert!(!is_video_name(name), "{name}");
         }
@@ -8525,7 +8545,10 @@ mod tests {
     #[test]
     fn a_pick_goes_to_documents_to_one_video_or_is_refused() {
         // No video: documents and pictures, as before.
-        assert_eq!(route_pick(&names(&["a.pdf", "b.png", "c.jpg"])), Some(false));
+        assert_eq!(
+            route_pick(&names(&["a.pdf", "b.png", "c.jpg"])),
+            Some(false)
+        );
         assert_eq!(route_pick(&names(&[])), Some(false));
         // Exactly one file, and it is a video.
         assert_eq!(route_pick(&names(&["Clip.MP4"])), Some(true));
@@ -8544,7 +8567,10 @@ mod tests {
             serde_json::json!({"kind": "documents", "pickId": pick_id})
         );
         let video = serde_json::to_value(AnyPick::Video { pick_id }).unwrap();
-        assert_eq!(video, serde_json::json!({"kind": "video", "pickId": pick_id}));
+        assert_eq!(
+            video,
+            serde_json::json!({"kind": "video", "pickId": pick_id})
+        );
         let refused = serde_json::to_value(AnyPick::VideoAlone).unwrap();
         assert_eq!(refused, serde_json::json!({"kind": "videoAlone"}));
     }
