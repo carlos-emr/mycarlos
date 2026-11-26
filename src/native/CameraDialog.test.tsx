@@ -1,13 +1,24 @@
 import { humanText } from "../test/humanText";
 import {
   act,
+  configure,
   fireEvent,
+  getConfig,
   render,
   screen,
   waitFor,
 } from "@testing-library/react";
 import axe from "axe-core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { page } from "vitest/browser";
 import { CameraDialog } from "./CameraDialog";
 import { setLocaleOverride, translate } from "../i18n";
@@ -42,6 +53,19 @@ function fakeCamera(): MediaStream {
 }
 const ended = (stream: MediaStream) =>
   stream.getTracks().every((track) => track.readyState === "ended");
+
+// These tests follow a real browser camera: the first video frame of a captured canvas, and the
+// JPEG the browser encodes from the photo, arrive when the browser's own threads get to them. A
+// `waitFor` that stops after the library's 1 s default fails on a loaded machine with the
+// condition still about to be true (three of this file's tests did, in a contended coverage run).
+// The wait ends as soon as its condition holds, so a longer ceiling costs a passing test nothing.
+const WAIT_MS = 10_000;
+let defaultWaitMs = 1000;
+beforeAll(() => {
+  defaultWaitMs = getConfig().asyncUtilTimeout;
+  configure({ asyncUtilTimeout: WAIT_MS });
+});
+afterAll(() => configure({ asyncUtilTimeout: defaultWaitMs }));
 
 let getUserMedia: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -367,14 +391,28 @@ describe("CameraDialog", () => {
           quality,
         );
       });
+    // The dialog reads the JPEG's bytes after the hand-back, and only then decides whether to save:
+    // that read is what the test waits for, not a duration.
+    const readBytes = Blob.prototype.arrayBuffer;
+    let read: Promise<ArrayBuffer> | undefined;
+    const bytes = vi
+      .spyOn(Blob.prototype, "arrayBuffer")
+      .mockImplementation(function (this: Blob) {
+        read = readBytes.call(this);
+        return read;
+      });
     try {
       fireEvent.click(button("Use photo"));
       await waitFor(() => expect(handBack).toBeDefined());
       unmount();
       handBack!();
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await waitFor(() => expect(read).toBeDefined());
+      await read;
+      // Let the dialog's own continuation after that read run before looking.
+      await act(async () => undefined);
       expect(onUse).not.toHaveBeenCalled();
     } finally {
+      bytes.mockRestore();
       spy.mockRestore();
     }
   });
