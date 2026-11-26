@@ -244,6 +244,23 @@ fn the_signature_must_be_the_value_of_exactly_one_reachable_field() {
 }
 
 #[test]
+fn an_object_reached_twice_is_refused_even_when_it_is_not_the_signature_field() {
+    // The duplicate-reference guard is wanted strictness (no two references to one object), not
+    // only a stop for loops: a plain text field (/Tx) listed twice, beside the one signature
+    // field, leaves the signature count at exactly one, so only that guard refuses it. (The
+    // signature field listed twice is refused anyway, by the "exactly one value" check.)
+    let mut doubled = fixture();
+    let (field, plain) = (doubled.field(), doubled.plain());
+    let doubled = doubled.with_fields(vec![reference(field), reference(plain), reference(plain)]);
+    assert_eq!(structure(&doubled), Err(Refusal::BadStructure));
+    // The same fields, each once, are read.
+    let mut once = fixture();
+    let (field, plain) = (once.field(), once.plain());
+    let once = once.with_fields(vec![reference(field), reference(plain)]);
+    assert!(structure(&once).is_ok());
+}
+
+#[test]
 fn a_field_tree_past_its_bounds_is_refused_and_at_the_bounds_is_read() {
     // 256 fields visited is the most; one more is refused.
     let build = |others: usize| {
