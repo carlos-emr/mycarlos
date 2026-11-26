@@ -7480,6 +7480,610 @@ describe("durable vault UI", () => {
     expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
   });
 
+  // ---- A notice pending when the vault locks is not on the lock screen or at the next unlock ----
+
+  // The PROPERTY, not the sinks: every translation call in the sources whose parameters are
+  // name-like (a name, a person, a clinic, a title, a file, a folder, where) is a place a
+  // patient's words can reach the screen, however the text then travels (`setNotice`, `report`,
+  // `holdForUnlock`, a dialog's own error, a helper that returns the string). Each is classified
+  // by what happens to it when the vault locks. A new one fails the guard below until it is placed
+  // here, which is the moment to decide whether it needs a case.
+  //  - unmounted: shown inside the library or a dialog, which the lock removes (or the lock
+  //    screen's own fixed words).
+  //  - replaced: a notice line the lock replaces with its own reason text (cases below).
+  //  - held: kept on purpose for the next unlock, once, by `pendingOutcomeRef`,
+  //    `pendingSharedOutcomeRef` or the transfer's outcome (the held case below).
+  //  - fixed: the parameter is a fixed label, not a patient's word.
+  type AtLock = "unmounted" | "replaced" | "held" | "fixed";
+  // This is a reading of each site, backed by tests for the groups that act on the lock: the
+  // `replaced` cases and the `held` case below, and (for `unmounted`) the tests that nothing of
+  // the library, a dialog, a selection or a search survives a lock and an unlock.
+  const NAME_PARAMETERS: Record<string, AtLock> = {
+    // A backup or import cut off by a lock: the note it carries is kept for the next unlock
+    // (`holdForUnlock` in `run`'s catch, with the transfer's outcome). The held case below runs
+    // the same holder with a damaged-document message.
+    "VaultApp.tsx notice.backupCutOff": "held",
+    // What a received (shared) file's outcome says. CLASSIFIED, NOT RUN here: it is held in
+    // `pendingSharedOutcomeRef`, a different holder from the one the held case below runs, and
+    // only while the page is concealed or hidden during the intake (`deferIfPrivate`); an outcome
+    // that arrives after the lock is dropped. Those behaviours are pinned by the shared-file
+    // tests "does not restore an old share notice or new badge after locking during refresh
+    // (#53)" and "discards a shared-file refusal name that arrives after Lock".
+    "VaultApp.tsx interface.notice.alreadyShared": "held",
+    "VaultApp.tsx interface.notice.notPdf": "held",
+    "VaultApp.tsx interface.notice.receivedNotOpened": "held",
+    // A dialog that is only rendered while unlocked (`status === "unlocked"`).
+    "VaultApp.tsx interface.received.confirmTitleOne": "unmounted",
+    "native/AiModelSetting.tsx ai.model.accepted": "unmounted",
+    "native/FileUnder.tsx fileUnder.clinicWords": "unmounted",
+    "native/FileUnder.tsx fileUnder.confirm": "unmounted",
+    "native/FileUnder.tsx fileUnder.saveDetails": "unmounted",
+    "native/FileUnder.tsx fileUnder.saveDetailsOnly": "unmounted",
+    "native/FileUnder.tsx fileUnder.what.both": "unmounted",
+    "native/FileUnder.tsx fileUnder.what.name": "unmounted",
+    "native/HiddenDocuments.tsx interface.hidden.record": "unmounted",
+    "native/HiddenDocuments.tsx interface.hidden.restore": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.arrived.body": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.arrived.move": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.arrived.title": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.confirm.body": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.confirm.hide": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.confirm.title": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.handOverFor": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.hideFor": "unmounted",
+    "native/HiddenPeople.tsx hiddenPeople.restoreFor": "unmounted",
+    "native/LibraryItems.tsx library.document.details": "unmounted",
+    "native/LibraryItems.tsx library.document.label": "unmounted",
+    "native/LibraryItems.tsx library.folder.label": "unmounted",
+    "native/LibraryItems.tsx library.folder.open": "unmounted",
+    "native/LibraryItems.tsx library.folder.rename": "unmounted",
+    "native/LibraryItems.tsx library.select": "unmounted",
+    "native/LibrarySidebar.tsx sidebar.folderOfPerson": "unmounted",
+    "native/MoveTargetSelect.tsx interface.person.records": "unmounted",
+    "native/PersonDetails.tsx personDetails.editFor": "unmounted",
+    "native/PersonDetails.tsx personDetails.for": "unmounted",
+    "native/PersonSuggestion.tsx personSuggestion.moveLabel": "unmounted",
+    "native/PersonSuggestion.tsx personSuggestion.offer": "unmounted",
+    "native/PhotoViewer.tsx photo.alt": "unmounted",
+    // The clinic card's own status line, inside the clinic view.
+    "native/PortalDocuments.tsx portal.clinicIssue": "unmounted",
+    "native/ProfileHandover.tsx handover.export.done": "unmounted",
+    "native/ProfileHandover.tsx handover.export.hideOffer": "unmounted",
+    "native/ProfileHandover.tsx handover.export.summary": "unmounted",
+    "native/ProfileHandover.tsx handover.import.done": "unmounted",
+    "native/ProfileHandover.tsx handover.import.previousNames": "unmounted",
+    "native/ProfileHandover.tsx handover.import.says": "unmounted",
+    "native/ProfileHandover.tsx hiddenPeople.confirm.body": "unmounted",
+    "native/RecordDetails.tsx fileUnder.words": "unmounted",
+    "native/RecordSource.tsx library.source.clinic": "unmounted",
+    "native/RecordingRecovery.tsx interface.RecordingRecovery.name":
+      "unmounted",
+    "native/RefusedDeliveries.tsx portal.tryAgainFor": "unmounted",
+    // The "Shared with me" label is a fixed word, as is a count of waiting shares.
+    "native/RenameDialog.tsx create.profile.sharedTaken": "fixed",
+    "native/RenameDialog.tsx interface.LibrarySidebar.sharedWithMe": "fixed",
+    "native/SecuritySettings.tsx create.profile.sharedTaken": "fixed",
+    "native/SecuritySettings.tsx interface.LibrarySidebar.sharedWithMe":
+      "fixed",
+    "native/SecuritySettings.tsx security.oldBackups.named": "unmounted",
+    "native/SecuritySettings.tsx security.oldBackups.namedWithSize":
+      "unmounted",
+    "native/VaultAuth.tsx create.profile.sharedTaken": "fixed",
+    "native/VaultAuth.tsx interface.LibrarySidebar.sharedWithMe": "fixed",
+    "native/VaultAuth.tsx unlock.waiting": "fixed",
+    "native/VaultAuth.tsx unlock.waiting.one": "fixed",
+    // Notice lines the lock replaces with its own reason text.
+    "native/VaultLibrary.tsx handover.nowVerified": "replaced",
+    "native/VaultLibrary.tsx interface.notice.alreadyFiled": "replaced",
+    "native/VaultLibrary.tsx interface.notice.folderCreated": "replaced",
+    "native/VaultLibrary.tsx interface.notice.folderMovedNamed": "replaced",
+    "native/VaultLibrary.tsx interface.notice.hidden": "replaced",
+    "native/VaultLibrary.tsx interface.notice.movedMany": "replaced",
+    "native/VaultLibrary.tsx interface.notice.movedNamed": "replaced",
+    "native/VaultLibrary.tsx interface.notice.pdfUnlocked": "replaced",
+    "native/VaultLibrary.tsx interface.notice.personAdded": "replaced",
+    "native/VaultLibrary.tsx interface.notice.restored": "replaced",
+    "native/VaultLibrary.tsx interface.notice.whereFolder": "replaced",
+    // The library's polite announcement line: library state, unmounted by the lock.
+    "native/VaultLibrary.tsx hiddenPeople.hidden": "unmounted",
+    "native/VaultLibrary.tsx hiddenPeople.restored": "unmounted",
+    "native/VaultLibrary.tsx interface.RecordDetails.encryptedDocument":
+      "fixed",
+    "native/VaultLibrary.tsx interface.person.records": "unmounted",
+    "native/VaultLibrary.tsx personDetails.reminder": "unmounted",
+    "native/VaultLibrary.tsx rename.profile.action": "unmounted",
+    "native/VaultLibrary.tsx sidebar.myRecords": "fixed",
+    "native/VideoViewer.tsx interface.VideoViewer.player": "unmounted",
+    // What a clinic check found, said as a notice (and so replaced by the lock).
+    "native/documentCheck.ts portal.arrivedForHidden": "replaced",
+    "native/documentCheck.ts portal.clinicIssue": "replaced",
+    "native/documentCheck.ts portal.errorIncomplete": "replaced",
+    // A damaged document and its person, in the error text of a backup or export a lock cut off:
+    // held for the next unlock, once.
+    "vault.ts error.damaged": "held",
+    "vault.ts error.damaged.where": "held",
+    "vault.ts error.damaged.whereFor": "held",
+  };
+
+  /** The app's own sources (not tests), read as text. */
+  const noticeSources = () =>
+    Object.entries(
+      import.meta.glob("/src/**/*.{ts,tsx}", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }) as Record<string, string>,
+    ).filter(([path]) => !/\.test\.|\/test\//.test(path));
+
+  /** Every (file, message key) whose translation call has a name-like parameter. The call is read
+   * with its brackets matched, so a key chosen by a ternary, a call over several lines and a
+   * shorthand parameter (`{ name }`) are all seen. */
+  const nameLikeCalls = () => {
+    const call =
+      /\b(?:t|translateNow|translateCurrent|translate|translatePlain|tPlain)\(/g;
+    const nameLike =
+      /^(name|names|person|clinic|clinicName|title|file|display\w*|folder|where|note|term|deviceName)$/;
+    const found = new Set<string>();
+    for (const [path, text] of noticeSources()) {
+      for (const start of text.matchAll(call)) {
+        // The text of the call: from its "(" to the matching ")".
+        let depth = 1;
+        let end = start.index! + start[0].length;
+        for (; end < text.length && depth > 0; end += 1) {
+          if (text[end] === "(") depth += 1;
+          else if (text[end] === ")") depth -= 1;
+        }
+        const inside = text.slice(start.index! + start[0].length, end - 1);
+        const keys = [
+          ...inside.matchAll(/"([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)"/g),
+        ].map((match) => match[1]);
+        const object = /\{([^]*)\}/.exec(inside)?.[1];
+        if (!keys.length || object === undefined) continue;
+        // The parameter names: what stands before a ":" or alone before a "," or the end.
+        const parameters = object
+          .split(",")
+          .map((part) => part.trim().split(/\s*:/)[0].trim())
+          .filter(Boolean);
+        if (parameters.some((parameter) => nameLike.test(parameter)))
+          for (const key of keys)
+            found.add(`${path.replace("/src/", "")} ${key}`);
+      }
+    }
+    return Array.from(found).sort();
+  };
+
+  it("classifies every translation with a name-like parameter by what the lock does to it: a new one has to be placed", () => {
+    expect(nameLikeCalls()).toEqual(Object.keys(NAME_PARAMETERS).sort());
+  });
+
+  /** A notice a patient's action leaves on screen: how to cause it, a name that is in it, and
+   * words only the notice says (names can come back with the vault's own lists). */
+  type NoticeCase = {
+    label: string;
+    name: string;
+    words: RegExp;
+    run: (user: ReturnType<typeof userEvent.setup>) => Promise<void>;
+    bridge: () => Partial<VaultBridge>;
+  };
+  const noticeCases = (): NoticeCase[] => {
+    const record = {
+      ...snapshotWithRecord.records[0],
+      displayName: "FAKE_Leak_Hide.pdf",
+    };
+    let recordHidden = false;
+    let personAdded = false;
+    let personHidden = false;
+    let personRestored = false;
+    let folderMade = false;
+    let sharedMoved = false;
+    const robin = {
+      id: "profile-2",
+      displayName: "FAKE Robin",
+      createdAtMs: 2,
+    };
+    const casey = {
+      id: "profile-9",
+      displayName: "FAKE Casey Leakname",
+      hiddenAtMs: 1_700_000_000_000,
+      documents: 1,
+    };
+    return [
+      {
+        label: "hiding a document",
+        name: "FAKE_Leak_Hide",
+        words: /was hidden\. It stays in the vault under Hidden/,
+        bridge: () => ({
+          snapshot: vi.fn().mockImplementation(async () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              records: recordHidden ? [] : [record],
+            }),
+          ),
+          unlock: vi.fn().mockImplementation(async () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              records: recordHidden ? [] : [record],
+            }),
+          ),
+          hideRecord: vi.fn().mockImplementation(async () => {
+            recordHidden = true;
+          }),
+        }),
+        run: async (user) => {
+          await user.click(
+            await screen.findByText(humanText("FAKE_Leak_Hide.pdf")),
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Hide") }),
+          );
+        },
+      },
+      {
+        label: "importing a document",
+        name: "FAKE_Leak_Import",
+        words: /encrypted and added/,
+        bridge: () => ({
+          pickImportFiles: vi.fn().mockResolvedValue("pick-1"),
+          importPickedFiles: vi.fn().mockResolvedValue({
+            imported: ["FAKE_Leak_Import.pdf"],
+            skippedDuplicates: [],
+          }),
+        }),
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { ...IMPORT_BUTTON }),
+          );
+        },
+      },
+      {
+        label: "adding a person",
+        name: "FAKE Leak Person",
+        words: /was added\./,
+        bridge: () => {
+          const withPerson = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: personAdded
+                ? [
+                    ...snapshotWithRecord.profiles,
+                    {
+                      id: "profile-3",
+                      displayName: "FAKE Leak Person",
+                      createdAtMs: 3,
+                    },
+                  ]
+                : snapshotWithRecord.profiles,
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => withPerson()),
+            unlock: vi.fn().mockImplementation(async () => withPerson()),
+            createProfile: vi.fn().mockImplementation(async () => {
+              personAdded = true;
+              return "profile-3";
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { name: humanText(/Security/) }),
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Add profile") }),
+          );
+          const field = await screen.findByLabelText(
+            humanText(/New profile name/),
+          );
+          await user.type(field, "FAKE Leak Person");
+          fireEvent.submit(field.closest("form")!);
+        },
+      },
+      {
+        label: "hiding a person",
+        name: "FAKE Robin",
+        words: /is now hidden\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: personHidden
+                ? snapshotWithRecord.profiles
+                : [...snapshotWithRecord.profiles, robin],
+              hiddenProfiles: personHidden
+                ? [{ ...casey, id: "profile-2", displayName: "FAKE Robin" }]
+                : [],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            hideProfile: vi.fn().mockImplementation(async () => {
+              personHidden = true;
+            }),
+            restoreProfile: vi.fn().mockResolvedValue([]),
+            updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { name: humanText(/Security/) }),
+          );
+          await user.click(
+            screen.getByRole("button", { name: humanText("Hide FAKE Robin") }),
+          );
+          await user.click(
+            within(await screen.findByRole("alertdialog")).getByRole("button", {
+              name: humanText("Hide FAKE Robin"),
+            }),
+          );
+        },
+      },
+      {
+        label: "restoring a person",
+        name: "FAKE Casey Leakname",
+        words: /is back in the library\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: personRestored
+                ? [
+                    ...snapshotWithRecord.profiles,
+                    {
+                      id: "profile-9",
+                      displayName: "FAKE Casey Leakname",
+                      createdAtMs: 9,
+                    },
+                  ]
+                : snapshotWithRecord.profiles,
+              hiddenProfiles: personRestored ? [] : [casey],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            hideProfile: vi.fn().mockResolvedValue(undefined),
+            restoreProfile: vi.fn().mockImplementation(async () => {
+              personRestored = true;
+              return [];
+            }),
+            updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", { name: humanText(/Security/) }),
+          );
+          await user.click(
+            screen.getByRole("button", {
+              name: humanText("Restore FAKE Casey Leakname"),
+            }),
+          );
+        },
+      },
+      {
+        label: "creating a folder",
+        name: "FAKE Leak Folder",
+        words: /was created\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              folders: folderMade
+                ? [
+                    {
+                      id: "folder-1",
+                      profileId: "profile-1",
+                      parentId: null,
+                      name: "FAKE Leak Folder",
+                      createdAtMs: 5,
+                    },
+                  ]
+                : [],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            createFolder: vi.fn().mockImplementation(async () => {
+              folderMade = true;
+              return "folder-1";
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText("New folder"),
+            }),
+          );
+          const field = await screen.findByLabelText(humanText("Folder name"));
+          await user.type(field, "FAKE Leak Folder");
+          fireEvent.submit(field.closest("form")!);
+        },
+      },
+      {
+        label: "moving a shared document to a person",
+        name: "FAKE_Leak_Moved",
+        words: /moved to /,
+        bridge: () => {
+          const shared = {
+            id: "shared-1",
+            displayName: "Shared with me",
+            createdAtMs: 3,
+          };
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: [...snapshotWithRecord.profiles, shared],
+              sharedProfileId: "shared-1",
+              records: [
+                {
+                  ...snapshotWithRecord.records[0],
+                  id: "record-shared",
+                  profileId: sharedMoved ? "profile-1" : "shared-1",
+                  displayName: "FAKE_Leak_Moved.pdf",
+                },
+              ],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            moveToPerson: vi.fn().mockImplementation(async () => {
+              sharedMoved = true;
+              return { moved: ["record-shared"], alreadyThere: [] };
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText(/^Shared with me/),
+            }),
+          );
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText(/^Select FAKE_Leak_Moved/),
+            }),
+          );
+          await user.click(
+            await screen.findByRole("button", { name: humanText("Move") }),
+          );
+        },
+      },
+    ];
+  };
+
+  it("keeps a backup's damaged-document message, with its names, for the next unlock only: not on the lock screen, said once, not repeated", async () => {
+    const user = userEvent.setup();
+    const person = {
+      id: "profile-2",
+      displayName: "FAKE Leak Person",
+      createdAtMs: 2,
+    };
+    const record = {
+      ...snapshotWithRecord.records[0],
+      id: "record-leak",
+      profileId: "profile-2",
+      displayName: "FAKE_Leak_Doc.pdf",
+    };
+    const current = () =>
+      captureSnapshot({
+        ...snapshotWithRecord,
+        profiles: [...snapshotWithRecord.profiles, person],
+        records: [record],
+      });
+    let failSave: (error: unknown) => void = () => {};
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () => current()),
+      unlock: vi.fn().mockImplementation(async () => current()),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn(
+        () =>
+          new Promise<SavedBackup>((_, reject) => {
+            failSave = reject;
+          }),
+      ),
+    });
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    const setVisibility = (state: DocumentVisibilityState) =>
+      act(async () => {
+        visibilityState = state;
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
+    );
+    await waitFor(() => expect(bridge.saveBackupToPicked).toHaveBeenCalled());
+    // A lock falls due during the backup: it is held, then the backup is cut off and says why.
+    await setVisibility("hidden");
+    expect(bridge.lock).not.toHaveBeenCalled();
+    await act(async () =>
+      failSave({
+        code: "damaged_document",
+        message: "A document in the vault is damaged.",
+        recordId: "record-leak",
+      }),
+    );
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    // The lock screen says neither the document nor the person.
+    for (const private_ of [
+      "FAKE_Leak_Doc",
+      "FAKE Leak Person",
+      "No backup was saved",
+    ])
+      expect(document.body.textContent).not.toContain(private_);
+    await setVisibility("visible");
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    // The first unlock says it, once, with the names.
+    const said = humanText(
+      /No backup was saved: the document "FAKE_Leak_Doc\.pdf" \(added [^)]+, in FAKE Leak Person's records\)/,
+    );
+    expect(await screen.findByText(said)).toBeVisible();
+    expect(screen.getAllByText(said)).toHaveLength(1);
+    // The next lock and unlock does not repeat it.
+    fireEvent.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(document.body.textContent).not.toContain("No backup was saved");
+    await user.type(
+      screen.getByLabelText(humanText("Passphrase")),
+      "river-azimuth-cobalt-sparrow-934",
+    );
+    await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
+    await screen.findByRole("button", { name: humanText(/Security/) });
+    await new Promise((resolve) => setTimeout(resolve, ANNOUNCE_DELAY_MS * 3));
+    expect(document.body.textContent).not.toContain("No backup was saved");
+  });
+
+  it.each(noticeCases().map((c) => c.label))(
+    "a notice from %s that is on screen when the vault locks is not on the lock screen, nor at the next unlock",
+    async (label) => {
+      const user = userEvent.setup();
+      const one = noticeCases().find((c) => c.label === label)!;
+      const bridge = nativeBridge({
+        status: vi.fn().mockResolvedValue("unlocked"),
+        ...one.bridge(),
+      });
+      render(<VaultApp bridge={bridge} />);
+      await one.run(user);
+      // The notice is on screen (so the lock really has something to clear).
+      await screen.findByText(humanText(one.words));
+      fireEvent.click(windowLock());
+      await screen.findByRole("heading", {
+        name: humanText("Unlock your vault"),
+      });
+      expect(document.body.textContent).not.toMatch(one.words);
+      expect(document.body.textContent).not.toContain(one.name);
+      await user.type(
+        screen.getByLabelText(humanText("Passphrase")),
+        "river-azimuth-cobalt-sparrow-934",
+      );
+      await user.click(
+        screen.getByRole("button", { name: humanText("Unlock") }),
+      );
+      await screen.findByRole("button", { name: humanText(/Security/) });
+      // The unlock's own messages are said a moment after it (see the handover control).
+      await new Promise((resolve) =>
+        setTimeout(resolve, ANNOUNCE_DELAY_MS * 3),
+      );
+      expect(document.body.textContent).not.toMatch(one.words);
+    },
+  );
+
   /** The link form on a vault with a clinic portal, a first address and code typed in. */
   async function linkFormReady(bridgeOverrides: Partial<VaultBridge>) {
     const bridge = nativeBridge({
