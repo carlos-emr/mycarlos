@@ -656,6 +656,46 @@ describe("native clinic document controls", () => {
       await page.viewport(1100, 760);
     }
   });
+  it("tells the person that the clinic sees the device name, in every language", async () => {
+    // The portal stores this free text (audit of what myCarlos sends, F1): the help sits
+    // under the field, is read with it, and asks for a device name, not a person's name.
+    const bridge = {
+      platform: vi.fn().mockResolvedValue("windows"),
+      linkPortal: vi.fn(),
+      connectPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+    } as unknown as VaultBridge;
+    const { unmount } = fixture({ bridge, snapshot: unlinkedSnapshot });
+    const input = screen.getByLabelText("Name for this device");
+    const help = screen.getByText(
+      "The clinic sees this name. Use something like “Kitchen laptop”, not a person’s name.",
+    );
+    expect(input).toHaveAccessibleDescription(help.textContent ?? "");
+    // The help is not part of the field's name.
+    expect(input).toHaveAccessibleName("Name for this device");
+    unmount();
+    // One plain sentence in every language, read from the catalogue itself: a missing
+    // variable would otherwise be quietly filled in by the translator.
+    const catalogues = import.meta.glob("/src/i18n/locales/fluent/*.ftl", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>;
+    for (const locale of LOCALES) {
+      const source = catalogues[`/src/i18n/locales/fluent/${locale}.ftl`];
+      const lines = source.split("\n");
+      const at = lines.findIndex((line) =>
+        line.startsWith("portal-deviceNameHelp ="),
+      );
+      expect(at, `${locale} has the help`).toBeGreaterThan(-1);
+      const sentence = lines[at].slice(lines[at].indexOf("=") + 1).trim();
+      expect(sentence, locale).not.toBe("");
+      expect(sentence, locale).not.toMatch(/[{}$]/);
+      // One sentence on one line: the next line is blank, not a continuation.
+      expect(lines[at + 1], locale).toBe("");
+      expect(translate(locale, "portal.deviceNameHelp"), locale).toBe(sentence);
+    }
+  });
   it("keeps a device name typed before platform detection finishes and submits that name", async () => {
     let detect!: (platform: string) => void;
     const platform = vi.fn(

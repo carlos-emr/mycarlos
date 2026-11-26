@@ -1501,6 +1501,8 @@ portal-deviceCode = Código del dispositivo
 
 portal-deviceName = Nombre de este dispositivo
 
+portal-deviceNameHelp = La clínica ve este nombre. Use algo como “Portátil de la cocina”, no el nombre de una persona.
+
 portal-deviceLine = Dispositivo: { $device }
 
 portal-deviceLineLinked = Dispositivo: { $device }, vinculado el { $date }

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type FormEvent,
@@ -208,6 +209,7 @@ export function PortalDocuments({
   onDialogChange,
 }: Props) {
   const { locale, t } = useI18n();
+  const deviceNameHelpId = useId();
   const [address, setAddress] = useState("");
   const [code, setCode] = useState("");
   // The name the patient typed for this device, if any. Until they type one,
@@ -833,10 +835,13 @@ export function PortalDocuments({
           required
           value={device}
           maxLength={64}
+          aria-describedby={deviceNameHelpId}
           onChange={(e) => setDevice(e.target.value)}
           disabled={disabled}
         />
       </label>
+      {/* The clinic stores this name: say so, and ask for a device name, not a person's. */}
+      <p id={deviceNameHelpId}>{t("portal.deviceNameHelp")}</p>
       <label>
         {t("portal.person")}
         <select

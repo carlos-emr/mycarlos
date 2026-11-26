@@ -1341,6 +1341,8 @@ portal-deviceCode = 裝置代碼
 
 portal-deviceName = 此裝置的名稱
 
+portal-deviceNameHelp = 診所會看到這個名稱。請使用類似「廚房電腦」的名稱，不要使用人名。
+
 portal-deviceLine = 裝置：{ $device }
 
 portal-deviceLineLinked = 裝置：{ $device }，連結於 { $date }

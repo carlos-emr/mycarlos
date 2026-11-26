@@ -1533,6 +1533,8 @@ portal-deviceCode = Kod urządzenia
 
 portal-deviceName = Nazwa tego urządzenia
 
+portal-deviceNameHelp = Klinika widzi tę nazwę. Użyj czegoś w rodzaju „Laptop w kuchni”, a nie imienia i nazwiska osoby.
+
 portal-deviceLine = Urządzenie: { $device }
 
 portal-deviceLineLinked = Urządzenie: { $device }, połączono { $date }

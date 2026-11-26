@@ -1501,6 +1501,8 @@ portal-deviceCode = Code de l’appareil
 
 portal-deviceName = Nom de cet appareil
 
+portal-deviceNameHelp = La clinique voit ce nom. Utilisez par exemple « Ordinateur de la cuisine », pas le nom d’une personne.
+
 portal-deviceLine = Appareil : { $device }
 
 portal-deviceLineLinked = Appareil : { $device }, associé le { $date }
