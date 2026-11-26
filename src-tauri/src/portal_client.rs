@@ -703,7 +703,26 @@ mod network_tests {
         body: Vec<u8>,
     }
 
+    /// Headers no portal request carries: nothing that names the app's version or HTTP library
+    /// (`user-agent`), the compression it accepts (`accept-encoding`, which reqwest adds only with
+    /// a compression feature), or a page, a session or a person (`referer`, `cookie`,
+    /// `authorization`, `x-forwarded-for`). The portal sees the signed assertion and nothing else.
+    const NEVER_SENT: [&str; 6] = [
+        "user-agent",
+        "accept-encoding",
+        "referer",
+        "cookie",
+        "authorization",
+        "x-forwarded-for",
+    ];
+
     impl Captured {
+        fn assert_no_identifying_headers(&self) {
+            for name in NEVER_SENT {
+                assert_eq!(self.header(name), None, "{name}");
+            }
+        }
+
         fn header(&self, name: &str) -> Option<&str> {
             self.headers
                 .iter()
@@ -1062,10 +1081,8 @@ mod network_tests {
         );
         assert_eq!(request.body, body);
         assert_eq!(request.header("content-type"), Some("application/json"));
-        // No referrer, cookie, authorization or user-supplied identifier travels with it.
-        for name in ["referer", "cookie", "authorization", "x-forwarded-for"] {
-            assert_eq!(request.header(name), None, "{name}");
-        }
+        // No user agent, referrer, cookie, authorization or user-supplied identifier travels with it.
+        request.assert_no_identifying_headers();
         let assertion = request.header("x-mycarlos-device-assertion").unwrap();
         let claims = payload_of(assertion);
         assert_eq!(claims["aud"], "carlos-patient-portal-device-api");
@@ -1320,6 +1337,7 @@ mod network_tests {
             );
             // The device key's header is never sent from here, only the waiting key's.
             assert_eq!(request.header("x-mycarlos-device-assertion"), None);
+            request.assert_no_identifying_headers();
             let claims = payload_of(request.header("x-mycarlos-waiting-assertion").unwrap());
             assert_eq!(claims["aud"], "carlos-patient-portal-waiting-check");
             assert_eq!(claims["iss"], "mycarlos");
@@ -1458,9 +1476,7 @@ mod network_tests {
             request.header("x-mycarlos-device-assertion"),
             Some("FAKE.assertion")
         );
-        for name in ["referer", "cookie", "authorization"] {
-            assert_eq!(request.header(name), None, "{name}");
-        }
+        request.assert_no_identifying_headers();
     }
 
     #[test]
