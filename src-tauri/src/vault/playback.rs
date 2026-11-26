@@ -418,7 +418,21 @@ impl VaultStore {
             &object_key,
             record.plaintext_size,
         )?;
-        let session = open_session(reader)?;
+        // A video the patient picked is the ordinary MP4 it came in as; a recorded one has the
+        // index at its end. The history says which. When it cannot be read in full, a record that
+        // is not a recording may be a picked video whose entry could not be read: that is "could
+        // not be opened", never "not a video".
+        let (picked, uncertain) = match self.camera_made_records(unlocked) {
+            Ok(origins) => (origins.is_picked(&record.id), !origins.complete),
+            Err(_) => (false, true),
+        };
+        let session = open_session(reader, picked).map_err(|error| {
+            if uncertain && matches!(error, VaultError::Invalid) {
+                VaultError::Unreadable
+            } else {
+                error
+            }
+        })?;
         let total_bytes = session.total_len();
         let token = new_token();
         let mut tokens = self.playback.lock().unwrap_or_else(PoisonError::into_inner);
@@ -516,8 +530,37 @@ impl VaultStore {
     }
 }
 
+/// A picked video, served as it is stored: an ordinary MP4 (its `moov` may come first or last, which
+/// the player's own Range requests handle). Only a record the history says was picked comes here, and
+/// its file must still start as an MP4 does.
+fn open_plain_session(mut reader: ChunkReader) -> Result<PlaybackSession, VaultError> {
+    let size = reader.plaintext_size;
+    if size < 12 {
+        return Err(VaultError::Invalid);
+    }
+    let start = reader.read_at(0, 8)?;
+    if &start[4..8] != b"ftyp" {
+        return Err(VaultError::Invalid);
+    }
+    Ok(PlaybackSession {
+        record_id: reader.record_id,
+        reader,
+        // Nothing in front: the served file is the stored one.
+        head: VirtualHead {
+            bytes: Vec::new(),
+            stored_head_len: 0,
+            first_fragment: 0,
+            media_end: size,
+        },
+        opened: Instant::now(),
+    })
+}
+
 /// Reads the index and the stored head and builds what is served.
-fn open_session(mut reader: ChunkReader) -> Result<PlaybackSession, VaultError> {
+fn open_session(mut reader: ChunkReader, picked: bool) -> Result<PlaybackSession, VaultError> {
+    if picked {
+        return open_plain_session(reader);
+    }
     let size = reader.plaintext_size;
     let footer_at = size
         .checked_sub(mp4_stream::INDEX_FOOTER_LEN as u64)
@@ -1262,5 +1305,281 @@ mod tests {
         );
         // Another document's video plays on.
         assert!(serve(&store, &elsewhere.token, None).is_ok());
+    }
+
+    // ---- a video the patient picked, stored as an ordinary MP4 ------------
+
+    /// A picked video of about `padding` bytes more than the smallest MP4, added through the real
+    /// import. Returns the store, the record and the plaintext the vault holds.
+    fn picked_video(root: &Path, padding: usize) -> (VaultStore, Uuid, Vec<u8>) {
+        use super::super::picked_video::{PickedVideoOutcome, PickedVideoRequest, VideoImportJob};
+        let store = VaultStore::new(root.join("vault"));
+        store.create(PASSWORD, "FAKE Person", 1).unwrap();
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        let bytes = crate::video_import::tests::video_padded(true, &[], &[], padding);
+        let open = move || -> Result<Box<dyn Read + Send>, VaultError> {
+            Ok(Box::new(io::Cursor::new(bytes.clone())))
+        };
+        let PickedVideoOutcome::Imported { record_id } = store
+            .import_picked_video(
+                PickedVideoRequest {
+                    profile_id: profile,
+                    folder_ids: vec![],
+                    display_name: "FAKE picked.mp4".to_owned(),
+                    max_bytes: 1 << 30,
+                    now_ms: 5,
+                },
+                &open,
+                &VideoImportJob::new(),
+            )
+            .unwrap()
+        else {
+            panic!("the picked video was not added");
+        };
+        let mut plain = Vec::new();
+        store.read_for_view(record_id, &mut plain).unwrap();
+        (store, record_id, plain)
+    }
+
+    #[test]
+    fn a_picked_video_plays_as_stored_and_every_byte_comes_back_through_ranges() {
+        let temp = tempfile::tempdir().unwrap();
+        // About 2.5 frames, so a range can cross from one stored frame into the next.
+        let (store, record, plain) = picked_video(temp.path(), 5 * CHUNK_SIZE / 2);
+        assert!(plain.len() > 2 * CHUNK_SIZE);
+        let opened = store.playback_open(record).unwrap();
+        // Served as it is: the player sees the stored file, with nothing put in front of it.
+        assert_eq!(opened.total_bytes, plain.len() as u64);
+        let mut got = Vec::new();
+        while (got.len() as u64) < opened.total_bytes {
+            let reply = serve(
+                &store,
+                &opened.token,
+                Some(&format!("bytes={}-", got.len())),
+            )
+            .unwrap();
+            assert_eq!(reply.status, 206);
+            let (start, end) = reply.range.unwrap();
+            assert_eq!(start, got.len() as u64);
+            assert_eq!(reply.body.len() as u64, end - start + 1);
+            assert!(reply.body.len() as u64 <= MAX_RANGE_RESPONSE);
+            got.extend(reply.body);
+        }
+        assert_eq!(got, plain);
+        // A range that crosses a stored frame's end, the last bytes and the very first.
+        let edge = CHUNK_SIZE as u64;
+        for (header, from, to) in [
+            (
+                format!("bytes={}-{}", edge - 6, edge + 9),
+                edge - 6,
+                edge + 9,
+            ),
+            (
+                "bytes=-16".to_owned(),
+                plain.len() as u64 - 16,
+                plain.len() as u64 - 1,
+            ),
+            ("bytes=0-7".to_owned(), 0, 7),
+        ] {
+            let reply = serve(&store, &opened.token, Some(&header)).unwrap();
+            assert_eq!(reply.range, Some((from, to)), "{header}");
+            assert_eq!(reply.body, plain[from as usize..=to as usize], "{header}");
+        }
+        // Past the end is the same refusal as for a recording.
+        let reply = serve(&store, &opened.token, Some("bytes=999999999-")).unwrap();
+        assert_eq!(reply.status, 416);
+    }
+
+    #[test]
+    fn a_seek_into_a_picked_video_decrypts_only_the_frame_it_lands_in() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, plain) = picked_video(temp.path(), 5 * CHUNK_SIZE / 2);
+        let opened = store.playback_open(record).unwrap();
+        // Opening read the first bytes only (the check that it starts as an MP4 does).
+        let decrypted = |store: &VaultStore| {
+            store
+                .playback
+                .lock()
+                .unwrap()
+                .values()
+                .map(|session| session.reader.decrypted)
+                .sum::<u64>()
+        };
+        assert_eq!(decrypted(&store), 1);
+        let at = 2 * CHUNK_SIZE as u64 + 100;
+        let reply = serve(
+            &store,
+            &opened.token,
+            Some(&format!("bytes={at}-{}", at + 9)),
+        )
+        .unwrap();
+        assert_eq!(reply.body, plain[at as usize..at as usize + 10]);
+        assert_eq!(decrypted(&store), 2, "only the third frame was added");
+    }
+
+    #[test]
+    fn only_a_record_added_as_a_picked_video_is_played_as_stored() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _) = picked_video(temp.path(), 1000);
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        // The same bytes, added the ordinary way (or as a camera photo would be), are not played:
+        // the history, not the bytes, says what a record is.
+        for (n, (name, how)) in [("FAKE same.mp4", "picked"), ("FAKE shared.mp4", "shared")]
+            .into_iter()
+            .enumerate()
+        {
+            // A different file each time (the same bytes would be a duplicate of one stored).
+            let bytes = crate::video_import::tests::video_padded(true, &[], &[], 777 + n);
+            store
+                .import_from(
+                    profile,
+                    vec![],
+                    vec![ImportSource {
+                        display_name: name.to_owned(),
+                        reader: Box::new(io::Cursor::new(bytes.clone())),
+                    }],
+                    9,
+                    how,
+                )
+                .unwrap();
+            let id = store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .find(|r| r.display_name == name)
+                .unwrap()
+                .id;
+            assert!(matches!(store.playback_open(id), Err(VaultError::Invalid)));
+        }
+    }
+
+    #[test]
+    fn a_damaged_frame_of_a_picked_video_is_refused_when_it_is_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, plain) = picked_video(temp.path(), 5 * CHUNK_SIZE / 2);
+        let path = object_path(temp.path(), &store, record);
+        let mut bytes = fs::read(&path).unwrap();
+        // One byte inside the third frame.
+        let at = OBJECT_HEADER_LEN as usize + 2 * FRAME_LEN as usize + 50;
+        bytes[at] ^= 0xFF;
+        fs::write(&path, bytes).unwrap();
+        let opened = store.playback_open(record).unwrap();
+        // The first frame still plays; the damaged one does not.
+        let first = serve(&store, &opened.token, Some("bytes=0-99")).unwrap();
+        assert_eq!(first.body, plain[..100]);
+        let third = 2 * CHUNK_SIZE as u64 + 50;
+        assert!(matches!(
+            serve(
+                &store,
+                &opened.token,
+                Some(&format!("bytes={third}-{third}"))
+            ),
+            Err(PlaybackRefusal::Unreadable)
+        ));
+    }
+
+    #[test]
+    fn a_range_that_runs_from_a_good_frame_into_a_damaged_one_gives_no_body_at_all() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, plain) = picked_video(temp.path(), 5 * CHUNK_SIZE / 2);
+        let path = object_path(temp.path(), &store, record);
+        let mut bytes = fs::read(&path).unwrap();
+        // One byte inside the third frame (the second is good).
+        bytes[OBJECT_HEADER_LEN as usize + 2 * FRAME_LEN as usize + 50] ^= 0xFF;
+        fs::write(&path, bytes).unwrap();
+        let opened = store.playback_open(record).unwrap();
+        let edge = 2 * CHUNK_SIZE as u64;
+        // Wholly inside the good frame: served. Across the edge into the damaged one: refused as
+        // a whole, never a short body of the good part.
+        let good = serve(
+            &store,
+            &opened.token,
+            Some(&format!("bytes={}-{}", edge - 30, edge - 11)),
+        )
+        .unwrap();
+        assert_eq!(
+            good.body,
+            plain[(edge - 30) as usize..=(edge - 11) as usize]
+        );
+        assert!(matches!(
+            serve(
+                &store,
+                &opened.token,
+                Some(&format!("bytes={}-{}", edge - 10, edge + 10))
+            ),
+            Err(PlaybackRefusal::Unreadable)
+        ));
+    }
+
+    #[test]
+    fn a_record_marked_picked_whose_bytes_are_not_an_mp4_is_not_opened() {
+        use super::super::picked_video::PICKED_VIDEO_HOW;
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, _) = picked_video(temp.path(), 1000);
+        let profile = store.snapshot().unwrap().profiles[0].id;
+        // Marked as a picked video, but the file is not what the check lets in: a PDF-like file,
+        // and one shorter than an MP4 head. The marker alone does not make a video.
+        for (name, bytes) in [
+            (
+                "FAKE not-mp4.mp4",
+                b"%PDF-1.7 FAKE not a video at all".to_vec(),
+            ),
+            ("FAKE tiny.mp4", b"FAKE".to_vec()),
+        ] {
+            store
+                .import_from(
+                    profile,
+                    vec![],
+                    vec![ImportSource {
+                        display_name: name.to_owned(),
+                        reader: Box::new(io::Cursor::new(bytes)),
+                    }],
+                    9,
+                    PICKED_VIDEO_HOW,
+                )
+                .unwrap();
+            let id = store
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .find(|r| r.display_name == name)
+                .unwrap()
+                .id;
+            assert!(
+                matches!(store.playback_open(id), Err(VaultError::Invalid)),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_history_that_cannot_be_read_says_could_not_be_opened_not_not_a_video() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, record, _) = picked_video(temp.path(), 1000);
+        let names: Vec<String> = {
+            let guard = store.session();
+            let unlocked = guard.as_ref().unwrap();
+            unlocked
+                .manifest
+                .history
+                .segments
+                .iter()
+                .map(|segment| segment.object_name.clone())
+                .collect()
+        };
+        for name in names {
+            let path = temp.path().join("vault").join("objects").join(name);
+            let mut bytes = fs::read(&path).unwrap();
+            *bytes.last_mut().unwrap() ^= 1;
+            fs::write(&path, bytes).unwrap();
+        }
+        // The entry that says "picked" cannot be read, so the file is not played as one; the
+        // answer is the one for a part of the vault that cannot be read.
+        assert!(matches!(
+            store.playback_open(record),
+            Err(VaultError::Unreadable)
+        ));
     }
 }

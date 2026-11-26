@@ -278,9 +278,11 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
 
 // --- The line contract, helper side --------------------------------------------------------
 
-/// One page as the parent sends it.
+/// One page as the parent sends it. A page with a key it does not know is refused (it is also the
+/// element of the renderer's `pages` for a summary, `SummarizeRequest.pages`).
 #[cfg_attr(test, derive(Debug))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,

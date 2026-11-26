@@ -46,6 +46,8 @@ pub struct Labels<'a> {
     pub zoom_out: &'a str,
     pub page: &'a str,
     pub page_status: &'a str,
+    /// "Page {page} of {total} could not be shown": the same placeholders.
+    pub page_failed: &'a str,
 }
 
 #[derive(Serialize)]
