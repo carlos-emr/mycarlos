@@ -2435,7 +2435,7 @@ interface-AnonymizePreview-pasteWhereNote = To, gdzie to wkleisz, decyduje o tym
 
 interface-AnonymizePreview-copy = Kopiuj tekst
 
-interface-AnonymizePreview-copied = Tekst został skopiowany.
+interface-AnonymizePreview-copied = Tekst został skopiowany. Jeśli w międzyczasie nic innego nie zostanie skopiowane, zostanie usunięty ze schowka po pięciu minutach.
 
 interface-AnonymizePreview-copyFailed = Nie udało się skopiować tekstu.
 

@@ -2320,7 +2320,7 @@ interface-AnonymizePreview-pasteWhereNote = Where you paste this decides what is
 
 interface-AnonymizePreview-copy = Copy text
 
-interface-AnonymizePreview-copied = The text was copied.
+interface-AnonymizePreview-copied = The text was copied. If nothing else is copied meanwhile, it is cleared from the clipboard in five minutes.
 
 interface-AnonymizePreview-copyFailed = The text could not be copied.
 
