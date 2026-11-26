@@ -857,6 +857,25 @@ What it does not check yet:
 A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a
 false alarm; read the log in the artifact before changing the app.
 
+## Linking a clinic on Android (portal connection, piece 3)
+
+myCarlos on Android can now link a clinic's portal. It uses the same HTTPS client as the computer
+builds, with Android's own certificate trust (the system's trust manager through the platform
+verifier), so a certificate the phone does not trust is refused, and a release build trusts the
+system's authorities only.
+
+1. On an Android phone or the emulator, open **Security**, under **Connected clinics**. Enter a FAKE
+   test portal's address and link code and choose **Connect and request approval**. The device is
+   linked and its approval status is shown there. (Before this piece Android showed "Portal linking
+   is not available on this device yet.")
+2. With a test portal whose certificate the phone does not trust (a self-signed one, or one from a
+   certificate authority you added by hand), a **release** build refuses with the same plain message
+   as on a computer and saves nothing; only a debug build may trust the test authority.
+3. With the phone offline, the attempt says it could not connect and can be tried again.
+4. If the app was just started, the Connected clinics section can be missing for a moment: linking
+   is offered only once the platform certificate check has been set up, and not at all if that
+   failed (the old "not available on this device yet" message), never as a choice that then fails.
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
