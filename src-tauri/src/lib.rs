@@ -9640,13 +9640,17 @@ mod tests {
     /// What the renderer sends reaches a command through serde, which by default IGNORES a key it
     /// does not know and fills a field it does not receive from its default: a spelling slip
     /// (`hiddenPeopleDocuments` against a field `hidden_people_documents`) then fails silently, as
-    /// it did for the recovery of a hidden person's lost document. So, for every `#[tauri::command]`
-    /// in any source file, each parameter type that is a struct this crate deserializes must:
+    /// it did for the recovery of a hidden person's lost document. So, for every Tauri command
+    /// (a function under the command attribute) in any source file, each parameter type that is a
+    /// struct this crate deserializes must:
     ///   - carry `deny_unknown_fields`, so a wrong key is refused at the command (and the same for
     ///     every struct such a request holds); and
     ///   - spell its multi-word fields in camelCase on the wire (`rename_all = "camelCase"`), as the
-    ///     renderer does;
-    /// and every struct such a request holds in a field is held to the same two rules.
+    ///     renderer does.
+    ///
+    /// Every struct such a request holds in a field is held to the same two rules. The attribute is
+    /// not spelled out here: `production_webview_configuration_has_no_development_network_access`
+    /// counts its exact text in this file, and a quoted copy would add one to the count.
     #[test]
     fn every_command_argument_denies_unknown_keys_and_is_camel_case_on_the_wire() {
         use std::collections::{BTreeMap, BTreeSet};
@@ -9722,7 +9726,7 @@ mod tests {
                             .rsplit(' ')
                             .next()
                             .unwrap()
-                            .trim_end_matches(|c: char| c == '<' || c == '>')
+                            .trim_end_matches(['<', '>'])
                             .to_owned();
                         let parameters = &signature[open..];
                         command_parameters.push((function, parameters.to_owned()));
