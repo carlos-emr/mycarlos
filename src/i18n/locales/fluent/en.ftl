@@ -2934,3 +2934,19 @@ reader-panel-ai = Explain with AI
 interface-VaultLibrary-help = Help
 
 interface-VaultLibrary-helpButtonName = Help: this screen
+
+interface-clinicNew-fromClinic = { $count } new from your clinic
+
+interface-clinicNew-fromClinics = { $count } new from your clinics
+
+interface-clinicNew-named = { $action }, { $detail }
+
+interface-clinicNew-showThem = Show them
+
+interface-clinicNew-showAll = Show all documents
+
+interface-clinicNew-markAll = Mark all as seen
+
+interface-clinicNew-showing = Showing only the new documents.
+
+interface-VaultLibrary-newTag = New

@@ -111,6 +111,8 @@
     "allow-vault-video-close",
     "allow-vault-is-photo",
     "allow-vault-view-photo",
+    "allow-vault-mark-seen",
+    "allow-vault-mark-all-seen",
     "allow-vault-hide-record",
     "allow-vault-ai-result-save",
     "allow-vault-ai-results",

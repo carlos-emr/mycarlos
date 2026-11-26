@@ -292,6 +292,8 @@ export function VaultLibrary({
   const announcedSearchRef = useRef(searchRequest);
   const [view, setView] = useState<NativeView>("list");
   const [sort, setSort] = useState<NativeSort>("newest");
+  // "Show them" on the New strip: the person's new documents only, wherever they are filed.
+  const [showNewOnly, setShowNewOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [moveFolderId, setMoveFolderId] = useState("");
   // Where the selected documents in Shared with me go: "<person>|<folder>".
@@ -620,6 +622,21 @@ export function VaultLibrary({
       ),
     [snapshot.records, locationProfileId],
   );
+  // Clinic documents the patient has not looked at yet on this device (the New marker). Counted
+  // across every person they can see, never named.
+  const newRecords = useMemo(
+    () =>
+      snapshot.records.filter(
+        (record) => record.isNew === true && !record.hidden,
+      ),
+    [snapshot.records],
+  );
+  const newCount = newRecords.length;
+  const newClinics = useMemo(
+    () =>
+      new Set(newRecords.map((record) => record.verifiedClinicName ?? "")).size,
+    [newRecords],
+  );
   const hiddenRecords = useMemo(
     () =>
       snapshot.records.filter(
@@ -663,7 +680,7 @@ export function VaultLibrary({
   );
   const visibleFolders = useMemo(
     () =>
-      (inShared ? [] : folders)
+      (inShared || showNewOnly ? [] : folders)
         .filter((folder) =>
           normalizedQuery
             ? folder.id !== currentFolderId &&
@@ -683,6 +700,7 @@ export function VaultLibrary({
       folderById,
       folders,
       inShared,
+      showNewOnly,
       normalizedQuery,
       searchScope,
     ],
@@ -690,6 +708,13 @@ export function VaultLibrary({
   // One entry per document, however many folders it is filed in.
   const visibleRecords = useMemo(() => {
     const matching = records.filter((record) => {
+      // "Show them": the person's new documents, wherever they are filed.
+      if (showNewOnly)
+        return (
+          record.isNew === true &&
+          (!normalizedQuery ||
+            searchKey(record.displayName).includes(normalizedQuery))
+        );
       if (normalizedQuery)
         return (
           (!searchScope ||
@@ -705,7 +730,14 @@ export function VaultLibrary({
         ? left.displayName.localeCompare(right.displayName)
         : right.importedAtMs - left.importedAtMs,
     );
-  }, [currentFolderId, normalizedQuery, records, searchScope, sort]);
+  }, [
+    currentFolderId,
+    normalizedQuery,
+    records,
+    searchScope,
+    showNewOnly,
+    sort,
+  ]);
   const selectedRecords = records.filter((record) =>
     selectedIds.includes(record.id),
   );
@@ -1217,6 +1249,66 @@ export function VaultLibrary({
   useEffect(() => {
     if (inShared && sharedNew > 0) onSharedSeen?.();
   }, [inShared, onSharedSeen, sharedNew]);
+
+  // The New strip. A rise in the count while the vault is open is said politely, once, through the
+  // same line as Shared with me's news (so it waits while Rename is open); the count at unlock,
+  // and a fall, are not said.
+  const clinicNewSeen = useRef(newCount);
+  useEffect(() => {
+    const before = clinicNewSeen.current;
+    clinicNewSeen.current = newCount;
+    if (newCount > before)
+      setSharedAnnouncement(
+        deferredText(() =>
+          translateNow(
+            newClinics > 1
+              ? "interface.clinicNew.fromClinics"
+              : "interface.clinicNew.fromClinic",
+            { count: newCount },
+          ),
+        ),
+      );
+  }, [newCount, newClinics]);
+  // Nothing new left: back to the whole list.
+  useEffect(() => {
+    if (newCount === 0) setShowNewOnly(false);
+  }, [newCount]);
+  // The patient opened a document: it stops being new on this device. Not done by looking at the
+  // list, scrolling or unlocking.
+  const markOpened = (recordId: string) => {
+    if (!bridge.markSeen) return;
+    const record = snapshot.records.find(
+      (candidate) => candidate.id === recordId,
+    );
+    if (!record || record.isNew !== true) return;
+    void bridge
+      .markSeen([recordId])
+      .then(() => refresh())
+      .catch(() => undefined);
+  };
+  useEffect(() => {
+    if (readerRecordId) markOpened(readerRecordId);
+    // Once per document opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readerRecordId]);
+  // "Show them": the person with new documents who is on screen, or else the first who has some.
+  const showNewDocuments = () => {
+    const target = newRecords.some((record) => record.profileId === profileId)
+      ? profileId
+      : (newRecords.find((record) =>
+          people.some((person) => person.id === record.profileId),
+        )?.profileId ?? profileId);
+    if (target !== profileId || section !== "records") openPerson(target);
+    setShowNewOnly(true);
+  };
+  const markAllSeen = () =>
+    run(async () => {
+      await bridge.markAllSeen?.();
+      setShowNewOnly(false);
+      await refresh();
+      // The strip leaves the page: the focus goes to the list heading.
+      window.requestAnimationFrame(() => pageHeadingRef.current?.focus());
+    });
 
   const importFiles = (inFolder?: string | null) =>
     run(async () => {
@@ -2602,8 +2694,17 @@ export function VaultLibrary({
                   </div>
                 </div>
 
-                {/* The "N new from your clinic" strip goes here (shows nothing until the marker lands). */}
-                <ClinicNewStrip count={0} />
+                {/* "{N} new from your clinic": nothing at zero. Shared with me has its own count. */}
+                {!inShared && (
+                  <ClinicNewStrip
+                    count={newCount}
+                    clinics={newClinics}
+                    showing={showNewOnly}
+                    onShow={showNewDocuments}
+                    onShowAll={() => setShowNewOnly(false)}
+                    onMarkAllSeen={() => void markAllSeen()}
+                  />
+                )}
 
                 {inShared && (
                   <p className="purpose-note native-shared-intro">
@@ -2953,6 +3054,7 @@ export function VaultLibrary({
                     // an earlier operation would read as being about this record.
                     setNotice("");
                     setActiveRecordId(recordId);
+                    markOpened(recordId);
                   }}
                   onRenameFolder={renameFolder}
                   onToggleSelected={toggleSelected}

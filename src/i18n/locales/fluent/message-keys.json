@@ -1381,5 +1381,13 @@
   "reader.panel.more",
   "reader.panel.ai",
   "interface.VaultLibrary.help",
-  "interface.VaultLibrary.helpButtonName"
+  "interface.VaultLibrary.helpButtonName",
+  "interface.clinicNew.fromClinic",
+  "interface.clinicNew.fromClinics",
+  "interface.clinicNew.named",
+  "interface.clinicNew.showThem",
+  "interface.clinicNew.showAll",
+  "interface.clinicNew.markAll",
+  "interface.clinicNew.showing",
+  "interface.VaultLibrary.newTag"
 ]

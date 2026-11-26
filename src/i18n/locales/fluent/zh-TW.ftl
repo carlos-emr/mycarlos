@@ -2660,3 +2660,19 @@ reader-panel-ai = 用 AI 解釋
 interface-VaultLibrary-help = 說明
 
 interface-VaultLibrary-helpButtonName = 說明：此畫面
+
+interface-clinicNew-fromClinic = { $count } 份來自您診所的新文件
+
+interface-clinicNew-fromClinics = { $count } 份來自您各診所的新文件
+
+interface-clinicNew-named = { $action }，{ $detail }
+
+interface-clinicNew-showThem = 顯示這些文件
+
+interface-clinicNew-showAll = 顯示所有文件
+
+interface-clinicNew-markAll = 全部標示為已檢視
+
+interface-clinicNew-showing = 僅顯示新文件。
+
+interface-VaultLibrary-newTag = 新

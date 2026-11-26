@@ -381,6 +381,16 @@ On every platform:
     (a FAKE `.txt` renamed `.pdf` will do): after unlocking, the app names it and says it was not
     added. Sharing from another app on a phone comes with the phone issues (#50 to #53).
 
+13a. **New marker.** On a vault with a linked clinic, have the clinic deliver two FAKE documents while
+    myCarlos is open: a line "2 new from your clinic" appears above the list (read out politely once),
+    with **Show them** and **Mark all as seen**, and a **New** tag on those two rows. Lock and unlock, scroll
+    and search: nothing changes. Open one document: its tag goes and the line says "1 new". **Show them**
+    lists only the new ones (and **Show all documents** comes back). **Mark all as seen**: the line goes and
+    the focus is on the list's heading. Deliver another: it is new again. Delete the small
+    `new-seen-*.v1` file beside `vault-home` (with myCarlos locked) and unlock: nothing is new. A document
+    you added yourself, one in a handover, a hidden one, and one in Shared with me are never tagged. With two
+    clinics the line says "clinics". Check it in each language and at 200% text.
+
 **Windows second-launch forwarding (#53; real Windows execution still required).**
 Use a build containing this change, a synthetic vault, and two FAKE PDFs. In PowerShell,
 replace the executable placeholder with the actual installed executable path:

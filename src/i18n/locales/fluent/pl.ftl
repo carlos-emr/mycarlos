@@ -3063,3 +3063,31 @@ reader-panel-ai = Wyjaśnij z pomocą AI
 interface-VaultLibrary-help = Pomoc
 
 interface-VaultLibrary-helpButtonName = Pomoc: ten ekran
+
+interface-clinicNew-fromClinic =
+    { $count ->
+    [one] { $count } nowy dokument od Twojej kliniki
+    [few] { $count } nowe dokumenty od Twojej kliniki
+    [many] { $count } nowych dokumentów od Twojej kliniki
+    *[other] { $count } nowego dokumentu od Twojej kliniki
+    }
+
+interface-clinicNew-fromClinics =
+    { $count ->
+    [one] { $count } nowy dokument od Twoich klinik
+    [few] { $count } nowe dokumenty od Twoich klinik
+    [many] { $count } nowych dokumentów od Twoich klinik
+    *[other] { $count } nowego dokumentu od Twoich klinik
+    }
+
+interface-clinicNew-named = { $action }, { $detail }
+
+interface-clinicNew-showThem = Pokaż je
+
+interface-clinicNew-showAll = Pokaż wszystkie dokumenty
+
+interface-clinicNew-markAll = Oznacz wszystkie jako obejrzane
+
+interface-clinicNew-showing = Wyświetlane są tylko nowe dokumenty.
+
+interface-VaultLibrary-newTag = Nowy

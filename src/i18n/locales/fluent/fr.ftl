@@ -2969,3 +2969,29 @@ reader-panel-ai = Expliquer avec l’IA
 interface-VaultLibrary-help = Aide
 
 interface-VaultLibrary-helpButtonName = Aide : cet écran
+
+interface-clinicNew-fromClinic =
+    { $count ->
+    [one] { $count } nouveau document de votre clinique
+    [many] { $count } nouveaux documents de votre clinique
+    *[other] { $count } nouveaux documents de votre clinique
+    }
+
+interface-clinicNew-fromClinics =
+    { $count ->
+    [one] { $count } nouveau document de vos cliniques
+    [many] { $count } nouveaux documents de vos cliniques
+    *[other] { $count } nouveaux documents de vos cliniques
+    }
+
+interface-clinicNew-named = { $action }, { $detail }
+
+interface-clinicNew-showThem = Les afficher
+
+interface-clinicNew-showAll = Afficher tous les documents
+
+interface-clinicNew-markAll = Tout marquer comme vu
+
+interface-clinicNew-showing = Seuls les nouveaux documents sont affichés.
+
+interface-VaultLibrary-newTag = Nouveau

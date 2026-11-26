@@ -1383,6 +1383,14 @@ export const MESSAGE_KEYS = [
   "reader.panel.ai",
   "interface.VaultLibrary.help",
   "interface.VaultLibrary.helpButtonName",
+  "interface.clinicNew.fromClinic",
+  "interface.clinicNew.fromClinics",
+  "interface.clinicNew.named",
+  "interface.clinicNew.showThem",
+  "interface.clinicNew.showAll",
+  "interface.clinicNew.markAll",
+  "interface.clinicNew.showing",
+  "interface.VaultLibrary.newTag",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3038,6 +3046,14 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.help": "interface-VaultLibrary-help",
   "interface.VaultLibrary.helpButtonName":
     "interface-VaultLibrary-helpButtonName",
+  "interface.clinicNew.fromClinic": "interface-clinicNew-fromClinic",
+  "interface.clinicNew.fromClinics": "interface-clinicNew-fromClinics",
+  "interface.clinicNew.named": "interface-clinicNew-named",
+  "interface.clinicNew.showThem": "interface-clinicNew-showThem",
+  "interface.clinicNew.showAll": "interface-clinicNew-showAll",
+  "interface.clinicNew.markAll": "interface-clinicNew-markAll",
+  "interface.clinicNew.showing": "interface-clinicNew-showing",
+  "interface.VaultLibrary.newTag": "interface-VaultLibrary-newTag",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4556,6 +4572,17 @@ export interface MessageArgsByKey {
   "reader.panel.ai": undefined;
   "interface.VaultLibrary.help": undefined;
   "interface.VaultLibrary.helpButtonName": undefined;
+  "interface.clinicNew.fromClinic": { count: FluentArgument };
+  "interface.clinicNew.fromClinics": { count: FluentArgument };
+  "interface.clinicNew.named": {
+    action: FluentArgument;
+    detail: FluentArgument;
+  };
+  "interface.clinicNew.showThem": undefined;
+  "interface.clinicNew.showAll": undefined;
+  "interface.clinicNew.markAll": undefined;
+  "interface.clinicNew.showing": undefined;
+  "interface.VaultLibrary.newTag": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];
