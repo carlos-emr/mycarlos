@@ -132,6 +132,23 @@ fn be64(bytes: &[u8], at: usize) -> Option<u64> {
         .map(|b| u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
 }
 
+/// A number read only from inside the box it belongs to: the 4 (or 8) bytes at `at` must end at or
+/// before `end`, the box's own end. `be32` and `be64` check the whole buffer; a field of a box that is
+/// too short for it would otherwise be read from the bytes of the box that follows.
+fn be32_in(bytes: &[u8], at: usize, end: usize) -> Option<u32> {
+    if at.checked_add(4)? > end {
+        return None;
+    }
+    be32(bytes, at)
+}
+
+fn be64_in(bytes: &[u8], at: usize, end: usize) -> Option<u64> {
+    if at.checked_add(8)? > end {
+        return None;
+    }
+    be64(bytes, at)
+}
+
 /// The children of a box whose payload starts at `from` and ends at `to`.
 fn children(
     bytes: &[u8],
@@ -170,15 +187,27 @@ fn parse_moov(moov: &[u8]) -> Result<InitInfo, Mp4Error> {
         let parts = children(moov, at + 8, at + size)?;
         let tkhd = find(&parts, b"tkhd").ok_or(Mp4Error::Malformed)?;
         let version = *moov.get(tkhd.0 + 8).ok_or(Mp4Error::Malformed)?;
-        let id =
-            be32(moov, tkhd.0 + if version == 1 { 28 } else { 20 }).ok_or(Mp4Error::Malformed)?;
+        let id = be32_in(
+            moov,
+            tkhd.0 + if version == 1 { 28 } else { 20 },
+            tkhd.0 + tkhd.1,
+        )
+        .ok_or(Mp4Error::Malformed)?;
         let mdia = find(&parts, b"mdia").ok_or(Mp4Error::Malformed)?;
         let media = children(moov, mdia.0 + 8, mdia.0 + mdia.1)?;
         let mdhd = find(&media, b"mdhd").ok_or(Mp4Error::Malformed)?;
         let version = *moov.get(mdhd.0 + 8).ok_or(Mp4Error::Malformed)?;
-        let timescale =
-            be32(moov, mdhd.0 + if version == 1 { 28 } else { 20 }).ok_or(Mp4Error::Malformed)?;
+        let timescale = be32_in(
+            moov,
+            mdhd.0 + if version == 1 { 28 } else { 20 },
+            mdhd.0 + mdhd.1,
+        )
+        .ok_or(Mp4Error::Malformed)?;
         let hdlr = find(&media, b"hdlr").ok_or(Mp4Error::Malformed)?;
+        // The handler type is the 4 bytes at 16, inside the box.
+        if hdlr.1 < 20 {
+            return Err(Mp4Error::Malformed);
+        }
         let handler = moov
             .get(hdlr.0 + 16..hdlr.0 + 20)
             .ok_or(Mp4Error::Malformed)?;
@@ -249,8 +278,9 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
         }
         let parts = children(moof, at + 8, at + size)?;
         let tfhd = find(&parts, b"tfhd").ok_or(Mp4Error::Malformed)?;
-        let flags = be32(moof, tfhd.0 + 8).ok_or(Mp4Error::Malformed)? & 0x00ff_ffff;
-        let track_id = be32(moof, tfhd.0 + 12).ok_or(Mp4Error::Malformed)?;
+        let tfhd_end = tfhd.0 + tfhd.1;
+        let flags = be32_in(moof, tfhd.0 + 8, tfhd_end).ok_or(Mp4Error::Malformed)? & 0x00ff_ffff;
+        let track_id = be32_in(moof, tfhd.0 + 12, tfhd_end).ok_or(Mp4Error::Malformed)?;
         // An explicit base data offset is an absolute position in the file the
         // pieces came from; the normaliser moves every fragment, so it would
         // point at the wrong bytes afterwards. Neither Chromium (which sets
@@ -273,14 +303,16 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
             .find(|t| t.id == track_id)
             .map_or(0, |t| u64::from(t.default_duration));
         if flags & 0x08 != 0 {
-            default_duration = u64::from(be32(moof, cursor).ok_or(Mp4Error::Malformed)?);
+            default_duration =
+                u64::from(be32_in(moof, cursor, tfhd_end).ok_or(Mp4Error::Malformed)?);
         }
         let tfdt = find(&parts, b"tfdt").ok_or(Mp4Error::Malformed)?;
+        let tfdt_end = tfdt.0 + tfdt.1;
         let wide = *moof.get(tfdt.0 + 8).ok_or(Mp4Error::Malformed)? == 1;
         let value = if wide {
-            be64(moof, tfdt.0 + 12).ok_or(Mp4Error::Malformed)?
+            be64_in(moof, tfdt.0 + 12, tfdt_end).ok_or(Mp4Error::Malformed)?
         } else {
-            u64::from(be32(moof, tfdt.0 + 12).ok_or(Mp4Error::Malformed)?)
+            u64::from(be32_in(moof, tfdt.0 + 12, tfdt_end).ok_or(Mp4Error::Malformed)?)
         };
         // The fragment's length: the sum of its runs' sample durations.
         let mut duration = 0_u64;
@@ -290,8 +322,9 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
             if &rkind != b"trun" {
                 continue;
             }
-            let flags = be32(moof, rat + 8).ok_or(Mp4Error::Malformed)? & 0x00ff_ffff;
-            let count = be32(moof, rat + 12).ok_or(Mp4Error::Malformed)? as usize;
+            let run_end = rat + rsize;
+            let flags = be32_in(moof, rat + 8, run_end).ok_or(Mp4Error::Malformed)? & 0x00ff_ffff;
+            let count = be32_in(moof, rat + 12, run_end).ok_or(Mp4Error::Malformed)? as usize;
             samples = samples
                 .checked_add(count as u64)
                 .ok_or(Mp4Error::Malformed)?;
@@ -314,7 +347,8 @@ fn parse_moof(moof: &[u8], init: &InitInfo) -> Result<MoofInfo, Mp4Error> {
                 for sample in 0..count {
                     duration = duration
                         .checked_add(u64::from(
-                            be32(moof, at + sample * each).ok_or(Mp4Error::Malformed)?,
+                            be32_in(moof, at + sample * each, run_end)
+                                .ok_or(Mp4Error::Malformed)?,
                         ))
                         .ok_or(Mp4Error::Malformed)?;
                 }
@@ -624,6 +658,13 @@ impl Mp4Normaliser {
                 self.buffer.clear();
                 self.state = State::Skipping { remaining: payload };
                 return self.close_if_empty();
+            }
+        }
+        // A box that is only its header has no payload to wait for: it is read now, not when
+        // the next byte happens to arrive (or never, at the end of the stream).
+        if let State::Buffering { total, .. } = self.state {
+            if self.buffer.len() == total {
+                return self.finish_buffered(out);
             }
         }
         Ok(())
@@ -1811,5 +1852,196 @@ mod tests {
             // (index() says so), the only estimate there is.
             vec![(0, 30000), (30000, 30000), (60000, 30000)]
         );
+    }
+
+    // ---- a box's fields are read from inside the box (and a header-only box is read at once) ----
+
+    fn push_all(stream: &[u8]) -> Result<Mp4Normaliser, Mp4Error> {
+        let mut normaliser = Mp4Normaliser::new();
+        normaliser.push(stream, &mut Vec::new())?;
+        Ok(normaliser)
+    }
+
+    fn moov_of(tracks: &[Vec<u8>]) -> Vec<u8> {
+        boxed(b"moov", &tracks.concat())
+    }
+
+    fn tkhd_with(payload: &[u8]) -> Vec<u8> {
+        full(b"tkhd", 0, 0, payload)
+    }
+
+    fn mdhd_with(payload: &[u8]) -> Vec<u8> {
+        full(b"mdhd", 0, 0, payload)
+    }
+
+    fn hdlr_with(payload: &[u8]) -> Vec<u8> {
+        full(b"hdlr", 0, 0, payload)
+    }
+
+    fn trak_of(tkhd: Vec<u8>, mdhd: Vec<u8>, hdlr: Vec<u8>) -> Vec<u8> {
+        boxed(
+            b"trak",
+            &[tkhd, boxed(b"mdia", &[mdhd, hdlr].concat())].concat(),
+        )
+    }
+
+    /// The fields a good track box has, so that each test shortens exactly one box.
+    fn good_tkhd() -> Vec<u8> {
+        let mut payload = vec![0; 8];
+        payload.extend_from_slice(&1_u32.to_be_bytes());
+        payload.extend_from_slice(&[0; 68]);
+        tkhd_with(&payload)
+    }
+
+    fn good_mdhd() -> Vec<u8> {
+        let mut payload = vec![0; 8];
+        payload.extend_from_slice(&30000_u32.to_be_bytes());
+        payload.extend_from_slice(&[0; 8]);
+        mdhd_with(&payload)
+    }
+
+    fn good_hdlr() -> Vec<u8> {
+        let mut payload = vec![0; 4];
+        payload.extend_from_slice(b"vide");
+        payload.extend_from_slice(&[0; 12]);
+        hdlr_with(&payload)
+    }
+
+    #[test]
+    fn a_track_box_too_short_for_its_fields_is_refused_not_read_from_the_box_after_it() {
+        let ok =
+            |tkhd, mdhd, hdlr| push_all(&[ftyp(), moov_of(&[trak_of(tkhd, mdhd, hdlr)])].concat());
+        assert!(ok(good_tkhd(), good_mdhd(), good_hdlr()).is_ok());
+        // A track header that ends before its id, a media header that ends before its timescale
+        // and a handler box that ends before its type: each box is followed by bytes that would
+        // have been read as the field.
+        assert_eq!(
+            ok(tkhd_with(&[0; 4]), good_mdhd(), good_hdlr()).map(|_| ()),
+            Err(Mp4Error::Malformed)
+        );
+        assert_eq!(
+            ok(good_tkhd(), mdhd_with(&[0; 8]), good_hdlr()).map(|_| ()),
+            Err(Mp4Error::Malformed)
+        );
+        assert_eq!(
+            ok(good_tkhd(), good_mdhd(), hdlr_with(&[0; 4])).map(|_| ()),
+            Err(Mp4Error::Malformed)
+        );
+        // The field itself just inside its box is read: the box ends exactly after the timescale.
+        let mut exact = vec![0; 8];
+        exact.extend_from_slice(&30000_u32.to_be_bytes());
+        assert!(ok(good_tkhd(), mdhd_with(&exact), good_hdlr()).is_ok());
+    }
+
+    fn tfhd_of(flags: u32, payload: &[u8]) -> Vec<u8> {
+        let mut body = 1_u32.to_be_bytes().to_vec();
+        body.extend_from_slice(payload);
+        full(b"tfhd", 0, flags, &body)
+    }
+
+    fn fragment_of(parts: &[Vec<u8>]) -> Vec<u8> {
+        let mfhd = full(b"mfhd", 0, 0, &1_u32.to_be_bytes());
+        let moof = boxed(b"moof", &[vec![mfhd], parts.to_vec()].concat().concat());
+        [moof, boxed(b"mdat", &[0xAB; 8])].concat()
+    }
+
+    fn traf_of(parts: &[Vec<u8>]) -> Vec<u8> {
+        boxed(b"traf", &parts.concat())
+    }
+
+    fn tfdt0() -> Vec<u8> {
+        full(b"tfdt", 0, 0, &0_u32.to_be_bytes())
+    }
+
+    fn trun_sizes(count: u32) -> Vec<u8> {
+        // Sizes only (0x200): the fragment's length then comes from the default duration.
+        let mut body = count.to_be_bytes().to_vec();
+        body.extend_from_slice(&vec![0; 4 * count as usize]);
+        full(b"trun", 0, 0x200, &body)
+    }
+
+    #[test]
+    fn a_fragment_box_too_short_for_its_fields_is_refused_not_read_from_the_box_after_it() {
+        let parse =
+            |traf: Vec<u8>| push_all(&[ftyp(), moov(), fragment_of(&[traf])].concat()).map(|_| ());
+        // A default sample duration the header's flags promise but its box does not hold: it
+        // used to be read from the time box that follows, so a wrong duration was accepted.
+        assert_eq!(
+            parse(traf_of(&[tfhd_of(0x08, &[]), tfdt0(), trun_sizes(2)])),
+            Err(Mp4Error::Malformed)
+        );
+        assert_eq!(
+            parse(traf_of(&[
+                tfhd_of(0x02 | 0x08, &[0; 4]),
+                tfdt0(),
+                trun_sizes(2)
+            ])),
+            Err(Mp4Error::Malformed)
+        );
+        // With its field inside the box it is read.
+        assert_eq!(
+            parse(traf_of(&[
+                tfhd_of(0x08, &1000_u32.to_be_bytes()),
+                tfdt0(),
+                trun_sizes(2)
+            ])),
+            Ok(())
+        );
+        assert_eq!(
+            parse(traf_of(&[
+                tfhd_of(0x02 | 0x08, &[[0; 4], 1000_u32.to_be_bytes()].concat()),
+                tfdt0(),
+                trun_sizes(2)
+            ])),
+            Ok(())
+        );
+        // A track header without even its id, a time box that ends before its time (with another
+        // box after it) and a run that ends before its sample count.
+        let short_tfhd = full(b"tfhd", 0, 0, &[]);
+        assert_eq!(
+            parse(traf_of(&[short_tfhd, tfdt0(), trun_sizes(1)])),
+            Err(Mp4Error::Malformed)
+        );
+        let wide_short = full(b"tfdt", 1, 0, &[0; 4]);
+        assert_eq!(
+            parse(traf_of(&[tfhd_of(0, &[]), wide_short, trun_sizes(1)])),
+            Err(Mp4Error::Malformed)
+        );
+        let narrow_short = full(b"tfdt", 0, 0, &[]);
+        assert_eq!(
+            parse(traf_of(&[tfhd_of(0, &[]), narrow_short, trun_sizes(1)])),
+            Err(Mp4Error::Malformed)
+        );
+        let short_run = full(b"trun", 0, 0x200, &[]);
+        assert_eq!(
+            parse(traf_of(&[
+                tfhd_of(0, &[]),
+                tfdt0(),
+                short_run,
+                trun_sizes(1)
+            ])),
+            Err(Mp4Error::Malformed)
+        );
+    }
+
+    #[test]
+    fn a_box_that_is_only_its_header_is_read_when_it_arrives_not_when_the_next_byte_does() {
+        // A movie box with no payload is refused at once (it used to wait for the next byte, and
+        // at the end of the stream it was never read at all).
+        assert_eq!(
+            push_all(&[ftyp(), boxed(b"moov", &[])].concat()).map(|_| ()),
+            Err(Mp4Error::Malformed)
+        );
+        // So is a fragment header with no content, after a good movie.
+        assert_eq!(
+            push_all(&[ftyp(), moov(), boxed(b"moof", &[])].concat()).map(|_| ()),
+            Err(Mp4Error::Malformed)
+        );
+        // A file-type box of only its header is taken and written through, as a longer one is.
+        let mut normaliser = Mp4Normaliser::new();
+        let mut out = Vec::new();
+        normaliser.push(&boxed(b"ftyp", &[]), &mut out).unwrap();
+        assert_eq!(out, boxed(b"ftyp", &[]));
+        assert_eq!(normaliser.written(), 8);
     }
 }
