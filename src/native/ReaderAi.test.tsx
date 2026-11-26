@@ -580,6 +580,30 @@ describe("the reader's AI helper", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("asks the model once and keeps one answer when Summary opens, though React runs its effect twice (StrictMode)", async () => {
+    const model = fakeLocalModel();
+    const { kept } = fakeKept([], model);
+    renderReader(model, { kept, strict: true });
+    await firstPage();
+    const user = userEvent.setup();
+    const asked = () =>
+      model.calls.filter((call) => call.tool === "summary").length;
+    // One model call and one kept answer for one opening of the panel, though StrictMode runs its
+    // effect twice. NOT a pin of the `startedFor` guard on its own: with that check dropped this
+    // still passes (the fake model is not asked twice by the second run), and opening the panel
+    // again asks again by design when nothing readable was kept. The property pinned is the
+    // outcome, not the guard.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(AI_LABEL);
+    await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(asked()).toBe(1);
+    expect(kept.save).toHaveBeenCalledTimes(1);
+    // A second press is a toggle (it closes the panel), not a second request.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(asked()).toBe(1);
+  });
+
   it("shows the summary the vault kept, asks no model, and summarizes again on request", async () => {
     const model = fakeLocalModel();
     const { kept } = fakeKept(
