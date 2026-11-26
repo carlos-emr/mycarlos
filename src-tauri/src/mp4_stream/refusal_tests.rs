@@ -120,6 +120,21 @@ fn a_child_box_that_is_too_short_or_runs_past_its_parent_is_malformed() {
     assert_eq!(refused_moov(moov_of(&[damaged])), Mp4Error::Malformed);
 }
 
+#[test]
+fn a_child_that_runs_past_its_own_parent_into_the_next_box_is_malformed() {
+    // The first track's last child claims 100 bytes but the track ends after 8 of them; the
+    // second track's bytes follow in the movie, so the claim is still inside the whole box. Only
+    // the check against the parent's own end refuses it (without it the track reads as it should).
+    let parts = [tkhd(1), mdia(&[mdhd(30000), hdlr(b"vide")])].concat();
+    let mut first = parts.clone();
+    first.extend_from_slice(&[0, 0, 0, 100, b'f', b'r', b'e', b'e']);
+    let second = trak_of(&[tkhd(2), mdia(&[mdhd(48000), hdlr(b"soun")])]);
+    let good = moov_of(&[boxed(b"trak", &parts), second.clone()]);
+    assert!(push_all(&[ftyp(), good].concat()).is_ok());
+    let bad = moov_of(&[boxed(b"trak", &first), second]);
+    assert_eq!(refused_moov(bad), Mp4Error::Malformed);
+}
+
 // ---- a fragment's own fields ------------------------------------------------------------------
 
 fn good_prefix() -> Vec<u8> {
