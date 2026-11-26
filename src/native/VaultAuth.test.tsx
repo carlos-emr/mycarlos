@@ -884,3 +884,86 @@ for (const locale of LOCALES) {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 }
+
+// iOS and Android take the app switcher's picture BEFORE the page is reported hidden
+// (visibilitychange), so a secret shown as text has to go back to dots on blur, pagehide and
+// freeze too (review of #489, agent 1). Typed text stays: switching to another window to copy a
+// key must not lose it.
+describe("a shown secret goes back to dots before the app switcher's picture", () => {
+  const goesAway: [string, () => void][] = [
+    ["blur", () => fireEvent(window, new Event("blur"))],
+    ["pagehide", () => fireEvent(window, new Event("pagehide"))],
+    ["freeze", () => fireEvent(document, new Event("freeze"))],
+  ];
+  const unlockProps = {
+    busy: false,
+    notice: "",
+    autoLockMinutes: 5,
+    onUnlock: vi.fn().mockResolvedValue(undefined),
+    onRecover: vi.fn(),
+    restoreBridge,
+    onRestored: vi.fn(),
+    onReset: vi.fn(),
+  };
+
+  it.each(goesAway)(
+    "on %s: the set-up screen's two boxes, the unlock box and the recovery key",
+    (_event, leave) => {
+      const { unmount } = render(
+        <CreateVault
+          busy={false}
+          notice=""
+          restoreBridge={restoreBridge}
+          onRestored={vi.fn()}
+          onCreate={vi.fn().mockResolvedValue(undefined)}
+          checkRules={vi.fn().mockResolvedValue({
+            longEnough: true,
+            notAName: true,
+            hardToGuess: true,
+          })}
+        />,
+      );
+      const passphrase = screen.getByLabelText(humanText("Passphrase"));
+      const confirmation = screen.getByLabelText(
+        humanText("Confirm passphrase"),
+      );
+      fireEvent.change(passphrase, { target: { value: "FAKE river 934" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Show passphrase") }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: humanText("Show passphrase in Confirm passphrase"),
+        }),
+      );
+      expect(passphrase).toHaveAttribute("type", "text");
+      expect(confirmation).toHaveAttribute("type", "text");
+      act(leave);
+      expect(passphrase).toHaveAttribute("type", "password");
+      expect(confirmation).toHaveAttribute("type", "password");
+      // What was typed stays.
+      expect(passphrase).toHaveValue("FAKE river 934");
+      unmount();
+
+      render(<UnlockVault {...unlockProps} />);
+      const unlockBox = screen.getByLabelText(humanText("Passphrase"));
+      fireEvent.change(unlockBox, { target: { value: "FAKE river 934" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Show passphrase") }),
+      );
+      expect(unlockBox).toHaveAttribute("type", "text");
+      const key = screen.getByLabelText(humanText("Recovery key"));
+      fireEvent.change(key, { target: { value: "ABCD-EFGH" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: humanText("Show recovery key") }),
+      );
+      expect(key).toHaveAttribute("type", "text");
+      act(leave);
+      expect(unlockBox).toHaveAttribute("type", "password");
+      expect(key).toHaveAttribute("type", "password");
+      // Only what is shown is hidden: neither box is cleared.
+      expect(unlockBox).toHaveValue("FAKE river 934");
+      expect(key).toHaveValue("ABCD-EFGH");
+    },
+  );
+});
