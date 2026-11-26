@@ -7113,21 +7113,93 @@ describe("durable vault UI", () => {
     "mycarlos.zoom.v1": "1.25",
   };
 
-  it("lists every mycarlos.* storage key the sources write, and each is a vault note or a device setting", () => {
+  // What these guards cover: the webview's localStorage keys named `mycarlos.*` in the sources.
+  // Not covered: sessionStorage, IndexedDB and cookies (the first test pins that no source uses
+  // them), and anything the native side keeps (its settings and the vault itself).
+  const appSources = () => {
     const sources = import.meta.glob("/src/**/*.{ts,tsx}", {
       query: "?raw",
       import: "default",
       eager: true,
     }) as Record<string, string>;
+    return Object.entries(sources).filter(
+      ([path]) => !/\.test\.|\/test\//.test(path),
+    );
+  };
+
+  it("pins the sources that use webview storage: only localStorage, in these files", () => {
+    const users = appSources()
+      .filter(([, text]) =>
+        /localStorage|sessionStorage|indexedDB|document\.cookie/.test(text),
+      )
+      .map(([path]) => path)
+      .sort();
+    expect(users).toEqual([
+      "/src/aiLabelPreference.ts",
+      "/src/appearance.ts", // keeps `window.localStorage` in a local `storage` alias
+      "/src/i18n/core.ts",
+      "/src/native/autoLock.ts",
+      "/src/native/oldBackups.ts",
+      "/src/native/photo.ts",
+      "/src/native/recoveryOffer.ts",
+      "/src/native/unfinishedHandover.ts",
+      "/src/native/unfinishedRecoveryKey.ts",
+      "/src/native/video.ts",
+      "/src/native/zoom.ts",
+    ]);
+    for (const [path, text] of appSources())
+      expect(
+        /sessionStorage|indexedDB|document\.cookie/.test(text),
+        `${path} uses a store these guards do not cover`,
+      ).toBe(false);
+  });
+
+  it("lists every mycarlos.* localStorage key the sources write, and each is a vault note or a device setting", () => {
     const found = new Set<string>();
-    for (const [path, text] of Object.entries(sources)) {
-      if (/\.test\.|\/test\//.test(path)) continue;
-      for (const match of text.matchAll(/["'`](mycarlos\.[A-Za-z0-9.]+)["'`]/g))
+    for (const [path, text] of appSources()) {
+      // Any string that starts with the app's prefix: dashes and underscores included.
+      for (const match of text.matchAll(/["'`](mycarlos\.[^"'`]*)["'`]/g)) {
+        // A key built at run time cannot be listed, so none may be (`${…}` or a concatenation).
+        expect(match[1], `${path}: a key built at run time`).not.toMatch(
+          /\$\{|\.$/,
+        );
         found.add(match[1]);
+      }
+      expect(text, `${path}: a key built by concatenation`).not.toMatch(
+        /["'`]mycarlos\.[^"'`]*["'`]\s*\+|\+\s*["'`]mycarlos\./,
+      );
     }
     expect(Array.from(found).sort()).toEqual(
       [...Object.keys(VAULT_NOTES), ...Object.keys(DEVICE_SETTINGS)].sort(),
     );
+  });
+
+  it("no caller gives the unfinished-handover note a scope: erase clears the one key, so a scope must not appear unnoticed", () => {
+    // `unfinishedHandover.ts` can keep one note per vault slot (#357). Erase clears the unscoped
+    // key only, because clearing by prefix would wipe another vault's note. When a caller starts
+    // passing a scope, this test fails: erase must then clear the erased vault's own scope.
+    const topLevelArguments = (call: string) =>
+      call
+        .replace(/\([^()]*\)/g, "()")
+        .split(",")
+        .map((argument) => argument.trim())
+        .filter(Boolean);
+    let calls = 0;
+    for (const [path, text] of appSources()) {
+      if (path === "/src/native/unfinishedHandover.ts") continue;
+      for (const match of text.matchAll(
+        /(rememberUnfinishedHandover|takeUnfinishedHandover)\(((?:[^()]|\([^()]*\))*)\)/g,
+      )) {
+        calls += 1;
+        const given = topLevelArguments(match[2]).length;
+        expect(
+          given,
+          `${path}: ${match[1]}(${match[2].trim()}) passes a scope`,
+        ).toBe(match[1] === "rememberUnfinishedHandover" ? 1 : 0);
+      }
+    }
+    // The scan finds the calls it is about (VaultApp's two, today).
+    expect(calls).toBeGreaterThanOrEqual(2);
   });
 
   it("erasing a vault removes every note about it from the device, and keeps the device's settings", async () => {

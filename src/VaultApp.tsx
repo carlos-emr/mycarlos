@@ -468,6 +468,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     pendingSharedOutcomeRef.current = null;
     rememberUnfinishedRecoveryKey(null);
     rememberOldBackupsGuide(null);
+    // The unscoped note: no caller passes a scope today (a test pins that). When vaults get
+    // their own slots (#357) and the notes are scoped, this must clear the erased vault's own
+    // scope, never every scope by prefix: that would wipe another vault's note.
     rememberUnfinishedHandover(false);
   };
 
