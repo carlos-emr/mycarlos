@@ -281,3 +281,51 @@ fn a_saved_intent_is_trusted_only_while_each_of_its_fields_is_what_this_device_s
         })
     ));
 }
+
+#[test]
+fn a_saved_challenge_or_acceptance_that_no_longer_verifies_is_not_trusted() {
+    let (x, link, attempt) = first_fixture();
+    let first = &x["flows"]["first"];
+    let good_challenge = first["challenge"]["compact"].as_str().unwrap().to_owned();
+    let good_acceptance = first["acceptance"]["compact"].as_str().unwrap().to_owned();
+    let other = uuid::Uuid::new_v4().to_string();
+    let complete = |challenge: &str, acceptance: Option<&str>, status: ApprovalState| Attempt {
+        challenge: Some(challenge.to_owned()),
+        acceptance: acceptance.map(str::to_owned),
+        status: Some(status),
+        ..attempt.clone()
+    };
+    // The control: the fixture's own challenge, and with its acceptance, are trusted.
+    assert!(valid_saved(
+        &link,
+        &complete(&good_challenge, None, ApprovalState::ChallengeReady)
+    ));
+    assert!(valid_saved(
+        &link,
+        &complete(
+            &good_challenge,
+            Some(&good_acceptance),
+            ApprovalState::Accepted
+        )
+    ));
+    // A challenge about another request (signed properly by the clinic's key, so only the check
+    // that it is for THIS request refuses it).
+    let wrong_challenge =
+        fixture_challenge_with(|claims| claims["request_id"] = other.clone().into());
+    assert!(!valid_saved(
+        &link,
+        &complete(&wrong_challenge, None, ApprovalState::ChallengeReady)
+    ));
+    // An acceptance of another request, with the good challenge in place.
+    let wrong_acceptance = fixture_acceptance_with(&good_challenge, |claims| {
+        claims["request_id"] = other.clone().into()
+    });
+    assert!(!valid_saved(
+        &link,
+        &complete(
+            &good_challenge,
+            Some(&wrong_acceptance),
+            ApprovalState::Accepted
+        )
+    ));
+}
