@@ -126,6 +126,7 @@ export function declareMicrophone(manifest) {
 // are not touched.
 const BARS_MARKER = "mycarlos: keep the page clear of the system bars";
 const BARS_IMPORTS = [
+  "import android.content.pm.ApplicationInfo",
   "import android.content.res.Configuration",
   "import android.graphics.Color",
   "import android.graphics.drawable.ColorDrawable",
@@ -157,6 +158,11 @@ const BARS_METHOD = `    // ${BARS_MARKER}
 
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
+        // Page inspection (so a test can drive the page over the DevTools protocol) only in a debug
+        // build: the flag is set by the debug variant and by nothing in a release build.
+        if ((applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
         setStripColour(if (night) 0xFF21372F.toInt() else 0xFFE7EFED.toInt(), night)
