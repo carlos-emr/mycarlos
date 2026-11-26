@@ -394,6 +394,13 @@ impl VaultStore {
         // then sent); `sync_remote_notices` alone only reads the permission, so a revoked
         // destination would stay "active" here.
         let denied = state.permission() == crate::document_notifications::Permission::Denied;
+        if denied {
+            // The destinations are about to be revoked: what the Keychain remembered about them goes
+            // too, so no digest of a token that is no longer bound is left behind.
+            for id in self.iphone_destination_ids().unwrap_or_default() {
+                memory.forget(id);
+            }
+        }
         let result = if missing || denied {
             // A link with no destination (a new link, or one the portal did not know twice): the
             // same reserve, enrol and bind as turning the switch on. Also the way a denied
@@ -1997,6 +2004,9 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(saved(&store).active().len(), 2);
+            // The Keychain holds a digest for each destination the token was bound to.
+            let destinations = store.iphone_destination_ids().unwrap();
+            assert_eq!(memory.kept.lock().unwrap().len(), 2);
             // iPhone Settings now says no: no token is asked for, so none is passed.
             let denied = IosPushState::default();
             denied.record_permission("denied");
@@ -2025,14 +2035,19 @@ mod tests {
             assert!(queued.active().is_empty());
             assert_eq!(queued.revocations().len(), 2);
             assert_eq!(paths(&seen), [REVOCATIONS, REVOCATIONS]);
+            // The Keychain keeps no digest of the destinations being revoked.
+            assert!(memory.kept.lock().unwrap().is_empty());
+            for id in &destinations {
+                assert_eq!(memory.recall(*id), None);
+            }
             // At the next opening the portal answers: the revocations are acknowledged, still
             // with no handle.
             seen.borrow_mut().clear();
             refresh(&store, None, &denied, &memory, &exchange).unwrap();
             assert!(saved(&store).revocations().is_empty());
             assert!(!paths(&seen).contains(&HANDLES.to_string()));
-            // What the Keychain remembered stays: a later allowed opening finds the vault with no
-            // destination and makes one (the token is bound to that one only).
+            // A later allowed opening finds the vault with no destination and makes new ones (the
+            // token is bound to those only).
             seen.borrow_mut().clear();
             let again = refresh(&store, Some(&token), &state, &memory, &exchange).unwrap();
             assert_eq!(again.bound, 2);
