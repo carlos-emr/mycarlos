@@ -296,7 +296,10 @@ fn the_gap_must_be_hex_between_the_right_delimiters_and_within_the_size_limit() 
     // that can refuse it: without it each of these would still verify.
     let good = good();
     let [_, b, c, _] = good.layout.byte_ranges[0];
-    assert!(matches!(good.verdict(&good.pdf), Ok(Verdict::Verified { .. })));
+    assert!(matches!(
+        good.verdict(&good.pdf),
+        Ok(Verdict::Verified { .. })
+    ));
     // The delimiters are outside the signed bytes, so only the delimiter check refuses them.
     for (at, wrong) in [(b, b'['), (c - 1, b')')] {
         let mut pdf = good.pdf.clone();
@@ -312,7 +315,10 @@ fn the_gap_must_be_hex_between_the_right_delimiters_and_within_the_size_limit() 
         let (pdf, layout) = good.with_gap(&good.padded_hex(bytes));
         let verdict = good.verdict_with(&pdf, &layout);
         if allowed {
-            assert!(matches!(verdict, Ok(Verdict::Verified { .. })), "{bytes}: {verdict:?}");
+            assert!(
+                matches!(verdict, Ok(Verdict::Verified { .. })),
+                "{bytes}: {verdict:?}"
+            );
         } else {
             assert_eq!(verdict, Err(Refusal::BadContents), "{bytes}");
         }
@@ -325,11 +331,18 @@ fn the_gap_must_be_hex_between_the_right_delimiters_and_within_the_size_limit() 
         let mut garbled = hex.clone();
         garbled.replace_range(..2, bad);
         let (pdf, layout) = good.with_gap(&garbled);
-        assert_eq!(good.verdict_with(&pdf, &layout), Err(Refusal::BadContents), "{bad:?}");
+        assert_eq!(
+            good.verdict_with(&pdf, &layout),
+            Err(Refusal::BadContents),
+            "{bad:?}"
+        );
     }
     // The unchanged gap, rebuilt the same way, still verifies: the helper changes nothing else.
     let (pdf, layout) = good.with_gap(&hex);
-    assert!(matches!(good.verdict_with(&pdf, &layout), Ok(Verdict::Verified { .. })));
+    assert!(matches!(
+        good.verdict_with(&pdf, &layout),
+        Ok(Verdict::Verified { .. })
+    ));
 }
 
 #[test]
