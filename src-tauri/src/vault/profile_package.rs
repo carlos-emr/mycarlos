@@ -547,8 +547,10 @@ const PACKAGE_KEY_CHECK_LABEL: &[u8] = b"mycarlos-profile-package-key-check-v1:"
 /// The check is 10 bits, so it is a net, not a proof. A typo of a package key reads as a
 /// recovery key about 1 time in 1,024 (the typo's check happens to fit the recovery label), and
 /// about as often passes as a key. The second is harmless: a key that is not the file's fails to
-/// open it as `WrongKey`, and nothing is exposed. The first only words the message wrongly: a real
-/// recovery key typed here always reads as one.
+/// open it as `WrongKey`, and nothing is exposed. The first only words the message wrongly. The
+/// package label is tried first, so a real recovery key typed here reads as one almost always
+/// (about 1,023 times in 1,024); the rest fits the package label too, is read as a package key, and
+/// fails to open the file as `WrongKey`.
 pub(crate) fn parse_package_key(
     text: &str,
 ) -> Result<Zeroizing<[u8; RECOVERY_KEY_BYTES]>, PackageError> {

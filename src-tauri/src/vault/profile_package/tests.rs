@@ -322,8 +322,8 @@ fn the_generated_key_is_shown_as_seven_groups_and_reads_back_as_typed() {
     assert_eq!(*parse_package_key(&typed).unwrap(), *key);
     // A one-character slip is caught as a typo, before any unwrapping. The check is 10 bits, so for
     // a random key about 2 slips in 1,024 would get through (as a key, or as a recovery key), which
-    // made this test fail one run in about 450. The exact answer is asserted for a fixed key; the
-    // test below counts every slip of it.
+    // made this test fail about one run in 450 (measured over 40,000 random keys). The exact answer
+    // is asserted for a fixed key; the test below counts every slip of it.
     let fixed = Zeroizing::new([7_u8; RECOVERY_KEY_BYTES]);
     let fixed_text = encode_key_text(&fixed, PACKAGE_KEY_CHECK_LABEL);
     let mut slipped: Vec<char> = fixed_text.chars().collect();
