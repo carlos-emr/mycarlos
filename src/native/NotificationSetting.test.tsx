@@ -145,7 +145,7 @@ describe("Document notice preference", () => {
     await screen.findByRole("checkbox", {
       name: humanText("Allow document arrival notices"),
     });
-    // In view: the notice is generic, and automatic checks happen only while open and unlocked.
+    // In view: the notice is generic, and documents are collected only while open and unlocked; locked, it only says something is waiting.
     expect(
       screen.getByText(
         humanText(/Windows can show a generic notice after a clinic document/),
@@ -154,7 +154,7 @@ describe("Document notice preference", () => {
     expect(
       screen.getByText(
         humanText(
-          "Automatic checks run only while myCarlos is open and unlocked.",
+          "myCarlos collects new clinic documents on its own only while it is open and unlocked. While it is locked in the background, it can only tell you that something is waiting.",
         ),
       ),
     ).toBeVisible();

@@ -284,6 +284,11 @@ export interface PortalLinkSummary {
     | "code_attempts"
     | null;
   approvalCanRestart?: boolean;
+  /** A document or reading aid from this clinic is saved in the vault: its custody
+   * proof needs this link's keys, so the link cannot be removed (#160). */
+  hasDocuments?: boolean;
+  /** Document notices are on for this clinic: the link cannot be removed until they are off (#160). */
+  noticesEnrolled?: boolean;
   approvalRequestLimitReached?: boolean;
   /** The clinic asked for the code it emailed (#141): the request that
    * approved this device, when one did, else the current one. */
@@ -597,6 +602,7 @@ export interface AuditHistoryEntry {
     | "profileDetailsChanged"
     | "portalLinkStarted"
     | "portalLinked"
+    | "portalLinkRemoved"
     | "deviceApprovalRequested"
     | "deviceApprovalVerified"
     | "deviceApprovalStatusChanged"
@@ -703,6 +709,8 @@ export interface VaultBridge {
   /** Try again (#143): forgets a clinic's documents that failed their
    * checks, so the next check downloads and checks them again. */
   forgetRefusedDeliveries?(linkId: string): Promise<void>;
+  /** Removes a link that has delivered nothing (#160); refused when documents are saved. */
+  removePortalLink?(linkId: string): Promise<void>;
   /** Reads one linked device's approval status from its portal and saves the
    * clinic's answer (#131). It only reads: no request is sent or started. */
   refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
@@ -1387,6 +1395,8 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_restart_device_approval", { linkId }),
     forgetRefusedDeliveries: (linkId) =>
       invoke("vault_forget_refused_deliveries", { linkId }),
+    removePortalLink: (linkId) =>
+      invoke("vault_portal_remove_link", { linkId }),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
     submitApprovalCode: (linkId, code) =>
