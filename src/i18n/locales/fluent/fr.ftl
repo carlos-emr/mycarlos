@@ -2715,7 +2715,7 @@ handover-import-opening = Ouverture…
 
 handover-import-error-typo = Cette clé ne semble pas correcte. Comparez-la avec celle qu'on vous a donnée.
 
-handover-import-error-recovery = Cela ressemble à une clé de récupération, pas à la clé de ce fichier. Vérifiez la clé qu'on vous a donnée pour le fichier et qu'il n'y a pas de faute de frappe. Si on ne vous en a pas donné, demandez la clé créée pour le fichier.
+handover-import-error-recovery = Cela ressemble à une clé de récupération, pas à la clé de ce fichier. Vérifiez la clé qu’on vous a donnée pour le fichier et qu’il n’y a pas de faute de frappe. Si on ne vous en a pas donné, demandez la clé créée pour le fichier.
 
 handover-import-error-wrong = Cela n'ouvre pas ce fichier.
 
