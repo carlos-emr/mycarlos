@@ -65,13 +65,15 @@ describe("the Hide button on a person's line", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("the only person the library shows cannot be hidden: the button is off and says why", () => {
-    render(<HidePersonButton {...props} onlyOne onHide={vi.fn()} />);
-    const hide = screen.getByRole("button", {
-      name: humanText(en("hiddenPeople.hideFor", { name: "FAKE Avery" })),
-    });
-    expect(hide).toBeDisabled();
-    expect(hide).toHaveAccessibleDescription(en("hiddenPeople.lastPerson"));
+  // main's 7ad78285 changed this: the only person the library shows has no Hide button at all,
+  // and nothing explains its absence (the old test here expected a disabled button with a reason).
+  it("the only person the library shows has no Hide button, and nothing explains it", () => {
+    const { container } = render(
+      <HidePersonButton {...props} onlyOne onHide={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(en("hiddenPeople.lastPerson"))).toBeNull();
   });
 
   it.each([
@@ -243,5 +245,66 @@ describe("documents that arrived for a person while they were hidden", () => {
       }),
     );
     expect(onLeave).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The tests main's 7ad78285 brought with the change above, kept whole (they overlap the first
+// describe on purpose: they were written against the component on its own).
+const PERSON = { id: "p1", displayName: "FAKE Avery Example", createdAtMs: 1 };
+
+describe("Hide on a person's line in Security (#360)", () => {
+  it("is there for a person who can be hidden", () => {
+    const onHide = vi.fn();
+    render(
+      <HidePersonButton
+        person={PERSON}
+        onlyOne={false}
+        busy={false}
+        readOnly={false}
+        onHide={onHide}
+      />,
+    );
+    expect(
+      screen.getByRole("button", {
+        name: humanText(
+          translate("en", "hiddenPeople.hideFor", { name: PERSON.displayName }),
+        ),
+      }),
+    ).toBeEnabled();
+  });
+
+  it("is not drawn for the only person, and nothing explains it either", () => {
+    const { container } = render(
+      <HidePersonButton
+        person={PERSON}
+        onlyOne
+        busy={false}
+        readOnly={false}
+        onHide={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+    expect(
+      screen.queryByText(humanText(translate("en", "hiddenPeople.lastPerson"))),
+    ).toBeNull();
+  });
+
+  it("is disabled, not removed, while the library is busy or read-only", () => {
+    for (const flags of [
+      { busy: true, readOnly: false },
+      { busy: false, readOnly: true },
+    ]) {
+      const { unmount } = render(
+        <HidePersonButton
+          person={PERSON}
+          onlyOne={false}
+          onHide={vi.fn()}
+          {...flags}
+        />,
+      );
+      expect(screen.getByRole("button")).toBeDisabled();
+      unmount();
+    }
   });
 });

@@ -79,6 +79,29 @@ describe("the language button on the unlock and set-up screens", () => {
     ).toBeInTheDocument();
   });
 
+  it("has Close in the title row, with initial focus on it, and no footer", async () => {
+    const user = userEvent.setup();
+    render(<LanguageButton />);
+    await user.click(screen.getByRole("button", { name: /\(Language\)$/ }));
+    const dialog = screen.getByRole("dialog", { name: "Language" });
+    const head = dialog.querySelector(".dialog-head") as HTMLElement;
+    const close = within(dialog).getByRole("button", { name: "Close" });
+    // Beside the title, in the head, with the same classes as the document details' Close.
+    expect(head).toContainElement(close);
+    expect(head).toContainElement(
+      within(dialog).getByRole("heading", { name: "Language" }),
+    );
+    expect(close).toHaveClass("dialog-close", "native-dialog-close");
+    expect(dialog.querySelector("footer")).toBeNull();
+    expect(close).toHaveFocus();
+    // Closing from it gives the focus back to the button that opened the dialog.
+    await user.click(close);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^English \(Language\)$/ }),
+    ).toHaveFocus();
+  });
+
   it("closes with Escape without changing the language", async () => {
     const user = userEvent.setup();
     render(<LanguageButton />);

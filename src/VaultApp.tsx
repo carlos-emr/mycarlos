@@ -282,6 +282,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   const [openingRecoverySetup, setOpeningRecoverySetup] =
     useState<OpeningRecoverySetup | null>(null);
   const [busy, setBusy] = useState(false);
+  // Library operations in flight, counted by the session they started in. `busy` is only about
+  // the session now shown: a lock ends the session, so an operation of the one before (a picker
+  // the patient left open, whose answer never came) can neither keep the unlock screen's button
+  // greyed nor stand in for work that is not being done now. The operation itself runs on, and
+  // its result is still handled where it is (see `run`).
+  const runsBySessionRef = useRef(new Map<number, number>());
   const [portalBusy, setPortalBusy] = useState(false);
   const portalJobRef = useRef<{
     session: number;
@@ -376,6 +382,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // Incremented whenever the vault locks. Work started in an earlier session
   // must not put its decrypted results or document names back on screen.
   const sessionRef = useRef(0);
+  const refreshBusy = useCallback(
+    () => setBusy((runsBySessionRef.current.get(sessionRef.current) ?? 0) > 0),
+    [],
+  );
   const appliedCaptureRef = useRef<
     (SnapshotCapture & { owner: number }) | null
   >(null);
@@ -537,6 +547,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     try {
       await bridge.lock();
       sessionRef.current += 1;
+      // The session shown from here has no operation of its own yet.
+      transferHold.moveTo(sessionRef.current);
+      refreshBusy();
       endedPortalWorkRef.current = Promise.allSettled([
         endedPortalWorkRef.current,
         portalJobRef.current?.promise,
@@ -596,7 +609,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     } finally {
       lockingRef.current = false;
     }
-  }, [bridge, holdForUnlock, holdLock, transferHold]);
+  }, [bridge, holdForUnlock, holdLock, refreshBusy, transferHold]);
 
   const requestLock = useCallback(
     (concealImmediately = false) => {
@@ -841,8 +854,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),
       pickBackupDestination: (localDate) =>
         track(bridge.pickBackupDestination(localDate)),
-      saveBackupToPicked: (pickId) =>
-        transfer(() => bridge.saveBackupToPicked(pickId)),
+      // `leaveVideosOut` must be passed on: dropping it saved every backup whole.
+      saveBackupToPicked: (pickId, leaveVideosOut) =>
+        transfer(() => bridge.saveBackupToPicked(pickId, leaveVideosOut)),
       // A person's records handed over, or added from a file (#360): pickers are
       // tracked as the backup's are, and writing or adding is a transfer the lock waits for.
       pickProfileExportDestination: (exportId, localDate) =>
@@ -1139,9 +1153,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   ) => {
     const startedIn = sessionRef.current;
     if (!clinicOperation) {
-      setBusy(true);
+      runsBySessionRef.current.set(
+        startedIn,
+        (runsBySessionRef.current.get(startedIn) ?? 0) + 1,
+      );
+      refreshBusy();
       setNotice("");
-      transferHold.operationStarted();
+      transferHold.operationStarted(startedIn);
     } else if (clinicOperation !== "quiet") showPortalNotice(startedIn, "");
     try {
       await operation();
@@ -1223,8 +1241,13 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       }
     } finally {
       if (!clinicOperation) {
-        setBusy(false);
-        const idle = transferHold.operationEnded();
+        // However it ended (done, cancelled, refused, failed, or cut off by a lock), this
+        // operation stops counting, in the session it started in.
+        const left = (runsBySessionRef.current.get(startedIn) ?? 1) - 1;
+        if (left > 0) runsBySessionRef.current.set(startedIn, left);
+        else runsBySessionRef.current.delete(startedIn);
+        refreshBusy();
+        const idle = transferHold.operationEnded(startedIn);
         if (idle && lockHeldRef.current) requestLock(true);
         else if (idle) flushPortalNotice();
       }

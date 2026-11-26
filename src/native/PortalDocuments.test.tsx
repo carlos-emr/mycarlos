@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
-import { humanText, humanValue } from "../test/humanText";
+import { humanText, humanValue, visibleText } from "../test/humanText";
 import { page } from "vitest/browser";
 import { PortalDocuments } from "./PortalDocuments";
 import type {
@@ -68,6 +68,7 @@ function fixture(
     requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
     restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
     submitApprovalCode: vi.fn().mockResolvedValue(undefined),
+    removePortalLink: vi.fn().mockResolvedValue(undefined),
   } as unknown as VaultBridge;
   const refresh = vi.fn().mockResolvedValue(snapshot);
   const failures: unknown[] = [];
@@ -3081,4 +3082,128 @@ it("keeps manual check available for an explicit retry after bounded preemption 
   } finally {
     setLocaleOverride(null);
   }
+});
+
+describe("Remove this link (#160)", () => {
+  it("asks first, names the clinic and the device, removes only on confirm and says so", async () => {
+    const user = userEvent.setup();
+    const { bridge, props } = fixture();
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    const dialog = screen.getByRole("alertdialog");
+    const text = visibleText(dialog.textContent ?? "");
+    expect(text).toContain("FAKE Clinic");
+    expect(text).toContain("myCarlos on Windows");
+    expect(text).toContain("may still list this device");
+    expect(bridge.removePortalLink).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove link" }),
+    );
+    await waitFor(() =>
+      expect(bridge.removePortalLink).toHaveBeenCalledWith("fake-link"),
+    );
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Link removed."),
+    );
+  });
+
+  it("Cancel removes nothing and returns focus to the Remove button", async () => {
+    const user = userEvent.setup();
+    const { bridge } = fixture();
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(bridge.removePortalLink).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(document.activeElement?.id).toBe("portal-remove-fake-link"),
+    );
+  });
+
+  it("reads the card again when the vault refuses, and does not move focus", async () => {
+    const user = userEvent.setup();
+    const { bridge, props } = fixture();
+    (bridge.removePortalLink as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: "invalid",
+    });
+    await user.click(screen.getByRole("button", { name: "Remove this link" }));
+    await user.click(screen.getByRole("button", { name: "Remove link" }));
+    // The card is read again to say why; nothing else moves.
+    await waitFor(() => expect(props.refresh).toHaveBeenCalled());
+    expect(document.activeElement?.id).not.toBe("portal-link-title-fake-link");
+  });
+
+  it("offers no removal while notices are on for the clinic, and says so", () => {
+    fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [{ ...link, noticesEnrolled: true }],
+      },
+    });
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+    expect(screen.getByText(/Document notices are on/)).toBeVisible();
+  });
+
+  it("offers no removal for a clinic whose documents are saved, and says why", () => {
+    const { bridge } = fixture({
+      snapshot: {
+        ...snapshot,
+        portalLinks: [{ ...link, hasDocuments: true }],
+      },
+    });
+    bridge.removePortalLink = vi.fn();
+    // The bridge was read at render; render again with the method present.
+    const { unmount } = render(
+      <PortalDocuments
+        bridge={bridge}
+        snapshot={{
+          ...snapshot,
+          portalLinks: [{ ...link, hasDocuments: true }],
+        }}
+        busy={false}
+        readOnly={false}
+        refresh={vi.fn()}
+        run={async (operation) => operation()}
+        setNotice={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+    expect(
+      screen.getAllByText(/saved in your vault, so this link stays/).length,
+    ).toBeGreaterThan(0);
+    unmount();
+  });
+
+  it("offers nothing in a read-only vault", () => {
+    const { bridge } = fixture({ readOnly: true });
+    expect(bridge.removePortalLink).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Remove this link" }),
+    ).toBeNull();
+  });
+
+  it("puts focus on the next card's heading, else the previous one's", async () => {
+    const user = userEvent.setup();
+    const second = {
+      ...link,
+      id: "second-link",
+      clinicName: "FAKE Second Clinic",
+    };
+    const both: VaultSnapshot = { ...snapshot, portalLinks: [link, second] };
+    const { bridge } = fixture({ snapshot: both });
+    await user.click(
+      screen.getAllByRole("button", { name: "Remove this link" })[0],
+    );
+    await user.click(screen.getByRole("button", { name: "Remove link" }));
+    await waitFor(() =>
+      expect(bridge.removePortalLink).toHaveBeenCalledWith("fake-link"),
+    );
+    // The heading that follows the removed card is the one the focus rule names.
+    await waitFor(() =>
+      expect(document.activeElement?.id).toBe("portal-link-title-second-link"),
+    );
+  });
 });
