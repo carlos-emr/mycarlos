@@ -5688,8 +5688,8 @@ async fn vault_import_video_pick(
     let _open = ActivityHold::new(store.idle());
     let filter = locale.text(MessageId::NativeFilterVideo)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        // The owned helper, like every other picker (a bare dialog is a separate window on Windows).
+        file_dialog(&app)
             .add_filter(&filter, &["mp4", "m4v", "mov"])
             .blocking_pick_file()
     })
@@ -9979,7 +9979,7 @@ mod tests {
     ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
     ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
     ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
-    ///   - `file_dialog(&` is called at exactly the nine sites there are today (a tenth must be added
+    ///   - `file_dialog(&` is called at exactly the ten sites there are today (an eleventh must be added
     ///     here on purpose, and a lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
@@ -10041,8 +10041,8 @@ mod tests {
         assert_eq!(file_calls, 1, "only the helper builds a file dialog");
         assert_eq!(builders, 0, "a file dialog builder is made directly");
         assert_eq!(
-            sites, 9,
-            "the nine file dialog sites go through file_dialog"
+            sites, 10,
+            "the ten file dialog sites go through file_dialog"
         );
         // The helper keeps its owner.
         let source = include_str!("lib.rs");
