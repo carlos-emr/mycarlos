@@ -74,18 +74,39 @@ const CASES: [string, (bridge: Bridge) => unknown, string, unknown?][] = [
     "linkPortal",
     (b) =>
       b.linkPortal({
-        portalBase: "https://portal.fake.example",
-        code: "FAKE",
-      } as never),
+        portalBase: "https://portal.fake.example/patient",
+        code: "FAKE-CODE-1234",
+        deviceName: "FAKE phone",
+        profileId: "p1",
+      }),
     "vault_portal_link",
-    { request: { portalBase: "https://portal.fake.example", code: "FAKE" } },
+    {
+      request: {
+        portalBase: "https://portal.fake.example/patient",
+        code: "FAKE-CODE-1234",
+        deviceName: "FAKE phone",
+        profileId: "p1",
+      },
+    },
   ],
   [
-    "connectPortal",
+    "connectPortal (a link not tied to a person)",
     (b) =>
-      b.connectPortal({ portalBase: "https://portal.fake.example" } as never),
+      b.connectPortal({
+        portalBase: "https://portal.fake.example/patient",
+        code: "FAKE-CODE-1234",
+        deviceName: "FAKE phone",
+        profileId: null,
+      }),
     "vault_portal_connect",
-    { request: { portalBase: "https://portal.fake.example" } },
+    {
+      request: {
+        portalBase: "https://portal.fake.example/patient",
+        code: "FAKE-CODE-1234",
+        deviceName: "FAKE phone",
+        profileId: null,
+      },
+    },
   ],
   [
     "changePassphrase",
@@ -356,9 +377,19 @@ const CASES: [string, (bridge: Bridge) => unknown, string, unknown?][] = [
   ],
   [
     "pageBoxes (no password sends null)",
-    (b) => b.pageBoxes("r1", 2, { first: 3, last: 4 } as never),
+    (b) =>
+      b.pageBoxes("r1", 2, { start: 12, end: 31, quoted: "FAKE quoted words" }),
     "vault_page_boxes",
-    { request: { recordId: "r1", page: 2, first: 3, last: 4, password: null } },
+    {
+      request: {
+        recordId: "r1",
+        page: 2,
+        start: 12,
+        end: 31,
+        quoted: "FAKE quoted words",
+        password: null,
+      },
+    },
   ],
   [
     "aiExplain (the answer is named; a document is named only when given)",
