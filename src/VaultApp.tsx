@@ -852,6 +852,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
+      // An anonymized text saved to a file is handled as a record's copy is: its picker is
+      // tracked (on a phone the system's chooser sends the app to the background, and that must
+      // not lock the vault under it), and the write is a transfer the lock waits for. Without
+      // these a lock that fell due during either was taken at once.
+      pickTextExportDestination: (recordId, ticket) =>
+        track(bridge.pickTextExportDestination(recordId, ticket)),
+      exportTextToPicked: (pickId, recordId, ticket, text, kept) =>
+        transfer(() =>
+          bridge.exportTextToPicked(pickId, recordId, ticket, text, kept),
+        ),
+      // `copyTextExport` is left as it is on purpose: it only puts the text on the clipboard,
+      // which is instant, so there is no transfer to hold a lock for.
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
       // A native confirmation may be open for as long as a picker.
       confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),

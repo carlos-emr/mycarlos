@@ -5101,6 +5101,11 @@ describe("durable vault UI", () => {
       (b) => b.importPickedFiles("pick-1", "profile-1", []),
     ],
     ["exportToPicked", (b) => b.exportToPicked("pick-1", "record-1")],
+    [
+      "exportTextToPicked",
+      (b) =>
+        b.exportTextToPicked("pick-1", "record-1", "ticket", "FAKE text", []),
+    ],
   ];
 
   async function bareTransferPending(method: string) {
@@ -5179,6 +5184,35 @@ describe("durable vault UI", () => {
       await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
     },
   );
+
+  it("does not lock under the picker an anonymized text's save opened: a page hidden while it is open is held, and locks when it closes", async () => {
+    const { bridge, tracked, setVisibility, finish } =
+      await bareTransferPending("pickTextExportDestination");
+    let settled = false;
+    void tracked
+      .pickTextExportDestination("record-1", "ticket")
+      .then(() => (settled = true));
+    await waitFor(() =>
+      expect(bridge.pickTextExportDestination).toHaveBeenCalled(),
+    );
+    // On a phone the system's chooser sends the app to the background.
+    await setVisibility("hidden");
+    expect(bridge.lock).not.toHaveBeenCalled();
+    // The chooser closes while the page is still hidden: only then is the vault locked.
+    await finish();
+    await waitFor(() => expect(settled).toBe(true));
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+  });
+
+  it("leaves copying an anonymized text to the clipboard bare: it is instant, so a page hidden while it runs locks at once", async () => {
+    const { bridge, tracked, setVisibility, finish } =
+      await bareTransferPending("copyTextExport");
+    void tracked.copyTextExport("record-1", "ticket", "FAKE text", []);
+    await waitFor(() => expect(bridge.copyTextExport).toHaveBeenCalled());
+    await setVisibility("hidden");
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    await finish();
+  });
 
   it("names the damaged document that stopped a backup", async () => {
     const user = userEvent.setup();
