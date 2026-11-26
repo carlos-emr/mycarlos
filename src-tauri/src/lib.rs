@@ -3517,21 +3517,30 @@ fn other_vault_ids(
 ) -> Option<std::collections::HashSet<Uuid>> {
     let mut ids = std::collections::HashSet::new();
     for other in vaults.iter().filter(|other| !Arc::ptr_eq(other, store)) {
-        // A slot with no vault made in it holds no keys.
-        if matches!(other.status(), Ok(VaultStatus::Absent)) {
-            continue;
+        match other.notice_key_vault() {
+            vault::NoticeKeyVault::Id(id) => {
+                ids.insert(id);
+            }
+            // A slot with no vault made in it holds no keys.
+            vault::NoticeKeyVault::None => {}
+            vault::NoticeKeyVault::Unknown => return None,
         }
-        ids.insert(other.vault_id_for_notice_keys()?);
     }
     Some(ids)
 }
 
 /// After a vault is reset: its notice keys go, and every key of a vault the device does not hold;
 /// another vault's keys stay (#357). On a device with the one vault, that is every key.
-async fn wipe_notice_keys_of_reset_vault(store: &Arc<VaultStore>, vaults: Vec<Arc<VaultStore>>) {
+/// `reset_id` is the id the vault had before the reset (`NoticeKeyVault::id`), so its own keys go
+/// even when another vault's id cannot be read.
+async fn wipe_notice_keys_of_reset_vault(
+    store: &Arc<VaultStore>,
+    vaults: Vec<Arc<VaultStore>>,
+    reset_id: Option<Uuid>,
+) {
     let store = Arc::clone(store);
     let _ = tauri::async_runtime::spawn_blocking(move || {
-        notice_key::after_reset(other_vault_ids(&store, &vaults).as_ref());
+        notice_key::after_reset(reset_id, other_vault_ids(&store, &vaults).as_ref());
     })
     .await;
 }
@@ -3547,8 +3556,9 @@ fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
         // it and every other key goes, as before. If another vault's id cannot be read, nothing is
         // wiped now.
         if let Some(vault_id) = store.open_vault_id() {
-            if let Some(mut held) = other_vault_ids(&store, &vaults) {
-                held.insert(vault_id);
+            if let Some(held) =
+                notice_key::held_with_open(vault_id, other_vault_ids(&store, &vaults))
+            {
                 notice_key::after_open(&held);
             }
         }
@@ -7906,9 +7916,11 @@ async fn vault_reset(
         return Ok(false);
     }
     picks.clear();
+    // The id the vault has now, for its notice keys after it is gone (#357).
+    let reset_id = store.arc().notice_key_vault().id();
     run_blocking(store.arc(), VaultStore::reset).await?;
     // Its notice keys go with it (#230); another vault's stay (#357).
-    wipe_notice_keys_of_reset_vault(store.arc(), store.all()).await;
+    wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await;
     // The vault the counts were about is gone.
     forget_vault(throttle.inner(), store.arc(), store.all()).await;
     Ok(true)
@@ -8992,7 +9004,7 @@ mod tests {
                 "async fn vault_reset(",
                 concat!(
                     "VaultStore::reset).await?; ",
-                    "wipe_notice_keys_of_reset_vault(store.arc(), store.all()).await; ",
+                    "wipe_notice_keys_of_reset_vault(store.arc(), store.all(), reset_id).await; ",
                     "forget_vault(throttle.inner(), store.arc(), store.all()).await; Ok(true)",
                 ),
             ),
@@ -9090,12 +9102,21 @@ mod tests {
             .unwrap();
         let other_id = other.open_vault_id().unwrap();
         assert_ne!(this.open_vault_id().unwrap(), other_id);
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
+        assert_eq!(empty.notice_key_vault(), vault::NoticeKeyVault::None);
         // The other vault open: its own id. Locked: its header's. A slot with no vault: none.
         assert_eq!(
             other_vault_ids(&this, &all),
             Some(std::collections::HashSet::from([other_id]))
         );
         other.lock();
+        assert_eq!(
+            other.notice_key_vault(),
+            vault::NoticeKeyVault::Id(other_id)
+        );
         assert_eq!(
             other_vault_ids(&this, &all),
             Some(std::collections::HashSet::from([other_id]))
@@ -9110,6 +9131,7 @@ mod tests {
             let _ = std::fs::remove_file(temp.path().join("other").join(name));
         }
         std::fs::write(temp.path().join("other").join("header-0.json"), b"{").unwrap();
+        assert_eq!(other.notice_key_vault(), vault::NoticeKeyVault::Unknown);
         assert_eq!(other_vault_ids(&this, &all), None);
     }
 

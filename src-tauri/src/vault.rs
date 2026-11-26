@@ -1091,6 +1091,27 @@ pub enum RecoveryReason {
     WriteFailed,
 }
 
+/// What a store's folder says about the vault its notice keys belong to (#357).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NoticeKeyVault {
+    /// The vault's id, from the open vault or a locked one's header.
+    Id(Uuid),
+    /// No vault is made here (the folder is not there): it holds no keys.
+    None,
+    /// A vault is here but its id cannot be read: the caller must not guess.
+    Unknown,
+}
+
+impl NoticeKeyVault {
+    /// The id, when there is one.
+    pub(crate) fn id(self) -> Option<Uuid> {
+        match self {
+            Self::Id(id) => Some(id),
+            Self::None | Self::Unknown => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum VaultStatus {
@@ -9715,22 +9736,25 @@ impl VaultStore {
         self.session().as_ref().map(|open| open.manifest.vault_id)
     }
 
-    /// The id the notice keys of this vault carry, whether it is open or locked: the open vault's
-    /// own, else the one its header says (the header names the vault in the clear). `None` when
-    /// neither is there (no vault here, or a header that cannot be read), which the caller reads as
-    /// "cannot tell", never as "no keys" (#357: another vault's keys are kept, not guessed about).
-    pub(crate) fn vault_id_for_notice_keys(&self) -> Option<Uuid> {
-        self.open_vault_id().or_else(|| {
-            let files = read_header_files(&self.root);
-            let id = files.candidates.first()?.vault_id;
+    /// Which vault, if any, the notice keys of this store belong to, open or locked: the open
+    /// vault's own id, else the one its header names (in the clear). It looks at the folder only
+    /// (no storage lock, no repair), so it is safe on the notice path (#357).
+    pub(crate) fn notice_key_vault(&self) -> NoticeKeyVault {
+        if let Some(id) = self.open_vault_id() {
+            return NoticeKeyVault::Id(id);
+        }
+        if !self.root.exists() {
+            return NoticeKeyVault::None;
+        }
+        let files = read_header_files(&self.root);
+        match files.candidates.first().map(|header| header.vault_id) {
             // The header slots of one vault name one id; two ids are a folder that cannot be read
             // as one vault.
-            files
-                .candidates
-                .iter()
-                .all(|header| header.vault_id == id)
-                .then_some(id)
-        })
+            Some(id) if files.candidates.iter().all(|header| header.vault_id == id) => {
+                NoticeKeyVault::Id(id)
+            }
+            _ => NoticeKeyVault::Unknown,
+        }
     }
 
     /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the

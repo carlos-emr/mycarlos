@@ -333,6 +333,11 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         self.wipe(|entry| !vault_ids.contains(&entry.vault_id))
     }
 
+    /// Every key made in the vault `vault_id` (the vault was reset, #357).
+    pub(crate) fn wipe_vault(&self, vault_id: Uuid) -> Result<Wiped, NoticeKeyError> {
+        self.wipe(|entry| entry.vault_id == vault_id)
+    }
+
     /// `keep_only_vaults` for a device that has the one vault `vault_id`, which is what every
     /// device had before several vaults (kept for the tests that pin that case).
     #[cfg(test)]
@@ -532,8 +537,24 @@ pub(crate) fn kept() -> Option<&'static NoticeKeys<Box<dyn WrapKeyStore>>> {
 /// a vault set aside leaves its enrollments to lapse on the Portal's side.
 pub(crate) fn after_open(held: &std::collections::HashSet<Uuid>) {
     if let Some(keys) = kept() {
-        let _ = keys.keep_only_vaults(held);
+        after_open_in(keys, held);
     }
+}
+
+/// The vaults this device holds when `open` has just opened: `open` and every one of `others`, or
+/// `None` when the others could not all be read (the caller then wipes nothing).
+pub(crate) fn held_with_open(
+    open: Uuid,
+    others: Option<std::collections::HashSet<Uuid>>,
+) -> Option<std::collections::HashSet<Uuid>> {
+    let mut held = others?;
+    held.insert(open);
+    Some(held)
+}
+
+/// `after_open` over the keys it is given (the hook uses the process-wide ones).
+fn after_open_in<S: WrapKeyStore>(keys: &NoticeKeys<S>, held: &std::collections::HashSet<Uuid>) {
+    let _ = keys.keep_only_vaults(held);
 }
 
 /// Keys of this vault whose link is not in `links`: a removal's key wipe that did not finish (#160).
@@ -552,13 +573,27 @@ pub(crate) fn after_link_removed(link_id: Uuid) {
     }
 }
 
-/// After the vault is reset (set aside for a new one): its keys go, and with them every key of a
-/// vault the device does not hold. `others` is the ids of the OTHER vaults the device holds: none
-/// (the one-vault device) wipes every key, as it always did. `None` means an other vault's id could
-/// not be read, so nothing is wiped now (a key is kept rather than guessed about); the reset
-/// vault's keys belong to no vault the device holds, and the next `after_open` wipes them.
-pub(crate) fn after_reset(others: Option<&std::collections::HashSet<Uuid>>) {
-    let Some(keys) = kept() else { return };
+/// After the vault is reset (set aside for a new one): its keys go, `reset_id` being the id it had
+/// before the reset, and with them every key of a vault the device does not hold. `others` is the
+/// ids of the OTHER vaults the device holds: none (the one-vault device) wipes every key, as it
+/// always did. `None` means an other vault's id could not be read: only the reset vault's own keys
+/// go now (a key of another vault is kept rather than guessed about), and the next `after_open`
+/// wipes any other key that belongs to no vault the device holds.
+pub(crate) fn after_reset(
+    reset_id: Option<Uuid>,
+    others: Option<&std::collections::HashSet<Uuid>>,
+) {
+    if let Some(keys) = kept() {
+        after_reset_in(keys, reset_id, others);
+    }
+}
+
+/// `after_reset` over the keys it is given (the hook uses the process-wide ones).
+fn after_reset_in<S: WrapKeyStore>(
+    keys: &NoticeKeys<S>,
+    reset_id: Option<Uuid>,
+    others: Option<&std::collections::HashSet<Uuid>>,
+) {
     match others {
         Some(others) if others.is_empty() => {
             let _ = keys.wipe_all();
@@ -566,7 +601,11 @@ pub(crate) fn after_reset(others: Option<&std::collections::HashSet<Uuid>>) {
         Some(others) => {
             let _ = keys.keep_only_vaults(others);
         }
-        None => {}
+        None => {
+            if let Some(reset_id) = reset_id {
+                let _ = keys.wipe_vault(reset_id);
+            }
+        }
     }
 }
 
@@ -1090,21 +1129,72 @@ mod tests {
         assert!(keys.store.get().unwrap().is_some());
     }
 
-    /// The reset of vault 1 on a device that holds vault 2 too: 1's keys go (it is no longer one of
-    /// the vaults the device holds, `others` = {2}), 2's stay, and the wrap key stays with them.
+    /// The open hook with the vaults the app passes it: the opened vault and every other one it
+    /// could read. A hook that held only the opened vault would wipe vault 2's keys here.
     #[test]
-    fn the_reset_of_one_vault_wipes_its_keys_and_keeps_another_vaults() {
+    fn the_open_hook_keeps_every_held_vault_and_wipes_only_what_belongs_to_none() {
         let (_temp, keys) = keys();
         let a = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
         let b = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
-        let others = std::collections::HashSet::from([uuid(2)]);
-        assert_eq!(keys.keep_only_vaults(&others).unwrap().key_ids, vec![a]);
-        assert_eq!(key_ids_of(&keys), vec![b]);
-        assert!(keys.store.get().unwrap().is_some());
-        // With no other vault, it is the whole wipe, and the wrap key goes.
-        assert_eq!(keys.wipe_all().unwrap().key_ids.len(), 1);
+        let stray = keys.make_for(uuid(9), uuid(90), ORIGIN).unwrap().key_id;
+        let held = held_with_open(uuid(1), Some(std::collections::HashSet::from([uuid(2)])));
+        assert_eq!(
+            held,
+            Some(std::collections::HashSet::from([uuid(1), uuid(2)]))
+        );
+        after_open_in(&keys, &held.unwrap());
+        let mut kept_ids = vec![a, b];
+        kept_ids.sort();
+        assert_eq!(key_ids_of(&keys), kept_ids);
+        assert!(!key_ids_of(&keys).contains(&stray));
+        // An other vault whose id could not be read: no held set, so no wipe at all.
+        assert_eq!(held_with_open(uuid(1), None), None);
+        // A device with the one vault: held is just it, and every other key goes.
+        after_open_in(
+            &keys,
+            &held_with_open(uuid(1), Some(Default::default())).unwrap(),
+        );
+        assert_eq!(key_ids_of(&keys).len(), 1);
+    }
+
+    /// The reset hook, each way it can be called. Vault 1 is reset; 2 is another vault on the
+    /// device; 9 is a stray key of a vault the device does not hold.
+    #[test]
+    fn the_reset_hook_wipes_the_reset_vaults_keys_and_never_more_than_it_can_tell() {
+        let set = |ids: &[u128]| {
+            ids.iter()
+                .map(|n| uuid(*n))
+                .collect::<std::collections::HashSet<_>>()
+        };
+        let make = || {
+            let (temp, keys) = keys();
+            let a = keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap().key_id;
+            let b = keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap().key_id;
+            let stray = keys.make_for(uuid(9), uuid(90), ORIGIN).unwrap().key_id;
+            (temp, keys, a, b, stray)
+        };
+        // No other vault (the one-vault device): every key goes, and so does the wrap key.
+        let (_t, keys, ..) = make();
+        after_reset_in(&keys, Some(uuid(1)), Some(&set(&[])));
         assert_eq!(keys.entries(), Ok(vec![]));
         assert!(keys.store.get().unwrap().is_none());
+        // Another vault held: its keys and the wrap key stay; the reset vault's and the stray go.
+        let (_t, keys, _a, b, _stray) = make();
+        after_reset_in(&keys, Some(uuid(1)), Some(&set(&[2])));
+        assert_eq!(key_ids_of(&keys), vec![b.clone()]);
+        assert!(keys.store.get().unwrap().is_some());
+        // Another vault's id unreadable: only the reset vault's own keys go; the stray waits for
+        // the next open, and the other vault's are kept.
+        let (_t, keys, a, b, stray) = make();
+        after_reset_in(&keys, Some(uuid(1)), None);
+        let mut rest = vec![b, stray];
+        rest.sort();
+        assert_eq!(key_ids_of(&keys), rest);
+        assert!(!key_ids_of(&keys).contains(&a));
+        // Nothing known at all: nothing is wiped.
+        let (_t, keys, ..) = make();
+        after_reset_in(&keys, None, None);
+        assert_eq!(key_ids_of(&keys).len(), 3);
     }
 
     #[test]
@@ -1194,9 +1284,15 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         install(temp.path());
         assert!(kept().is_some());
-        after_open(uuid(1));
-        after_open(uuid(2));
-        after_reset();
+        after_open(&std::collections::HashSet::from([uuid(1)]));
+        after_open(&std::collections::HashSet::from([uuid(1), uuid(2)]));
+        after_reset(Some(uuid(1)), Some(&std::collections::HashSet::new()));
+        after_reset(
+            Some(uuid(1)),
+            Some(&std::collections::HashSet::from([uuid(2)])),
+        );
+        after_reset(Some(uuid(1)), None);
+        after_reset(None, None);
         // Nothing was made, so no key file was written.
         assert!(!temp.path().join(FILE_NAME).exists());
         // And a second install does not replace the first.
