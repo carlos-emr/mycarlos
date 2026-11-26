@@ -11,8 +11,9 @@ import { ConfirmDialog } from "./ConfirmDialog";
 // secrecy: the dialog says so. Nothing is deleted, nothing is re-encrypted, and one action
 // reverses it.
 
-/** Hide on a person's line in Security. The last visible person cannot be hidden: the
- * button says why instead of failing. */
+/** Hide on a person's line in Security. The last visible person cannot be hidden, so there is
+ * no button for them (the native side refuses it too, and the handover's saved-file step says why
+ * no hide is offered). */
 export function HidePersonButton({
   person,
   onlyOne,
@@ -21,7 +22,7 @@ export function HidePersonButton({
   onHide,
 }: {
   person: PatientProfile;
-  /** This is the only person the library shows. */
+  /** This is the only person the library shows: no Hide button is drawn. */
   onlyOne: boolean;
   busy: boolean;
   readOnly: boolean;
@@ -29,25 +30,19 @@ export function HidePersonButton({
 }) {
   const { t } = useI18n();
   const [asking, setAsking] = useState(false);
-  const explainId = `hide-last-${person.id}`;
+  if (onlyOne) return null;
   return (
     <>
       <button
         className="button"
         type="button"
-        disabled={busy || readOnly || onlyOne}
+        disabled={busy || readOnly}
         aria-label={t("hiddenPeople.hideFor", { name: person.displayName })}
-        aria-describedby={onlyOne ? explainId : undefined}
         aria-haspopup="dialog"
         onClick={() => setAsking(true)}
       >
         {t("hiddenPeople.hide")}
       </button>
-      {onlyOne && (
-        <span id={explainId} className="native-hide-last">
-          {t("hiddenPeople.lastPerson")}
-        </span>
-      )}
       {asking && (
         <ConfirmDialog
           title={t("hiddenPeople.confirm.title", { name: person.displayName })}
