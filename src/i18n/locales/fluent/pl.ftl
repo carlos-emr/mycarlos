@@ -1744,6 +1744,8 @@ interface-history-event-portalLinkStarted = Rozpoczęto łączenie z przychodni�
 
 interface-history-event-portalLinked = Połączono z przychodnią
 
+interface-history-event-portalLinkRemoved = Usunięto powiązanie z przychodnią
+
 interface-history-event-profileCreated = Dodano profil pacjenta
 
 interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
@@ -1914,6 +1916,21 @@ portal-tryAgainFor = Spróbuj ponownie: { $clinic }
 
 portal-linkAnother = Połącz z inną przychodnią
 
+portal-removeLink = Usuń to powiązanie
+
+portal-removeTitle = Usunąć to powiązanie?
+
+portal-removeBody = { $clinic }, urządzenie „{ $device }”. To urządzenie przestaje być tu powiązane, a jego zapisane klucze zostają usunięte z tego urządzenia. Wcześniejsze kopie zapasowe sejfu zachowują te klucze, dopóki nie zostaną zastąpione. Przychodnia może nadal wyświetlać to urządzenie.
+
+portal-removeConfirm = Usuń powiązanie
+
+portal-removeKept = Dokumenty z tej przychodni są zapisane w Twoim sejfie, więc to powiązanie pozostaje.
+
+portal-removeNotices = Powiadomienia o dokumentach są włączone dla tej przychodni. Najpierw je wyłącz, potem usuń powiązanie.
+
+portal-removed = Powiązanie usunięte.
+
+
 ai-summary-button = Podsumowanie
 
 ai-summary-title = Podsumowanie prostymi słowami
@@ -1936,11 +1953,11 @@ aiHelper-resultLabelInfo = Co oznacza „Szkic AI”
 
 ai-label-settingsTitle = Ostrzeżenie przy odpowiedziach AI
 
-ai-label-settingsBody = Każda odpowiedź AI informuje, że została napisana przez AI i może zawierać błędy. Po wybraniu „Nie pokazuj ponownie” pełne zdanie zastępuje krótka etykieta „Szkic AI”. Etykieta nigdy nie znika. Wybór jest zapamiętany na tym urządzeniu i zaczyna się od nowa, gdy zmieni się model lub narzędzie.
+ai-label-settingsBody = Odpowiedzi AI mogą zawierać błędy, a każda o tym informuje. Jeśli przy jednej odpowiedzi wybierzesz „Nie pokazuj ponownie”, kolejne odpowiedzi pokażą krótką etykietę „Szkic AI” zamiast pełnego zdania.
 
 ai-label-settingsShowFull = Pokaż ponownie pełne ostrzeżenie
 
-ai-label-settingsFullShown = Pełne ostrzeżenie jest pokazywane przy każdej odpowiedzi AI.
+ai-label-settingsFullBack = Pełne ostrzeżenie jest znów pokazywane przy każdej odpowiedzi AI.
 
 ai-label-settingsShortShown = Krótka etykieta „Szkic AI” jest pokazywana przy odpowiedziach AI, dla których ją wybrano.
 
@@ -3013,7 +3030,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Automatyczne sprawdzanie działa tylko wtedy, gdy myCarlos jest otwarty i odblokowany.
+notifications-autoSummary = myCarlos sam pobiera nowe dokumenty z kliniki tylko wtedy, gdy jest otwarty i odblokowany. Gdy jest zablokowany i działa w tle, może jedynie powiadomić, że coś czeka.
 
 background-keepRunningSummary = myCarlos może działać w tle po zamknięciu okna. Sejf blokuje się w chwili zamknięcia okna.
 

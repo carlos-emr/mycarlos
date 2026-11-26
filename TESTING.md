@@ -857,6 +857,25 @@ What it does not check yet:
 A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a
 false alarm; read the log in the artifact before changing the app.
 
+## The loopback portal for trust checks (FAKE data)
+
+`scripts/android-portal-fixture.py` is a small HTTPS "portal" for checking how the app trusts one,
+on a computer or from an Android emulator (`adb reverse`). It answers every POST with a fixed
+refusal, never a real portal answer, so a run proves the handshake and the HTTP exchange only:
+
+| Mode | What the app should do |
+| --- | --- |
+| `trusted` (certificate for `127.0.0.1` and `localhost` under the test root of `src-tauri/tests/fixtures/portal-test-pki`) | A build that trusts the test root (a debug Android build, #478) reads `403 link_code_invalid` as "The portal did not accept that code." A build that does not trust it says "The portal request could not be completed." and the fixture logs no request. |
+| `other` (certificate for `other.example` only) | Refused even by a build that trusts the root (wrong name): "could not be completed", no request logged. |
+| `redirect` | A `302` is not followed: one request logged, never the target. |
+| `--plain-port` | A clear-text listener that only logs a connection: a `http://` address is refused before any connection (the log stays empty). |
+
+The log (`--log`, JSON lines) holds the method, path and body length, never a body or header. Run it
+by hand with `python3 scripts/android-portal-fixture.py --mode trusted --port 8443 --log out.jsonl`;
+its own tests are `npm run test:android-portal-fixture`. It uses throwaway test keys that are never
+added to a trust store. The emulator test that drives the app against it is a proposed workflow
+change (not applied; see `for-ben/android-portal-trust-emulator-README-20261126.md`).
+
 ## Password-protected PDFs
 
 Use sample data only: `src-tauri/tests/fixtures/locked-pdf/` holds FAKE PDFs locked the way CARLOS
