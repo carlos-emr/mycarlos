@@ -2715,7 +2715,7 @@ handover-import-opening = Abrindo…
 
 handover-import-error-typo = Essa chave não parece correta. Compare-a com a que lhe deram.
 
-handover-import-error-recovery = Essa é uma chave de recuperação, não a chave deste arquivo. Peça a chave criada para o arquivo.
+handover-import-error-recovery = Isso parece uma chave de recuperação, não a chave deste arquivo. Confira a chave que lhe deram para o arquivo e veja se não há erro de digitação. Se não lhe deram nenhuma, peça a chave criada para o arquivo.
 
 handover-import-error-wrong = Isso não abre este arquivo.
 

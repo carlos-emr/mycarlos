@@ -2450,7 +2450,7 @@ handover-import-opening = 正在打开…
 
 handover-import-error-typo = 该密钥看起来不对，请与您拿到的密钥核对。
 
-handover-import-error-recovery = 这是恢复密钥，不是此文件的密钥。请索取为该文件生成的密钥。
+handover-import-error-recovery = 这看起来像恢复密钥，而不是此文件的密钥。请核对您拿到的该文件密钥，并检查是否输错。如果没有拿到，请索取为该文件生成的密钥。
 
 handover-import-error-wrong = 这无法打开此文件。
 
