@@ -7060,6 +7060,8 @@ describe("durable vault UI", () => {
     history: "allowed",
     linkPortal: "write",
     connectPortal: "write",
+    // Removes a link that has delivered nothing: a change to the vault (main's #476 added it).
+    removePortalLink: "write",
     checkDocuments: "write",
     requestDeviceApproval: "write",
     submitApprovalCode: "write",
@@ -7588,6 +7590,9 @@ describe("durable vault UI", () => {
     "native/PhotoViewer.tsx photo.alt": "unmounted",
     // The clinic card's own status line, inside the clinic view.
     "native/PortalDocuments.tsx portal.clinicIssue": "unmounted",
+    // The confirmation for removing a clinic link (main's #476): a dialog of the clinic view, gone
+    // with the library when the vault locks.
+    "native/PortalDocuments.tsx portal.removeBody": "unmounted",
     "native/ProfileHandover.tsx handover.export.done": "unmounted",
     "native/ProfileHandover.tsx handover.export.hideOffer": "unmounted",
     "native/ProfileHandover.tsx handover.export.summary": "unmounted",
