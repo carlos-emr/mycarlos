@@ -709,18 +709,27 @@ mod tests {
         // A settings screen polls the permission (a bus call) just as a document arrives: the
         // notice waits for that young call and is then shown, instead of being turned away.
         let (backend, sent) = backend(Behaviour::Slow);
-        let backend = Arc::new(backend);
+        // The helper's 200 ms timeout is twice the 100 ms question: on a loaded CI runner (macOS, main
+        // run 45875944268) a late wake-up of the poll's thread made it count as hung and the notice was
+        // turned away. A long timeout keeps "a young call is waited for" and leaves the hung-call cases
+        // (which use the helper's own short timeout) as they were.
+        let backend = Arc::new(backend.with_timeout(Duration::from_secs(3)));
         let poll = {
             let backend = Arc::clone(&backend);
             thread::spawn(move || backend.permission())
         };
-        thread::sleep(Duration::from_millis(30));
+        // Wait until the poll's call is really out, instead of guessing how long its thread takes to start.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !backend.gate.outstanding.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the poll never started its call");
+            thread::sleep(Duration::from_millis(1));
+        }
         let begun = Instant::now();
         assert!(
             backend.accept(SENTENCE, &|| true).is_ok(),
             "the notice was lost"
         );
-        // It waited for the poll (about 70 ms more) and then ran, well inside the timeout.
+        // It waited for the poll (up to about 100 ms) and then ran, well inside the timeout.
         assert!(
             begun.elapsed() >= Duration::from_millis(40),
             "{:?}",
