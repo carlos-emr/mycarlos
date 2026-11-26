@@ -6991,7 +6991,16 @@ describe("durable vault UI", () => {
   // `replaced` cases and the `held` case below, and (for `unmounted`) the tests that nothing of
   // the library, a dialog, a selection or a search survives a lock and an unlock.
   const NAME_PARAMETERS: Record<string, AtLock> = {
-    // What a received (shared) file's outcome says, kept for the next unlock by design.
+    // A backup or import cut off by a lock: the note it carries is kept for the next unlock
+    // (`holdForUnlock` in `run`'s catch, with the transfer's outcome). The held case below runs
+    // the same holder with a damaged-document message.
+    "VaultApp.tsx notice.backupCutOff": "held",
+    // What a received (shared) file's outcome says. CLASSIFIED, NOT RUN here: it is held in
+    // `pendingSharedOutcomeRef`, a different holder from the one the held case below runs, and
+    // only while the page is concealed or hidden during the intake (`deferIfPrivate`); an outcome
+    // that arrives after the lock is dropped. Those behaviours are pinned by the shared-file
+    // tests "does not restore an old share notice or new badge after locking during refresh
+    // (#53)" and "discards a shared-file refusal name that arrives after Lock".
     "VaultApp.tsx interface.notice.alreadyShared": "held",
     "VaultApp.tsx interface.notice.notPdf": "held",
     "VaultApp.tsx interface.notice.receivedNotOpened": "held",
@@ -7105,7 +7114,7 @@ describe("durable vault UI", () => {
     const call =
       /\b(?:t|translateNow|translateCurrent|translate|translatePlain|tPlain)\(/g;
     const nameLike =
-      /^(name|names|person|clinic|clinicName|title|file|display\w*|folder|where)$/;
+      /^(name|names|person|clinic|clinicName|title|file|display\w*|folder|where|note|term|deviceName)$/;
     const found = new Set<string>();
     for (const [path, text] of noticeSources()) {
       for (const start of text.matchAll(call)) {
