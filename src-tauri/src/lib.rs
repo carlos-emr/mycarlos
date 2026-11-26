@@ -11675,10 +11675,12 @@ mod tests {
 
     #[test]
     fn a_picked_video_is_recognised_from_the_name_the_provider_gave_not_the_display_name() {
-        let tail = |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
+        let tail =
+            |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
         // An Android document id that ends in a video extension is a video, though the document
         // import would call it "Imported document.pdf".
-        let clip = "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
+        let clip =
+            "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
         assert_eq!(tail(clip), "clip.mp4");
         assert_eq!(
             import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap())),
@@ -11694,8 +11696,12 @@ mod tests {
         assert_eq!(tail(opaque), "31");
         assert_eq!(route_pick(&[tail(opaque)]), Some(false));
         // Desktop paths and file URLs are their own names.
-        assert!(is_video_name(&picked_name_tail(&tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into()))));
-        assert!(is_video_name(&tail("file:///private/var/mobile/Inbox/My%20Clip.m4v")));
+        assert!(is_video_name(&picked_name_tail(
+            &tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into())
+        )));
+        assert!(is_video_name(&tail(
+            "file:///private/var/mobile/Inbox/My%20Clip.m4v"
+        )));
     }
 
     #[test]
@@ -11711,7 +11717,10 @@ mod tests {
             named("content://com.android.providers.downloads.documents/document/msf%3A31"),
             "Imported video.mp4"
         );
-        assert_eq!(named("file:///private/var/mobile/Inbox/My%20Clip.mov"), "My Clip.mov");
+        assert_eq!(
+            named("file:///private/var/mobile/Inbox/My%20Clip.mov"),
+            "My Clip.mov"
+        );
         assert_eq!(
             video_import_display_name(&tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into())),
             "/home/x/clip.mp4"
