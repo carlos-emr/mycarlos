@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocaleOverride, translate } from "../i18n";
 import { visibleText } from "../test/humanText";
 import { RecoveryKeySetup } from "./RecoveryKeySetup";
@@ -102,21 +102,24 @@ describe("leaving a recovery key setup", () => {
   it("still locks when throwing the key away fails, with the failure handled", async () => {
     const user = userEvent.setup();
     // The runner does not report unhandled rejections here, so watch for the handler itself:
-    // `catch` is `then(undefined, handler)`, so a rejection handler shows as a second argument.
-    const failing = Promise.reject(new Error("FAKE failure"));
-    const then = vi.spyOn(failing, "then");
+    // `catch` is `then(undefined, handler)`, so a rejection handler is the second argument.
     let asked = 0;
-    onTestFinished(() => {
-      // Defused through the prototype, so that the spy above does not see it.
-      void Promise.prototype.then.call(failing, undefined, () => undefined);
-    });
+    // The second argument of every `then` the caller made: a rejection handler, if it gave one.
+    const rejectionHandlers: unknown[] = [];
     const { onLockAndLeave, onClose } = setUp(
       { initialKey: KEY, required: true },
       // Not a vi.fn: a mock attaches its own handlers to what it returns, which would hide the
-      // caller's.
+      // caller's. The rejection is made here, with the spy on before it is returned, so the
+      // caller's handler attaches in the same tick.
       {
         cancelRecoveryKey: () => {
           asked += 1;
+          const failing = Promise.reject(new Error("FAKE failure"));
+          const original = failing.then.bind(failing);
+          failing.then = ((onFulfilled, onRejected) => {
+            rejectionHandlers.push(onRejected);
+            return original(onFulfilled, onRejected);
+          }) as typeof failing.then;
           return failing;
         },
       },
@@ -134,9 +137,7 @@ describe("leaving a recovery key setup", () => {
     expect(onClose).not.toHaveBeenCalled();
     // The failure was handled by the caller, not left to surface as an unhandled rejection.
     expect(
-      then.mock.calls.some(
-        ([, onRejected]) => typeof onRejected === "function",
-      ),
+      rejectionHandlers.some((handler) => typeof handler === "function"),
     ).toBe(true);
   });
 
@@ -232,6 +233,12 @@ describe("leaving a recovery key setup", () => {
     GROUPS.forEach((group, index) =>
       expect(back[index].textContent).toContain(group),
     );
+    expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
+    expect(onLockAndLeave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    // A second Escape asks again; it does not discard.
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("alertdialog")).toBeVisible();
     expect(bridge.cancelRecoveryKey).not.toHaveBeenCalled();
     expect(onLockAndLeave).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
