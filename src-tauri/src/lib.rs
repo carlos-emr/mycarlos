@@ -9799,16 +9799,18 @@ mod tests {
                             Some(false) => {}
                         }
                     }
-                } else if declaration.starts_with("impl")
-                    && declaration.contains("Deserialize<'de> for ")
-                {
-                    if let Some(rest) = declaration.split("Deserialize<'de> for ").nth(1) {
-                        manual_impls.insert(
-                            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
-                                .next()
-                                .unwrap()
-                                .to_owned(),
-                        );
+                } else if declaration.starts_with("impl") && declaration.contains("Deserialize<") {
+                    // Whatever the lifetime is called (`'de`, `'a`, `'__de`, `'_`) and however the
+                    // trait is named (`Deserialize`, `serde::Deserialize`, `serde::de::Deserialize`).
+                    for part in declaration.split("Deserialize<").skip(1) {
+                        if let Some((_, rest)) = part.split_once("> for ") {
+                            manual_impls.insert(
+                                rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .next()
+                                    .unwrap()
+                                    .to_owned(),
+                            );
+                        }
                     }
                 } else if let Some(rest) = declaration.strip_prefix("enum ") {
                     if attributes.contains("Deserialize") {
@@ -10060,11 +10062,23 @@ mod tests {
         // A custom deserializer (or a conversion through another type) decides what is accepted
         // where the list cannot see it. The few that only validate a list or accept a null are
         // named here; any other is refused until it is modelled and named.
-        const REVIEWED_DESERIALIZERS: [(&str, &str); 3] = [
-            ("Page", "nullable"),
-            ("ProfileDetails", "present_previous_names"),
+        const REVIEWED_DESERIALIZERS: [(&str, &str, &str, &str); 3] = [
+            (
+                "Page",
+                "document_collection_pickup.rs",
+                "next_cursor",
+                "nullable",
+            ),
+            (
+                "ProfileDetails",
+                "vault.rs",
+                "previous_full_names",
+                "present_previous_names",
+            ),
             (
                 "SaveAiResultRequest",
+                "lib.rs",
+                "sources",
                 "summary_contract::deserialize_sources",
             ),
         ];
@@ -10075,7 +10089,24 @@ mod tests {
                     found.push(format!("{name}: serde({word}) on the struct"));
                 }
             }
-            for attributes in &definition.field_attributes {
+            // `flatten` defeats `deny_unknown_fields` (serde does not enforce it on a struct that
+            // flattens another), and `serde_as` / `serde_with` change what is accepted where the
+            // list cannot see it: a command argument may use none of them.
+            for attributes in
+                std::iter::once(&definition.attributes).chain(&definition.field_attributes)
+            {
+                if attributes.contains("#[serde_as") || attributes.contains("#[serde_with") {
+                    found.push(format!("{name}: serde_as or serde_with"));
+                }
+            }
+            for ((field, _), attributes) in
+                definition.fields.iter().zip(&definition.field_attributes)
+            {
+                if serde_has(attributes, "flatten") {
+                    found.push(format!(
+                        "{name}.{field}: serde(flatten) defeats deny_unknown_fields"
+                    ));
+                }
                 for word in ["with", "deserialize_with", "from", "try_from", "remote"] {
                     if !serde_has(attributes, word) {
                         continue;
@@ -10085,9 +10116,16 @@ mod tests {
                         .nth(1)
                         .and_then(|rest| rest.split('"').next());
                     let reviewed = word == "deserialize_with"
-                        && function.is_some_and(|f| REVIEWED_DESERIALIZERS.contains(&(name, f)));
+                        && function.is_some_and(|f| {
+                            REVIEWED_DESERIALIZERS.contains(&(
+                                name,
+                                definition.file.as_str(),
+                                field.as_str(),
+                                f,
+                            ))
+                        });
                     if !reviewed {
-                        found.push(format!("{name}: serde({word}) on a field"));
+                        found.push(format!("{name}.{field}: serde({word}) on a field"));
                     }
                 }
             }
