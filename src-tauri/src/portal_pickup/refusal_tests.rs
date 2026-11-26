@@ -80,6 +80,19 @@ fn a_clinic_is_asked_only_with_an_approval_or_a_request_still_open() {
     ] {
         assert!(!worth_asking(&with(Some(ended), None)), "{ended:?}");
     }
+    // A link whose clinic's current keys prove its acceptance IS an approval: worth asking, with
+    // no open request needed (the accepted one is not "open").
+    let (x, link, attempt) = first_fixture();
+    let first = &x["flows"]["first"];
+    let mut approved = link.clone();
+    approved.approval = Some(Attempt {
+        status: Some(ApprovalState::Accepted),
+        challenge: Some(first["challenge"]["compact"].as_str().unwrap().to_owned()),
+        acceptance: Some(first["acceptance"]["compact"].as_str().unwrap().to_owned()),
+        ..attempt.clone()
+    });
+    assert!(crate::portal_approval::currently_approved(&approved));
+    assert!(worth_asking(&approved));
     // An acceptance the clinic's current keys cannot prove is not an approval either.
     assert!(!worth_asking(&with(
         Some(ApprovalState::Accepted),

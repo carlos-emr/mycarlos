@@ -42,7 +42,9 @@ fn a_request_is_not_made_for_a_clock_past_the_most_a_time_can_hold() {
     let (x, link, _) = first_fixture();
     let now = x["now"].as_u64().unwrap();
     assert!(create(&link, now).is_ok());
-    // The clock is the number of seconds a safe integer can hold, no more.
+    // The clock is the number of seconds a safe integer can hold, no more: the limit itself is
+    // allowed, one past it is not.
+    assert!(create(&link, 9_007_199_254_740_000).is_ok());
     assert!(matches!(
         create(&link, 9_007_199_254_740_001),
         Err(VaultError::Invalid)
@@ -110,13 +112,19 @@ fn a_saved_request_that_contradicts_itself_is_not_trusted() {
         &link,
         &with(&|a| a.status = Some(ApprovalState::Accepted))
     ));
-    assert!(!valid_saved(
-        &link,
-        &with(&|a| {
-            a.acceptance = Some("FAKE.acceptance".to_owned());
-            a.status = Some(ApprovalState::Pending);
+    // (The fixture's own challenge and its real acceptance, so that without the status rule this
+    // request would be trusted: only that rule refuses it.)
+    let (x, _, _) = first_fixture();
+    let first = &x["flows"]["first"];
+    let complete = |status: ApprovalState| {
+        with(&|a| {
+            a.challenge = Some(first["challenge"]["compact"].as_str().unwrap().to_owned());
+            a.acceptance = Some(first["acceptance"]["compact"].as_str().unwrap().to_owned());
+            a.status = Some(status);
         })
-    ));
+    };
+    assert!(valid_saved(&link, &complete(ApprovalState::Accepted)));
+    assert!(!valid_saved(&link, &complete(ApprovalState::Pending)));
     assert!(!valid_saved(
         &link,
         &with(&|a| a.reason = Some(ApprovalReason::InvalidProof))
@@ -165,5 +173,111 @@ fn a_saved_request_whose_intent_is_not_the_one_this_device_signed_is_not_trusted
             expires_at: attempt.expires_at + 1,
             ..attempt.clone()
         }
+    ));
+}
+
+/// The saved request's own intent, with ONE field changed, signed again by this device's key (so
+/// only the check on that field can refuse it); `expires_at` follows `exp` when `exp` is changed,
+/// so the check that the two agree is not what refuses.
+fn resigned(
+    link: &crate::portal_link::StoredLink,
+    attempt: &Attempt,
+    change: impl FnOnce(&mut serde_json::Value),
+) -> Attempt {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
+    let payload = attempt.intent.split('.').next().unwrap();
+    let mut intent: serde_json::Value =
+        serde_json::from_slice(&B64.decode(payload).unwrap()).unwrap();
+    change(&mut intent);
+    Attempt {
+        intent: link.keys.sign(&serde_json::to_vec(&intent).unwrap()),
+        expires_at: intent["exp"].as_u64().unwrap(),
+        ..attempt.clone()
+    }
+}
+
+/// One field of the intent changed.
+type Change = Box<dyn Fn(&mut serde_json::Value)>;
+
+#[test]
+fn a_saved_intent_is_trusted_only_while_each_of_its_fields_is_what_this_device_signed() {
+    let (x, link, _) = first_fixture();
+    let now = x["now"].as_u64().unwrap();
+    let base = create(&link, now).unwrap();
+    // Re-signing it unchanged is accepted, so every refusal below is the one changed field.
+    assert!(valid_saved(&link, &resigned(&link, &base, |_| {})));
+    let other = |v: &mut serde_json::Value, field: &str| {
+        let text = format!("{}x", v[field].as_str().unwrap());
+        v[field] = text.into();
+    };
+    let refused: Vec<(&str, Change)> = vec![
+        ("v", Box::new(|v| v["v"] = 2.into())),
+        ("typ", Box::new(move |v| other(v, "typ"))),
+        ("aud", Box::new(move |v| other(v, "aud"))),
+        ("iss", Box::new(move |v| other(v, "iss"))),
+        (
+            "candidate_device_key_id",
+            Box::new(move |v| other(v, "candidate_device_key_id")),
+        ),
+        (
+            "candidate_x25519_public_key",
+            Box::new(move |v| other(v, "candidate_x25519_public_key")),
+        ),
+        (
+            "candidate_ed25519_public_key",
+            Box::new(move |v| other(v, "candidate_ed25519_public_key")),
+        ),
+        ("clinic_id", Box::new(move |v| other(v, "clinic_id"))),
+        ("recipient_id", Box::new(move |v| other(v, "recipient_id"))),
+        (
+            "public_portal_base_url",
+            Box::new(move |v| other(v, "public_portal_base_url")),
+        ),
+        (
+            "predecessor_device_key_id",
+            Box::new(|v| v["predecessor_device_key_id"] = "FAKE-earlier-key".into()),
+        ),
+        // The lifetime: not after it began, and at most ten minutes.
+        ("exp = iat", Box::new(|v| v["iat"] = v["exp"].clone())),
+        (
+            "exp < iat",
+            Box::new(|v| v["iat"] = (v["exp"].as_u64().unwrap() + 1).into()),
+        ),
+        (
+            "lifetime 601",
+            Box::new(|v| v["iat"] = (v["exp"].as_u64().unwrap() - 601).into()),
+        ),
+        // Past the most a time can hold (iat moved with it, so the lifetime is still 600).
+        (
+            "exp past a safe integer",
+            Box::new(|v| {
+                v["exp"] = 9_007_199_254_740_992u64.into();
+                v["iat"] = (9_007_199_254_740_992u64 - 600).into();
+            }),
+        ),
+    ];
+    for (name, change) in refused {
+        assert!(
+            !valid_saved(&link, &resigned(&link, &base, change)),
+            "a changed {name} is still trusted"
+        );
+    }
+    // The edges that ARE allowed: exactly ten minutes, a shorter life, and the largest time.
+    assert!(valid_saved(
+        &link,
+        &resigned(&link, &base, |v| v["iat"] =
+            (v["exp"].as_u64().unwrap() - 600).into())
+    ));
+    assert!(valid_saved(
+        &link,
+        &resigned(&link, &base, |v| v["iat"] =
+            (v["exp"].as_u64().unwrap() - 1).into())
+    ));
+    assert!(valid_saved(
+        &link,
+        &resigned(&link, &base, |v| {
+            v["exp"] = 9_007_199_254_740_991u64.into();
+            v["iat"] = (9_007_199_254_740_991u64 - 600).into();
+        })
     ));
 }
