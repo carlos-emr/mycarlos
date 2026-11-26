@@ -3311,6 +3311,10 @@ fn after_open(store: &Arc<VaultStore>) {
         if let Some(vault_id) = store.open_vault_id() {
             notice_key::after_open(vault_id);
         }
+        // Keys whose link was removed before their wipe finished (#160). One read of the vault id
+        // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
+        // an empty link set.
+        store.sweep_notice_keys();
         store.after_open();
         // The notices switch is kept in the vault: read it now it is open, then bring the notice
         // keys in line with the two switches (#230).
@@ -3777,6 +3781,20 @@ async fn vault_forget_refused_deliveries(
     let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_portal_remove_link(
+    store: State<'_, StoreHandle>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.remove_portal_link(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map_err(Into::into)
@@ -7890,6 +7908,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_portal_remove_link,
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
