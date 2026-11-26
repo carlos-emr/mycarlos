@@ -233,8 +233,9 @@ saved (for example some network folders), on the systems where it can tell.
 The patient can save an **encrypted backup**: one file holding the whole vault, still encrypted,
 saved wherever the patient chooses (a folder, a USB stick, or on a phone the Files app or a
 cloud drive). The app never chooses a place and never uploads it anywhere. The name it suggests
-is "myCarlos backup" and the date (for example `myCarlos backup 2026-09-30.mycarlosbackup`); it
-names no person, document or key. The patient can type any other name.
+is "myCarlos backup", the date, and the recovery key's short label if the vault has a recovery
+key (for example `myCarlos backup 2026-09-30 7F3A.mycarlosbackup`); it names no person or
+document. The patient can type any other name.
 
 - A backup opens only with the passphrase, or the recovery key, that the vault had when the backup
   was saved. Changing the passphrase or replacing the recovery key later does **not** lock older

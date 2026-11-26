@@ -35,7 +35,7 @@ test.beforeEach(({}, testInfo) => {
 });
 
 const GUIDE_STORAGE = "mycarlos.oldBackupsGuide.v1";
-const BACKUP_NAME = "myCarlos backup FAKE.mycarlosbackup";
+const BACKUP_NAME = `myCarlos backup FAKE ${FAKE_KEY_LABEL}.mycarlosbackup`;
 
 async function openSecurity(page: Page) {
   await sidebar(page)
