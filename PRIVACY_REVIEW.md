@@ -24,8 +24,9 @@ record held by the patient, not a clinic system.
 It cannot show a document yet. To read one, the patient saves a readable copy outside the app and
 opens it in another app (see section 6).
 
-Today it is **not connected to anything**: not to CARLOS (the clinic's electronic medical
-record), not to a clinic portal, not to any server. It has no accounts, no sign-in and no
+Until the patient links a clinic's portal it is **not connected to anything**: not to CARLOS (the
+clinic's electronic medical record), not to a clinic portal, not to any server. Once a patient links
+a clinic, it contacts that clinic's portal and only that (section 7, "The clinic portal"). It has no accounts, no sign-in and no
 analytics. The planned link with CARLOS (a clinic sends an encrypted document, and the patient
 adds it to myCarlos) is not built.
 
@@ -284,9 +285,10 @@ leaves depends on the system:
 
 **The app itself sends nothing.** It:
 
-- makes no network connections: its own code makes none, and its security settings let its
-  screens talk only to the app itself (the AI helper's model download, #219, is
-  the exception: one public file, only when the patient clicks it; see below);
+- makes no network connections until the patient links a clinic or clicks the AI helper's model
+  download (#219): its security settings let its screens talk only to the app itself, and its own
+  code reaches only the portal the patient linked (see "The clinic portal" below) and, on the
+  patient's click, the one public model file;
 - has no analytics, telemetry or crash reporting;
 - has no automatic updates yet (updates are planned through app stores and a signed desktop
   updater);
@@ -316,6 +318,23 @@ where the patient puts it.
 model download (#219), only when the patient clicks it: the download site sees the
 computer's IP address, the time and which public file was fetched, and nothing else is sent
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
+
+**The clinic portal (after the patient links a clinic: computers, iPhone and, from the Android
+connection pieces #493, #478 and #503, Android).** The lines above describe an app that is not
+linked. When a patient links a clinic the app contacts that clinic's portal and only it (NET-01):
+the address the patient typed or scanned, over HTTPS (clear text is refused on every platform), with
+the device's own certificate trust. On Android that is the phone's system authorities only: an
+authority a person, a malware or a device manager installed is not trusted (NET-05), and a debug
+build trusts one more, a FAKE test authority that exists only in debug builds, which is a property
+of test builds and not of a build for patients. The portal and anyone watching the network learn
+what any such request shows, the IP address the phone is reached from and the time, plus the fields
+the app sends: the opaque ids and the per-link device key id listed in `SECURITY_OPERATIONS.md`
+("Portal pickup", NET-03), signed by the link's device key. Documents arrive sealed to the device and
+are opened only inside the vault. On Android there is no background checker yet: the app contacts
+the portal when the patient asks (links a clinic, or checks for documents), and once after unlocking
+when a notice is owed; a request still running when the app goes to the background or the vault locks is
+dropped (NET-07). **Not yet verified on a phone:** a real connection from an Android phone has not
+been run (TESTING.md, "Linking a clinic on Android").
 
 **Tray notices (built in #230, after the tray #206; Portal contract merged in carlos-portal#88).**
 With the tray, closing the window locks the vault. While unlocked and tray notices are wanted (tray mode and notices both on: at link time, at unlock, or when a switch turns on), the device
