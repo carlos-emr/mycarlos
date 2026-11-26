@@ -1998,7 +1998,7 @@ pub mod testing {
             self.runner
                 .start(&Plenty)
                 .map(|model| model.name)
-                .map_err(|error| format!("{error:?}"))
+                .map_err(|error| words(&error))
         }
 
         /// A summary of `pages` (index, text): its sentences (text, quote) and the last page.
@@ -2029,21 +2029,21 @@ pub mod testing {
                         summary.last_page,
                     )
                 })
-                .map_err(|error| format!("{error:?}"))
+                .map_err(|error| words(&error))
         }
 
         pub fn explain(&self, term: &str) -> Result<String, String> {
             self.runner
                 .explain(self.runner.ticket(), term, "FAKE sentence.", "en")
                 .map(|(text, _)| text)
-                .map_err(|error| format!("{error:?}"))
+                .map_err(|error| words(&error))
         }
 
         /// What the sandbox lets the stub do (`model_helper::confine::probe`).
         pub fn probe(&self, what: &str) -> Result<String, String> {
             self.runner
                 .probe(self.runner.ticket(), what)
-                .map_err(|error| format!("{error:?}"))
+                .map_err(|error| words(&error))
         }
 
         /// Ends the request in flight, as a closing reader does.
@@ -2077,6 +2077,23 @@ pub mod engine_testing {
     use super::*;
     use sha2::{Digest, Sha256};
     use std::io::{Read, Write};
+
+    /// A runner failure as these tests read it: its kind and, for the kinds that carry words, the
+    /// words (an assertion on "ended before its hello" needs them). Test support over FAKE documents
+    /// only: in the app these words never leave the runner, which is why `Debug` of `RunnerError`
+    /// prints just its name in a release build, and this function must not move into app code.
+    fn words(error: &RunnerError) -> String {
+        match error {
+            RunnerError::Start(words) | RunnerError::Protocol(words) | RunnerError::Model(words) => {
+                format!("{}: {words}", error.code())
+            }
+            RunnerError::Budget {
+                needed_bytes,
+                available_bytes,
+            } => format!("budget: needed {needed_bytes}, available {available_bytes:?}"),
+            other => other.code().to_owned(),
+        }
+    }
 
     struct Plenty;
 
@@ -2228,7 +2245,7 @@ pub mod engine_testing {
                 card: None,
             };
             let config = launch_at(executable.to_owned(), &verified)
-                .map_err(|error| format!("{error:?}"))?;
+                .map_err(|failure| format!("{failure:?}"))?;
             // The runner keeps no model file of its own: this one start hands the sealed copy
             // over and lets it go once the helper has greeted, as the app does. So a test holds
             // the model once, in the helper, not twice (Linux: a 3 GB memfd beside the weights).
@@ -2238,7 +2255,7 @@ pub mod engine_testing {
             }));
             runner
                 .start_with(&Plenty, move || Ok(config))
-                .map_err(|error| format!("{error:?}"))?;
+                .map_err(|error| words(&error))?;
             Ok(Self {
                 runner,
                 unlocated: std::sync::Mutex::default(),
@@ -2276,7 +2293,7 @@ pub mod engine_testing {
             let summary = self
                 .runner
                 .summarize(self.runner.ticket(), &request)
-                .map_err(|error| format!("{error:?}"))?;
+                .map_err(|error| words(&error))?;
             let fallbacks = summary
                 .fallbacks
                 .into_iter()
@@ -2394,7 +2411,7 @@ pub mod engine_testing {
                         summary.last_page,
                     )
                 })
-                .map_err(|error| format!("{error:?}"))
+                .map_err(|error| words(&error))
         }
 
         /// Original rejected model quotes, including any source later repaired.
@@ -2463,7 +2480,7 @@ pub mod engine_testing {
             self.runner
                 .explain(self.runner.ticket(), term, context, lang)
                 .map(|(text, _)| text)
-                .map_err(|error| format!("{error:?}"))
+                .map_err(|error| words(&error))
         }
 
         pub fn stop(&self) {
