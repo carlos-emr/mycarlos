@@ -16,8 +16,92 @@ pub const MAX_PHOTO_SIDE: u16 = 8192;
 pub enum PhotoError {
     /// Not one complete 8-bit baseline or progressive JPEG.
     NotJpeg,
-    /// Over `MAX_PHOTO_BYTES`, or over `MAX_PHOTO_SIDE` on a side.
+    /// Not one complete, well formed, still PNG (`photo_png`).
+    NotPng,
+    /// Over `MAX_PHOTO_BYTES`, or over `MAX_PHOTO_SIDE` on a side (or, for a PNG, over the pixel
+    /// cap).
     TooLarge,
+}
+
+/// A kind of picture the vault shows, decided by the file's own first bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PictureKind {
+    Jpeg,
+    Png,
+}
+
+impl PictureKind {
+    /// The suffix a picture of this kind is named with when it has none that fits.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Jpeg => ".jpg",
+            Self::Png => ".png",
+        }
+    }
+
+    /// Whether `name` (trimmed) is a nonempty name followed by a suffix that describes this kind:
+    /// `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG, in any case.
+    pub fn names(self, name: &str) -> bool {
+        name.trim()
+            .rsplit_once('.')
+            .is_some_and(|(stem, extension)| {
+                !stem.trim().is_empty()
+                    && match self {
+                        Self::Jpeg => {
+                            extension.eq_ignore_ascii_case("jpg")
+                                || extension.eq_ignore_ascii_case("jpeg")
+                        }
+                        Self::Png => extension.eq_ignore_ascii_case("png"),
+                    }
+            })
+    }
+
+    /// The type of the `data:` URL the viewer is given.
+    pub fn media_type(self) -> &'static str {
+        match self {
+            Self::Jpeg => "image/jpeg",
+            Self::Png => "image/png",
+        }
+    }
+}
+
+/// The kind of picture `bytes` starts as, if any: FF D8 FF is a JPEG, the 8-byte signature a PNG.
+pub fn picture_kind(bytes: &[u8]) -> Option<PictureKind> {
+    if looks_like_jpeg(bytes) {
+        Some(PictureKind::Jpeg)
+    } else if crate::photo_png::looks_like_png(bytes) {
+        Some(PictureKind::Png)
+    } else {
+        None
+    }
+}
+
+/// How many bytes at the start of a file say what kind of picture it is.
+pub const SNIFF_BYTES: usize = 8;
+
+/// Whether the first bytes seen so far (fewer than `SNIFF_BYTES` is fine) can still be the start of
+/// a JPEG or a PNG, so that a reader can stop at the first byte that cannot be.
+pub fn could_start_a_picture(prefix: &[u8]) -> bool {
+    JPEG_START.starts_with(&prefix[..prefix.len().min(JPEG_START.len())])
+        || prefix.starts_with(&JPEG_START)
+        || crate::photo_png::PNG_SIGNATURE
+            .starts_with(&prefix[..prefix.len().min(crate::photo_png::PNG_SIGNATURE.len())])
+        || prefix.starts_with(&crate::photo_png::PNG_SIGNATURE)
+}
+
+/// The cleaned picture a patient brought, and which kind it is: a JPEG goes through
+/// `clean_picture` (orientation and a plain colour profile kept), a PNG through
+/// `photo_png::clean_png` (only the chunks that draw it). The same function runs when a picture is
+/// imported and every time it is shown.
+pub fn clean_any(input: &[u8]) -> Result<(PictureKind, Zeroizing<Vec<u8>>), PhotoError> {
+    match picture_kind(input) {
+        Some(PictureKind::Jpeg) => clean_picture(input).map(|bytes| (PictureKind::Jpeg, bytes)),
+        Some(PictureKind::Png) => {
+            crate::photo_png::clean_png(input).map(|bytes| (PictureKind::Png, bytes))
+        }
+        None if input.len() > MAX_PHOTO_BYTES => Err(PhotoError::TooLarge),
+        None => Err(PhotoError::NotJpeg),
+    }
 }
 
 const SOI: u8 = 0xd8;
@@ -46,6 +130,55 @@ pub fn looks_like_jpeg(bytes: &[u8]) -> bool {
 /// do not describe as a single 8-bit baseline or progressive image of at most
 /// `MAX_PHOTO_SIDE` pixels a side is refused.
 pub fn clean_jpeg(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
+    clean_core(input)
+}
+
+/// `clean_jpeg` for a picture the patient brought (imported, or shown after it was): the same
+/// walk, then two things the patient needs are put back, **rebuilt, never copied**:
+/// - the **orientation** (Exif tag 0x0112, a value 1 to 8), as the only entry of a minimal Exif
+///   block, so that a portrait photo a phone stored sideways still shows upright. An orientation
+///   of 1 (or none) needs no block. No place, time, device or thumbnail survives: the block is
+///   built here, 34 bytes, and holds nothing else.
+/// - a **colour profile, rebuilt** (`rebuild_icc`): a matrix and curve RGB profile (what phones
+///   write) is read for its colour numbers only and written again with a zeroed header and our own
+///   fixed description and copyright, so no maker, model, date, creator, id or text survives. Skin
+///   and rash colours matter in a health picture. A profile of any other kind is dropped and the
+///   picture shows as sRGB.
+///
+/// Whatever follows the first end-of-image marker (the gain map and MPF index that Ultra HDR and
+/// iPhone files append) is never copied: only the primary image is kept.
+///
+/// Running it again on its own output gives the same bytes.
+pub fn clean_picture(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
+    let core = clean_core(input)?;
+    let (orientation, profile) = wanted_metadata(input);
+    let mut extra = Vec::new();
+    if let Some(orientation) = orientation {
+        extra.extend_from_slice(&orientation_block(orientation));
+    }
+    if let Some(profile) = profile {
+        extra.extend_from_slice(&icc_segment(&profile));
+    }
+    if extra.is_empty() {
+        return Ok(core);
+    }
+    // After the JFIF header, which `clean_core` writes first when the picture has a plain one.
+    let at = if core.get(2..4) == Some(&[0xff, APP0]) {
+        2 + 2 + JFIF_LENGTH
+    } else {
+        2
+    };
+    let mut output = Zeroizing::new(Vec::with_capacity(core.len() + extra.len()));
+    output.extend_from_slice(&core[..at]);
+    output.extend_from_slice(&extra);
+    output.extend_from_slice(&core[at..]);
+    if output.len() > MAX_PHOTO_BYTES {
+        return Err(PhotoError::TooLarge);
+    }
+    Ok(output)
+}
+
+fn clean_core(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
     if input.len() > MAX_PHOTO_BYTES {
         return Err(PhotoError::TooLarge);
     }
@@ -148,6 +281,386 @@ pub fn clean_jpeg(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, PhotoError> {
             output.extend_from_slice(&input[start..position]);
         }
     }
+}
+
+/// The most bytes of a colour profile that is kept: it then fits in one APP2 segment.
+pub const MAX_ICC_BYTES: usize = 64 * 1024 - 64;
+const APP1: u8 = 0xe1;
+const APP2: u8 = 0xe2;
+const ICC_TAG: &[u8; 12] = b"ICC_PROFILE\0";
+/// The most APP2 segments a colour profile may come in.
+const MAX_ICC_CHUNKS: usize = 9;
+
+/// The orientation (2 to 8; 1 means upright and is not worth a block) and the colour profile the
+/// header of `input` carries, read leniently: anything unreadable or odd is "none". It stops at
+/// the first scan. `clean_core` has already accepted `input` as a whole.
+fn wanted_metadata(input: &[u8]) -> (Option<u16>, Option<Vec<u8>>) {
+    let mut orientation = None;
+    let mut chunks: Vec<(u8, u8, &[u8])> = Vec::new();
+    let mut position = 2;
+    let mut exif_seen = false;
+    let mut too_many_chunks = false;
+    while input.get(position) == Some(&0xff) {
+        while input.get(position) == Some(&0xff) {
+            position += 1;
+        }
+        let Some(&code) = input.get(position) else {
+            break;
+        };
+        position += 1;
+        if code == SOS || code == EOI {
+            break;
+        }
+        let Some(length) = input
+            .get(position..position + 2)
+            .map(|bytes| usize::from(u16::from_be_bytes([bytes[0], bytes[1]])))
+            .filter(|length| *length >= 2)
+        else {
+            break;
+        };
+        let Some(payload) = input.get(position + 2..position + length) else {
+            break;
+        };
+        match code {
+            // Only the first Exif block counts.
+            APP1 if !exif_seen && payload.starts_with(b"Exif\0\0") => {
+                exif_seen = true;
+                orientation = exif_orientation(&payload[6..]).filter(|value| *value != 1);
+            }
+            APP2 if payload.starts_with(ICC_TAG) && payload.len() >= ICC_TAG.len() + 2 => {
+                // A profile is at most `MAX_ICC_CHUNKS` pieces; more than that is no profile, and
+                // the rest are not collected.
+                if chunks.len() >= MAX_ICC_CHUNKS {
+                    too_many_chunks = true;
+                } else {
+                    let (sequence, total) = (payload[12], payload[13]);
+                    chunks.push((sequence, total, &payload[14..]));
+                }
+            }
+            _ => {}
+        }
+        position += length;
+    }
+    let profile = if too_many_chunks {
+        None
+    } else {
+        join_icc(chunks)
+    };
+    (orientation, profile)
+}
+
+/// The profile in its chunks (each APP2 segment carries a sequence number and the total), when
+/// they are all there, once each, and the whole can be rebuilt as a plain profile (`rebuild_icc`).
+fn join_icc(mut chunks: Vec<(u8, u8, &[u8])>) -> Option<Vec<u8>> {
+    let total = usize::from(chunks.first()?.1);
+    if total == 0
+        || total > MAX_ICC_CHUNKS
+        || chunks.len() != total
+        || chunks.iter().any(|c| usize::from(c.1) != total)
+    {
+        return None;
+    }
+    chunks.sort_by_key(|chunk| chunk.0);
+    if chunks
+        .iter()
+        .enumerate()
+        .any(|(index, chunk)| usize::from(chunk.0) != index + 1)
+    {
+        return None;
+    }
+    let profile: Vec<u8> = chunks
+        .iter()
+        .flat_map(|chunk| chunk.2.iter().copied())
+        .collect();
+    rebuild_icc(&profile)
+}
+
+/// A colour profile **rebuilt**, never copied: what the picture needs to show its colours and
+/// nothing a camera or a person put in the file. A profile carries free text (its description, its
+/// copyright, the device's maker and model) and a header of device and date fields, and a file may
+/// hide bytes between its tags; none of that is data about the picture, but all of it can be data
+/// about the person, so only the numbers that make the colours are read out of the input and a
+/// new profile is written around them:
+/// - only an RGB display profile with an XYZ connection space is rebuilt (class `mntr`, colour
+///   space `RGB `, connection space `XYZ `, a version of 4 or less): the matrix and curve kind
+///   that phone cameras write (sRGB, Display P3, Adobe RGB). A profile built on lookup tables
+///   (`A2B0` and the like), a gray, CMYK or other profile, and anything malformed gives `None`, and
+///   the picture shows as sRGB;
+/// - of its tags only `rXYZ gXYZ bXYZ rTRC gTRC bTRC wtpt` (all required) and `chad` and `cicp`
+///   (when there) are read, each checked down to its type, exact size and reserved bytes, the
+///   colour numbers within a sane range and each curve non-decreasing, so no text and little else
+///   can ride in them; every other tag, whatever it is called, is dropped;
+/// - the header is written new with zeros everywhere a device, a date, a maker, a model, a
+///   creator or a profile id would go; only the class, the colour spaces, the rendering intent
+///   (0 to 3) and the standard D50 illuminant are set, and the version is written as 4.3;
+/// - the description and the copyright are our own fixed words, the tags are laid end to end on
+///   four-byte boundaries with zero padding, and the result is at most [`MAX_ICC_BYTES`].
+///
+/// Running it again on its own output gives the same bytes.
+fn rebuild_icc(profile: &[u8]) -> Option<Vec<u8>> {
+    const HEADER: usize = 128;
+    if profile.len() < HEADER + 4 || profile.len() > MAX_ICC_BYTES {
+        return None;
+    }
+    let word = |at: usize| -> Option<u32> {
+        Some(u32::from_be_bytes(
+            profile.get(at..at.checked_add(4)?)?.try_into().ok()?,
+        ))
+    };
+    if word(0)? as usize != profile.len()
+        || profile.get(36..40)? != b"acsp"
+        || profile[8] > 4
+        || profile.get(12..16)? != b"mntr"
+        || profile.get(16..20)? != b"RGB "
+        || profile.get(20..24)? != b"XYZ "
+    {
+        return None;
+    }
+    let intent = word(64)?;
+    if intent > 3 {
+        return None;
+    }
+    let count = word(HEADER)? as usize;
+    if count == 0 || count > 100 || HEADER + 4 + 12 * count > profile.len() {
+        return None;
+    }
+    // The wanted tags, each at most once, as (signature, its bytes).
+    let mut taken: Vec<([u8; 4], Vec<u8>)> = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for index in 0..count {
+        let entry = HEADER + 4 + 12 * index;
+        let signature: [u8; 4] = profile.get(entry..entry + 4)?.try_into().ok()?;
+        let wanted = matches!(
+            &signature,
+            b"rXYZ" | b"gXYZ" | b"bXYZ" | b"rTRC" | b"gTRC" | b"bTRC" | b"wtpt" | b"chad" | b"cicp"
+        );
+        if !wanted {
+            continue;
+        }
+        if taken.iter().any(|(seen, _)| *seen == signature) {
+            return None;
+        }
+        let offset = word(entry + 4)? as usize;
+        let size = word(entry + 8)? as usize;
+        // A tag's data lies after the tag table (never in the header or the table itself) and
+        // starts on a four-byte boundary, as the format requires.
+        if offset < HEADER + 4 + 12 * count || !offset.is_multiple_of(4) {
+            return None;
+        }
+        let data = profile.get(offset..offset.checked_add(size)?)?;
+        if !tag_is_plain(&signature, data) {
+            return None;
+        }
+        ranges.push((offset, offset + size));
+        taken.push((signature, data.to_vec()));
+    }
+    if !ranges_are_compatible(&ranges) {
+        return None;
+    }
+    for required in [
+        b"rXYZ", b"gXYZ", b"bXYZ", b"rTRC", b"gTRC", b"bTRC", b"wtpt",
+    ] {
+        if !taken.iter().any(|(seen, _)| seen == required) {
+            return None;
+        }
+    }
+    taken.push((*b"desc", mluc("Colour profile")));
+    taken.push((*b"cprt", mluc("No copyright")));
+    taken.sort_by_key(|tag| tag.0);
+
+    let table = HEADER + 4 + 12 * taken.len();
+    let mut offsets = Vec::with_capacity(taken.len());
+    let mut at = table;
+    for (_, data) in &taken {
+        offsets.push(at);
+        at += data.len().div_ceil(4) * 4;
+    }
+    if at > MAX_ICC_BYTES {
+        return None;
+    }
+    let mut out = vec![0_u8; at];
+    out[0..4].copy_from_slice(&u32::try_from(at).ok()?.to_be_bytes());
+    out[8..12].copy_from_slice(&[4, 0x30, 0, 0]);
+    out[12..16].copy_from_slice(b"mntr");
+    out[16..20].copy_from_slice(b"RGB ");
+    out[20..24].copy_from_slice(b"XYZ ");
+    out[36..40].copy_from_slice(b"acsp");
+    out[64..68].copy_from_slice(&intent.to_be_bytes());
+    // The standard D50 illuminant (X 0.9642, Y 1.0, Z 0.8249) as s15Fixed16.
+    out[68..72].copy_from_slice(&0x0000_f6d6_u32.to_be_bytes());
+    out[72..76].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+    out[76..80].copy_from_slice(&0x0000_d32d_u32.to_be_bytes());
+    out[HEADER..HEADER + 4].copy_from_slice(&u32::try_from(taken.len()).ok()?.to_be_bytes());
+    for (index, (signature, data)) in taken.iter().enumerate() {
+        let entry = HEADER + 4 + 12 * index;
+        out[entry..entry + 4].copy_from_slice(signature);
+        out[entry + 4..entry + 8]
+            .copy_from_slice(&u32::try_from(offsets[index]).ok()?.to_be_bytes());
+        out[entry + 8..entry + 12].copy_from_slice(&u32::try_from(data.len()).ok()?.to_be_bytes());
+        out[offsets[index]..offsets[index] + data.len()].copy_from_slice(data);
+    }
+    Some(out)
+}
+
+/// Whether tags' data ranges (start, end) never overlap except by being exactly the same range:
+/// real profiles share one table between the three curves (`rTRC`, `gTRC`, `bTRC` pointing at the
+/// same data), but a range that begins inside another is not a profile that makes sense.
+fn ranges_are_compatible(ranges: &[(usize, usize)]) -> bool {
+    ranges.iter().enumerate().all(|(index, a)| {
+        ranges[index + 1..]
+            .iter()
+            .all(|b| a == b || a.1 <= b.0 || b.1 <= a.0)
+    })
+}
+
+/// A tag read from a profile, accepted only if it is exactly the kind of tag its name says and
+/// nothing else: the right type, the exact size, zero reserved bytes, numbers in a sane range.
+fn tag_is_plain(signature: &[u8; 4], data: &[u8]) -> bool {
+    let kind = data.get(..4);
+    let is = |wanted: &[u8; 4]| kind == Some(&wanted[..]);
+    // Reserved bytes 4 to 8 of every tag type are zero.
+    if data.len() < 8 || data[4..8] != [0, 0, 0, 0] {
+        return false;
+    }
+    let be32 = |at: usize| -> Option<u32> {
+        Some(u32::from_be_bytes(data.get(at..at + 4)?.try_into().ok()?))
+    };
+    match signature {
+        // A colour: three s15Fixed16 numbers, each between 0 and 2.
+        b"rXYZ" | b"gXYZ" | b"bXYZ" | b"wtpt" => {
+            data.len() == 20
+                && is(b"XYZ ")
+                && (0..3).all(|index| be32(8 + 4 * index).is_some_and(|value| value <= 0x0002_0000))
+        }
+        b"rTRC" | b"gTRC" | b"bTRC" => {
+            if is(b"curv") {
+                // A table of 16-bit values that never goes down; 0 entries is the identity and
+                // 1 a gamma.
+                let Some(entries) = be32(8).map(|n| n as usize) else {
+                    return false;
+                };
+                entries <= 4096
+                    && data.len() == 12 + 2 * entries
+                    && data[12..]
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|pair| u16::from_be_bytes(*pair))
+                        .is_sorted()
+            } else if is(b"para") {
+                // A parametric curve: a function type 0 to 4 and its 1, 3, 4, 5 or 7 parameters.
+                let function = data.get(8..10).map_or(usize::MAX, |bytes| {
+                    usize::from(u16::from_be_bytes([bytes[0], bytes[1]]))
+                });
+                let parameters = [1_usize, 3, 4, 5, 7].get(function).copied();
+                data.get(10..12) == Some(&[0_u8, 0][..])
+                    && parameters.is_some_and(|n| data.len() == 12 + 4 * n)
+            } else {
+                false
+            }
+        }
+        // The chromatic adaptation matrix: nine s15Fixed16 numbers, each between -4 and 4.
+        b"chad" => {
+            data.len() == 44
+                && is(b"sf32")
+                && (0..9).all(|index| {
+                    be32(8 + 4 * index).is_some_and(|value| {
+                        let signed = value as i32;
+                        (-0x0004_0000..=0x0004_0000).contains(&signed)
+                    })
+                })
+        }
+        // Colour codes: the primaries and the transfer function (0 to 22), the matrix (0 for RGB) and
+        // the full-range flag (0 or 1): four bytes that can say nothing else.
+        b"cicp" => {
+            data.len() == 12
+                && is(b"cicp")
+                && data[8] <= 22
+                && data[9] <= 22
+                && data[10] == 0
+                && data[11] <= 1
+        }
+        _ => false,
+    }
+}
+
+/// A multi-localized text tag with one English record: the words are ours, never the file's.
+fn mluc(text: &str) -> Vec<u8> {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut tag = b"mluc".to_vec();
+    tag.extend_from_slice(&[0, 0, 0, 0]);
+    tag.extend_from_slice(&1_u32.to_be_bytes());
+    tag.extend_from_slice(&12_u32.to_be_bytes());
+    tag.extend_from_slice(b"enUS");
+    tag.extend_from_slice(&u32::try_from(units.len() * 2).unwrap_or(0).to_be_bytes());
+    tag.extend_from_slice(&28_u32.to_be_bytes());
+    for unit in units {
+        tag.extend_from_slice(&unit.to_be_bytes());
+    }
+    tag
+}
+
+/// The orientation of an Exif TIFF block: IFD0's tag 0x0112, a SHORT of count 1 with a value of
+/// 1 to 8. Every read is bounds-checked; anything odd is `None`.
+fn exif_orientation(tiff: &[u8]) -> Option<u16> {
+    let big = match tiff.get(..2)? {
+        b"MM" => true,
+        b"II" => false,
+        _ => return None,
+    };
+    let u16_at = |at: usize| -> Option<u16> {
+        let bytes: [u8; 2] = tiff.get(at..at + 2)?.try_into().ok()?;
+        Some(if big {
+            u16::from_be_bytes(bytes)
+        } else {
+            u16::from_le_bytes(bytes)
+        })
+    };
+    let u32_at = |at: usize| -> Option<u32> {
+        let bytes: [u8; 4] = tiff.get(at..at + 4)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(bytes)
+        } else {
+            u32::from_le_bytes(bytes)
+        })
+    };
+    if u16_at(2)? != 42 {
+        return None;
+    }
+    let ifd = usize::try_from(u32_at(4)?).ok()?;
+    let entries = usize::from(u16_at(ifd)?);
+    for index in 0..entries.min(512) {
+        let entry = ifd.checked_add(2 + 12 * index)?;
+        if u16_at(entry)? == 0x0112 {
+            // Type SHORT (3), count 1; the value sits in the first two bytes of the value field.
+            if u16_at(entry + 2)? != 3 || u32_at(entry + 4)? != 1 {
+                return None;
+            }
+            return u16_at(entry + 8).filter(|value| (1..=8).contains(value));
+        }
+    }
+    None
+}
+
+/// An Exif APP1 segment with the orientation and nothing else (big-endian TIFF, one IFD entry).
+fn orientation_block(orientation: u16) -> Vec<u8> {
+    let mut block = vec![0xff, APP1, 0x00, 0x22];
+    block.extend_from_slice(b"Exif\0\0MM\0\x2a\0\0\0\x08");
+    block.extend_from_slice(&[0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1]);
+    block.extend_from_slice(&orientation.to_be_bytes());
+    block.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    block
+}
+
+/// The profile as one APP2 segment (it is at most [`MAX_ICC_BYTES`]).
+fn icc_segment(profile: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(2 + ICC_TAG.len() + 2 + profile.len()).unwrap_or(u16::MAX);
+    let mut segment = vec![0xff, APP2];
+    segment.extend_from_slice(&length.to_be_bytes());
+    segment.extend_from_slice(ICC_TAG);
+    segment.extend_from_slice(&[1, 1]);
+    segment.extend_from_slice(profile);
+    segment
 }
 
 /// A JFIF header and nothing else: no thumbnail, and not the JFXX extension,
@@ -534,5 +1047,772 @@ mod tests {
         assert!(!looks_like_jpeg(b"%PDF-1.7"));
         assert!(!looks_like_jpeg(&[0xff, SOI]));
         assert!(!looks_like_jpeg(&[0xff, 0xd9, 0xff]));
+    }
+
+    // ---- pictures the patient brings: orientation and a plain colour profile are kept ----
+
+    /// The canvas photo (no colour profile) with `segments` after its JFIF header.
+    fn with_segments(segments: &[Vec<u8>]) -> Vec<u8> {
+        let mut bytes = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+        for segment in segments {
+            bytes.extend_from_slice(segment);
+        }
+        bytes.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+        bytes
+    }
+
+    /// An Exif block as a phone writes it for a portrait photo: Make, Orientation, GPSInfo.
+    fn exif_with(orientation: u16, big_endian: bool) -> Vec<u8> {
+        let word = |value: u16| {
+            if big_endian {
+                value.to_be_bytes()
+            } else {
+                value.to_le_bytes()
+            }
+        };
+        let long = |value: u32| {
+            if big_endian {
+                value.to_be_bytes()
+            } else {
+                value.to_le_bytes()
+            }
+        };
+        let mut tiff = if big_endian {
+            b"MM".to_vec()
+        } else {
+            b"II".to_vec()
+        };
+        tiff.extend_from_slice(&word(42));
+        tiff.extend_from_slice(&long(8));
+        tiff.extend_from_slice(&word(3));
+        for (tag, kind, count, value) in [
+            (0x010f_u16, 2_u16, 12_u32, 50_u32),
+            (0x0112, 3, 1, 0),
+            (0x8825, 4, 1, 62),
+        ] {
+            tiff.extend_from_slice(&word(tag));
+            tiff.extend_from_slice(&word(kind));
+            tiff.extend_from_slice(&long(count));
+            if tag == 0x0112 {
+                tiff.extend_from_slice(&word(orientation));
+                tiff.extend_from_slice(&[0, 0]);
+            } else {
+                tiff.extend_from_slice(&long(value));
+            }
+        }
+        tiff.extend_from_slice(&long(0));
+        assert_eq!(tiff.len(), 50);
+        tiff.extend_from_slice(b"FAKE Phone\0\0");
+        // A GPS IFD with one entry (a latitude reference).
+        tiff.extend_from_slice(&word(1));
+        tiff.extend_from_slice(&word(1));
+        tiff.extend_from_slice(&word(2));
+        tiff.extend_from_slice(&long(2));
+        tiff.extend_from_slice(&[b'N', 0, 0, 0]);
+        tiff.extend_from_slice(&long(0));
+        let mut exif = b"Exif\0\0".to_vec();
+        exif.extend_from_slice(&tiff);
+        exif
+    }
+
+    fn fixed(value: f64) -> [u8; 4] {
+        ((value * 65536.0).round() as i32 as u32).to_be_bytes()
+    }
+
+    fn xyz_tag(x: f64, y: f64, z: f64) -> Vec<u8> {
+        let mut tag = b"XYZ \0\0\0\0".to_vec();
+        for value in [x, y, z] {
+            tag.extend_from_slice(&fixed(value));
+        }
+        tag
+    }
+
+    fn curv_tag(values: &[u16]) -> Vec<u8> {
+        let mut tag = b"curv\0\0\0\0".to_vec();
+        tag.extend_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+        for value in values {
+            tag.extend_from_slice(&value.to_be_bytes());
+        }
+        tag
+    }
+
+    fn para_tag(function: u16, parameters: usize) -> Vec<u8> {
+        let mut tag = b"para\0\0\0\0".to_vec();
+        tag.extend_from_slice(&function.to_be_bytes());
+        tag.extend_from_slice(&[0, 0]);
+        for _ in 0..parameters {
+            tag.extend_from_slice(&fixed(2.2));
+        }
+        tag
+    }
+
+    fn chad_tag() -> Vec<u8> {
+        let mut tag = b"sf32\0\0\0\0".to_vec();
+        for value in [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] {
+            tag.extend_from_slice(&fixed(value));
+        }
+        tag
+    }
+
+    fn text_tag(text: &str) -> Vec<u8> {
+        mluc(text)
+    }
+
+    /// A profile as a phone writes it, with every place a camera or a person can leave a mark
+    /// filled with a FAKE one: the header's maker, model, creator, id and date, the description and
+    /// copyright, a device maker and model tag, a target data tag, and bytes between the tags.
+    fn phone_profile_with(
+        extra_tags: &[([u8; 4], Vec<u8>)],
+        edit: impl FnOnce(&mut Vec<([u8; 4], Vec<u8>)>),
+    ) -> Vec<u8> {
+        let mut tags: Vec<([u8; 4], Vec<u8>)> = vec![
+            (*b"rXYZ", xyz_tag(0.4361, 0.2225, 0.0139)),
+            (*b"gXYZ", xyz_tag(0.3851, 0.7169, 0.0971)),
+            (*b"bXYZ", xyz_tag(0.1431, 0.0606, 0.7141)),
+            (*b"rTRC", curv_tag(&[0, 600, 4000, 20000, 40000, 65535])),
+            (*b"gTRC", para_tag(3, 5)),
+            (*b"bTRC", curv_tag(&[0, 600, 4000, 20000, 40000, 65535])),
+            (*b"wtpt", xyz_tag(0.9642, 1.0, 0.8249)),
+            (*b"chad", chad_tag()),
+            (*b"desc", text_tag("FAKE Camera Model profile")),
+            (*b"cprt", text_tag("FAKE Owner copyright")),
+            (*b"dmnd", text_tag("FAKE Maker")),
+            (*b"dmdd", text_tag("FAKE Camera Model")),
+            (*b"targ", b"text\0\0\0\0FAKE target data".to_vec()),
+        ];
+        tags.extend(extra_tags.iter().cloned());
+        edit(&mut tags);
+        let table = 128 + 4 + 12 * tags.len();
+        let mut body = Vec::new();
+        let mut entries = Vec::new();
+        for (signature, data) in &tags {
+            let offset = table + body.len();
+            entries.push((*signature, offset, data.len()));
+            body.extend_from_slice(data);
+            // Padding to four bytes, and then bytes a profile reader never looks at.
+            while !body.len().is_multiple_of(4) {
+                body.push(0);
+            }
+            body.extend_from_slice(b"FAKE-GAP-SECRET!");
+        }
+        let length = table + body.len();
+        let mut profile = vec![0_u8; 128];
+        profile[0..4].copy_from_slice(&u32::try_from(length).unwrap().to_be_bytes());
+        profile[4..8].copy_from_slice(b"FAKE");
+        profile[8..12].copy_from_slice(&[2, 0x10, 0, 0]);
+        profile[12..16].copy_from_slice(b"mntr");
+        profile[16..20].copy_from_slice(b"RGB ");
+        profile[20..24].copy_from_slice(b"XYZ ");
+        profile[24..36].copy_from_slice(&[7, 0xe9, 0, 11, 0, 24, 0, 9, 0, 30, 0, 15]);
+        profile[36..40].copy_from_slice(b"acsp");
+        profile[40..44].copy_from_slice(b"APPL");
+        profile[44..48].copy_from_slice(&[0, 0, 0, 1]);
+        profile[48..52].copy_from_slice(b"FAKE");
+        profile[52..56].copy_from_slice(b"MODL");
+        profile[56..64].copy_from_slice(b"FAKEATTR");
+        profile[68..72].copy_from_slice(&0x0000_f6d6_u32.to_be_bytes());
+        profile[72..76].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+        profile[76..80].copy_from_slice(&0x0000_d32d_u32.to_be_bytes());
+        profile[80..84].copy_from_slice(b"FAKE");
+        profile[84..100].copy_from_slice(b"FAKE-PROFILE-ID!");
+        profile[100..128].copy_from_slice(b"FAKE-RESERVED-HEADER-BYTES!!");
+        profile.extend_from_slice(&u32::try_from(tags.len()).unwrap().to_be_bytes());
+        for (signature, offset, size) in entries {
+            profile.extend_from_slice(&signature);
+            profile.extend_from_slice(&u32::try_from(offset).unwrap().to_be_bytes());
+            profile.extend_from_slice(&u32::try_from(size).unwrap().to_be_bytes());
+        }
+        profile.extend_from_slice(&body);
+        assert_eq!(profile.len(), length);
+        profile
+    }
+
+    fn phone_profile() -> Vec<u8> {
+        phone_profile_with(&[], |_| {})
+    }
+
+    /// Every FAKE mark `phone_profile` carries as plain bytes (header fields, the gap bytes, a text
+    /// tag of plain text).
+    const FAKE_MARKS: [&[u8]; 7] = [
+        b"FAKE",
+        b"MODL",
+        b"APPL",
+        b"GAP-SECRET",
+        b"PROFILE-ID",
+        b"RESERVED",
+        b"target data",
+    ];
+
+    /// The FAKE words inside the profile's text tags, which are UTF-16.
+    fn fake_texts() -> Vec<Vec<u8>> {
+        ["Camera Model", "Owner", "Maker"]
+            .iter()
+            .map(|text| text.encode_utf16().flat_map(u16::to_be_bytes).collect())
+            .collect()
+    }
+
+    /// Whether `bytes` carry any FAKE mark of `phone_profile`, plain or as text.
+    fn carries_a_fake_mark(bytes: &[u8]) -> Option<Vec<u8>> {
+        FAKE_MARKS
+            .iter()
+            .map(|mark| mark.to_vec())
+            .chain(fake_texts())
+            .find(|mark| contains(bytes, mark))
+    }
+
+    /// The profile a cleaned picture carries, from its (one) APP2 segment, if it has one.
+    fn kept_profile(cleaned: &[u8]) -> Option<Vec<u8>> {
+        let at = cleaned.windows(12).position(|w| w == b"ICC_PROFILE\0")?;
+        let length = usize::from(u16::from_be_bytes([cleaned[at - 2], cleaned[at - 1]]));
+        Some(cleaned[at + 14..at - 2 + length].to_vec())
+    }
+
+    fn icc_chunk(sequence: u8, total: u8, bytes: &[u8]) -> Vec<u8> {
+        let mut payload = b"ICC_PROFILE\0".to_vec();
+        payload.extend_from_slice(&[sequence, total]);
+        payload.extend_from_slice(bytes);
+        segment(0xe2, &payload)
+    }
+
+    #[test]
+    fn a_sideways_picture_keeps_only_its_orientation_in_a_block_built_here() {
+        for big_endian in [true, false] {
+            for orientation in 2..=8_u16 {
+                let input = with_segments(&[segment(0xe1, &exif_with(orientation, big_endian))]);
+                let cleaned = clean_picture(&input).unwrap();
+                // The orientation, as the only entry of a block of 36 bytes, after the JFIF header.
+                let mut expected = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+                expected.extend_from_slice(&orientation_block(orientation));
+                expected.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+                assert_eq!(*cleaned, expected, "{orientation} {big_endian}");
+                assert_eq!(orientation_block(orientation).len(), 36);
+                // Nothing of the original block survives: no make, no GPS.
+                assert!(!contains(&cleaned, b"FAKE Phone"));
+                assert!(!contains(&cleaned, b"\x88\x25"));
+                // Cleaning it again changes nothing.
+                assert_eq!(*clean_picture(&cleaned).unwrap(), *cleaned);
+            }
+        }
+    }
+
+    #[test]
+    fn an_upright_or_unreadable_orientation_leaves_no_block_at_all() {
+        let upright = with_segments(&[segment(0xe1, &exif_with(1, true))]);
+        assert_eq!(*clean_picture(&upright).unwrap(), *PLAIN);
+        for orientation in [0_u16, 9, 300] {
+            let odd = with_segments(&[segment(0xe1, &exif_with(orientation, true))]);
+            assert_eq!(*clean_picture(&odd).unwrap(), *PLAIN, "{orientation}");
+        }
+        // A block that is cut short, one of the wrong type, and one that is not Exif.
+        let mut cut = exif_with(6, true);
+        cut.truncate(20);
+        let mut wrong_type = exif_with(6, true);
+        wrong_type[6 + 8 + 2 + 12 + 2 + 1] = 4;
+        for payload in [
+            cut,
+            wrong_type,
+            b"Exif\0\0nonsense".to_vec(),
+            b"NotExif".to_vec(),
+        ] {
+            let input = with_segments(&[segment(0xe1, &payload)]);
+            assert_eq!(*clean_picture(&input).unwrap(), *PLAIN);
+        }
+    }
+
+    #[test]
+    fn a_phone_colour_profile_is_rebuilt_and_nothing_a_camera_or_person_put_in_it_survives() {
+        let original = phone_profile();
+        for mark in FAKE_MARKS
+            .iter()
+            .map(|mark| mark.to_vec())
+            .chain(fake_texts())
+        {
+            assert!(contains(&original, &mark), "the fixture carries {mark:?}");
+        }
+        let input = with_segments(&[icc_chunk(1, 1, &original)]);
+        let cleaned = clean_picture(&input).unwrap();
+        assert_eq!(carries_a_fake_mark(&cleaned), None, "a FAKE mark survived");
+        let rebuilt = kept_profile(&cleaned).expect("a matrix profile is kept, rebuilt");
+        assert!(rebuilt.len() <= MAX_ICC_BYTES);
+        // The header is new: zeros everywhere a device, a date, a maker, a model, a creator or a
+        // profile id would go, and only these fields set.
+        let mut expected = [0_u8; 128];
+        expected[0..4].copy_from_slice(&u32::try_from(rebuilt.len()).unwrap().to_be_bytes());
+        expected[8..12].copy_from_slice(&[4, 0x30, 0, 0]);
+        expected[12..16].copy_from_slice(b"mntr");
+        expected[16..20].copy_from_slice(b"RGB ");
+        expected[20..24].copy_from_slice(b"XYZ ");
+        expected[36..40].copy_from_slice(b"acsp");
+        expected[68..72].copy_from_slice(&0x0000_f6d6_u32.to_be_bytes());
+        expected[72..76].copy_from_slice(&0x0001_0000_u32.to_be_bytes());
+        expected[76..80].copy_from_slice(&0x0000_d32d_u32.to_be_bytes());
+        assert_eq!(rebuilt[..128], expected[..]);
+        // Only the colour tags and our own two texts, in order, laid end to end with zero padding.
+        let count = u32::from_be_bytes(rebuilt[128..132].try_into().unwrap()) as usize;
+        let signatures: Vec<&[u8]> = (0..count)
+            .map(|index| &rebuilt[132 + 12 * index..136 + 12 * index])
+            .collect();
+        assert_eq!(
+            signatures,
+            [
+                &b"bTRC"[..],
+                b"bXYZ",
+                b"chad",
+                b"cprt",
+                b"desc",
+                b"gTRC",
+                b"gXYZ",
+                b"rTRC",
+                b"rXYZ",
+                b"wtpt"
+            ]
+        );
+        assert!(contains(&rebuilt, &mluc("Colour profile")));
+        assert!(contains(&rebuilt, &mluc("No copyright")));
+        // The colour numbers themselves are the file's.
+        assert!(contains(&rebuilt, &xyz_tag(0.4361, 0.2225, 0.0139)));
+        assert!(contains(
+            &rebuilt,
+            &curv_tag(&[0, 600, 4000, 20000, 40000, 65535])
+        ));
+        // Rebuilding the rebuilt profile changes nothing, and neither does cleaning again.
+        assert_eq!(rebuild_icc(&rebuilt).as_deref(), Some(&rebuilt[..]));
+        assert_eq!(*clean_picture(&cleaned).unwrap(), *cleaned);
+        // The strict cleaner (camera photos) still drops every profile.
+        assert_eq!(*clean_jpeg(&input).unwrap(), *PLAIN);
+    }
+
+    #[test]
+    fn a_profile_that_is_not_a_plain_rgb_matrix_profile_is_dropped() {
+        let base = phone_profile();
+        let edit = |change: &dyn Fn(&mut Vec<u8>)| {
+            let mut profile = base.clone();
+            change(&mut profile);
+            profile
+        };
+        // The offset of a tag's data and its table entry, by signature.
+        let entry_of = |profile: &[u8], signature: &[u8; 4]| {
+            let count = u32::from_be_bytes(profile[128..132].try_into().unwrap()) as usize;
+            (0..count)
+                .map(|index| 132 + 12 * index)
+                .find(|entry| profile[*entry..*entry + 4] == signature[..])
+                .unwrap()
+        };
+        let data_of = |profile: &[u8], signature: &[u8; 4]| {
+            let entry = entry_of(profile, signature);
+            u32::from_be_bytes(profile[entry + 4..entry + 8].try_into().unwrap()) as usize
+        };
+        let without = |signature: &[u8; 4]| {
+            phone_profile_with(&[], |tags| {
+                tags.retain(|(name, _)| name != signature);
+            })
+        };
+        let lut = phone_profile_with(&[(*b"A2B0", vec![0; 32])], |tags| {
+            tags.retain(|(name, _)| !matches!(name, b"rXYZ" | b"gXYZ" | b"bXYZ"));
+        });
+        let cases: Vec<(&str, Vec<u8>)> = vec![
+            ("a lookup-table profile", lut),
+            ("no red colorant", without(b"rXYZ")),
+            ("no white point", without(b"wtpt")),
+            ("no blue curve", without(b"bTRC")),
+            (
+                "a repeated tag",
+                phone_profile_with(&[(*b"wtpt", xyz_tag(0.9642, 1.0, 0.8249))], |_| {}),
+            ),
+            (
+                "a colorant of the wrong type",
+                phone_profile_with(&[], |tags| {
+                    tags[0].1 = curv_tag(&[0, 65535]);
+                }),
+            ),
+            (
+                "a colorant out of range",
+                phone_profile_with(&[], |tags| {
+                    tags[0].1 = xyz_tag(40.0, 0.2, 0.0);
+                }),
+            ),
+            (
+                "a colorant with a reserved byte set",
+                phone_profile_with(&[], |tags| {
+                    tags[0].1[5] = 1;
+                }),
+            ),
+            (
+                "a curve that goes down",
+                phone_profile_with(&[], |tags| {
+                    tags[3].1 = curv_tag(&[0, 40000, 100, 65535]);
+                }),
+            ),
+            (
+                "a curve of 5000 entries",
+                phone_profile_with(&[], |tags| {
+                    tags[3].1 = curv_tag(&[7; 5000]);
+                }),
+            ),
+            (
+                "a curve whose size does not match its count",
+                phone_profile_with(&[], |tags| {
+                    tags[3].1.extend_from_slice(&[0, 0]);
+                }),
+            ),
+            (
+                "a parametric curve of an unknown function",
+                phone_profile_with(&[], |tags| {
+                    tags[4].1 = para_tag(9, 5);
+                }),
+            ),
+            (
+                "a parametric curve of the wrong size",
+                phone_profile_with(&[], |tags| {
+                    tags[4].1 = para_tag(3, 4);
+                }),
+            ),
+            (
+                "an adaptation matrix of the wrong size",
+                phone_profile_with(&[], |tags| {
+                    tags[7].1.truncate(40);
+                }),
+            ),
+            (
+                "an adaptation matrix out of range",
+                phone_profile_with(&[], |tags| {
+                    tags[7].1[8..12].copy_from_slice(&fixed(100.0));
+                }),
+            ),
+            ("a version of 5", edit(&|p| p[8] = 5)),
+            (
+                "a printer profile",
+                edit(&|p| p[12..16].copy_from_slice(b"prtr")),
+            ),
+            (
+                "a gray profile",
+                edit(&|p| p[16..20].copy_from_slice(b"GRAY")),
+            ),
+            (
+                "a Lab connection space",
+                edit(&|p| p[20..24].copy_from_slice(b"Lab ")),
+            ),
+            ("a rendering intent of 4", edit(&|p| p[67] = 4)),
+            ("no acsp signature", edit(&|p| p[36] = b'x')),
+            ("the wrong length", edit(&|p| p[3] ^= 1)),
+            (
+                "a tag past the end",
+                edit(&|p| {
+                    let entry = entry_of(p, b"rXYZ");
+                    p[entry + 8..entry + 12].copy_from_slice(&u32::MAX.to_be_bytes());
+                }),
+            ),
+            (
+                "a tag offset that wraps",
+                edit(&|p| {
+                    let entry = entry_of(p, b"rXYZ");
+                    p[entry + 4..entry + 8].copy_from_slice(&u32::MAX.to_be_bytes());
+                }),
+            ),
+            (
+                "a table past the end",
+                edit(&|p| p[128..132].copy_from_slice(&200_u32.to_be_bytes())),
+            ),
+            (
+                "no tags",
+                edit(&|p| p[128..132].copy_from_slice(&0_u32.to_be_bytes())),
+            ),
+            ("too short", vec![0_u8; 100]),
+            ("too big", vec![0_u8; MAX_ICC_BYTES + 1]),
+        ];
+        // The fixture's own tags are where the cases above assume.
+        assert_eq!(data_of(&base, b"rXYZ") % 4, 0);
+        for (name, profile) in cases {
+            assert_eq!(rebuild_icc(&profile), None, "{name}");
+            let input = with_segments(&[icc_chunk(1, 1, &profile)]);
+            assert_eq!(*clean_picture(&input).unwrap(), *PLAIN, "{name}");
+        }
+        // And the unedited one is accepted.
+        assert!(rebuild_icc(&base).is_some());
+    }
+
+    #[test]
+    fn a_colour_profile_in_several_segments_is_joined_only_when_complete() {
+        let plain = phone_profile();
+        let (first, second) = plain.split_at(100);
+        let both = with_segments(&[icc_chunk(2, 2, second), icc_chunk(1, 2, first)]);
+        let cleaned = clean_picture(&both).unwrap();
+        assert_eq!(kept_profile(&cleaned), rebuild_icc(&plain));
+        assert!(kept_profile(&cleaned).is_some());
+        for (name, chunks) in [
+            ("one missing", vec![icc_chunk(1, 2, first)]),
+            (
+                "a repeat",
+                vec![icc_chunk(1, 2, first), icc_chunk(1, 2, first)],
+            ),
+            (
+                "totals disagree",
+                vec![icc_chunk(1, 2, first), icc_chunk(2, 3, second)],
+            ),
+            ("a total of zero", vec![icc_chunk(1, 0, first)]),
+        ] {
+            assert_eq!(
+                *clean_picture(&with_segments(&chunks)).unwrap(),
+                *PLAIN,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn more_than_nine_profile_segments_mean_no_profile_and_are_not_collected() {
+        // Ten one-byte pieces: far fewer bytes than a profile, but more segments than allowed.
+        let chunks: Vec<Vec<u8>> = (1..=10).map(|n| icc_chunk(n, 10, &[0])).collect();
+        assert_eq!(*clean_picture(&with_segments(&chunks)).unwrap(), *PLAIN);
+        // Nine pieces that are a whole profile are still accepted.
+        let profile = phone_profile();
+        let size = profile.len().div_ceil(9);
+        let nine: Vec<Vec<u8>> = profile
+            .chunks(size)
+            .enumerate()
+            .map(|(index, piece)| icc_chunk(u8::try_from(index + 1).unwrap(), 9, piece))
+            .collect();
+        assert_eq!(nine.len(), 9);
+        let cleaned = clean_picture(&with_segments(&nine)).unwrap();
+        assert_eq!(kept_profile(&cleaned), rebuild_icc(&profile));
+    }
+
+    #[test]
+    fn a_picture_with_place_time_and_a_profile_keeps_exactly_orientation_and_profile() {
+        let plain = phone_profile();
+        let tagged = with_segments(&[
+            segment(0xe1, &exif_with_gps()),
+            segment(0xe1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>"),
+            icc_chunk(1, 1, &plain),
+            segment(0xed, b"Photoshop 3.0\08BIM FAKE caption"),
+            segment(0xfe, b"FAKE comment: taken at home"),
+        ]);
+        let cleaned = clean_picture(&tagged).unwrap();
+        // exif_with_gps has no orientation, so only the rebuilt profile comes back.
+        let rebuilt = rebuild_icc(&plain).unwrap();
+        let mut expected = PLAIN[..2 + 2 + JFIF_LENGTH].to_vec();
+        expected.extend_from_slice(&icc_segment(&rebuilt));
+        expected.extend_from_slice(&PLAIN[2 + 2 + JFIF_LENGTH..]);
+        assert_eq!(*cleaned, expected);
+        for gone in [
+            &b"FAKE Phone"[..],
+            b"xmpmeta",
+            b"FAKE caption",
+            b"taken at home",
+        ] {
+            assert!(!contains(&cleaned, gone));
+        }
+        // And the same with an orientation: the block is ours, the original's GPS is not in it.
+        let with_both =
+            with_segments(&[segment(0xe1, &exif_with(6, true)), icc_chunk(1, 1, &plain)]);
+        let cleaned = clean_picture(&with_both).unwrap();
+        assert!(contains(&cleaned, &orientation_block(6)));
+        assert_eq!(kept_profile(&cleaned), Some(rebuilt));
+        assert!(!contains(&cleaned, b"FAKE Phone"));
+        assert_eq!(carries_a_fake_mark(&cleaned), None, "a FAKE mark survived");
+    }
+
+    #[test]
+    fn a_gain_map_and_index_appended_after_the_picture_are_not_copied() {
+        // Ultra HDR and iPhone files: an MPF index in an APP2 segment, and a second, smaller JPEG
+        // (the gain map) after the first image's end marker.
+        let mpf = segment(0xe2, b"MPF\0FAKE-MPF-INDEX-WITH-OFFSETS");
+        let mut input = with_segments(&[mpf]);
+        let mut gain_map = vec![0xff, 0xd8, 0xff, 0xe1];
+        gain_map.extend_from_slice(&[0, 40]);
+        gain_map.extend_from_slice(b"Exif\0\0FAKE gain map GPS 43.65 -79.38");
+        gain_map.extend_from_slice(&[0xff, 0xd9]);
+        input.extend_from_slice(&gain_map);
+        let cleaned = clean_picture(&input).unwrap();
+        // Only the primary image: exactly what the same picture without the extras cleans to.
+        assert_eq!(*cleaned, *PLAIN);
+        assert!(!contains(&cleaned, b"MPF"));
+        assert!(!contains(&cleaned, b"gain map"));
+        assert!(!contains(&cleaned, b"43.65"));
+        // The same through the strict cleaner (camera photos).
+        assert_eq!(*clean_jpeg(&input).unwrap(), *PLAIN);
+        // With an orientation and a profile in front of it all, those still come back.
+        let phone = with_segments(&[
+            segment(0xe1, &exif_with(6, true)),
+            icc_chunk(1, 1, &phone_profile()),
+            segment(0xe2, b"MPF\0FAKE-MPF-INDEX-WITH-OFFSETS"),
+        ]);
+        let mut phone = phone;
+        phone.extend_from_slice(&gain_map);
+        let cleaned = clean_picture(&phone).unwrap();
+        assert!(contains(&cleaned, &orientation_block(6)));
+        assert!(kept_profile(&cleaned).is_some());
+        assert!(!contains(&cleaned, b"gain map") && !contains(&cleaned, b"MPF"));
+    }
+
+    #[test]
+    fn cleaning_a_picture_is_stable_and_a_picture_with_nothing_to_keep_matches_the_strict_cleaner()
+    {
+        let plain = phone_profile();
+        let with_profile = [
+            with_segments(&[segment(0xe1, &exif_with(6, true)), icc_chunk(1, 1, &plain)]),
+            with_segments(&[icc_chunk(1, 1, &plain)]),
+        ];
+        let without_profile = [
+            with_segments(&[segment(0xe1, &exif_with(8, false))]),
+            with_metadata(&PLAIN),
+            PLAIN.clone(),
+        ];
+        // The canvas photo carries a profile of its own (its three curves share one table, so
+        // rebuilt with a table each it can be larger): stable, but not "never larger".
+        let canvas = CANVAS_JPEG.to_vec();
+        for input in with_profile.iter().chain(&without_profile).chain([&canvas]) {
+            let cleaned = clean_picture(input).unwrap();
+            assert!(cleaned.len() <= MAX_PHOTO_BYTES);
+            assert_eq!(*clean_picture(&cleaned).unwrap(), *cleaned);
+        }
+        // Without a profile or an orientation to put back, a picture is never larger than it came.
+        for input in &without_profile {
+            let cleaned = clean_picture(input).unwrap();
+            assert!(
+                cleaned.len() <= input.len(),
+                "{} > {}",
+                cleaned.len(),
+                input.len()
+            );
+        }
+        // What the camera dialog stores (already cleaned strictly) is shown as it is.
+        assert_eq!(*clean_picture(&PLAIN).unwrap(), *PLAIN);
+        assert_eq!(
+            *clean_picture(&with_metadata(&PLAIN)).unwrap(),
+            *clean_jpeg(&with_metadata(&PLAIN)).unwrap()
+        );
+        // Everything the strict cleaner refuses is refused here too.
+        for refused in [
+            &b""[..],
+            b"%PDF-1.7",
+            &[0xff, 0xd8, 0xff][..],
+            &PLAIN[..PLAIN.len() - 2],
+        ] {
+            assert!(clean_picture(refused).is_err());
+        }
+    }
+
+    /// `profile` with one more tag entry's data placed at the end, at `gap` bytes past the old end
+    /// (which is a multiple of four), under `signature`.
+    fn with_tag_at_the_end(
+        profile: &[u8],
+        signature: &[u8; 4],
+        data: &[u8],
+        gap: usize,
+    ) -> Vec<u8> {
+        let mut out = profile.to_vec();
+        let count = u32::from_be_bytes(out[128..132].try_into().unwrap()) as usize;
+        let entry = (0..count)
+            .map(|index| 132 + 12 * index)
+            .find(|entry| out[*entry..*entry + 4] == signature[..])
+            .unwrap();
+        let offset = out.len() + gap;
+        out.extend_from_slice(&vec![0; gap]);
+        out.extend_from_slice(data);
+        let length = u32::try_from(out.len()).unwrap();
+        out[0..4].copy_from_slice(&length.to_be_bytes());
+        out[entry + 4..entry + 8].copy_from_slice(&u32::try_from(offset).unwrap().to_be_bytes());
+        out[entry + 8..entry + 12]
+            .copy_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn a_tags_data_must_lie_after_the_table_on_a_four_byte_boundary() {
+        let base = phone_profile();
+        let white = xyz_tag(0.9642, 1.0, 0.8249);
+        // The same valid white point, moved to the end: aligned is accepted, a byte off is not.
+        assert!(rebuild_icc(&with_tag_at_the_end(&base, b"wtpt", &white, 0)).is_some());
+        assert!(rebuild_icc(&with_tag_at_the_end(&base, b"wtpt", &white, 4)).is_some());
+        for gap in [1, 2, 3] {
+            assert_eq!(
+                rebuild_icc(&with_tag_at_the_end(&base, b"wtpt", &white, gap)),
+                None,
+                "{gap}"
+            );
+        }
+        // A tag pointing into the header or into the tag table itself.
+        let count = u32::from_be_bytes(base[128..132].try_into().unwrap()) as usize;
+        let table_end = 128 + 4 + 12 * count;
+        for offset in [0_usize, 4, 128, 132, table_end - 4] {
+            let mut profile = base.clone();
+            let entry = (0..count)
+                .map(|index| 132 + 12 * index)
+                .find(|entry| profile[*entry..*entry + 4] == b"rXYZ"[..])
+                .unwrap();
+            profile[entry + 4..entry + 8]
+                .copy_from_slice(&u32::try_from(offset).unwrap().to_be_bytes());
+            assert_eq!(rebuild_icc(&profile), None, "{offset}");
+        }
+    }
+
+    #[test]
+    fn tag_ranges_may_be_the_same_range_but_never_partly_overlap() {
+        // Shared data (three curves on one table) is how real profiles save space.
+        assert!(ranges_are_compatible(&[
+            (200, 220),
+            (200, 220),
+            (200, 220),
+            (220, 240)
+        ]));
+        assert!(ranges_are_compatible(&[]));
+        assert!(ranges_are_compatible(&[(200, 220), (300, 310)]));
+        for overlapping in [
+            vec![(200, 220), (204, 224)],
+            vec![(200, 220), (210, 215)],
+            vec![(200, 220), (190, 201)],
+            vec![(200, 220), (200, 224)],
+        ] {
+            assert!(!ranges_are_compatible(&overlapping), "{overlapping:?}");
+        }
+        // And a real profile whose three curves point at one table (how sRGB and Display P3 are
+        // written) is still rebuilt.
+        let mut shared = phone_profile_with(&[], |tags| {
+            tags[4].1 = curv_tag(&[0, 600, 4000, 20000, 40000, 65535]);
+        });
+        let count = u32::from_be_bytes(shared[128..132].try_into().unwrap()) as usize;
+        let entry_of = |profile: &[u8], signature: &[u8; 4]| {
+            (0..count)
+                .map(|index| 132 + 12 * index)
+                .find(|entry| profile[*entry..*entry + 4] == signature[..])
+                .unwrap()
+        };
+        let red = entry_of(&shared, b"rTRC");
+        // The offset and size of the red curve, copied into the green and blue entries.
+        let red_table: Vec<u8> = shared[red + 4..red + 12].to_vec();
+        for name in [b"gTRC", b"bTRC"] {
+            let entry = entry_of(&shared, name);
+            shared[entry + 4..entry + 12].copy_from_slice(&red_table);
+        }
+        assert!(rebuild_icc(&shared).is_some());
+        // Rebuilt, each curve has its own copy.
+        let rebuilt = rebuild_icc(&shared).unwrap();
+        assert!(rebuilt.windows(4).filter(|w| *w == b"curv").count() >= 3);
+    }
+
+    #[test]
+    fn the_colour_codes_of_a_cicp_tag_are_limited_to_the_values_the_standard_gives() {
+        let cicp = |codes: [u8; 4]| {
+            let mut tag = b"cicp\0\0\0\0".to_vec();
+            tag.extend_from_slice(&codes);
+            tag
+        };
+        let with = |codes: [u8; 4]| phone_profile_with(&[(*b"cicp", cicp(codes))], |_| {});
+        // Display P3 with the PQ or the sRGB-like transfer, limited or full range.
+        for ok in [[12, 13, 0, 1], [1, 13, 0, 0], [22, 22, 0, 1], [0, 0, 0, 0]] {
+            let rebuilt = rebuild_icc(&with(ok)).expect("allowed codes");
+            assert!(contains(&rebuilt, &cicp(ok)));
+        }
+        for bad in [
+            [23, 13, 0, 1],
+            [1, 23, 0, 1],
+            [255, 13, 0, 1],
+            [1, 13, 1, 1],
+            [1, 13, 0, 2],
+            [0xde, 0xad, 0xbe, 0xef],
+        ] {
+            assert_eq!(rebuild_icc(&with(bad)), None, "{bad:?}");
+        }
     }
 }

@@ -29,7 +29,7 @@ Clinic or portal operator, if you connect one: **[CLINIC OR PORTAL OPERATOR: NAM
 
 myCarlos is a patient-run local application. You control your device and vault and choose which records to add, which connections to use, and where to save copies. This control does not extend to records held by a connected portal, clinic, support provider or another service you choose.
 
-The vault can contain document names and contents, photos, **videos with their sound**, folders, information about the people whose records you manage (names, birth dates, earlier names), saved AI answers, clinic links and their delivery records, and an encrypted history of what was done. You choose which files to add and which people to keep records for. Make sure you are entitled to manage someone else's information.
+The vault can contain document names and contents, photos, **videos with their sound**, folders, information about the people whose records you manage (names, birth dates, earlier names), saved AI answers, clinic links and their delivery records, and an encrypted history of what was done. You choose which files to add and which people to keep records for. A video you add (an MP4 or MOV) is checked on your device, and the place, and the device's name and model, it carries are removed first; the times saved in its headers, and the names of its video and sound formats, stay. Nothing is sent anywhere. A backup includes your videos unless you choose to leave them out. Make sure you are entitled to manage someone else's information.
 
 The app unlocks the vault with your passphrase or recovery key. Keep those secrets private and keep your recovery kit somewhere safe. The publisher does not provide a password-reset service. Losing both ways to unlock the vault can mean losing access to your records.
 
@@ -56,7 +56,7 @@ The device keeps some app settings outside the encrypted vault: language, appear
 
 ## Photos, video, camera and microphone
 
-myCarlos turns the camera on only when you choose to take a photo or record a video, and the microphone only when you choose to record video with sound. Nothing is shown or recorded before that choice, and the photo dialog never asks for sound. A photo is cleaned of location and camera details before it is stored. A recording is stored encrypted as it is made, so an interrupted recording can be recovered; a recording that is still in progress is **not** in a backup until it ends. The phone or computer shows its own permission question first, and you can refuse.
+myCarlos turns the camera on only when you choose to take a photo or record a video, and the microphone only when you choose to record video with sound. Nothing is shown or recorded before that choice, and the photo dialog never asks for sound. A photo is cleaned of location and camera details before it is stored. A picture you add from a file is cleaned the same way: myCarlos removes its place, time and camera details from its own encrypted copy (from a JPEG it keeps only which way up the picture is, and its colours as a new colour profile that it writes itself; from a PNG, only the picture and its colour settings (a Display P3 or sRGB profile becomes a plain marker that it writes itself)) and never changes the file you chose, which keeps them wherever it is. A recording is stored encrypted as it is made, so an interrupted recording can be recovered; a recording that is still in progress is **not** in a backup until it ends. The phone or computer shows its own permission question first, and you can refuse.
 
 ## Backups
 

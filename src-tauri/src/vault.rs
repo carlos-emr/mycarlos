@@ -45,6 +45,9 @@ mod notice_keys;
 mod remote_notices;
 pub use backup_video::{BackupPlan, BackupSize};
 pub(crate) use delivery::AidFiling;
+pub use picked_video::{
+    PickedVideoOutcome, PickedVideoRequest, VideoImportJob, VideoImportProgress, VideoImportStage,
+};
 #[allow(unused_imports)]
 pub use playback::PlaybackOpened;
 #[cfg(test)]
@@ -79,6 +82,8 @@ mod backup_video;
 mod playback;
 // Recording into the vault (#359): the video commands call it.
 mod recording;
+// A video the patient picks from their own files: checked, cleaned and sealed.
+mod picked_video;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};

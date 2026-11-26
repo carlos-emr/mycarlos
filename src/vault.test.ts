@@ -14,6 +14,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { setLocaleOverride } from "./i18n";
+import contractText from "../src-tauri/tests/fixtures/command-args.json?raw";
+import {
+  problemsInCall,
+  shapeOfValue,
+  type Contract,
+} from "./test/commandContract";
 import { setDeviceLocale } from "./test/deviceLocale";
 import {
   NATIVE_READER_ACTIVITY_EVENT,
@@ -31,6 +37,17 @@ import {
 } from "./vault";
 
 const PDF_PASSWORD = "  FAKE cafe\u0301 password  ";
+
+// Whatever a test here made the bridge send is held to the native side's argument list (the
+// Rust guard test writes it): a key with no Rust field would be refused there at run time.
+const COMMAND_ARGUMENTS = JSON.parse(contractText) as Contract;
+afterEach(() => {
+  const problems = (invoke.mock.calls as [string, unknown?][]).flatMap(
+    ([command, args]) =>
+      problemsInCall(COMMAND_ARGUMENTS, command, shapeOfValue(args)),
+  );
+  expect(problems).toEqual([]);
+});
 
 describe("native idle deadline bridge", () => {
   beforeEach(() => {

@@ -310,6 +310,32 @@ describe("Document notice preference", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses the macOS words for a refused or not-yet-asked permission, never Windows's", async () => {
+    for (const [permission, line, never] of [
+      [
+        "blocked",
+        /macOS is not allowing notifications from myCarlos/,
+        /Windows/,
+      ],
+      [
+        "not_yet_asked",
+        /macOS has not been asked yet. It will ask when you turn on notices/,
+        /Windows/,
+      ],
+    ] as const) {
+      native.invoke.mockResolvedValue({
+        ...allowed,
+        system: "macos",
+        permission,
+      });
+      const { unmount } = render(<NotificationSetting />);
+      const text = await screen.findByText(humanText(line));
+      expect(text).toBeVisible();
+      expect(text.textContent).not.toMatch(never);
+      unmount();
+    }
+  });
+
   it("keeps consent off until a person acts and bounds the native call to one boolean", async () => {
     const user = userEvent.setup();
     let enabled = false;

@@ -485,6 +485,8 @@ interface-UnlockPdfDialog-unlocking = Desbloqueando…
 
 interface-VaultApp-chooseFilesToImport = Elegir archivos para importar
 
+interface-VaultLibrary-picturesNote = Se quitan el lugar, la hora y los datos de la cámara de las imágenes que añada.
+
 interface-VaultApp-finishingTheTransfer = Finalizando la transferencia
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Bloquear ahora y cancelar la transferencia
@@ -777,7 +779,7 @@ native-error-20 = Elija una frase de contraseña menos predecible que no se base
 
 native-error-21 = No elija más de 100 archivos en una importación.
 
-native-error-22 = Uno de los archivos no es un documento PDF, por lo que no se añadió nada. myCarlos solo conserva documentos PDF.
+native-error-22 = Uno de los archivos no es un documento PDF ni una imagen JPEG o PNG, por lo que no se añadió nada. myCarlos conserva documentos PDF e imágenes JPEG y PNG. Si es una imagen de iPhone (HEIC), compártala como JPEG.
 
 native-error-23 = Este documento está bloqueado con una contraseña. Introduzca la contraseña del documento que aparece en su portal de pacientes.
 
@@ -827,7 +829,7 @@ native-error-45 = myCarlos no pudo abrir ese archivo. Si está en una carpeta co
 
 native-error-46 = Un documento de la bóveda está dañado y ya no se puede leer, por lo que no se guardó ninguna copia de seguridad. No se cambió nada.
 
-native-error-47 = myCarlos no puede guardar ni mostrar esta foto: debe ser una imagen JPEG completa de como máximo 25 MB y 8192 píxeles por lado. No se cambió nada.
+native-error-47 = myCarlos no puede guardar ni mostrar esta foto: debe ser una imagen JPEG o PNG completa (no animada) de como máximo 25 MB, 8192 píxeles por lado y 50 millones de píxeles en total (24 millones en un teléfono). No se cambió nada.
 
 native-error-48 = Se comprobó la copia de seguridad, pero su restauración no ha terminado. Cierre myCarlos y ábralo de nuevo para terminar. Después abra la bóveda con la frase de contraseña o la clave de recuperación de la copia de seguridad.
 
@@ -836,6 +838,11 @@ native-error-speedTest = La prueba de velocidad se detuvo antes de terminar. No 
 native-filter-backups = Copias de seguridad de myCarlos
 
 native-filter-pdf = Documentos PDF
+
+native-filter-video = Videos (MP4 o MOV)
+native-filter-pictures = Imágenes JPEG y PNG
+
+native-filter-pdfAndPictures = Documentos PDF e imágenes JPEG y PNG
 
 native-kit-text =
     Kit de recuperación de myCarlos
@@ -2436,6 +2443,8 @@ notifications-error = No se pudo guardar este ajuste. Los avisos y las comprobac
 notifications-unavailable = Estos ajustes no están disponibles por ahora. Abra myCarlos normalmente para consultar sus documentos.
 notifications-helpAutomatic = myCarlos puede buscar documentos nuevos de la clínica por sí mismo mientras está abierto y desbloqueado. Los documentos nuevos aparecen entonces en su biblioteca.
 notifications-notYetAsked = Windows aún no ha mostrado ningún aviso de myCarlos, así que no tiene un ajuste para ellos. Los avisos están permitidos hasta que los desactive en los ajustes de Windows.
+notifications-blockedMac = macOS no permite las notificaciones de myCarlos. Actívelas en Ajustes del Sistema, en Notificaciones.
+notifications-notYetAskedMac = Aún no se le ha preguntado a macOS. Lo hará cuando active los avisos.
 notifications-autoAllow = Buscar documentos de las clínicas automáticamente mientras la bóveda esté desbloqueada
 notifications-autoConsent = Al activar esto, myCarlos se pone en contacto con el portal de su clínica de forma programada, con al menos dos minutos entre intentos, solo mientras está abierto y desbloqueado. Desactívelo para detenerlo.
 notifications-noticesHelp = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
@@ -2979,6 +2988,7 @@ native-notice-test = Este es un aviso de prueba de myCarlos.
 notifications-testButton = Mostrar un aviso de prueba
 
 notifications-testSent = Aviso de prueba enviado. Si no lo ve, revise la configuración de notificaciones de Windows.
+notifications-testSentMac = Aviso de prueba enviado. Si no lo ve, revise Ajustes del Sistema, en Notificaciones.
 
 notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
@@ -2998,3 +3008,47 @@ reader-panel-ai = Explicar con IA
 interface-VaultLibrary-help = Ayuda
 
 interface-VaultLibrary-helpButtonName = Ayuda: esta pantalla
+
+interface-AddVideo-add = Añadir un video
+
+interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y el nombre y modelo del dispositivo que contiene.
+
+interface-AddVideo-checking = Comprobando el video…
+
+interface-AddVideo-storing = Añadiendo el video: { $percent } %
+
+interface-AddVideo-progressLabel = Añadiendo el video
+
+interface-AddVideo-cancel = Cancelar
+
+interface-AddVideo-cancelling = Cancelando…
+
+interface-AddVideo-added = Se añadió el video.
+
+interface-AddVideo-duplicate = Ese video ya está aquí. No se añadió nada.
+
+interface-AddVideo-cancelled = Cancelado. No se añadió nada.
+
+interface-AddVideo-notVideo = Este archivo no es un video que myCarlos pueda añadir. Elija un video MP4 o MOV.
+
+interface-AddVideo-hevc = Este video usa H.265 (HEVC), que muchos ordenadores no pueden reproducir. Guárdelo como MP4 H.264 y añádalo de nuevo.
+
+interface-AddVideo-videoCodec = Este video usa un formato de imagen que myCarlos no puede reproducir. Guárdelo como MP4 H.264 y añádalo de nuevo.
+
+interface-AddVideo-audioCodec = El sonido de este video usa un formato que myCarlos no puede reproducir. Guárdelo con sonido AAC y añádalo de nuevo.
+
+interface-AddVideo-noVideo = Este archivo no tiene imagen, así que no es un video. Elija un video MP4 o MOV.
+
+interface-AddVideo-tooManyTracks = Este video tiene más imágenes o sonidos de los que myCarlos puede añadir. Guarde una copia sencilla con una imagen y un sonido, y añádala de nuevo.
+
+interface-AddVideo-external = Una parte de este video está guardada fuera del archivo, así que no se puede añadir. Guarde una copia completa y añádala de nuevo.
+
+interface-AddVideo-fragmented = Este video está en un formato de transmisión. Guárdelo como MP4 normal y añádalo de nuevo.
+
+interface-AddVideo-tooBig = La imagen de este video es mayor de lo que myCarlos puede añadir. Guarde una copia más pequeña y añádala de nuevo.
+
+interface-AddVideo-tooLarge = Este video es mayor de lo que myCarlos puede añadir en este dispositivo (2 GB en un ordenador, 1 GB en un teléfono). Guarde una copia más pequeña y añádala de nuevo.
+
+interface-AddVideo-damaged = Este video está dañado o cortado, así que no se puede añadir. Cópielo de nuevo desde donde lo obtuvo e inténtelo otra vez.
+
+interface-AddVideo-adding = Añadiendo el video…

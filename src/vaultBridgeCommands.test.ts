@@ -307,6 +307,28 @@ describe("each bridge method invokes its native command with its arguments", () 
       { request: { pickId: "pick-1", profileId: "p-1", folderIds: ["f-1"] } },
     ],
     [
+      "pickImportVideo",
+      (b) => b.pickImportVideo("p-1", ["f-1"]),
+      "vault_import_video_pick",
+      { locale: locale(), request: { profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "importPickedVideo",
+      (b) => b.importPickedVideo("pick-1", "p-1", ["f-1"]),
+      "vault_import_video_picked",
+      { request: { pickId: "pick-1", profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "videoImportProgress",
+      (b) => b.videoImportProgress(),
+      "vault_video_import_progress",
+    ],
+    [
+      "videoImportCancel",
+      (b) => b.videoImportCancel(),
+      "vault_video_import_cancel",
+    ],
+    [
       "pickExportDestination",
       (b) => b.pickExportDestination("rec-1"),
       "vault_export_pick",

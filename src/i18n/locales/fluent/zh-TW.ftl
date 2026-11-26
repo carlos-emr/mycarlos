@@ -237,6 +237,8 @@ interface-UnlockPdfDialog-unlocking = 正在解鎖…
 
 interface-VaultApp-chooseFilesToImport = 選擇要匯入的檔案
 
+interface-VaultLibrary-picturesNote = 您新增的圖片會移除拍攝地點、時間和相機資訊。
+
 interface-VaultApp-finishingTheTransfer = 正在完成傳輸
 
 interface-VaultApp-lockNowAndCancelTheTransfer = 立即鎖定並取消傳輸
@@ -672,7 +674,7 @@ native-error-20 = 請選擇較不容易猜測的密語，不要使用常見密�
 
 native-error-21 = 每次匯入最多可選擇 100 個檔案。
 
-native-error-22 = 其中一個檔案不是 PDF 文件，因此沒有新增任何內容。myCarlos 只保留 PDF 文件。
+native-error-22 = 其中一個檔案既不是 PDF 文件也不是 JPEG 或 PNG 圖片，因此沒有新增任何內容。myCarlos 保留 PDF 文件以及 JPEG 和 PNG 圖片。如果是 iPhone 圖片（HEIC），請改以 JPEG 分享。
 
 native-error-23 = 此文件使用密碼鎖定。請輸入病患入口網站提供的文件密碼。
 
@@ -722,7 +724,7 @@ native-error-45 = myCarlos 無法開啟該檔案。如果檔案位於雲端或�
 
 native-error-46 = 保險庫中的文件已損毀且無法再讀取，因此沒有儲存備份。沒有變更任何內容。
 
-native-error-47 = myCarlos 無法儲存或顯示此相片：相片必須是完整的 JPEG 圖片、大小不得超過 25 MB，且每邊不得超過 8,192 像素。沒有變更任何內容。
+native-error-47 = myCarlos 無法儲存或顯示此相片：相片必須是完整的 JPEG 或 PNG 圖片（不能是動畫）、大小不得超過 25 MB，每邊不得超過 8,192 像素，總計不得超過 5,000 萬像素（手機上為 2,400 萬）。沒有變更任何內容。
 
 native-error-48 = 備份已檢查，但還原作業尚未完成。請關閉 myCarlos 再重新開啟以完成作業，接著使用建立備份時的密語或復原金鑰開啟保險庫。
 
@@ -731,6 +733,11 @@ native-error-speedTest = 速度測試尚未完成就停止了。沒有變更任�
 native-filter-backups = myCarlos 備份
 
 native-filter-pdf = PDF 文件
+
+native-filter-video = 影片（MP4 或 MOV）
+native-filter-pictures = JPEG 和 PNG 圖片
+
+native-filter-pdfAndPictures = PDF 文件以及 JPEG 和 PNG 圖片
 
 native-kit-text =
     myCarlos 復原套件
@@ -2183,6 +2190,8 @@ notifications-error = 無法儲存此設定。本次工作階段的通知和自�
 notifications-unavailable = 這些設定目前無法使用。請依平常方式開啟 myCarlos 查看文件。
 notifications-helpAutomatic = myCarlos 可以在開啟且已解鎖時自行檢查診所的新文件。新文件隨後會出現在您的紀錄庫中。
 notifications-notYetAsked = Windows 尚未顯示過 myCarlos 的通知，因此還沒有針對它的設定。在您於 Windows 設定中將其關閉之前，通知是允許的。
+notifications-blockedMac = macOS 不允許 myCarlos 傳送通知。請在「系統設定」的「通知」中開啟。
+notifications-notYetAskedMac = 尚未詢問 macOS。您開啟通知時，它會詢問。
 notifications-autoAllow = 保險庫解鎖時自動檢查診所文件
 notifications-autoConsent = 開啟後，myCarlos 會依排程聯絡您診所的入口網站，每次嘗試至少間隔兩分鐘，且僅在其開啟並已解鎖時進行。關閉即可停止。
 notifications-noticesHelp = 儲存診所文件後，Windows 可以顯示不含具體內容的通知。請照常開啟 myCarlos 閱讀文件。
@@ -2670,6 +2679,7 @@ native-notice-test = 這是來自 myCarlos 的測試通知。
 notifications-testButton = 顯示測試通知
 
 notifications-testSent = 測試通知已傳送。如果您沒有看到，請檢查 Windows 的通知設定。
+notifications-testSentMac = 已傳送測試通知。若沒有看到，請檢查「系統設定」中的「通知」。
 
 notifications-testWait = 請等候幾秒鐘後再試一次。
 
@@ -2689,3 +2699,47 @@ reader-panel-ai = 用 AI 解釋
 interface-VaultLibrary-help = 說明
 
 interface-VaultLibrary-helpButtonName = 說明：此畫面
+
+interface-AddVideo-add = 新增影片
+
+interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點以及裝置名稱和型號會先被刪除。
+
+interface-AddVideo-checking = 正在檢查影片…
+
+interface-AddVideo-storing = 正在新增影片：{ $percent }%
+
+interface-AddVideo-progressLabel = 正在新增影片
+
+interface-AddVideo-cancel = 取消
+
+interface-AddVideo-cancelling = 正在取消…
+
+interface-AddVideo-added = 影片已新增。
+
+interface-AddVideo-duplicate = 此影片已在這裡，未新增任何內容。
+
+interface-AddVideo-cancelled = 已取消，未新增任何內容。
+
+interface-AddVideo-notVideo = 此檔案不是 myCarlos 可以新增的影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-hevc = 此影片使用 H.265（HEVC），許多電腦無法播放。請另存為 H.264 MP4 後再新增。
+
+interface-AddVideo-videoCodec = 此影片的畫面格式 myCarlos 無法播放。請另存為 H.264 MP4 後再新增。
+
+interface-AddVideo-audioCodec = 此影片的聲音格式 myCarlos 無法播放。請另存為 AAC 聲音後再新增。
+
+interface-AddVideo-noVideo = 此檔案沒有畫面，所以不是影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-tooManyTracks = 此影片的畫面或聲音多於 myCarlos 可新增的數量。請另存為只有一路畫面和一路聲音的簡單副本後再新增。
+
+interface-AddVideo-external = 此影片的一部分存放在檔案之外，無法新增。請另存為完整副本後再新增。
+
+interface-AddVideo-fragmented = 此影片是串流格式。請另存為一般 MP4 後再新增。
+
+interface-AddVideo-tooBig = 此影片的畫面大於 myCarlos 可新增的尺寸。請另存為較小的副本後再新增。
+
+interface-AddVideo-tooLarge = 此影片大於 myCarlos 在此裝置上可新增的大小（電腦 2 GB，手機 1 GB）。請另存為較小的副本後再新增。
+
+interface-AddVideo-damaged = 此影片已損毀或被截斷，無法新增。請從來源處重新複製後再試。
+
+interface-AddVideo-adding = 正在新增影片…
