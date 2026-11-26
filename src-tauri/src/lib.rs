@@ -700,7 +700,11 @@ impl Drop for CreateVaultRequest {
     }
 }
 
+// camelCase on the wire, as every other request the renderer sends: without it the renderer's
+// `hiddenPeopleDocuments` was an unknown key, silently ignored, and the count was always 0, so the
+// removal was refused whenever a hidden person had a lost document.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
     /// How many damaged documents of hidden people the patient was told of (#360).
@@ -1464,6 +1468,10 @@ struct PendingPicks {
     /// document's save to take: gone once saved, at lock, and when the
     /// document is hidden.
     ai_answers: KeptAnswers,
+    /// The text of pages the reader was shown (#240), so an explanation kept for a document can
+    /// only be of a sentence that document's pages gave: gone at lock and when the document is
+    /// hidden.
+    shown_pages: ShownPages,
 }
 
 /// What a preview ticket remembers about its text read.
@@ -1503,6 +1511,128 @@ impl TextTicket {
     /// not), covers only part of the document.
     fn partial(&self, last_page: u32, last_page_cut: bool) -> bool {
         self.truncated || last_page_cut || self.last_index.is_some_and(|last| last_page < last)
+    }
+}
+
+/// The text of the pages `vault_view_page` showed, as native read it from the document (#240):
+/// what a sentence given to `ai_explain` for a document is checked against. Whitespace is
+/// collapsed on both sides, since the page's line breaks and spacing are not the reader's.
+/// A page shown again replaces its earlier entry; the oldest go past the caps below, and every
+/// entry is bound to the session it was shown in. The texts are the document's (PHI): held
+/// zeroizing, so they are overwritten when an entry goes.
+#[derive(Default)]
+struct ShownPages(Mutex<Vec<ShownPage>>);
+
+struct ShownPage {
+    session: u64,
+    record_id: Uuid,
+    page: u32,
+    /// The page's text and its readable text, each with whitespace collapsed.
+    texts: [zeroize::Zeroizing<String>; 2],
+}
+
+/// Pages kept at most, and bytes of text across them: well above the six pages the reader itself
+/// keeps drawn, so a page it shows again from its own cache is still known here.
+const MAX_SHOWN_PAGES: usize = 32;
+const MAX_SHOWN_BYTES: usize = 8 * 1024 * 1024;
+
+/// `text` with every run of whitespace as one space and none at either end.
+fn collapse_whitespace(text: &str) -> zeroize::Zeroizing<String> {
+    zeroize::Zeroizing::new(text.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// `text` in lower case, character by character, into a buffer that is overwritten when it goes.
+/// Per character, as the reader folds: `str::to_lowercase` reads a Greek capital sigma at the end
+/// of a word as a final sigma, which would refuse a term the reader found. The buffer is sized
+/// for the longest expansion (one character to three bytes from two), so it never moves.
+fn fold_case(text: &str) -> zeroize::Zeroizing<String> {
+    let mut folded = zeroize::Zeroizing::new(String::with_capacity(text.len() * 2));
+    for char in text.chars() {
+        folded.extend(char.to_lowercase());
+    }
+    folded
+}
+
+impl ShownPages {
+    fn list(&self) -> std::sync::MutexGuard<'_, Vec<ShownPage>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Notes a page shown in `session`, unless `current()` says that session is over: the check
+    /// is made under the same lock as the insert, and a lock's `clear` takes that lock after it
+    /// has ended the session, so a page shown during a lock is never remembered after it.
+    fn note(
+        &self,
+        current: &dyn Fn() -> u64,
+        session: u64,
+        record_id: Uuid,
+        page: u32,
+        text: &str,
+        readable_text: &str,
+    ) {
+        let texts = [
+            collapse_whitespace(text),
+            collapse_whitespace(readable_text),
+        ];
+        let mut list = self.list();
+        if current() != session {
+            return;
+        }
+        // Nothing from an earlier session stays, and a page shown again replaces itself.
+        list.retain(|held| {
+            held.session == session && !(held.record_id == record_id && held.page == page)
+        });
+        list.push(ShownPage {
+            session,
+            record_id,
+            page,
+            texts,
+        });
+        let size = |held: &ShownPage| held.texts[0].len() + held.texts[1].len();
+        while list.len() > MAX_SHOWN_PAGES
+            || (list.len() > 1 && list.iter().map(size).sum::<usize>() > MAX_SHOWN_BYTES)
+        {
+            list.remove(0);
+        }
+    }
+
+    /// The sentence to keep an explanation of `term` with, or `None` when it must be refused:
+    /// `context` with whitespace collapsed (so what is filed is exactly the document's own text),
+    /// if it is inside a page shown for `record_id` in `session` and, not being empty, holds the
+    /// term (case aside). An empty context says nothing about the document, so it passes.
+    fn accept(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        let wanted = collapse_whitespace(context);
+        if wanted.is_empty() {
+            return Some(wanted);
+        }
+        let term = collapse_whitespace(term);
+        if !term.is_empty() && !fold_case(&wanted).contains(fold_case(&term).as_str()) {
+            return None;
+        }
+        self.list()
+            .iter()
+            .any(|held| {
+                held.session == session
+                    && held.record_id == record_id
+                    && held.texts.iter().any(|text| text.contains(wanted.as_str()))
+            })
+            .then_some(wanted)
+    }
+
+    fn forget_record(&self, record_id: Uuid) {
+        self.list().retain(|held| held.record_id != record_id);
+    }
+
+    fn clear(&self) {
+        self.list().clear();
     }
 }
 
@@ -1719,8 +1849,34 @@ impl PendingPicks {
         self.ai_answers.forget(kept_id);
     }
 
+    /// The reader was shown this page of `record_id` in `session` (#240): not remembered if the
+    /// vault has locked since.
+    fn note_shown_page(&self, session: u64, record_id: Uuid, page: u32, shown: &ViewedPage) {
+        self.shown_pages.note(
+            &|| self.session(),
+            session,
+            record_id,
+            page,
+            &shown.text,
+            &shown.readable_text,
+        );
+    }
+
+    /// The sentence an explanation of `term` for `record_id` is kept with (collapsed), if it is
+    /// from pages shown for that document in `session` (#240).
+    fn explain_context(
+        &self,
+        session: u64,
+        record_id: Uuid,
+        term: &str,
+        context: &str,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        self.shown_pages.accept(session, record_id, term, context)
+    }
+
     /// The document was hidden: its tickets end, and its kept answers.
     fn forget_texts_for(&self, record_id: Uuid) {
+        self.shown_pages.forget_record(record_id);
         self.ai_answers.forget_record(record_id);
         self.texts.retain(|held| held.record_id != record_id);
     }
@@ -1824,6 +1980,7 @@ impl PendingPicks {
         self.texts.clear();
         self.text_exports.clear();
         self.ai_answers.clear();
+        self.shown_pages.clear();
     }
 }
 
@@ -2230,7 +2387,7 @@ async fn ai_model_add_picked(
     let _open = ActivityHold::new(store.idle());
     let picker = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        let dialog = picker.dialog().file();
+        let dialog = file_dialog(&picker);
         #[cfg(desktop)]
         let dialog = dialog.add_filter(&filter, &["gguf"]);
         #[cfg(not(desktop))]
@@ -2558,13 +2715,14 @@ fn ai_model_speed(models: State<'_, Arc<local_model::Store>>) -> Option<speed_ch
 }
 
 /// What a term means in its sentence, from the model on this computer (#72). With the
-/// document, which must be a readable PDF, the answer is also kept for that document's save.
+/// document, which must be a readable PDF, the answer is also kept for that document's save,
+/// and its sentence must then be from the pages the reader was shown for that document (#240).
 #[tauri::command]
 async fn ai_explain(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     picks: State<'_, Arc<PendingPicks>>,
-    request: model_runtime::ExplainRequest,
+    mut request: model_runtime::ExplainRequest,
     answer_id: Uuid,
 ) -> CommandResult<AiAnswer<model_runtime::ExplainResult>> {
     let store = store.pin();
@@ -2575,6 +2733,15 @@ async fn ai_explain(
     let session = picks.session();
     let kept_for = request.record_id;
     if let Some(record_id) = kept_for {
+        // The sentence an explanation is kept with must be from this document's own pages, as
+        // native showed them to the reader (#240): the model's words are never filed on a
+        // document under a sentence it does not contain. What is asked and filed is that
+        // sentence with its whitespace collapsed, exactly the document's own words; a sentence
+        // that has anything must hold the term.
+        let mut sentence = picks
+            .explain_context(session, record_id, request.term.trim(), &request.context)
+            .ok_or_else(|| PublicError::from(VaultError::Invalid))?;
+        request.context = std::mem::take(&mut *sentence);
         // Validation may outlive its originating session. It must not count
         // as unowned activity in whichever session is open when it returns.
         let store = Arc::clone(store.arc());
@@ -3304,6 +3471,10 @@ fn after_open(store: &Arc<VaultStore>) {
         if let Some(vault_id) = store.open_vault_id() {
             notice_key::after_open(vault_id);
         }
+        // Keys whose link was removed before their wipe finished (#160). One read of the vault id
+        // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
+        // an empty link set.
+        store.sweep_notice_keys();
         store.after_open();
         // The notices switch is kept in the vault: read it now it is open, then bring the notice
         // keys in line with the two switches (#230).
@@ -3776,6 +3947,20 @@ async fn vault_forget_refused_deliveries(
 }
 
 #[tauri::command]
+async fn vault_portal_remove_link(
+    store: State<'_, StoreHandle>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.remove_portal_link(link_id, session))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 async fn vault_check_documents(
     store: State<'_, StoreHandle>,
 ) -> CommandResult<portal_pickup::CheckResult> {
@@ -3971,6 +4156,22 @@ fn confirmed_natively<R: tauri::Runtime>(
 #[cfg(desktop)]
 const MAIN_WINDOW: &str = "main";
 
+/// A native file dialog owned by the app's window. Every file picker and save dialog of the app
+/// is opened through this and never through `app.dialog().file()`: with no owner, Windows shows
+/// the picker as a separate top-level window that is not modal to the app, so the patient can
+/// carry on in the app behind it, lose it behind the window or in the taskbar, and leave the
+/// operation waiting on a dialog that looks closed. Owned, it stays above the window and
+/// blocks it. No timeout is added: a patient may leave a dialog open as long as they like.
+fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().file();
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    };
+    dialog
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -4088,9 +4289,7 @@ async fn vault_recovery_kit_save(
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        dialog
-            .dialog()
-            .file()
+        file_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -4340,7 +4539,7 @@ async fn vault_backup_pick(
     let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4626,7 +4825,7 @@ async fn vault_profile_export_pick(
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4743,7 +4942,7 @@ async fn vault_profile_import_pick(
     let _open = ActivityHold::new(store.idle());
     // No filter: a phone's picker filters by file type, and a handover file has none it knows.
     let source =
-        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_file())
+        tauri::async_runtime::spawn_blocking(move || file_dialog(&app).blocking_pick_file())
             .await
             .map_err(|_| PublicError::from(VaultError::Storage))?;
     let Some(source) = source else {
@@ -5049,7 +5248,7 @@ async fn vault_restore_pick(
     .await?;
     let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
-        let picker = app.dialog().file();
+        let picker = file_dialog(&app);
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
@@ -5410,8 +5609,7 @@ async fn vault_import_pick(
     let _open = ActivityHold::new(store.idle());
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .add_filter(&pdf_filter, &["pdf"])
             .blocking_pick_files()
     })
@@ -5824,6 +6022,7 @@ impl ViewedPage {
 #[tauri::command]
 async fn vault_view_page(
     store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
     mut request: ViewPageRequest,
 ) -> CommandResult<ViewedPage> {
     let store = store.pin();
@@ -5841,14 +6040,20 @@ async fn vault_view_page(
     drop(request);
     // Taken now: a newer page request, a lock or the reader closing stops this one.
     let ticket = pdf_view::ViewTicket::new();
+    let session = picks.session();
     let result = run_blocking(store.arc(), move |store| {
-        let size = store
-            .snapshot()?
+        let snapshot = store.snapshot()?;
+        let record = snapshot
             .records
             .iter()
             .find(|record| record.id == record_id)
-            .ok_or(VaultError::NotFound)?
-            .plaintext_size;
+            .ok_or(VaultError::NotFound)?;
+        // A hidden document is not shown, so a view that began before it was hidden cannot note
+        // its page afterwards (#240).
+        if record.hidden.is_some() {
+            return Err(VaultError::NotFound);
+        }
+        let size = record.plaintext_size;
         if size > pdf_unlock::MAX_LOCKED_PDF_BYTES as u64 {
             return Err(VaultError::PdfTooLarge);
         }
@@ -5879,6 +6084,11 @@ async fn vault_view_page(
     // A lock can also happen after the blocking task finishes, before this command resumes.
     if !ticket.is_current() {
         return Err(VaultError::Cancelled.into());
+    }
+    // What the reader is shown is what an explanation's sentence is checked against (#240), in
+    // the session it was shown in: a lock since makes `session` a stale one.
+    if let Ok(shown) = &result {
+        picks.note_shown_page(session, record_id, page, shown);
     }
     result
 }
@@ -6459,8 +6669,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -6708,8 +6917,7 @@ async fn vault_export_pick(
     );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -6771,10 +6979,17 @@ async fn vault_export_picked(
 #[tauri::command]
 async fn vault_hide_unavailable_records(
     store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
     request: HideUnavailableRequest,
 ) -> CommandResult<Vec<Uuid>> {
     let store = store.pin();
-    run_blocking(store.arc(), move |store| {
+    // As when one document is hidden: its tickets, kept answers and shown pages end, and a page
+    // being drawn for it stops.
+    for record_id in &request.confirmed {
+        picks.forget_texts_for(*record_id);
+    }
+    pdf_view::cancel_views();
+    let hidden = run_blocking(store.arc(), move |store| {
         store.hide_unavailable_records_covering(
             &request.confirmed,
             request.hidden_people_documents,
@@ -6785,7 +7000,12 @@ async fn vault_hide_unavailable_records(
     .map_err(|error| match error.code {
         "recovery_mode" => PublicError::removal_not_possible(),
         _ => error,
-    })
+    })?;
+    // Pages drawn while it ran were of documents that are hidden now.
+    for record_id in &hidden {
+        picks.forget_texts_for(*record_id);
+    }
+    Ok(hidden)
 }
 
 /// Saves a photo taken with the camera dialog. The request's body is its
@@ -7289,12 +7509,18 @@ async fn vault_hide_record(
     request: RecordIdRequest,
 ) -> CommandResult<()> {
     let store = store.pin();
-    // A hidden document's text can no longer be saved (#72, AI-02).
+    // A hidden document's text can no longer be saved (#72, AI-02), and a page being drawn for
+    // it stops.
     picks.forget_texts_for(request.record_id);
-    run_blocking(store.arc(), move |store| {
+    pdf_view::cancel_views();
+    let record_id = request.record_id;
+    let hidden = run_blocking(store.arc(), move |store| {
         store.hide_record(request.record_id, now_ms())
     })
-    .await
+    .await;
+    // A page drawn while it ran was of a document that is hidden now.
+    picks.forget_texts_for(record_id);
+    hidden
 }
 
 /// Keeps the AI helper's answer with its document, encrypted (#72 part D).
@@ -7895,6 +8121,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_portal_remove_link,
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
@@ -9684,6 +9911,180 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
+    /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
+    /// top-level window that can be lost behind the app while its command waits for it. The rules,
+    /// over every source file (not only this one), in non-test code:
+    ///   - the plugin's dialog extension (`DialogExt`) is imported in this file and nowhere else;
+    ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
+    ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
+    ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
+    ///   - `file_dialog(&` is called at exactly the nine sites there are today (a tenth must be added
+    ///     here on purpose, and a lost one is noticed).
+    #[test]
+    fn every_file_dialog_is_opened_through_the_owned_helper() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        /// The code before the file's own `mod tests {` (its tests may name anything), comment lines
+        /// dropped, and every space and line break removed (so a call split over lines or spaced
+        /// oddly still matches). A file with no such module is read whole.
+        fn code(text: &str) -> String {
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            text[..end]
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .split_whitespace()
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let (mut dialog_ext, mut calls, mut file_calls, mut builders, mut sites) = (0, 0, 0, 0, 0);
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let code = code(&text);
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let imports = code.matches("DialogExt").count();
+            if name != "lib.rs" {
+                assert_eq!(imports, 0, "{name} imports DialogExt");
+            }
+            dialog_ext += imports;
+            calls += code.matches(".dialog()").count();
+            file_calls += code.matches(".dialog().file()").count();
+            builders += code.matches("FileDialogBuilder::new").count();
+            sites += code.matches("file_dialog(&").count();
+        }
+        assert_eq!(dialog_ext, 1, "DialogExt is imported once, in lib.rs");
+        assert_eq!(
+            calls, 2,
+            ".dialog() is called in the helper and the native confirmation only"
+        );
+        assert_eq!(file_calls, 1, "only the helper builds a file dialog");
+        assert_eq!(builders, 0, "a file dialog builder is made directly");
+        assert_eq!(
+            sites, 9,
+            "the nine file dialog sites go through file_dialog"
+        );
+        // The helper keeps its owner.
+        let source = include_str!("lib.rs");
+        let helper = source.split("fn file_dialog(").nth(1).unwrap();
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("app.dialog().file()"));
+        assert!(helper.contains("set_parent(&window)"));
+        assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
+    }
+
+    /// The renderer sends `hiddenPeopleDocuments` (src/vault.ts). A snake_case field without a
+    /// camelCase rename read it as an unknown key and used 0, which made the removal fail whenever
+    /// a hidden person had a lost document.
+    #[test]
+    fn hide_unavailable_request_reads_the_renderers_camel_case_count() {
+        let id = Uuid::new_v4();
+        let sent = format!(r#"{{"confirmed":["{id}"],"hiddenPeopleDocuments":3}}"#);
+        let request: HideUnavailableRequest = serde_json::from_str(&sent).unwrap();
+        assert_eq!(request.confirmed, vec![id]);
+        assert_eq!(request.hidden_people_documents, 3);
+        // Left out, it is 0 (a vault with no hidden people sends none).
+        let none: HideUnavailableRequest =
+            serde_json::from_str(&format!(r#"{{"confirmed":["{id}"]}}"#)).unwrap();
+        assert_eq!(none.hidden_people_documents, 0);
+        // A key the struct does not know is refused, not ignored: the old snake_case spelling (or
+        // any other slip) fails loudly instead of leaving a field at its default.
+        assert!(serde_json::from_str::<HideUnavailableRequest>(
+            r#"{"confirmed":[],"hidden_people_documents":3}"#
+        )
+        .is_err());
+    }
+
+    /// Every request struct this file deserializes from the renderer spells its multi-word fields in
+    /// camelCase on the wire. Without `rename_all = "camelCase"` a field like `hidden_people_documents`
+    /// silently never receives the renderer's `hiddenPeopleDocuments` (unknown keys are ignored
+    /// unless the struct denies them) and takes its default; that cost a patient the recovery from
+    /// a lost document. A struct that is not a renderer request goes on the short list below, with a
+    /// reason.
+    #[test]
+    fn deserialized_structs_with_multi_word_fields_are_camel_case_on_the_wire() {
+        // (struct name, why it is not read from the renderer)
+        let not_from_the_renderer: [(&str, &str); 0] = [];
+        let source = include_str!("lib.rs");
+        let code = &source[..source.find("\n#[cfg(test)]\nmod tests {").unwrap()];
+        let mut offenders = Vec::new();
+        let mut attributes = String::new();
+        let mut lines = code.lines().peekable();
+        while let Some(line) = lines.next() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("#[") {
+                attributes.push_str(trimmed);
+                attributes.push('\n');
+                continue;
+            }
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            let declaration = trimmed
+                .strip_prefix("pub(crate) ")
+                .or_else(|| trimmed.strip_prefix("pub "))
+                .unwrap_or(trimmed);
+            if let Some(rest) = declaration.strip_prefix("struct ") {
+                if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                    let name = rest
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .next()
+                        .unwrap();
+                    let mut multi_word = Vec::new();
+                    for field in lines.by_ref() {
+                        let field = field.trim();
+                        if field == "}" {
+                            break;
+                        }
+                        let field = field.strip_prefix("pub ").unwrap_or(field);
+                        if let Some((field_name, _)) = field.split_once(':') {
+                            if !field_name.starts_with("//")
+                                && !field_name.starts_with('#')
+                                && field_name.contains('_')
+                            {
+                                multi_word.push(field_name.to_owned());
+                            }
+                        }
+                    }
+                    let listed = not_from_the_renderer
+                        .iter()
+                        .any(|(listed, _)| *listed == name);
+                    if !multi_word.is_empty()
+                        && !attributes.contains("rename_all = \"camelCase\"")
+                        && !listed
+                    {
+                        offenders.push(format!("{name} ({})", multi_word.join(", ")));
+                    }
+                }
+            }
+            attributes.clear();
+        }
+        assert!(
+            offenders.is_empty(),
+            "these request structs need #[serde(rename_all = \"camelCase\")]: {offenders:?}"
+        );
     }
 
     #[test]
@@ -11878,6 +12279,208 @@ mod photo_command_tests {
                     .code,
                 "photo_body"
             );
+        }
+    }
+
+    #[test]
+    fn an_explained_sentence_must_be_from_pages_shown_for_that_document() {
+        let shown = ShownPages::default();
+        let (here, other, session) = (Uuid::from_u128(1), Uuid::from_u128(2), 7);
+        let accepts = |session: u64, record: Uuid, term: &str, context: &str| {
+            shown
+                .accept(session, record, term, context)
+                .map(|sentence| sentence.to_string())
+        };
+        shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE Patient\n  has a   fake\tcondition. Next sentence.",
+            "FAKE Patient has a fake condition. Next sentence.",
+        );
+        // As the reader cuts it from the page, with the page's own line breaks and spacing: what
+        // comes back is the sentence collapsed, which is what is asked and filed.
+        assert_eq!(
+            accepts(session, here, "fake", "has a fake condition.").as_deref(),
+            Some("has a fake condition.")
+        );
+        assert_eq!(
+            accepts(
+                session,
+                here,
+                "FAKE condition",
+                "FAKE Patient\nhas a   fake condition."
+            )
+            .as_deref(),
+            Some("FAKE Patient has a fake condition.")
+        );
+        assert_eq!(
+            accepts(session, here, "next", "  Next sentence.  ").as_deref(),
+            Some("Next sentence.")
+        );
+        // The term may be typed in another case, or across the page's line break.
+        assert!(accepts(session, here, "HAS A FAKE", "has a fake condition.").is_some());
+        assert!(accepts(session, here, "fake\n condition", "has a fake condition.").is_some());
+        // Nothing to mislead with: an empty sentence, whatever the term.
+        assert_eq!(accepts(session, here, "anything", "").as_deref(), Some(""));
+        assert_eq!(
+            accepts(session, here, "anything", " \n ").as_deref(),
+            Some("")
+        );
+        // A Greek capital sigma at the end of a word folds as the reader folds it (to σ), so a
+        // term found on the page is not refused for the context's final-sigma form.
+        shown.note(
+            &|| session,
+            session,
+            other,
+            0,
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+            "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.",
+        );
+        assert!(accepts(session, other, "οδυσσεασ", "ΟΔΥΣΣΕΑΣ ΟΔΥΣΣΕΑΣ.").is_some());
+        shown.forget_record(other);
+        // A sentence that does not hold the term is refused, though it is the page's own.
+        assert!(accepts(session, here, "pneumonia", "has a fake condition.").is_none());
+        // Words the pages never held, a sentence stitched from two, another document's pages, and
+        // another session's.
+        assert!(accepts(session, here, "fake", "has a different fake condition.").is_none());
+        assert!(accepts(session, here, "fake", "fake condition. Another sentence.").is_none());
+        assert!(accepts(
+            session,
+            here,
+            "fake",
+            "has a fake condition. Next sentence. And more."
+        )
+        .is_none());
+        assert!(accepts(session, other, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session + 1, here, "fake", "has a fake condition.").is_none());
+        // The page's text is checked as it is: case matters in the sentence.
+        assert!(accepts(session, here, "fake", "HAS A FAKE CONDITION.").is_none());
+        // A page shown again replaces itself; another session's pages go on a new note.
+        shown.note(
+            &|| session,
+            session,
+            here,
+            0,
+            "FAKE changed page.",
+            "FAKE changed page.",
+        );
+        assert!(accepts(session, here, "fake", "has a fake condition.").is_none());
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_some());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE next session.",
+            "FAKE next session.",
+        );
+        assert!(accepts(session, here, "changed", "FAKE changed page.").is_none());
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_some());
+        // A document hidden, and a lock, forget what was shown.
+        shown.forget_record(here);
+        assert!(accepts(session + 1, here, "next", "FAKE next session.").is_none());
+        shown.note(
+            &|| session + 1,
+            session + 1,
+            here,
+            1,
+            "FAKE again.",
+            "FAKE again.",
+        );
+        shown.clear();
+        assert!(accepts(session + 1, here, "again", "FAKE again.").is_none());
+    }
+
+    #[test]
+    fn a_page_shown_after_a_lock_has_ended_its_session_is_not_remembered() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(4);
+        // The page was drawn in session 5; by the time it is noted the vault is in session 6.
+        shown.note(&|| 6, 5, record, 0, "FAKE late page.", "FAKE late page.");
+        assert!(shown.list().is_empty());
+        assert!(shown.accept(5, record, "late", "FAKE late page.").is_none());
+        assert!(shown.accept(6, record, "late", "FAKE late page.").is_none());
+        // Through the real path: a clear ends the session first, so a note after it is dropped.
+        let picks = PendingPicks::default();
+        let before = picks.session();
+        picks.clear();
+        let page = ViewedPage {
+            page_count: 1,
+            width: 1,
+            height: 1,
+            image: String::new(),
+            text: "FAKE page text".into(),
+            readable_text: "FAKE page text".into(),
+        };
+        picks.note_shown_page(before, record, 0, &page);
+        assert!(picks
+            .explain_context(before, record, "page", "FAKE page text")
+            .is_none());
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+        picks.note_shown_page(picks.session(), record, 0, &page);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_some());
+        // Hiding the document forgets its pages.
+        picks.forget_texts_for(record);
+        assert!(picks
+            .explain_context(picks.session(), record, "page", "FAKE page text")
+            .is_none());
+    }
+
+    #[test]
+    fn the_pages_shown_are_bounded_and_the_oldest_go_first() {
+        let shown = ShownPages::default();
+        let record = Uuid::from_u128(3);
+        for page in 0..(MAX_SHOWN_PAGES as u32 + 5) {
+            let text = format!("FAKE page number {page}.");
+            shown.note(&|| 1, 1, record, page, &text, &text);
+        }
+        assert_eq!(shown.list().len(), MAX_SHOWN_PAGES);
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 0.")
+            .is_none());
+        assert!(shown
+            .accept(1, record, "number", "FAKE page number 36.")
+            .is_some());
+        // Size is bounded too (in bytes), and the page just shown always stays.
+        let big = "x".repeat(MAX_SHOWN_BYTES);
+        shown.note(&|| 1, 1, record, 99, &big, "");
+        assert_eq!(shown.list().len(), 1);
+        assert!(shown.accept(1, record, "xx", "xxxx").is_some());
+    }
+
+    #[test]
+    fn explaining_for_a_document_checks_its_sentence_against_the_pages_shown_first() {
+        let source = include_str!("lib.rs");
+        let body = |command: &str| {
+            let body = source.split(command).nth(1).unwrap();
+            body[..body.find("\n}\n").unwrap()].to_owned()
+        };
+        // Before the model is asked anything, and before anything is kept, and what is asked
+        // is the collapsed sentence.
+        let explain = body("async fn ai_explain(");
+        let checked = explain.find("explain_context(").unwrap();
+        assert!(checked < explain.find("run_ai(").unwrap());
+        assert!(explain.contains("request.context = std::mem::take(&mut *sentence)"));
+        // What the reader is shown is noted only from a page native really drew.
+        let view = body("async fn vault_view_page(");
+        assert!(view.contains("note_shown_page("));
+        assert!(view.find("note_shown_page(").unwrap() > view.find("ticket.is_current()").unwrap());
+        // A hidden document is not drawn at all.
+        assert!(view.contains("record.hidden.is_some()"));
+        // Hiding a document, one or several, forgets its pages and stops a page being drawn.
+        for command in [
+            "async fn vault_hide_record(",
+            "async fn vault_hide_unavailable_records(",
+        ] {
+            let hide = body(command);
+            assert!(hide.contains("forget_texts_for("), "{command}");
+            assert!(hide.contains("pdf_view::cancel_views()"), "{command}");
         }
     }
 

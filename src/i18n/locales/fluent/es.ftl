@@ -1713,6 +1713,8 @@ interface-history-event-portalLinkStarted = Vinculación con la clínica iniciad
 
 interface-history-event-portalLinked = Clínica vinculada
 
+interface-history-event-portalLinkRemoved = Vínculo con la clínica quitado
+
 interface-history-event-profileCreated = Perfil de paciente añadido
 
 interface-history-event-profileDetailsChanged = Datos personales cambiados
@@ -1878,6 +1880,21 @@ portal-tryAgainFor = Intentar de nuevo con { $clinic }
 
 portal-linkAnother = Vincular otra clínica
 
+portal-removeLink = Quitar este vínculo
+
+portal-removeTitle = ¿Quitar este vínculo?
+
+portal-removeBody = { $clinic }, dispositivo «{ $device }». Este dispositivo deja de estar vinculado aquí y se borran sus claves guardadas de este dispositivo. Las copias de seguridad anteriores de su bóveda conservan esas claves hasta que se sustituyan. Es posible que su clínica siga mostrando este dispositivo.
+
+portal-removeConfirm = Quitar vínculo
+
+portal-removeKept = Los documentos de esta clínica están guardados en su caja fuerte, así que este vínculo se mantiene.
+
+portal-removeNotices = Los avisos de documentos están activados para esta clínica. Desactívelos primero y luego quite el vínculo.
+
+portal-removed = Vínculo quitado.
+
+
 ai-summary-button = Resumen
 
 ai-summary-title = Resumen en palabras sencillas
@@ -1900,11 +1917,11 @@ aiHelper-resultLabelInfo = Qué significa «Borrador de IA»
 
 ai-label-settingsTitle = Aviso en las respuestas de la IA
 
-ai-label-settingsBody = Cada respuesta de la IA indica que fue escrita por IA y que puede contener errores. Tras «No volver a mostrar», una etiqueta corta «Borrador de IA» sustituye la frase completa. La etiqueta nunca se quita. La elección se guarda en este dispositivo y vuelve a empezar si cambia el modelo o la herramienta.
+ai-label-settingsBody = Las respuestas de la IA pueden contener errores, y cada una lo indica. Si en una respuesta elige «No volver a mostrar», las respuestas siguientes muestran una etiqueta corta «Borrador de IA» en lugar de la frase completa.
 
 ai-label-settingsShowFull = Mostrar de nuevo el aviso completo
 
-ai-label-settingsFullShown = El aviso completo se muestra en cada respuesta de la IA.
+ai-label-settingsFullBack = El aviso completo vuelve a mostrarse en cada respuesta de la IA.
 
 ai-label-settingsShortShown = Se muestra una etiqueta corta «Borrador de IA» en las respuestas de la IA en las que la eligió.
 
@@ -2923,7 +2940,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Las comprobaciones automáticas solo se hacen mientras myCarlos está abierto y desbloqueado.
+notifications-autoSummary = myCarlos solo recoge por sí mismo los documentos nuevos de la clínica mientras está abierto y desbloqueado. Mientras está bloqueado en segundo plano, solo puede avisarle de que hay algo esperando.
 
 background-keepRunningSummary = myCarlos puede seguir en segundo plano después de cerrar su ventana. Su bóveda se bloquea al cerrarse la ventana.
 

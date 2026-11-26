@@ -578,19 +578,38 @@ export function SecuritySettings({
                 </p>
                 {backupSize.videoCount > 0 && (
                   <>
-                    <label className="restore-choice">
-                      <input
-                        type="checkbox"
-                        checked={leaveVideosOut}
-                        onChange={(event) =>
-                          setLeaveVideosOut(event.target.checked)
-                        }
-                      />
-                      {translateNow("security.backup.leaveVideosOut")}
-                    </label>
-                    <p className="native-dialog-status">
-                      {translateNow("security.backup.leaveVideosOutHelp")}
-                    </p>
+                    {/* The same box and row as the other Settings tick boxes (a 22px box, a 44px row,
+                        the whole label clickable). */}
+                    <div className="appearance-choice preferences-checks">
+                      <label className="appearance-option">
+                        <input
+                          type="checkbox"
+                          checked={leaveVideosOut}
+                          aria-describedby={
+                            leaveVideosOut ? "backup-videos-help" : undefined
+                          }
+                          onChange={(event) =>
+                            setLeaveVideosOut(event.target.checked)
+                          }
+                        />
+                        <span>
+                          {translateNow("security.backup.leaveVideosOut")}
+                        </span>
+                      </label>
+                    </div>
+                    {/* The consequence shows only while the box is ticked. The region itself is
+                        always there, so ticking is announced (a status that arrives with its text
+                        is not reliably read); the box is also described by it while it shows. */}
+                    <div role="status">
+                      {leaveVideosOut && (
+                        <p
+                          id="backup-videos-help"
+                          className="native-dialog-status"
+                        >
+                          {translateNow("security.backup.leaveVideosOutHelp")}
+                        </p>
+                      )}
+                    </div>
                   </>
                 )}
               </>
