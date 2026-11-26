@@ -237,6 +237,15 @@ fn offences_in(path: &Path, lines: &[String]) -> Vec<String> {
     offences
 }
 
+/// What a green run of this scan does NOT prove (it is a ratchet, not an audit):
+/// - Tuple structs and tuple variants are not read: a text field is only seen when it is a named
+///   field on its own line, so `UnlocatedQuotes(Vec<(usize, String)>)` and `RunnerError::Model(String)`
+///   are redacted by hand, and a new one like them has to be added by hand.
+/// - A `#[derive(...)]` split over several lines is not read (none exists today).
+/// - Files with "test" in their name are skipped, and so is everything after a source file's first
+///   `#[cfg(test)]` module.
+/// - Only a `String` field whose NAME is in `TEXT_FIELDS` counts as text: a text held in a `Vec<u8>`,
+///   a `PathBuf`, or a field called something else (`message`, `reason`) is not seen.
 #[test]
 fn every_redacted_type_derives_debug_only_in_tests_and_no_text_type_prints_in_release() {
     let mut offences = Vec::new();
