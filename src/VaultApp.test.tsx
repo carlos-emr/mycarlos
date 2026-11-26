@@ -6814,6 +6814,158 @@ describe("durable vault UI", () => {
     }
   });
 
+  // ---- A double press, or a form sent twice, never writes twice ----
+
+  /** The bridge call stays pending, as a slow disk would leave it, until `finish` is called. */
+  function pendingCall<T>() {
+    let finish: (value: T) => void = () => {};
+    const promise = new Promise<T>((resolve) => {
+      finish = resolve;
+    });
+    return { promise, finish };
+  }
+
+  it("hides a document once for a double click on Hide", async () => {
+    const user = userEvent.setup();
+    const slow = pendingCall<void>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      hideRecord: vi.fn().mockReturnValue(slow.promise),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(await screen.findByText(humanText("FAKE_Results.pdf")));
+    const hide = screen.getByRole("button", { name: humanText("Hide") });
+    fireEvent.click(hide);
+    fireEvent.click(hide);
+    await waitFor(() => expect(bridge.hideRecord).toHaveBeenCalled());
+    expect(bridge.hideRecord).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish());
+    expect(bridge.hideRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides a person once for a double click on the confirmation, and a second Enter does nothing more", async () => {
+    const user = userEvent.setup();
+    const slow = pendingCall<void>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...snapshotWithRecord,
+          profiles: [
+            ...snapshotWithRecord.profiles,
+            { id: "profile-2", displayName: "FAKE Robin", createdAtMs: 2 },
+          ],
+        }),
+      ),
+      hideProfile: vi.fn().mockReturnValue(slow.promise),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Hide FAKE Robin") }),
+    );
+    const confirm = within(await screen.findByRole("alertdialog")).getByRole(
+      "button",
+      { name: humanText("Hide FAKE Robin") },
+    );
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(bridge.hideProfile).toHaveBeenCalled());
+    expect(bridge.hideProfile).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish());
+    expect(bridge.hideProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds a person once for a form sent twice", async () => {
+    const user = userEvent.setup();
+    const slow = pendingCall<string>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(snapshotWithRecord)),
+      createProfile: vi.fn().mockReturnValue(slow.promise),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Add profile") }),
+    );
+    const name = await screen.findByLabelText(humanText(/New profile name/));
+    await user.type(name, "FAKE Robin");
+    const form = name.closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(bridge.createProfile).toHaveBeenCalled());
+    expect(bridge.createProfile).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish("profile-2"));
+    expect(bridge.createProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("chooses files to import once for a double click on New", async () => {
+    const slow = pendingCall<string | null>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportFiles: vi.fn().mockReturnValue(slow.promise),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const add = await screen.findByRole("button", { ...IMPORT_BUTTON });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
+    expect(bridge.pickImportFiles).toHaveBeenCalledTimes(1);
+    await act(async () => slow.finish(null));
+    expect(bridge.pickImportFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("links a clinic once for a form sent twice", async () => {
+    const slow = pendingCall<never>();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...snapshotWithRecord,
+          recoveryKeySetAtMs: 5,
+          portalLinkingEnabled: true,
+          portalLinks: [],
+        } as VaultSnapshot),
+      ),
+      connectPortal: vi.fn().mockReturnValue(slow.promise),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    await user.type(
+      screen.getByLabelText("Linking code"),
+      "01234567-89ABCDEFGH",
+    );
+    const form = screen
+      .getByRole("button", { name: "Connect and request approval" })
+      .closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+  });
+
   it("hides a document at once, never deletes it, and restores it from Hidden (#71)", async () => {
     const user = userEvent.setup();
     const record = {
