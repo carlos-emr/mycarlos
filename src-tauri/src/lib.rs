@@ -700,7 +700,11 @@ impl Drop for CreateVaultRequest {
     }
 }
 
+// camelCase on the wire, as every other request the renderer sends: without it the renderer's
+// `hiddenPeopleDocuments` was an unknown key, silently ignored, and the count was always 0, so the
+// removal was refused whenever a hidden person had a lost document.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct HideUnavailableRequest {
     confirmed: Vec<Uuid>,
     /// How many damaged documents of hidden people the patient was told of (#360).
@@ -3300,6 +3304,10 @@ fn after_open(store: &Arc<VaultStore>) {
         if let Some(vault_id) = store.open_vault_id() {
             notice_key::after_open(vault_id);
         }
+        // Keys whose link was removed before their wipe finished (#160). One read of the vault id
+        // and its links under one guard: a vault that locked meanwhile is skipped, never swept with
+        // an empty link set.
+        store.sweep_notice_keys();
         store.after_open();
         // The notices switch is kept in the vault: read it now it is open, then bring the notice
         // keys in line with the two switches (#230).
@@ -3766,6 +3774,20 @@ async fn vault_forget_refused_deliveries(
     let store = store.pin();
     let store = Arc::clone(store.arc());
     tauri::async_runtime::spawn_blocking(move || store.forget_refusals(link_id))
+        .await
+        .map_err(|_| PublicError::from(VaultError::Storage))?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn vault_portal_remove_link(
+    store: State<'_, StoreHandle>,
+    link_id: Uuid,
+) -> CommandResult<()> {
+    let store = store.pin();
+    let session = store.portal_link_ticket();
+    let store = Arc::clone(store.arc());
+    tauri::async_runtime::spawn_blocking(move || store.remove_portal_link(link_id, session))
         .await
         .map_err(|_| PublicError::from(VaultError::Storage))?
         .map_err(Into::into)
@@ -7875,6 +7897,7 @@ pub fn run() {
             vault_portal_link,
             vault_portal_connect,
             vault_check_documents,
+            vault_portal_remove_link,
             vault_forget_refused_deliveries,
             vault_notification_status,
             vault_set_notifications,
@@ -9690,6 +9713,98 @@ mod tests {
         assert!(helper.contains("app.dialog().file()"));
         assert!(helper.contains("set_parent(&window)"));
         assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
+    }
+
+    /// The renderer sends `hiddenPeopleDocuments` (src/vault.ts). A snake_case field without a
+    /// camelCase rename read it as an unknown key and used 0, which made the removal fail whenever
+    /// a hidden person had a lost document.
+    #[test]
+    fn hide_unavailable_request_reads_the_renderers_camel_case_count() {
+        let id = Uuid::new_v4();
+        let sent = format!(r#"{{"confirmed":["{id}"],"hiddenPeopleDocuments":3}}"#);
+        let request: HideUnavailableRequest = serde_json::from_str(&sent).unwrap();
+        assert_eq!(request.confirmed, vec![id]);
+        assert_eq!(request.hidden_people_documents, 3);
+        // Left out, it is 0 (a vault with no hidden people sends none).
+        let none: HideUnavailableRequest =
+            serde_json::from_str(&format!(r#"{{"confirmed":["{id}"]}}"#)).unwrap();
+        assert_eq!(none.hidden_people_documents, 0);
+        // A key the struct does not know is refused, not ignored: the old snake_case spelling (or
+        // any other slip) fails loudly instead of leaving a field at its default.
+        assert!(serde_json::from_str::<HideUnavailableRequest>(
+            r#"{"confirmed":[],"hidden_people_documents":3}"#
+        )
+        .is_err());
+    }
+
+    /// Every request struct this file deserializes from the renderer spells its multi-word fields in
+    /// camelCase on the wire. Without `rename_all = "camelCase"` a field like `hidden_people_documents`
+    /// silently never receives the renderer's `hiddenPeopleDocuments` (unknown keys are ignored
+    /// unless the struct denies them) and takes its default; that cost a patient the recovery from
+    /// a lost document. A struct that is not a renderer request goes on the short list below, with a
+    /// reason.
+    #[test]
+    fn deserialized_structs_with_multi_word_fields_are_camel_case_on_the_wire() {
+        // (struct name, why it is not read from the renderer)
+        let not_from_the_renderer: [(&str, &str); 0] = [];
+        let source = include_str!("lib.rs");
+        let code = &source[..source.find("\n#[cfg(test)]\nmod tests {").unwrap()];
+        let mut offenders = Vec::new();
+        let mut attributes = String::new();
+        let mut lines = code.lines().peekable();
+        while let Some(line) = lines.next() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("#[") {
+                attributes.push_str(trimmed);
+                attributes.push('\n');
+                continue;
+            }
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            let declaration = trimmed
+                .strip_prefix("pub(crate) ")
+                .or_else(|| trimmed.strip_prefix("pub "))
+                .unwrap_or(trimmed);
+            if let Some(rest) = declaration.strip_prefix("struct ") {
+                if attributes.contains("Deserialize") && declaration.ends_with('{') {
+                    let name = rest
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .next()
+                        .unwrap();
+                    let mut multi_word = Vec::new();
+                    for field in lines.by_ref() {
+                        let field = field.trim();
+                        if field == "}" {
+                            break;
+                        }
+                        let field = field.strip_prefix("pub ").unwrap_or(field);
+                        if let Some((field_name, _)) = field.split_once(':') {
+                            if !field_name.starts_with("//")
+                                && !field_name.starts_with('#')
+                                && field_name.contains('_')
+                            {
+                                multi_word.push(field_name.to_owned());
+                            }
+                        }
+                    }
+                    let listed = not_from_the_renderer
+                        .iter()
+                        .any(|(listed, _)| *listed == name);
+                    if !multi_word.is_empty()
+                        && !attributes.contains("rename_all = \"camelCase\"")
+                        && !listed
+                    {
+                        offenders.push(format!("{name} ({})", multi_word.join(", ")));
+                    }
+                }
+            }
+            attributes.clear();
+        }
+        assert!(
+            offenders.is_empty(),
+            "these request structs need #[serde(rename_all = \"camelCase\")]: {offenders:?}"
+        );
     }
 
     #[test]
