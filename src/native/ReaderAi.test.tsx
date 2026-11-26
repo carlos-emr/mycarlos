@@ -557,6 +557,26 @@ describe("the reader's AI helper", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("never asks the model or keeps an answer twice when Summary is pressed twice", async () => {
+    const model = fakeLocalModel();
+    const { kept } = fakeKept([], model);
+    renderReader(model, { kept });
+    await firstPage();
+    const user = userEvent.setup();
+    const summary = screen.getByRole("button", { name: "Summary" });
+    // The second press may take the panel back off (it is a toggle), so how much is shown is not
+    // the point: the model is asked at most once, and one answer is kept at most once.
+    await user.click(summary);
+    await user.click(summary);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(
+      model.calls.filter((call) => call.tool === "summary").length,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      (kept.save as ReturnType<typeof vi.fn>).mock.calls.length,
+    ).toBeLessThanOrEqual(1);
+  });
+
   it("shows the summary the vault kept, asks no model, and summarizes again on request", async () => {
     const model = fakeLocalModel();
     const { kept } = fakeKept(

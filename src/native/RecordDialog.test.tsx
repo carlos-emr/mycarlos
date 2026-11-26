@@ -240,6 +240,29 @@ describe("RecordDialog", () => {
     );
   });
 
+  it("ends and saves the video once when Stop and save is pressed twice (a double click, or a second click while it stops)", async () => {
+    let finish!: (saved: { recordId: string | null }) => void;
+    const bridge = fakeBridge({
+      videoStop: vi.fn(
+        () =>
+          new Promise<{ recordId: string | null }>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    const { onSaved } = await recording(bridge);
+    const stop = button("Stop and save");
+    // The second click is the one that must not end the video again.
+    fireEvent.click(stop);
+    fireEvent.click(stop);
+    await waitFor(() => expect(bridge.videoStop).toHaveBeenCalled());
+    fireEvent.click(stop);
+    await act(async () => finish({ recordId: "video-1" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(bridge.videoStop).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
   it("sends each piece to the vault in order with the sequence number it asked for, then saves on Stop", async () => {
     const bridge = fakeBridge();
     const { onSaved, onClose } = await recording(bridge);
