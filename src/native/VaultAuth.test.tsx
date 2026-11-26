@@ -906,6 +906,24 @@ describe("a shown secret goes back to dots before the app switcher's picture", (
     onReset: vi.fn(),
   };
 
+  it("stays shown when only the focus moves inside the page (pressing Show blurs the box, not the window)", () => {
+    render(<UnlockVault {...unlockProps} />);
+    const box = screen.getByLabelText(humanText("Passphrase"));
+    const show = screen.getByRole("button", {
+      name: humanText("Show passphrase"),
+    });
+    box.focus();
+    fireEvent.click(show);
+    expect(box).toHaveAttribute("type", "text");
+    // The box loses the focus to the button, and the page's other elements blur and focus: none
+    // of that reaches the window's own blur, which is what hides.
+    fireEvent.blur(box);
+    fireEvent.focusOut(box);
+    show.focus();
+    fireEvent.blur(show);
+    expect(box).toHaveAttribute("type", "text");
+  });
+
   it.each(goesAway)(
     "on %s: the set-up screen's two boxes, the unlock box and the recovery key",
     (_event, leave) => {
