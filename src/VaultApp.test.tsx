@@ -6939,13 +6939,19 @@ describe("durable vault UI", () => {
 
   /** Every bridge method, in exactly one of two lists (a `Record` over all the keys, so adding a
    * method to `VaultBridge` stops the build until it is placed):
-   * - `write`: changes the vault, or sends or saves something for a clinic. In read-only recovery
-   *   none may be reached from any control.
-   * - `allowed`: reads, pickers, computing, and the deliberate exceptions: exports and backups
-   *   (a patient with a damaged vault must still be able to save what is readable), erasing the
-   *   vault and restoring a backup (how a damaged vault is started over; both are reached from the
-   *   locked and set-up screens, not the library), the device's own auto-lock setting, and
-   *   `recover` (the locked screen). */
+   * - `write`: changes the vault, sends or saves something for a clinic, or is refused by native
+   *   in recovery mode. In read-only recovery none may be reached from any control. That last
+   *   group is the backup (`backup_parts` returns `RecoveryMode`, vault.rs, pinned by the test
+   *   `a_read_only_vault_is_not_backed_up`: a backup of a degraded manifest could omit records
+   *   silently, and the old-backups guide tells the patient to delete older ones after a new
+   *   one) and a person's hand-over, export and import (`exportable_profile` and the import
+   *   both return `RecoveryMode`). The UI matches: those buttons are disabled.
+   * - `allowed`: reads, pickers, computing, and the deliberate exceptions: a single document's
+   *   export and an anonymized text's save (native: "the export still runs: it may be the only
+   *   way to get a document out", `export_atomic`), erasing the vault and restoring a backup
+   *   (how a damaged vault is started over; both are reached from the locked and set-up
+   *   screens, not the library), the device's own auto-lock setting, and `recover` (the locked
+   *   screen). */
   const BRIDGE_CLASS: Record<keyof VaultBridge, "write" | "allowed"> = {
     native: "allowed",
     status: "allowed",
@@ -6974,13 +6980,13 @@ describe("durable vault UI", () => {
     recoveryKeyLabel: "allowed",
     cancelRecoveryKey: "allowed",
     recover: "allowed",
-    pickBackupDestination: "allowed",
-    saveBackupToPicked: "allowed",
+    pickBackupDestination: "write",
+    saveBackupToPicked: "write",
     backupSize: "allowed",
     leftOutRecords: "allowed",
-    prepareProfileExport: "allowed",
-    pickProfileExportDestination: "allowed",
-    saveProfileExportToPicked: "allowed",
+    prepareProfileExport: "write",
+    pickProfileExportDestination: "write",
+    saveProfileExportToPicked: "write",
     pickProfileImportSource: "allowed",
     profileImportKeyKind: "allowed",
     inspectProfileImport: "allowed",
