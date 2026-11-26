@@ -771,7 +771,7 @@ native-error-20 = Choisissez une phrase secrète moins prévisible, qui ne soit 
 
 native-error-21 = Ne choisissez pas plus de 100 fichiers par importation.
 
-native-error-22 = L’un des fichiers n’est ni un document PDF ni une image JPEG; aucun fichier n’a donc été ajouté. myCarlos conserve les documents PDF et les images JPEG. S’il s’agit d’une image d’iPhone (HEIC), partagez-la plutôt en JPEG.
+native-error-22 = L’un des fichiers n’est ni un document PDF ni une image JPEG ou PNG; aucun fichier n’a donc été ajouté. myCarlos conserve les documents PDF et les images JPEG et PNG. S’il s’agit d’une image d’iPhone (HEIC), partagez-la plutôt en JPEG.
 
 native-error-23 = Ce document est verrouillé par un mot de passe. Saisissez le mot de passe du document indiqué dans votre portail patient.
 
@@ -821,7 +821,7 @@ native-error-45 = myCarlos n’a pas pu ouvrir ce fichier. S’il se trouve dans
 
 native-error-46 = Un document du coffre-fort est endommagé et ne peut plus être lu; aucune sauvegarde n’a donc été enregistrée. Rien n’a été modifié.
 
-native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG complète d’au plus 25 MB et de 8 192 pixels par côté. Rien n’a été modifié.
+native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG ou PNG complète (non animée) d’au plus 25 MB, de 8 192 pixels par côté et de 50 millions de pixels au total (24 millions sur un téléphone). Rien n’a été modifié.
 
 native-error-48 = La sauvegarde a été vérifiée, mais la restauration n’est pas terminée. Fermez myCarlos et ouvrez-le de nouveau pour terminer. Ouvrez ensuite le coffre-fort avec la phrase secrète ou la clé de récupération de la sauvegarde.
 
@@ -831,9 +831,9 @@ native-filter-backups = Sauvegardes myCarlos
 
 native-filter-pdf = Documents PDF
 
-native-filter-pictures = Images JPEG
+native-filter-pictures = Images JPEG et PNG
 
-native-filter-pdfAndPictures = Documents PDF et images JPEG
+native-filter-pdfAndPictures = Documents PDF et images JPEG et PNG
 
 native-kit-text =
     Trousse de récupération myCarlos

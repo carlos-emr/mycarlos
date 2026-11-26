@@ -666,7 +666,7 @@ native-error-20 = 请选择较不容易猜测的密码短语，不要使用常�
 
 native-error-21 = 每次导入最多可选择 100 个文件。
 
-native-error-22 = 其中一个文件既不是 PDF 文档也不是 JPEG 图片，因此没有添加任何内容。myCarlos 保留 PDF 文档和 JPEG 图片。如果是 iPhone 图片（HEIC），请改为以 JPEG 分享。
+native-error-22 = 其中一个文件既不是 PDF 文档也不是 JPEG 或 PNG 图片，因此没有添加任何内容。myCarlos 保留 PDF 文档以及 JPEG 和 PNG 图片。如果是 iPhone 图片（HEIC），请改为以 JPEG 分享。
 
 native-error-23 = 此文档使用密码锁定。请输入患者门户网站提供的文档密码。
 
@@ -716,7 +716,7 @@ native-error-45 = myCarlos 无法打开该文件。如果文件位于云端或�
 
 native-error-46 = 保险库中的文档已损毁且无法再读取，因此没有保存备份。没有变更任何内容。
 
-native-error-47 = myCarlos 无法保存或显示此相片：相片必须是完整的 JPEG 图片、大小不得超过 25 MB，且每边不得超过 8,192 像素。没有变更任何内容。
+native-error-47 = myCarlos 无法保存或显示此相片：相片必须是完整的 JPEG 或 PNG 图片（不能是动画）、大小不得超过 25 MB，每边不得超过 8,192 像素，总计不得超过 5,000 万像素（手机上为 2,400 万）。没有变更任何内容。
 
 native-error-48 = 备份已检查，但还原作业尚未完成。请关闭 myCarlos 再重新打开以完成作业，接着使用创建备份时的密码短语或恢复密钥打开保险库。
 
@@ -726,9 +726,9 @@ native-filter-backups = myCarlos 备份
 
 native-filter-pdf = PDF 文档
 
-native-filter-pictures = JPEG 图片
+native-filter-pictures = JPEG 和 PNG 图片
 
-native-filter-pdfAndPictures = PDF 文档和 JPEG 图片
+native-filter-pdfAndPictures = PDF 文档以及 JPEG 和 PNG 图片
 
 native-kit-text =
     myCarlos 恢复工具包

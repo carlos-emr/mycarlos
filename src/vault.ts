@@ -848,8 +848,8 @@ export interface VaultBridge {
   /** Whether a document's file starts as a JPEG does. Only its first bytes
    * are read; the photo itself stays native. */
   isPhoto(recordId: string): Promise<boolean>;
-  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
-   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  /** A document's photo, as a `data:image/jpeg` or `data:image/png` URL, if its file is a whole
+   * JPEG or PNG the vault can show; rejected with the code "not_a_photo" otherwise. */
   viewPhoto(recordId: string): Promise<string>;
   /** Hides a document (#71). There is no way to delete one. */
   /** Hides a whole person (#360): one step, nothing deleted. */

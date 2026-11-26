@@ -62,6 +62,7 @@ mod page_boxes;
 mod pdf_unlock;
 mod pdf_view;
 mod photo;
+mod photo_png;
 mod portal_approval;
 mod portal_client;
 mod portal_delivery;
@@ -1129,11 +1130,11 @@ impl std::io::Write for PhotoBuffer {
             self.bytes = larger;
         }
         self.bytes.extend_from_slice(data);
-        // FF D8 FF, as far as the bytes so far go.
-        let seen = self.bytes.len().min(photo::JPEG_START.len());
-        if self.bytes[..seen] != photo::JPEG_START[..seen] {
+        // FF D8 FF (a JPEG) or the PNG signature, as far as the bytes so far go.
+        let seen = self.bytes.len().min(photo::SNIFF_BYTES);
+        if !photo::could_start_a_picture(&self.bytes[..seen]) {
             self.refused = true;
-            return Err(std::io::Error::other("not a JPEG"));
+            return Err(std::io::Error::other("not a JPEG or a PNG"));
         }
         Ok(data.len())
     }
@@ -1143,38 +1144,8 @@ impl std::io::Write for PhotoBuffer {
     }
 }
 
-/// The first bytes of a record's file, and no more: once it has them, it stops
-/// the export, so only the first chunk is decrypted.
-#[derive(Default)]
-struct FileStart {
-    bytes: [u8; photo::JPEG_START.len()],
-    seen: usize,
-}
-
-impl FileStart {
-    fn complete(&self) -> bool {
-        self.seen == self.bytes.len()
-    }
-}
-
-impl std::io::Write for FileStart {
-    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
-        let take = data.len().min(self.bytes.len() - self.seen);
-        self.bytes[self.seen..self.seen + take].copy_from_slice(&data[..take]);
-        self.seen += take;
-        if self.complete() {
-            Err(std::io::Error::other("the first bytes are read"))
-        } else {
-            Ok(data.len())
-        }
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-/// The first `N` bytes of a record's file, and no more (as `FileStart`).
+/// The first `N` bytes of a record's file, and no more: once it has them, it stops the export, so
+/// only the first chunk is decrypted.
 struct FileStartN<const N: usize> {
     bytes: [u8; N],
     seen: usize,
@@ -1212,22 +1183,30 @@ impl<const N: usize> std::io::Write for FileStartN<N> {
     }
 }
 
-/// Whether a record's file starts as a JPEG does (FF D8 FF), whatever it is
-/// called. A document's details ask this before offering View photo, so the
-/// photo itself stays here until the patient asks to see it; `view_photo` then
-/// checks the whole file.
-fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
-    let mut start = FileStart::default();
+/// Which picture a record's file starts as (a JPEG: FF D8 FF; a PNG: its 8-byte signature),
+/// whatever it is called. A document's details ask this before offering View photo, so the photo
+/// itself stays here until the patient asks to see it; `view_photo` then checks the whole file.
+fn photo_kind(
+    store: &VaultStore,
+    record_id: Uuid,
+) -> Result<Option<photo::PictureKind>, VaultError> {
+    let mut start = FileStartN::<{ photo::SNIFF_BYTES }>::default();
     let exported = store.read_for_view(record_id, &mut start);
-    if start.complete() {
-        return Ok(start.bytes == photo::JPEG_START);
+    // A file shorter than eight bytes can still be a (too short) JPEG start; `picture_kind` looks
+    // only at what was read.
+    if start.complete() || exported.is_ok() {
+        return Ok(photo::picture_kind(&start.bytes[..start.seen]));
     }
-    // Shorter than three bytes, or not read at all.
-    exported.map(|()| false)
+    exported.map(|()| None)
 }
 
-/// A photo's name must still describe its JPEG bytes. Ordinary PDF renames
-/// retain the vault's existing metadata-only checks.
+/// Whether a record's file starts as a picture does (see `photo_kind`).
+fn is_photo(store: &VaultStore, record_id: Uuid) -> Result<bool, VaultError> {
+    photo_kind(store, record_id).map(|kind| kind.is_some())
+}
+
+/// A photo's name must still describe its bytes: `.jpg` or `.jpeg` for a JPEG, `.png` for a PNG.
+/// Ordinary PDF renames retain the vault's existing metadata-only checks.
 fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<(), VaultError> {
     let old_name = store
         .snapshot()?
@@ -1239,29 +1218,24 @@ fn rename_document(store: &VaultStore, record_id: Uuid, name: &str) -> Result<()
     // A failed probe establishes no format. Keep the existing metadata-only
     // rename policy for an unreadable/unknown file, rather than requiring a
     // readable object just to edit its name.
-    if !old_name.trim().to_ascii_lowercase().ends_with(".pdf")
-        && is_photo(store, record_id).unwrap_or(false)
-    {
-        let valid_jpeg_name = name
-            .trim()
-            .rsplit_once('.')
-            .is_some_and(|(stem, extension)| {
-                !stem.trim().is_empty()
-                    && (extension.eq_ignore_ascii_case("jpg")
-                        || extension.eq_ignore_ascii_case("jpeg"))
-            });
-        if !valid_jpeg_name {
+    let kind = if old_name.trim().to_ascii_lowercase().ends_with(".pdf") {
+        None
+    } else {
+        photo_kind(store, record_id).unwrap_or(None)
+    };
+    if let Some(kind) = kind {
+        if !kind.names(name) {
             return Err(VaultError::Invalid);
         }
     }
     store.rename_record(record_id, name)
 }
 
-/// The photo a record holds, as a `data:image/jpeg` URL for the photo view
-/// (the CSP allows `data:` images). The file's own bytes decide: it must start
-/// with the JPEG marker FF D8 FF, whatever it is called, and pass the same
-/// checks as a photo being saved, which also drop any metadata from what is
-/// shown. The record is unchanged.
+/// The picture a record holds, as a `data:image/jpeg` or `data:image/png` URL for the photo view
+/// (the CSP allows `data:` images). The file's own bytes decide: it must start with the JPEG
+/// marker FF D8 FF or the PNG signature, whatever it is called, and pass the same checks as a
+/// picture being imported, which also drop any metadata from what is shown. The record is
+/// unchanged.
 fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError> {
     let mut buffer = PhotoBuffer::default();
     let exported = store.read_for_view(record_id, &mut buffer);
@@ -1269,11 +1243,13 @@ fn view_photo(store: &VaultStore, record_id: Uuid) -> Result<String, VaultError>
         return Err(VaultError::NotPhoto);
     }
     exported?;
-    // `clean_picture`: a picture the patient brought keeps its orientation and a plain colour
-    // profile (the camera's own photos have neither, so they are shown as stored).
-    let cleaned = photo::clean_picture(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
+    // `clean_any`: a picture the patient brought keeps what draws it (a JPEG also its orientation
+    // and a plain colour profile; the camera's own photos have neither, so they are shown as
+    // stored).
+    let (kind, cleaned) = photo::clean_any(&buffer.bytes).map_err(|_| VaultError::NotPhoto)?;
     Ok(format!(
-        "data:image/jpeg;base64,{}",
+        "data:{};base64,{}",
+        kind.media_type(),
         BASE64.encode(&*cleaned)
     ))
 }
@@ -2052,6 +2028,9 @@ fn now_ms() -> u64 {
 /// segment is percent-encoded, and for Android document providers it is a
 /// document id that either embeds the storage path ("primary:Documents/labs.pdf")
 /// or is opaque ("msf:31").
+/// The name given to a picked document whose Android id holds no file name.
+const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
+
 fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
@@ -2066,21 +2045,42 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
-    // The picker offers only PDFs, so a tail that does not end in ".pdf" is
-    // part of an opaque id rather than a name. The fallback keeps the extension
+    // The picker offers only PDFs and pictures, so a tail that does not end in
+    // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
     // so that an export still suggests a file the platform can open.
     // A document id is "<root>:<path>". Only the first colon separates them; a
     // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
     let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
     let name = path.rsplit('/').next().unwrap_or_default();
-    let is_pdf_name = name
-        .rsplit_once('.')
-        .is_some_and(|(stem, extension)| !stem.is_empty() && extension.eq_ignore_ascii_case("pdf"));
-    if is_pdf_name {
+    let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && ["pdf", "jpg", "jpeg", "png"]
+                .iter()
+                .any(|accepted| extension.eq_ignore_ascii_case(accepted))
+    });
+    if is_file_name {
         name.to_owned()
     } else {
-        "Imported document.pdf".to_owned()
+        IMPORTED_DOCUMENT_NAME.to_owned()
     }
+}
+
+/// The name an imported picture is stored under: the name it came with when that already ends
+/// the way its kind does (`.jpg` or `.jpeg` for a JPEG, `.png` for a PNG), otherwise with the
+/// suffix of what it is added, so the stored name always describes the stored bytes (a rename
+/// keeps it that way, `rename_document`). The stand-in name an opaque Android document id gets
+/// (`Imported document.pdf`) is replaced, so that a picture is never named as a PDF.
+fn picture_import_name(name: String, kind: Option<photo::PictureKind>) -> String {
+    let Some(kind) = kind else {
+        return name;
+    };
+    if kind.names(&name) {
+        return name;
+    }
+    if name == IMPORTED_DOCUMENT_NAME {
+        return format!("Imported picture{}", kind.extension());
+    }
+    format!("{name}{}", kind.extension())
 }
 
 #[tauri::command]
@@ -5575,12 +5575,12 @@ async fn vault_import_pick(
     let both_filter = locale.text(MessageId::NativeFilterPdfAndPictures)?;
     let picked = tauri::async_runtime::spawn_blocking(move || {
         // PDF documents stay first (what the dialog shows by default); the others are one choice
-        // away. JPEG pictures only: PNG comes in a later piece, and HEIC is not accepted.
+        // away. JPEG and PNG pictures only: HEIC is not accepted.
         app.dialog()
             .file()
             .add_filter(&pdf_filter, &["pdf"])
-            .add_filter(&pictures_filter, &["jpg", "jpeg"])
-            .add_filter(&both_filter, &["pdf", "jpg", "jpeg"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
             .blocking_pick_files()
     })
     .await
@@ -5628,9 +5628,10 @@ fn open_import_source(
     path: tauri_plugin_fs::FilePath,
 ) -> Result<ImportSource, VaultError> {
     let display_name = import_display_name(&path);
+    let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
-        display_name,
-        reader: require_supported_file(open_source_reader(app, path)?)?,
+        display_name: picture_import_name(display_name, kind),
+        reader,
     })
 }
 
@@ -5639,9 +5640,10 @@ fn open_received_source(
     app: &tauri::AppHandle,
     file: received::ReceivedFile,
 ) -> Result<ImportSource, VaultError> {
+    let (kind, reader) = open_supported_file(open_received_reader(app, &file)?)?;
     Ok(ImportSource {
-        reader: require_supported_file(open_received_reader(app, &file)?)?,
-        display_name: file.name,
+        reader,
+        display_name: picture_import_name(file.name, kind),
     })
 }
 
@@ -5683,9 +5685,18 @@ fn open_source_reader(
 /// profile are kept. What is stored is already clean, whatever app made the picture. Anything else
 /// is refused (`NotPdf`, worded for both kinds). A JPEG that is damaged, not a baseline or
 /// progressive image, or too large is refused as a picture (`NotPhoto`).
+#[cfg(test)]
 fn require_supported_file(
     reader: Box<dyn std::io::Read + Send>,
 ) -> Result<Box<dyn std::io::Read + Send>, VaultError> {
+    open_supported_file(reader).map(|(_, reader)| reader)
+}
+
+/// `require_supported_file`, also saying which picture it was (`None` for a PDF), so that the
+/// import can name the picture for what it is (`picture_import_name`).
+fn open_supported_file(
+    reader: Box<dyn std::io::Read + Send>,
+) -> Result<(Option<photo::PictureKind>, Box<dyn std::io::Read + Send>), VaultError> {
     let (kind, reader) = received::classify(reader).map_err(|error| {
         if received::is_not_pdf(&error) {
             VaultError::NotPdf
@@ -5694,8 +5705,8 @@ fn require_supported_file(
         }
     })?;
     match kind {
-        received::FileKind::Pdf => Ok(reader),
-        received::FileKind::Jpeg => {
+        received::FileKind::Pdf => Ok((None, reader)),
+        received::FileKind::Jpeg | received::FileKind::Png => {
             use std::io::Read as _;
             // Room for the most a picture may be (and one byte over, which is enough to say it is
             // too large) from the start: a buffer that grows leaves outgrown copies of a health
@@ -5706,9 +5717,9 @@ fn require_supported_file(
                 .take(photo::MAX_PHOTO_BYTES as u64 + 1)
                 .read_to_end(&mut bytes)
                 .map_err(VaultError::from)?;
-            let cleaned = photo::clean_picture(&bytes).map_err(|_| VaultError::NotPhoto)?;
+            let (picture, cleaned) = photo::clean_any(&bytes).map_err(|_| VaultError::NotPhoto)?;
             drop(bytes);
-            Ok(Box::new(std::io::Cursor::new(cleaned)))
+            Ok((Some(picture), Box::new(std::io::Cursor::new(cleaned))))
         }
     }
 }
@@ -11869,11 +11880,10 @@ mod photo_command_tests {
     fn a_file_that_is_not_a_clean_jpeg_is_refused_before_anything_is_staged() {
         let refused =
             |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
-        // Not a picture or a PDF at all: a GIF (even named .jpg), a PNG (a later piece), HEIC, a
-        // truncated file of nothing, plain text.
+        // Not a picture or a PDF at all: a GIF (even named .jpg), HEIC, a truncated file of
+        // nothing, plain text.
         for other in [
             b"GIF89a FAKE".to_vec(),
-            b"\x89PNG\r\n\x1a\n FAKE".to_vec(),
             b"\0\0\0\x18ftypheic\0\0\0\0mif1heic".to_vec(),
             Vec::new(),
             b"FAKE".to_vec(),
@@ -11894,6 +11904,143 @@ mod photo_command_tests {
         let mut huge = vec![0xff, 0xd8, 0xff, 0xe0];
         huge.resize(photo::MAX_PHOTO_BYTES + 10, 0);
         assert!(matches!(refused(huge), Some(VaultError::NotPhoto)));
+    }
+
+    /// A PNG as a patient might bring it, as a test sample: a 2 by 2 picture with, after its
+    /// header, text with a FAKE place, time and camera, an Exif block and a time chunk, and bytes
+    /// after its end.
+    fn dirty_png() -> Vec<u8> {
+        use crate::photo_png::tests::{chunk, file, header, pixels};
+        let mut bytes = file(&[
+            header(2, 2, 8, 2),
+            chunk(b"tEXt", b"Location\0FAKE place 51.05,-114.07"),
+            chunk(b"zTXt", b"Comment\0\0FAKE camera Phone X"),
+            chunk(b"eXIf", b"MM\0*\0\0\0\x08FAKE Make GPS"),
+            chunk(b"tIME", &[7, 234, 11, 25, 12, 30, 0]),
+            chunk(b"IDAT", &pixels()),
+            chunk(b"IEND", &[]),
+        ]);
+        bytes.extend_from_slice(b"FAKE hidden after the end");
+        bytes
+    }
+
+    #[test]
+    fn a_png_the_patient_picks_is_cleaned_on_import_stored_clean_and_named_png() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, profile) = unlocked_store(&temp);
+        let picture = dirty_png();
+        let (kind, reader) =
+            open_supported_file(Box::new(std::io::Cursor::new(picture.clone()))).unwrap();
+        assert_eq!(kind, Some(photo::PictureKind::Png));
+        // A name with no suffix of its own gets the one of what it is, and a name that has it
+        // keeps it.
+        let (a, b) = (
+            picture_import_name("Screenshot 2026-11-25".to_owned(), kind),
+            picture_import_name("Screenshot.PNG".to_owned(), kind),
+        );
+        assert_eq!(
+            (a.as_str(), b.as_str()),
+            ("Screenshot 2026-11-25.png", "Screenshot.PNG")
+        );
+        let outcome = store
+            .import(
+                profile,
+                Vec::new(),
+                vec![ImportSource {
+                    display_name: a,
+                    reader,
+                }],
+                now_ms(),
+            )
+            .unwrap();
+        assert_eq!(outcome.imported.len(), 1);
+        let record = store.snapshot().unwrap().records[0].clone();
+        assert_eq!(record.display_name, "Screenshot 2026-11-25.png");
+        let stored = exported(&store, record.id);
+        for gone in [
+            &b"FAKE"[..],
+            b"Location",
+            b"tEXt",
+            b"zTXt",
+            b"eXIf",
+            b"tIME",
+            b"hidden",
+        ] {
+            assert!(!stored.windows(gone.len()).any(|w| w == gone), "{gone:?}");
+        }
+        assert_eq!(&stored[..8], &crate::photo_png::PNG_SIGNATURE);
+        // The vault knows it is a picture, which kind, and shows exactly what it stored.
+        assert_eq!(
+            photo_kind(&store, record.id).unwrap(),
+            Some(photo::PictureKind::Png)
+        );
+        let shown = view_photo(&store, record.id).unwrap();
+        let bytes = BASE64
+            .decode(shown.strip_prefix("data:image/png;base64,").unwrap())
+            .unwrap();
+        assert_eq!(bytes, stored);
+        // A rename keeps a PNG a `.png`, and refuses a suffix that says another kind.
+        rename_document(&store, record.id, "Letter.png").unwrap();
+        for wrong in ["Letter.jpg", "Letter.jpeg", "Letter", ".png", "Letter.pdf"] {
+            assert!(
+                matches!(
+                    rename_document(&store, record.id, wrong),
+                    Err(VaultError::Invalid)
+                ),
+                "{wrong}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_png_that_is_damaged_animated_or_too_large_is_refused_before_anything_is_staged() {
+        use crate::photo_png::tests::{chunk, file, header, plain};
+        let refused =
+            |bytes: Vec<u8>| require_supported_file(Box::new(std::io::Cursor::new(bytes))).err();
+        let whole = dirty_png();
+        let mut animated = plain();
+        animated.insert(1, chunk(b"acTL", &[0, 0, 0, 2, 0, 0, 0, 0]));
+        let mut huge = plain();
+        huge[0] = header(60_000, 60_000, 8, 2);
+        let mut no_data = plain();
+        no_data.remove(1);
+        for bad in [
+            whole[..whole.len() - 30].to_vec(),
+            whole[..20].to_vec(),
+            b"\x89PNG\r\n\x1a\n".to_vec(),
+            file(&animated),
+            file(&huge),
+            file(&no_data),
+        ] {
+            assert!(matches!(refused(bad), Some(VaultError::NotPhoto)));
+        }
+        // Over a photo's size, however it starts.
+        let mut over = file(&plain());
+        over.resize(photo::MAX_PHOTO_BYTES + 10, 0);
+        assert!(matches!(refused(over), Some(VaultError::NotPhoto)));
+    }
+
+    #[test]
+    fn a_picture_is_named_for_what_it_is_and_never_as_a_pdf() {
+        use photo::PictureKind::{Jpeg, Png};
+        let named = |name: &str, kind| picture_import_name(name.to_owned(), kind);
+        // A PDF's name is not touched.
+        assert_eq!(named("Scan", None), "Scan");
+        assert_eq!(named("Letter.pdf", None), "Letter.pdf");
+        for (name, kind, want) in [
+            ("IMG_1.jpg", Some(Jpeg), "IMG_1.jpg"),
+            ("IMG_1.JPEG", Some(Jpeg), "IMG_1.JPEG"),
+            ("IMG_1", Some(Jpeg), "IMG_1.jpg"),
+            ("shot.png", Some(Jpeg), "shot.png.jpg"),
+            ("shot.png", Some(Png), "shot.png"),
+            ("shot.jpg", Some(Png), "shot.jpg.png"),
+            ("shot", Some(Png), "shot.png"),
+            (".png", Some(Png), ".png.png"),
+            ("Imported document.pdf", Some(Png), "Imported picture.png"),
+            ("Imported document.pdf", Some(Jpeg), "Imported picture.jpg"),
+        ] {
+            assert_eq!(named(name, kind), want, "{name}");
+        }
     }
 
     #[test]
@@ -12186,7 +12333,7 @@ mod photo_command_tests {
         assert!(matches!(is_photo(&store, ids[0]), Err(VaultError::Locked)));
 
         // It stops the export once it has three bytes.
-        let mut start = FileStart::default();
+        let mut start = FileStartN::<3>::default();
         assert_eq!(start.write(&[0xff]).unwrap(), 1);
         assert!(start.write(&[0xd8, 0xff, 0xe0, 0x00]).is_err());
         assert!(start.complete());

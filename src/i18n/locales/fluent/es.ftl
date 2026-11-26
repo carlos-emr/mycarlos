@@ -771,7 +771,7 @@ native-error-20 = Elija una frase de contraseña menos predecible que no se base
 
 native-error-21 = No elija más de 100 archivos en una importación.
 
-native-error-22 = Uno de los archivos no es un documento PDF ni una imagen JPEG, por lo que no se añadió nada. myCarlos conserva documentos PDF e imágenes JPEG. Si es una imagen de iPhone (HEIC), compártala como JPEG.
+native-error-22 = Uno de los archivos no es un documento PDF ni una imagen JPEG o PNG, por lo que no se añadió nada. myCarlos conserva documentos PDF e imágenes JPEG y PNG. Si es una imagen de iPhone (HEIC), compártala como JPEG.
 
 native-error-23 = Este documento está bloqueado con una contraseña. Introduzca la contraseña del documento que aparece en su portal de pacientes.
 
@@ -821,7 +821,7 @@ native-error-45 = myCarlos no pudo abrir ese archivo. Si está en una carpeta co
 
 native-error-46 = Un documento de la bóveda está dañado y ya no se puede leer, por lo que no se guardó ninguna copia de seguridad. No se cambió nada.
 
-native-error-47 = myCarlos no puede guardar ni mostrar esta foto: debe ser una imagen JPEG completa de como máximo 25 MB y 8192 píxeles por lado. No se cambió nada.
+native-error-47 = myCarlos no puede guardar ni mostrar esta foto: debe ser una imagen JPEG o PNG completa (no animada) de como máximo 25 MB, 8192 píxeles por lado y 50 millones de píxeles en total (24 millones en un teléfono). No se cambió nada.
 
 native-error-48 = Se comprobó la copia de seguridad, pero su restauración no ha terminado. Cierre myCarlos y ábralo de nuevo para terminar. Después abra la bóveda con la frase de contraseña o la clave de recuperación de la copia de seguridad.
 
@@ -831,9 +831,9 @@ native-filter-backups = Copias de seguridad de myCarlos
 
 native-filter-pdf = Documentos PDF
 
-native-filter-pictures = Imágenes JPEG
+native-filter-pictures = Imágenes JPEG y PNG
 
-native-filter-pdfAndPictures = Documentos PDF e imágenes JPEG
+native-filter-pdfAndPictures = Documentos PDF e imágenes JPEG y PNG
 
 native-kit-text =
     Kit de recuperación de myCarlos
