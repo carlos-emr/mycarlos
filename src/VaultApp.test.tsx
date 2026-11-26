@@ -6937,83 +6937,215 @@ describe("durable vault UI", () => {
     expect(document.body.textContent).not.toContain("Hiddenname");
   });
 
-  /** Every bridge call that changes the vault or sends something to a clinic. In read-only
-   * recovery none may be reached from any control. (Erasing the vault stays possible: it is how
-   * a damaged vault is started over.) */
-  const BRIDGE_WRITES = [
-    "create",
-    "changePassphrase",
-    "beginRecoveryKey",
-    "confirmRecoveryKey",
-    "createProfile",
-    "renameProfile",
-    "updateProfileDetails",
-    "createFolder",
-    "updateFolder",
-    "renameRecord",
-    "assignFolders",
-    "assignFoldersBatch",
-    "importPickedFiles",
-    "importProfile",
-    "restore",
-    "savePhoto",
-    "videoStart",
-    "videoAppend",
-    "videoStop",
-    "hideProfile",
-    "restoreProfile",
-    "hideRecord",
-    "unhideRecord",
-    "hideUnavailableRecords",
-    "acceptReceived",
-    "discardReceived",
-    "moveToPerson",
-    "linkPortal",
-    "connectPortal",
-    "checkDocuments",
-    "requestDeviceApproval",
-    "submitApprovalCode",
-    "restartDeviceApproval",
-    "saveAiResult",
-    "recordKnownDetails",
-  ] as const;
+  /** Every bridge method, in exactly one of two lists (a `Record` over all the keys, so adding a
+   * method to `VaultBridge` stops the build until it is placed):
+   * - `write`: changes the vault, or sends or saves something for a clinic. In read-only recovery
+   *   none may be reached from any control.
+   * - `allowed`: reads, pickers, computing, and the deliberate exceptions: exports and backups
+   *   (a patient with a damaged vault must still be able to save what is readable), erasing the
+   *   vault and restoring a backup (how a damaged vault is started over; both are reached from the
+   *   locked and set-up screens, not the library), the device's own auto-lock setting, and
+   *   `recover` (the locked screen). */
+  const BRIDGE_CLASS: Record<keyof VaultBridge, "write" | "allowed"> = {
+    native: "allowed",
+    status: "allowed",
+    passphraseRules: "allowed",
+    create: "write",
+    unlock: "allowed",
+    lock: "allowed",
+    touch: "allowed",
+    setAutoLock: "allowed",
+    platform: "allowed",
+    snapshot: "allowed",
+    history: "allowed",
+    linkPortal: "write",
+    connectPortal: "write",
+    checkDocuments: "write",
+    requestDeviceApproval: "write",
+    submitApprovalCode: "write",
+    restartDeviceApproval: "write",
+    forgetRefusedDeliveries: "write",
+    refreshDeviceApproval: "write",
+    changePassphrase: "write",
+    beginRecoveryKey: "write",
+    confirmRecoveryKey: "write",
+    saveRecoveryKit: "allowed",
+    benchmarkKdf: "allowed",
+    recoveryKeyLabel: "allowed",
+    cancelRecoveryKey: "allowed",
+    recover: "allowed",
+    pickBackupDestination: "allowed",
+    saveBackupToPicked: "allowed",
+    backupSize: "allowed",
+    leftOutRecords: "allowed",
+    prepareProfileExport: "allowed",
+    pickProfileExportDestination: "allowed",
+    saveProfileExportToPicked: "allowed",
+    pickProfileImportSource: "allowed",
+    profileImportKeyKind: "allowed",
+    inspectProfileImport: "allowed",
+    importProfile: "write",
+    pickRestoreSource: "allowed",
+    inspectRestore: "allowed",
+    restore: "allowed",
+    createProfile: "write",
+    renameProfile: "write",
+    updateProfileDetails: "write",
+    sharedIdentity: "allowed",
+    createFolder: "write",
+    updateFolder: "write",
+    renameRecord: "write",
+    assignFolders: "write",
+    assignFoldersBatch: "write",
+    pickImportFiles: "allowed",
+    importPickedFiles: "write",
+    pickExportDestination: "allowed",
+    exportToPicked: "allowed",
+    savePhoto: "write",
+    videoStart: "write",
+    videoAppend: "write",
+    videoPause: "write",
+    videoResume: "write",
+    videoStop: "write",
+    videoSpace: "allowed",
+    videoPending: "allowed",
+    videoRecover: "write",
+    isVideo: "allowed",
+    videoOpen: "allowed",
+    videoClose: "allowed",
+    isPhoto: "allowed",
+    viewPhoto: "allowed",
+    hideProfile: "write",
+    restoreProfile: "write",
+    hideRecord: "write",
+    unhideRecord: "write",
+    hideUnavailableRecords: "write",
+    isLockedPdf: "allowed",
+    unlockPdf: "allowed",
+    listReceived: "allowed",
+    acceptReceived: "write",
+    discardReceived: "write",
+    moveToPerson: "write",
+    viewPage: "allowed",
+    cancelView: "allowed",
+    readAndroidPdf: "allowed",
+    pageBoxes: "allowed",
+    aiModelStatus: "allowed",
+    aiSummarize: "allowed",
+    aiExplain: "allowed",
+    aiCancel: "allowed",
+    aiModelSpeed: "allowed",
+    onAiAnswerStarted: "allowed",
+    onVaultLocked: "allowed",
+    trayWaiting: "allowed",
+    onTrayWaiting: "allowed",
+    documentText: "allowed",
+    cancelDocumentText: "allowed",
+    recordKnownDetails: "allowed",
+    pickTextExportDestination: "allowed",
+    exportTextToPicked: "allowed",
+    copyTextExport: "allowed",
+    saveAiResult: "write",
+    aiResults: "allowed",
+    readAiResult: "allowed",
+    reset: "allowed",
+  };
+  const BRIDGE_WRITES = (
+    Object.keys(BRIDGE_CLASS) as (keyof VaultBridge)[]
+  ).filter((name) => BRIDGE_CLASS[name] === "write");
 
   it("lets no control write while the vault is read-only: every enabled button in the library, a document's details and Security", async () => {
     const user = userEvent.setup();
+    // A clinic is linked and its approval is waiting (as in the clinic tests), and a document
+    // waits in Shared with me, so that the controls for both are on the screen.
     const readOnly: VaultSnapshot = {
       ...snapshotWithRecord,
       recovery: "writeFailed",
+      recoveryKeySetAtMs: 5,
+      portalLinkingEnabled: true,
+      portalLinks: [
+        {
+          id: "fake-clinic-link",
+          portalBase: "https://portal.example.test/patient",
+          deviceName: "myCarlos FAKE device",
+          profileId: null,
+          clinicName: "FAKE First Clinic",
+          fingerprints: [],
+          incomplete: false,
+          deviceKeyId: "FAKE_FIRST_DEVICE",
+          deviceFingerprint: "11".repeat(32),
+          approvalRequested: true,
+          clinicApproved: false,
+        },
+      ],
       profiles: [
         ...snapshotWithRecord.profiles,
         { id: "profile-2", displayName: "FAKE Robin", createdAtMs: 2 },
+        { id: "shared-1", displayName: "Shared with me", createdAtMs: 3 },
+      ],
+      sharedProfileId: "shared-1",
+      records: [
+        ...snapshotWithRecord.records,
+        {
+          ...snapshotWithRecord.records[0],
+          id: "record-shared",
+          profileId: "shared-1",
+          displayName: "FAKE_Shared_Letter.pdf",
+        },
       ],
       hiddenProfiles: [hiddenCasey],
     };
+    // Every method a control could reach is present: the interface hides the control of a
+    // method that is missing, which would make this test pass for the wrong reason.
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
       snapshot: vi
         .fn()
         .mockImplementation(async () => captureSnapshot(readOnly)),
-      // Present, so that what they would be reached from is on the screen to be pressed.
       hideProfile: vi.fn().mockResolvedValue(undefined),
       restoreProfile: vi.fn().mockResolvedValue([]),
       updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+      linkPortal: vi.fn().mockResolvedValue(undefined),
+      connectPortal: vi.fn().mockResolvedValue(undefined),
+      checkDocuments: vi
+        .fn()
+        .mockResolvedValue({ added: 0, refused: 0, receiptsPending: 0 }),
+      requestDeviceApproval: vi.fn().mockResolvedValue(undefined),
+      submitApprovalCode: vi.fn().mockResolvedValue(undefined),
+      restartDeviceApproval: vi.fn().mockResolvedValue(undefined),
     });
     render(<VaultApp bridge={bridge} />);
     // With two people the library's heading is the person's name.
     await screen.findByRole("heading", { name: humanText("Jamie") });
     const calledWrites = () =>
       BRIDGE_WRITES.filter((name) => {
-        const method = bridge[name as keyof VaultBridge] as unknown;
+        const method = bridge[name] as unknown;
         return vi.isMockFunction(method) && method.mock.calls.length > 0;
       });
-    // Not pressed: they leave, close or move between pages and people, and cannot write.
-    const NOT_PRESSED =
-      /lock|cancel|close|back|not now|leave|erase|forget|reset|security|library|my records|skip|done|dismiss|^jamie|robin|shared with me|^hidden$|^records$|preferences|ai helper/i;
+    // The classification covers every method the test bridge has, and no other.
+    expect(
+      Object.keys(bridge).filter((name) => !(name in BRIDGE_CLASS)),
+    ).toEqual([]);
+    // Not pressed, by their whole names: they close, move between pages and people, or erase the
+    // vault (which stays possible, see BRIDGE_CLASS). Nothing else is skipped, and the set that
+    // was skipped is asserted at the end, so a real write cannot hide in a substring.
+    const NAVIGATION =
+      /^(lock now|cancel|close|back|not now|done|skip|dismiss|my records|records|security|preferences|ai helper|shared with me|hidden|jamie\d.*|fake robin\d.*|shared with me\d.*|erase.*)$/i;
+    const skipped = new Set<string>();
+    const isNavigation = (name: string) => {
+      const navigation = NAVIGATION.test(name);
+      if (navigation) skipped.add(name);
+      return navigation;
+    };
     const nameOf = (element: Element) =>
       visibleText(
         element.getAttribute("aria-label") ?? element.textContent ?? "",
       ).trim();
+    // Disclosures (a <summary>, such as "Show device details") hide controls until opened.
+    const expandDisclosures = async () => {
+      for (const summary of Array.from(document.querySelectorAll("summary")))
+        if (!summary.closest("details")?.open) await user.click(summary);
+    };
     const dialogsOpen = () => [
       ...screen.queryAllByRole("dialog"),
       ...screen.queryAllByRole("alertdialog"),
@@ -7035,7 +7167,7 @@ describe("durable vault UI", () => {
         const dialog = dialogsOpen()[dialogsOpen().length - 1];
         for (const button of within(dialog).queryAllByRole("button")) {
           const name = nameOf(button);
-          if (enabled(button) && name && !NOT_PRESSED.test(name)) {
+          if (enabled(button) && name && !isNavigation(name)) {
             pressed.push(`(in a dialog) ${name}`);
             await user.click(button);
           }
@@ -7044,25 +7176,33 @@ describe("durable vault UI", () => {
       }
     };
     const pressed: string[] = [];
-    /** Presses every enabled button once, by its name, in `scope` (default: the page). */
-    const sweep = async (scope?: () => HTMLElement) => {
+    /** Presses every enabled button once, by its name, in `scope` (default: the page), and then
+     * again for the buttons that pressing revealed (a selection reveals Move, for one). */
+    const sweep = async (scope?: () => HTMLElement | null) => {
       const keep = dialogsOpen().length;
-      const names = Array.from(
-        new Set(
-          pressable(scope?.())
-            .filter(enabled)
-            .map(nameOf)
-            .filter((name) => name && !NOT_PRESSED.test(name)),
-        ),
-      );
-      for (const name of names) {
-        const target = pressable(scope?.()).find(
-          (element) => enabled(element) && nameOf(element) === name,
+      const done = new Set<string>();
+      for (let pass = 0; pass < 3; pass += 1) {
+        const names = Array.from(
+          new Set(
+            pressable(scope?.() ?? undefined)
+              .filter(enabled)
+              .map(nameOf)
+              .filter((name) => name && !done.has(name) && !isNavigation(name)),
+          ),
         );
-        if (!target) continue;
-        pressed.push(name);
-        await user.click(target);
-        await closeWhatOpened(keep);
+        if (!names.length) break;
+        for (const name of names) {
+          // A press can close the dialog being swept (as Back does): nothing is left in it.
+          if (scope && !scope()) return;
+          const target = pressable(scope?.() ?? undefined).find(
+            (element) => enabled(element) && nameOf(element) === name,
+          );
+          if (!target) continue;
+          done.add(name);
+          pressed.push(name);
+          await user.click(target);
+          await closeWhatOpened(keep);
+        }
       }
     };
     // The library.
@@ -7071,18 +7211,56 @@ describe("durable vault UI", () => {
     await user.click(screen.getByText(humanText("FAKE_Results.pdf")));
     await screen.findByRole("dialog");
     const pressedBefore = pressed.length;
-    await sweep(() => within(document.body).getByRole("dialog"));
+    await sweep(() => screen.queryByRole("dialog"));
     // (Pressing some of them closes the dialog, as Back does; the rest are still pressed.)
     expect(pressed.length).toBeGreaterThan(pressedBefore);
     if (screen.queryByRole("dialog")) await user.keyboard("{Escape}");
-    // Security.
+    // Shared with me: where a received document is accepted, discarded or moved to a person.
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^Shared with me/) }),
+    );
+    await screen.findByText(humanText("FAKE_Shared_Letter.pdf"));
+    await expandDisclosures();
+    await sweep();
+    const sharedLetter = screen.queryByText(
+      humanText("FAKE_Shared_Letter.pdf"),
+    );
+    if (sharedLetter) {
+      await user.click(sharedLetter);
+      if (await screen.findByRole("dialog").catch(() => null)) {
+        await sweep(() => screen.queryByRole("dialog"));
+        if (screen.queryByRole("dialog")) await user.keyboard("{Escape}");
+      }
+    }
+    // Security, which holds the clinic cards and the people.
     await user.click(
       screen.getByRole("button", { name: humanText(/Security/) }),
     );
+    await expandDisclosures();
+    // The clinic's controls are on the screen (not hidden for want of a bridge method) and are
+    // refused by being disabled, not by being absent.
+    for (const name of [
+      "Retry saved approval request",
+      "Link another clinic",
+    ] as const) {
+      const control = screen.getByRole("button", { name: humanText(name) });
+      expect(control, name).toBeDisabled();
+    }
     await sweep();
     // The sweep really pressed things (it is not vacuously quiet).
     expect(pressed.length).toBeGreaterThan(5);
     expect(calledWrites()).toEqual([]);
+    // What was not pressed is the page and person navigation and the window's lock button, and
+    // nothing else (a substring match used to skip, by accident, anything with "back" or "lock").
+    expect(Array.from(skipped).sort()).toEqual([
+      "AI helper",
+      "FAKE Robin00 documents",
+      "Jamie11 document",
+      "Lock now",
+      "Preferences",
+      "Security",
+      "Shared with me",
+    ]);
   });
 
   it("hides a document at once, never deletes it, and restores it from Hidden (#71)", async () => {
