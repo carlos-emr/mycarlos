@@ -355,6 +355,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // What was last reported since the latest transfer began: its result, or a
   // partial readable copy to delete. Used only when a lock ends that transfer.
   const transferOutcomeRef = useRef<UiText | null>(null);
+  // `flushPortalNotice` is made again on every render; the bridge below is not, so it reaches
+  // the current one through this ref.
+  const flushPortalNoticeRef = useRef<() => void>(() => undefined);
   // The outcome of a transfer the vault locked on. It is shown after the next
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<UiText | null>(null);
@@ -826,14 +829,27 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
   }, [status, busy, requestLock]);
   const trackedBridge = useMemo<VaultBridge>(() => {
+    // Every transfer is its own operation, bracketed here as `run` brackets its own, so that no
+    // caller has to remember to: a transfer started outside `run` (the hand-over dialogs call the
+    // bridge themselves) would otherwise leave the hold at "a transfer ran" for good, and an
+    // automatic lock would hide the screen but never lock the vault. Inside `run` the operations
+    // nest: the count only reaches zero at the outermost end, so `run` still locks once the
+    // operation has reported the transfer's outcome. When the last operation is over the hold is
+    // freed, and a lock owed meanwhile now happens.
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
-      // `run` locks once the operation has reported the transfer's outcome.
-      transferHold.transferStarted();
-      transferOutcomeRef.current = null;
-      // iOS suspends an app in the background, and its transfer with it.
-      if (platformRef.current === "ios")
-        setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
-      return start();
+      transferHold.operationStarted();
+      try {
+        transferHold.transferStarted();
+        transferOutcomeRef.current = null;
+        // iOS suspends an app in the background, and its transfer with it.
+        if (platformRef.current === "ios")
+          setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
+        return await start();
+      } finally {
+        const idle = transferHold.operationEnded();
+        if (idle && lockHeldRef.current) requestLock(true);
+        else if (idle) flushPortalNoticeRef.current();
+      }
     };
     return {
       ...bridge,
@@ -849,6 +865,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         track(bridge.pickImportFiles(profileId, folderIds)),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
+      // An anonymized text saved to a file is handled as a record's copy is: its picker is
+      // tracked (on a phone the system's chooser sends the app to the background, and that must
+      // not lock the vault under it), and the write is a transfer the lock waits for. Without
+      // these a lock that fell due during either was taken at once.
+      pickTextExportDestination: (recordId, ticket) =>
+        track(bridge.pickTextExportDestination(recordId, ticket)),
+      exportTextToPicked: (pickId, recordId, ticket, text, kept) =>
+        transfer(() =>
+          bridge.exportTextToPicked(pickId, recordId, ticket, text, kept),
+        ),
+      // `copyTextExport` is left as it is on purpose: it only puts the text on the clipboard,
+      // which is instant, so there is no transfer to hold a lock for.
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
       // A native confirmation may be open for as long as a picker.
       confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),
@@ -891,7 +919,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           bridge.aiExplain(term, context, lang, recordId, answerId),
         ),
     };
-  }, [answering, bridge, track, transferHold]);
+  }, [answering, bridge, requestLock, track, transferHold]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -1141,6 +1169,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     )
       addNotice(held.message);
   };
+  flushPortalNoticeRef.current = flushPortalNotice;
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
    * so that a refusal of it says which box to check. Clinic work clears the
