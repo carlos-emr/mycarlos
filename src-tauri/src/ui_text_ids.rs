@@ -500,10 +500,15 @@ pub enum MessageId {
     InterfaceRecordDetailsViewPhoto,
     InterfaceRecordDialogAboutHighPerHour,
     InterfaceRecordDialogAboutStandardPerHour,
+    InterfaceRecordDialogCamera,
+    InterfaceRecordDialogCameraAndMicrophone,
+    InterfaceRecordDialogDeviceFellBack,
     InterfaceRecordDialogHigh,
     InterfaceRecordDialogKeepRecording,
     InterfaceRecordDialogLowOnRoom,
     InterfaceRecordDialogLowOnRoomMinutes,
+    InterfaceRecordDialogMicrophone,
+    InterfaceRecordDialogMicrophoneLevel,
     InterfaceRecordDialogNotEnoughRoom,
     InterfaceRecordDialogNothingWasRecorded,
     InterfaceRecordDialogPauseRecording,
@@ -523,11 +528,16 @@ pub enum MessageId {
     InterfaceRecordDialogStartingTheCameraAndMicrophone,
     InterfaceRecordDialogStopAndSave,
     InterfaceRecordDialogStopAndSaveTheVideo,
+    InterfaceRecordDialogStopTestingMicrophone,
+    InterfaceRecordDialogSystemDefaultDevice,
+    InterfaceRecordDialogTestMicrophone,
     InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
     InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
     InterfaceRecordDialogTheVideoIsRecordedWithSound,
     InterfaceRecordDialogThisDeviceCannotRecordMp4,
     InterfaceRecordDialogUnavailable,
+    InterfaceRecordDialogUnnamedCamera,
+    InterfaceRecordDialogUnnamedMicrophone,
     InterfaceRecordDialogUseTheCameraAndMicrophone,
     InterfaceRecordDialogVideoKeptUnfinished,
     InterfaceRecordDialogVideoNeedsBoth,
@@ -1880,10 +1890,15 @@ impl MessageId {
         Self::InterfaceRecordDetailsViewPhoto,
         Self::InterfaceRecordDialogAboutHighPerHour,
         Self::InterfaceRecordDialogAboutStandardPerHour,
+        Self::InterfaceRecordDialogCamera,
+        Self::InterfaceRecordDialogCameraAndMicrophone,
+        Self::InterfaceRecordDialogDeviceFellBack,
         Self::InterfaceRecordDialogHigh,
         Self::InterfaceRecordDialogKeepRecording,
         Self::InterfaceRecordDialogLowOnRoom,
         Self::InterfaceRecordDialogLowOnRoomMinutes,
+        Self::InterfaceRecordDialogMicrophone,
+        Self::InterfaceRecordDialogMicrophoneLevel,
         Self::InterfaceRecordDialogNotEnoughRoom,
         Self::InterfaceRecordDialogNothingWasRecorded,
         Self::InterfaceRecordDialogPauseRecording,
@@ -1903,11 +1918,16 @@ impl MessageId {
         Self::InterfaceRecordDialogStartingTheCameraAndMicrophone,
         Self::InterfaceRecordDialogStopAndSave,
         Self::InterfaceRecordDialogStopAndSaveTheVideo,
+        Self::InterfaceRecordDialogStopTestingMicrophone,
+        Self::InterfaceRecordDialogSystemDefaultDevice,
+        Self::InterfaceRecordDialogTestMicrophone,
         Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
         Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
         Self::InterfaceRecordDialogTheVideoIsRecordedWithSound,
         Self::InterfaceRecordDialogThisDeviceCannotRecordMp4,
         Self::InterfaceRecordDialogUnavailable,
+        Self::InterfaceRecordDialogUnnamedCamera,
+        Self::InterfaceRecordDialogUnnamedMicrophone,
         Self::InterfaceRecordDialogUseTheCameraAndMicrophone,
         Self::InterfaceRecordDialogVideoKeptUnfinished,
         Self::InterfaceRecordDialogVideoNeedsBoth,
@@ -3422,12 +3442,19 @@ impl MessageId {
             Self::InterfaceRecordDialogAboutStandardPerHour => {
                 "interface-RecordDialog-aboutStandardPerHour"
             }
+            Self::InterfaceRecordDialogCamera => "interface-RecordDialog-camera",
+            Self::InterfaceRecordDialogCameraAndMicrophone => {
+                "interface-RecordDialog-cameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogDeviceFellBack => "interface-RecordDialog-deviceFellBack",
             Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
             Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
             Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
             Self::InterfaceRecordDialogLowOnRoomMinutes => {
                 "interface-RecordDialog-lowOnRoomMinutes"
             }
+            Self::InterfaceRecordDialogMicrophone => "interface-RecordDialog-microphone",
+            Self::InterfaceRecordDialogMicrophoneLevel => "interface-RecordDialog-microphoneLevel",
             Self::InterfaceRecordDialogNotEnoughRoom => "interface-RecordDialog-notEnoughRoom",
             Self::InterfaceRecordDialogNothingWasRecorded => {
                 "interface-RecordDialog-nothingWasRecorded"
@@ -3457,6 +3484,13 @@ impl MessageId {
             Self::InterfaceRecordDialogStopAndSaveTheVideo => {
                 "interface-RecordDialog-stopAndSaveTheVideo"
             }
+            Self::InterfaceRecordDialogStopTestingMicrophone => {
+                "interface-RecordDialog-stopTestingMicrophone"
+            }
+            Self::InterfaceRecordDialogSystemDefaultDevice => {
+                "interface-RecordDialog-systemDefaultDevice"
+            }
+            Self::InterfaceRecordDialogTestMicrophone => "interface-RecordDialog-testMicrophone",
             Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn => {
                 "interface-RecordDialog-theCameraAndMicrophoneAreOn"
             }
@@ -3470,6 +3504,10 @@ impl MessageId {
                 "interface-RecordDialog-thisDeviceCannotRecordMp4"
             }
             Self::InterfaceRecordDialogUnavailable => "interface-RecordDialog-unavailable",
+            Self::InterfaceRecordDialogUnnamedCamera => "interface-RecordDialog-unnamedCamera",
+            Self::InterfaceRecordDialogUnnamedMicrophone => {
+                "interface-RecordDialog-unnamedMicrophone"
+            }
             Self::InterfaceRecordDialogUseTheCameraAndMicrophone => {
                 "interface-RecordDialog-useTheCameraAndMicrophone"
             }
@@ -6115,6 +6153,32 @@ impl MessageId {
             }
             "interface.RecordDialog.pictureQuality" => {
                 Some(Self::InterfaceRecordDialogPictureQuality)
+            }
+            "interface.RecordDialog.cameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogCameraAndMicrophone)
+            }
+            "interface.RecordDialog.camera" => Some(Self::InterfaceRecordDialogCamera),
+            "interface.RecordDialog.microphone" => Some(Self::InterfaceRecordDialogMicrophone),
+            "interface.RecordDialog.unnamedCamera" => {
+                Some(Self::InterfaceRecordDialogUnnamedCamera)
+            }
+            "interface.RecordDialog.unnamedMicrophone" => {
+                Some(Self::InterfaceRecordDialogUnnamedMicrophone)
+            }
+            "interface.RecordDialog.systemDefaultDevice" => {
+                Some(Self::InterfaceRecordDialogSystemDefaultDevice)
+            }
+            "interface.RecordDialog.deviceFellBack" => {
+                Some(Self::InterfaceRecordDialogDeviceFellBack)
+            }
+            "interface.RecordDialog.testMicrophone" => {
+                Some(Self::InterfaceRecordDialogTestMicrophone)
+            }
+            "interface.RecordDialog.stopTestingMicrophone" => {
+                Some(Self::InterfaceRecordDialogStopTestingMicrophone)
+            }
+            "interface.RecordDialog.microphoneLevel" => {
+                Some(Self::InterfaceRecordDialogMicrophoneLevel)
             }
             "interface.RecordDialog.standard" => Some(Self::InterfaceRecordDialogStandard),
             "interface.RecordDialog.high" => Some(Self::InterfaceRecordDialogHigh),
