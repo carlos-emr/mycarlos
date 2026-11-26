@@ -4997,7 +4997,7 @@ describe("durable vault UI", () => {
         }),
       );
       await waitFor(() =>
-        expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7"),
+        expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7", false),
       );
     }
     const setVisibility = (state: DocumentVisibilityState) =>
@@ -5106,7 +5106,7 @@ describe("durable vault UI", () => {
     await user.click(
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
-    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7");
+    expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7", false);
     await screen.findByText(humanText(/Encrypted backup saved/));
     await act(async () => {
       visibilityState = "hidden";
@@ -7634,6 +7634,12 @@ describe("durable vault UI", () => {
     "mycarlos.cameraExplained.v1": "1",
     "mycarlos.language.v1": "fr",
     "mycarlos.recoveryOfferHour.v1": "480000",
+    // The camera and microphone chosen for a recording (#477): the webview's opaque device ids
+    // only, about this device and no vault.
+    "mycarlos.videoDevices.v1": JSON.stringify({
+      camera: "cam-a",
+      microphone: null,
+    }),
     "mycarlos.videoQuality.v1": "high",
     "mycarlos.zoom.v1": "1.25",
   };
@@ -7664,6 +7670,7 @@ describe("durable vault UI", () => {
       "/src/appearance.ts", // keeps `window.localStorage` in a local `storage` alias
       "/src/i18n/core.ts",
       "/src/native/autoLock.ts",
+      "/src/native/mediaDevices.ts",
       "/src/native/oldBackups.ts",
       "/src/native/photo.ts",
       "/src/native/recoveryOffer.ts",
