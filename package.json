@@ -33,7 +33,7 @@
     "i18n:generate": "node scripts/generate-fluent-bindings.mjs",
     "i18n:check": "node scripts/generate-fluent-bindings.mjs --check && node --test scripts/generate-fluent-bindings.test.mjs && npm run ios-push:strings:check",
     "ios-push:strings": "node scripts/generate-ios-push-strings.mjs",
-    "ios-push:strings:check": "node scripts/generate-ios-push-strings.mjs --check && node --test scripts/generate-ios-push-strings.test.mjs"
+    "ios-push:strings:check": "node scripts/generate-ios-push-strings.mjs --check && node --test scripts/generate-ios-push-strings.test.mjs scripts/wire-ios-push-strings.test.mjs"
   },
   "dependencies": {
     "@fluent/bundle": "0.19.1",
