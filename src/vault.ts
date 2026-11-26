@@ -1454,7 +1454,10 @@ export function createVaultBridge(): VaultBridge {
         request: { pickId, profileId, folderIds },
       }),
     pickExportDestination: (recordId) =>
-      invoke<string | null>("vault_export_pick", { request: { recordId } }),
+      // The patient's own date, for the neutral name the save dialog suggests.
+      invoke<string | null>("vault_export_pick", {
+        request: { recordId, localDate: localDateText(new Date()) },
+      }),
     exportToPicked: (pickId, recordId) =>
       invoke<void>("vault_export_picked", { request: { pickId, recordId } }),
     savePhoto: (profileId, folderIds, name, jpeg) => {
