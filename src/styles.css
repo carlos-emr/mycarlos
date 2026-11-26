@@ -3792,6 +3792,36 @@ p {
   cursor: not-allowed;
 }
 /* Recording a video, and playing one (#359). */
+.record-video-dialog .record-device-note {
+  margin: 0;
+}
+.record-video-dialog .record-device-note:empty {
+  min-height: 0;
+}
+.record-video-dialog .record-devices {
+  display: grid;
+  gap: 8px;
+}
+.record-video-dialog .record-device {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.record-video-dialog .record-device select {
+  min-height: 44px;
+  max-width: 100%;
+}
+.record-video-dialog .record-mic-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.record-video-dialog .record-mic-test meter {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  height: 1.25rem;
+}
 .record-video-dialog .record-quality {
   margin: 0;
   padding: 0;
