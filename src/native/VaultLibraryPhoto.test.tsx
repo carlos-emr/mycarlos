@@ -2,24 +2,14 @@ import { humanText } from "../test/humanText";
 import { useTextState } from "../i18n";
 import {
   act,
-  configure,
   fireEvent,
-  getConfig,
   render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
 import { useState } from "react";
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   vaultErrorMessage,
   type VaultBridge,
@@ -28,15 +18,18 @@ import {
 } from "../vault";
 import { VaultLibrary } from "./VaultLibrary";
 
-// The camera path does real work before anything is saved: the canvas is encoded as a JPEG (in a
-// loop that lowers the quality until it is small enough) and read back, which takes well over a
-// second when the machine is busy (a full run with coverage). Every wait in this file (`waitFor`
-// and `findBy…`) is for the state a test names, not for a delay: it ends as soon as that state is
-// there, so a longer limit only changes how long a test that is really broken takes to fail. It
-// stays under the test's own limit (`testTimeout`, 15 s) so that the failure says what was awaited.
-const defaultAsyncTimeout = getConfig().asyncUtilTimeout;
-configure({ asyncUtilTimeout: 12_000 });
-afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
+// This file tests the library and the camera dialog around the save, not the encoding of the
+// picture: `photo.test.ts` tests `encodePhoto` itself. The real encoder draws the canvas as a JPEG
+// in a loop that lowers the quality until it is small enough, which took longer than a wait's
+// default second when the machine was busy (a full run, a coverage run) and made these tests
+// flaky. It is stood in for by one that gives a small JPEG-typed blob at once. The bytes are not
+// zeros: the test that checks the copy sent to the vault is wiped after the save needs something
+// to wipe, and a blob of zeros would pass that check without the wiping.
+vi.mock("./photo", async (original) => ({
+  ...(await original<typeof import("./photo")>()),
+  encodePhoto: async () =>
+    new Blob([new Uint8Array(64).fill(7)], { type: "image/jpeg" }),
+}));
 
 // One fake native runtime: stamp and clone when data is captured, before delivery.
 let snapshotSequence = 1;
