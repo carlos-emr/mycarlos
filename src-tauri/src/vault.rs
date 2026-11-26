@@ -66,6 +66,8 @@ mod original_pdf;
 // the export and import commands of the later PRs.
 #[cfg(test)]
 mod hidden_profiles_tests;
+#[cfg(test)]
+mod refusal_tests;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_export;
 #[cfg_attr(not(test), allow(dead_code))]
