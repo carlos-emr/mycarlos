@@ -320,11 +320,11 @@ computer's IP address, the time and which public file was fetched, and nothing e
 (`SECURITY_OPERATIONS.md`). Its text export is a file the patient saves, like a readable copy.
 
 **The clinic portal (after the patient links a clinic: computers, iPhone and, from the Android
-connection pieces #493, #478 and #503, Android).** The lines above describe an app that is not
-linked. When a patient links a clinic the app contacts that clinic's portal and only it (NET-01):
+connection pieces #493, #478 and #503, Android; *requires #478, merged before this piece*).** The
+lines above describe an app that is not linked. When a patient links a clinic the app contacts that clinic's portal and only it (NET-01):
 the address the patient typed or scanned, over HTTPS (clear text is refused on every platform), with
 the device's own certificate trust. On Android that is the phone's system authorities only: an
-authority a person, a malware or a device manager installed is not trusted (NET-05), and a debug
+authority a person, a piece of malware or a device manager installed is not trusted (NET-05), and a debug
 build trusts one more, a FAKE test authority that exists only in debug builds, which is a property
 of test builds and not of a build for patients. The portal and anyone watching the network learn
 what any such request shows, the IP address the phone is reached from and the time, plus the fields
