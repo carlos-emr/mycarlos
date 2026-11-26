@@ -458,6 +458,12 @@ pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
     if input.len() > MAX_PORTAL_UTF8_BYTES || input.trim() != input || input.contains('\\') {
         return Err(LinkError::InvalidPortal);
     }
+    // The URL parser silently deletes a tab, a line feed and a carriage return wherever they are, so
+    // "https://fake.ex<TAB>ample" would be linked to the host "fake.example", which is not what was
+    // typed. (Only the ends were refused, by the trim above.)
+    if input.contains(['\t', '\n', '\r']) {
+        return Err(LinkError::InvalidPortal);
+    }
     let url = Url::parse(input).map_err(|_| LinkError::InvalidPortal)?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -585,14 +591,19 @@ mod tests {
             "https://fake.example#FAKE",
             " https://fake.example",
             "https://fake.example\\evil",
+            // The URL parser deletes a tab, a line feed and a carriage return anywhere, so each of
+            // these would be read as a clean address that was not typed.
+            "https://fake.ex\tample",
+            "ht\ttps://fake.example",
+            "https://fake.ex\nample",
+            "https://fake.ex\rample",
+            "https://fake.example/pa\ntient",
             // The URL standard reads each of these as the host "fake.example"; what is typed must
             // be exactly "https://" and then the host.
             "https:///fake.example",
             "https:////fake.example/patient",
             "https:/fake.example",
             "https:fake.example",
-            "https:",
-            "https://",
         ] {
             assert_eq!(
                 normalize_portal(bad),
