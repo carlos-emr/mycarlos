@@ -121,6 +121,37 @@ class FloorTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("regions coverage", err)
 
+    def test_require_floor_refuses_before_anything_is_built_when_no_floor_is_in_force(self):
+        # No floor file, no --fail-under-*: refused at once, with the reason (nothing is built or run;
+        # prerequisites() is not reached).
+        for extra in ((), ("--check",), ("--features", "ai-helper-stub", "--jobs", "2")):
+            with self.subTest(extra=extra):
+                with mock.patch.object(coverage_rust, "prerequisites",
+                                       side_effect=AssertionError("went on without a floor")):
+                    status, _, err = run_main("--require-floor", *extra)
+                self.assertEqual(status, 1)
+                self.assertIn("--require-floor needs --floor-file or --fail-under-lines", err)
+
+    def test_require_floor_goes_on_with_a_floor_from_the_file_or_an_option(self):
+        floor = self.floor_file(80, 80)
+        for floors in (("--floor-file", str(floor)), ("--fail-under-lines", "80"),
+                       ("--fail-under-regions", "70")):
+            with self.subTest(floors=floors):
+                with mock.patch.object(coverage_rust, "prerequisites",
+                                       side_effect=RuntimeError("reached prerequisites")):
+                    status, _, err = run_main("--require-floor", *floors)
+                # It got past the floor check, to the prerequisites (which this test stops).
+                self.assertEqual(status, 1)
+                self.assertIn("reached prerequisites", err)
+                self.assertNotIn("--require-floor needs", err)
+
+    def test_a_run_without_require_floor_may_still_have_no_floor(self):
+        # The measurement-only use stays: nothing is asked of a run that does not say it needs a floor.
+        with mock.patch.object(coverage_rust, "prerequisites", side_effect=RuntimeError("reached prerequisites")):
+            status, _, err = run_main()
+        self.assertEqual(status, 1)
+        self.assertIn("reached prerequisites", err)
+
     def test_out_of_range_options_are_refused(self):
         measured = self.path / "measured.json"
         report(measured, lines=(1, 1), regions=(1, 1))

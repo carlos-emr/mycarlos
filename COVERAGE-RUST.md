@@ -43,7 +43,7 @@ separate coverage job. The workflow runs
 
 ```bash
 python3 scripts/coverage-rust.py --features ai-helper-stub --target-dir src-tauri/target \
-  --jobs 2 --floor-file scripts/coverage-rust-floor.json
+  --jobs 2 --require-floor --floor-file scripts/coverage-rust-floor.json
 ```
 
 in place of `cargo test --features ai-helper-stub -- --test-threads=1` for the library, then runs the
@@ -51,6 +51,9 @@ other test targets (`--test '*'`) as before. `--features` gives the library the 
 ordinary step uses (the model helper's stub, so llama.cpp is not run); `--target-dir` builds into the
 target directory `cargo test` and the app build already use, with no explicit `--target`, so their
 dependencies are shared and only the library test unit is built again, with `-C instrument-coverage`.
+`--require-floor` makes the runner refuse, before building anything, if no floor is in force (no
+`--floor-file` and no `--fail-under-*`): a dropped flag then stops the job instead of turning the
+gate off. A run without it may still have no floor (a plain measurement on a developer machine).
 The tests keep the one-thread setting, the report is checked against the floor file when they finish,
 and the report is kept as an artifact. The floor gate itself is `python3 -m unittest
 scripts/test_coverage_rust.py`, run in the same job.

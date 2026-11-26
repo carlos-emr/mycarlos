@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in Linux host/default-feature/lib-test coverage; see COVERAGE-RUST.md."""
+"""Opt-in Linux host/lib-test coverage (default features, or the ones named); see COVERAGE-RUST.md."""
 
 import argparse
 import datetime
@@ -254,6 +254,15 @@ def requested_floors(args):
     return floors
 
 
+def floors_required(args):
+    """The floors in force. With `--require-floor`, none in force is an error, raised before anything
+    is built: a gate that a dropped `--floor-file` could turn off without a word is no gate."""
+    floors = requested_floors(args)
+    if args.require_floor and not floors:
+        raise RuntimeError("--require-floor needs --floor-file or --fail-under-lines/--fail-under-regions")
+    return floors
+
+
 # A name never starts with a hyphen: `--features=--release` would otherwise reach Cargo as the next
 # argument and change what it does.
 FEATURE_LIST = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*(,[A-Za-z0-9_][A-Za-z0-9_-]*)*")
@@ -382,7 +391,7 @@ def execute(args, pin, host, tools, versions):
         metadata["source_after"] = snapshot()
         if before != metadata["source_after"]:
             raise RuntimeError("source inputs changed during coverage; report is not a stable-source measurement")
-        floors = requested_floors(args)
+        floors = floors_required(args)
         print((directory / "report/summary.txt").read_text(), flush=True)
         print("Measured: " + ", ".join(f"{metric} {percent(totals, metric):.2f}%" for metric in FLOOR_METRICS),
               flush=True)
@@ -407,6 +416,10 @@ def main():
                         help="build into this existing Cargo target directory (the one `cargo test` and "
                              "the app build use) instead of a private one, so nothing is built twice; "
                              "it is never cleaned")
+    parser.add_argument("--require-floor", action="store_true",
+                        help="refuse to run (before building anything) unless a floor is in force, from "
+                             "--floor-file or --fail-under-*; CI passes it so that a dropped flag cannot "
+                             "silently turn the gate off")
     parser.add_argument("--fail-under-lines", type=int, metavar="PERCENT",
                         help="fail when line coverage is below this whole percent")
     parser.add_argument("--fail-under-regions", type=int, metavar="PERCENT",
@@ -455,6 +468,7 @@ def main():
                 write_floor(args.floor_file, floors)
                 print(f"Floors now: {floors}")
             return 0
+        floors_required(args)
         pin, host, tools, versions = prerequisites()
         if args.check:
             print(json.dumps({"toolchain": pin, "host": host,
