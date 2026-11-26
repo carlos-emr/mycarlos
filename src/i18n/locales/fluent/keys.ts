@@ -1023,13 +1023,16 @@ export const MESSAGE_KEYS = [
   "notifications.allow",
   "notifications.blocked",
   "notifications.error",
-  "notifications.help",
   "notifications.title",
+  "notifications.blockedMac",
   "notifications.notYetAsked",
+  "notifications.notYetAskedMac",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
   "notifications.autoAllow",
+  "notifications.autoConsent",
+  "notifications.noticesHelp",
   "notifications.autoHelp",
   "notifications.autoPaused",
   "notifications.checkBusy",
@@ -1078,7 +1081,6 @@ export const MESSAGE_KEYS = [
   "noticesStep.later",
   "noticesStep.done",
   "noticesStep.notNow",
-  "notifications.autoNeedsNotices",
   "ai.settings.subtitle",
   "ai.model.progressName",
   "ai.model.progressValue",
@@ -1381,6 +1383,7 @@ export const MESSAGE_KEYS = [
   "native.notice.test",
   "notifications.testButton",
   "notifications.testSent",
+  "notifications.testSentMac",
   "notifications.testWait",
   "notifications.testFailed",
   "notifications.testOff",
@@ -2637,13 +2640,16 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.allow": "notifications-allow",
   "notifications.blocked": "notifications-blocked",
   "notifications.error": "notifications-error",
-  "notifications.help": "notifications-help",
   "notifications.title": "notifications-title",
+  "notifications.blockedMac": "notifications-blockedMac",
   "notifications.notYetAsked": "notifications-notYetAsked",
+  "notifications.notYetAskedMac": "notifications-notYetAskedMac",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
   "notifications.autoAllow": "notifications-autoAllow",
+  "notifications.autoConsent": "notifications-autoConsent",
+  "notifications.noticesHelp": "notifications-noticesHelp",
   "notifications.autoHelp": "notifications-autoHelp",
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
@@ -2693,7 +2699,6 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.later": "noticesStep-later",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
-  "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
   "ai.settings.subtitle": "ai-settings-subtitle",
   "ai.model.progressName": "ai-model-progressName",
   "ai.model.progressValue": "ai-model-progressValue",
@@ -3046,6 +3051,7 @@ const FLUENT_IDS_BY_KEY = {
   "native.notice.test": "native-notice-test",
   "notifications.testButton": "notifications-testButton",
   "notifications.testSent": "notifications-testSent",
+  "notifications.testSentMac": "notifications-testSentMac",
   "notifications.testWait": "notifications-testWait",
   "notifications.testFailed": "notifications-testFailed",
   "notifications.testOff": "notifications-testOff",
@@ -4191,13 +4197,16 @@ export interface MessageArgsByKey {
   "notifications.allow": undefined;
   "notifications.blocked": undefined;
   "notifications.error": undefined;
-  "notifications.help": undefined;
   "notifications.title": undefined;
+  "notifications.blockedMac": undefined;
   "notifications.notYetAsked": undefined;
+  "notifications.notYetAskedMac": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;
   "notifications.autoAllow": undefined;
+  "notifications.autoConsent": undefined;
+  "notifications.noticesHelp": undefined;
   "notifications.autoHelp": undefined;
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
@@ -4254,7 +4263,6 @@ export interface MessageArgsByKey {
   };
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
-  "notifications.autoNeedsNotices": undefined;
   "ai.settings.subtitle": undefined;
   "ai.model.progressName": undefined;
   "ai.model.progressValue": {
@@ -4567,6 +4575,7 @@ export interface MessageArgsByKey {
   "native.notice.test": undefined;
   "notifications.testButton": undefined;
   "notifications.testSent": undefined;
+  "notifications.testSentMac": undefined;
   "notifications.testWait": undefined;
   "notifications.testFailed": undefined;
   "notifications.testOff": undefined;

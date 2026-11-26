@@ -3,13 +3,14 @@ import type { Page } from "@playwright/test";
 // The Windows document-arrival notices (Settings > Preferences > Notices
 // after document checks), faked over the vault fake (support/vaultFake.ts,
 // which says they are unsupported): what vault_notification_status says, and
-// what the two switches do. Native owns the consent and the OS permission;
+// what the two switches do (each independent of the other). Native owns the consent and the OS permission;
 // this fake only answers as the commands do. FAKE data only.
 
 export interface FakeNoticeStatus {
   supported: boolean;
   available: boolean;
   enabled: boolean;
+  noticesSupported: boolean;
   permission: "unavailable" | "unknown" | "allowed" | "blocked";
   automaticChecksSupported: boolean;
   automaticChecksEnabled: boolean;
@@ -63,13 +64,8 @@ export async function fakeNoticesWith(
           };
         }
         if (command === commands.setNotices) {
-          status = {
-            ...status,
-            enabled: args.enabled === true,
-            // Turning notices off turns the automatic checks off too.
-            automaticChecksEnabled:
-              args.enabled === true ? status.automaticChecksEnabled : false,
-          };
+          // The notices are an add-on: they leave the automatic checks as they were.
+          status = { ...status, enabled: args.enabled === true };
         } else {
           status = { ...status, automaticChecksEnabled: args.enabled === true };
         }
@@ -90,6 +86,7 @@ export async function fakeNoticesWith(
         supported: true,
         available: true,
         enabled: false,
+        noticesSupported: true,
         permission: "allowed",
         automaticChecksSupported: true,
         automaticChecksEnabled: false,

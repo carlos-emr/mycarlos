@@ -2410,22 +2410,24 @@ interface-AiHelperNotice-continue = Continuar
 
 interface-AnonymizePreview-footerNote = El archivo terminará con esta línea:
 
-notifications-title = Avisos después de revisar los documentos
-notifications-help = Cuando se guarda un documento de la clínica tras una revisión manual, Windows puede mostrar un aviso general. Abra myCarlos normalmente para leerlo. Los documentos no se revisan automáticamente.
-notifications-allow = Permitir avisos de llegada de documentos
+notifications-title = Búsqueda de documentos
+notifications-allow = Mostrar un aviso cuando llegue un documento
 notifications-blocked = Windows está bloqueando las notificaciones. Revise sus ajustes de notificaciones.
 notifications-unknown = No se pudo comprobar el permiso de notificaciones de Windows.
+notifications-error = No se pudo guardar este ajuste. Los avisos y las comprobaciones automáticas están desactivados durante esta sesión.
+notifications-unavailable = Estos ajustes no están disponibles por ahora. Abra myCarlos normalmente para consultar sus documentos.
+notifications-helpAutomatic = myCarlos puede buscar documentos nuevos de la clínica por sí mismo mientras está abierto y desbloqueado. Los documentos nuevos aparecen entonces en su biblioteca.
 notifications-notYetAsked = Windows aún no ha mostrado ningún aviso de myCarlos, así que no tiene un ajuste para ellos. Los avisos están permitidos hasta que los desactive en los ajustes de Windows.
-notifications-error = No se pudo guardar este ajuste. Los avisos están desactivados durante esta sesión.
-notifications-unavailable = Los avisos de documentos no están disponibles. Abra myCarlos normalmente para consultar sus documentos.
-notifications-helpAutomatic = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
+notifications-blockedMac = macOS no permite las notificaciones de myCarlos. Actívelas en Ajustes del Sistema, en Notificaciones.
+notifications-notYetAskedMac = Aún no se le ha preguntado a macOS. Lo hará cuando active los avisos.
 notifications-autoAllow = Buscar documentos de las clínicas automáticamente mientras la bóveda esté desbloqueada
-notifications-autoNeedsNotices = Primero permita los avisos de llegada de documentos para activar esta opción.
-notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Las consultas pueden continuar si Windows bloquea los avisos. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores.
+notifications-autoConsent = Al activar esto, myCarlos se pone en contacto con el portal de su clínica de forma programada, con al menos dos minutos entre intentos, solo mientras está abierto y desbloqueado. Desactívelo para detenerlo.
+notifications-noticesHelp = Windows puede mostrar un aviso genérico después de guardar un documento de la clínica. Abra myCarlos normalmente para leerlo.
+notifications-autoHelp = Con su permiso, myCarlos consulta los enlaces guardados y aprobados de las clínicas mientras esta aplicación está abierta y la bóveda está desbloqueada, con al menos dos minutos entre intentos. Los documentos nuevos aparecen en su biblioteca. Bloquear la bóveda o cerrar la aplicación detiene las consultas posteriores. Los avisos son una opción aparte y no hacen falta para esto.
 notifications-autoPaused = Se necesita una consulta manual para continuar las consultas automáticas. Abra Clínicas conectadas y elija Buscar documentos nuevos.
 notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva a elegir Buscar documentos nuevos dentro de un momento.
-noticesStep-title = Avisos de su clínica
-noticesStep-intro = Su clínica está vinculada. myCarlos puede avisarle cuando llegue un documento nuevo. No se activa nada a menos que usted lo marque.
+noticesStep-title = Documentos de su clínica
+noticesStep-intro = Su clínica está vinculada. myCarlos puede buscar documentos nuevos por usted y mostrar un aviso cuando llegue uno, en un equipo que pueda hacerlo. No se activa nada a menos que usted lo marque.
 noticesStep-later = Puede cambiarlos cuando quiera en { $settings }, en { $preferences }: { $notices }.
 noticesStep-done = Listo
 noticesStep-notNow = Ahora no
@@ -2961,6 +2963,7 @@ native-notice-test = Este es un aviso de prueba de myCarlos.
 notifications-testButton = Mostrar un aviso de prueba
 
 notifications-testSent = Aviso de prueba enviado. Si no lo ve, revise la configuración de notificaciones de Windows.
+notifications-testSentMac = Aviso de prueba enviado. Si no lo ve, revise Ajustes del Sistema, en Notificaciones.
 
 notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 

@@ -481,11 +481,11 @@ where
                                         .unwrap_or_default(),
                                 );
                             }
-                            #[cfg(windows)]
+                            #[cfg(desktop)]
                             if added {
                                 store.notify_local_arrival(record_id, &link, session);
                             }
-                            #[cfg(not(windows))]
+                            #[cfg(not(desktop))]
                             let _ = record_id;
                             send_pending(&link)?;
                         }

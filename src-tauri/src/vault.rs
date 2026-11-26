@@ -1452,12 +1452,12 @@ impl VaultStore {
         enabled: bool,
     ) -> Result<crate::document_notification_runtime::Status, VaultError> {
         if !enabled {
-            // Revoke final OS acceptance before even an in-memory cache lock.
+            // Revoke final OS acceptance before even an in-memory cache lock. Only the notices
+            // stop: the automatic document checks are their own choice (a check that is running
+            // goes on, and its documents are filed as before).
             if let Some(runtime) = self.notifications.get() {
                 runtime.suspend_notices();
             }
-            self.collection.suspend();
-            self.drop_idle_collection_cache();
         }
         self.notifications
             .get()
@@ -1475,7 +1475,7 @@ impl VaultStore {
         let stamp = self.collection.suspend();
         self.drop_idle_collection_cache();
         run_at_test_boundary("notifications.after-automatic-suspend");
-        if !cfg!(any(test, windows)) {
+        if !cfg!(any(test, desktop)) {
             return Err(VaultError::Invalid);
         }
         let status = self
@@ -1499,13 +1499,14 @@ impl VaultStore {
     /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
     /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
     /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
-    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
-    /// there is nothing to run).
+    /// while this vault is unlocked and its owner turned automatic checks on (desktop; a phone has
+    /// no worker). The notice at the end of a check goes through the runtime, which on a system
+    /// with no notices records nothing.
     pub(crate) fn document_tick(&self) -> bool {
         if self.collection.is_shutdown() {
             return false;
         }
-        #[cfg(windows)]
+        #[cfg(desktop)]
         self.automatic_document_tick();
         true
     }
@@ -1526,7 +1527,7 @@ impl VaultStore {
         }
     }
 
-    #[cfg(windows)]
+    #[cfg(desktop)]
     fn automatic_document_tick(&self) {
         if !self.automatic_collection_allowed() {
             return;
@@ -8725,6 +8726,56 @@ mod collection_object_tests {
         store.set_automatic_checks(true).ok().unwrap();
         store
     }
+    /// A store whose runtime has a backend that can show notices, with nothing turned on.
+    fn unconsented_store(path: &Path) -> Arc<VaultStore> {
+        use crate::document_notification_runtime::{active::Backend, Error, Permission, Runtime};
+        struct BackendMock;
+        impl Backend for BackendMock {
+            fn permission(&self) -> Permission {
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+        let store = Arc::new(VaultStore::new(path.join("vault")));
+        let runtime = Runtime::load_for_test(path.join("state.json"), Box::new(BackendMock));
+        assert!(store.notifications.set(Arc::new(runtime)).is_ok());
+        store
+    }
+
+    #[test]
+    fn the_automatic_check_runs_with_the_notices_off_and_the_notices_do_not_stop_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = unconsented_store(temp.path());
+        assert!(!store.automatic_collection_allowed());
+        // Its own consent, no notices: the check is allowed to run.
+        let status = store.set_automatic_checks(true).ok().unwrap();
+        assert!(status.automatic_checks_enabled && !status.enabled);
+        assert!(store.automatic_collection_allowed());
+        // Turning the notices on and off again does not stop or pause it.
+        store.set_notifications(true).ok().unwrap();
+        assert!(store.automatic_collection_allowed());
+        store.set_notifications(false).ok().unwrap();
+        assert!(store.automatic_collection_allowed());
+        assert!(!store.collection.paused());
+        // Only its own switch turns it off.
+        store.set_automatic_checks(false).ok().unwrap();
+        assert!(!store.automatic_collection_allowed());
+    }
+
+    #[test]
+    fn a_saved_choice_to_check_automatically_is_still_on_when_the_vault_is_opened_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = unconsented_store(temp.path());
+        store.set_automatic_checks(true).ok().unwrap();
+        drop(store);
+        // A new store over the same ledger (the next start of the app): on without any notice.
+        let again = unconsented_store(temp.path());
+        assert!(again.notifications.get().unwrap().automatic_eligible());
+        assert!(!again.notifications.get().unwrap().status().enabled);
+    }
+
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
 
     /// `unlock` is untouched by the derive/install split (the older unlock tests above and below
