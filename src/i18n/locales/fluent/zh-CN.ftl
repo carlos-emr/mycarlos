@@ -726,6 +726,7 @@ native-filter-backups = myCarlos 备份
 
 native-filter-pdf = PDF 文档
 
+native-filter-video = 视频（MP4 或 MOV）
 native-filter-pictures = JPEG 和 PNG 图片
 
 native-filter-pdfAndPictures = PDF 文档以及 JPEG 和 PNG 图片
@@ -2666,3 +2667,47 @@ notifications-testWait = 请等待几秒钟后再试。
 
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
+
+interface-AddVideo-add = 添加视频
+
+interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。
+
+interface-AddVideo-checking = 正在检查视频…
+
+interface-AddVideo-storing = 正在添加视频：{ $percent }%
+
+interface-AddVideo-progressLabel = 正在添加视频
+
+interface-AddVideo-cancel = 取消
+
+interface-AddVideo-cancelling = 正在取消…
+
+interface-AddVideo-added = 视频已添加。
+
+interface-AddVideo-duplicate = 此视频已在这里，未添加任何内容。
+
+interface-AddVideo-cancelled = 已取消，未添加任何内容。
+
+interface-AddVideo-notVideo = 此文件不是 myCarlos 可以添加的视频。请选择 MP4 或 MOV 视频。
+
+interface-AddVideo-hevc = 此视频使用 H.265（HEVC），许多电脑无法播放。请另存为 H.264 MP4 后再添加。
+
+interface-AddVideo-videoCodec = 此视频的画面格式 myCarlos 无法播放。请另存为 H.264 MP4 后再添加。
+
+interface-AddVideo-audioCodec = 此视频的声音格式 myCarlos 无法播放。请另存为 AAC 声音后再添加。
+
+interface-AddVideo-noVideo = 此文件没有画面，所以不是视频。请选择 MP4 或 MOV 视频。
+
+interface-AddVideo-tooManyTracks = 此视频的画面或声音多于 myCarlos 可添加的数量。请另存为只有一路画面和一路声音的简单副本后再添加。
+
+interface-AddVideo-external = 此视频的一部分存放在文件之外，无法添加。请另存为完整副本后再添加。
+
+interface-AddVideo-fragmented = 此视频是流媒体格式。请另存为普通 MP4 后再添加。
+
+interface-AddVideo-tooBig = 此视频的画面大于 myCarlos 可添加的尺寸。请另存为较小的副本后再添加。
+
+interface-AddVideo-tooLarge = 此视频大于 myCarlos 在此设备上可添加的大小（电脑 2 GB，手机 1 GB）。请另存为较小的副本后再添加。
+
+interface-AddVideo-damaged = 此视频已损坏或被截断，无法添加。请从来源处重新复制后再试。
+
+interface-AddVideo-adding = 正在添加视频…

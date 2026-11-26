@@ -327,7 +327,9 @@ test("closing the preview while the text is read stops the read", async ({
   expect(await aiCancelled(page)).toEqual([
     { command: AI_COMMANDS.documentText, by: AI_COMMANDS.cancelText },
   ]);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(
+    0,
+  );
   await expectOnlyFakedCommands(page);
 });
 

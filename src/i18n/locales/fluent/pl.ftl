@@ -852,6 +852,7 @@ native-filter-backups = Kopie zapasowe myCarlos
 
 native-filter-pdf = Dokumenty PDF
 
+native-filter-video = Filmy (MP4 lub MOV)
 native-filter-pictures = Obrazy JPEG i PNG
 
 native-filter-pdfAndPictures = Dokumenty PDF oraz obrazy JPEG i PNG
@@ -3069,3 +3070,47 @@ notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
 notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
+
+interface-AddVideo-add = Dodaj film
+
+interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce oraz nazwa i model urządzenia, które zawiera, zostaną najpierw usunięte.
+
+interface-AddVideo-checking = Sprawdzanie filmu…
+
+interface-AddVideo-storing = Dodawanie filmu: { $percent }%
+
+interface-AddVideo-progressLabel = Dodawanie filmu
+
+interface-AddVideo-cancel = Anuluj
+
+interface-AddVideo-cancelling = Anulowanie…
+
+interface-AddVideo-added = Film został dodany.
+
+interface-AddVideo-duplicate = Ten film już tu jest. Nic nie zostało dodane.
+
+interface-AddVideo-cancelled = Anulowano. Nic nie zostało dodane.
+
+interface-AddVideo-notVideo = Ten plik nie jest filmem, który myCarlos może dodać. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-hevc = Ten film używa formatu H.265 (HEVC), którego wiele komputerów nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
+
+interface-AddVideo-videoCodec = Ten film używa formatu obrazu, którego myCarlos nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
+
+interface-AddVideo-audioCodec = Dźwięk tego filmu używa formatu, którego myCarlos nie odtworzy. Proszę zapisać go z dźwiękiem AAC i dodać ponownie.
+
+interface-AddVideo-noVideo = Ten plik nie ma obrazu, więc nie jest filmem. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-tooManyTracks = Ten film ma więcej obrazów lub ścieżek dźwiękowych, niż myCarlos może dodać. Proszę zapisać prostą kopię z jednym obrazem i jednym dźwiękiem i dodać ją ponownie.
+
+interface-AddVideo-external = Część tego filmu jest przechowywana poza plikiem, więc nie można go dodać. Proszę zapisać pełną kopię i dodać ją ponownie.
+
+interface-AddVideo-fragmented = Ten film jest w formacie do przesyłania strumieniowego. Proszę zapisać go jako zwykły MP4 i dodać ponownie.
+
+interface-AddVideo-tooBig = Obraz tego filmu jest większy, niż myCarlos może dodać. Proszę zapisać mniejszą kopię i dodać ją ponownie.
+
+interface-AddVideo-tooLarge = Ten film jest większy, niż myCarlos może dodać na tym urządzeniu (2 GB na komputerze, 1 GB na telefonie). Proszę zapisać mniejszą kopię i dodać ją ponownie.
+
+interface-AddVideo-damaged = Ten film jest uszkodzony lub ucięty, więc nie można go dodać. Proszę skopiować go ponownie z miejsca, z którego pochodzi, i spróbować jeszcze raz.
+
+interface-AddVideo-adding = Dodawanie filmu…

@@ -73,6 +73,7 @@ import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
 import { RecordDialog, type RecordEnd } from "./RecordDialog";
+import { AddVideoButton, AddVideoStatus, type AddVideoApi } from "./AddVideo";
 import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
@@ -167,6 +168,7 @@ export function VaultLibrary({
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
+  addVideo,
   androidPdfReader = false,
   cameraAsking,
   holdMedia,
@@ -226,6 +228,9 @@ export function VaultLibrary({
   /** The platform the camera dialog runs on (a computer, or since D97 a
    * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** Adding a video: its state lives above the library (VaultApp), so leaving the library mid-import
+   * keeps the progress, the Cancel and the answer. */
+  addVideo?: AddVideoApi;
   /** Android alone has a native PdfRenderer reader for stored PDFs (#358). */
   androidPdfReader?: boolean;
   /** On a phone: holds the lock on a hidden app while the system asks
@@ -2470,6 +2475,14 @@ export function VaultLibrary({
                             </button>
                           </span>
                         )}
+                      {cameraPlatform !== "ios" && addVideo?.canAdd && (
+                        <AddVideoButton
+                          add={addVideo}
+                          profileId={profileId}
+                          folderIds={currentFolderId ? [currentFolderId] : []}
+                          disabled={busy || readOnly || !profileId}
+                        />
+                      )}
                       <button
                         className="button primary"
                         type="button"
@@ -2493,6 +2506,9 @@ export function VaultLibrary({
                     </div>
                   )}
                 </div>
+                {cameraPlatform !== "ios" && addVideo?.canAdd && (
+                  <AddVideoStatus add={addVideo} />
+                )}
 
                 {!readOnly && profileId && (
                   <p className="purpose-note native-pictures-note">

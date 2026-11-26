@@ -5141,6 +5141,12 @@ describe("durable vault UI", () => {
       "importPickedFiles",
       (b) => b.importPickedFiles("pick-1", "profile-1", []),
     ],
+    // Adding a video can take minutes: it is a transfer too (a page hidden while it runs locks when
+    // it has ended, not under it).
+    [
+      "importPickedVideo",
+      (b) => b.importPickedVideo!("pick-1", "profile-1", []),
+    ],
     ["exportToPicked", (b) => b.exportToPicked("pick-1", "record-1")],
     [
       "exportTextToPicked",
@@ -5155,9 +5161,11 @@ describe("durable vault UI", () => {
     "exportTextToPicked",
     "exportToPicked",
     "importPickedFiles",
+    "importPickedVideo",
     "pickBackupDestination",
     "pickExportDestination",
     "pickImportFiles",
+    "pickImportVideo",
     "pickProfileExportDestination",
     "pickProfileImportSource",
     "pickRestoreSource",
@@ -5169,8 +5177,14 @@ describe("durable vault UI", () => {
   async function bareTransferPending(method: string) {
     let finish: (value: never) => void = () => {};
     let fail: (error: unknown) => void = () => {};
+    // The video's two methods are on this bridge only: the library shows "Add a video" (and its
+    // status line) when a bridge has them, and most tests do not look at that screen.
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportVideo: vi.fn().mockResolvedValue("pick-1"),
+      importPickedVideo: vi
+        .fn()
+        .mockResolvedValue({ result: "imported", recordId: "FAKE-video-1" }),
       [method]: vi.fn(
         () =>
           new Promise((resolve, reject) => {

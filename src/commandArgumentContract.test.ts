@@ -60,6 +60,7 @@ const BLIND_SPOT_COMMANDS = [
   "vault_export_text_pick",
   "vault_export_text_picked",
   "vault_import_pick",
+  "vault_import_video_pick",
   "vault_name_found_vaults",
   "vault_notification_status",
   "vault_recovery_key_confirm",

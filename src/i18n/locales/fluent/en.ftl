@@ -810,6 +810,7 @@ native-filter-backups = myCarlos backups
 
 native-filter-pdf = PDF documents
 
+native-filter-video = Videos (MP4 or MOV)
 native-filter-pictures = JPEG and PNG pictures
 
 native-filter-pdfAndPictures = PDF documents and JPEG and PNG pictures
@@ -2940,3 +2941,47 @@ notifications-testWait = Wait a few seconds, then try again.
 
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
+
+interface-AddVideo-add = Add a video
+
+interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and the device's name and model it carries are removed first.
+
+interface-AddVideo-checking = Checking the video…
+
+interface-AddVideo-storing = Adding the video: { $percent }%
+
+interface-AddVideo-progressLabel = Adding the video
+
+interface-AddVideo-cancel = Cancel
+
+interface-AddVideo-cancelling = Cancelling…
+
+interface-AddVideo-added = The video was added.
+
+interface-AddVideo-duplicate = That video is already here. Nothing was added.
+
+interface-AddVideo-cancelled = Cancelled. Nothing was added.
+
+interface-AddVideo-notVideo = This file is not a video myCarlos can add. Choose an MP4 or MOV video.
+
+interface-AddVideo-hevc = This video uses H.265 (HEVC), which many computers cannot play. Save it as an H.264 MP4 and add it again.
+
+interface-AddVideo-videoCodec = This video uses a picture format myCarlos cannot play. Save it as an H.264 MP4 and add it again.
+
+interface-AddVideo-audioCodec = The sound of this video uses a format myCarlos cannot play. Save it with AAC sound and add it again.
+
+interface-AddVideo-noVideo = This file has no picture, so it is not a video. Choose an MP4 or MOV video.
+
+interface-AddVideo-tooManyTracks = This video has more pictures or sounds than myCarlos can add. Save a simple copy with one picture and one sound, and add it again.
+
+interface-AddVideo-external = Part of this video is stored outside the file, so it cannot be added. Save a complete copy and add it again.
+
+interface-AddVideo-fragmented = This video is in a streaming format. Save it as an ordinary MP4 and add it again.
+
+interface-AddVideo-tooBig = The picture of this video is larger than myCarlos can add. Save a smaller copy and add it again.
+
+interface-AddVideo-tooLarge = This video is larger than myCarlos can add on this device (2 GB on a computer, 1 GB on a phone). Save a smaller copy and add it again.
+
+interface-AddVideo-damaged = This video is damaged or cut short, so it cannot be added. Copy it again from where it came from and try again.
+
+interface-AddVideo-adding = Adding the video…
