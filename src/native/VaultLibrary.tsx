@@ -487,6 +487,15 @@ export function VaultLibrary({
   const [folderName, setFolderName] = useState("");
   const [folderToMoveId, setFolderToMoveId] = useState("");
   const [folderDestinationId, setFolderDestinationId] = useState("");
+  // "Move folder…" in the head's menu opens the help panel's keyboard move with this folder
+  // chosen, then puts the focus on its destination (the next decision).
+  const [focusFolderMove, setFocusFolderMove] = useState(false);
+  const folderDestinationRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (!focusFolderMove || !showHelp) return;
+    folderDestinationRef.current?.focus();
+    setFocusFolderMove(false);
+  }, [focusFolderMove, showHelp]);
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
@@ -2076,6 +2085,20 @@ export function VaultLibrary({
       disabled: busy || readOnly,
       onChoose: () => renameFolder(currentFolder),
     });
+  // The labelled way into the keyboard folder move (WCAG 2.5.7's alternative to dragging a
+  // folder): it opens the same controls as the Help panel, with this folder already chosen.
+  if (!inShared && currentFolder)
+    headItems.push({
+      id: "moveFolder",
+      label: translateNow("interface.VaultLibrary.moveFolderItem"),
+      disabled: busy || readOnly,
+      onChoose: () => {
+        setFolderToMoveId(currentFolder.id);
+        setFolderDestinationId("");
+        setShowHelp(true);
+        setFocusFolderMove(true);
+      },
+    });
   if (!inShared && !currentFolder && profile) {
     headItems.push({
       id: "rename",
@@ -2174,6 +2197,7 @@ export function VaultLibrary({
             <label>
               {translateNow("interface.VaultLibrary.destination")}
               <select
+                ref={folderDestinationRef}
                 value={folderDestinationId}
                 onChange={(event) => setFolderDestinationId(event.target.value)}
               >
