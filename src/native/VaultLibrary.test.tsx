@@ -2460,3 +2460,122 @@ describe("backup reminder", () => {
     await waitFor(() => expect(save).toHaveFocus());
   });
 });
+
+describe("VaultLibrary folder tools that are not a drag", () => {
+  const keyboardMove = () => {
+    const details = screen.getByText(
+      humanText("Move a folder with the keyboard"),
+    );
+    // The tools sit in a closed disclosure: opened, as the patient would.
+    fireEvent.click(details);
+    const panel = details.closest("details") as HTMLElement;
+    return {
+      folder: within(panel).getByLabelText("Folder") as HTMLSelectElement,
+      destination: within(panel).getByLabelText(
+        "Destination",
+      ) as HTMLSelectElement,
+      move: within(panel).getByRole("button", { name: "Move folder" }),
+    };
+  };
+  const optionNames = (select: HTMLSelectElement) =>
+    [...select.options].map((option) => option.textContent);
+
+  it("moves a folder to the destination chosen in the lists, and says so", async () => {
+    const { bridge, setNotice } = renderLibrary();
+    const { folder, destination, move } = keyboardMove();
+    expect(move).toBeDisabled();
+    fireEvent.change(folder, { target: { value: "letters-2025-june" } });
+    fireEvent.change(destination, { target: { value: "letters" } });
+    expect(move).toBeEnabled();
+    fireEvent.click(move);
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        "letters",
+        "FAKE June Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContain("FAKE June Letters moved."),
+    );
+  });
+
+  it("moves a folder to the top of the person's records when no destination is chosen", async () => {
+    const { bridge, setNotice } = renderLibrary();
+    const { folder, move } = keyboardMove();
+    fireEvent.change(folder, { target: { value: "letters-2025" } });
+    fireEvent.click(move);
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025",
+        null,
+        "FAKE 2025 Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContain("FAKE 2025 Letters moved."),
+    );
+  });
+
+  it("offers no destination inside the chosen folder, and forgets a destination when the folder changes", () => {
+    renderLibrary();
+    const { folder, destination } = keyboardMove();
+    fireEvent.change(folder, { target: { value: "letters" } });
+    // Not itself, and not anything beneath it: only the top of the records is left.
+    expect(optionNames(destination)).toEqual(["My records"]);
+    fireEvent.change(folder, { target: { value: "letters-2025-june" } });
+    expect(optionNames(destination)).toContain("FAKE Letters");
+    expect(optionNames(destination)).not.toContain("FAKE June Letters");
+    fireEvent.change(destination, { target: { value: "letters" } });
+    expect(destination.value).toBe("letters");
+    fireEvent.change(folder, { target: { value: "letters-2025" } });
+    expect(destination.value).toBe("");
+  });
+
+  it("moves a folder to the top of the records by dropping it on the top of the records above the list", async () => {
+    const { bridge, setNotice } = renderLibrary();
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    // The top of the records above the list (the person's own name when there is more than one
+    // person), found as the patient finds it: a button by its name, outside the sidebar.
+    const root = screen
+      .getAllByRole("button", { name: "My records" })
+      .find((button) => !sidebar.contains(button)) as HTMLElement;
+    expect(root).toBeDefined();
+    dragFolder(
+      within(sidebar).getByRole("button", {
+        name: humanText(/^FAKE June Letters/),
+      }),
+      root,
+    );
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        null,
+        "FAKE June Letters",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(
+        humanValue(setNotice.mock.calls.map(([notice]) => resolveText(notice))),
+      ).toContainEqual(
+        expect.stringMatching(/^FAKE June Letters moved( to .+)?\.$/),
+      ),
+    );
+  });
+
+  it("renames the open folder from its heading", () => {
+    renderLibrary();
+    openFolder(/^FAKE Letters/);
+    fireEvent.click(screen.getByRole("button", { name: "Rename folder" }));
+    expect(
+      screen.getByRole("dialog", { name: humanText(/Rename/) }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Letters");
+  });
+});

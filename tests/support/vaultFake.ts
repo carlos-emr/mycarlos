@@ -186,6 +186,9 @@ export interface FakeVaultSetup {
   /** A computer that can keep myCarlos running in the background (the tray icon), or one whose
    * icon cannot be made. Default: no such mode. */
   background?: "available" | "noIcon";
+  /** The number of videos the vault holds, as the backup's size answer tells it (#359): above
+   * zero the encrypted backup offers "Leave videos out". The fake holds no video file. */
+  backupVideos?: number;
   /** Clinic linking is built in: with no clinic linked yet, or with one
    * linked and approved, unless `approval` says the request did not end in
    * approval. */
@@ -204,9 +207,6 @@ export interface FakeVaultSetup {
     status: "pending" | "refused" | "expired" | "cancelled";
     canRestart?: boolean;
   };
-  /** How many videos the vault holds, for the backup size the screen shows (and so whether a backup
-   * may leave them out). Default: none. */
-  videos?: number;
   /** The backup file a restore would choose: what it replaces on this
    * device, whether the vault here differs, the documents it holds (FAKE
    * names), and the passphrase it was made with (the vault's by default). */
@@ -1725,11 +1725,11 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               (sum, record) => sum + record.plaintextSize,
               4096,
             );
-            const videos = setup.videos ?? 0;
+            const videos = setup.backupVideos ?? 0;
             return {
-              totalBytes: bytes + videos * 1_000_000,
+              totalBytes: bytes + videos * 8_000_000,
               withoutVideosBytes: bytes,
-              videoBytes: videos * 1_000_000,
+              videoBytes: videos * 8_000_000,
               videoCount: videos,
             };
           }
@@ -2174,6 +2174,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       lockedPdf: setup.lockedPdf ?? false,
       readingAid: setup.readingAid ?? false,
       background: setup.background ?? null,
+      backupVideos: setup.backupVideos ?? 0,
       documentPassword: FAKE_DOCUMENT_PASSWORD,
       lockedOriginal: lockedOriginalName("{name}.pdf"),
       pageText: PAGE_TEXT,
@@ -2183,7 +2184,6 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       refusedDeliveries: setup.refusedDeliveries ?? 0,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
-      videos: setup.videos ?? 0,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],

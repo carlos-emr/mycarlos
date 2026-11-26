@@ -42,6 +42,7 @@ import {
   type PortalWaits,
 } from "./useApprovalPolling";
 import { RefusedDeliveries } from "./RefusedDeliveries";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Props {
   bridge: VaultBridge;
@@ -271,6 +272,10 @@ export function PortalDocuments({
   // After Try again (#143), focus goes back to the button, or to the
   // clinic's name once its documents verified and the button is gone.
   const [focusAfterRetry, setFocusAfterRetry] = useState<string | null>(null);
+  // "Remove this link" (#160): the link being confirmed, and the heading to
+  // focus once it is gone (the card that was there is not).
+  const [removing, setRemoving] = useState<PortalLinkSummary | null>(null);
+  const [focusAfterRemove, setFocusAfterRemove] = useState<string | null>(null);
   useEffect(() => {
     if (!focusAfterRetry || busy || working) return;
     if (document.activeElement === document.body) {
@@ -281,6 +286,17 @@ export function PortalDocuments({
     }
     setFocusAfterRetry(null);
   }, [focusAfterRetry, busy, working, snapshot.portalLinks]);
+  useEffect(() => {
+    if (focusAfterRemove === null || busy || working) return;
+    (
+      (focusAfterRemove
+        ? document.getElementById(`portal-link-title-${focusAfterRemove}`)
+        : null) ??
+      document.getElementById("portal-earlier-toggle") ??
+      document.getElementById("portal-title")
+    )?.focus();
+    setFocusAfterRemove(null);
+  }, [focusAfterRemove, busy, working, snapshot.portalLinks]);
   // "Link another clinic" (#145): its dialog, and where focus goes once a
   // link sent from it is over: the clinic's heading, or else back to the
   // button that opened it.
@@ -606,6 +622,33 @@ export function PortalDocuments({
     }).finally(() => {
       polling.restart(known);
       after?.();
+    });
+  };
+  /** Removes a link that delivered nothing. Focus then goes to the next card's
+   * heading, else the previous one's, else the panel's heading (the rule for
+   * removing the last working clinic, #382). */
+  const remove = (link: PortalLinkSummary) => {
+    setRemoving(null);
+    const ids = [...workingLinks, ...earlierLinks].map((l) => l.id);
+    const at = ids.indexOf(link.id);
+    const next = ids[at + 1] ?? ids[at - 1] ?? "";
+    void run(async () => {
+      try {
+        await bridge.removePortalLink!(link.id);
+      } catch (error) {
+        // The vault refused: documents from this clinic are saved, or notices are on. Nothing
+        // changed, so focus stays where it is, and the card (read again, so a notices switch
+        // that just came on shows) says which reason applies.
+        if (hasVaultErrorCode(error, "invalid")) {
+          await refresh();
+          return;
+        }
+        throw error;
+      }
+      // Only a removal that happened moves focus to a card that is still there.
+      setFocusAfterRemove(next);
+      await refresh();
+      setStatusLine({ text: message("portal.removed") });
     });
   };
   const checkButton = (
@@ -1062,6 +1105,24 @@ export function PortalDocuments({
             />
           </label>
         </details>
+        {!readOnly &&
+          bridge.removePortalLink &&
+          (link.hasDocuments ? (
+            <p className="portal-remove-kept">{t("portal.removeKept")}</p>
+          ) : link.noticesEnrolled ? (
+            <p className="portal-remove-kept">{t("portal.removeNotices")}</p>
+          ) : (
+            <button
+              id={`portal-remove-${link.id}`}
+              className="button"
+              type="button"
+              aria-describedby={whose}
+              disabled={disabled}
+              onClick={() => setRemoving(link)}
+            >
+              {t("portal.removeLink")}
+            </button>
+          ))}
         {!link.incomplete && !link.clinicApproved && (
           <>
             <button
@@ -1177,6 +1238,30 @@ export function PortalDocuments({
         )}
       </p>
       {showCheck && checkButton}
+      {removing && (
+        <ConfirmDialog
+          title={t("portal.removeTitle")}
+          confirmLabel={t("portal.removeConfirm")}
+          danger
+          onCancel={() => {
+            const id = removing.id;
+            setRemoving(null);
+            // The dialog's opener is still there: focus goes back to the button that opened it.
+            requestAnimationFrame(() =>
+              (
+                document.getElementById(`portal-remove-${id}`) ??
+                document.getElementById(`portal-link-title-${id}`)
+              )?.focus(),
+            );
+          }}
+          onConfirm={() => remove(removing)}
+        >
+          {t("portal.removeBody", {
+            clinic: removing.clinicName ?? removing.portalBase,
+            device: removing.deviceName,
+          })}
+        </ConfirmDialog>
+      )}
       {linkDialogShown &&
         (dialogHost
           ? createPortal(linkDialogShown, dialogHost)
