@@ -166,7 +166,12 @@ name):
 - on a computer, the text size chosen for the app (`mycarlos.zoom.v1`). A large size kept on a
   shared computer could suggest that someone who uses it has poor sight;
 - the appearance choice, System, Light or Dark (`mycarlos.appearance.v1`). This preference
-  names no vault, patient or document and is not copied into an encrypted backup.
+  names no vault, patient or document and is not copied into an encrypted backup;
+- the camera and the microphone the patient chose for a recording (`mycarlos.videoDevices.v1`):
+  the webview's opaque device identifiers only (at most a short, checked string each), never a
+  device name, a person or a recording. They can tell which hardware this device's user prefers
+  and, as the browser derives them, they are specific to this app on this device. Not copied into
+  an encrypted backup.
 
 Beside the vault, the app also keeps a small file counting wrong passphrase or recovery-key tries
 in a row, and when the last one was, to make the next try wait after several. It holds no secret.
