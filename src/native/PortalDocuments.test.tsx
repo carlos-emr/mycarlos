@@ -1424,7 +1424,7 @@ describe("automatic approval status checks (#131)", () => {
     expect(status()).toHaveTextContent(AWAITING);
   });
 
-  it("says why a check failed for another reason, once, and does not check that request again by itself", async () => {
+  it("says why a check failed for another reason, and does not check that request again by itself", async () => {
     const { poll } = checked(() => ({
       error: { code: "zzz_unknown", message: "FAKE the check failed" },
     }));
@@ -1432,7 +1432,7 @@ describe("automatic approval status checks (#131)", () => {
     expect(poll).toHaveBeenCalledOnce();
     expect(status()).toHaveTextContent("FAKE the check failed");
     expect(screen.queryByText(AUTO)).not.toBeInTheDocument();
-    // Nothing more is asked of the portal, and nothing more is said.
+    // Nothing more is asked of the portal, and what was said stays on screen.
     await pass(30 * 60_000);
     expect(poll).toHaveBeenCalledOnce();
     expect(status()).toHaveTextContent("FAKE the check failed");
