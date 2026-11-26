@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  APS_ENVIRONMENT,
+  checkEntitlements,
   checkInfoPlist,
   checkManifest,
   INFO_PLIST_PATH,
@@ -14,6 +16,14 @@ import {
 } from "./check-ios-privacy.mjs";
 
 const manifest = () => readFile(MANIFEST_PATH, "utf8");
+
+/** An entitlements plist as `codesign -d --entitlements :-` writes it. */
+const entitlements = (environment, extra = "") =>
+  `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>${
+    environment === null
+      ? ""
+      : `<key>aps-environment</key><string>${environment}</string>`
+  }${extra}</dict></plist>`;
 
 test("the repository's manifest and Info.ios.plist are as pinned", async () => {
   assert.deepEqual(await run([]), []);
@@ -186,16 +196,27 @@ test("a built app must carry the repository's manifest at its root and the expor
       join(app, "Info.plist"),
       await readFile(INFO_PLIST_PATH, "utf8"),
     );
-    assert.deepEqual(await run(["--app", app]), []);
+    // The signed entitlements come from a file here (on a Mac, from `codesign`).
+    const signed = join(directory, "signed.plist");
+    await writeFile(signed, entitlements("production"));
+    const withSigned = [
+      "--app",
+      app,
+      "--build",
+      "release",
+      "--entitlements",
+      signed,
+    ];
+    assert.deepEqual(await run(withSigned), []);
     await writeFile(
       join(app, "PrivacyInfo.xcprivacy"),
       `${await manifest()}\n`,
     );
-    assert.match((await run(["--app", app])).join(), /differs from/);
+    assert.match((await run(withSigned)).join(), /differs from/);
     await writeFile(join(app, "PrivacyInfo.xcprivacy"), await manifest());
     await writeFile(join(app, "Info.plist"), "<dict></dict>");
     assert.match(
-      (await run(["--app", app])).join(),
+      (await run(withSigned)).join(),
       /ITSAppUsesNonExemptEncryption is missing/,
     );
     assert.match((await run(["--app"])).join(), /pass the built .app/);
@@ -222,6 +243,7 @@ test("the manifest is copied into the one generated iOS app folder", async () =>
     const apple = join(directory, "src-tauri/gen/apple");
     await mkdir(join(apple, "mycarlos_iOS"), { recursive: true });
     await mkdir(join(apple, "Sources"));
+    await writeFile(join(apple, "project.yml"), "name: mycarlos\n");
     const target = await configureIosPrivacy({
       root: directory,
       generate: false,
@@ -327,5 +349,284 @@ test("the webview's own storage keys are the reviewed ones, and nothing else is 
   assert.deepEqual(
     [...found].sort(),
     Object.keys(REVIEWED_WEBVIEW_STORAGE).sort(),
+  );
+});
+
+test("a build carries the push environment of its kind: development for debug, production for release", () => {
+  assert.deepEqual(APS_ENVIRONMENT, {
+    debug: "development",
+    release: "production",
+  });
+  assert.deepEqual(checkEntitlements(entitlements("development"), "debug"), []);
+  assert.deepEqual(
+    checkEntitlements(entitlements("production"), "release"),
+    [],
+  );
+  // The two crossed: a release build with the sandbox value (the gate's refusal, seen here first), and a
+  // debug build with the production one.
+  assert.match(
+    checkEntitlements(entitlements("development"), "release").join(),
+    /is development, but a release build must carry production/,
+  );
+  assert.match(
+    checkEntitlements(entitlements("production"), "debug").join(),
+    /is production, but a debug build must carry development/,
+  );
+  // Without a build only the value's presence and shape are checked.
+  assert.deepEqual(checkEntitlements(entitlements("production")), []);
+  assert.deepEqual(checkEntitlements(entitlements("development")), []);
+  assert.match(checkEntitlements(entitlements(null)).join(), /missing/);
+  assert.match(
+    checkEntitlements(entitlements("staging")).join(),
+    /development or production/,
+  );
+  assert.match(
+    checkEntitlements(entitlements("production"), "beta").join(),
+    /debug or release/,
+  );
+  // A commented-out key is not the key; other entitlements do not stand in for it.
+  assert.match(
+    checkEntitlements(
+      "<dict><!-- <key>aps-environment</key><string>production</string> --></dict>",
+    ).join(),
+    /missing/,
+  );
+  assert.match(
+    checkEntitlements(
+      entitlements(null, "<key>get-task-allow</key><true/>"),
+      "release",
+    ).join(),
+    /missing/,
+  );
+});
+
+test("a built app is checked for its push environment against the kind of build", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-ios-aps-"));
+  try {
+    const app = join(directory, "myCarlos.app");
+    await mkdir(app);
+    await writeFile(join(app, "PrivacyInfo.xcprivacy"), await manifest());
+    await writeFile(
+      join(app, "Info.plist"),
+      await readFile(INFO_PLIST_PATH, "utf8"),
+    );
+    const signed = join(directory, "signed.plist");
+    const check = (environment, build) =>
+      writeFile(signed, entitlements(environment)).then(() =>
+        run(["--app", app, "--entitlements", signed, ...build]),
+      );
+    assert.deepEqual(await check("production", ["--build", "release"]), []);
+    assert.deepEqual(await check("development", ["--build", "debug"]), []);
+    assert.match(
+      (await check("development", ["--build", "release"])).join(),
+      /a release build must carry production/,
+    );
+    assert.match(
+      (await check("production", ["--build", "debug"])).join(),
+      /a debug build must carry development/,
+    );
+    assert.match(
+      (await check(null, ["--build", "release"])).join(),
+      /aps-environment entitlement is missing/,
+    );
+    assert.match(
+      (await check("production", ["--build", "nightly"])).join(),
+      /--build must be debug or release/,
+    );
+    // No way to read the signed entitlements (no file, and not macOS): refused, never assumed.
+    await rm(signed);
+    assert.match(
+      (
+        await run([
+          "--app",
+          app,
+          "--entitlements",
+          signed,
+          "--build",
+          "release",
+        ])
+      ).join(),
+      /signed entitlements cannot be read/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the entitlement files and the project fragment are written into the generated project", async () => {
+  const { configureIosPrivacy, withApsEnvironment } = await import(
+    "./configure-ios-privacy.mjs"
+  );
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-ios-ent-"));
+  try {
+    await mkdir(join(directory, "src-tauri/ios"), { recursive: true });
+    await writeFile(
+      join(directory, "src-tauri/ios/PrivacyInfo.xcprivacy"),
+      await manifest(),
+    );
+    const apple = join(directory, "src-tauri/gen/apple");
+    const folder = join(apple, "mycarlos_iOS");
+    await mkdir(folder, { recursive: true });
+    // As `tauri ios init` writes it: an empty entitlements dictionary, and a project spec.
+    const base =
+      '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict/>\n</plist>\n';
+    await writeFile(join(folder, "mycarlos_iOS.entitlements"), base);
+    const spec =
+      "name: mycarlos\ntargets:\n  mycarlos_iOS:\n    type: application\n";
+    await writeFile(join(apple, "project.yml"), spec);
+    await configureIosPrivacy({ root: directory, generate: false });
+    const debug = await readFile(
+      join(folder, "mycarlos_iOS.Debug.entitlements"),
+      "utf8",
+    );
+    const release = await readFile(
+      join(folder, "mycarlos_iOS.Release.entitlements"),
+      "utf8",
+    );
+    assert.deepEqual(checkEntitlements(debug, "debug"), []);
+    assert.deepEqual(checkEntitlements(release, "release"), []);
+    assert.match(debug, /<string>development<\/string>/);
+    assert.match(release, /<string>production<\/string>/);
+    // The generated base file is left as it was, for the next run.
+    assert.equal(
+      await readFile(join(folder, "mycarlos_iOS.entitlements"), "utf8"),
+      base,
+    );
+    // The fragment names each configuration's file, and the spec includes the fragment once.
+    const fragment = await readFile(join(apple, "project.carlos.yml"), "utf8");
+    assert.match(fragment, /mycarlos_iOS:/);
+    assert.match(
+      fragment,
+      /debug:\s+CODE_SIGN_ENTITLEMENTS: mycarlos_iOS\/mycarlos_iOS\.Debug\.entitlements/,
+    );
+    assert.match(
+      fragment,
+      /release:\s+CODE_SIGN_ENTITLEMENTS: mycarlos_iOS\/mycarlos_iOS\.Release\.entitlements/,
+    );
+    const included = await readFile(join(apple, "project.yml"), "utf8");
+    assert.equal(included.match(/project\.carlos\.yml/g).length, 1);
+    assert.ok(included.endsWith(spec) || included.includes(spec));
+    // Again: the same files, and still one include.
+    await configureIosPrivacy({ root: directory, generate: false });
+    assert.equal(
+      (await readFile(join(apple, "project.yml"), "utf8")).match(
+        /project\.carlos\.yml/g,
+      ).length,
+      1,
+    );
+    assert.equal(
+      await readFile(join(folder, "mycarlos_iOS.Release.entitlements"), "utf8"),
+      release,
+    );
+    // A spec that already includes another file keeps it and gains ours once.
+    await writeFile(
+      join(apple, "project.yml"),
+      "include:\n  - other.yml\nname: mycarlos\n",
+    );
+    await configureIosPrivacy({ root: directory, generate: false });
+    const merged = await readFile(join(apple, "project.yml"), "utf8");
+    assert.match(
+      merged,
+      /include:\n  - other\.yml\n  - project\.carlos\.yml\n/,
+    );
+    // Other entitlements already in the base file stay, and a value already there is replaced.
+    const other =
+      '<plist version="1.0"><dict><key>com.apple.developer.associated-domains</key><array/><key>aps-environment</key><string>production</string></dict></plist>';
+    const debugText = withApsEnvironment(other, "development");
+    assert.match(debugText, /associated-domains/);
+    assert.deepEqual(checkEntitlements(debugText, "debug"), []);
+    assert.equal(debugText.match(/aps-environment/g).length, 1);
+    assert.match(
+      withApsEnvironment("<dict></dict>", "production"),
+      /<string>production<\/string>/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the build flags are not silently ignored: they need --app, and --app needs --build", async () => {
+  // A CI step that forgot --app must fail, not pass having checked nothing.
+  assert.match(
+    (await run(["--build", "release"])).join(),
+    /--build is only for a built app/,
+  );
+  assert.match(
+    (await run(["--entitlements", "/nonexistent/signed.plist"])).join(),
+    /--entitlements is only for a built app/,
+  );
+  assert.match(
+    (await run(["--build", "debug", "--entitlements", "x"])).join(),
+    /--build is only for a built app.*--entitlements is only for a built app/,
+  );
+  // No flag, no problem: the repository's own files.
+  assert.deepEqual(await run([]), []);
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-ios-flags-"));
+  try {
+    const app = join(directory, "myCarlos.app");
+    await mkdir(app);
+    await writeFile(join(app, "PrivacyInfo.xcprivacy"), await manifest());
+    await writeFile(
+      join(app, "Info.plist"),
+      await readFile(INFO_PLIST_PATH, "utf8"),
+    );
+    const signed = join(directory, "signed.plist");
+    await writeFile(signed, entitlements("production"));
+    // A built app with good files but no --build: any push value would pass, so it is refused.
+    assert.match(
+      (await run(["--app", app, "--entitlements", signed])).join(),
+      /pass --build debug or --build release with --app/,
+    );
+    assert.deepEqual(
+      await run(["--app", app, "--build", "release", "--entitlements", signed]),
+      [],
+    );
+    // --build with no value after it is not a build.
+    assert.match(
+      (await run(["--app", app, "--entitlements", signed, "--build"])).join(),
+      /--build must be debug or release, not /,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("aps-environment counts only as a top-level entitlement, not inside another value", () => {
+  const nested = (environment) =>
+    `<?xml version="1.0"?><plist version="1.0"><dict><key>com.example.nested</key><dict><key>aps-environment</key><string>${environment}</string></dict><key>com.example.list</key><array><dict><key>aps-environment</key><string>${environment}</string></dict></array></dict></plist>`;
+  assert.match(
+    checkEntitlements(nested("production"), "release").join(),
+    /missing/,
+  );
+  assert.match(checkEntitlements(nested("development")).join(), /missing/);
+  // The top-level one is found after nested values, whatever they hold.
+  const both = `<plist version="1.0"><dict><key>x</key><dict><key>aps-environment</key><string>development</string></dict><key>aps-environment</key><string>production</string></dict></plist>`;
+  assert.deepEqual(checkEntitlements(both, "release"), []);
+  assert.match(
+    checkEntitlements(both, "debug").join(),
+    /is production, but a debug build must carry development/,
+  );
+  // A key that is not a string value is not an environment.
+  assert.match(
+    checkEntitlements(
+      "<plist><dict><key>aps-environment</key><true/></dict></plist>",
+    ).join(),
+    /development or production/,
+  );
+  assert.match(
+    checkEntitlements(
+      "<plist><dict><key>aps-environment</key><array/></dict></plist>",
+    ).join(),
+    /development or production/,
+  );
+  // An empty entitlements dictionary has none.
+  assert.match(checkEntitlements("<plist><dict/></plist>").join(), /missing/);
+  // The first top-level key decides, however many follow.
+  assert.deepEqual(
+    checkEntitlements(
+      `<plist><dict><key>get-task-allow</key><true/><key>aps-environment</key><string>production</string></dict></plist>`,
+      "release",
+    ),
+    [],
   );
 });

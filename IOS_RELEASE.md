@@ -9,6 +9,7 @@
 | Export compliance key              | `src-tauri/Info.ios.plist` (Tauri merges `Info.ios.plist` into the iOS app's Info.plist) | the same script                     |
 | Out of iCloud and computer backups | `src-tauri/src/backup_exclusion.rs`, called at start                                     | unit tests; a device check (below)  |
 | The manifest reaches the built app | `scripts/configure-ios-privacy.mjs`                                                      | `check-ios-privacy.mjs --app X.app` |
+| Push environment                   | `scripts/configure-ios-privacy.mjs` (one entitlements file per configuration)            | `--app X.app --build` (below)       |
 
 ## Privacy manifest (draft for Ben)
 
@@ -59,6 +60,24 @@ its `<name>_iOS` folder is built in; `npm run ios:privacy` copies the manifest t
 generate` again. That is the one step not verified here (no macOS): the CI step that runs
 `check-ios-privacy.mjs --app` on the built simulator app is the proof, and fails if the manifest is not at the
 root.
+
+## Push entitlement (iPhone notices when myCarlos is closed)
+
+Remote notices need the `aps-environment` entitlement, and its value has to be the Apple push service the
+build's tokens belong to: **`development`** (the sandbox) for a debug build and **`production`** for a release
+one (TestFlight and the store); a token from one service is refused by the other. `npm run ios:privacy` also
+writes `<name>_iOS.Debug.entitlements` (development) and `<name>_iOS.Release.entitlements` (production) next to
+the generated entitlements file (whose own entries are kept), a spec fragment `project.carlos.yml` that points
+each configuration's `CODE_SIGN_ENTITLEMENTS` at its file, and an `include:` of that fragment in `project.yml`;
+XcodeGen merges an included spec into the one that includes it. Nothing here runs on a Mac: the proof is the
+built app. `node scripts/check-ios-privacy.mjs --app X.app --build debug|release` reads the app's signed
+entitlements (`codesign -d --entitlements :- X.app` on a Mac, or `--entitlements FILE`) and refuses an app with
+no `aps-environment`, a value other than the two, or the other build's value. The release gate
+(`check-release-safety.mjs --ios`) already refuses `aps-environment` = `development` in a release build's
+provisioning profile; the Apple Developer account's App ID also needs the Push Notifications capability, and the
+distribution profile has to be made after that, or it will not carry the entitlement. Two things to look at on the
+first Mac build: that the included fragment's configuration names (`debug`, `release`) are the generated project's,
+and that the signed app's value is the expected one (the check above).
 
 ## Export compliance (draft for Ben, with a lawyer)
 
