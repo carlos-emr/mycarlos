@@ -257,6 +257,8 @@ describe("the text the operating system shows for myCarlos", () => {
     "NativeFilterBackups",
     "NativeFilterModels",
     "NativeFilterPdf",
+    "NativeFilterPdfAndPictures",
+    "NativeFilterPictures",
     "NativeKitText",
     "NativeNoticeArrival",
     "NativeNoticeTest",
