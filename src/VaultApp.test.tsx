@@ -7011,7 +7011,7 @@ describe("durable vault UI", () => {
     return { bridge, user, typeCode, form };
   }
 
-  it("links a clinic once for a form sent twice with no render between: only the page's own markers can stop that", async () => {
+  it("links a clinic once for a form sent twice with no render between: the page's markers or the app's clinic-job join stop that", async () => {
     // Either of the two markers (`submitting`, and the code's revision already sent) alone is
     // enough, so deleting only one of them leaves this passing: an equivalent mutant.
     const slow = pendingCall<never>();
