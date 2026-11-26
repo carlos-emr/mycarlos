@@ -767,3 +767,6 @@ mod tests {
         assert_eq!(summary["incomplete"], true);
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;
