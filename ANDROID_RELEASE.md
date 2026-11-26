@@ -54,3 +54,65 @@ CI: the step after `tauri android build` is in the patch
 fails, the fix is the NDK (r28 or newer, pinned above) or, for a prebuilt library, a rebuilt one; a
 linker flag (`-Wl,-z,max-page-size=16384`) is the fallback, and is not set today because the pinned NDK
 already does it.
+
+## The release bundle (AAB) and its version code
+
+`scripts/build-android-release.sh` builds the signed App Bundle for Google Play. **No key is in the
+repository.** The person building supplies the _upload_ key (Play App Signing keeps the real app signing
+key) through `MYCARLOS_UPLOAD_KEYSTORE`, `MYCARLOS_UPLOAD_KEYSTORE_PASSWORD`, `MYCARLOS_UPLOAD_KEY_ALIAS`
+and `MYCARLOS_UPLOAD_KEY_PASSWORD`; Ben adds them as secrets of a protected GitHub environment when a
+workflow builds it. The script stops before any build if one is missing, so a release can never fall back
+to the debug key.
+
+What it does, in order: checks the NDK (r28+); `npm ci`; `tauri android init`; checks the generated
+project (targetSdk 36); applies the backup and system-bar configuration (`npm run android:secure`);
+adds the signing block (`scripts/configure-android-signing.mjs`, which reads the key from the environment
+in Gradle and never writes a value into a file); builds the `.aab` for `aarch64` and `x86_64`; checks the
+16 KB alignment of the result; and copies it to `release-out/android/myCarlos-<version>-<versionCode>.aab`
+(ignored by git).
+
+**versionCode** = `major * 10,000,000 + minor * 100,000 + patch * 1,000 + build`
+(`scripts/android-version-code.mjs`; major, minor and patch 0 to 99, build 0 to 999). Play needs each
+upload's code to be larger than the last and at most 2,100,000,000; this keeps both, because a new version
+always beats any build of an older one. `build` is `MYCARLOS_BUILD_NUMBER` (0 by default): raise it for
+a re-upload of the same version. A pre-release suffix of the version is ignored. The code is passed with
+`--config` for that build only, so `tauri.conf.json` does not change. Today: version 0.1.0, build 0 gives
+`100000`. The Tauri default (`major * 1,000,000 + ...`) has no build part, which is why it is replaced.
+
+**The upload key stays out of the repository**: both the script and `configure-android-signing.mjs` resolve
+the keystore path (following links) and refuse one inside the working tree; `.gitignore` also covers `*.jks`,
+`*.keystore`, `*.p12`, `*.pfx` and `.env`. The build runs Gradle without a daemon, and stops any daemon on
+the way out, so the key variables do not stay in a running process.
+
+**Version scheme (decided): the app's version is SemVer.** `tauri.conf.json` and `package.json` say `0.1.0`,
+and Tauri needs a semver string for Android. The version code therefore assumes each part is 0 to 99 and
+**throws** on anything else. A calendar version such as `2026.11.0` is refused (major above 99) rather than
+wrapped; if myCarlos ever adopts one, change the scheme deliberately here and in
+`scripts/android-version-code.mjs` before the first upload, because a version code can never go down.
+Symbol and mapping upload (native debug symbols, R8 mapping) is for later: it needs the Play Console app.
+
+## Google Play and the direct APK download (decided by Ben, 24 Nov 2026)
+
+Android goes to **both** Google Play and a direct APK download, signed so that one can update the other:
+**Play App Signing is used, and the direct download is the universal APK that Play Console generates for
+each release** (taken from the release's app bundle explorer in Play Console), signed by the same Google-held
+app-signing key as the copies Play installs. This script's `.aab` stays signed with the **upload key** only.
+What follows from it:
+
+- **Never publish an APK built and signed here as the direct download.** It carries the upload key's
+  signature, a different one, so it can neither update a Play install nor be updated by Play; the only way
+  across is uninstall and reinstall, which **deletes the vault on that phone** (device backup is off).
+- The same `versionCode` (this scheme) is on the Play copy and on the Console's universal APK, so both
+  channels rise together; Play needs it to go up on every upload.
+- Each release's direct download is a manual step: upload the `.aab`, then download the universal APK from
+  Play Console and publish that file (with its checksum) on the download page.
+- It needs the Play Console app and Play App Signing enrolment first (still to do, below). Ben chose this
+  over giving Play our own app-signing key (which would let CI sign the direct APK itself) and over two
+  package ids; if that is ever revisited, the choice of app-signing key is made when the app is created in
+  Play Console and cannot be changed afterwards.
+
+**Not done here** (Ben or later): the upload keystore itself, the Play Console app and Play App Signing
+enrolment, the product name (the app is still named "myCarlos Evaluation"), and a workflow that runs
+this script with the secrets (a `.github` change).
+
+Tests: `npm run test:android-release-scripts`.
