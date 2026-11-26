@@ -7051,6 +7051,8 @@ describe("durable vault UI", () => {
     let personAdded = false;
     let personHidden = false;
     let personRestored = false;
+    let folderMade = false;
+    let sharedMoved = false;
     const robin = {
       id: "profile-2",
       displayName: "FAKE Robin",
@@ -7230,6 +7232,95 @@ describe("durable vault UI", () => {
             screen.getByRole("button", {
               name: humanText("Restore FAKE Casey Leakname"),
             }),
+          );
+        },
+      },
+      {
+        label: "creating a folder",
+        name: "FAKE Leak Folder",
+        words: /was created\./,
+        bridge: () => {
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              folders: folderMade
+                ? [
+                    {
+                      id: "folder-1",
+                      profileId: "profile-1",
+                      parentId: null,
+                      name: "FAKE Leak Folder",
+                      createdAtMs: 5,
+                    },
+                  ]
+                : [],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            createFolder: vi.fn().mockImplementation(async () => {
+              folderMade = true;
+              return "folder-1";
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText("New folder"),
+            }),
+          );
+          const field = await screen.findByLabelText(humanText("Folder name"));
+          await user.type(field, "FAKE Leak Folder");
+          fireEvent.submit(field.closest("form")!);
+        },
+      },
+      {
+        label: "moving a shared document to a person",
+        name: "FAKE_Leak_Moved",
+        words: /moved to /,
+        bridge: () => {
+          const shared = {
+            id: "shared-1",
+            displayName: "Shared with me",
+            createdAtMs: 3,
+          };
+          const current = () =>
+            captureSnapshot({
+              ...snapshotWithRecord,
+              profiles: [...snapshotWithRecord.profiles, shared],
+              sharedProfileId: "shared-1",
+              records: [
+                {
+                  ...snapshotWithRecord.records[0],
+                  id: "record-shared",
+                  profileId: sharedMoved ? "profile-1" : "shared-1",
+                  displayName: "FAKE_Leak_Moved.pdf",
+                },
+              ],
+            });
+          return {
+            snapshot: vi.fn().mockImplementation(async () => current()),
+            unlock: vi.fn().mockImplementation(async () => current()),
+            moveToPerson: vi.fn().mockImplementation(async () => {
+              sharedMoved = true;
+              return { moved: ["record-shared"], alreadyThere: [] };
+            }),
+          };
+        },
+        run: async (user) => {
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText(/^Shared with me/),
+            }),
+          );
+          await user.click(
+            await screen.findByRole("button", {
+              name: humanText(/^Select FAKE_Leak_Moved/),
+            }),
+          );
+          await user.click(
+            await screen.findByRole("button", { name: humanText("Move") }),
           );
         },
       },
