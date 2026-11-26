@@ -1017,6 +1017,7 @@ export const MESSAGE_KEYS = [
   "notifications.error",
   "notifications.help",
   "notifications.title",
+  "notifications.notYetAsked",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
@@ -1166,7 +1167,18 @@ export const MESSAGE_KEYS = [
   "interface.VideoViewer.video",
   "interface.VideoViewer.player",
   "interface.VideoViewer.thisVideoCouldNotBePlayed",
-  "interface.VideoViewer.keys",
+  "interface.VideoViewer.controls",
+  "interface.VideoViewer.playPause",
+  "interface.VideoViewer.back",
+  "interface.VideoViewer.forward",
+  "interface.VideoViewer.backBig",
+  "interface.VideoViewer.forwardBig",
+  "interface.VideoViewer.volumeUp",
+  "interface.VideoViewer.volumeDown",
+  "interface.VideoViewer.mute",
+  "interface.VideoViewer.unmute",
+  "interface.VideoViewer.start",
+  "interface.VideoViewer.end",
   "interface.VideoViewer.playVideo",
   "interface.VideoHelp.title",
   "interface.VideoHelp.engine",
@@ -2600,6 +2612,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.error": "notifications-error",
   "notifications.help": "notifications-help",
   "notifications.title": "notifications-title",
+  "notifications.notYetAsked": "notifications-notYetAsked",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
@@ -2775,7 +2788,18 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VideoViewer.player": "interface-VideoViewer-player",
   "interface.VideoViewer.thisVideoCouldNotBePlayed":
     "interface-VideoViewer-thisVideoCouldNotBePlayed",
-  "interface.VideoViewer.keys": "interface-VideoViewer-keys",
+  "interface.VideoViewer.controls": "interface-VideoViewer-controls",
+  "interface.VideoViewer.playPause": "interface-VideoViewer-playPause",
+  "interface.VideoViewer.back": "interface-VideoViewer-back",
+  "interface.VideoViewer.forward": "interface-VideoViewer-forward",
+  "interface.VideoViewer.backBig": "interface-VideoViewer-backBig",
+  "interface.VideoViewer.forwardBig": "interface-VideoViewer-forwardBig",
+  "interface.VideoViewer.volumeUp": "interface-VideoViewer-volumeUp",
+  "interface.VideoViewer.volumeDown": "interface-VideoViewer-volumeDown",
+  "interface.VideoViewer.mute": "interface-VideoViewer-mute",
+  "interface.VideoViewer.unmute": "interface-VideoViewer-unmute",
+  "interface.VideoViewer.start": "interface-VideoViewer-start",
+  "interface.VideoViewer.end": "interface-VideoViewer-end",
   "interface.VideoViewer.playVideo": "interface-VideoViewer-playVideo",
   "interface.VideoHelp.title": "interface-VideoHelp-title",
   "interface.VideoHelp.engine": "interface-VideoHelp-engine",
@@ -4116,6 +4140,7 @@ export interface MessageArgsByKey {
   "notifications.error": undefined;
   "notifications.help": undefined;
   "notifications.title": undefined;
+  "notifications.notYetAsked": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;
@@ -4277,7 +4302,18 @@ export interface MessageArgsByKey {
   "interface.VideoViewer.video": undefined;
   "interface.VideoViewer.player": { name: FluentArgument };
   "interface.VideoViewer.thisVideoCouldNotBePlayed": undefined;
-  "interface.VideoViewer.keys": { seconds: FluentArgument };
+  "interface.VideoViewer.controls": undefined;
+  "interface.VideoViewer.playPause": undefined;
+  "interface.VideoViewer.back": { seconds: FluentArgument };
+  "interface.VideoViewer.forward": { seconds: FluentArgument };
+  "interface.VideoViewer.backBig": { seconds: FluentArgument };
+  "interface.VideoViewer.forwardBig": { seconds: FluentArgument };
+  "interface.VideoViewer.volumeUp": undefined;
+  "interface.VideoViewer.volumeDown": undefined;
+  "interface.VideoViewer.mute": undefined;
+  "interface.VideoViewer.unmute": undefined;
+  "interface.VideoViewer.start": undefined;
+  "interface.VideoViewer.end": undefined;
   "interface.VideoViewer.playVideo": undefined;
   "interface.VideoHelp.title": undefined;
   "interface.VideoHelp.engine": undefined;

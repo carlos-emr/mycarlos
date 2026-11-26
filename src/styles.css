@@ -3733,6 +3733,15 @@ p {
 .video-frame {
   padding: 12px 20px;
 }
+.video-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+.video-controls .button {
+  min-height: 44px;
+}
 .video-player {
   display: block;
   width: 100%;

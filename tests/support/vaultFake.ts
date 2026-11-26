@@ -249,7 +249,13 @@ export interface FakeVaultSetup {
   hiddenPeople?: string[];
   /** The patient the clinic's first delivery names (#340): the document arrives in Shared
    * with me carrying these words. */
-  clinicPatient?: { name: string; birthDate: string };
+  clinicPatient?: {
+    name: string;
+    birthDate: string;
+    linkPerson?: string;
+    linkedToHidden?: boolean;
+    matchingPeople?: string[];
+  };
   /** Documents (by name) that came in a handover file and stand on what the file says (#360):
    * they carry `fileSaysCheckedAtMs` until `__fakeVault.verifyCarried` links their clinic. */
   fileSays?: string[];
@@ -305,7 +311,13 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         hidden?: { atMs: number; reason: "patient" | "damaged" } | null;
         verifiedClinicName?: string;
         /** What the clinic wrote as the patient, on a document in Shared with me (#340). */
-        clinicPatient?: { name: string; birthDate: string };
+        clinicPatient?: {
+          name: string;
+          birthDate: string;
+          linkPerson?: string;
+          linkedToHidden?: boolean;
+          matchingPeople?: string[];
+        };
         /** What a handover file says of this document's checking (#360). */
         fileSaysCheckedAtMs?: number;
         clinicServiceDate?: string;
