@@ -447,6 +447,9 @@ describe("a write pressed twice is written once", () => {
     },
   );
 
+  // Two layers stop a repeat here (so a mutant that removes only one survives): the question
+  // closes as the first press is handled, and `acceptSharedRef` answers false while an accept is
+  // in flight.
   it.each(PRESSES)(
     "adds an opened file once when Import is pressed with %s",
     async (_name, make) => {
@@ -576,6 +579,9 @@ describe("a write pressed twice is written once", () => {
       expect(bridge.savePhoto).toHaveBeenCalledTimes(1);
     },
   );
+  // Two layers stop a repeat here too: the state guard (the form is disabled while it works) and
+  // `runPortal`, which makes a repeated press join the job already running. A mutant that removes
+  // only one of them survives.
   it.each(PRESSES)(
     "sends the emailed approval code once when Confirm code is pressed with %s",
     async (_name, make) => {

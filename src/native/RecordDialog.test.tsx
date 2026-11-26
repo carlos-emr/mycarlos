@@ -252,11 +252,16 @@ describe("RecordDialog", () => {
     });
     const { onSaved } = await recording(bridge);
     const stop = button("Stop and save");
-    // The second click is the one that must not end the video again.
-    fireEvent.click(stop);
-    fireEvent.click(stop);
+    // Two clicks in one tick: nothing re-renders between them, so the first has not yet replaced
+    // the button, and only `finishingRef` stops the second from ending the video again.
+    await act(async () => {
+      fireEvent.click(stop);
+      fireEvent.click(stop);
+    });
     await waitFor(() => expect(bridge.videoStop).toHaveBeenCalled());
-    fireEvent.click(stop);
+    // After that the Stop button is gone and a "Saving" one stands in its place; a click on the
+    // live one (not the detached Stop) does nothing either.
+    fireEvent.click(button("Saving…"));
     await act(async () => finish({ recordId: "video-1" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(bridge.videoStop).toHaveBeenCalledTimes(1);

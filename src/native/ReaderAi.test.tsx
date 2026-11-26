@@ -557,24 +557,28 @@ describe("the reader's AI helper", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("never asks the model or keeps an answer twice when Summary is pressed twice", async () => {
+  it("asks the model once and keeps one answer when Summary opens, though React runs its effect twice (StrictMode)", async () => {
     const model = fakeLocalModel();
     const { kept } = fakeKept([], model);
-    renderReader(model, { kept });
+    renderReader(model, { kept, strict: true });
     await firstPage();
     const user = userEvent.setup();
-    const summary = screen.getByRole("button", { name: "Summary" });
-    // The second press may take the panel back off (it is a toggle), so how much is shown is not
-    // the point: the model is asked at most once, and one answer is kept at most once.
-    await user.click(summary);
-    await user.click(summary);
+    const asked = () =>
+      model.calls.filter((call) => call.tool === "summary").length;
+    // One model call and one kept answer for one opening of the panel, though StrictMode runs its
+    // effect twice. NOT a pin of the `startedFor` guard on its own: with that check dropped this
+    // still passes (the fake model is not asked twice by the second run), and opening the panel
+    // again asks again by design when nothing readable was kept. The property pinned is the
+    // outcome, not the guard.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    await screen.findByText(AI_LABEL);
+    await waitFor(() => expect(kept.save).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(
-      model.calls.filter((call) => call.tool === "summary").length,
-    ).toBeLessThanOrEqual(1);
-    expect(
-      (kept.save as ReturnType<typeof vi.fn>).mock.calls.length,
-    ).toBeLessThanOrEqual(1);
+    expect(asked()).toBe(1);
+    expect(kept.save).toHaveBeenCalledTimes(1);
+    // A second press is a toggle (it closes the panel), not a second request.
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(asked()).toBe(1);
   });
 
   it("shows the summary the vault kept, asks no model, and summarizes again on request", async () => {
