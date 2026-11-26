@@ -2798,7 +2798,7 @@ handover-import-opening = Otwieranie…
 
 handover-import-error-typo = Ten klucz wygląda niepoprawnie. Porównaj go z tym, który otrzymałeś(-aś).
 
-handover-import-error-recovery = To jest klucz odzyskiwania, a nie klucz do tego pliku. Poproś o klucz utworzony dla pliku.
+handover-import-error-recovery = To wygląda na klucz odzyskiwania, a nie klucz do tego pliku. Sprawdź klucz, który otrzymałeś(-aś) dla pliku, i czy nie ma w nim literówki. Jeśli go nie otrzymałeś(-aś), poproś o klucz utworzony dla pliku.
 
 handover-import-error-wrong = To nie otwiera tego pliku.
 

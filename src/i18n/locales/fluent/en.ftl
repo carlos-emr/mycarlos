@@ -2680,7 +2680,7 @@ handover-import-opening = Opening…
 
 handover-import-error-typo = That key does not look right. Check it against what you were given.
 
-handover-import-error-recovery = That is a recovery key, not the key for this file. Ask for the key made for the file.
+handover-import-error-recovery = That looks like a recovery key, not the key for this file. Check the key you were given for the file, and check for a typo. If you were not given one, ask for the key made for the file.
 
 handover-import-error-wrong = That does not open this file.
 
