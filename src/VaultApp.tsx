@@ -854,8 +854,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       confirmRecoveryKey: (groups) => track(bridge.confirmRecoveryKey(groups)),
       pickBackupDestination: (localDate) =>
         track(bridge.pickBackupDestination(localDate)),
-      saveBackupToPicked: (pickId) =>
-        transfer(() => bridge.saveBackupToPicked(pickId)),
+      // `leaveVideosOut` must be passed on: dropping it saved every backup whole.
+      saveBackupToPicked: (pickId, leaveVideosOut) =>
+        transfer(() => bridge.saveBackupToPicked(pickId, leaveVideosOut)),
       // A person's records handed over, or added from a file (#360): pickers are
       // tracked as the backup's are, and writing or adding is a transfer the lock waits for.
       pickProfileExportDestination: (exportId, localDate) =>
