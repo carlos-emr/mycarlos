@@ -91,6 +91,7 @@ describe("the language in use", () => {
     setLocaleOverride("es");
     setLocaleOverride("xx" as never);
     expect(getLocaleOverride()).toBe("es");
+    expect(document.documentElement.lang).toBe("es");
   });
 
   it("tells a screen reader which language the page is in, and follows a change", () => {
