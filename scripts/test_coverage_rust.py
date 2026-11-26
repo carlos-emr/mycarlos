@@ -219,6 +219,11 @@ class BuildCommandTests(unittest.TestCase):
         for bad in ("a b", "a;b", "--x", "a,,b", ",a"):
             with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 run_main("--check", "--features", bad)
+        # The `=` form reaches the pattern itself (argparse refuses a separate "--x" before it
+        # runs): a name that starts with a hyphen would be handed to Cargo as an option.
+        for bad in ("--x", "-x", "--release", "a,-b", "-a,b"):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                run_main("--check", f"--features={bad}")
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             run_main("--check", "--target-dir", "/no/such/directory/anywhere")
 

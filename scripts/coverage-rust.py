@@ -254,7 +254,9 @@ def requested_floors(args):
     return floors
 
 
-FEATURE_LIST = re.compile(r"[A-Za-z0-9_-]+(,[A-Za-z0-9_-]+)*")
+# A name never starts with a hyphen: `--features=--release` would otherwise reach Cargo as the next
+# argument and change what it does.
+FEATURE_LIST = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*(,[A-Za-z0-9_][A-Za-z0-9_-]*)*")
 
 
 def build_command(tools, host, args):
