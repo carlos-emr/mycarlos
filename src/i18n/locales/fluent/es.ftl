@@ -2538,6 +2538,7 @@ interface-RecordDialog-camera = Cámara
 interface-RecordDialog-microphone = Micrófono
 interface-RecordDialog-unnamedCamera = Cámara { $number }
 interface-RecordDialog-unnamedMicrophone = Micrófono { $number }
+interface-RecordDialog-systemDefaultDevice = Predeterminado del sistema
 interface-RecordDialog-deviceFellBack = La cámara o el micrófono que usó la última vez no está conectado, así que se usa el predeterminado del sistema.
 interface-RecordDialog-testMicrophone = Probar el micrófono
 interface-RecordDialog-stopTestingMicrophone = Dejar de probar

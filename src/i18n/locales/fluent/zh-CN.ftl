@@ -2285,6 +2285,7 @@ interface-RecordDialog-camera = 摄像头
 interface-RecordDialog-microphone = 麦克风
 interface-RecordDialog-unnamedCamera = 摄像头 { $number }
 interface-RecordDialog-unnamedMicrophone = 麦克风 { $number }
+interface-RecordDialog-systemDefaultDevice = 系统默认
 interface-RecordDialog-deviceFellBack = 上次使用的摄像头或麦克风未连接，因此正在使用系统默认设备。
 interface-RecordDialog-testMicrophone = 测试麦克风
 interface-RecordDialog-stopTestingMicrophone = 停止测试

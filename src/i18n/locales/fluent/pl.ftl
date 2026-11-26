@@ -2618,6 +2618,7 @@ interface-RecordDialog-camera = Kamera
 interface-RecordDialog-microphone = Mikrofon
 interface-RecordDialog-unnamedCamera = Kamera { $number }
 interface-RecordDialog-unnamedMicrophone = Mikrofon { $number }
+interface-RecordDialog-systemDefaultDevice = Domyślne urządzenie systemu
 interface-RecordDialog-deviceFellBack = Kamera lub mikrofon użyty ostatnio nie jest podłączony, więc używane jest urządzenie domyślne systemu.
 interface-RecordDialog-testMicrophone = Sprawdź mikrofon
 interface-RecordDialog-stopTestingMicrophone = Zakończ sprawdzanie

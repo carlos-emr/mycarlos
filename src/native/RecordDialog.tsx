@@ -187,7 +187,9 @@ export function RecordDialog({
   }, []);
 
   const start = useCallback(
-    async (choice?: DeviceChoice) => {
+    // `choice` is what to open (the devices in use, with the one chosen from a list replaced);
+    // `chosen` is which of the two the patient picked, the only one that is remembered.
+    async (choice?: DeviceChoice, chosen?: keyof DeviceChoice) => {
       stopCamera();
       const attempt = attemptRef.current;
       setFailure(null);
@@ -279,16 +281,18 @@ export function RecordDialog({
         const connected = await listDevices(navigator.mediaDevices);
         if (attempt !== attemptRef.current) return;
         setDevices(connected);
-        const used = devicesInUse(stream);
+        const used = devicesInUse(stream, connected);
         setUsing(used);
         setFellBack(gone);
         // A choice made from the lists is remembered only now that its stream is open: a device
         // that is busy or refuses must not become the one asked for every time ("Try again"
-        // would retry it for ever).
-        if (choice)
+        // would retry it for ever). Only the one the patient chose is remembered: the other keeps
+        // what was stored (nothing, for the system's default), so choosing a camera does not pin
+        // the microphone that happened to be in use.
+        if (choice && chosen)
           rememberDeviceChoice({
-            camera: used.camera ?? choice.camera,
-            microphone: used.microphone ?? choice.microphone,
+            ...readDeviceChoice(),
+            [chosen]: used[chosen] ?? choice[chosen],
           });
         setStage("ready");
       } catch (error) {
@@ -762,7 +766,7 @@ export function RecordDialog({
     refocusRef.current = kind;
     restartedRef.current = false;
     setTesting(false);
-    void start(next);
+    void start(next, kind);
   };
 
   const pausedNow = stage === "paused";
@@ -1154,8 +1158,10 @@ function DevicePick({
   if (devices.length === 0) return null;
   const nameOf = (device: DeviceInfo, index: number) =>
     device.label || translateNow(unnamed, { number: index + 1 });
-  const selected =
-    devices.find((device) => device.id === current) ?? devices[0];
+  // The one in use, if the browser says which it is. When it cannot be matched to a listed device
+  // (the system's default, which a stream reports under an alias id), "System default" is shown:
+  // never the first device of the list, which would be a guess shown as a fact.
+  const selected = devices.find((device) => device.id === current) ?? null;
   if (devices.length === 1)
     return (
       <p className="record-device">
@@ -1168,10 +1174,15 @@ function DevicePick({
       <span>{label}</span>
       <select
         id={`record-device-${kind}`}
-        value={selected.id}
+        value={selected ? selected.id : ""}
         disabled={disabled}
         onChange={(event) => onChange(kind, event.currentTarget.value)}
       >
+        {!selected && (
+          <option value="" disabled>
+            {translateNow("interface.RecordDialog.systemDefaultDevice")}
+          </option>
+        )}
         {devices.map((device, index) => (
           <option key={device.id} value={device.id}>
             {nameOf(device, index)}

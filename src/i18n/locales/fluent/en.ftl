@@ -2503,6 +2503,7 @@ interface-RecordDialog-camera = Camera
 interface-RecordDialog-microphone = Microphone
 interface-RecordDialog-unnamedCamera = Camera { $number }
 interface-RecordDialog-unnamedMicrophone = Microphone { $number }
+interface-RecordDialog-systemDefaultDevice = System default
 interface-RecordDialog-deviceFellBack = The camera or microphone you used last is not connected, so the system's default is in use.
 interface-RecordDialog-testMicrophone = Test microphone
 interface-RecordDialog-stopTestingMicrophone = Stop testing

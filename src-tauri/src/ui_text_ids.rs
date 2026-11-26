@@ -529,6 +529,7 @@ pub enum MessageId {
     InterfaceRecordDialogStopAndSave,
     InterfaceRecordDialogStopAndSaveTheVideo,
     InterfaceRecordDialogStopTestingMicrophone,
+    InterfaceRecordDialogSystemDefaultDevice,
     InterfaceRecordDialogTestMicrophone,
     InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
     InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
@@ -1918,6 +1919,7 @@ impl MessageId {
         Self::InterfaceRecordDialogStopAndSave,
         Self::InterfaceRecordDialogStopAndSaveTheVideo,
         Self::InterfaceRecordDialogStopTestingMicrophone,
+        Self::InterfaceRecordDialogSystemDefaultDevice,
         Self::InterfaceRecordDialogTestMicrophone,
         Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
         Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
@@ -3484,6 +3486,9 @@ impl MessageId {
             }
             Self::InterfaceRecordDialogStopTestingMicrophone => {
                 "interface-RecordDialog-stopTestingMicrophone"
+            }
+            Self::InterfaceRecordDialogSystemDefaultDevice => {
+                "interface-RecordDialog-systemDefaultDevice"
             }
             Self::InterfaceRecordDialogTestMicrophone => "interface-RecordDialog-testMicrophone",
             Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn => {
@@ -6159,6 +6164,9 @@ impl MessageId {
             }
             "interface.RecordDialog.unnamedMicrophone" => {
                 Some(Self::InterfaceRecordDialogUnnamedMicrophone)
+            }
+            "interface.RecordDialog.systemDefaultDevice" => {
+                Some(Self::InterfaceRecordDialogSystemDefaultDevice)
             }
             "interface.RecordDialog.deviceFellBack" => {
                 Some(Self::InterfaceRecordDialogDeviceFellBack)

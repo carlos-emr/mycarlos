@@ -1150,6 +1150,7 @@
   "interface.RecordDialog.microphone",
   "interface.RecordDialog.unnamedCamera",
   "interface.RecordDialog.unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack",
   "interface.RecordDialog.testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone",

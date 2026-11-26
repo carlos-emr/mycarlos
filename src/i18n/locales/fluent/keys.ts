@@ -1151,6 +1151,7 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.microphone",
   "interface.RecordDialog.unnamedCamera",
   "interface.RecordDialog.unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack",
   "interface.RecordDialog.testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone",
@@ -2774,6 +2775,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-unnamedCamera",
   "interface.RecordDialog.unnamedMicrophone":
     "interface-RecordDialog-unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice":
+    "interface-RecordDialog-systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack":
     "interface-RecordDialog-deviceFellBack",
   "interface.RecordDialog.testMicrophone":
@@ -4328,6 +4331,7 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.microphone": undefined;
   "interface.RecordDialog.unnamedCamera": { number: FluentArgument };
   "interface.RecordDialog.unnamedMicrophone": { number: FluentArgument };
+  "interface.RecordDialog.systemDefaultDevice": undefined;
   "interface.RecordDialog.deviceFellBack": undefined;
   "interface.RecordDialog.testMicrophone": undefined;
   "interface.RecordDialog.stopTestingMicrophone": undefined;

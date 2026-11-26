@@ -43,16 +43,26 @@ class FakeRecorder extends EventTarget {
   }
 }
 
-type FakeDevice = { deviceId: string; label: string; kind: MediaDeviceKind };
+type FakeDevice = {
+  deviceId: string;
+  label: string;
+  kind: MediaDeviceKind;
+  groupId?: string;
+};
 const camera = (deviceId: string, label: string): FakeDevice => ({
   deviceId,
   label,
   kind: "videoinput",
 });
-const microphone = (deviceId: string, label: string): FakeDevice => ({
+const microphone = (
+  deviceId: string,
+  label: string,
+  groupId?: string,
+): FakeDevice => ({
   deviceId,
   label,
   kind: "audioinput",
+  ...(groupId && { groupId }),
 });
 const LAPTOP = camera("cam-a", "FAKE Laptop camera");
 const WEBCAM = camera("cam-b", "FAKE USB webcam");
@@ -63,7 +73,15 @@ const HEADSET = microphone("mic-b", "FAKE Headset microphone");
 const streams: MediaStream[] = [];
 const timers: number[] = [];
 const contexts: AudioContext[] = [];
-function fakeStream(cameraId: string, microphoneId: string) {
+/** What a stream opened on the system's default microphone says about it, when a test needs the
+ * browser's real habit: Chromium reports the ALIAS id "default" (not in the lists), with the
+ * group id of the physical device it stands for. */
+let defaultMicrophoneReport: { deviceId: string; groupId?: string } | null;
+function fakeStream(
+  cameraId: string,
+  microphoneId: string,
+  microphoneReport?: { deviceId: string; groupId?: string },
+) {
   const canvas = document.createElement("canvas");
   canvas.width = 320;
   canvas.height = 240;
@@ -90,7 +108,7 @@ function fakeStream(cameraId: string, microphoneId: string) {
     getCapabilities: () => ({ width: { max: 1280 }, height: { max: 720 } }),
   });
   Object.assign(stream.getAudioTracks()[0]!, {
-    getSettings: () => ({ deviceId: microphoneId }),
+    getSettings: () => microphoneReport ?? { deviceId: microphoneId },
   });
   streams.push(stream);
   return stream;
@@ -110,6 +128,7 @@ beforeEach(() => {
   window.localStorage.removeItem(KEY);
   window.localStorage.removeItem("mycarlos.videoQuality.v1");
   connected = [LAPTOP, WEBCAM, BUILT_IN, HEADSET];
+  defaultMicrophoneReport = null;
   vi.stubGlobal("MediaRecorder", FakeRecorder);
   enumerate = vi
     .spyOn(navigator.mediaDevices, "enumerateDevices")
@@ -130,6 +149,7 @@ beforeEach(() => {
           connected.find((d) => d.kind === "videoinput")!.deviceId,
         wantedMicrophone ??
           connected.find((d) => d.kind === "audioinput")!.deviceId,
+        wantedMicrophone ? undefined : (defaultMicrophoneReport ?? undefined),
       );
     });
 });
@@ -234,8 +254,10 @@ describe("choosing the camera and the microphone", () => {
     await screen.findByRole("button", { name: "Start recording" });
     expect(microphoneList().value).toBe("mic-b");
     expect(cameraList().value).toBe("cam-a");
+    // Only the microphone, which was chosen, is remembered: the camera in use was not chosen, so
+    // it stays "the system's default" (nothing stored) rather than being pinned.
     expect(readDeviceChoice()).toEqual({
-      camera: "cam-a",
+      camera: null,
       microphone: "mic-b",
     });
     // The focus stays on the list that was used, not on Start recording.
@@ -245,6 +267,92 @@ describe("choosing the camera and the microphone", () => {
     const third = getUserMedia.mock.calls[2]![0];
     expect(exact(third.video)).toBe("cam-b");
     expect(exact(third.audio)).toBe("mic-b");
+    await screen.findByRole("button", { name: "Start recording" });
+    expect(readDeviceChoice()).toEqual({
+      camera: "cam-b",
+      microphone: "mic-b",
+    });
+  });
+
+  it("remembers only the device chosen: choosing a camera leaves the microphone as it was stored", async () => {
+    // Nothing stored: the microphone in use is the system's default and stays so.
+    open();
+    await ready();
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    await screen.findByRole("button", { name: "Start recording" });
+    expect(readDeviceChoice()).toEqual({ camera: "cam-b", microphone: null });
+    cleanup();
+    // A stored microphone stays as it was, and is not replaced by the one in use.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ camera: null, microphone: "mic-b" }),
+    );
+    open();
+    await ready();
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(4));
+    await screen.findByRole("button", { name: "Start recording" });
+    expect(readDeviceChoice()).toEqual({
+      camera: "cam-b",
+      microphone: "mic-b",
+    });
+  });
+
+  it("shows the system's default microphone as the device it really is when the stream calls it 'default'", async () => {
+    // Chromium's habit: no device chosen, the track says "default" (not listed), with the group
+    // of the headset that is the system's default; the built-in one is listed first.
+    connected = [
+      LAPTOP,
+      WEBCAM,
+      microphone("mic-a", "FAKE Built-in microphone", "group-built-in"),
+      microphone("mic-b", "FAKE Headset microphone", "group-headset"),
+      microphone(
+        "default",
+        "Default - FAKE Headset microphone",
+        "group-headset",
+      ),
+    ];
+    defaultMicrophoneReport = { deviceId: "default", groupId: "group-headset" };
+    open();
+    await ready();
+    // The alias is not a device of its own.
+    expect(names(microphoneList())).toEqual([
+      "FAKE Built-in microphone",
+      "FAKE Headset microphone",
+    ]);
+    expect(microphoneList().value).toBe("mic-b");
+    // Nothing was chosen, so nothing is stored.
+    expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
+  });
+
+  it("says 'System default' rather than guessing the first device when the one in use cannot be matched", async () => {
+    connected = [
+      LAPTOP,
+      WEBCAM,
+      microphone("mic-a", "FAKE Built-in microphone", "group-built-in"),
+      microphone("mic-b", "FAKE Headset microphone", "group-headset"),
+    ];
+    // The stream says "default" with a group that matches no listed device (or none at all).
+    for (const report of [
+      { deviceId: "default", groupId: "group-unknown" },
+      { deviceId: "default" },
+    ]) {
+      defaultMicrophoneReport = report;
+      const view = open();
+      await ready();
+      expect(microphoneList().value).toBe("");
+      const shown = microphoneList().selectedOptions[0]!;
+      expect(visibleText(shown.textContent ?? "")).toBe("System default");
+      // It is a label for the state, not a choice: it cannot be picked again.
+      expect(shown).toBeDisabled();
+      // The real devices are still all there to choose.
+      expect(names(microphoneList()).slice(1)).toEqual([
+        "FAKE Built-in microphone",
+        "FAKE Headset microphone",
+      ]);
+      view.unmount();
+    }
   });
 
   it("uses the devices chosen last on this device, outside the vault", async () => {

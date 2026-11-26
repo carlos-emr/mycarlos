@@ -5,10 +5,13 @@
 // ids, never a name.
 
 /** One camera or microphone as the dialog lists it: the browser's id and its name, which the
- * browser withholds until the camera and microphone have been allowed once. */
+ * browser withholds until the camera and microphone have been allowed once. `group` is the
+ * browser's group id ("" where it gives none): the physical device behind the id, which is how a
+ * stream opened on the system's default is matched to the device that is really the default. */
 export interface DeviceInfo {
   id: string;
   label: string;
+  group: string;
 }
 
 export interface DeviceLists {
@@ -79,7 +82,11 @@ export async function listDevices(
             device.deviceId !== "" &&
             !ALIASES.has(device.deviceId),
         )
-        .map((device) => ({ id: device.deviceId, label: device.label }));
+        .map((device) => ({
+          id: device.deviceId,
+          label: device.label,
+          group: device.groupId ?? "",
+        }));
     return { cameras: pick("videoinput"), microphones: pick("audioinput") };
   } catch {
     return NO_DEVICES;
@@ -110,18 +117,35 @@ export function deviceIsGone(error: unknown): boolean {
   return name === "OverconstrainedError" || name === "NotFoundError";
 }
 
-/** The ids the open tracks really use, for showing which device is in use. */
-export function devicesInUse(stream: MediaStream): DeviceChoice {
-  const id = (track: MediaStreamTrack | undefined) => {
+/** The ids, among the listed devices, that the open tracks really use, for showing which device is
+ * in use. A stream opened with no device chosen reports the system's default under an alias id
+ * (Chromium says "default" for a microphone), which is not in the lists; it is matched to the
+ * listed device with the same group id. A device that cannot be matched is null ("the system's
+ * default", never the first one listed). */
+export function devicesInUse(
+  stream: MediaStream,
+  lists: DeviceLists,
+): DeviceChoice {
+  const id = (
+    track: MediaStreamTrack | undefined,
+    devices: DeviceInfo[],
+  ): string | null => {
     try {
-      return cleanId(track?.getSettings().deviceId);
+      const settings = track?.getSettings();
+      const reported = cleanId(settings?.deviceId);
+      if (reported && devices.some((device) => device.id === reported))
+        return reported;
+      const group = settings?.groupId;
+      if (group)
+        return devices.find((device) => device.group === group)?.id ?? null;
     } catch {
-      return null;
+      // Nothing is known about the device in use.
     }
+    return null;
   };
   return {
-    camera: id(stream.getVideoTracks()[0]),
-    microphone: id(stream.getAudioTracks()[0]),
+    camera: id(stream.getVideoTracks()[0], lists.cameras),
+    microphone: id(stream.getAudioTracks()[0], lists.microphones),
   };
 }
 
