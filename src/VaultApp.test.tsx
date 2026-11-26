@@ -7054,6 +7054,63 @@ describe("durable vault UI", () => {
     Object.keys(BRIDGE_CLASS) as (keyof VaultBridge)[]
   ).filter((name) => BRIDGE_CLASS[name] === "write");
 
+  it("offers a hidden person in no menu, dialog or picker the library opens: not the Add menu, the head menu, a document's details, or the move choices", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...withHiddenCasey(),
+          profiles: [
+            ...snapshotWithRecord.profiles,
+            { id: "profile-2", displayName: "FAKE Robin", createdAtMs: 2 },
+          ],
+        }),
+      ),
+      hideProfile: vi.fn().mockResolvedValue(undefined),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("Jamie") });
+    const name = "Hiddenname";
+    // The values of the choices count too: an option's text is what a picker lists.
+    const optionsSaying = () =>
+      Array.from(document.querySelectorAll("option")).filter((option) =>
+        (option.textContent ?? "").includes(name),
+      );
+    const clean = (where: string) => {
+      expect(placesThatSay(name), where).toEqual([]);
+      expect(optionsSaying(), `${where} (options)`).toEqual([]);
+    };
+    clean("the library");
+    // Every button that opens a menu or a dialog, one at a time, and closes it again.
+    let opened = 0;
+    for (const opener of Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button[aria-haspopup]"),
+    )) {
+      if (opener.disabled || !opener.isConnected) continue;
+      await user.click(opener);
+      opened += 1;
+      clean(
+        `after pressing ${opener.getAttribute("aria-label") ?? opener.textContent}`,
+      );
+      await user.keyboard("{Escape}");
+    }
+    expect(opened).toBeGreaterThan(1);
+    // A document's details, and the person choices that a selection brings.
+    await user.click(screen.getByText(humanText("FAKE_Results.pdf")));
+    await screen.findByRole("dialog");
+    clean("a document's details");
+    await user.keyboard("{Escape}");
+    for (const tick of screen.queryAllByRole("button", {
+      name: humanText(/^Select /),
+    })) {
+      await user.click(tick);
+      clean("a selection");
+    }
+  });
+
   it("lets no control write while the vault is read-only: every enabled button in the library, a document's details and Security", async () => {
     const user = userEvent.setup();
     // A clinic is linked and its approval is waiting (as in the clinic tests), and a document
