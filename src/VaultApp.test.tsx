@@ -34,6 +34,7 @@ import type {
   PortalLinkSummary,
   PersonDetails,
   ReceivedAcceptOutcome,
+  ProfileImportOutcome,
   SavedBackup,
   SavedProfileExport,
   VaultBridge,
@@ -4791,12 +4792,19 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
-  /** An unlocked vault, the hand-over dialog taken as far as the file being written: that save
-   * stays pending until `finishSave` is called. A lock takes 50 ms; the page can be hidden. */
-  async function handOverSavePending() {
+  /** An unlocked vault, a hand-over dialog taken as far as the bridge call that writes or adds
+   * (`which`: a person's records saved to a file, or a person added from one): that call stays
+   * pending until `finish` or `fail`. A lock takes 50 ms; the page can be hidden. With
+   * `withBackup` an encrypted backup (which runs through `run`) is also pending, started from
+   * the Security page beneath the dialog. */
+  async function handOverSavePending(
+    which: "export" | "import" = "export",
+    { withBackup = false }: { withBackup?: boolean } = {},
+  ) {
     const user = userEvent.setup();
-    let finishSave: (saved: SavedProfileExport) => void = () => {};
+    let finishSave: (value: never) => void = () => {};
     let failSave: (error: unknown) => void = () => {};
+    let finishBackup: (value: never) => void = () => {};
     const summaryOfOne = () => ({
       documents: 1,
       hidden: 0,
@@ -4823,6 +4831,36 @@ describe("durable vault UI", () => {
             failSave = reject;
           }),
       ),
+      pickProfileImportSource: vi.fn().mockResolvedValue("pick-5"),
+      profileImportKeyKind: vi.fn().mockResolvedValue("passphrase"),
+      inspectProfileImport: vi.fn().mockResolvedValue({
+        exportedAtMs: 1_700_000_000_000,
+        displayName: "FAKE Robin",
+        fullName: null,
+        birthDate: null,
+        documents: 1,
+        hidden: 0,
+        folders: 0,
+        aiAnswers: 0,
+        withClinicEvidence: 0,
+        historyEntries: 0,
+        plaintextBytes: 100,
+        alreadyHere: null,
+      }),
+      importProfile: vi.fn(
+        () =>
+          new Promise<ProfileImportOutcome>((resolve, reject) => {
+            finishSave = resolve;
+            failSave = reject;
+          }),
+      ),
+      pickBackupDestination: vi.fn().mockResolvedValue("pick-7"),
+      saveBackupToPicked: vi.fn(
+        () =>
+          new Promise<SavedBackup>((resolve) => {
+            finishBackup = resolve;
+          }),
+      ),
       lock: vi.fn(
         () => new Promise<void>((resolve) => setTimeout(resolve, 50)),
       ),
@@ -4836,29 +4874,71 @@ describe("durable vault UI", () => {
     await user.click(
       await screen.findByRole("button", { name: humanText(/Security/) }),
     );
-    await user.click(
-      screen.getByRole("button", { name: humanText("Hand records over…") }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    await user.click(
-      within(dialog).getByRole("button", { name: humanText("Continue") }),
-    );
-    await user.click(
-      await within(dialog).findByRole("checkbox", {
-        name: humanText(/I have written the key down/),
-      }),
-    );
-    await user.click(
-      within(dialog).getByRole("button", { name: humanText("Continue") }),
-    );
-    await user.click(
-      within(dialog).getByRole("button", {
-        name: humanText("Choose where to save…"),
-      }),
-    );
-    await waitFor(() =>
-      expect(bridge.saveProfileExportToPicked).toHaveBeenCalledWith("pick-4"),
-    );
+    if (which === "export") {
+      await user.click(
+        screen.getByRole("button", { name: humanText("Hand records over…") }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await user.click(
+        within(dialog).getByRole("button", { name: humanText("Continue") }),
+      );
+      await user.click(
+        await within(dialog).findByRole("checkbox", {
+          name: humanText(/I have written the key down/),
+        }),
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: humanText("Continue") }),
+      );
+      await user.click(
+        within(dialog).getByRole("button", {
+          name: humanText("Choose where to save…"),
+        }),
+      );
+      await waitFor(() =>
+        expect(bridge.saveProfileExportToPicked).toHaveBeenCalledWith("pick-4"),
+      );
+    } else {
+      await user.click(
+        screen.getByRole("button", {
+          name: humanText("Add a person from a file…"),
+        }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await user.click(
+        within(dialog).getByRole("button", {
+          name: humanText("Choose the file…"),
+        }),
+      );
+      await user.type(
+        await within(dialog).findByLabelText(humanText(/^Passphrase/)),
+        "FAKE passphrase of the file",
+      );
+      await user.click(
+        within(dialog).getByRole("button", {
+          name: humanText("Open the file"),
+        }),
+      );
+      await user.click(
+        await within(dialog).findByRole("button", {
+          name: humanText("Add this person"),
+        }),
+      );
+      await waitFor(() => expect(bridge.importProfile).toHaveBeenCalledOnce());
+    }
+    if (withBackup) {
+      // Not reachable with a pointer under the dialog, and not offered while busy: this pins the
+      // arithmetic of two operations running at once.
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: humanText("Save encrypted backup…"),
+          hidden: true,
+        }),
+      );
+      await waitFor(() =>
+        expect(bridge.saveBackupToPicked).toHaveBeenCalledWith("pick-7"),
+      );
+    }
     const setVisibility = (state: DocumentVisibilityState) =>
       act(async () => {
         visibilityState = state;
@@ -4866,46 +4946,82 @@ describe("durable vault UI", () => {
       });
     const finish = () =>
       act(async () =>
-        finishSave({
-          name: "FAKE.mycarloshandover",
-          bytes: 10,
-          summary: summaryOfOne(),
-        }),
+        which === "export"
+          ? finishSave({
+              name: "FAKE.mycarloshandover",
+              bytes: 10,
+              summary: summaryOfOne(),
+            } as SavedProfileExport as never)
+          : finishSave({
+              status: "alreadyHere",
+              profileId: null,
+              documents: 0,
+              folders: 0,
+              hidden: 0,
+              aiAnswers: 0,
+              aiAnswersDropped: 0,
+              evidenceKept: 0,
+              evidenceDropped: 0,
+              historyEntries: 0,
+            } as ProfileImportOutcome as never),
       );
     const fail = () =>
       act(async () => failSave({ code: "export_failed", message: "FAKE" }));
-    return { bridge, setVisibility, finish, fail };
+    const finishTheBackup = () =>
+      act(async () =>
+        finishBackup({ name: "FAKE.mycarlosbackup", bytes: 10 } as never),
+      );
+    return { bridge, setVisibility, finish, fail, finishTheBackup };
   }
 
-  it("holds a lock for a person's records being saved to a file, then locks when the file is written", async () => {
-    const { bridge, setVisibility, finish } = await handOverSavePending();
-    await setVisibility("hidden");
-    // Locking now would cancel the write: content is hidden and the lock is owed.
-    expect(bridge.lock).not.toHaveBeenCalled();
-    expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
-    // Coming back does not show the library again: the lock is still owed.
-    await setVisibility("visible");
-    expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
-    await finish();
-    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
-    expect(
-      await screen.findByRole("heading", {
-        name: humanText("Unlock your vault"),
-      }),
-    ).toBeVisible();
-  });
+  it.each(["export", "import"] as const)(
+    "holds a lock while a hand-over %s is under way, then locks when it is done",
+    async (which) => {
+      const { bridge, setVisibility, finish } =
+        await handOverSavePending(which);
+      await setVisibility("hidden");
+      // Locking now would cancel the write: content is hidden and the lock is owed.
+      expect(bridge.lock).not.toHaveBeenCalled();
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
+      // Coming back does not show the library again: the lock is still owed.
+      await setVisibility("visible");
+      expect(screen.getByText(humanText(TRANSFER_HOLD))).toBeVisible();
+      await finish();
+      await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+      expect(
+        await screen.findByRole("heading", {
+          name: humanText("Unlock your vault"),
+        }),
+      ).toBeVisible();
+    },
+  );
 
-  it("a file that could not be written frees the hold too: a page hidden afterwards locks, and one hidden meanwhile locks when it fails", async () => {
-    const first = await handOverSavePending();
-    await first.fail();
-    await first.setVisibility("hidden");
-    await waitFor(() => expect(first.bridge.lock).toHaveBeenCalledOnce());
-    cleanup();
-    const second = await handOverSavePending();
-    await second.setVisibility("hidden");
-    expect(second.bridge.lock).not.toHaveBeenCalled();
-    await second.fail();
-    await waitFor(() => expect(second.bridge.lock).toHaveBeenCalledOnce());
+  it.each(["export", "import"] as const)(
+    "a hand-over %s that fails frees the hold too: a page hidden afterwards locks, and one hidden meanwhile locks when it fails",
+    async (which) => {
+      const first = await handOverSavePending(which);
+      await first.fail();
+      await first.setVisibility("hidden");
+      await waitFor(() => expect(first.bridge.lock).toHaveBeenCalledOnce());
+      cleanup();
+      const second = await handOverSavePending(which);
+      await second.setVisibility("hidden");
+      expect(second.bridge.lock).not.toHaveBeenCalled();
+      await second.fail();
+      await waitFor(() => expect(second.bridge.lock).toHaveBeenCalledOnce());
+    },
+  );
+
+  it("owes the lock until the last of two operations is over, a backup and a hand-over together", async () => {
+    const { bridge, setVisibility, finish, finishTheBackup } =
+      await handOverSavePending("export", { withBackup: true });
+    await setVisibility("hidden");
+    expect(bridge.lock).not.toHaveBeenCalled();
+    // The hand-over is over first: the backup is still being written.
+    await finish();
+    expect(bridge.lock).not.toHaveBeenCalled();
+    await finishTheBackup();
+    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
   });
 
   it("locks a page hidden after an encrypted backup was written (the same shape through run)", async () => {
@@ -4938,12 +5054,16 @@ describe("durable vault UI", () => {
     await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
   });
 
-  it("locks a page hidden after the file was written: the write is over, nothing is owed", async () => {
-    const { bridge, setVisibility, finish } = await handOverSavePending();
-    await finish();
-    await setVisibility("hidden");
-    await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
-  });
+  it.each(["export", "import"] as const)(
+    "locks a page hidden after the hand-over %s is done: it is over, nothing is owed",
+    async (which) => {
+      const { bridge, setVisibility, finish } =
+        await handOverSavePending(which);
+      await finish();
+      await setVisibility("hidden");
+      await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    },
+  );
 
   it("names the damaged document that stopped a backup", async () => {
     const user = userEvent.setup();

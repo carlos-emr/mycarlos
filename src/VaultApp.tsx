@@ -349,6 +349,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
   // What was last reported since the latest transfer began: its result, or a
   // partial readable copy to delete. Used only when a lock ends that transfer.
   const transferOutcomeRef = useRef<UiText | null>(null);
+  // `flushPortalNotice` is made again on every render; the bridge below is not, so it reaches
+  // the current one through this ref.
+  const flushPortalNoticeRef = useRef<() => void>(() => undefined);
   // The outcome of a transfer the vault locked on. It is shown after the next
   // unlock, not on the unlock screen, where anyone at the device could read it.
   const pendingOutcomeRef = useRef<UiText | null>(null);
@@ -832,8 +835,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       try {
         return await transfer(start);
       } finally {
-        if (transferHold.operationEnded() && lockHeldRef.current)
-          requestLock(true);
+        const idle = transferHold.operationEnded();
+        if (idle && lockHeldRef.current) requestLock(true);
+        else if (idle) flushPortalNoticeRef.current();
       }
     };
     return {
@@ -1141,6 +1145,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     )
       addNotice(held.message);
   };
+  flushPortalNoticeRef.current = flushPortalNotice;
 
   /** Runs a vault operation; `boxes` names what the patient typed for it,
    * so that a refusal of it says which box to check. Clinic work clears the
