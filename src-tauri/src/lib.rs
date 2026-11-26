@@ -12,6 +12,8 @@ mod document_collection;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod document_collection_pickup;
 mod document_identity;
+#[cfg(target_os = "macos")]
+mod document_notification_macos;
 pub mod document_notification_runtime;
 // Compiled on Linux, and in tests on every platform (its bus is a trait, tested with a fake).
 #[cfg(any(test, target_os = "linux"))]
