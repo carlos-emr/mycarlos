@@ -12,7 +12,7 @@ Clinic or portal operator, if you connect one: **[NAME AND PRIVACY NOTICE LINK]*
 
 myCarlos is a patient-run local application. You control your device and vault and choose which records to add, which supported connections to use, and where to save copies. This control does not extend to records held by a connected portal, clinic, support provider or another service you choose.
 
-myCarlos lets you keep documents and photos in an encrypted vault on your device. The vault can contain document names and contents, folders, information about the people whose records you manage, saved AI answers, clinic links and delivery records. You choose which files to add and which people to keep records for. Make sure you are entitled to manage someone else's information.
+myCarlos lets you keep documents, photos and videos in an encrypted vault on your device. The vault can contain document names and contents, folders, information about the people whose records you manage, saved AI answers, clinic links and delivery records. You choose which files to add and which people to keep records for. A video you add (an MP4 or MOV) is checked on your device, and the place and device details it carries are removed first; times saved in the video's headers stay. Nothing is sent anywhere. A backup includes your videos unless you choose to leave them out. Make sure you are entitled to manage someone else's information.
 
 The app unlocks the vault using your passphrase or recovery key. Keep those secrets private and keep your recovery kit somewhere safe. The publisher does not provide an account password-reset service for your vault. Losing both ways to unlock it can mean losing access to your records.
 

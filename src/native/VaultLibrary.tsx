@@ -73,6 +73,7 @@ import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
 import { RecordDialog, type RecordEnd } from "./RecordDialog";
+import { AddVideo, canAddVideo } from "./AddVideo";
 import { VideoViewer } from "./VideoViewer";
 import { VideoHelp } from "./VideoHelp";
 import { RecordingRecovery } from "./RecordingRecovery";
@@ -2470,6 +2471,15 @@ export function VaultLibrary({
                             </button>
                           </span>
                         )}
+                      {cameraPlatform !== "ios" && canAddVideo(bridge) && (
+                        <AddVideo
+                          bridge={bridge}
+                          profileId={profileId}
+                          folderIds={currentFolderId ? [currentFolderId] : []}
+                          disabled={busy || readOnly || !profileId}
+                          onAdded={() => void refresh()}
+                        />
+                      )}
                       <button
                         className="button primary"
                         type="button"

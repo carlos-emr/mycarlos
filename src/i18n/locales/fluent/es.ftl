@@ -829,7 +829,7 @@ native-filter-backups = Copias de seguridad de myCarlos
 
 native-filter-pdf = Documentos PDF
 
-native-filter-video = Vídeos (MP4 o MOV)
+native-filter-video = Videos (MP4 o MOV)
 
 native-kit-text =
     Kit de recuperación de myCarlos
@@ -2941,3 +2941,45 @@ notifications-testWait = Espere unos segundos y vuelva a intentarlo.
 
 notifications-testFailed = No se pudo mostrar el aviso de prueba.
 notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y vuelva a intentarlo.
+
+interface-AddVideo-add = Añadir un video
+
+interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y los datos del dispositivo que contiene.
+
+interface-AddVideo-checking = Comprobando el video…
+
+interface-AddVideo-storing = Añadiendo el video: { $percent } %
+
+interface-AddVideo-progressLabel = Añadiendo el video
+
+interface-AddVideo-cancel = Cancelar
+
+interface-AddVideo-cancelling = Cancelando…
+
+interface-AddVideo-added = Se añadió el video.
+
+interface-AddVideo-duplicate = Ese video ya está aquí. No se añadió nada.
+
+interface-AddVideo-cancelled = Cancelado. No se añadió nada.
+
+interface-AddVideo-notVideo = Este archivo no es un video que myCarlos pueda añadir. Elija un video MP4 o MOV.
+
+interface-AddVideo-hevc = Este video usa H.265 (HEVC), que muchos ordenadores no pueden reproducir. Guárdelo como MP4 H.264 y añádalo de nuevo.
+
+interface-AddVideo-videoCodec = Este video usa un formato de imagen que myCarlos no puede reproducir. Guárdelo como MP4 H.264 y añádalo de nuevo.
+
+interface-AddVideo-audioCodec = El sonido de este video usa un formato que myCarlos no puede reproducir. Guárdelo con sonido AAC y añádalo de nuevo.
+
+interface-AddVideo-noVideo = Este archivo no tiene imagen, así que no es un video. Elija un video MP4 o MOV.
+
+interface-AddVideo-tooManyTracks = Este video tiene más imágenes o sonidos de los que myCarlos puede añadir. Guarde una copia sencilla con una imagen y un sonido, y añádala de nuevo.
+
+interface-AddVideo-external = Una parte de este video está guardada fuera del archivo, así que no se puede añadir. Guarde una copia completa y añádala de nuevo.
+
+interface-AddVideo-fragmented = Este video está en un formato de transmisión. Guárdelo como MP4 normal y añádalo de nuevo.
+
+interface-AddVideo-tooBig = La imagen de este video es mayor de lo que myCarlos puede añadir. Guarde una copia más pequeña y añádala de nuevo.
+
+interface-AddVideo-tooLarge = Este video es mayor de lo que myCarlos puede añadir en este dispositivo (2 GB en un ordenador, 1 GB en un teléfono). Guarde una copia más pequeña y añádala de nuevo.
+
+interface-AddVideo-damaged = Este video está dañado o cortado, así que no se puede añadir. Cópielo de nuevo desde donde lo obtuvo e inténtelo otra vez.

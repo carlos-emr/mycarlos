@@ -1369,6 +1369,27 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "interface.AddVideo.add",
+  "interface.AddVideo.hint",
+  "interface.AddVideo.checking",
+  "interface.AddVideo.storing",
+  "interface.AddVideo.progressLabel",
+  "interface.AddVideo.cancel",
+  "interface.AddVideo.cancelling",
+  "interface.AddVideo.added",
+  "interface.AddVideo.duplicate",
+  "interface.AddVideo.cancelled",
+  "interface.AddVideo.notVideo",
+  "interface.AddVideo.hevc",
+  "interface.AddVideo.videoCodec",
+  "interface.AddVideo.audioCodec",
+  "interface.AddVideo.noVideo",
+  "interface.AddVideo.tooManyTracks",
+  "interface.AddVideo.external",
+  "interface.AddVideo.fragmented",
+  "interface.AddVideo.tooBig",
+  "interface.AddVideo.tooLarge",
+  "interface.AddVideo.damaged",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3008,6 +3029,27 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "interface.AddVideo.add": "interface-AddVideo-add",
+  "interface.AddVideo.hint": "interface-AddVideo-hint",
+  "interface.AddVideo.checking": "interface-AddVideo-checking",
+  "interface.AddVideo.storing": "interface-AddVideo-storing",
+  "interface.AddVideo.progressLabel": "interface-AddVideo-progressLabel",
+  "interface.AddVideo.cancel": "interface-AddVideo-cancel",
+  "interface.AddVideo.cancelling": "interface-AddVideo-cancelling",
+  "interface.AddVideo.added": "interface-AddVideo-added",
+  "interface.AddVideo.duplicate": "interface-AddVideo-duplicate",
+  "interface.AddVideo.cancelled": "interface-AddVideo-cancelled",
+  "interface.AddVideo.notVideo": "interface-AddVideo-notVideo",
+  "interface.AddVideo.hevc": "interface-AddVideo-hevc",
+  "interface.AddVideo.videoCodec": "interface-AddVideo-videoCodec",
+  "interface.AddVideo.audioCodec": "interface-AddVideo-audioCodec",
+  "interface.AddVideo.noVideo": "interface-AddVideo-noVideo",
+  "interface.AddVideo.tooManyTracks": "interface-AddVideo-tooManyTracks",
+  "interface.AddVideo.external": "interface-AddVideo-external",
+  "interface.AddVideo.fragmented": "interface-AddVideo-fragmented",
+  "interface.AddVideo.tooBig": "interface-AddVideo-tooBig",
+  "interface.AddVideo.tooLarge": "interface-AddVideo-tooLarge",
+  "interface.AddVideo.damaged": "interface-AddVideo-damaged",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4512,6 +4554,27 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "interface.AddVideo.add": undefined;
+  "interface.AddVideo.hint": undefined;
+  "interface.AddVideo.checking": undefined;
+  "interface.AddVideo.storing": { percent: FluentArgument };
+  "interface.AddVideo.progressLabel": undefined;
+  "interface.AddVideo.cancel": undefined;
+  "interface.AddVideo.cancelling": undefined;
+  "interface.AddVideo.added": undefined;
+  "interface.AddVideo.duplicate": undefined;
+  "interface.AddVideo.cancelled": undefined;
+  "interface.AddVideo.notVideo": undefined;
+  "interface.AddVideo.hevc": undefined;
+  "interface.AddVideo.videoCodec": undefined;
+  "interface.AddVideo.audioCodec": undefined;
+  "interface.AddVideo.noVideo": undefined;
+  "interface.AddVideo.tooManyTracks": undefined;
+  "interface.AddVideo.external": undefined;
+  "interface.AddVideo.fragmented": undefined;
+  "interface.AddVideo.tooBig": undefined;
+  "interface.AddVideo.tooLarge": undefined;
+  "interface.AddVideo.damaged": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

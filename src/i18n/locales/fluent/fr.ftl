@@ -2941,3 +2941,45 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
+
+interface-AddVideo-add = Ajouter une vidéo
+
+interface-AddVideo-hint = Choisissez une vidéo MP4 ou MOV sur cet appareil. Le lieu et les détails de l’appareil qu’elle contient sont d’abord supprimés.
+
+interface-AddVideo-checking = Vérification de la vidéo…
+
+interface-AddVideo-storing = Ajout de la vidéo : { $percent } %
+
+interface-AddVideo-progressLabel = Ajout de la vidéo
+
+interface-AddVideo-cancel = Annuler
+
+interface-AddVideo-cancelling = Annulation…
+
+interface-AddVideo-added = La vidéo a été ajoutée.
+
+interface-AddVideo-duplicate = Cette vidéo est déjà ici. Rien n’a été ajouté.
+
+interface-AddVideo-cancelled = Annulé. Rien n’a été ajouté.
+
+interface-AddVideo-notVideo = Ce fichier n’est pas une vidéo que myCarlos peut ajouter. Choisissez une vidéo MP4 ou MOV.
+
+interface-AddVideo-hevc = Cette vidéo utilise le H.265 (HEVC), que de nombreux ordinateurs ne peuvent pas lire. Enregistrez-la en MP4 H.264 et ajoutez-la de nouveau.
+
+interface-AddVideo-videoCodec = Cette vidéo utilise un format d’image que myCarlos ne peut pas lire. Enregistrez-la en MP4 H.264 et ajoutez-la de nouveau.
+
+interface-AddVideo-audioCodec = Le son de cette vidéo utilise un format que myCarlos ne peut pas lire. Enregistrez-la avec un son AAC et ajoutez-la de nouveau.
+
+interface-AddVideo-noVideo = Ce fichier n’a pas d’image : ce n’est donc pas une vidéo. Choisissez une vidéo MP4 ou MOV.
+
+interface-AddVideo-tooManyTracks = Cette vidéo contient plus d’images ou de sons que myCarlos ne peut en ajouter. Enregistrez une copie simple avec une image et un son, puis ajoutez-la de nouveau.
+
+interface-AddVideo-external = Une partie de cette vidéo est stockée hors du fichier : elle ne peut pas être ajoutée. Enregistrez une copie complète et ajoutez-la de nouveau.
+
+interface-AddVideo-fragmented = Cette vidéo est dans un format de diffusion en continu. Enregistrez-la en MP4 ordinaire et ajoutez-la de nouveau.
+
+interface-AddVideo-tooBig = L’image de cette vidéo est plus grande que ce que myCarlos peut ajouter. Enregistrez une copie plus petite et ajoutez-la de nouveau.
+
+interface-AddVideo-tooLarge = Cette vidéo est plus volumineuse que ce que myCarlos peut ajouter sur cet appareil (2 Go sur un ordinateur, 1 Go sur un téléphone). Enregistrez une copie plus petite et ajoutez-la de nouveau.
+
+interface-AddVideo-damaged = Cette vidéo est endommagée ou tronquée : elle ne peut pas être ajoutée. Copiez-la de nouveau depuis son origine et réessayez.

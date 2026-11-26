@@ -2632,3 +2632,45 @@ notifications-testWait = 請等候幾秒鐘後再試一次。
 
 notifications-testFailed = 無法顯示測試通知。
 notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後再試一次。
+
+interface-AddVideo-add = 新增影片
+
+interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點和裝置資訊會先被刪除。
+
+interface-AddVideo-checking = 正在檢查影片…
+
+interface-AddVideo-storing = 正在新增影片：{ $percent }%
+
+interface-AddVideo-progressLabel = 正在新增影片
+
+interface-AddVideo-cancel = 取消
+
+interface-AddVideo-cancelling = 正在取消…
+
+interface-AddVideo-added = 影片已新增。
+
+interface-AddVideo-duplicate = 此影片已在這裡，未新增任何內容。
+
+interface-AddVideo-cancelled = 已取消，未新增任何內容。
+
+interface-AddVideo-notVideo = 此檔案不是 myCarlos 可以新增的影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-hevc = 此影片使用 H.265（HEVC），許多電腦無法播放。請另存為 H.264 MP4 後再新增。
+
+interface-AddVideo-videoCodec = 此影片的畫面格式 myCarlos 無法播放。請另存為 H.264 MP4 後再新增。
+
+interface-AddVideo-audioCodec = 此影片的聲音格式 myCarlos 無法播放。請另存為 AAC 聲音後再新增。
+
+interface-AddVideo-noVideo = 此檔案沒有畫面，所以不是影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-tooManyTracks = 此影片的畫面或聲音多於 myCarlos 可新增的數量。請另存為只有一路畫面和一路聲音的簡單副本後再新增。
+
+interface-AddVideo-external = 此影片的一部分存放在檔案之外，無法新增。請另存為完整副本後再新增。
+
+interface-AddVideo-fragmented = 此影片是串流格式。請另存為一般 MP4 後再新增。
+
+interface-AddVideo-tooBig = 此影片的畫面大於 myCarlos 可新增的尺寸。請另存為較小的副本後再新增。
+
+interface-AddVideo-tooLarge = 此影片大於 myCarlos 在此裝置上可新增的大小（電腦 2 GB，手機 1 GB）。請另存為較小的副本後再新增。
+
+interface-AddVideo-damaged = 此影片已損毀或被截斷，無法新增。請從來源處重新複製後再試。

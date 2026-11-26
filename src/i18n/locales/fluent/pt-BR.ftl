@@ -2941,3 +2941,45 @@ notifications-testWait = Aguarde alguns segundos e tente novamente.
 
 notifications-testFailed = Não foi possível mostrar o aviso de teste.
 notifications-testOff = Os avisos estão desativados no myCarlos. Ative-os e tente novamente.
+
+interface-AddVideo-add = Adicionar um vídeo
+
+interface-AddVideo-hint = Escolha um vídeo MP4 ou MOV neste dispositivo. O local e os dados do dispositivo que ele contém são removidos antes.
+
+interface-AddVideo-checking = Verificando o vídeo…
+
+interface-AddVideo-storing = Adicionando o vídeo: { $percent }%
+
+interface-AddVideo-progressLabel = Adicionando o vídeo
+
+interface-AddVideo-cancel = Cancelar
+
+interface-AddVideo-cancelling = Cancelando…
+
+interface-AddVideo-added = O vídeo foi adicionado.
+
+interface-AddVideo-duplicate = Esse vídeo já está aqui. Nada foi adicionado.
+
+interface-AddVideo-cancelled = Cancelado. Nada foi adicionado.
+
+interface-AddVideo-notVideo = Este arquivo não é um vídeo que o myCarlos possa adicionar. Escolha um vídeo MP4 ou MOV.
+
+interface-AddVideo-hevc = Este vídeo usa H.265 (HEVC), que muitos computadores não conseguem reproduzir. Salve-o como MP4 H.264 e adicione-o de novo.
+
+interface-AddVideo-videoCodec = Este vídeo usa um formato de imagem que o myCarlos não consegue reproduzir. Salve-o como MP4 H.264 e adicione-o de novo.
+
+interface-AddVideo-audioCodec = O som deste vídeo usa um formato que o myCarlos não consegue reproduzir. Salve-o com som AAC e adicione-o de novo.
+
+interface-AddVideo-noVideo = Este arquivo não tem imagem, então não é um vídeo. Escolha um vídeo MP4 ou MOV.
+
+interface-AddVideo-tooManyTracks = Este vídeo tem mais imagens ou sons do que o myCarlos pode adicionar. Salve uma cópia simples com uma imagem e um som e adicione-a de novo.
+
+interface-AddVideo-external = Parte deste vídeo está guardada fora do arquivo, então ele não pode ser adicionado. Salve uma cópia completa e adicione-a de novo.
+
+interface-AddVideo-fragmented = Este vídeo está em um formato de transmissão. Salve-o como um MP4 comum e adicione-o de novo.
+
+interface-AddVideo-tooBig = A imagem deste vídeo é maior do que o myCarlos pode adicionar. Salve uma cópia menor e adicione-a de novo.
+
+interface-AddVideo-tooLarge = Este vídeo é maior do que o myCarlos pode adicionar neste dispositivo (2 GB em um computador, 1 GB em um celular). Salve uma cópia menor e adicione-a de novo.
+
+interface-AddVideo-damaged = Este vídeo está danificado ou cortado, então não pode ser adicionado. Copie-o de novo de onde ele veio e tente outra vez.

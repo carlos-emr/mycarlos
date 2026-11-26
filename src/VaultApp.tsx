@@ -834,6 +834,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         }),
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
+      pickImportVideo:
+        bridge.pickImportVideo &&
+        ((profileId, folderIds) =>
+          track(bridge.pickImportVideo!(profileId, folderIds))),
+      // Adding a video can take minutes: the lock waits for it, as for any transfer.
+      importPickedVideo:
+        bridge.importPickedVideo &&
+        ((pickId, profileId, folderIds) =>
+          transfer(() =>
+            bridge.importPickedVideo!(pickId, profileId, folderIds),
+          )),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
       saveRecoveryKit: () => track(bridge.saveRecoveryKit()),
