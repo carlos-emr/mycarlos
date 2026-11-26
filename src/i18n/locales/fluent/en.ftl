@@ -1035,6 +1035,8 @@ recoveryKey-reason-legend = Why are you replacing it?
 
 recoveryKey-reason-routine = I just want a new key: its kit is safe
 
+recoveryKey-kitCloudWarning = This file is not encrypted. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it, so save it somewhere that does not sync.
+
 recoveryKey-saveKit = Save recovery kit…
 
 recoveryKey-threeMisses = That did not match three times. Look at your recovery key again, then check it.
@@ -1170,6 +1172,8 @@ security-autoLock-shorter = Shorter delay
 security-autoLock-title = Lock automatically
 
 security-backup-body = One file holding your whole vault, still encrypted. Keep it somewhere other than this device, such as a USB drive. It opens with the passphrase or recovery key you have when you save it, and keeps opening with them even after you change them here. To restore one, lock the vault and choose Restore from a backup.
+
+security-backup-cloudWarning = This file is encrypted, but it shows how many documents it holds and how large each one is. A folder that syncs to the cloud (OneDrive, iCloud Drive, Dropbox, Google Drive) uploads it.
 
 security-backup-save = Save encrypted backup…
 

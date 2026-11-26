@@ -943,6 +943,8 @@ recoveryKey-reason-legend = 为什么要更换？
 
 recoveryKey-reason-routine = 我只是想换新密钥；目前的工具包仍安全
 
+recoveryKey-kitCloudWarning = 此文件未加密。同步到云端的文件夹（OneDrive、iCloud Drive、Dropbox、Google Drive）会将其上传，请保存到不会同步的位置。
+
 recoveryKey-saveKit = 保存恢复工具包…
 
 recoveryKey-threeMisses = 连续三次输入不相符。请再次查看恢复密钥，然后重新检查。
@@ -1058,6 +1060,8 @@ security-autoLock-shorter = 缩短延迟时间
 security-autoLock-title = 自动锁定
 
 security-backup-body = 一个文件即可保存整个保险库，且内容仍会加密。请将备份存放在此设备以外的位置，例如 USB 闪存盘。备份使用保存当下的密码短语或恢复密钥打开，即使您之后变更密钥，它们仍可打开此备份。若要还原备份，请先锁定保险库，再选择「从备份还原」。
+
+security-backup-cloudWarning = 此文件已加密，但仍会显示其中有多少份文档以及每份的大小。同步到云端的文件夹（OneDrive、iCloud Drive、Dropbox、Google Drive）会将其上传。
 
 security-backup-save = 保存加密备份…
 
