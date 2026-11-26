@@ -277,28 +277,85 @@ fn setting_the_vault_aside_removes_its_own_seen_file_and_no_other() {
     }
 }
 
+/// The slot of the open session (the tests' way in).
+fn with_slot<R>(store: &VaultStore, then: impl FnOnce(&crate::new_marker::Slot) -> R) -> R {
+    let guard = store.session();
+    then(&guard.as_ref().unwrap().new_marker)
+}
+
 #[test]
-fn a_file_that_cannot_be_read_for_now_is_not_written_over() {
-    // The slot is told the file is unreadable by a folder in its place being a symlink-free
-    // directory: `load` calls that damaged, so the unreadable case is reached by permissions.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let (_temp, store, id) = vault(5_000, 1_000);
-        let path = seen_file(&store);
-        store.mark_seen(&[id]).unwrap();
-        let sealed = std::fs::read(&path).unwrap();
-        store.lock();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
-        // Running as root can read it anyway: nothing to check then.
-        if std::fs::read(&path).is_err() {
-            store.unlock(PASSWORD).unwrap();
-            // This session starts at "now" in memory and leaves the file as it was.
-            assert!(!is_new(&store, id));
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-            assert_eq!(std::fs::read(&path).unwrap(), sealed);
-        }
+fn a_file_that_cannot_be_read_for_now_is_never_written_over_not_at_unlock_and_not_at_a_later_mark()
+{
+    let (_temp, store, id) = vault(5_000, 1_000);
+    store.mark_seen(&[id]).unwrap();
+    let path = seen_file(&store);
+    let sealed = std::fs::read(&path).unwrap();
+    // The next read of the file fails as an input or output error does (a permission would not
+    // stop root): the session is read again, as an unlock reads it.
+    with_slot(&store, |slot| {
+        slot.make_unreadable_for_test(true);
+        slot.forget_for_test();
+    });
+    // At unlock: the session starts at "now" in memory, and the file is as it was.
+    assert!(!is_new(&store, id));
+    assert_eq!(std::fs::read(&path).unwrap(), sealed);
+    // A later mark works in memory too and does not replace the file with the "now" state.
+    store.mark_seen(&[id]).unwrap();
+    store.mark_all_seen().unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), sealed);
+    // When the file can be read again, its own history is what is read (not the "now" state).
+    with_slot(&store, |slot| {
+        slot.make_unreadable_for_test(false);
+        slot.forget_for_test();
+    });
+    assert!(!is_new(&store, id));
+    let state = {
+        let guard = store.session();
+        let unlocked = guard.as_ref().unwrap();
+        unlocked
+            .new_marker
+            .state(&store.new_marker_context(unlocked), 1)
+    };
+    assert_eq!(state.opened(), [id]);
+}
+
+#[test]
+fn a_file_that_is_missing_or_damaged_is_written_again_at_the_next_read() {
+    let (_temp, store, _id) = vault(5_000, 1_000);
+    let path = seen_file(&store);
+    std::fs::write(&path, b"not ours").unwrap();
+    with_slot(&store, |slot| slot.forget_for_test());
+    store.snapshot().unwrap();
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        new_marker::FILE_BYTES as u64
+    );
+}
+
+#[test]
+fn setting_a_locked_vault_aside_removes_the_file_of_every_header_candidate() {
+    let (_temp, store, _id) = vault(5_000, 1_000);
+    let path = seen_file(&store);
+    let ids: Vec<Uuid> = {
+        // The header's own id, as a locked vault reads it, and the file is there.
+        read_header_files(&store.root)
+            .candidates
+            .iter()
+            .map(|header| header.vault_id)
+            .collect()
+    };
+    assert!(!ids.is_empty());
+    assert!(path.exists());
+    store.lock();
+    // A second candidate's file (another id) beside it is not named by any header: it stays.
+    let stranger = path.with_file_name(new_marker::file_name(Uuid::new_v4()));
+    std::fs::write(&stranger, b"someone else's").unwrap();
+    store.reset().unwrap();
+    for id in ids {
+        let own = path.with_file_name(new_marker::file_name(id));
+        assert!(!own.exists(), "{id}");
     }
+    assert!(stranger.exists());
 }
 
 #[test]

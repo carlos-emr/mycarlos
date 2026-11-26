@@ -2281,18 +2281,15 @@ impl VaultStore {
             .copied()
             .filter(|id| candidates.contains_key(id))
             .collect();
-        let newest = candidates.values().copied().max().unwrap_or(0);
+        let filed: Vec<(Uuid, u64)> = candidates.iter().map(|(id, at)| (*id, *at)).collect();
+        let now = crate::new_marker::now_ms();
         unlocked
             .new_marker
-            .update(
-                &self.new_marker_context(unlocked),
-                crate::new_marker::now_ms(),
-                |state| {
-                    let opened = state.mark_opened(&wanted, newest);
-                    let pruned = state.prune(|id| candidates.get(&id).copied());
-                    opened || pruned
-                },
-            )
+            .update(&self.new_marker_context(unlocked), now, |state| {
+                let opened = state.mark_opened(&wanted, &filed, now);
+                let pruned = state.prune(|id| candidates.get(&id).copied());
+                opened || pruned
+            })
             .map_err(|_| VaultError::Storage)
     }
 
@@ -4882,15 +4879,16 @@ impl VaultStore {
         // The id of the vault being set aside, for the small file kept beside it (the New
         // marker): known from the session when it is open, and from the header (which is not
         // secret) when it is not.
-        let vault_id = guard
-            .as_ref()
-            .map(|unlocked| unlocked.manifest.vault_id)
-            .or_else(|| {
-                read_header_files(&self.root)
-                    .candidates
-                    .first()
-                    .map(|header| header.vault_id)
-            });
+        // Every header that could be this vault's names a file: a locked vault may have more than
+        // one candidate, and each one's file goes.
+        let vault_ids: Vec<Uuid> = match guard.as_ref() {
+            Some(unlocked) => vec![unlocked.manifest.vault_id],
+            None => read_header_files(&self.root)
+                .candidates
+                .iter()
+                .map(|header| header.vault_id)
+                .collect(),
+        };
         // A recording in progress is parked in the vault being set aside, and its
         // keys dropped, before the session goes: it must not write into a vault
         // that is no longer where it was.
@@ -4912,8 +4910,8 @@ impl VaultStore {
         set_aside_to(&self.root, &target)?;
         terminate_at_test_boundary("reset.after-set-aside");
         // What the patient had looked at in a vault that is set aside goes with it: best effort, and
-        // only the file named for that vault.
-        if let Some(vault_id) = vault_id {
+        // only the files named for that vault's ids.
+        for vault_id in vault_ids {
             if let Some(path) = vault_home(&self.root)
                 .ok()
                 .and_then(|home| crate::new_marker::path_beside(home, vault_id))

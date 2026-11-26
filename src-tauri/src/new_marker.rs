@@ -101,11 +101,11 @@ impl SeenState {
         imported_at_ms > self.seen_up_to_ms && !self.opened.contains(&id)
     }
 
-    /// Records that the patient opened these documents. `newest_ms` is the time of the newest
-    /// document there is, for the one case in which the list is full: then everything up to the
-    /// newest is taken as seen, rather than forgetting which documents were opened. Returns
-    /// whether anything changed.
-    pub(crate) fn mark_opened(&mut self, ids: &[Uuid], newest_ms: u64) -> bool {
+    /// Records that the patient opened these documents. `filed` is every document that can be
+    /// new (an id and the time it was filed), for the one case in which the list is full: then it
+    /// does what "Mark all as seen" does (`mark_all`, with the same limit on the clock) rather
+    /// than forget which documents were opened. Returns whether anything changed.
+    pub(crate) fn mark_opened(&mut self, ids: &[Uuid], filed: &[(Uuid, u64)], now_ms: u64) -> bool {
         let before = self.clone();
         for id in ids {
             if !self.opened.contains(id) {
@@ -113,8 +113,7 @@ impl SeenState {
             }
         }
         if self.opened.len() > MAX_OPENED {
-            self.seen_up_to_ms = self.seen_up_to_ms.max(newest_ms);
-            self.opened.clear();
+            self.mark_all(filed, now_ms);
         }
         *self != before
     }
@@ -219,8 +218,20 @@ pub(crate) enum LoadError {
     Unreadable,
 }
 
-/// Reads the state sealed in `path`.
+/// Reads the state sealed in `path` (the session reads it through `Slot::read`, which a test can
+/// make fail; this is the plain read, for the tests of the file itself).
+#[cfg(test)]
 pub(crate) fn load(path: &Path, key: &[u8; 32]) -> Result<SeenState, LoadError> {
+    load_with(path, key, &|path| fs::read(path))
+}
+
+/// `load`, reading the file's bytes through `read`, so that a test can make the read fail the way a
+/// passing input or output error does (running as the owner or as root, a permission cannot).
+pub(crate) fn load_with(
+    path: &Path,
+    key: &[u8; 32],
+    read: &dyn Fn(&Path) -> io::Result<Vec<u8>>,
+) -> Result<SeenState, LoadError> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Err(LoadError::Missing),
@@ -230,7 +241,7 @@ pub(crate) fn load(path: &Path, key: &[u8; 32]) -> Result<SeenState, LoadError> 
     if !metadata.is_file() || metadata.len() != FILE_BYTES as u64 {
         return Err(LoadError::Damaged);
     }
-    let bytes = fs::read(path).map_err(|_| LoadError::Unreadable)?;
+    let bytes = read(path).map_err(|_| LoadError::Unreadable)?;
     if bytes.len() != FILE_BYTES || &bytes[..MAGIC.len()] != MAGIC {
         return Err(LoadError::Damaged);
     }
@@ -317,18 +328,47 @@ struct Loaded {
 /// The session's copy of the state: read once, when it is first asked for, and gone with the
 /// session. Held inside the unlocked vault.
 #[derive(Default)]
-pub(crate) struct Slot(Mutex<Option<Loaded>>);
+pub(crate) struct Slot {
+    loaded: Mutex<Option<Loaded>>,
+    /// Tests: the read of the file answers as an input or output error would.
+    #[cfg(test)]
+    unreadable: std::sync::atomic::AtomicBool,
+}
 
 impl Slot {
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Loaded>> {
-        self.0
+        self.loaded
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Reads the file (or starts the state at `now_ms` when there is none, or it cannot be read,
-    /// and writes that at once so that "now" stays where it was put).
+    /// Tests: from now on the file cannot be read (until `true` is given again as `false`).
+    #[cfg(test)]
+    pub(crate) fn make_unreadable_for_test(&self, unreadable: bool) {
+        self.unreadable
+            .store(unreadable, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Tests: forgets the state, as a lock does, so that the next use reads the file again.
+    #[cfg(test)]
+    pub(crate) fn forget_for_test(&self) {
+        *self.lock() = None;
+    }
+
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        #[cfg(test)]
+        if self.unreadable.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(io::Error::other("FAKE: the file cannot be read for now"));
+        }
+        fs::read(path)
+    }
+
+    /// Reads the file (or starts the state at `now_ms` when there is none, or it is not ours, and
+    /// writes that at once so that "now" stays where it was put). A file that cannot be read at
+    /// all is another matter: this session works in memory only (no path is kept), so nothing
+    /// is ever written over it, now or at a later mark, and the next unlock can read it again.
     fn ensure<'a>(
+        &self,
         guard: &'a mut Option<Loaded>,
         context: &Context<'_>,
         now_ms: u64,
@@ -338,21 +378,17 @@ impl Slot {
             let path = context
                 .vault_home
                 .and_then(|home| path_beside(home, context.vault_id));
-            let state = match path.as_deref().map(|path| load(path, &key)) {
-                Some(Ok(state)) => state,
-                // A file that could not be read at all (a passing input or output error) is left
-                // as it is: this session starts at "now" in memory, and the file is not written
-                // over, so the next unlock can read it again.
-                Some(Err(LoadError::Unreadable)) => SeenState::starting_at(now_ms),
-                // Missing or not ours: start at "now" and write that at once, so that "now" stays
-                // where it was put.
+            let read = |path: &Path| self.read(path);
+            let (state, path) = match path.as_deref().map(|path| load_with(path, &key, &read)) {
+                Some(Ok(state)) => (state, path),
+                Some(Err(LoadError::Unreadable)) => (SeenState::starting_at(now_ms), None),
                 _ => {
                     let fresh = SeenState::starting_at(now_ms);
                     if let Some(path) = &path {
                         // A failed write leaves the state in memory for this session.
                         let _ = save(path, &key, &fresh);
                     }
-                    fresh
+                    (fresh, path)
                 }
             };
             Loaded { path, key, state }
@@ -362,7 +398,7 @@ impl Slot {
     /// A copy of the state, for working out which documents are new.
     pub(crate) fn state(&self, context: &Context<'_>, now_ms: u64) -> SeenState {
         let mut guard = self.lock();
-        Self::ensure(&mut guard, context, now_ms).state.clone()
+        self.ensure(&mut guard, context, now_ms).state.clone()
     }
 
     /// Changes the state and writes it when `change` says it changed. On a failed write the
@@ -374,7 +410,7 @@ impl Slot {
         change: impl FnOnce(&mut SeenState) -> bool,
     ) -> io::Result<()> {
         let mut guard = self.lock();
-        let loaded = Self::ensure(&mut guard, context, now_ms);
+        let loaded = self.ensure(&mut guard, context, now_ms);
         let mut next = loaded.state.clone();
         if !change(&mut next) {
             return Ok(());
@@ -405,18 +441,19 @@ mod tests {
         assert!(!state.is_new(id(1), 1_000));
         assert!(state.is_new(id(1), 1_001));
         assert!(state.is_new(id(2), 5_000));
-        assert!(state.mark_opened(&[id(1)], 5_000));
+        let filed = [(id(1), 1_001), (id(2), 5_000)];
+        assert!(state.mark_opened(&[id(1)], &filed, 9_000));
         assert!(!state.is_new(id(1), 1_001));
         assert!(state.is_new(id(2), 5_000));
         // Opening the same document again changes nothing.
-        assert!(!state.mark_opened(&[id(1)], 5_000));
+        assert!(!state.mark_opened(&[id(1)], &filed, 9_000));
         assert_eq!(state.opened(), [id(1)]);
     }
 
     #[test]
     fn mark_all_moves_seen_up_to_past_everything_and_empties_the_list() {
         let mut state = SeenState::starting_at(1_000);
-        state.mark_opened(&[id(1), id(2)], 9_000);
+        state.mark_opened(&[id(1), id(2)], &[], 9_000);
         assert!(state.mark_all(&[(id(1), 5_000), (id(2), 7_000)], 8_000));
         assert_eq!(state.seen_up_to_ms(), 7_000);
         assert!(state.opened().is_empty());
@@ -460,24 +497,51 @@ mod tests {
     fn a_full_list_turns_into_mark_all_and_never_makes_an_opened_document_new_again() {
         let mut state = SeenState::starting_at(0);
         let ids: Vec<Uuid> = (0..MAX_OPENED as u128).map(id).collect();
-        state.mark_opened(&ids, 50_000);
+        let mut filed: Vec<(Uuid, u64)> = ids.iter().map(|id| (*id, 40_000)).collect();
+        filed.push((id(5_000), 40_000));
+        state.mark_opened(&ids, &filed, 60_000);
         assert_eq!(state.opened().len(), MAX_OPENED);
-        // One more is one too many: everything up to the newest is seen.
-        state.mark_opened(&[id(5_000)], 50_000);
+        // One more is one too many: it does what "Mark all as seen" does.
+        state.mark_opened(&[id(5_000)], &filed, 60_000);
         assert!(state.opened().is_empty());
-        assert_eq!(state.seen_up_to_ms(), 50_000);
+        assert_eq!(state.seen_up_to_ms(), 40_000);
         for n in [0, 17, 999, 5_000] {
             assert!(!state.is_new(id(n), 40_000));
         }
     }
 
     #[test]
-    fn prune_forgets_only_what_the_caller_says_no_longer_matters() {
+    fn a_full_list_does_not_let_a_clock_that_ran_ahead_hide_later_documents() {
         let mut state = SeenState::starting_at(0);
-        state.mark_opened(&[id(1), id(2), id(3)], 1);
-        // id(1) is filed after "seen up to" (0), id(2) is gone, id(3) is not newer than it.
+        let ids: Vec<Uuid> = (0..MAX_OPENED as u128).map(id).collect();
+        // All filed while the clock was ahead of what it says now (5,000): one more document
+        // opened fills the list. "Seen up to" must not pass now, so a document at 6,000 is new;
+        // the documents the patient opened stay seen (the list holds them).
+        let ahead = 90_000;
+        let mut filed: Vec<(Uuid, u64)> = ids.iter().map(|id| (*id, ahead)).collect();
+        filed.push((id(5_000), ahead));
+        state.mark_opened(&ids, &filed, 5_000);
+        state.mark_opened(&[id(5_000)], &filed, 5_000);
+        // So many future-stamped documents cannot all be listed: everything up to the newest is
+        // seen, which is the one case where the clock's lead is taken as it is.
+        assert_eq!(state.seen_up_to_ms(), ahead);
+        assert!(!state.is_new(id(3), ahead));
+        // With only a few of them, the cap holds.
+        let mut few = SeenState::starting_at(0);
+        let some = [(id(1), ahead), (id(2), 4_000)];
+        few.mark_opened(&[id(1)], &some, 5_000);
+        assert_eq!(few.seen_up_to_ms(), 0);
+        few.mark_all(&some, 5_000);
+        assert_eq!(few.seen_up_to_ms(), 5_000);
+        assert!(few.is_new(id(9), 6_000));
+        assert!(!few.is_new(id(1), ahead));
+    }
+
+    #[test]
+    fn prune_forgets_only_what_the_caller_says_no_longer_matters() {
+        // id(1) is filed after "seen up to" (10), id(2) is gone, id(3) is not newer than it.
         let mut state = SeenState::starting_at(10);
-        state.mark_opened(&[id(1), id(2), id(3)], 100);
+        state.mark_opened(&[id(1), id(2), id(3)], &[], 100);
         let filed = |candidate: Uuid| {
             if candidate == id(1) {
                 Some(50)
@@ -503,7 +567,7 @@ mod tests {
         assert_eq!(first.len(), FILE_BYTES);
         assert_eq!(load(&path, &KEY).unwrap(), empty);
         let mut full = SeenState::starting_at(u64::MAX - 1);
-        full.mark_opened(&(0..400).map(id).collect::<Vec<_>>(), 0);
+        full.mark_opened(&(0..400).map(id).collect::<Vec<_>>(), &[], 0);
         save(&path, &KEY, &full).unwrap();
         let second = fs::read(&path).unwrap();
         // The size says nothing about how many were opened, and nothing is readable in it.
