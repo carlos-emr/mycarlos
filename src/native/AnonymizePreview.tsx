@@ -20,7 +20,6 @@ import { useModalFocus } from "../useModalFocus";
 import { useMediaMatch } from "./smallWindow";
 import { removalCounts, wordsToCheck } from "./anonymizeReview";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { useClipboardClear } from "./useClipboardClear";
 import {
   hasVaultErrorCode,
   vaultErrorMessage,
@@ -159,6 +158,7 @@ export function AnonymizePreview({
   pickDestination,
   saveText,
   copyText,
+  copyToClipboard,
   exportHeader,
   onClose,
 }: {
@@ -185,6 +185,10 @@ export function AnonymizePreview({
     text: string,
     kept?: TextRange[],
   ) => Promise<TextCopyOutcome>;
+  /** Puts the approved text on the clipboard and takes it off again later. It belongs to the
+   * library, not to this screen, because the patient closes the preview and then pastes: closing
+   * does not clear it. It rejects when the clipboard refuses the write. */
+  copyToClipboard: (text: string) => Promise<void>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   onClose: () => void;
@@ -193,9 +197,6 @@ export function AnonymizePreview({
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
-  // A copied text is taken off the clipboard after a minute, or when this screen goes away (it
-  // closes, or the vault locks), if the clipboard still holds it.
-  const { copy: copyToClipboard } = useClipboardClear();
   const [text, setText] = useState<DocumentText | null>(null);
   // The automatic result, then one entry per removal the patient made.
   const [history, setHistory] = useState<Deidentified[]>([]);

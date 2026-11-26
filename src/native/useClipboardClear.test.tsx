@@ -1,6 +1,10 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CLIPBOARD_CLEAR_MS, useClipboardClear } from "./useClipboardClear";
+import {
+  CLIPBOARD_CLEAR_MS,
+  TEXT_CLIPBOARD_CLEAR_MS,
+  useClipboardClear,
+} from "./useClipboardClear";
 
 /** A clipboard that remembers what was written, as a real one does. */
 function installClipboard(
@@ -24,8 +28,8 @@ function installClipboard(
 
 let copyFn: (text: string) => Promise<void>;
 let clearFn: () => void;
-function Probe() {
-  const { copy, clear } = useClipboardClear();
+function Probe({ delayMs }: { delayMs?: number }) {
+  const { copy, clear } = useClipboardClear(delayMs);
   copyFn = copy;
   clearFn = clear;
   return null;
@@ -47,6 +51,23 @@ describe("useClipboardClear", () => {
     await act(() => copyFn("FAKE secret text"));
     expect(clip.state.text).toBe("FAKE secret text");
     await act(async () => void vi.advanceTimersByTime(CLIPBOARD_CLEAR_MS - 1));
+    await settle();
+    expect(clip.state.text).toBe("FAKE secret text");
+    await act(async () => void vi.advanceTimersByTime(1));
+    await settle();
+    expect(clip.state.text).toBe("");
+  });
+
+  it("clears after the delay it was given instead of the minute: five minutes for a copied text", async () => {
+    vi.useFakeTimers();
+    const clip = installClipboard();
+    render(<Probe delayMs={TEXT_CLIPBOARD_CLEAR_MS} />);
+    expect(TEXT_CLIPBOARD_CLEAR_MS).toBe(5 * 60_000);
+    await act(() => copyFn("FAKE secret text"));
+    // Well past the default minute, and just short of five: still there.
+    await act(
+      async () => void vi.advanceTimersByTime(TEXT_CLIPBOARD_CLEAR_MS - 1),
+    );
     await settle();
     expect(clip.state.text).toBe("FAKE secret text");
     await act(async () => void vi.advanceTimersByTime(1));

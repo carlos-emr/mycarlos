@@ -2102,7 +2102,7 @@ interface-AnonymizePreview-pasteWhereNote = 您把它貼到哪裡，決定了什
 
 interface-AnonymizePreview-copy = 複製文字
 
-interface-AnonymizePreview-copied = 文字已複製。如果期間沒有複製其他內容，一分鐘後會從剪貼簿中清除。
+interface-AnonymizePreview-copied = 文字已複製。如果期間沒有複製其他內容，五分鐘後會從剪貼簿中清除。
 
 interface-AnonymizePreview-copyFailed = 無法複製文字。
 
