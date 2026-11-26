@@ -305,6 +305,8 @@ const REVIEWED_WEBVIEW_STORAGE = {
   "mycarlos.zoom.v1": "a zoom level",
   "mycarlos.videoQuality.v1": "the video quality choice",
   "mycarlos.cameraExplained.v1": "whether the camera notice was shown",
+  "mycarlos.videoDevices.v1":
+    "the camera and microphone chosen last for a recording, by the device's own opaque id (no name, no recording); in the privacy notice's settings sentence",
   "mycarlos.recoveryOfferHour.v1":
     "when the recovery-key offer was last made (a time)",
   "mycarlos.unfinishedRecoveryKey.v1":
