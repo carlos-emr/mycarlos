@@ -14,6 +14,7 @@ import {
   recordRecoveryOffer,
 } from "./native/recoveryOffer";
 import VaultApp from "./VaultApp";
+import { ANNOUNCE_DELAY_MS } from "./native/announce";
 import type { VaultBridge, VaultSnapshot } from "./vault";
 
 // One fake native runtime: stamp and clone when data is captured, before delivery.
@@ -246,6 +247,17 @@ async function startExport() {
   });
 }
 
+// A message for a screen that has just appeared is written after a delay (so a status line reads
+// it out). An assertion that something is NOT said has to wait past it, or it passes because the
+// line was not written yet.
+async function pastTheAnnounceDelay() {
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, ANNOUNCE_DELAY_MS + 300),
+    );
+  });
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   forgetRecoveryOffer();
@@ -350,12 +362,17 @@ describe("what arrives after the vault locked", () => {
     });
     // The copy was already written when the lock came: its result arrives on the lock screen.
     await act(async () => finishExport());
+    await pastTheAnnounceDelay();
     expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
     expect(
       screen.queryByText(humanText(OUTCOME), { exact: false }),
     ).not.toBeInTheDocument();
 
-    // The patient does not unlock: they set the vault aside and make a new one.
+    // The patient does not unlock: they set the vault aside and make a new one. The held text
+    // (the control above holds it in this same setup) is cleared twice, by two clears that are
+    // each enough alone: the reset handler's (`onReset`) and the creation path's ("Nothing from a
+    // vault that is gone"). Removing only one of them leaves this test green; removing both, or
+    // all five assignments, makes the new vault's first unlock say the old copy's text.
     await user.click(screen.getByText(humanText("Forgot your passphrase?")));
     await user.type(
       screen.getByLabelText(humanText("Type RESET MYCARLOS VAULT")),
@@ -381,6 +398,7 @@ describe("what arrives after the vault locked", () => {
       screen.getByRole("button", { name: humanText("Create vault") }),
     );
     await screen.findByRole("heading", { name: humanText("My records") });
+    await pastTheAnnounceDelay();
     // The new vault never shows what the old vault's transfer reported...
     expect(
       screen.queryByText(humanText(OUTCOME), { exact: false }),
@@ -405,7 +423,10 @@ describe("what arrives after the vault locked", () => {
       );
     });
     await screen.findByRole("heading", { name: humanText("My records") });
+    await pastTheAnnounceDelay();
+    // The first unlock of the new vault says nothing about the old vault's copy.
     expect(document.body).not.toHaveTextContent(OUTCOME);
+    expect(screen.getByText(humanText(/^Vault unlocked\./))).toBeVisible();
   });
 
   it("keeps a clinic link's result off the lock screen, and out of a new vault made after setting the old one aside", async () => {
@@ -483,6 +504,7 @@ describe("what arrives after the vault locked", () => {
     });
     // The portal answers after the lock.
     await act(async () => finish({ link, approvalError: null }));
+    await pastTheAnnounceDelay();
     expect(screen.getByText(humanText(LOCKED_MESSAGE))).toBeVisible();
     expect(document.body).not.toHaveTextContent(/Device linked/);
     expect(document.body).not.toHaveTextContent("FAKE First Clinic");
@@ -512,6 +534,7 @@ describe("what arrives after the vault locked", () => {
       screen.getByRole("button", { name: humanText("Create vault") }),
     );
     await screen.findByRole("heading", { name: humanText("My records") });
+    await pastTheAnnounceDelay();
     expect(document.body).not.toHaveTextContent(/Device linked/);
     expect(document.body).not.toHaveTextContent("FAKE First Clinic");
   });
