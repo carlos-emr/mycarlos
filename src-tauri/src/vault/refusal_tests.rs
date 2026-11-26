@@ -300,14 +300,30 @@ fn a_restore_needs_a_locked_vault_and_the_say_so_to_replace_and_a_wrong_secret_c
         Err(VaultError::AlreadyExists)
     ));
     // And a secret that does not open the backup leaves the vault exactly as it was.
-    assert!(v
-        .store
-        .restore(
+    assert!(matches!(
+        v.store.restore(
             open(),
             RestoreCredential::Passphrase("a different FAKE passphrase 4410 river"),
             true
-        )
-        .is_err());
+        ),
+        Err(VaultError::WrongPassphrase)
+    ));
+    // A recovery key: a well-formed one the backup does not have is a wrong key; one that is not a
+    // key at all is a typo.
+    let other_key = encode_recovery_key(&[9_u8; RECOVERY_KEY_BYTES]);
+    assert!(matches!(
+        v.store
+            .restore(open(), RestoreCredential::RecoveryKey(&other_key), true),
+        Err(VaultError::WrongRecoveryKey)
+    ));
+    assert!(matches!(
+        v.store.restore(
+            open(),
+            RestoreCredential::RecoveryKey("not a recovery key"),
+            true
+        ),
+        Err(VaultError::RecoveryKeyTypo)
+    ));
     v.store.unlock(PASSWORD).unwrap();
     assert_eq!(shape(&v.store), before);
 }
@@ -319,6 +335,10 @@ fn a_folder_refuses_a_parent_that_is_missing_another_persons_itself_or_below_it_
     let child = v
         .store
         .create_folder(v.jamie, Some(v.folder), "FAKE Child Folder", 5)
+        .unwrap();
+    let grandchild = v
+        .store
+        .create_folder(v.jamie, Some(child), "FAKE Grandchild Folder", 7)
         .unwrap();
     let robins = v
         .store
@@ -353,12 +373,24 @@ fn a_folder_refuses_a_parent_that_is_missing_another_persons_itself_or_below_it_
         s.update_folder(child, Some(robins), "FAKE Renamed"),
         Err(VaultError::Invalid)
     ));
-    // A folder cannot move under what it holds: that would be a loop.
+    // A folder cannot move under what it holds, at any depth: that would be a loop.
     assert!(matches!(
         s.update_folder(v.folder, Some(child), "FAKE Renamed"),
         Err(VaultError::Invalid)
     ));
+    assert!(matches!(
+        s.update_folder(v.folder, Some(grandchild), "FAKE Renamed"),
+        Err(VaultError::Invalid)
+    ));
+    assert!(matches!(
+        s.update_folder(child, Some(grandchild), "FAKE Renamed"),
+        Err(VaultError::Invalid)
+    ));
     assert_eq!(shape(s), before);
+    // And a move that is no loop still works, so the refusals above are not a blanket.
+    s.update_folder(grandchild, Some(v.folder), "FAKE Grandchild Folder")
+        .unwrap();
+    assert_ne!(shape(s), before);
 }
 
 #[test]
@@ -373,7 +405,18 @@ fn a_filing_names_at_least_one_document_and_at_most_the_most_folders_and_nothing
         .map(|_| Uuid::new_v4())
         .collect();
     assert!(matches!(
-        v.store.assign_folders_batch(vec![v.record], too_many),
+        v.store
+            .assign_folders_batch(vec![v.record], too_many.clone()),
+        Err(VaultError::Invalid)
+    ));
+    // The same through the single-document form, and over the most documents.
+    assert!(matches!(
+        v.store.assign_folders(v.record, too_many),
+        Err(VaultError::Invalid)
+    ));
+    assert!(matches!(
+        v.store
+            .assign_folders_batch(vec![v.record; MAX_FOLDER_ASSIGNMENTS + 1], vec![v.folder]),
         Err(VaultError::Invalid)
     ));
     // The count itself: the most is allowed, one more is not.
@@ -383,6 +426,14 @@ fn a_filing_names_at_least_one_document_and_at_most_the_most_folders_and_nothing
         Err(VaultError::Invalid)
     ));
     assert_eq!(shape(&v.store), before);
+    // Exactly the most is accepted (the repeats of one real folder or document count in full, then
+    // collapse), so the refusals above are the count and nothing else.
+    v.store
+        .assign_folders(v.record, vec![v.folder; MAX_FOLDER_ASSIGNMENTS])
+        .unwrap();
+    v.store
+        .assign_folders_batch(vec![v.record; MAX_FOLDER_ASSIGNMENTS], vec![v.folder])
+        .unwrap();
 }
 
 #[test]
@@ -414,6 +465,18 @@ fn a_passphrase_over_the_limit_is_refused_before_anything_is_tried_and_the_old_o
         v.store.begin_recovery_key(&too_long),
         Err(VaultError::Invalid)
     ));
+    // A NEW passphrase one byte over the limit is refused outright; exactly the limit is not
+    // refused for its size (its strength is another rule).
+    assert!(matches!(
+        v.store
+            .change_passphrase(PASSWORD, &"a".repeat(MAX_PASSPHRASE_BYTES + 1)),
+        Err(VaultError::Invalid)
+    ));
+    assert!(matches!(
+        judge_new_passphrase(&"a".repeat(MAX_PASSPHRASE_BYTES + 1), &[], true),
+        Err(VaultError::Invalid)
+    ));
+    assert!(judge_new_passphrase(&"a".repeat(MAX_PASSPHRASE_BYTES), &[], true).is_ok());
     assert_eq!(shape(&v.store), before);
     v.store.lock();
     v.store.unlock(PASSWORD).unwrap();
