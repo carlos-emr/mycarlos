@@ -1368,5 +1368,10 @@
   "notifications.testFailed",
   "notifications.testOff",
   "preferences.moreAutomatic",
-  "preferences.moreBackground"
+  "preferences.moreBackground",
+  "interface.received.notNow",
+  "interface.received.confirmBodySealed",
+  "interface.receive.inboxRemoved",
+  "interface.receive.inboxKeyChanged",
+  "interface.received.removeKept"
 ]

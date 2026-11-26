@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tauri::Url;
 use uuid::Uuid;
 
+use crate::sealed_inbox::ItemId;
 use crate::vault::{sanitize_basename, MANUAL_IMPORT_LABEL, MAX_IMPORT_FILES};
 
 /// How far into a file "%PDF-" may start. PDF readers accept a short preamble before the header.
@@ -25,6 +26,9 @@ pub(crate) enum ReceivedSource {
     Path(PathBuf),
     /// An Android content URI, read through the file-system plugin.
     ContentUri(Url),
+    /// A file sealed into the inbox while the vault was locked (#49), offered at unlock: opened
+    /// later with the vault's inbox keys, so nothing readable is ever on disk.
+    Inbox(ItemId),
 }
 
 /// Which platform's rules apply to an opened URL. Passed in, so both can be tested anywhere.
@@ -118,6 +122,8 @@ pub(crate) fn received_name(source: &ReceivedSource) -> String {
                     .decode_utf8_lossy()
                     .into_owned()
             }),
+        // Named by the sealed meta when it is offered, never from here.
+        ReceivedSource::Inbox(_) => None,
     };
     match raw {
         // A provider's last segment is often an opaque id ("msf:31"), not a file name. The
@@ -201,6 +207,12 @@ pub(crate) struct ReceiveNotice {
     /// Files the inbox could not keep (it is full, the disk is, or the file could not be read):
     /// the patient shares them again.
     pub(crate) not_kept: usize,
+    /// Sealed files this unlock removed because they were past their age or did not open (#49):
+    /// a count only, never a name.
+    pub(crate) inbox_removed: usize,
+    /// The inbox key file was not the one this vault derives (something else changed it): said
+    /// once, and the right file was written. Files shared since it changed were not kept.
+    pub(crate) inbox_key_changed: bool,
 }
 
 /// What the page may see of a waiting file.
@@ -214,6 +226,9 @@ pub(crate) struct ReceivedSummary {
     /// The file was named by a program started with its path (Open with, Send to, a second launch)
     /// rather than shared by another app: the renderer asks the patient before it is added.
     pub(crate) needs_confirm: bool,
+    /// The file was sealed while the vault was locked (#49): the patient may Remove it, which
+    /// deletes it, where Not now keeps it for the next unlock.
+    pub(crate) sealed: bool,
 }
 
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
@@ -348,9 +363,71 @@ impl ReceivedFiles {
                 id: *id,
                 name: file.name.clone(),
                 source_label: MANUAL_IMPORT_LABEL,
-                needs_confirm: matches!(file.source, ReceivedSource::Path(_)),
+                needs_confirm: matches!(
+                    file.source,
+                    ReceivedSource::Path(_) | ReceivedSource::Inbox(_)
+                ),
+                sealed: matches!(file.source, ReceivedSource::Inbox(_)),
             })
             .collect()
+    }
+
+    /// Offers the items an unlock found in the sealed inbox (#49), each with the name its sealed
+    /// meta holds, for the patient to confirm. An item already waiting is not added twice, and
+    /// nothing beyond the import limit is (what does not fit stays in the inbox for a later
+    /// unlock). Returns how many were added.
+    pub(crate) fn add_sealed(&self, items: Vec<(ItemId, String)>) -> usize {
+        let mut waiting = self.waiting();
+        let mut added = 0;
+        for (item, name) in items {
+            if waiting
+                .files
+                .iter()
+                .any(|(_, file)| file.source == ReceivedSource::Inbox(item))
+            {
+                continue;
+            }
+            if waiting.files.len() + waiting.taken + 1 > MAX_IMPORT_FILES {
+                break;
+            }
+            waiting.files.push((
+                Uuid::new_v4(),
+                ReceivedFile {
+                    source: ReceivedSource::Inbox(item),
+                    name,
+                },
+            ));
+            added += 1;
+        }
+        added
+    }
+
+    /// Forgets the SEALED files among those named, and returns their items so that the caller
+    /// deletes them (the patient chose Delete, not Not now). A file that is not sealed (an "Open
+    /// with" file waiting in the same question) is not touched: it stays waiting.
+    pub(crate) fn remove_sealed(&self, ids: &[Uuid]) -> Vec<ItemId> {
+        let mut waiting = self.waiting();
+        let mut removed = Vec::new();
+        waiting.files.retain(|(id, file)| {
+            if !ids.contains(id) {
+                return true;
+            }
+            match file.source {
+                ReceivedSource::Inbox(item) => {
+                    removed.push(item);
+                    false
+                }
+                _ => true,
+            }
+        });
+        removed
+    }
+
+    /// Adds what an unlock's reconciliation of the sealed inbox says to the notice the page reads.
+    pub(crate) fn note_inbox_unlock(&self, removed: usize, key_changed: bool) {
+        let mut notice = self.notice();
+        notice.inbox_removed += removed;
+        notice.inbox_key_changed |= key_changed;
     }
 
     /// Forgets exactly the waiting files named (the patient said Cancel): nothing was stored, and
@@ -867,6 +944,7 @@ mod tests {
                 refused_shares: 0,
                 sealed: 2,
                 not_kept: 3,
+                ..ReceiveNotice::default()
             }
         );
     }

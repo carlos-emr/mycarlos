@@ -17,9 +17,9 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
 use crate::sealed_inbox::{
-    admit, file_limit, item_file_name, long_expired, parse_item_name, parse_part_name,
-    part_file_name, peek_header, usage_of, Caps, InboxError, InboxPublic, ItemId, KeyId, Refusal,
-    Source, CAPS, HEADER_LEN,
+    admit, age_of, file_limit, item_file_name, long_expired, open_item, parse_item_name,
+    parse_part_name, part_file_name, peek_header, usage_of, Age, Caps, InboxError, InboxKeys,
+    InboxPublic, ItemId, KeyId, PublicFileCheck, Refusal, Source, CAPS, HEADER_LEN,
 };
 use std::{
     fs::{self, File, OpenOptions},
@@ -130,6 +130,49 @@ fn plan_import(
         }
     }
     plan
+}
+
+/// One sealed item that opened and is waiting for the patient to say what happens to it.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PendingItem {
+    pub(crate) item_id: ItemId,
+    /// The name the sealer was given (bounded; the importing stage cleans it with the vault's own
+    /// rename rules before it names a record).
+    pub(crate) name: String,
+    pub(crate) received_at: u64,
+    pub(crate) source: Source,
+    pub(crate) plaintext_size: u64,
+    /// The item's size on disk: what it counts for against the byte cap.
+    pub(crate) sealed_bytes: u64,
+    /// The id the vault gives the document this item becomes (derived from the item).
+    pub(crate) record_id: Uuid,
+}
+
+/// What an unlock found and did in the inbox folder (`InboxFolder::reconcile_at_unlock`).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct UnlockReport {
+    /// `inbox.pub` was there and was not the key derived at unlock (or not a key at all): said to
+    /// the patient, and the right file written.
+    pub(crate) tamper: bool,
+    /// Part-sealed leftovers removed.
+    pub(crate) parts_removed: usize,
+    /// Items past their age (by the time sealed into them), removed.
+    pub(crate) expired: usize,
+    /// Items that do not open (bad header, cut, changed, renamed over another, a time from the
+    /// future), removed. None of these ever counts against the item cap.
+    pub(crate) malformed: usize,
+    /// Items sealed to another key: left until they are long expired (their time is not readable).
+    pub(crate) other_key: usize,
+    /// Items that could not be read now (a failing disk): left alone.
+    pub(crate) unreadable: usize,
+    /// Items whose record already exists in the vault (the delete was lost to a crash): removed.
+    pub(crate) already_imported: usize,
+    /// Good items beyond the item or byte cap: left for a later unlock.
+    pub(crate) over_cap: usize,
+    /// The listing stopped at its bound: there were more entries than were looked at.
+    pub(crate) listing_truncated: bool,
+    /// The good items to offer, oldest first.
+    pub(crate) pending: Vec<PendingItem>,
 }
 
 /// One inbox folder, of one vault.
@@ -484,6 +527,195 @@ impl InboxFolder {
             .map(|entry| (entry.name, entry.bytes, entry.modified))
             .collect();
         Ok(plan_import(items, &self.caps, truncated))
+    }
+
+    /// Where the item `id` lies in this folder (the strict name; nothing else is ever opened).
+    pub(crate) fn item_path(&self, id: &ItemId) -> PathBuf {
+        self.dir.join(item_file_name(id))
+    }
+
+    /// Deletes one item by id, after the vault commit that added its record, or when the patient
+    /// chose Remove. A missing file is not an error: it is already gone.
+    pub(crate) fn remove_item_by_id(&self, id: &ItemId) -> io::Result<()> {
+        match remove_item(self.item_path(id)) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    }
+
+    /// The inbox key file, as the bytes it holds (at most one more than a key), or `None` if there
+    /// is none. A file that is there and cannot be read as a plain file counts as bytes that are no
+    /// key, so it is replaced and said.
+    fn read_public_bytes(&self) -> Option<Vec<u8>> {
+        let path = self.dir.join(PUBLIC_FILE);
+        match crate::vault::open_regular_read(&path) {
+            Ok(file) => {
+                let mut bytes = Vec::with_capacity(33);
+                match file.take(33).read_to_end(&mut bytes) {
+                    Ok(_) => Some(bytes),
+                    Err(_) => Some(Vec::new()),
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(_) => Some(Vec::new()),
+        }
+    }
+
+    /// Writes `inbox.pub`: a temporary file, synced, renamed over the old one, the folder synced,
+    /// so a crash leaves the old file or the new one and never half of one. Only under the lock.
+    fn write_public(&self, public: &InboxPublic) -> io::Result<()> {
+        let temp = self.dir.join(format!("{PUBLIC_FILE}.tmp"));
+        // A leftover (or a link planted there) is removed, not followed.
+        let _ = remove_item(&temp);
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options.open(&temp)?;
+        file.write_all(&public.to_bytes())?;
+        file.flush()?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temp, self.dir.join(PUBLIC_FILE))?;
+        sync_dir(&self.dir)
+    }
+
+    /// Everything the unlock does to this folder, under the folder's lock, with the key the unlock
+    /// derived (#49 stage 3):
+    ///
+    /// 1. `inbox.pub` is compared with the key and (re)written every time: absent is a first
+    ///    write, a different file is a tamper to tell the patient (`tamper`), and the right file
+    ///    goes back either way, so a lost or changed file heals at the next unlock.
+    /// 2. Part-sealed leftovers are removed.
+    /// 3. The items, oldest first (the listing is bounded and counts every entry), are each opened
+    ///    far enough to check them (header, key, the sealed trailer, the sizes). One that does not
+    ///    open, or is past its age or from the future, is deleted and NEVER counts against the item
+    ///    cap, so junk named like an item cannot starve a real one. One sealed to another key is
+    ///    left until its file time is long past (its own time cannot be read). One whose record id
+    ///    is already in the vault was imported and only its delete was lost (a crash between the
+    ///    commit and the delete): it is deleted silently, so it is never imported twice. The rest
+    ///    are the pending items, up to the item cap and the byte cap; the others wait.
+    ///
+    /// `record_exists` asks the vault whether a record id is already there. Nothing is read past
+    /// each item's header and trailer, and nothing is imported here.
+    pub(crate) fn reconcile_at_unlock(
+        &self,
+        keys: &InboxKeys,
+        now: u64,
+        record_exists: &dyn Fn(Uuid) -> bool,
+    ) -> Result<UnlockReport, SealFailure> {
+        let _lock = self.lock().map_err(|_| SealFailure::Storage)?;
+        let mut report = UnlockReport::default();
+        match keys.check_public_file(self.read_public_bytes().as_deref()) {
+            PublicFileCheck::Matches => {}
+            check => {
+                report.tamper = check == PublicFileCheck::Changed;
+                self.write_public(keys.public())
+                    .map_err(|_| SealFailure::Storage)?;
+            }
+        }
+        report.parts_removed = self.remove_parts().map_err(|_| SealFailure::Storage)?;
+        let (entries, truncated) = self
+            .listed_entries(self.listing_limit)
+            .map_err(|_| SealFailure::Storage)?;
+        report.listing_truncated = truncated;
+        let mut items: Vec<Entry> = entries
+            .into_iter()
+            .filter(|entry| parse_item_name(&entry.name).is_some())
+            .collect();
+        items.sort_by(|a, b| {
+            (a.modified.unwrap_or(u64::MAX), &a.name)
+                .cmp(&(b.modified.unwrap_or(u64::MAX), &b.name))
+        });
+        let mut total = 0u64;
+        for entry in items {
+            let Some(item_id) = parse_item_name(&entry.name) else {
+                continue;
+            };
+            let path = self.dir.join(&entry.name);
+            let opened = match crate::vault::open_regular_read(&path) {
+                Ok(file) => open_item(keys, &item_id, file),
+                Err(_) => {
+                    report.unreadable += 1;
+                    continue;
+                }
+            };
+            let item = match opened {
+                Ok(item) => item,
+                Err(InboxError::WrongKey) => {
+                    // Another key's: not ours to delete early; only a long-past file time lets go.
+                    if entry
+                        .modified
+                        .is_some_and(|time| long_expired(time, now, &self.caps))
+                        && remove_item(&path).is_ok()
+                    {
+                        report.expired += 1;
+                    } else {
+                        report.other_key += 1;
+                    }
+                    continue;
+                }
+                Err(InboxError::Io(_)) => {
+                    report.unreadable += 1;
+                    continue;
+                }
+                Err(_) => {
+                    if remove_item(&path).is_ok() {
+                        report.malformed += 1;
+                    } else {
+                        report.unreadable += 1;
+                    }
+                    continue;
+                }
+            };
+            match age_of(item.meta.received_at, now, &self.caps) {
+                Age::Fresh => {}
+                Age::Expired => {
+                    if remove_item(&path).is_ok() {
+                        report.expired += 1;
+                    } else {
+                        report.unreadable += 1;
+                    }
+                    continue;
+                }
+                Age::FromTheFuture => {
+                    if remove_item(&path).is_ok() {
+                        report.malformed += 1;
+                    } else {
+                        report.unreadable += 1;
+                    }
+                    continue;
+                }
+            }
+            let record_id = keys.record_id(&item_id);
+            if record_exists(record_id) {
+                if remove_item(&path).is_ok() {
+                    report.already_imported += 1;
+                } else {
+                    report.unreadable += 1;
+                }
+                continue;
+            }
+            let over = report.pending.len() >= self.caps.items
+                || total
+                    .checked_add(entry.bytes)
+                    .is_none_or(|sum| sum > self.caps.total_bytes);
+            if over {
+                report.over_cap += 1;
+                continue;
+            }
+            total += entry.bytes;
+            report.pending.push(PendingItem {
+                item_id,
+                name: item.meta.name.clone(),
+                received_at: item.meta.received_at,
+                source: item.meta.source,
+                plaintext_size: item.meta.plaintext_size,
+                sealed_bytes: entry.bytes,
+                record_id,
+            });
+        }
+        Ok(report)
     }
 
     /// What a locked app may remove with no key: part-sealed leftovers, and items far past their
@@ -974,6 +1206,307 @@ mod tests {
         // The locked sweep works on what it can list, and does not build more than the bound.
         let _ = folder.sweep_locked(NOW).unwrap();
         assert!(folder.entries().unwrap().len() <= 20);
+    }
+
+    fn other_keys() -> InboxKeys {
+        InboxKeys::derive(&[9_u8; 32], vault()).unwrap()
+    }
+
+    fn seal_at(folder: &InboxFolder, keys: &InboxKeys, data: Vec<u8>, at: u64) -> ItemId {
+        let declared = Some(data.len() as u64);
+        folder
+            .seal(
+                keys.public(),
+                Box::new(Cursor::new(data)),
+                "report.pdf",
+                Source::Shared,
+                declared,
+                at,
+                &|| false,
+            )
+            .unwrap()
+            .item_id
+    }
+
+    fn item_path(folder: &InboxFolder, id: &ItemId) -> PathBuf {
+        folder.dir().join(item_file_name(id))
+    }
+
+    fn never(_: Uuid) -> bool {
+        false
+    }
+
+    #[test]
+    fn inbox_pub_is_written_checked_and_put_right_at_every_unlock() {
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let right = keys.public().to_bytes();
+        let file = folder.dir().join(PUBLIC_FILE);
+        // The first unlock: no folder yet, no file: a first write, not a tamper.
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert!(!report.tamper);
+        assert_eq!(fs::read(&file).unwrap(), right);
+        assert_eq!(folder.public_key().unwrap().to_bytes(), right);
+        // The next: the same, and nothing to say.
+        assert!(
+            !folder
+                .reconcile_at_unlock(&keys, NOW, &never)
+                .unwrap()
+                .tamper
+        );
+        // Deleted between unlocks: written again, not a tamper.
+        remove_item(&file).unwrap();
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert!(!report.tamper);
+        assert_eq!(fs::read(&file).unwrap(), right);
+        // Another valid key, a short file, a long one: each is a tamper and put right.
+        for other in [
+            other_keys().public().to_bytes().to_vec(),
+            b"short".to_vec(),
+            vec![7_u8; 40],
+            Vec::new(),
+        ] {
+            fs::write(&file, &other).unwrap();
+            let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+            assert!(report.tamper, "{other:?}");
+            assert_eq!(fs::read(&file).unwrap(), right, "{other:?}");
+            assert!(!names(&folder).iter().any(|n| n.ends_with(".tmp")));
+        }
+        // A key-shaped file that is the all-zero point is no key either.
+        fs::write(&file, [0_u8; 32]).unwrap();
+        assert!(
+            folder
+                .reconcile_at_unlock(&keys, NOW, &never)
+                .unwrap()
+                .tamper
+        );
+        assert_eq!(fs::read(&file).unwrap(), right);
+    }
+
+    #[test]
+    fn an_item_that_does_not_open_is_deleted_and_never_pending() {
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        type Damage = Box<dyn Fn(&InboxFolder, &ItemId)>;
+        let cases: Vec<(&str, Damage)> = vec![
+            (
+                "cut short",
+                Box::new(|folder, id| {
+                    let file = OpenOptions::new()
+                        .write(true)
+                        .open(item_path(folder, id))
+                        .unwrap();
+                    file.set_len(file.metadata().unwrap().len() / 2).unwrap();
+                }),
+            ),
+            (
+                "a bad header",
+                Box::new(|folder, id| {
+                    let mut bytes = fs::read(item_path(folder, id)).unwrap();
+                    bytes[..8].fill(0);
+                    fs::write(item_path(folder, id), bytes).unwrap();
+                }),
+            ),
+            (
+                "a changed trailer (failed authentication)",
+                Box::new(|folder, id| {
+                    let mut bytes = fs::read(item_path(folder, id)).unwrap();
+                    *bytes.last_mut().unwrap() ^= 1;
+                    fs::write(item_path(folder, id), bytes).unwrap();
+                }),
+            ),
+            (
+                "a changed encapsulated key",
+                Box::new(|folder, id| {
+                    let mut bytes = fs::read(item_path(folder, id)).unwrap();
+                    bytes[60] ^= 1;
+                    fs::write(item_path(folder, id), bytes).unwrap();
+                }),
+            ),
+            (
+                "junk of no size",
+                Box::new(|folder, id| fs::write(item_path(folder, id), b"").unwrap()),
+            ),
+        ];
+        for (what, damage) in cases {
+            let id = seal_at(&folder, &keys, pdf(3000), NOW);
+            damage(&folder, &id);
+            let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+            assert!(report.pending.is_empty(), "{what}");
+            assert_eq!(report.malformed, 1, "{what}");
+            assert!(!item_path(&folder, &id).exists(), "{what}: removed");
+        }
+        // An item copied over another's name (its header says another id) is refused too.
+        let (first, second) = (
+            seal_at(&folder, &keys, pdf(3000), NOW),
+            seal_at(&folder, &keys, pdf(3000), NOW),
+        );
+        fs::copy(item_path(&folder, &first), item_path(&folder, &second)).unwrap();
+        remove_item(item_path(&folder, &first)).unwrap();
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!((report.malformed, report.pending.len()), (1, 0));
+        // And an item whose time is from the future is not believed.
+        let future = seal_at(&folder, &keys, pdf(3000), NOW + 3 * 24 * 60 * 60);
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!((report.malformed, report.pending.len()), (1, 0));
+        assert!(!item_path(&folder, &future).exists());
+    }
+
+    #[test]
+    fn an_item_past_its_age_is_deleted_by_its_sealed_time() {
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let old = seal_at(&folder, &keys, pdf(3000), NOW - CAPS.age_secs - 1);
+        let fresh = seal_at(&folder, &keys, pdf(3000), NOW - CAPS.age_secs + 60);
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!(report.expired, 1);
+        assert!(!item_path(&folder, &old).exists());
+        assert!(item_path(&folder, &fresh).exists());
+        assert_eq!(report.pending.len(), 1);
+    }
+
+    #[test]
+    fn an_item_sealed_to_another_key_is_left_until_it_is_long_expired() {
+        fn set_file_time(path: &Path, secs: u64) {
+            let file = OpenOptions::new().write(true).open(path).unwrap();
+            file.set_modified(UNIX_EPOCH + std::time::Duration::from_secs(secs))
+                .unwrap();
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let theirs = seal_at(&folder, &other_keys(), pdf(3000), NOW);
+        // The file's own time is the test's clock, not the machine's.
+        set_file_time(&item_path(&folder, &theirs), NOW);
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!(
+            (report.other_key, report.pending.len()),
+            (1, 0),
+            "{report:?}"
+        );
+        assert!(
+            item_path(&folder, &theirs).exists(),
+            "not ours to delete early"
+        );
+        // Its file time is long past (twice the age): now it goes.
+        set_file_time(&item_path(&folder, &theirs), NOW - 3 * CAPS.age_secs);
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!((report.expired, report.other_key), (1, 0), "{report:?}");
+        assert!(!item_path(&folder, &theirs).exists());
+    }
+
+    #[test]
+    fn junk_named_like_items_cannot_starve_real_ones_of_the_item_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let keys = keys();
+        let sealing = folder(temp.path());
+        let real: Vec<ItemId> = (0..3)
+            .map(|_| seal_at(&sealing, &keys, pdf(3000), NOW))
+            .collect();
+        // The unlock's folder has an item cap of three. Ten junk files with older file times, so
+        // that they are looked at first, are named like items.
+        let caps = Caps { items: 3, ..CAPS };
+        let folder = InboxFolder::new(temp.path(), vault()).with(caps, roomy);
+        for n in 0..10 {
+            plant(&folder, 200 + n, 100 + n as u64);
+        }
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!(report.malformed, 10, "all the junk is deleted");
+        assert_eq!(report.pending.len(), 3, "and the real items are all taken");
+        assert_eq!(report.over_cap, 0);
+        for id in &real {
+            assert!(report.pending.iter().any(|p| p.item_id == *id));
+            assert!(item_path(&folder, id).exists());
+        }
+    }
+
+    #[test]
+    fn the_item_and_byte_caps_apply_to_good_items_and_the_rest_wait() {
+        let temp = tempfile::tempdir().unwrap();
+        let keys = keys();
+        let sealing = folder(temp.path());
+        let ids: Vec<ItemId> = (0..3)
+            .map(|_| seal_at(&sealing, &keys, pdf(10_000), NOW))
+            .collect();
+        let caps = Caps { items: 2, ..CAPS };
+        let limited = InboxFolder::new(temp.path(), vault()).with(caps, roomy);
+        let report = limited.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!((report.pending.len(), report.over_cap), (2, 1));
+        assert!(
+            ids.iter().all(|id| item_path(&limited, id).exists()),
+            "the one over the cap is left, not deleted"
+        );
+        // The byte cap: room for two sealed items and a little over.
+        let size = report.pending[0].sealed_bytes;
+        let temp = tempfile::tempdir().unwrap();
+        let sealing = folder(temp.path());
+        for _ in 0..3 {
+            seal_at(&sealing, &keys, pdf(10_000), NOW);
+        }
+        let caps = Caps {
+            total_bytes: 2 * size + 1,
+            ..CAPS
+        };
+        let limited = InboxFolder::new(temp.path(), vault()).with(caps, roomy);
+        let report = limited.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!((report.pending.len(), report.over_cap), (2, 1));
+    }
+
+    #[test]
+    fn an_item_whose_record_exists_was_imported_and_is_deleted_once_not_imported_twice() {
+        use std::{cell::RefCell, collections::HashSet};
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let (first, second) = (
+            seal_at(&folder, &keys, pdf(3000), NOW),
+            seal_at(&folder, &keys, pdf(3000), NOW),
+        );
+        let in_vault: RefCell<HashSet<Uuid>> = RefCell::default();
+        let exists = |id: Uuid| in_vault.borrow().contains(&id);
+        // An unlock changes nothing by itself: asking twice gives the same two pending items.
+        for _ in 0..2 {
+            let report = folder.reconcile_at_unlock(&keys, NOW, &exists).unwrap();
+            assert_eq!(report.pending.len(), 2);
+            assert_eq!(report.already_imported, 0);
+        }
+        // The crash window: the vault committed the first one's record, and the app died before
+        // the delete. The item is still there...
+        in_vault.borrow_mut().insert(keys.record_id(&first));
+        assert!(item_path(&folder, &first).exists());
+        // ...and the next unlock deletes it silently and offers only the second.
+        let report = folder.reconcile_at_unlock(&keys, NOW, &exists).unwrap();
+        assert_eq!(report.already_imported, 1);
+        assert_eq!(report.pending.len(), 1);
+        assert_eq!(report.pending[0].item_id, second);
+        assert!(!item_path(&folder, &first).exists());
+        // And never again: it is gone, so it cannot be imported a second time.
+        let report = folder.reconcile_at_unlock(&keys, NOW, &exists).unwrap();
+        assert_eq!((report.already_imported, report.pending.len()), (0, 1));
+        // Its record id is the vault's id for it, however it was moved since: the same every time.
+        assert_eq!(report.pending[0].record_id, keys.record_id(&second));
+    }
+
+    #[test]
+    fn an_unlock_removes_part_files_and_reads_names_and_sizes_from_the_sealed_meta() {
+        let temp = tempfile::tempdir().unwrap();
+        let (folder, keys) = (folder(temp.path()), keys());
+        let id = seal_at(&folder, &keys, pdf(5000), NOW);
+        let part = folder.dir().join(part_file_name(&ItemId::random()));
+        fs::write(&part, b"half").unwrap();
+        let report = folder.reconcile_at_unlock(&keys, NOW, &never).unwrap();
+        assert_eq!(report.parts_removed, 1);
+        assert!(!part.exists());
+        let [item] = report.pending.as_slice() else {
+            panic!("one pending item");
+        };
+        assert_eq!(item.item_id, id);
+        assert_eq!(item.name, "report.pdf");
+        assert_eq!(item.plaintext_size, 5000);
+        assert_eq!(item.received_at, NOW);
+        assert_eq!(item.source, Source::Shared);
+        assert_eq!(
+            item.sealed_bytes,
+            fs::metadata(item_path(&folder, &id)).unwrap().len()
+        );
     }
 
     #[test]
