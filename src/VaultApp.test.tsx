@@ -7599,6 +7599,11 @@ describe("durable vault UI", () => {
     assignFoldersBatch: "write",
     pickImportFiles: "allowed",
     importPickedFiles: "write",
+    // A video is picked like a picture; adding it is a write, and its progress and cancel are not.
+    pickImportVideo: "allowed",
+    importPickedVideo: "write",
+    videoImportProgress: "allowed",
+    videoImportCancel: "allowed",
     pickExportDestination: "allowed",
     exportToPicked: "allowed",
     savePhoto: "write",
