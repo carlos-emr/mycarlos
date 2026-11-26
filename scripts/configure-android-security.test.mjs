@@ -263,6 +263,16 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
   ]) {
     const patched = keepPageClearOfSystemBars(source);
     assert.match(patched, /override fun onWebViewCreate\(webView: WebView\)/);
+    // Page inspection is on only when the app is debuggable (a debug build), never unconditionally.
+    assert.match(
+      patched,
+      /if \(\(applicationInfo\.flags and ApplicationInfo\.FLAG_DEBUGGABLE\) != 0\) \{\s*WebView\.setWebContentsDebuggingEnabled\(true\)\s*\}/,
+    );
+    assert.equal(
+      patched.split("setWebContentsDebuggingEnabled").length - 1,
+      1,
+      "one call, inside the debuggable check",
+    );
     assert.match(patched, /WindowInsetsCompat\.Type\.systemBars\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.ime\(\)/);
@@ -291,6 +301,7 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
       /runOnUiThread \{ setStripColour\(value, darkBackground\) \}/,
     );
     for (const line of [
+      "import android.content.pm.ApplicationInfo",
       "import android.content.res.Configuration",
       "import android.graphics.Color",
       "import android.graphics.drawable.ColorDrawable",
