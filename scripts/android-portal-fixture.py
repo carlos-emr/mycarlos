@@ -17,7 +17,8 @@ A second, plain-HTTP listener (`--plain-port`) only logs that someone connected,
 that a clear-text address was refused before any connection was made.
 
 The log (`--log`, JSON lines) holds the method, the path and the body's length of each request and
-the fact of a plain connection. It never holds a body, a header or an address of the caller.
+the fact of a plain connection. The PATH is logged as it was sent, so it may carry opaque ids from the
+app's request (a link id, a request id); it never holds a body, a header or an address of the caller.
 
 The certificates and keys are throwaway test keys (see that folder's README); they are written to a
 private temporary directory only long enough to be loaded and are never added to any trust store.
@@ -111,7 +112,10 @@ class Fixture:
             protocol_version = "HTTP/1.1"
 
             def handle_any(self) -> None:
-                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    length = max(0, int(self.headers.get("Content-Length") or 0))
+                except ValueError:
+                    length = 0  # not a number: no body is read, and the request is still answered
                 remaining = min(length, MAX_BODY)
                 while remaining > 0:
                     chunk = self.rfile.read(min(remaining, 8192))

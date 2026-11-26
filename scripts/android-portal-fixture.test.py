@@ -95,6 +95,20 @@ class Fake(unittest.TestCase):
         self.assertNotIn("fake", self.log.read_text())
         self.assertNotIn("Content-Type", self.log.read_text())
 
+    def test_a_content_length_that_is_not_a_number_is_a_request_without_a_body(self):
+        fixture = self.fixture("trusted")
+        context = trusting(True)
+        with socket.create_connection(("127.0.0.1", fixture.port), timeout=5) as raw:
+            with context.wrap_socket(raw, server_hostname="localhost") as tls:
+                tls.sendall(
+                    b"POST /api/mycarlos/x HTTP/1.1\r\nHost: localhost\r\n"
+                    b"Content-Length: abc\r\n\r\n"
+                )
+                reply = tls.recv(4096)
+        self.assertTrue(reply.startswith(b"HTTP/1.1 403"))
+        [event] = events(self.log)
+        self.assertEqual((event["path"], event["bytes"]), ("/api/mycarlos/x", 0))
+
     def test_the_plain_listener_logs_that_someone_connected_and_nothing_else(self):
         fixture = self.fixture("trusted", plain_port=0)
         self.assertEqual(events(self.log), [])
