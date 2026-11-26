@@ -1424,6 +1424,20 @@ describe("automatic approval status checks (#131)", () => {
     expect(status()).toHaveTextContent(AWAITING);
   });
 
+  it("says why a check failed for another reason, once, and does not check that request again by itself", async () => {
+    const { poll } = checked(() => ({
+      error: { code: "zzz_unknown", message: "FAKE the check failed" },
+    }));
+    await pass(10_000);
+    expect(poll).toHaveBeenCalledOnce();
+    expect(status()).toHaveTextContent("FAKE the check failed");
+    expect(screen.queryByText(AUTO)).not.toBeInTheDocument();
+    // Nothing more is asked of the portal, and nothing more is said.
+    await pass(30 * 60_000);
+    expect(poll).toHaveBeenCalledOnce();
+    expect(status()).toHaveTextContent("FAKE the check failed");
+  });
+
   it("stops for a request the portal does not have until the patient sends it again", async () => {
     const answers: ApprovalPoll[] = [
       reply(pending, { issue: { code: "approval_missing" } }),
@@ -1684,6 +1698,58 @@ describe("automatic approval status checks (#131)", () => {
       unmount();
       vi.useRealTimers();
     }
+  });
+
+  describe("a check that puts the vault into read-only recovery", () => {
+    const accepted = {
+      ...link,
+      approvalStatus: "accepted",
+      clinicApproved: true,
+    } as const;
+
+    it("waits for the vault to turn read-only, then moves focus from the control it took away to the device's heading", async () => {
+      const { rerender, props } = checked(
+        () => reply(accepted, { recovery: true }),
+        pending,
+      );
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
+      await pass(10_000);
+      // Not before: the control is only taken away once the app reads the vault again.
+      expect(
+        screen.getByRole("heading", { name: "FAKE Clinic", level: 3 }),
+      ).not.toHaveFocus();
+      rerender(
+        <PortalDocuments {...props} snapshot={view(accepted)} readOnly />,
+      );
+      expect(
+        screen.getByRole("heading", { name: "FAKE Clinic", level: 3 }),
+      ).toHaveFocus();
+    });
+
+    it("leaves focus where the patient moved it while the vault was still turning read-only", async () => {
+      const { rerender, props } = checked(
+        () => reply(accepted, { recovery: true }),
+        pending,
+      );
+      screen
+        .getByRole("button", { name: "Retry saved approval request" })
+        .focus();
+      await pass(10_000);
+      // The patient goes on to another control meanwhile.
+      // (A read-only vault disables the buttons: the details disclosure stays usable.)
+      const elsewhere = screen.getByText("Show device details");
+      act(() => elsewhere.focus());
+      expect(elsewhere).toHaveFocus();
+      rerender(
+        <PortalDocuments {...props} snapshot={view(accepted)} readOnly />,
+      );
+      expect(elsewhere).toHaveFocus();
+      expect(
+        screen.getByRole("heading", { name: "FAKE Clinic", level: 3 }),
+      ).not.toHaveFocus();
+    });
   });
 
   it("does not say it is checking once the time runs out after checks stopped", async () => {
@@ -2040,6 +2106,37 @@ describe("the code a clinic emails (#141)", () => {
     }
     rerender(<PortalDocuments {...props} snapshot={showing()} readOnly />);
     expect(codeBox()).not.toBeInTheDocument();
+  });
+
+  it("leaves focus where the patient moved it while the code was being sent", async () => {
+    const { bridge, props, rerender, failures } = fixture({
+      snapshot: showing(),
+    });
+    let refuse!: (error: unknown) => void;
+    vi.mocked(bridge.submitApprovalCode!).mockImplementationOnce(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    const user = userEvent.setup();
+    await user.type(codeBox()!, "482193645");
+    const confirm = screen.getByRole("button", { name: "Confirm code" });
+    await user.click(confirm);
+    rerender(<PortalDocuments {...props} busy working />);
+    expect(confirm).toBeDisabled();
+    act(() => confirm.blur());
+    expect(document.activeElement).toBe(document.body);
+    // The patient goes on to another control while it is being sent.
+    const elsewhere = screen.getByText("Show device details");
+    act(() => elsewhere.focus());
+    expect(elsewhere).toHaveFocus();
+    refuse({ code: "approval_code_refused" });
+    await waitFor(() => expect(failures).toHaveLength(1));
+    rerender(<PortalDocuments {...props} />);
+    // Not pulled back to the control that sent the code.
+    expect(elsewhere).toHaveFocus();
+    expect(confirm).not.toHaveFocus();
   });
 
   it("sends the code as typed to the native side only, and says it was sent", async () => {
