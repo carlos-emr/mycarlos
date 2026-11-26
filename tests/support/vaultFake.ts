@@ -417,6 +417,13 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         >;
         /** The files the next import picker "chooses" (FAKE names). */
         importQueue: string[];
+        /** The video the next video picker "chooses": refused with a reason, or slow
+         * (progress and Cancel can be seen), as asked. */
+        videoQueue: {
+          name: string;
+          refusal: string | null;
+          slow: boolean;
+        } | null;
         /** Documents that arrived for a hidden person, by person (#360). */
         arrivedWhileHidden: Record<
           string,
@@ -695,6 +702,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           nextPickId: 1000,
           picks: {},
           importQueue: [],
+          videoQueue: null,
           arrivedWhileHidden: {},
           backupsSaved: 0,
           received: setup.received.map((name, index) => ({
@@ -963,6 +971,13 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         if (state.status !== "unlocked")
           throw refuse("locked", "native.error.14");
       };
+      // The picked video's import, as the page watches it (not saved: it lasts one call).
+      let videoProgress = {
+        stage: "idle",
+        doneBytes: 0,
+        totalBytes: 0,
+      };
+      let videoCancelled = false;
       const refusePaused = () => {
         refuseLocked();
         if (state.snapshot.recovery !== null)
@@ -1303,6 +1318,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             state.documentPasswords = {};
             state.picks = {};
             state.importQueue = [];
+            state.videoQueue = null;
             state.received = [];
             state.history = [];
             snapshot.profiles = [];
@@ -1963,6 +1979,72 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             }
             return { imported, skippedDuplicates };
           }
+          // --- a picked video (queued with __fakeVault.pickVideo) ---
+          case "vault_import_video_pick":
+            refusePaused();
+            return state.videoQueue
+              ? makePick("import", {
+                  profileId: request.profileId,
+                  folderIds: request.folderIds ?? [],
+                })
+              : null;
+          case "vault_import_video_picked": {
+            const chosen = pick(request.pickId, "import", true);
+            if (
+              chosen.profileId !== request.profileId ||
+              JSON.stringify(chosen.folderIds) !==
+                JSON.stringify(request.folderIds ?? [])
+            )
+              throw refuse("invalid", "native.error.19");
+            refusePaused();
+            const video = state.videoQueue;
+            state.videoQueue = null;
+            if (!video) return { result: "refused", reason: "notVideo" };
+            videoProgress = { stage: "checking", doneBytes: 0, totalBytes: 0 };
+            videoCancelled = false;
+            try {
+              if (video.slow) {
+                // About seven seconds, in steps, so the bar and Cancel can be seen.
+                for (let step = 0; step <= 10; step++) {
+                  // A lock stops the copy natively: it ends as a refusal of the locked vault.
+                  if (state.status === "locked") refuseLocked();
+                  if (videoCancelled) return { result: "cancelled" };
+                  videoProgress =
+                    step < 3
+                      ? { stage: "checking", doneBytes: step, totalBytes: 0 }
+                      : {
+                          stage: "storing",
+                          doneBytes: (step - 3) * 100,
+                          totalBytes: 700,
+                        };
+                  await new Promise((resolve) => setTimeout(resolve, 600));
+                }
+              }
+              if (video.refusal)
+                return { result: "refused", reason: video.refusal };
+              const duplicate = snapshot.records.find(
+                (r) =>
+                  r.profileId === request.profileId &&
+                  r.displayName === video.name,
+              );
+              if (duplicate) return { result: "duplicate" };
+              const record = fakeRecord(
+                video.name,
+                request.profileId ?? setup.ids.profile,
+                request.folderIds ?? [],
+              );
+              snapshot.records.push(record);
+              wrote("imported", { name: video.name, how: "pickedVideo" });
+              return { result: "imported", recordId: record.id };
+            } finally {
+              videoProgress = { stage: "idle", doneBytes: 0, totalBytes: 0 };
+            }
+          }
+          case "vault_video_import_progress":
+            return videoProgress;
+          case "vault_video_import_cancel":
+            videoCancelled = true;
+            return null;
           // --- Recovery mode: hide the documents whose files are missing ---
           case "vault_hide_unavailable_records": {
             refuseLocked();
@@ -2025,6 +2107,17 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         },
         pickFiles: (names: string[]) => {
           state.importQueue = names;
+          save();
+        },
+        pickVideo: (
+          name: string,
+          how: { refusal?: string; slow?: boolean } = {},
+        ) => {
+          state.videoQueue = {
+            name,
+            refusal: how.refusal ?? null,
+            slow: how.slow ?? false,
+          };
           save();
         },
         // A clinic document that arrived for a person while they were hidden: it is in
@@ -2220,6 +2313,26 @@ export async function fakePickFiles(page: Page, names: string[]) {
         }
       ).pickFiles(names),
     names,
+  );
+}
+
+/** The FAKE video the next video picker (the library's "Add a video") chooses. */
+export async function fakePickVideo(
+  page: Page,
+  name: string,
+  how: { refusal?: string; slow?: boolean } = {},
+) {
+  await page.evaluate(
+    ([name, how]) =>
+      (
+        Reflect.get(window, "__fakeVault") as {
+          pickVideo: (
+            name: string,
+            how: { refusal?: string; slow?: boolean },
+          ) => void;
+        }
+      ).pickVideo(name, how),
+    [name, how] as const,
   );
 }
 

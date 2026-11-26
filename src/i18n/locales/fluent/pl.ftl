@@ -502,6 +502,8 @@ interface-UnlockPdfDialog-unlocking = Odblokowywanie…
 
 interface-VaultApp-chooseFilesToImport = Wybierz pliki do importu
 
+interface-VaultLibrary-picturesNote = Z dodawanych obrazów usuwane są miejsce, czas i dane o aparacie.
+
 interface-VaultApp-finishingTheTransfer = Kończenie przesyłania
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Zablokuj teraz i anuluj przesyłanie
@@ -798,7 +800,7 @@ native-error-20 = Proszę wybrać trudniejsze do odgadnięcia hasło główne, k
 
 native-error-21 = Proszę wybrać najwyżej 100 plików do jednego importu.
 
-native-error-22 = Jeden z plików nie jest dokumentem PDF, więc nic nie dodano. myCarlos przechowuje tylko dokumenty PDF.
+native-error-22 = Jeden z plików nie jest dokumentem PDF ani obrazem JPEG lub PNG, więc nic nie dodano. myCarlos przechowuje dokumenty PDF oraz obrazy JPEG i PNG. Jeśli to obraz z iPhone’a (HEIC), udostępnij go jako JPEG.
 
 native-error-23 = Ten dokument jest zabezpieczony hasłem. Proszę wpisać hasło dokumentu z portalu pacjenta.
 
@@ -848,7 +850,7 @@ native-error-45 = myCarlos nie mógł otworzyć tego pliku. Jeśli znajduje się
 
 native-error-46 = Dokument w sejfie jest uszkodzony i nie można go już odczytać, więc nie zapisano kopii zapasowej. Nic nie zostało zmienione.
 
-native-error-47 = To nie jest zdjęcie, które myCarlos może zapisać lub wyświetlić: musi być kompletnym obrazem JPEG o rozmiarze najwyżej 25 MB i wymiarach najwyżej 8 192 pikseli na każdym boku. Nic nie zostało zmienione.
+native-error-47 = To nie jest zdjęcie, które myCarlos może zapisać lub wyświetlić: musi być kompletnym obrazem JPEG lub PNG (nieanimowanym) o rozmiarze najwyżej 25 MB, wymiarach najwyżej 8 192 pikseli na każdym boku i najwyżej 50 milionach pikseli łącznie (24 milionach na telefonie). Nic nie zostało zmienione.
 
 native-error-48 = Kopia zapasowa została sprawdzona, ale przywracanie nie zostało ukończone. Proszę zamknąć i ponownie otworzyć myCarlos, aby je dokończyć. Następnie proszę otworzyć sejf hasłem głównym lub kluczem odzyskiwania z kopii zapasowej.
 
@@ -857,6 +859,11 @@ native-error-speedTest = Test szybkości został przerwany przed zakończeniem. 
 native-filter-backups = Kopie zapasowe myCarlos
 
 native-filter-pdf = Dokumenty PDF
+
+native-filter-video = Filmy (MP4 lub MOV)
+native-filter-pictures = Obrazy JPEG i PNG
+
+native-filter-pdfAndPictures = Dokumenty PDF oraz obrazy JPEG i PNG
 
 native-kit-text =
     Zestaw odzyskiwania myCarlos
@@ -2516,6 +2523,8 @@ notifications-error = Nie można zapisać tego ustawienia. Powiadomienia i autom
 notifications-unavailable = Te ustawienia są teraz niedostępne. Proszę otworzyć myCarlos jak zwykle, aby sprawdzić dokumenty.
 notifications-helpAutomatic = myCarlos może sam sprawdzać nowe dokumenty z przychodni, gdy jest otwarty i odblokowany. Nowe dokumenty pojawiają się wtedy w bibliotece.
 notifications-notYetAsked = System Windows nie wyświetlił jeszcze żadnego powiadomienia myCarlos, więc nie ma dla nich ustawienia. Powiadomienia są dozwolone, dopóki nie zostaną wyłączone w ustawieniach Windows.
+notifications-blockedMac = System macOS nie zezwala na powiadomienia z myCarlos. Proszę je włączyć w Ustawieniach systemowych, w sekcji Powiadomienia.
+notifications-notYetAskedMac = System macOS nie został jeszcze zapytany. Zapyta, gdy zostaną włączone powiadomienia.
 notifications-autoAllow = Automatycznie sprawdzaj dokumenty z przychodni, gdy sejf jest odblokowany
 notifications-autoConsent = Włączenie tej opcji pozwala myCarlos łączyć się z portalem przychodni według harmonogramu, co najmniej dwie minuty między próbami, wyłącznie gdy jest otwarty i odblokowany. Wyłączenie jej zatrzymuje sprawdzanie.
 notifications-noticesHelp = Po zapisaniu dokumentu z przychodni system Windows może wyświetlić ogólne powiadomienie. Proszę otworzyć myCarlos jak zwykle, aby przeczytać dokument.
@@ -3073,6 +3082,7 @@ native-notice-test = To jest testowe powiadomienie z myCarlos.
 notifications-testButton = Pokaż powiadomienie testowe
 
 notifications-testSent = Powiadomienie testowe wysłane. Jeśli go nie widzisz, sprawdź ustawienia powiadomień systemu Windows.
+notifications-testSentMac = Wysłano powiadomienie testowe. Jeśli go nie widać, proszę sprawdzić Ustawienia systemowe, sekcję Powiadomienia.
 
 notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
@@ -3092,3 +3102,47 @@ reader-panel-ai = Wyjaśnij z pomocą AI
 interface-VaultLibrary-help = Pomoc
 
 interface-VaultLibrary-helpButtonName = Pomoc: ten ekran
+
+interface-AddVideo-add = Dodaj film
+
+interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce oraz nazwa i model urządzenia, które zawiera, zostaną najpierw usunięte.
+
+interface-AddVideo-checking = Sprawdzanie filmu…
+
+interface-AddVideo-storing = Dodawanie filmu: { $percent }%
+
+interface-AddVideo-progressLabel = Dodawanie filmu
+
+interface-AddVideo-cancel = Anuluj
+
+interface-AddVideo-cancelling = Anulowanie…
+
+interface-AddVideo-added = Film został dodany.
+
+interface-AddVideo-duplicate = Ten film już tu jest. Nic nie zostało dodane.
+
+interface-AddVideo-cancelled = Anulowano. Nic nie zostało dodane.
+
+interface-AddVideo-notVideo = Ten plik nie jest filmem, który myCarlos może dodać. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-hevc = Ten film używa formatu H.265 (HEVC), którego wiele komputerów nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
+
+interface-AddVideo-videoCodec = Ten film używa formatu obrazu, którego myCarlos nie odtworzy. Proszę zapisać go jako MP4 H.264 i dodać ponownie.
+
+interface-AddVideo-audioCodec = Dźwięk tego filmu używa formatu, którego myCarlos nie odtworzy. Proszę zapisać go z dźwiękiem AAC i dodać ponownie.
+
+interface-AddVideo-noVideo = Ten plik nie ma obrazu, więc nie jest filmem. Proszę wybrać film MP4 lub MOV.
+
+interface-AddVideo-tooManyTracks = Ten film ma więcej obrazów lub ścieżek dźwiękowych, niż myCarlos może dodać. Proszę zapisać prostą kopię z jednym obrazem i jednym dźwiękiem i dodać ją ponownie.
+
+interface-AddVideo-external = Część tego filmu jest przechowywana poza plikiem, więc nie można go dodać. Proszę zapisać pełną kopię i dodać ją ponownie.
+
+interface-AddVideo-fragmented = Ten film jest w formacie do przesyłania strumieniowego. Proszę zapisać go jako zwykły MP4 i dodać ponownie.
+
+interface-AddVideo-tooBig = Obraz tego filmu jest większy, niż myCarlos może dodać. Proszę zapisać mniejszą kopię i dodać ją ponownie.
+
+interface-AddVideo-tooLarge = Ten film jest większy, niż myCarlos może dodać na tym urządzeniu (2 GB na komputerze, 1 GB na telefonie). Proszę zapisać mniejszą kopię i dodać ją ponownie.
+
+interface-AddVideo-damaged = Ten film jest uszkodzony lub ucięty, więc nie można go dodać. Proszę skopiować go ponownie z miejsca, z którego pochodzi, i spróbować jeszcze raz.
+
+interface-AddVideo-adding = Dodawanie filmu…

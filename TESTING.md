@@ -363,6 +363,22 @@ On every platform:
       choose **Cancel**, or the vault locks.
     - **TalkBack or VoiceOver:** the shutter is read as "Take photo", and after a photo the focus
       is on **Use photo**. At the largest text size, every button can be reached.
+12a. **Pictures from files.** Take a FAKE JPEG that carries a place and time (a phone photo with Location on,
+    or one made with `exiftool -GPSLatitude=1 -GPSLongitude=1 -DateTimeOriginal=...`) and choose **New** and that
+    file: it is added, and a note under the buttons says place, time and camera details are removed. Open it:
+    it is shown upright (try a portrait photo a phone stored sideways). Run `exiftool` on the original: unchanged.
+    **Export** it (or use a readable export) and run `exiftool` on that copy: no GPS, time, make or model, no
+    thumbnail. Then choose a **HEIC** and a text file renamed `.pdf`: each is refused with a plain
+    message that names the file, and the others in the same choice are still added.
+    Choose a **PNG** (a screenshot; for one with text chunks, `exiftool -Comment=FAKE x.png`): it is added and
+    shown as it looks, `exiftool` on an export shows only the picture's own fields (size, depth), and an
+    animated PNG is refused as not a photo. An iPhone screenshot (Display P3) keeps its colours: the stored copy shows no shift against the original. A PNG whose picture data is damaged (flip a byte in the middle of the file, then fix its checksum, or use a deliberately truncated stream with correct chunk checksums) is added and then does not show; hide it from its details. This is expected: the picture data is checked for its header, not decoded. Choose a JPEG renamed
+    `.pdf`: it is cleaned as a picture, not kept as it came.
+    Try **real phone files**: one from a Pixel and one from a Samsung (they append an Ultra HDR gain map
+    after the picture) and one JPEG exported from an iPhone (Photos, Options, Most Compatible). Each must be
+    added, shown upright, and have no place or time left (`exiftool` on the export); the brightness may look
+    slightly flatter (the gain map is not kept).
+
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
@@ -1155,3 +1171,20 @@ private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
 `unknown_signer` with no pins. Private captures, metadata and certificates are not committed
 or published, and the public fixture is not regenerated. This opt-in check is separate from
 the public fixture tests and does not establish a production authenticated clinic link.
+
+### Adding a video from the device's files (#500 and the playback and page changes)
+
+Not run on a real device by the authors; the Rust and component tests use small FAKE files. By hand:
+
+1. On a computer, **Add a video** with a short H.264 + AAC MP4 from a phone that has a place set. The
+   video is added, plays, and its details show no place or device (`ffprobe` on a *Save a copy* shows no
+   `©xyz` or `com.apple.quicktime.*` keys; creation times may remain, as the threat model says).
+2. The same with an HEVC (H.265) video, an M4A voice memo and a HEIC photo renamed `.mp4`: each is refused
+   with its own words and nothing is added.
+3. A file near the limit (about 1.9 GiB on a computer; about 0.9 GiB on an Android phone): the progress
+   bar moves, Cancel stops it within a second or two, and nothing is left (library, the vault's
+   `objects/` and `staging/` folders).
+4. With little free space (under the file's size plus 256 MiB): the video is refused with the no-space words
+   before any copy.
+5. Leave the app idle during a long copy: it does not lock while the bar moves.
+6. Make a backup with **Leave videos out** ticked: the added video is left out and the size shown counts it.

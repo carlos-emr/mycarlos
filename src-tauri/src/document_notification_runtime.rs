@@ -8,6 +8,17 @@ use crate::ui_text::UiLocale;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// The system this build runs on, for the wording of the permission lines.
+pub(crate) const fn system_name() -> &'static str {
+    if cfg!(windows) {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "other"
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
@@ -68,6 +79,8 @@ pub struct Status {
     /// Whether this computer can show a notice at all (Windows today): the notice switch is an
     /// add-on offered only where it is true. The automatic checks do not depend on it.
     pub notices_supported: bool,
+    /// Which system's words the page uses for the permission lines ("windows", "macos", "other").
+    pub system: &'static str,
     pub last_outcome: Option<Outcome>,
 }
 
@@ -82,6 +95,7 @@ impl Status {
             automatic_checks_supported: false,
             automatic_checks_paused: false,
             notices_supported: false,
+            system: system_name(),
             last_outcome: None,
         }
     }
@@ -109,9 +123,9 @@ pub(crate) mod active {
     const MAX_EVENTS: usize = 512;
 
     /// What the operating system said when asked whether this app may show notices. Only the
-    /// Windows backend asks (and the tests): elsewhere there is no notice to ask about.
-    #[cfg(any(test, windows))]
+    /// Windows and macOS backends ask (and the tests): elsewhere there is no notice to ask about.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) enum OsSetting {
         Enabled,
         /// Turned off by the person, an administrator, the app's own manifest or "do not disturb".
@@ -122,7 +136,7 @@ pub(crate) mod active {
     }
 
     /// How an answer reads. Only a definite "disabled" blocks: a failed question is "not yet asked".
-    #[cfg(any(test, windows))]
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) fn permission_for(setting: OsSetting) -> Permission {
         match setting {
             OsSetting::Enabled => Permission::Allowed,
@@ -131,14 +145,45 @@ pub(crate) mod active {
         }
     }
 
+    /// How a macOS `UNAuthorizationStatus` reads: not determined (0) is "not yet asked", denied (1)
+    /// is blocked, authorized (2), provisional (3) and ephemeral (4) allow it. Anything else is not
+    /// understood, so nothing is shown.
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
+    pub(crate) fn permission_for_authorization(status: isize) -> Permission {
+        match status {
+            0 => Permission::NotYetAsked,
+            1 => Permission::Blocked,
+            2..=4 => Permission::Allowed,
+            _ => Permission::Unknown,
+        }
+    }
+
+    /// Whether a macOS notice may be posted for what the system says now. Only an allowed answer
+    /// does: a posting never asks the question (that is `Backend::request_permission`, asked when
+    /// the patient turns notices on), so a not-yet-asked, blocked or unknown answer is refused.
+    #[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+    pub(crate) fn may_post(permission: Permission) -> Result<(), Error> {
+        if permission == Permission::Allowed {
+            Ok(())
+        } else {
+            Err(Error::OsRejected)
+        }
+    }
+
     /// Whether a notice may be tried now: yes unless the system said it is disabled.
-    #[cfg(any(test, windows))]
+    #[cfg_attr(not(any(test, windows, target_os = "macos")), allow(dead_code))]
     pub(crate) fn may_show(setting: OsSetting) -> bool {
         permission_for(setting) != Permission::Blocked
     }
 
     pub trait Backend: Send + Sync {
         fn permission(&self) -> Permission;
+        /// Asks the system for permission, where it has a question to ask (macOS shows its own
+        /// prompt, once). Called when the patient turns notices on, so the prompt comes with the
+        /// choice. Where there is no question (Windows allows by default), it only reads.
+        fn request_permission(&self) -> Permission {
+            self.permission()
+        }
         /// A successful OS API acceptance, never a claim that a person saw it. `body` is the
         /// fixed catalogue sentence for the language the app last reported, never data.
         fn accept(&self, body: &str, still_current: &dyn Fn() -> bool) -> Result<(), Error>;
@@ -248,9 +293,28 @@ pub(crate) mod active {
             )
         }
 
-        /// Where the OS cannot show a notice (everything but Windows): the checks are still
-        /// supported, and a notice is never attempted.
-        #[cfg(not(windows))]
+        /// On a Linux desktop: the freedesktop notification service over D-Bus. It has no
+        /// permission step; the permission is "allowed" while the service is on the session bus
+        /// and "unavailable" when it is not.
+        #[cfg(target_os = "linux")]
+        pub fn new(path: PathBuf, _app_id: String) -> Self {
+            Self::load(
+                path,
+                Box::new(crate::document_notification_linux::LinuxBackend::new()),
+            )
+        }
+
+        #[cfg(target_os = "macos")]
+        pub fn new(path: PathBuf, _app_id: String) -> Self {
+            Self::load(
+                path,
+                Box::new(crate::document_notification_macos::MacBackend::new()),
+            )
+        }
+
+        /// Where the OS cannot show a notice (everything but Windows, Linux and macOS): the checks
+        /// are still supported, and a notice is never attempted.
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         pub fn new(path: PathBuf, _app_id: String) -> Self {
             struct Unavailable;
             impl Backend for Unavailable {
@@ -407,6 +471,10 @@ pub(crate) mod active {
             if !self.supported {
                 return Status::unavailable();
             }
+            // Asked once, and before the state lock is taken: on Linux the answer comes from a bus
+            // call that can take its full timeout, and the lock must not be held across it (turning
+            // notices off, or an arrival, would wait behind a status poll).
+            let permission = self.backend.permission();
             let Ok(guard) = self.state.lock() else {
                 return Status {
                     supported: true,
@@ -417,6 +485,7 @@ pub(crate) mod active {
                     automatic_checks_supported: false,
                     automatic_checks_paused: false,
                     notices_supported: false,
+                    system: system_name(),
                     last_outcome: Some(Outcome::Unknown),
                 };
             };
@@ -430,8 +499,9 @@ pub(crate) mod active {
                 }),
                 automatic_checks_supported: true,
                 automatic_checks_paused: false,
-                notices_supported: self.backend.permission() != Permission::Unavailable,
-                permission: self.backend.permission(),
+                notices_supported: permission != Permission::Unavailable,
+                system: system_name(),
+                permission,
                 last_outcome: guard
                     .as_ref()
                     .and_then(|s| s.events.last().map(|e| e.outcome)),
@@ -471,6 +541,13 @@ pub(crate) mod active {
             // Where the OS cannot show a notice there is nothing to turn on.
             if enabled && self.backend.permission() == Permission::Unavailable {
                 return Err(Error::Unavailable);
+            }
+            if enabled {
+                // The system's own question, where it has one (macOS), is asked now: with the
+                // choice, never at launch, and before the ledger lock is taken, because the
+                // patient may take a while to answer. A refusal is not an error: the notice is
+                // saved as wanted and the status says honestly that the system blocks it.
+                self.backend.request_permission();
             }
             if !enabled {
                 // This happens before any blocking ledger write/lock.
@@ -527,6 +604,10 @@ pub(crate) mod active {
             if !self.supported {
                 return TestNotice::NotAllowed;
             }
+            // Asked before the state lock is taken: on a Mac the answer is a round trip of up to
+            // five seconds, and nothing else may wait behind it. Only the notice itself is posted
+            // with the lock held (`accept` is bounded and never asks).
+            let permission = self.backend.permission();
             let Ok(guard) = self.state.lock() else {
                 return TestNotice::Failed;
             };
@@ -547,7 +628,7 @@ pub(crate) mod active {
                 }
                 *last = Some(std::time::Instant::now());
             }
-            match self.backend.permission() {
+            match permission {
                 Permission::Allowed | Permission::NotYetAsked => {
                     match (self.test_notice)(state.locale) {
                         Some(body) => {
@@ -599,13 +680,20 @@ pub(crate) mod active {
                 return;
             };
             let key = format!("{:x}", Sha256::digest(identity));
+            // Asked before the state lock is taken (see `send_test_notice`); only `accept`, which
+            // is bounded and never asks, runs with the lock held.
+            let permission = self.backend.permission();
             let Ok(mut guard) = self.state.lock() else {
                 return;
             };
             let Some(state) = guard.as_ref() else {
                 return;
             };
-            if !state.enabled || state.events.iter().any(|e| e.key == key) {
+            // Notices turned off or on while the permission was being asked (it is asked before the
+            // lock): the arrival is still recorded, as never accepted, so that it is not shown
+            // later either.
+            let consent_changed = self.consent_epoch.load(Ordering::Acquire) != epoch;
+            if (!state.enabled && !consent_changed) || state.events.iter().any(|e| e.key == key) {
                 return;
             }
             let mut next = state.clone();
@@ -626,7 +714,7 @@ pub(crate) mod active {
                 return;
             }
             // Serialize the opt-out and side effect. No detached task can revive a disabled notice.
-            let outcome = match self.backend.permission() {
+            let outcome = match permission {
                 Permission::Allowed | Permission::NotYetAsked if current() => {
                     match (self.notice)(next.locale) {
                         Some(body) => match self.backend.accept(&body, &current) {
@@ -1276,6 +1364,52 @@ pub(crate) mod active {
                 }
             }
         }
+        /// A backend that counts how often the permission is asked, and whether the runtime's
+        /// state lock was free while it was.
+        struct Counting {
+            asked: Arc<AtomicUsize>,
+            state_free: Arc<Mutex<Option<bool>>>,
+            runtime: Arc<std::sync::OnceLock<std::sync::Weak<Runtime>>>,
+        }
+        impl Backend for Counting {
+            fn permission(&self) -> Permission {
+                self.asked.fetch_add(1, Ordering::SeqCst);
+                if let Some(runtime) = self.runtime.get().and_then(std::sync::Weak::upgrade) {
+                    *self.state_free.lock().unwrap() = Some(runtime.state.try_lock().is_ok());
+                }
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn status_asks_the_permission_once_and_not_while_holding_the_state_lock() {
+            let dir = tempfile::tempdir().unwrap();
+            let asked = Arc::new(AtomicUsize::new(0));
+            let state_free = Arc::new(Mutex::new(None));
+            let cell = Arc::new(std::sync::OnceLock::new());
+            let runtime = Arc::new(Runtime::load(
+                dir.path().join("state.json"),
+                Box::new(Counting {
+                    asked: Arc::clone(&asked),
+                    state_free: Arc::clone(&state_free),
+                    runtime: Arc::clone(&cell),
+                }),
+            ));
+            cell.set(Arc::downgrade(&runtime)).ok().unwrap();
+            let status = runtime.status();
+            assert_eq!(status.permission, Permission::Allowed);
+            assert!(status.notices_supported);
+            assert_eq!(asked.load(Ordering::SeqCst), 1, "one question per status");
+            assert_eq!(
+                *state_free.lock().unwrap(),
+                Some(true),
+                "the state lock is free while the backend is asked"
+            );
+        }
+
         fn test_runtime(
             dir: &std::path::Path,
             permission: Permission,
@@ -1291,6 +1425,92 @@ pub(crate) mod active {
                 }),
             );
             (runtime, bodies)
+        }
+
+        /// The Linux backend through the runtime: a bus with or without a notification service.
+        struct FakeLinuxBus {
+            present: bool,
+            sent: Arc<Mutex<Vec<crate::document_notification_linux::Notice>>>,
+        }
+        impl crate::document_notification_linux::Bus for FakeLinuxBus {
+            fn service_present(&self) -> bool {
+                self.present
+            }
+            fn notify(
+                &self,
+                notice: &crate::document_notification_linux::Notice,
+            ) -> Result<(), ()> {
+                self.sent.lock().unwrap().push(notice.clone());
+                Ok(())
+            }
+        }
+        fn linux_runtime(
+            dir: &std::path::Path,
+            present: bool,
+        ) -> (
+            Runtime,
+            Arc<Mutex<Vec<crate::document_notification_linux::Notice>>>,
+        ) {
+            let sent = Arc::new(Mutex::new(Vec::new()));
+            let runtime = Runtime::load(
+                dir.join("state.json"),
+                Box::new(crate::document_notification_linux::LinuxBackend::with_bus(
+                    FakeLinuxBus {
+                        present,
+                        sent: Arc::clone(&sent),
+                    },
+                )),
+            );
+            (runtime, sent)
+        }
+
+        #[test]
+        fn on_a_linux_desktop_with_a_notification_service_the_test_notice_and_an_arrival_show() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, sent) = linux_runtime(temp.path(), true);
+            assert!(runtime.status().notices_supported);
+            assert_eq!(runtime.status().permission, Permission::Allowed);
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            let device = "A".repeat(43);
+            runtime.arrived(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &device,
+                &Uuid::new_v4().to_string(),
+                Uuid::new_v4(),
+                || true,
+            );
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::OsAccepted));
+            let sent = sent.lock().unwrap();
+            assert_eq!(sent.len(), 2);
+            // Only the app name and the catalogue's fixed sentences, no actions, no hints.
+            let test_sentence = UiLocale::default()
+                .text(crate::ui_text_ids::MessageId::NativeNoticeTest)
+                .unwrap();
+            let arrival_sentence = UiLocale::default()
+                .text(crate::ui_text_ids::MessageId::NativeNoticeArrival)
+                .unwrap();
+            assert_eq!(sent[0].body, test_sentence);
+            assert_eq!(sent[1].body, arrival_sentence);
+            for notice in sent.iter() {
+                assert_eq!(notice.app_name, "myCarlos");
+                assert!(notice.actions.is_empty());
+                assert_eq!(notice.hints, 0);
+            }
+        }
+
+        #[test]
+        fn on_a_linux_desktop_with_no_notification_service_notices_are_unavailable_and_nothing_is_sent(
+        ) {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, sent) = linux_runtime(temp.path(), false);
+            // The automatic checks still work; the notices part says it is not available.
+            assert!(runtime.status().supported && runtime.status().automatic_checks_supported);
+            assert!(!runtime.status().notices_supported);
+            assert_eq!(runtime.status().permission, Permission::Unavailable);
+            assert_ne!(runtime.send_test_notice(), TestNotice::Shown);
+            assert!(sent.lock().unwrap().is_empty());
         }
 
         #[test]
@@ -1435,6 +1655,152 @@ pub(crate) mod active {
         fn the_not_yet_asked_state_reaches_the_page_by_its_own_name() {
             let json = serde_json::to_string(&Permission::NotYetAsked).unwrap();
             assert_eq!(json, "\"not_yet_asked\"");
+        }
+
+        #[test]
+        fn a_macos_authorization_status_reads_as_the_matching_permission() {
+            // notDetermined, denied, authorized, provisional, ephemeral, and one nobody knows.
+            assert_eq!(permission_for_authorization(0), Permission::NotYetAsked);
+            assert_eq!(permission_for_authorization(1), Permission::Blocked);
+            assert_eq!(permission_for_authorization(2), Permission::Allowed);
+            assert_eq!(permission_for_authorization(3), Permission::Allowed);
+            assert_eq!(permission_for_authorization(4), Permission::Allowed);
+            assert_eq!(permission_for_authorization(5), Permission::Unknown);
+            assert_eq!(permission_for_authorization(-1), Permission::Unknown);
+        }
+
+        /// A backend that says what it was asked: how many times the system's question was put.
+        struct Asking {
+            before: Permission,
+            after: Permission,
+            asked: Arc<AtomicU64>,
+        }
+        impl Backend for Asking {
+            fn permission(&self) -> Permission {
+                if self.asked.load(Ordering::SeqCst) > 0 {
+                    self.after
+                } else {
+                    self.before
+                }
+            }
+            fn request_permission(&self) -> Permission {
+                self.asked.fetch_add(1, Ordering::SeqCst);
+                self.after
+            }
+            // Posts as the macOS backend does: only on an allowed answer, and never asking.
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                may_post(self.permission())
+            }
+        }
+
+        fn asking_runtime(
+            dir: &std::path::Path,
+            before: Permission,
+            after: Permission,
+        ) -> (Runtime, Arc<AtomicU64>) {
+            let asked = Arc::new(AtomicU64::new(0));
+            let runtime = Runtime::load(
+                dir.join("state.json"),
+                Box::new(Asking {
+                    before,
+                    after,
+                    asked: Arc::clone(&asked),
+                }),
+            );
+            (runtime, asked)
+        }
+
+        #[test]
+        fn the_system_is_asked_when_notices_are_turned_on_and_not_before() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, asked) =
+                asking_runtime(temp.path(), Permission::NotYetAsked, Permission::Allowed);
+            // Reading the status never asks: not at launch, not when the page looks.
+            assert_eq!(runtime.status().permission, Permission::NotYetAsked);
+            assert_eq!(asked.load(Ordering::SeqCst), 0);
+            // Turning notices on is the moment.
+            let status = runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+            assert!(status.enabled);
+            assert_eq!(status.permission, Permission::Allowed);
+            // Turning them off asks nothing.
+            runtime.set_enabled(false).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+        }
+
+        #[test]
+        fn a_refused_question_is_said_honestly_and_the_choice_is_still_saved() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, asked) =
+                asking_runtime(temp.path(), Permission::NotYetAsked, Permission::Blocked);
+            let status = runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+            // The patient's choice stands; the system's refusal is shown, not hidden.
+            assert!(status.enabled);
+            assert_eq!(status.permission, Permission::Blocked);
+            assert_eq!(runtime.send_test_notice(), TestNotice::Blocked);
+        }
+
+        #[test]
+        fn where_the_system_has_no_notice_to_ask_for_nothing_is_asked() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, asked) = asking_runtime(
+                temp.path(),
+                Permission::Unavailable,
+                Permission::Unavailable,
+            );
+            assert!(matches!(runtime.set_enabled(true), Err(Error::Unavailable)));
+            assert_eq!(asked.load(Ordering::SeqCst), 0);
+        }
+
+        #[test]
+        fn only_an_allowed_answer_lets_a_notice_be_posted_and_posting_never_asks() {
+            assert!(may_post(Permission::Allowed).is_ok());
+            for permission in [
+                Permission::NotYetAsked,
+                Permission::Blocked,
+                Permission::Unknown,
+                Permission::Unavailable,
+            ] {
+                assert!(matches!(may_post(permission), Err(Error::OsRejected)));
+            }
+        }
+
+        #[test]
+        fn an_arrival_or_a_test_notice_before_the_question_is_answered_never_asks_it() {
+            let temp = tempfile::tempdir().unwrap();
+            // The patient turned notices on and left macOS's question unanswered.
+            let (runtime, asked) = asking_runtime(
+                temp.path(),
+                Permission::NotYetAsked,
+                Permission::NotYetAsked,
+            );
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(asked.load(Ordering::SeqCst), 1);
+            let device = "A".repeat(43);
+            runtime.arrived(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &device,
+                &Uuid::new_v4().to_string(),
+                Uuid::new_v4(),
+                || true,
+            );
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::Failed));
+            assert_eq!(runtime.send_test_notice(), TestNotice::Failed);
+            assert_eq!(
+                asked.load(Ordering::SeqCst),
+                1,
+                "only turning notices on asks the system"
+            );
+        }
+
+        #[test]
+        fn the_status_names_the_system_for_the_words_of_the_permission_lines() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, _) = test_runtime(temp.path(), Permission::Allowed, false);
+            let system = serde_json::to_value(runtime.status()).unwrap()["system"].clone();
+            assert!(["windows", "macos", "other"].contains(&system.as_str().unwrap()));
         }
 
         #[test]

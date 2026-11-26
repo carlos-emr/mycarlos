@@ -76,16 +76,19 @@ export function RenameDialog({
   // Someone who types the extension out of habit means the same name, so a
   // typed copy of it is dropped rather than doubled, unless the name was left
   // as it was or already ended with it twice, as in "Report.pdf.pdf".
+  // A picture's own kind decides which suffix counts as a copy: .png for a PNG, .jpg or .jpeg for
+  // a JPEG (typing the other kind's suffix is part of the name, as in "Family.png.jpg").
+  const photoSuffix = /^\.png$/i.test(extension) ? /\.png$/i : /\.jpe?g$/i;
   const endsWithExtension = (value: string) =>
     target.photo
-      ? /\.jpe?g$/i.test(value)
+      ? photoSuffix.test(value)
       : value.toLowerCase().endsWith(extension.toLowerCase());
   let stem =
     target.kind === "profile"
       ? name.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "")
       : trimLikeVault(name);
   const typedExtension = target.photo
-    ? (/\.jpe?g$/i.exec(stem)?.[0] ?? "")
+    ? (photoSuffix.exec(stem)?.[0] ?? "")
     : extension;
   if (
     extension &&

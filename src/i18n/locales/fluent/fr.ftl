@@ -485,6 +485,8 @@ interface-UnlockPdfDialog-unlocking = Déverrouillage…
 
 interface-VaultApp-chooseFilesToImport = Choisir les fichiers à importer
 
+interface-VaultLibrary-picturesNote = Le lieu, l’heure et les détails de l’appareil sont retirés des images que vous ajoutez.
+
 interface-VaultApp-finishingTheTransfer = Fin du transfert
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Verrouiller maintenant et annuler le transfert
@@ -777,7 +779,7 @@ native-error-20 = Choisissez une phrase secrète moins prévisible, qui ne soit 
 
 native-error-21 = Ne choisissez pas plus de 100 fichiers par importation.
 
-native-error-22 = L’un des fichiers n’est pas un document PDF; aucun fichier n’a donc été ajouté. myCarlos ne conserve que les documents PDF.
+native-error-22 = L’un des fichiers n’est ni un document PDF ni une image JPEG ou PNG; aucun fichier n’a donc été ajouté. myCarlos conserve les documents PDF et les images JPEG et PNG. S’il s’agit d’une image d’iPhone (HEIC), partagez-la plutôt en JPEG.
 
 native-error-23 = Ce document est verrouillé par un mot de passe. Saisissez le mot de passe du document indiqué dans votre portail patient.
 
@@ -827,7 +829,7 @@ native-error-45 = myCarlos n’a pas pu ouvrir ce fichier. S’il se trouve dans
 
 native-error-46 = Un document du coffre-fort est endommagé et ne peut plus être lu; aucune sauvegarde n’a donc été enregistrée. Rien n’a été modifié.
 
-native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG complète d’au plus 25 MB et de 8 192 pixels par côté. Rien n’a été modifié.
+native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG ou PNG complète (non animée) d’au plus 25 MB, de 8 192 pixels par côté et de 50 millions de pixels au total (24 millions sur un téléphone). Rien n’a été modifié.
 
 native-error-48 = La sauvegarde a été vérifiée, mais la restauration n’est pas terminée. Fermez myCarlos et ouvrez-le de nouveau pour terminer. Ouvrez ensuite le coffre-fort avec la phrase secrète ou la clé de récupération de la sauvegarde.
 
@@ -836,6 +838,11 @@ native-error-speedTest = Le test de vitesse s’est arrêté avant la fin. Rien 
 native-filter-backups = Sauvegardes myCarlos
 
 native-filter-pdf = Documents PDF
+
+native-filter-video = Vidéos (MP4 ou MOV)
+native-filter-pictures = Images JPEG et PNG
+
+native-filter-pdfAndPictures = Documents PDF et images JPEG et PNG
 
 native-kit-text =
     Trousse de récupération myCarlos
@@ -2436,6 +2443,8 @@ notifications-error = Ce réglage n’a pas pu être enregistré. Les avis et le
 notifications-unavailable = Ces réglages ne sont pas disponibles pour le moment. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = myCarlos peut vérifier lui-même les nouveaux documents de la clinique lorsqu’il est ouvert et déverrouillé. Les nouveaux documents apparaissent alors dans votre bibliothèque.
 notifications-notYetAsked = Windows n’a pas encore affiché d’avis myCarlos, il n’a donc pas encore de paramètre pour eux. Les avis sont autorisés jusqu’à ce que vous les désactiviez dans les paramètres de Windows.
+notifications-blockedMac = macOS n’autorise pas les notifications de myCarlos. Activez-les dans Réglages Système, sous Notifications.
+notifications-notYetAskedMac = macOS n’a pas encore été interrogé. Il le fera quand vous activerez les avis.
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
 notifications-autoConsent = En activant ceci, vous permettez à myCarlos de contacter le portail de votre clinique selon un calendrier, avec au moins deux minutes entre les tentatives, uniquement lorsqu’il est ouvert et déverrouillé. Désactivez-le pour l’arrêter.
 notifications-noticesHelp = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
@@ -2979,6 +2988,7 @@ native-notice-test = Ceci est un avis de test de myCarlos.
 notifications-testButton = Afficher un avis de test
 
 notifications-testSent = Avis de test envoyé. Si vous ne le voyez pas, vérifiez les paramètres de notification de Windows.
+notifications-testSentMac = Avis de test envoyé. Si vous ne le voyez pas, vérifiez Réglages Système, sous Notifications.
 
 notifications-testWait = Patientez quelques secondes, puis réessayez.
 
@@ -2998,3 +3008,47 @@ reader-panel-ai = Expliquer avec l’IA
 interface-VaultLibrary-help = Aide
 
 interface-VaultLibrary-helpButtonName = Aide : cet écran
+
+interface-AddVideo-add = Ajouter une vidéo
+
+interface-AddVideo-hint = Choisissez une vidéo MP4 ou MOV sur cet appareil. Le lieu, ainsi que le nom et le modèle de l’appareil qu’elle contient, sont d’abord supprimés.
+
+interface-AddVideo-checking = Vérification de la vidéo…
+
+interface-AddVideo-storing = Ajout de la vidéo : { $percent } %
+
+interface-AddVideo-progressLabel = Ajout de la vidéo
+
+interface-AddVideo-cancel = Annuler
+
+interface-AddVideo-cancelling = Annulation…
+
+interface-AddVideo-added = La vidéo a été ajoutée.
+
+interface-AddVideo-duplicate = Cette vidéo est déjà ici. Rien n’a été ajouté.
+
+interface-AddVideo-cancelled = Annulé. Rien n’a été ajouté.
+
+interface-AddVideo-notVideo = Ce fichier n’est pas une vidéo que myCarlos peut ajouter. Choisissez une vidéo MP4 ou MOV.
+
+interface-AddVideo-hevc = Cette vidéo utilise le H.265 (HEVC), que de nombreux ordinateurs ne peuvent pas lire. Enregistrez-la en MP4 H.264 et ajoutez-la de nouveau.
+
+interface-AddVideo-videoCodec = Cette vidéo utilise un format d’image que myCarlos ne peut pas lire. Enregistrez-la en MP4 H.264 et ajoutez-la de nouveau.
+
+interface-AddVideo-audioCodec = Le son de cette vidéo utilise un format que myCarlos ne peut pas lire. Enregistrez-la avec un son AAC et ajoutez-la de nouveau.
+
+interface-AddVideo-noVideo = Ce fichier n’a pas d’image : ce n’est donc pas une vidéo. Choisissez une vidéo MP4 ou MOV.
+
+interface-AddVideo-tooManyTracks = Cette vidéo contient plus d’images ou de sons que myCarlos ne peut en ajouter. Enregistrez une copie simple avec une image et un son, puis ajoutez-la de nouveau.
+
+interface-AddVideo-external = Une partie de cette vidéo est stockée hors du fichier : elle ne peut pas être ajoutée. Enregistrez une copie complète et ajoutez-la de nouveau.
+
+interface-AddVideo-fragmented = Cette vidéo est dans un format de diffusion en continu. Enregistrez-la en MP4 ordinaire et ajoutez-la de nouveau.
+
+interface-AddVideo-tooBig = L’image de cette vidéo est plus grande que ce que myCarlos peut ajouter. Enregistrez une copie plus petite et ajoutez-la de nouveau.
+
+interface-AddVideo-tooLarge = Cette vidéo est plus volumineuse que ce que myCarlos peut ajouter sur cet appareil (2 Go sur un ordinateur, 1 Go sur un téléphone). Enregistrez une copie plus petite et ajoutez-la de nouveau.
+
+interface-AddVideo-damaged = Cette vidéo est endommagée ou tronquée : elle ne peut pas être ajoutée. Copiez-la de nouveau depuis son origine et réessayez.
+
+interface-AddVideo-adding = Ajout de la vidéo…
