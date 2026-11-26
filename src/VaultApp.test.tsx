@@ -7007,6 +7007,8 @@ describe("durable vault UI", () => {
     history: "allowed",
     linkPortal: "write",
     connectPortal: "write",
+    // Removes a link that has delivered nothing: a change to the vault (main's #476 added it).
+    removePortalLink: "write",
     checkDocuments: "write",
     requestDeviceApproval: "write",
     submitApprovalCode: "write",
@@ -16418,7 +16420,10 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
       status: vi.fn().mockResolvedValue("unlocked"),
       pickImportFiles,
     });
-  const newButton = () => screen.getByRole("button", { ...IMPORT_BUTTON });
+  // In the overhaul the import is an item of the Add document menu: the menu's button is what is
+  // enabled again when a picker has ended, and choosing "Import a file" is what starts one.
+  const newButton = () =>
+    screen.getByRole("button", { name: humanText("Add document") });
   const picker = () => {
     let settle!: (pickId: string | null) => void;
     let fail!: (error: unknown) => void;
@@ -16434,7 +16439,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     const pick = picker();
     const bridge = unlockedWith(vi.fn(() => pick.promise));
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     expect(screen.getByText(humanText("Working…"))).toBeVisible();
     await act(async () => pick.settle(null));
@@ -16445,7 +16450,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     expect(screen.queryByText(humanText("Working…"))).toBeNull();
     // And Add works again.
     vi.mocked(bridge.pickImportFiles).mockResolvedValueOnce("pick-2");
-    await user.click(newButton());
+    await chooseAdd(user, "Import a file");
     await waitFor(() =>
       expect(bridge.pickImportFiles).toHaveBeenCalledTimes(2),
     );
@@ -16456,7 +16461,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     const pick = picker();
     const bridge = unlockedWith(vi.fn(() => pick.promise));
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     // The picker may not block the window: sections and settings pages are visited meanwhile.
     for (const section of ["Security", "Preferences", "Shared with me"]) {
@@ -16473,7 +16478,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     const pick = picker();
     const bridge = unlockedWith(vi.fn(() => pick.promise));
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     await act(async () =>
       pick.fail({ code: "storage", message: "FAKE picker failure" }),
@@ -16487,7 +16492,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
     const pick = picker();
     const bridge = unlockedWith(vi.fn(() => pick.promise));
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     await user.click(screen.getByRole("button", { name: "Security" }));
     // The picker is never answered; the patient locks the vault.
@@ -16524,7 +16529,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
       .mockImplementationOnce(() => second.promise);
     const bridge = unlockedWith(pickImportFiles);
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(pickImportFiles).toHaveBeenCalledTimes(1));
     await user.click(windowLock());
     await screen.findByRole("heading", {
@@ -16535,7 +16540,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
       "river-azimuth-cobalt-sparrow-934",
     );
     await user.click(screen.getByRole("button", { name: humanText("Unlock") }));
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(pickImportFiles).toHaveBeenCalledTimes(2));
     // The first session's picker ends while the new one is still open: the new one is still working.
     await act(async () => first.settle(null));
@@ -16586,7 +16591,7 @@ describe("a file picker that is cancelled, fails, or is left behind never keeps 
         .mockResolvedValue({ added: 1, refused: 0, receiptsPending: 0 }),
     });
     render(<VaultApp bridge={bridge} />);
-    await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+    await chooseAdd(user, "Import a file");
     await waitFor(() => expect(bridge.pickImportFiles).toHaveBeenCalled());
     await user.click(windowLock());
     await screen.findByRole("heading", {
