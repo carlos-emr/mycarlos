@@ -333,6 +333,94 @@ describe("handing a person's records over", () => {
     expect(document.body.textContent).not.toContain("AAAA");
   });
 
+  it("the done screen reports what the saved file holds, not what was prepared", async () => {
+    const user = userEvent.setup();
+    const bridge = exportBridge({
+      saveProfileExportToPicked: vi.fn().mockResolvedValue({
+        name: "FAKE.handover",
+        bytes: 4096,
+        summary: {
+          ...summary,
+          documents: 9,
+          leftOutDamaged: 0,
+          evidenceLeftOut: 0,
+        },
+      }),
+    });
+    await toSaveStep(user, bridge);
+    await user.click(button(en("handover.export.chooseWhere")));
+    await screen.findByRole("heading", {
+      name: en("handover.export.doneTitle"),
+    });
+    expect(
+      screen.getByText(
+        humanText(en("handover.export.done", { count: 9, name: "FAKE Avery" })),
+      ),
+    ).toBeVisible();
+    // The prepared summary's left-out lines are not shown for a file that left nothing out.
+    expect(
+      screen.queryByText(
+        humanText(en("handover.export.leftOut", { count: 1 })),
+      ),
+    ).toBeNull();
+  });
+
+  it("takes a copied key off the clipboard as soon as the file is saved, or the save fails, or the preparation is lost, while the dialog is still open", async () => {
+    let held = "";
+    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(
+      async (text) => {
+        held = text;
+      },
+    );
+    vi.spyOn(navigator.clipboard, "readText").mockImplementation(
+      async () => held,
+    );
+    const cases = [
+      {
+        what: "saved",
+        extra: {},
+        screen: "handover.export.doneTitle",
+      },
+      {
+        what: "save failed",
+        extra: {
+          saveProfileExportToPicked: vi
+            .fn()
+            .mockRejectedValue(failure("fake_storage", "FAKE no room")),
+        },
+        screen: "handover.export.title",
+      },
+      {
+        what: "preparation lost",
+        extra: {
+          pickProfileExportDestination: vi
+            .fn()
+            .mockRejectedValue(failure("fake_expired", "FAKE expired")),
+        },
+        screen: "handover.export.title",
+      },
+    ] as const;
+    for (const outcome of cases) {
+      held = "";
+      const user = userEvent.setup();
+      renderExport(exportBridge(outcome.extra));
+      await toKeyStep(user);
+      await user.click(button(en("handover.export.copy")));
+      await screen.findByText(en("handover.export.copied"));
+      expect(held).toBe(KEY);
+      await user.click(
+        screen.getByRole("checkbox", { name: en("handover.export.keySaved") }),
+      );
+      await user.click(button(en("handover.export.continue")));
+      await user.click(button(en("handover.export.chooseWhere")));
+      await screen.findByRole("heading", { name: en(outcome.screen) });
+      // The dialog is still open, and the key is no longer on the clipboard.
+      await waitFor(() => expect(held, outcome.what).toBe(""));
+      expect(screen.getByRole("dialog")).toBeVisible();
+      cleanup();
+    }
+  });
+
   it("when no place is chosen nothing is saved and the dialog stays on the save step", async () => {
     const user = userEvent.setup();
     const bridge = exportBridge({
