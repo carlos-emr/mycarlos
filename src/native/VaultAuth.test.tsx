@@ -2,6 +2,7 @@ import { humanText } from "../test/humanText";
 import { birthDateGroup, enterBirthDate } from "../test/birthDate";
 import { LOCALES, setLocaleOverride, translate } from "../i18n";
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreateVault, ResetConfirmation, UnlockVault } from "./VaultAuth";
 
@@ -922,6 +923,43 @@ describe("a shown secret goes back to dots before the app switcher's picture", (
     show.focus();
     fireEvent.blur(show);
     expect(box).toHaveAttribute("type", "text");
+  });
+
+  it("on the set-up screen, moving the focus from one shown box to the other, by Tab too, hides neither", async () => {
+    render(
+      <CreateVault
+        busy={false}
+        notice=""
+        restoreBridge={restoreBridge}
+        onRestored={vi.fn()}
+        onCreate={vi.fn().mockResolvedValue(undefined)}
+        checkRules={vi.fn().mockResolvedValue({
+          longEnough: true,
+          notAName: true,
+          hardToGuess: true,
+        })}
+      />,
+    );
+    const user = userEvent.setup();
+    const passphrase = screen.getByLabelText(humanText("Passphrase"));
+    const confirmation = screen.getByLabelText(humanText("Confirm passphrase"));
+    await user.click(
+      screen.getByRole("button", { name: humanText("Show passphrase") }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Show passphrase in Confirm passphrase"),
+      }),
+    );
+    expect(passphrase).toHaveAttribute("type", "text");
+    expect(confirmation).toHaveAttribute("type", "text");
+    // Click into the passphrase, then the confirmation, then Tab on: the focus leaves each box.
+    await user.click(passphrase);
+    await user.click(confirmation);
+    await user.tab();
+    await user.tab({ shift: true });
+    expect(passphrase).toHaveAttribute("type", "text");
+    expect(confirmation).toHaveAttribute("type", "text");
   });
 
   it.each(goesAway)(
