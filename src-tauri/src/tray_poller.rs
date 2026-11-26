@@ -321,7 +321,27 @@ pub(crate) mod driver {
         let _ = toaster.accept(text, &|| true);
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    fn toast(_app: &AppHandle, text: &str) {
+        use crate::document_notification_runtime::active::Backend as _;
+        // The freedesktop service, when there is one: it never blocks (three seconds at most) and
+        // a refusal or a missing service is not an error; the tooltip and the unlock screen still
+        // say it.
+        let _ = crate::document_notification_linux::LinuxBackend::new().accept(text, &|| true);
+    }
+
+    /// On a Mac only when macOS already allows it: a tray toast never raises the "Allow
+    /// notifications?" prompt, which belongs to the moment the patient turns notices on.
+    #[cfg(target_os = "macos")]
+    fn toast(_app: &AppHandle, text: &str) {
+        use crate::document_notification_runtime::{active::Backend as _, Permission};
+        let toaster = crate::document_notification_macos::MacBackend::new();
+        if toaster.permission() == Permission::Allowed {
+            let _ = toaster.accept(text, &|| true);
+        }
+    }
+
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     fn toast(_app: &AppHandle, _text: &str) {}
 
     /// A number in `[-1.0, 1.0]` for the jitter.

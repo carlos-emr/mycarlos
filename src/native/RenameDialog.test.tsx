@@ -134,9 +134,11 @@ describe("RenameDialog", () => {
   it.each([
     ["Holiday.jpg", "Holiday", ".jpg"],
     ["Holiday.JPEG", "Holiday", ".JPEG"],
-    ["Legacy photo.png", "Legacy photo.png", ".jpg"],
+    ["Holiday.png", "Holiday", ".png"],
+    ["Holiday.PNG", "Holiday", ".PNG"],
+    ["Legacy photo", "Legacy photo", ".jpg"],
   ])(
-    "keeps a verified photo's JPEG suffix outside the name field: %s",
+    "keeps a verified photo's JPEG or PNG suffix outside the name field: %s",
     (stored, stem, extension) => {
       const { input } = open(stored, "document", true);
       expect(input).toHaveValue(stem);
@@ -156,9 +158,12 @@ describe("RenameDialog", () => {
     ["Holiday.JPEG", "Family.jpeg", "Family.JPEG"],
     ["Holiday.jpg", "Family.png", "Family.png.jpg"],
     ["Holiday.jpg.jpg", "Family.jpg", "Family.jpg.jpg"],
-    ["Legacy photo.png", "Family", "Family.jpg"],
+    ["Holiday.png", "Family", "Family.png"],
+    ["Holiday.PNG", "Family.png", "Family.PNG"],
+    ["Holiday.png", "Family.jpg", "Family.jpg.png"],
+    ["Legacy photo", "Family", "Family.jpg"],
   ])(
-    "saves the photo name %s typed as %s with its JPEG suffix",
+    "saves the photo name %s typed as %s with its own JPEG or PNG suffix",
     (stored, typed, saved) => {
       const { onSave, type, submit } = open(stored, "document", true);
       type(typed);
