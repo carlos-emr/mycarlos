@@ -2002,6 +2002,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               if (video.slow) {
                 // About seven seconds, in steps, so the bar and Cancel can be seen.
                 for (let step = 0; step <= 10; step++) {
+                  // A lock stops the copy natively: it ends as a refusal of the locked vault.
+                  if (state.status === "locked") refuseLocked();
                   if (videoCancelled) return { result: "cancelled" };
                   videoProgress =
                     step < 3

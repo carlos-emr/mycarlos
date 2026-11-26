@@ -109,7 +109,8 @@ export function useAddVideo({
     setWorking(true);
     try {
       const pickId = await current.pickImportVideo(profileId, folderIds);
-      if (!pickId) return;
+      // A lock while the picker was open: this pick belongs to the session that ended.
+      if (!pickId || epoch.current !== mine) return;
       if (current.videoImportProgress && epoch.current === mine) {
         timer.current = setInterval(() => {
           void bridgeRef.current

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectNoAxeViolations } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
+  FAKE_PASSPHRASE,
   fakeCalls,
   fakePickVideo,
   fakeVaultWith,
@@ -85,5 +86,41 @@ test("a slow video shows a bar, Cancel stops it, and nothing is added", async ({
   ).toBeVisible({ timeout: 10000 });
   await expect(bar).toHaveCount(0);
   await expect(page.getByText("FAKE long.mp4")).toHaveCount(0);
+  await expect(addVideo(page)).toBeEnabled();
+});
+
+test("a lock in the middle of adding a video leaves no bar, no alert and no stale answer after the next unlock", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await fakePickVideo(page, "FAKE locked.mp4", { slow: true });
+  await addVideo(page).click();
+  await expect(
+    page.getByRole("progressbar", {
+      name: en("interface.AddVideo.progressLabel"),
+    }),
+  ).toBeVisible();
+  // Lock now, with the video still being added.
+  await page
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.lockNow"), exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: en("unlock.title") }),
+  ).toBeVisible();
+  // Let the stopped import end, then unlock: nothing of it is left on the library.
+  await page.waitForTimeout(1500);
+  await page
+    .getByLabel(en("passphrase.label"), { exact: true })
+    .fill(FAKE_PASSPHRASE);
+  await page
+    .getByRole("button", { name: en("unlock.submit"), exact: true })
+    .click();
+  await expect(myRecords(page)).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveCount(0);
+  await expect(page.locator(".add-video-problem")).toBeEmpty();
+  await expect(page.locator(".add-video-result[role=status]")).toBeEmpty();
   await expect(addVideo(page)).toBeEnabled();
 });
