@@ -868,7 +868,11 @@ system's authorities only.
    test portal's address and link code and choose **Connect and request approval**. The device is
    linked and its approval status is shown there. (Before this piece Android showed "Portal linking
    is not available on this device yet.")
-2. **Which certificates are trusted.** A **release** build trusts only the phone's system
+2. **Which certificates are trusted.** *Requires #478 (merged before this piece).* Without #478,
+   Android's own default for an app that targets API 24 or later (as this one does, minSdk 24)
+   already ignores certificate authorities a person installed in the phone's settings; what only
+   #478 adds is the written configuration, the gate that refuses a release build that weakens it,
+   and the debug FAKE test root. A **release** build trusts only the phone's system
    certificate store, and no certificate authority a person installed in the phone's own settings
    (the network security configuration of #478 refuses user-installed authorities, and the release
    safety gate refuses a build that allows them). A **debug** build trusts the system store plus
