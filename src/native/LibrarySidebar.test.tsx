@@ -275,7 +275,9 @@ describe("LibrarySidebar: edge cases", () => {
 
   it("counts the open person's documents and folders in the footer, and the whole vault's while Shared with me (or Hidden from it) is open", () => {
     setLocaleOverride("en");
-    const p = props();
+    // The whole vault's totals differ from the open person's in BOTH numbers (4 documents against
+    // p1's 3, 3 folders against p1's 2), so a footer that took the wrong one cannot pass.
+    const p = { ...props(), vaultTotals: { documents: 4, folders: 3 } };
     const records = [
       record("r1", "p1", []),
       record("r2", "p1", ["f1"]),
@@ -308,7 +310,7 @@ describe("LibrarySidebar: edge cases", () => {
       ),
     ).toMatch(/1 document\b/);
     rerender(<LibrarySidebar {...p} records={records} section="shared" />);
-    expect(storage()).toMatch(/3 documents.*3 folders/);
+    expect(storage()).toMatch(/4 documents.*3 folders/);
     rerender(
       <LibrarySidebar
         {...p}
@@ -317,7 +319,7 @@ describe("LibrarySidebar: edge cases", () => {
         hiddenFromShared
       />,
     );
-    expect(storage()).toMatch(/3 documents.*3 folders/);
+    expect(storage()).toMatch(/4 documents.*3 folders/);
     // Hidden, but not from Shared: the person's own.
     rerender(<LibrarySidebar {...p} records={records} section="hidden" />);
     expect(storage()).toMatch(/3 documents.*2 folders/);
