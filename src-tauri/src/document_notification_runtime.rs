@@ -248,9 +248,20 @@ pub(crate) mod active {
             )
         }
 
-        /// Where the OS cannot show a notice (everything but Windows): the checks are still
-        /// supported, and a notice is never attempted.
-        #[cfg(not(windows))]
+        /// On a Linux desktop: the freedesktop notification service over D-Bus. It has no
+        /// permission step; the permission is "allowed" while the service is on the session bus
+        /// and "unavailable" when it is not.
+        #[cfg(target_os = "linux")]
+        pub fn new(path: PathBuf, _app_id: String) -> Self {
+            Self::load(
+                path,
+                Box::new(crate::document_notification_linux::LinuxBackend::new()),
+            )
+        }
+
+        /// Where the OS cannot show a notice (everything but Windows and Linux): the checks are
+        /// still supported, and a notice is never attempted.
+        #[cfg(not(any(windows, target_os = "linux")))]
         pub fn new(path: PathBuf, _app_id: String) -> Self {
             struct Unavailable;
             impl Backend for Unavailable {
@@ -407,6 +418,10 @@ pub(crate) mod active {
             if !self.supported {
                 return Status::unavailable();
             }
+            // Asked once, and before the state lock is taken: on Linux the answer comes from a bus
+            // call that can take its full timeout, and the lock must not be held across it (turning
+            // notices off, or an arrival, would wait behind a status poll).
+            let permission = self.backend.permission();
             let Ok(guard) = self.state.lock() else {
                 return Status {
                     supported: true,
@@ -430,8 +445,8 @@ pub(crate) mod active {
                 }),
                 automatic_checks_supported: true,
                 automatic_checks_paused: false,
-                notices_supported: self.backend.permission() != Permission::Unavailable,
-                permission: self.backend.permission(),
+                notices_supported: permission != Permission::Unavailable,
+                permission,
                 last_outcome: guard
                     .as_ref()
                     .and_then(|s| s.events.last().map(|e| e.outcome)),
@@ -1276,6 +1291,52 @@ pub(crate) mod active {
                 }
             }
         }
+        /// A backend that counts how often the permission is asked, and whether the runtime's
+        /// state lock was free while it was.
+        struct Counting {
+            asked: Arc<AtomicUsize>,
+            state_free: Arc<Mutex<Option<bool>>>,
+            runtime: Arc<std::sync::OnceLock<std::sync::Weak<Runtime>>>,
+        }
+        impl Backend for Counting {
+            fn permission(&self) -> Permission {
+                self.asked.fetch_add(1, Ordering::SeqCst);
+                if let Some(runtime) = self.runtime.get().and_then(std::sync::Weak::upgrade) {
+                    *self.state_free.lock().unwrap() = Some(runtime.state.try_lock().is_ok());
+                }
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn status_asks_the_permission_once_and_not_while_holding_the_state_lock() {
+            let dir = tempfile::tempdir().unwrap();
+            let asked = Arc::new(AtomicUsize::new(0));
+            let state_free = Arc::new(Mutex::new(None));
+            let cell = Arc::new(std::sync::OnceLock::new());
+            let runtime = Arc::new(Runtime::load(
+                dir.path().join("state.json"),
+                Box::new(Counting {
+                    asked: Arc::clone(&asked),
+                    state_free: Arc::clone(&state_free),
+                    runtime: Arc::clone(&cell),
+                }),
+            ));
+            cell.set(Arc::downgrade(&runtime)).ok().unwrap();
+            let status = runtime.status();
+            assert_eq!(status.permission, Permission::Allowed);
+            assert!(status.notices_supported);
+            assert_eq!(asked.load(Ordering::SeqCst), 1, "one question per status");
+            assert_eq!(
+                *state_free.lock().unwrap(),
+                Some(true),
+                "the state lock is free while the backend is asked"
+            );
+        }
+
         fn test_runtime(
             dir: &std::path::Path,
             permission: Permission,
@@ -1291,6 +1352,92 @@ pub(crate) mod active {
                 }),
             );
             (runtime, bodies)
+        }
+
+        /// The Linux backend through the runtime: a bus with or without a notification service.
+        struct FakeLinuxBus {
+            present: bool,
+            sent: Arc<Mutex<Vec<crate::document_notification_linux::Notice>>>,
+        }
+        impl crate::document_notification_linux::Bus for FakeLinuxBus {
+            fn service_present(&self) -> bool {
+                self.present
+            }
+            fn notify(
+                &self,
+                notice: &crate::document_notification_linux::Notice,
+            ) -> Result<(), ()> {
+                self.sent.lock().unwrap().push(notice.clone());
+                Ok(())
+            }
+        }
+        fn linux_runtime(
+            dir: &std::path::Path,
+            present: bool,
+        ) -> (
+            Runtime,
+            Arc<Mutex<Vec<crate::document_notification_linux::Notice>>>,
+        ) {
+            let sent = Arc::new(Mutex::new(Vec::new()));
+            let runtime = Runtime::load(
+                dir.join("state.json"),
+                Box::new(crate::document_notification_linux::LinuxBackend::with_bus(
+                    FakeLinuxBus {
+                        present,
+                        sent: Arc::clone(&sent),
+                    },
+                )),
+            );
+            (runtime, sent)
+        }
+
+        #[test]
+        fn on_a_linux_desktop_with_a_notification_service_the_test_notice_and_an_arrival_show() {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, sent) = linux_runtime(temp.path(), true);
+            assert!(runtime.status().notices_supported);
+            assert_eq!(runtime.status().permission, Permission::Allowed);
+            runtime.set_enabled(true).ok().unwrap();
+            assert_eq!(runtime.send_test_notice(), TestNotice::Shown);
+            let device = "A".repeat(43);
+            runtime.arrived(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &device,
+                &Uuid::new_v4().to_string(),
+                Uuid::new_v4(),
+                || true,
+            );
+            assert_eq!(runtime.status().last_outcome, Some(Outcome::OsAccepted));
+            let sent = sent.lock().unwrap();
+            assert_eq!(sent.len(), 2);
+            // Only the app name and the catalogue's fixed sentences, no actions, no hints.
+            let test_sentence = UiLocale::default()
+                .text(crate::ui_text_ids::MessageId::NativeNoticeTest)
+                .unwrap();
+            let arrival_sentence = UiLocale::default()
+                .text(crate::ui_text_ids::MessageId::NativeNoticeArrival)
+                .unwrap();
+            assert_eq!(sent[0].body, test_sentence);
+            assert_eq!(sent[1].body, arrival_sentence);
+            for notice in sent.iter() {
+                assert_eq!(notice.app_name, "myCarlos");
+                assert!(notice.actions.is_empty());
+                assert_eq!(notice.hints, 0);
+            }
+        }
+
+        #[test]
+        fn on_a_linux_desktop_with_no_notification_service_notices_are_unavailable_and_nothing_is_sent(
+        ) {
+            let temp = tempfile::tempdir().unwrap();
+            let (runtime, sent) = linux_runtime(temp.path(), false);
+            // The automatic checks still work; the notices part says it is not available.
+            assert!(runtime.status().supported && runtime.status().automatic_checks_supported);
+            assert!(!runtime.status().notices_supported);
+            assert_eq!(runtime.status().permission, Permission::Unavailable);
+            assert_ne!(runtime.send_test_notice(), TestNotice::Shown);
+            assert!(sent.lock().unwrap().is_empty());
         }
 
         #[test]
