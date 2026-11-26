@@ -5108,6 +5108,23 @@ describe("durable vault UI", () => {
     ],
   ];
 
+  // The bridge methods that open a picker or write to a picked place, today. A new one has to be
+  // added here, which is the moment to wrap it in `trackedBridge`.
+  const EXPECTED_PICKED_NAMES = [
+    "exportTextToPicked",
+    "exportToPicked",
+    "importPickedFiles",
+    "pickBackupDestination",
+    "pickExportDestination",
+    "pickImportFiles",
+    "pickProfileExportDestination",
+    "pickProfileImportSource",
+    "pickRestoreSource",
+    "pickTextExportDestination",
+    "saveBackupToPicked",
+    "saveProfileExportToPicked",
+  ];
+
   async function bareTransferPending(method: string) {
     let finish: (value: never) => void = () => {};
     let fail: (error: unknown) => void = () => {};
@@ -5193,7 +5210,10 @@ describe("durable vault UI", () => {
       .pickTextExportDestination("record-1", "ticket")
       .then(() => (settled = true));
     await waitFor(() =>
-      expect(bridge.pickTextExportDestination).toHaveBeenCalled(),
+      expect(bridge.pickTextExportDestination).toHaveBeenCalledWith(
+        "record-1",
+        "ticket",
+      ),
     );
     // On a phone the system's chooser sends the app to the background.
     await setVisibility("hidden");
@@ -5202,6 +5222,46 @@ describe("durable vault UI", () => {
     await finish();
     await waitFor(() => expect(settled).toBe(true));
     await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+  });
+
+  it("passes the text export's arguments through unchanged, and keeps the text and its ranges for the native re-check", async () => {
+    const { bridge, tracked } = await bareTransferPending("exportTextToPicked");
+    const kept = [{ start: 1, end: 4 }];
+    void tracked.exportTextToPicked(
+      "pick-9",
+      "record-9",
+      "ticket-9",
+      "FAKE text 9",
+      kept as never,
+    );
+    await waitFor(() =>
+      expect(bridge.exportTextToPicked).toHaveBeenCalledWith(
+        "pick-9",
+        "record-9",
+        "ticket-9",
+        "FAKE text 9",
+        kept,
+      ),
+    );
+  });
+
+  it("wraps every picker and every call that writes to a picked place: none is passed through raw", async () => {
+    const { bridge, tracked } = await bareTransferPending(
+      "pickTextExportDestination",
+    );
+    // By identity against the raw bridge the app was given: a method re-spread from it unchanged
+    // (as the text export's were) is the same function.
+    const names = Object.keys(bridge).filter((name) =>
+      /^pick|Picked/.test(name),
+    );
+    const raw = names.filter(
+      (name) =>
+        (tracked as unknown as Record<string, unknown>)[name] ===
+        (bridge as unknown as Record<string, unknown>)[name],
+    );
+    expect(raw).toEqual([]);
+    // The check looks at something: these are the ones that exist today.
+    expect(names.sort()).toEqual(EXPECTED_PICKED_NAMES);
   });
 
   it("leaves copying an anonymized text to the clipboard bare: it is instant, so a page hidden while it runs locks at once", async () => {
