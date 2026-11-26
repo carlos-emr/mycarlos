@@ -5685,6 +5685,93 @@ async fn vault_import_picked(
     .await
 }
 
+/// What "+ New" picked: documents and pictures (added by `vault_import_picked`), one video (added
+/// by `vault_import_video_picked`), or a choice no import takes. A refusal is an answer, not an
+/// error, and nothing is kept for it: the page says why in a fixed sentence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum AnyPick {
+    Documents { pick_id: Uuid },
+    Video { pick_id: Uuid },
+    /// A video is added on its own, with its own progress and Cancel: it was chosen with other
+    /// files, or with another video.
+    VideoAlone,
+}
+
+/// Whether a picked file's name says it is a video (the import checks the bytes, as ever).
+fn is_video_name(name: &str) -> bool {
+    name.rsplit_once('.').is_some_and(|(_, extension)| {
+        ["mp4", "m4v", "mov"]
+            .iter()
+            .any(|video| extension.eq_ignore_ascii_case(video))
+    })
+}
+
+/// How a pick is routed: no video is documents and pictures; exactly one file that is a video is
+/// that video; a video among others, or two videos, is refused (`None`).
+fn route_pick(names: &[String]) -> Option<bool> {
+    let videos = names.iter().filter(|name| is_video_name(name)).count();
+    match (videos, names.len()) {
+        (0, _) => Some(false),
+        (1, 1) => Some(true),
+        _ => None,
+    }
+}
+
+/// Opens the one picker "+ New" uses: PDF documents, pictures and videos (one combined choice
+/// first, then each kind alone). Returns what was picked, or `None` when it was cancelled.
+#[tauri::command]
+async fn vault_import_any_pick(
+    app: tauri::AppHandle,
+    store: State<'_, StoreHandle>,
+    picks: State<'_, Arc<PendingPicks>>,
+    request: ImportRequest,
+    locale: Option<UiLocale>,
+) -> CommandResult<Option<AnyPick>> {
+    let store = store.pin();
+    let locale = locale.unwrap_or_default();
+    vault::validate_folder_assignment_count(request.folder_ids.len()).map_err(PublicError::from)?;
+    let session = picks.session();
+    let profile_id = request.profile_id;
+    run_blocking(store.arc(), move |store| {
+        store.ensure_import_allowed(profile_id)
+    })
+    .await?;
+    let _open = ActivityHold::new(store.idle());
+    let all_filter = locale.text(MessageId::NativeFilterPdfPicturesAndVideos)?;
+    let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
+    let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
+    let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
+        // PNG pictures only: HEIC is not accepted.
+        file_dialog(&app)
+            .add_filter(&all_filter, &["pdf", "jpg", "jpeg", "png", "mp4", "m4v", "mov"])
+            .add_filter(&pdf_filter, &["pdf"])
+            .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
+            .add_filter(&video_filter, &["mp4", "m4v", "mov"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|_| PublicError::from(VaultError::Storage))?;
+    let Some(paths) = picked else {
+        return Ok(None);
+    };
+    vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
+    let names: Vec<String> = paths.iter().map(import_display_name).collect();
+    Ok(Some(match route_pick(&names) {
+        None => AnyPick::VideoAlone,
+        Some(video) => {
+            let pick_id = picks.store_import(session, request, paths);
+            if video {
+                AnyPick::Video { pick_id }
+            } else {
+                AnyPick::Documents { pick_id }
+            }
+        }
+    }))
+}
+
 /// Opens the picker for one video. Returns the id of the chosen file, or `None` when the picker
 /// was cancelled. Adding it is `vault_import_video_picked`.
 #[tauri::command]
@@ -8332,6 +8419,7 @@ pub fn run() {
             vault_assign_folders_batch,
             vault_import_pick,
             vault_import_picked,
+            vault_import_any_pick,
             vault_import_video_pick,
             vault_import_video_picked,
             vault_video_import_progress,
@@ -8418,6 +8506,48 @@ mod tests {
     use super::*;
 
     use proptest::prelude::*;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_name_is_a_video_by_its_extension_in_any_case() {
+        for name in ["a.mp4", "A.MP4", "clip.M4V", "x.y.mov", "Scan 10:30.MoV"] {
+            assert!(is_video_name(name), "{name}");
+        }
+        for name in ["a.pdf", "mp4", ".mp4x", "a.mp4.pdf", "movie", "a.jpeg", "", "a."] {
+            // ".mp4x" and "mp4" are not videos; "a.mp4.pdf" ends in pdf
+            assert!(!is_video_name(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_pick_goes_to_documents_to_one_video_or_is_refused() {
+        // No video: documents and pictures, as before.
+        assert_eq!(route_pick(&names(&["a.pdf", "b.png", "c.jpg"])), Some(false));
+        assert_eq!(route_pick(&names(&[])), Some(false));
+        // Exactly one file, and it is a video.
+        assert_eq!(route_pick(&names(&["Clip.MP4"])), Some(true));
+        // A video among others, or two videos, is one the video import does not take.
+        assert_eq!(route_pick(&names(&["a.pdf", "b.mp4"])), None);
+        assert_eq!(route_pick(&names(&["b.mov", "a.png"])), None);
+        assert_eq!(route_pick(&names(&["a.mp4", "b.m4v"])), None);
+    }
+
+    #[test]
+    fn a_pick_answer_names_its_kind_and_carries_no_path() {
+        let pick_id = Uuid::nil();
+        let documents = serde_json::to_value(AnyPick::Documents { pick_id }).unwrap();
+        assert_eq!(
+            documents,
+            serde_json::json!({"kind": "documents", "pickId": pick_id})
+        );
+        let video = serde_json::to_value(AnyPick::Video { pick_id }).unwrap();
+        assert_eq!(video, serde_json::json!({"kind": "video", "pickId": pick_id}));
+        let refused = serde_json::to_value(AnyPick::VideoAlone).unwrap();
+        assert_eq!(refused, serde_json::json!({"kind": "videoAlone"}));
+    }
 
     #[test]
     fn a_failed_second_launch_handoff_says_so_in_the_windows_display_language() {
@@ -10117,7 +10247,7 @@ mod tests {
     ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
     ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
     ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
-    ///   - `file_dialog(&` is called at exactly the ten sites there are today (an eleventh must be added
+    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
     ///     here on purpose, and a lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
@@ -10179,8 +10309,8 @@ mod tests {
         assert_eq!(file_calls, 1, "only the helper builds a file dialog");
         assert_eq!(builders, 0, "a file dialog builder is made directly");
         assert_eq!(
-            sites, 10,
-            "the ten file dialog sites go through file_dialog"
+            sites, 11,
+            "the eleven file dialog sites go through file_dialog"
         );
         // The helper keeps its owner.
         let source = include_str!("lib.rs");

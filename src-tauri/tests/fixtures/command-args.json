@@ -26,6 +26,9 @@
       "TextExportPickedRequest.kept: the elements of Hit",
       "locale: enum UiLocale"
     ],
+    "vault_import_any_pick": [
+      "locale: enum UiLocale"
+    ],
     "vault_import_pick": [
       "locale: enum UiLocale"
     ],
@@ -476,6 +479,19 @@
     },
     "vault_history": {
       "arguments": {},
+      "raw": false
+    },
+    "vault_import_any_pick": {
+      "arguments": {
+        "locale": {
+          "optional": true,
+          "struct": null
+        },
+        "request": {
+          "optional": false,
+          "struct": "ImportRequest"
+        }
+      },
       "raw": false
     },
     "vault_import_pick": {

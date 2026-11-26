@@ -731,6 +731,8 @@ native-filter-pictures = JPEG 和 PNG 圖片
 
 native-filter-pdfAndPictures = PDF 文件以及 JPEG 和 PNG 圖片
 
+native-filter-pdfPicturesAndVideos = PDF 文件、JPEG 和 PNG 圖片以及影片（MP4 或 MOV）
+
 native-kit-text =
     myCarlos 復原套件
 
@@ -2689,6 +2691,8 @@ interface-AddVideo-duplicate = 此影片已在這裡，未新增任何內容。
 interface-AddVideo-cancelled = 已取消，未新增任何內容。
 
 interface-AddVideo-notVideo = 此檔案不是 myCarlos 可以新增的影片。請選擇 MP4 或 MOV 影片。
+
+interface-AddVideo-videoAlone = 影片需單獨新增。請只選擇一部影片，或者選擇文件和圖片，不能同時選擇。未新增任何內容。
 
 interface-AddVideo-hevc = 此影片使用 H.265（HEVC），許多電腦無法播放。請另存為 H.264 MP4 後再新增。
 

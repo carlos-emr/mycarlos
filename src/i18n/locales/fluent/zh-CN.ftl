@@ -731,6 +731,8 @@ native-filter-pictures = JPEG 和 PNG 图片
 
 native-filter-pdfAndPictures = PDF 文档以及 JPEG 和 PNG 图片
 
+native-filter-pdfPicturesAndVideos = PDF 文档、JPEG 和 PNG 图片以及视频（MP4 或 MOV）
+
 native-kit-text =
     myCarlos 恢复工具包
 
@@ -2689,6 +2691,8 @@ interface-AddVideo-duplicate = 此视频已在这里，未添加任何内容。
 interface-AddVideo-cancelled = 已取消，未添加任何内容。
 
 interface-AddVideo-notVideo = 此文件不是 myCarlos 可以添加的视频。请选择 MP4 或 MOV 视频。
+
+interface-AddVideo-videoAlone = 视频需单独添加。请只选择一个视频，或者选择文档和图片，不能同时选择。未添加任何内容。
 
 interface-AddVideo-hevc = 此视频使用 H.265（HEVC），许多电脑无法播放。请另存为 H.264 MP4 后再添加。
 
