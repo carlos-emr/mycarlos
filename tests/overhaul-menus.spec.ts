@@ -35,6 +35,10 @@ async function openPlace(page: Page, name: RegExp) {
   await page.keyboard.press("Enter");
 }
 
+/** The "…" button of the heading's own row (what can be done to this person or folder). */
+const headMore = (page: Page) =>
+  page.locator(".head-title-row").getByRole("button", { name: /^More for / });
+
 /** Focuses a menu button and opens it with ArrowDown: the first item has the focus. */
 async function openMenu(page: Page, button: ReturnType<Page["getByRole"]>) {
   await button.focus();
@@ -66,10 +70,17 @@ test("Add document: Down reaches every item and End the last, Escape closes it a
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toBeHidden();
   await expect(add).toBeFocused();
-  // Enter on the last item (New folder) opens the folder form.
+  // Enter on the last item (New folder) opens the folder form: its Create button (this form's
+  // own control, not the rename dialog's label) is not there before, and is after.
+  const create = page.getByRole("button", {
+    name: en("interface.VaultLibrary.create"),
+    exact: true,
+  });
+  await expect(create).toBeHidden();
   await openMenu(page, add);
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
+  await expect(create).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: en("rename.label.folder") }),
   ).toBeVisible();
@@ -86,8 +97,9 @@ test("a folder's … menu: Move folder… opens the keyboard move with the folde
   await expect(
     page.getByRole("heading", { name: "FAKE Letters", level: 1 }),
   ).toBeFocused();
-  // The name inside is wrapped in invisible isolation marks: match only what precedes it.
-  const more = page.getByRole("button", { name: /^More for / });
+  // In the head row (not any other "More for" button), and the name inside is wrapped in
+  // invisible isolation marks: match only what precedes it.
+  const more = headMore(page);
   await openMenu(page, more);
   const rename = page.getByRole("menuitem", {
     name: en("rename.title.folder"),
@@ -108,15 +120,21 @@ test("a folder's … menu: Move folder… opens the keyboard move with the folde
     name: en("interface.VaultLibrary.helpWithThisScreen"),
   });
   await expect(panel).toBeVisible();
-  await expect(help).toHaveAttribute("aria-controls", /.+/);
+  // The button points at this very panel.
+  const panelId = await panel.getAttribute("id");
+  expect(panelId).toBeTruthy();
+  await expect(help).toHaveAttribute("aria-controls", panelId!);
   await expect(
     panel.getByRole("combobox", { name: "Folder", exact: true }),
   ).toHaveValue(FAKE_IDS.letters);
   const destination = panel.getByRole("combobox", { name: "Destination" });
   await expect(destination).toBeFocused();
-  // Down chooses the first folder offered (FAKE Results), Tab reaches Move folder, Enter moves.
-  await page.keyboard.press("ArrowDown");
+  // Choose FAKE Results with selectOption (ArrowDown on a closed <select> opens its popup on
+  // macOS instead of choosing), keeping the focus on Destination; Tab reaches Move folder,
+  // Enter moves.
+  await destination.selectOption(FAKE_IDS.folder);
   await expect(destination).toHaveValue(FAKE_IDS.folder);
+  await expect(destination).toBeFocused();
   await page.keyboard.press("Tab");
   const moveButton = panel.getByRole("button", { name: "Move folder" });
   await expect(moveButton).toBeFocused();
@@ -143,7 +161,7 @@ test("a folder's … menu: Rename by keyboard, Escape cancels without a change",
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await openPlace(page, /^FAKE Results/);
-  const more = page.getByRole("button", { name: /^More for / });
+  const more = headMore(page);
   // Escape on the open menu changes nothing and returns the focus.
   await openMenu(page, more);
   await page.keyboard.press("Escape");
@@ -186,7 +204,7 @@ test("a person's … menu: Hide asks first; Escape sends nothing; Enter on Hide 
   await expect(
     page.getByRole("heading", { name: "FAKE Blake", level: 1 }),
   ).toBeFocused();
-  const more = page.getByRole("button", { name: /^More for / });
+  const more = headMore(page);
   const hideItem = page.getByRole("menuitem", {
     name: en("hiddenPeople.hideFor", { name: "FAKE Blake" }),
   });
@@ -202,12 +220,31 @@ test("a person's … menu: Hide asks first; Escape sends nothing; Enter on Hide 
       name: en("hiddenPeople.confirm.title", { name: "FAKE Blake" }),
     }),
   ).toBeVisible();
+  // The safe control has the focus when the question opens: Cancel, not Hide, so a stray Enter
+  // cannot hide anyone. Checked before the test moves the focus itself.
+  const cancel = ask.getByRole("button", { name: en("common.cancel") });
+  const confirmHide = ask.getByRole("button", {
+    name: en("hiddenPeople.confirm.hide", { name: "FAKE Blake" }),
+    exact: true,
+  });
+  await expect(cancel).toBeFocused();
+  await expect(confirmHide).not.toBeFocused();
   // Escape cancels: nothing is sent, and the focus comes back to the menu's button.
   await page.keyboard.press("Escape");
   await expect(ask).toBeHidden();
   expect(await fakeCalls(page, "vault_hide_profile")).toEqual([]);
   await expect(more).toBeFocused();
-  // Again, and confirm with the keyboard.
+  // Open it again and press Enter at once, on whatever has the focus: that is Cancel, so
+  // nothing is hidden.
+  await openMenu(page, more);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(ask).toBeHidden();
+  expect(await fakeCalls(page, "vault_hide_profile")).toEqual([]);
+  // A third time: move to Hide on purpose, and confirm with the keyboard.
   await openMenu(page, more);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
