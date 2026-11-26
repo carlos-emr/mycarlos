@@ -10,12 +10,16 @@ export function sharedAddedText(count: number): string {
 export function receiveNoticeText({
   dropped,
   refusedShares,
+  sealed = 0,
+  notKept = 0,
 }: ReceiveNotice): string {
   return [
     refusedShares > 0
       ? t("interface.receive.refused", { count: refusedShares })
       : "",
     dropped > 0 ? t("interface.receive.dropped", { count: dropped }) : "",
+    sealed > 0 ? t("interface.receive.sealed", { count: sealed }) : "",
+    notKept > 0 ? t("interface.receive.notKept", { count: notKept }) : "",
   ]
     .filter(Boolean)
     .join(" ");

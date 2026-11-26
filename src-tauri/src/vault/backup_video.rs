@@ -47,8 +47,9 @@ pub struct BackupPlan {
 
 impl BackupPlan {
     /// The records whose files this backup leaves out: the videos found, that
-    /// this vault still has and has not had hidden since (a patient's hide
-    /// must keep a record's file in the backup). Size, check and write all ask
+    /// this vault still has and has not had hidden since (a patient's hide,
+    /// of the document or of its whole person, must keep a record's file in the
+    /// backup). Size, check and write all ask
     /// this, so they agree even if a record is hidden between them.
     pub(super) fn omitted_in(&self, manifest: &Manifest) -> Vec<Uuid> {
         if !self.leave_out {
@@ -58,10 +59,11 @@ impl BackupPlan {
             .iter()
             .copied()
             .filter(|id| {
-                manifest
-                    .records
-                    .iter()
-                    .any(|record| record.id == *id && record.hidden.is_none())
+                manifest.records.iter().any(|record| {
+                    record.id == *id
+                        && record.hidden.is_none()
+                        && !manifest.person_is_hidden(record.profile_id)
+                })
             })
             .collect()
     }
@@ -103,9 +105,9 @@ impl VaultStore {
     /// voice memo, a camera raw file and even a PDF can carry `ftyp`, and
     /// leaving one of those out would silently drop a patient's record.
     ///
-    /// A record the patient hid is not listed: its file is required to restore
-    /// it, and marking it as lacking its file would erase the patient's own
-    /// choice, so it stays in the backup. A record whose file cannot be read here
+    /// A record the patient hid, or whose person they hid (#360), is not listed:
+    /// its file is required to restore it, and marking it as lacking its file
+    /// would erase the patient's own choice, so it stays in the backup. A record whose file cannot be read here
     /// is not called a video either, and a backup keeps it.
     fn video_record_ids(
         &self,
@@ -117,6 +119,7 @@ impl VaultStore {
         for record in &unlocked.manifest.records {
             if !camera_made.contains(&record.id)
                 || record.hidden.is_some()
+                || unlocked.manifest.person_is_hidden(record.profile_id)
                 || record.plaintext_size < 12
             {
                 continue;
@@ -484,6 +487,54 @@ mod tests {
         assert_eq!(&bytes[..16], &BACKUP_MAGIC[..16]);
         let other = restored(bytes, temp.path()).unwrap();
         assert_eq!(read_all(&other, video), read_all(&store, video));
+    }
+
+    /// A hidden person's videos are never left out of a smaller backup, whether the person was
+    /// hidden before the videos were found or between the plan and the save: hiding is tidiness,
+    /// and a restore of the person needs their files (#360).
+    #[test]
+    fn a_hidden_persons_video_stays_in_the_backup_even_when_videos_are_left_out() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, _, video) = vault_with_a_video(temp.path());
+        let person = store
+            .snapshot()
+            .unwrap()
+            .records
+            .iter()
+            .find(|r| r.id == video)
+            .unwrap()
+            .profile_id;
+        store.create_profile("FAKE Other Person", 5).unwrap();
+        // Hidden between the plan and the save.
+        let plan = store.plan_backup(true).unwrap();
+        assert_eq!(plan.videos(), [video]);
+        store.hide_profile(person, 7).unwrap();
+        {
+            let guard = store.session();
+            assert!(plan
+                .omitted_in(&guard.as_ref().unwrap().manifest)
+                .is_empty());
+        }
+        // Hidden before the plan: the video is not even listed.
+        let plan = store.plan_backup(true).unwrap();
+        assert!(plan.videos().is_empty());
+        let mut bytes = Vec::new();
+        store.backup_planned(&mut bytes, 9, &plan).unwrap();
+        let other = restored(bytes, temp.path()).unwrap();
+        // The person comes back with their video, in the vault and in the restored copy.
+        store.restore_profile(person).unwrap();
+        other.restore_profile(person).unwrap();
+        assert_eq!(read_all(&other, video), read_all(&store, video));
+        assert!(
+            other
+                .snapshot()
+                .unwrap()
+                .records
+                .iter()
+                .find(|r| r.id == video)
+                .unwrap()
+                .available
+        );
     }
 
     #[test]
