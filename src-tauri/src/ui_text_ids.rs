@@ -17,7 +17,7 @@ pub enum MessageId {
     AiKeepFailed,
     AiKeepFull,
     AiLabelSettingsBody,
-    AiLabelSettingsFullShown,
+    AiLabelSettingsFullBack,
     AiLabelSettingsShortShown,
     AiLabelSettingsShowFull,
     AiLabelSettingsTitle,
@@ -706,6 +706,7 @@ pub enum MessageId {
     InterfaceHistoryEventMoved,
     InterfaceHistoryEventOther,
     InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventPortalLinkRemoved,
     InterfaceHistoryEventPortalLinkStarted,
     InterfaceHistoryEventPortalLinked,
     InterfaceHistoryEventProfileCreated,
@@ -1143,6 +1144,13 @@ pub enum MessageId {
     PortalPartialResult,
     PortalPerson,
     PortalRefusedDocuments,
+    PortalRemoveBody,
+    PortalRemoveConfirm,
+    PortalRemoveKept,
+    PortalRemoveLink,
+    PortalRemoveNotices,
+    PortalRemoveTitle,
+    PortalRemoved,
     PortalRequestApproval,
     PortalRestartApproval,
     PortalResult,
@@ -1392,7 +1400,7 @@ impl MessageId {
         Self::AiKeepFailed,
         Self::AiKeepFull,
         Self::AiLabelSettingsBody,
-        Self::AiLabelSettingsFullShown,
+        Self::AiLabelSettingsFullBack,
         Self::AiLabelSettingsShortShown,
         Self::AiLabelSettingsShowFull,
         Self::AiLabelSettingsTitle,
@@ -2081,6 +2089,7 @@ impl MessageId {
         Self::InterfaceHistoryEventMoved,
         Self::InterfaceHistoryEventOther,
         Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventPortalLinkRemoved,
         Self::InterfaceHistoryEventPortalLinkStarted,
         Self::InterfaceHistoryEventPortalLinked,
         Self::InterfaceHistoryEventProfileCreated,
@@ -2518,6 +2527,13 @@ impl MessageId {
         Self::PortalPartialResult,
         Self::PortalPerson,
         Self::PortalRefusedDocuments,
+        Self::PortalRemoveBody,
+        Self::PortalRemoveConfirm,
+        Self::PortalRemoveKept,
+        Self::PortalRemoveLink,
+        Self::PortalRemoveNotices,
+        Self::PortalRemoveTitle,
+        Self::PortalRemoved,
         Self::PortalRequestApproval,
         Self::PortalRestartApproval,
         Self::PortalResult,
@@ -2767,7 +2783,7 @@ impl MessageId {
             Self::AiKeepFailed => "ai-keepFailed",
             Self::AiKeepFull => "ai-keepFull",
             Self::AiLabelSettingsBody => "ai-label-settingsBody",
-            Self::AiLabelSettingsFullShown => "ai-label-settingsFullShown",
+            Self::AiLabelSettingsFullBack => "ai-label-settingsFullBack",
             Self::AiLabelSettingsShortShown => "ai-label-settingsShortShown",
             Self::AiLabelSettingsShowFull => "ai-label-settingsShowFull",
             Self::AiLabelSettingsTitle => "ai-label-settingsTitle",
@@ -3784,6 +3800,9 @@ impl MessageId {
             Self::InterfaceHistoryEventPassphraseChanged => {
                 "interface-history-event-passphraseChanged"
             }
+            Self::InterfaceHistoryEventPortalLinkRemoved => {
+                "interface-history-event-portalLinkRemoved"
+            }
             Self::InterfaceHistoryEventPortalLinkStarted => {
                 "interface-history-event-portalLinkStarted"
             }
@@ -4267,6 +4286,13 @@ impl MessageId {
             Self::PortalPartialResult => "portal-partialResult",
             Self::PortalPerson => "portal-person",
             Self::PortalRefusedDocuments => "portal-refusedDocuments",
+            Self::PortalRemoveBody => "portal-removeBody",
+            Self::PortalRemoveConfirm => "portal-removeConfirm",
+            Self::PortalRemoveKept => "portal-removeKept",
+            Self::PortalRemoveLink => "portal-removeLink",
+            Self::PortalRemoveNotices => "portal-removeNotices",
+            Self::PortalRemoveTitle => "portal-removeTitle",
+            Self::PortalRemoved => "portal-removed",
             Self::PortalRequestApproval => "portal-requestApproval",
             Self::PortalRestartApproval => "portal-restartApproval",
             Self::PortalResult => "portal-result",
@@ -5482,6 +5508,9 @@ impl MessageId {
                 Some(Self::InterfaceHistoryEventPortalLinkStarted)
             }
             "interface.history.event.portalLinked" => Some(Self::InterfaceHistoryEventPortalLinked),
+            "interface.history.event.portalLinkRemoved" => {
+                Some(Self::InterfaceHistoryEventPortalLinkRemoved)
+            }
             "interface.history.event.profileCreated" => {
                 Some(Self::InterfaceHistoryEventProfileCreated)
             }
@@ -5593,6 +5622,13 @@ impl MessageId {
             "portal.tryAgain" => Some(Self::PortalTryAgain),
             "portal.tryAgainFor" => Some(Self::PortalTryAgainFor),
             "portal.linkAnother" => Some(Self::PortalLinkAnother),
+            "portal.removeLink" => Some(Self::PortalRemoveLink),
+            "portal.removeTitle" => Some(Self::PortalRemoveTitle),
+            "portal.removeBody" => Some(Self::PortalRemoveBody),
+            "portal.removeConfirm" => Some(Self::PortalRemoveConfirm),
+            "portal.removeKept" => Some(Self::PortalRemoveKept),
+            "portal.removeNotices" => Some(Self::PortalRemoveNotices),
+            "portal.removed" => Some(Self::PortalRemoved),
             "interface.history.damagedStorageOnly" => {
                 Some(Self::InterfaceHistoryDamagedStorageOnly)
             }
@@ -5609,7 +5645,7 @@ impl MessageId {
             "ai.label.settingsTitle" => Some(Self::AiLabelSettingsTitle),
             "ai.label.settingsBody" => Some(Self::AiLabelSettingsBody),
             "ai.label.settingsShowFull" => Some(Self::AiLabelSettingsShowFull),
-            "ai.label.settingsFullShown" => Some(Self::AiLabelSettingsFullShown),
+            "ai.label.settingsFullBack" => Some(Self::AiLabelSettingsFullBack),
             "ai.label.settingsShortShown" => Some(Self::AiLabelSettingsShortShown),
             "ai.result.meta" => Some(Self::AiResultMeta),
             "ai.summary.showInDocument" => Some(Self::AiSummaryShowInDocument),
