@@ -840,7 +840,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     // operation has reported the transfer's outcome. When the last operation is over the hold is
     // freed, and a lock owed meanwhile now happens.
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
-      transferHold.operationStarted();
+      // Counted in the session it starts in, as `run` counts its own (#476): without it a
+      // transfer that a lock outlives would end in the NEW session, take one from that session's
+      // count and leave the old session's count at one for good.
+      const startedIn = sessionRef.current;
+      transferHold.operationStarted(startedIn);
       try {
         transferHold.transferStarted();
         transferOutcomeRef.current = null;
@@ -849,7 +853,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
           setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
         return await start();
       } finally {
-        const idle = transferHold.operationEnded();
+        const idle = transferHold.operationEnded(startedIn);
         if (idle && lockHeldRef.current) requestLock(true);
         else if (idle) flushPortalNoticeRef.current();
       }
