@@ -149,8 +149,10 @@ export function RecordDialog({
   const [fellBack, setFellBack] = useState(false);
   const [testing, setTesting] = useState(false);
   const [level, setLevel] = useState(0);
-  // One camera or microphone is being swapped for another on the open stream: Start and the lists
-  // wait for it.
+  // One camera or microphone is being swapped for another on the open stream: Start waits for it.
+  // The ref is the flag the handlers read (set at once, so two change events in the same instant
+  // cannot both pass); the state only draws it.
+  const switchingRef = useRef(false);
   const [switching, setSwitching] = useState(false);
   const previousStageRef = useRef<Stage | null>(null);
   const [status, setStatus] = useTextState();
@@ -487,7 +489,7 @@ export function RecordDialog({
 
   const record = async () => {
     const stream = streamRef.current;
-    if (!stream || stage !== "ready" || switching) return;
+    if (!stream || stage !== "ready" || switchingRef.current) return;
     const mimeType = pickMp4Type();
     if (!mimeType) {
       setProblem(
@@ -776,11 +778,22 @@ export function RecordDialog({
   // and microphone it began with. A device that will not open leaves everything as it was.
   const switchDevice = async (kind: "camera" | "microphone", id: string) => {
     const stream = streamRef.current;
-    if (stage !== "ready" || switching || !stream || using[kind] === id) return;
+    if (
+      stage !== "ready" ||
+      switchingRef.current ||
+      !stream ||
+      using[kind] === id
+    )
+      return;
     if (!navigator.mediaDevices?.getUserMedia) return;
     const attempt = attemptRef.current;
-    setTesting(false);
+    switchingRef.current = true;
     setSwitching(true);
+    // The microphone test listens to the microphone track being replaced, so it is let go of for
+    // the switch and takes up again after it, on the new microphone or, if that did not open, the
+    // old one (a camera switch does not touch it).
+    const resumeTest = kind === "microphone" && testing;
+    if (resumeTest) setTesting(false);
     setProblem(null);
     try {
       const opened = await whileAsking(
@@ -835,7 +848,9 @@ export function RecordDialog({
       // dialog says the other one did not open.
       setProblem(translateNow("interface.RecordDialog.deviceNotSwitched"));
     } finally {
+      switchingRef.current = false;
       setSwitching(false);
+      if (resumeTest) setTesting(true);
     }
   };
 
@@ -850,7 +865,10 @@ export function RecordDialog({
   // picture quality is there from the start, whether or not the devices could be listed.
   const hasDevices =
     devices.cameras.length > 0 || devices.microphones.length > 0;
-  const hasSettings = stage === "ready" || (recordingNow && hasDevices);
+  // The column also stays while Start is being answered ("starting" with the devices already
+  // listed), so it does not blink out and back.
+  const hasSettings =
+    stage === "ready" || ((recordingNow || stage === "starting") && hasDevices);
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={close}>

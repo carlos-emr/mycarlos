@@ -188,11 +188,11 @@ function fakeBridge() {
   } satisfies RecordBridge;
 }
 
-function open() {
+function open(bridge: RecordBridge = fakeBridge()) {
   return render(
     <RecordDialog
       platform="windows"
-      bridge={fakeBridge()}
+      bridge={bridge}
       profileId="profile-1"
       folderIds={[]}
       holdLock={() => () => undefined}
@@ -313,6 +313,128 @@ describe("choosing the camera and the microphone", () => {
     await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
     const spare = streams[1]!.getVideoTracks()[0]!;
     expect(spare.readyState).toBe("ended");
+  });
+
+  it("stops what it opened when the dialog is closed while the device is still opening", async () => {
+    const view = open();
+    await ready();
+    let release: (() => void) | undefined;
+    let opened: MediaStream | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        opened = await real(constraints);
+        return opened;
+      },
+    );
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    // Closed while the headset is still being asked for.
+    view.unmount();
+    release!();
+    // The microphone that answers late is not wanted: no track of it is left on.
+    await waitFor(() => expect(opened).toBeDefined());
+    await waitFor(() =>
+      expect(
+        opened!.getTracks().every((track) => track.readyState === "ended"),
+      ).toBe(true),
+    );
+    // And nothing was remembered for a device that never joined the preview.
+    expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
+  });
+
+  it("refuses a switch while the recording is starting, and keeps the devices in use", async () => {
+    // Start is pressed and the vault has not answered yet: the dialog is "starting".
+    const bridge: RecordBridge = {
+      ...fakeBridge(),
+      videoStart: vi.fn(() => new Promise<never>(() => undefined)),
+    };
+    open(bridge);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    await waitFor(() => expect(bridge.videoStart).toHaveBeenCalled());
+    // The lists stay on the screen, but cannot be used meanwhile.
+    expect(cameraList()).toBeDisabled();
+    expect(microphoneList()).toBeDisabled();
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(cameraList().value).toBe("cam-a");
+    expect(microphoneList().value).toBe("mic-a");
+    expect(readDeviceChoice()).toEqual({ camera: null, microphone: null });
+  });
+
+  it("two change events in the same instant open one device, not two", async () => {
+    open();
+    await ready();
+    let release: (() => void) | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return real(constraints);
+      },
+    );
+    // Both events are dispatched before React has drawn anything in between.
+    act(() => {
+      fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+      fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    release!();
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+    expect(cameraList().value).toBe("cam-a");
+  });
+
+  it("puts the microphone test back as it was after a switch, whether the new microphone opened or not", async () => {
+    // The real audio context, with an analyser that reports a loud signal (the fake devices of this
+    // file also make their tone with it, so it must stay a real one).
+    const Real = AudioContext;
+    class LoudContext extends Real {
+      override createAnalyser() {
+        const analyser = super.createAnalyser();
+        analyser.getByteTimeDomainData = (samples: Uint8Array<ArrayBuffer>) =>
+          void samples.fill(192);
+        return analyser;
+      }
+    }
+    vi.stubGlobal("AudioContext", LoudContext);
+    open();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+    await screen.findByRole("meter", { name: "Microphone level" });
+    // A switch that works: the test is on again afterwards.
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(microphoneList().value).toBe("mic-b"));
+    expect(
+      await screen.findByRole("meter", { name: "Microphone level" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Stop testing" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // A switch that fails: the test is on again too, on the microphone still in use.
+    getUserMedia.mockImplementationOnce(async () => {
+      throw Object.assign(new Error("FAKE microphone is busy"), {
+        name: "NotReadableError",
+      });
+    });
+    fireEvent.change(microphoneList(), { target: { value: "mic-a" } });
+    await screen.findByText(
+      humanText(
+        "The camera or microphone you chose could not be opened, so the one in use is still on.",
+      ),
+    );
+    expect(microphoneList().value).toBe("mic-b");
+    expect(
+      await screen.findByRole("meter", { name: "Microphone level" }),
+    ).toBeVisible();
+    // A camera switch never turns the test off.
+    fireEvent.change(cameraList(), { target: { value: "cam-b" } });
+    await waitFor(() => expect(cameraList().value).toBe("cam-b"));
+    expect(
+      screen.getByRole("meter", { name: "Microphone level" }),
+    ).toBeVisible();
   });
 
   it("ignores a second choice while the first is still opening", async () => {
