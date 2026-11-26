@@ -7,6 +7,7 @@ import { NotificationSetting } from "./NotificationSetting";
 type NoticeStatus = {
   supported: boolean;
   enabled: boolean;
+  noticesSupported?: boolean;
   automaticChecksSupported?: boolean;
   automaticChecksEnabled?: boolean;
 };
@@ -17,7 +18,7 @@ type NoticeStatus = {
  * useful. Nothing is ticked for the patient. The boxes are the existing
  * setting itself, so each is the same consent, the same native command and the
  * same stored setting as in Settings › Preferences; "Not now" changes nothing.
- * Shown only where notices are supported and not already on.
+ * Shown only where there is something to offer that is not already on.
  * `onClose` says whether the dialog was shown: one never shown had no focus.
  */
 export function NoticesAfterLink({
@@ -41,8 +42,10 @@ export function NoticesAfterLink({
     }).then(
       (status) => {
         if (!live) return;
+        // Each choice is offered where it exists and is not already on: the automatic check
+        // everywhere, the notice only where the system can show one.
         const allOn =
-          status.enabled &&
+          (!status.noticesSupported || status.enabled) &&
           (!status.automaticChecksSupported ||
             status.automaticChecksEnabled === true);
         setOffer(status.supported && !allOn ? "offer" : "none");
