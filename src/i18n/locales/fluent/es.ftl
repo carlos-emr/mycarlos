@@ -2359,7 +2359,7 @@ interface-AnonymizePreview-pasteWhereNote = El lugar donde lo pegue decide qué 
 
 interface-AnonymizePreview-copy = Copiar el texto
 
-interface-AnonymizePreview-copied = El texto se copió. Si no se copia nada más mientras tanto, se borra del portapapeles en cinco minutos.
+interface-AnonymizePreview-copied = El texto se copió.
 
 interface-AnonymizePreview-copyFailed = No se pudo copiar el texto.
 

@@ -2359,7 +2359,7 @@ interface-AnonymizePreview-pasteWhereNote = L’endroit où vous le collez déci
 
 interface-AnonymizePreview-copy = Copier le texte
 
-interface-AnonymizePreview-copied = Le texte a été copié. Si rien d’autre n’est copié entre-temps, il est effacé du presse-papiers dans cinq minutes.
+interface-AnonymizePreview-copied = Le texte a été copié.
 
 interface-AnonymizePreview-copyFailed = Le texte n’a pas pu être copié.
 

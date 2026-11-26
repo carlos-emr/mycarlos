@@ -68,10 +68,6 @@ import { DocumentReader } from "./DocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
 import type { ModelStatus } from "../ai/types";
 import { AnonymizePreview } from "./AnonymizePreview";
-import {
-  TEXT_CLIPBOARD_CLEAR_MS,
-  useClipboardClear,
-} from "./useClipboardClear";
 import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
@@ -271,13 +267,6 @@ export function VaultLibrary({
   // Gone once the vault locks: what a reply that comes later would show is
   // then not seen.
   const mountedRef = useRef(true);
-  // A copied de-identified text stays for five minutes, so the patient can close the preview and
-  // paste it into an AI chat; it is not taken off when the preview closes. It is taken off after
-  // the five minutes, and this library going away (the vault locks) TRIES to: the clipboard can
-  // only be read while the window has focus, and a refused read leaves the copy in place.
-  const { copy: copyTextToClipboard } = useClipboardClear(
-    TEXT_CLIPBOARD_CLEAR_MS,
-  );
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -3443,7 +3432,6 @@ export function VaultLibrary({
               copyText={(ticket, text, kept) =>
                 bridge.copyTextExport(anonymizeRecord.id, ticket, text, kept)
               }
-              copyToClipboard={copyTextToClipboard}
               exportHeader={translateNow("aiHelper.exportHeader")}
               onClose={() => setAnonymizeRecordId(null)}
             />

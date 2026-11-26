@@ -1,11 +1,5 @@
 import { humanText, visibleText } from "../test/humanText";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -96,8 +90,6 @@ function renderPreview({
       hits: [],
     }),
   ),
-  // The library's clipboard copy; here the plain web clipboard, which a test replaces.
-  copyToClipboard = (text: string) => navigator.clipboard.writeText(text),
 } = {}) {
   const onClose = vi.fn();
   const cancelRead = vi.fn();
@@ -112,7 +104,6 @@ function renderPreview({
       pickDestination={pickDestination}
       saveText={saveText}
       copyText={copyText}
-      copyToClipboard={copyToClipboard}
       exportHeader="FAKE header line"
       onClose={onClose}
     />,
@@ -612,11 +603,7 @@ describe("the anonymize preview (#72 part B)", () => {
       screen.getByRole("button", { name: humanText("Copy text") }),
     );
     expect(
-      await screen.findByText(
-        humanText(
-          "The text was copied. If nothing else is copied meanwhile, it is cleared from the clipboard in five minutes.",
-        ),
-      ),
+      await screen.findByText(humanText("The text was copied.")),
     ).toBeInTheDocument();
     // The check ran on the shown text with the ticket, and the clipboard got what it returned.
     expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString(), []);
@@ -644,59 +631,6 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(saved).toBe(copyText.mock.calls[0][1]);
     expect(copied).toBe(`FAKE header line\n\n${saved}\n`);
     expect(copied).not.toMatch(/Avery|Example|1961/);
-  });
-
-  it("copies through the library's clipboard copy, which outlives the preview: closing the preview takes nothing off the clipboard", async () => {
-    const user = userEvent.setup();
-    const board = { text: "" };
-    const readText = vi.fn(async () => board.text);
-    const writeText = vi.fn(async (value: string) => void (board.text = value));
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText, readText },
-    });
-    const copyToClipboard = vi.fn(async (text: string) =>
-      navigator.clipboard.writeText(text),
-    );
-    renderPreview({ copyToClipboard });
-    await screen.findByRole("region", {
-      name: humanText("The text that will be saved"),
-    });
-    await user.click(
-      screen.getByRole("button", { name: humanText("Copy text") }),
-    );
-    await screen.findByText(
-      humanText(
-        "The text was copied. If nothing else is copied meanwhile, it is cleared from the clipboard in five minutes.",
-      ),
-    );
-    expect(copyToClipboard).toHaveBeenCalledTimes(1);
-    expect(copyToClipboard.mock.calls[0][0]).toMatch(/^FAKE header line/);
-    // The patient closes the preview and then pastes: the copy is still there, and the preview
-    // neither read nor cleared the clipboard on its way out.
-    cleanup();
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(board.text).toMatch(/^FAKE header line/);
-    expect(readText).not.toHaveBeenCalled();
-    expect(writeText).toHaveBeenCalledTimes(1);
-  });
-
-  it("says so when the library's clipboard copy refuses the text", async () => {
-    const user = userEvent.setup();
-    renderPreview({
-      copyToClipboard: vi.fn(async () => {
-        throw new Error("FAKE: blocked");
-      }),
-    });
-    await screen.findByRole("region", {
-      name: humanText("The text that will be saved"),
-    });
-    await user.click(
-      screen.getByRole("button", { name: humanText("Copy text") }),
-    );
-    expect(
-      await screen.findByText(humanText("The text could not be copied.")),
-    ).toBeInTheDocument();
   });
 
   it("copies nothing when the native check refuses, and takes out what it found, as Save does", async () => {

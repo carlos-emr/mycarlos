@@ -2,7 +2,6 @@ import { humanText, visibleText } from "../test/humanText";
 import { useTextState } from "../i18n";
 import {
   act,
-  cleanup,
   fireEvent,
   render,
   screen,
@@ -366,84 +365,6 @@ describe("the text the anonymize preview exports", () => {
     expect(
       screen.queryByRole("dialog", { name: "FAKE anonymize preview" }),
     ).toBeNull();
-  });
-
-  describe("the clipboard copy of the text", () => {
-    const bridge = {
-      documentText: vi.fn(async () => ({ text: "FAKE" })),
-      cancelDocumentText: vi.fn(async () => undefined),
-      recordKnownDetails: vi.fn(async () => ({
-        names: [],
-        birthDates: [],
-        doctorNames: [],
-        clinicNames: [],
-      })),
-    } as unknown as Partial<VaultBridge>;
-    function installBoard() {
-      const board = { text: "" };
-      Object.defineProperty(navigator, "clipboard", {
-        configurable: true,
-        value: {
-          writeText: vi.fn(async (value: string) => void (board.text = value)),
-          readText: vi.fn(async () => board.text),
-        },
-      });
-      return board;
-    }
-    const settle = () => act(async () => void (await Promise.resolve()));
-    afterEach(() => vi.useRealTimers());
-
-    it("outlives the preview, is taken off after five minutes and not a second before, and never touches a newer copy", async () => {
-      const board = installBoard();
-      await openPreview(bridge);
-      const preview = seen.preview as unknown as {
-        copyToClipboard: (text: string) => Promise<void>;
-        onClose: () => void;
-      };
-      vi.useFakeTimers();
-      await act(() => preview.copyToClipboard("FAKE approved text"));
-      expect(board.text).toBe("FAKE approved text");
-      // The patient closes the preview, then pastes: the copy is still there.
-      act(() => preview.onClose());
-      expect(
-        screen.queryByRole("dialog", { name: "FAKE anonymize preview" }),
-      ).toBeNull();
-      await settle();
-      await settle();
-      expect(board.text).toBe("FAKE approved text");
-      await act(async () => void vi.advanceTimersByTime(5 * 60_000 - 1));
-      await settle();
-      expect(board.text).toBe("FAKE approved text");
-      await act(async () => void vi.advanceTimersByTime(1));
-      await settle();
-      expect(board.text).toBe("");
-    });
-
-    it("is taken off when the library goes away because the vault locked", async () => {
-      const board = installBoard();
-      await openPreview(bridge);
-      const preview = seen.preview as unknown as {
-        copyToClipboard: (text: string) => Promise<void>;
-      };
-      await act(() => preview.copyToClipboard("FAKE approved text"));
-      expect(board.text).toBe("FAKE approved text");
-      // A locked vault replaces the library, which unmounts it.
-      cleanup();
-      await waitFor(() => expect(board.text).toBe(""));
-    });
-
-    it("leaves a newer copy of the patient's own alone when the vault locks", async () => {
-      const board = installBoard();
-      await openPreview(bridge);
-      const preview = seen.preview as unknown as {
-        copyToClipboard: (text: string) => Promise<void>;
-      };
-      await act(() => preview.copyToClipboard("FAKE approved text"));
-      board.text = "FAKE something else";
-      cleanup();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(board.text).toBe("FAKE something else");
-    });
   });
 });
 

@@ -158,7 +158,6 @@ export function AnonymizePreview({
   pickDestination,
   saveText,
   copyText,
-  copyToClipboard,
   exportHeader,
   onClose,
 }: {
@@ -185,10 +184,6 @@ export function AnonymizePreview({
     text: string,
     kept?: TextRange[],
   ) => Promise<TextCopyOutcome>;
-  /** Puts the approved text on the clipboard and takes it off again later. It belongs to the
-   * library, not to this screen, because the patient closes the preview and then pastes: closing
-   * does not clear it. It rejects when the clipboard refuses the write. */
-  copyToClipboard: (text: string) => Promise<void>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   onClose: () => void;
@@ -449,7 +444,7 @@ export function AnonymizePreview({
         return;
       }
       try {
-        await copyToClipboard(outcome.approved);
+        await navigator.clipboard.writeText(outcome.approved);
         setNotice(
           deferredText(() => translateNow("interface.AnonymizePreview.copied")),
         );
