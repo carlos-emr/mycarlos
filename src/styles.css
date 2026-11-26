@@ -3676,6 +3676,36 @@ p {
   cursor: not-allowed;
 }
 /* Recording a video, and playing one (#359). */
+.record-video-dialog .record-device-note {
+  margin: 0;
+}
+.record-video-dialog .record-device-note:empty {
+  min-height: 0;
+}
+.record-video-dialog .record-devices {
+  display: grid;
+  gap: 8px;
+}
+.record-video-dialog .record-device {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.record-video-dialog .record-device select {
+  min-height: 44px;
+  max-width: 100%;
+}
+.record-video-dialog .record-mic-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.record-video-dialog .record-mic-test meter {
+  flex: 1 1 8rem;
+  min-width: 8rem;
+  height: 1.25rem;
+}
 .record-video-dialog .record-quality {
   margin: 0;
   padding: 0;
@@ -5080,4 +5110,31 @@ button:disabled,
 }
 .more-about-body p:first-child {
   margin-top: 2px;
+}
+
+/* Add a video: the button, its progress and its answer, as one item of the library's button row. */
+.add-video {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-video-progress {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.add-video-progress progress {
+  width: 10rem;
+  max-width: 100%;
+}
+.add-video-result {
+  margin: 0;
+  max-width: 32rem;
+}
+.add-video-progress > span {
+  display: inline-block;
+  min-width: 3.5ch;
+  text-align: end;
 }

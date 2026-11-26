@@ -93,6 +93,12 @@ describe("each bridge method invokes its native command with its arguments", () 
       { linkId: "link-1" },
     ],
     [
+      "removePortalLink",
+      (b) => b.removePortalLink("link-1"),
+      "vault_portal_remove_link",
+      { linkId: "link-1" },
+    ],
+    [
       "requestDeviceApproval",
       (b) => b.requestDeviceApproval("link-1"),
       "vault_request_device_approval",
@@ -299,6 +305,28 @@ describe("each bridge method invokes its native command with its arguments", () 
       (b) => b.importPickedFiles("pick-1", "p-1", ["f-1"]),
       "vault_import_picked",
       { request: { pickId: "pick-1", profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "pickImportVideo",
+      (b) => b.pickImportVideo("p-1", ["f-1"]),
+      "vault_import_video_pick",
+      { locale: locale(), request: { profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "importPickedVideo",
+      (b) => b.importPickedVideo("pick-1", "p-1", ["f-1"]),
+      "vault_import_video_picked",
+      { request: { pickId: "pick-1", profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "videoImportProgress",
+      (b) => b.videoImportProgress(),
+      "vault_video_import_progress",
+    ],
+    [
+      "videoImportCancel",
+      (b) => b.videoImportCancel(),
+      "vault_video_import_cancel",
     ],
     [
       "pickExportDestination",

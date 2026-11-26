@@ -120,6 +120,7 @@ export const MESSAGE_KEYS = [
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking",
   "interface.VaultApp.chooseFilesToImport",
+  "interface.VaultLibrary.picturesNote",
   "interface.VaultApp.finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer",
   "interface.VaultApp.myCarlosCouldNotLockTheVaultIts",
@@ -364,6 +365,9 @@ export const MESSAGE_KEYS = [
   "native.error.speedTest",
   "native.filter.backups",
   "native.filter.pdf",
+  "native.filter.video",
+  "native.filter.pictures",
+  "native.filter.pdfAndPictures",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -1023,13 +1027,16 @@ export const MESSAGE_KEYS = [
   "notifications.allow",
   "notifications.blocked",
   "notifications.error",
-  "notifications.help",
   "notifications.title",
+  "notifications.blockedMac",
   "notifications.notYetAsked",
+  "notifications.notYetAskedMac",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
   "notifications.autoAllow",
+  "notifications.autoConsent",
+  "notifications.noticesHelp",
   "notifications.autoHelp",
   "notifications.autoPaused",
   "notifications.checkBusy",
@@ -1078,7 +1085,6 @@ export const MESSAGE_KEYS = [
   "noticesStep.later",
   "noticesStep.done",
   "noticesStep.notNow",
-  "notifications.autoNeedsNotices",
   "ai.settings.subtitle",
   "ai.model.progressName",
   "ai.model.progressValue",
@@ -1146,6 +1152,16 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.theCameraAndMicrophoneAreOn",
   "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
   "interface.RecordDialog.pictureQuality",
+  "interface.RecordDialog.cameraAndMicrophone",
+  "interface.RecordDialog.camera",
+  "interface.RecordDialog.microphone",
+  "interface.RecordDialog.unnamedCamera",
+  "interface.RecordDialog.unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice",
+  "interface.RecordDialog.deviceFellBack",
+  "interface.RecordDialog.testMicrophone",
+  "interface.RecordDialog.stopTestingMicrophone",
+  "interface.RecordDialog.microphoneLevel",
   "interface.RecordDialog.standard",
   "interface.RecordDialog.high",
   "interface.RecordDialog.aboutStandardPerHour",
@@ -1382,11 +1398,34 @@ export const MESSAGE_KEYS = [
   "native.notice.test",
   "notifications.testButton",
   "notifications.testSent",
+  "notifications.testSentMac",
   "notifications.testWait",
   "notifications.testFailed",
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "interface.AddVideo.add",
+  "interface.AddVideo.hint",
+  "interface.AddVideo.checking",
+  "interface.AddVideo.storing",
+  "interface.AddVideo.progressLabel",
+  "interface.AddVideo.cancel",
+  "interface.AddVideo.cancelling",
+  "interface.AddVideo.added",
+  "interface.AddVideo.duplicate",
+  "interface.AddVideo.cancelled",
+  "interface.AddVideo.notVideo",
+  "interface.AddVideo.hevc",
+  "interface.AddVideo.videoCodec",
+  "interface.AddVideo.audioCodec",
+  "interface.AddVideo.noVideo",
+  "interface.AddVideo.tooManyTracks",
+  "interface.AddVideo.external",
+  "interface.AddVideo.fragmented",
+  "interface.AddVideo.tooBig",
+  "interface.AddVideo.tooLarge",
+  "interface.AddVideo.damaged",
+  "interface.AddVideo.adding",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -1548,6 +1587,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.UnlockPdfDialog.unlocking": "interface-UnlockPdfDialog-unlocking",
   "interface.VaultApp.chooseFilesToImport":
     "interface-VaultApp-chooseFilesToImport",
+  "interface.VaultLibrary.picturesNote": "interface-VaultLibrary-picturesNote",
   "interface.VaultApp.finishingTheTransfer":
     "interface-VaultApp-finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer":
@@ -1860,6 +1900,9 @@ const FLUENT_IDS_BY_KEY = {
   "native.error.speedTest": "native-error-speedTest",
   "native.filter.backups": "native-filter-backups",
   "native.filter.pdf": "native-filter-pdf",
+  "native.filter.video": "native-filter-video",
+  "native.filter.pictures": "native-filter-pictures",
+  "native.filter.pdfAndPictures": "native-filter-pdfAndPictures",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -2638,13 +2681,16 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.allow": "notifications-allow",
   "notifications.blocked": "notifications-blocked",
   "notifications.error": "notifications-error",
-  "notifications.help": "notifications-help",
   "notifications.title": "notifications-title",
+  "notifications.blockedMac": "notifications-blockedMac",
   "notifications.notYetAsked": "notifications-notYetAsked",
+  "notifications.notYetAskedMac": "notifications-notYetAskedMac",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
   "notifications.autoAllow": "notifications-autoAllow",
+  "notifications.autoConsent": "notifications-autoConsent",
+  "notifications.noticesHelp": "notifications-noticesHelp",
   "notifications.autoHelp": "notifications-autoHelp",
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
@@ -2694,7 +2740,6 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.later": "noticesStep-later",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
-  "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
   "ai.settings.subtitle": "ai-settings-subtitle",
   "ai.model.progressName": "ai-model-progressName",
   "ai.model.progressValue": "ai-model-progressValue",
@@ -2768,6 +2813,24 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-theCameraAndMicrophoneAreOnNow",
   "interface.RecordDialog.pictureQuality":
     "interface-RecordDialog-pictureQuality",
+  "interface.RecordDialog.cameraAndMicrophone":
+    "interface-RecordDialog-cameraAndMicrophone",
+  "interface.RecordDialog.camera": "interface-RecordDialog-camera",
+  "interface.RecordDialog.microphone": "interface-RecordDialog-microphone",
+  "interface.RecordDialog.unnamedCamera":
+    "interface-RecordDialog-unnamedCamera",
+  "interface.RecordDialog.unnamedMicrophone":
+    "interface-RecordDialog-unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice":
+    "interface-RecordDialog-systemDefaultDevice",
+  "interface.RecordDialog.deviceFellBack":
+    "interface-RecordDialog-deviceFellBack",
+  "interface.RecordDialog.testMicrophone":
+    "interface-RecordDialog-testMicrophone",
+  "interface.RecordDialog.stopTestingMicrophone":
+    "interface-RecordDialog-stopTestingMicrophone",
+  "interface.RecordDialog.microphoneLevel":
+    "interface-RecordDialog-microphoneLevel",
   "interface.RecordDialog.standard": "interface-RecordDialog-standard",
   "interface.RecordDialog.high": "interface-RecordDialog-high",
   "interface.RecordDialog.aboutStandardPerHour":
@@ -3040,11 +3103,34 @@ const FLUENT_IDS_BY_KEY = {
   "native.notice.test": "native-notice-test",
   "notifications.testButton": "notifications-testButton",
   "notifications.testSent": "notifications-testSent",
+  "notifications.testSentMac": "notifications-testSentMac",
   "notifications.testWait": "notifications-testWait",
   "notifications.testFailed": "notifications-testFailed",
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "interface.AddVideo.add": "interface-AddVideo-add",
+  "interface.AddVideo.hint": "interface-AddVideo-hint",
+  "interface.AddVideo.checking": "interface-AddVideo-checking",
+  "interface.AddVideo.storing": "interface-AddVideo-storing",
+  "interface.AddVideo.progressLabel": "interface-AddVideo-progressLabel",
+  "interface.AddVideo.cancel": "interface-AddVideo-cancel",
+  "interface.AddVideo.cancelling": "interface-AddVideo-cancelling",
+  "interface.AddVideo.added": "interface-AddVideo-added",
+  "interface.AddVideo.duplicate": "interface-AddVideo-duplicate",
+  "interface.AddVideo.cancelled": "interface-AddVideo-cancelled",
+  "interface.AddVideo.notVideo": "interface-AddVideo-notVideo",
+  "interface.AddVideo.hevc": "interface-AddVideo-hevc",
+  "interface.AddVideo.videoCodec": "interface-AddVideo-videoCodec",
+  "interface.AddVideo.audioCodec": "interface-AddVideo-audioCodec",
+  "interface.AddVideo.noVideo": "interface-AddVideo-noVideo",
+  "interface.AddVideo.tooManyTracks": "interface-AddVideo-tooManyTracks",
+  "interface.AddVideo.external": "interface-AddVideo-external",
+  "interface.AddVideo.fragmented": "interface-AddVideo-fragmented",
+  "interface.AddVideo.tooBig": "interface-AddVideo-tooBig",
+  "interface.AddVideo.tooLarge": "interface-AddVideo-tooLarge",
+  "interface.AddVideo.damaged": "interface-AddVideo-damaged",
+  "interface.AddVideo.adding": "interface-AddVideo-adding",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -3184,6 +3270,7 @@ export interface MessageArgsByKey {
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword": undefined;
   "interface.UnlockPdfDialog.unlocking": undefined;
   "interface.VaultApp.chooseFilesToImport": undefined;
+  "interface.VaultLibrary.picturesNote": undefined;
   "interface.VaultApp.finishingTheTransfer": undefined;
   "interface.VaultApp.lockNowAndCancelTheTransfer": undefined;
   "interface.VaultApp.myCarlosCouldNotLockTheVaultIts": undefined;
@@ -3474,6 +3561,9 @@ export interface MessageArgsByKey {
   "native.error.speedTest": undefined;
   "native.filter.backups": undefined;
   "native.filter.pdf": undefined;
+  "native.filter.video": undefined;
+  "native.filter.pictures": undefined;
+  "native.filter.pdfAndPictures": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;
@@ -4185,13 +4275,16 @@ export interface MessageArgsByKey {
   "notifications.allow": undefined;
   "notifications.blocked": undefined;
   "notifications.error": undefined;
-  "notifications.help": undefined;
   "notifications.title": undefined;
+  "notifications.blockedMac": undefined;
   "notifications.notYetAsked": undefined;
+  "notifications.notYetAskedMac": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;
   "notifications.autoAllow": undefined;
+  "notifications.autoConsent": undefined;
+  "notifications.noticesHelp": undefined;
   "notifications.autoHelp": undefined;
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
@@ -4248,7 +4341,6 @@ export interface MessageArgsByKey {
   };
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
-  "notifications.autoNeedsNotices": undefined;
   "ai.settings.subtitle": undefined;
   "ai.model.progressName": undefined;
   "ai.model.progressValue": {
@@ -4320,6 +4412,16 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.theCameraAndMicrophoneAreOn": undefined;
   "interface.RecordDialog.theCameraAndMicrophoneAreOnNow": undefined;
   "interface.RecordDialog.pictureQuality": undefined;
+  "interface.RecordDialog.cameraAndMicrophone": undefined;
+  "interface.RecordDialog.camera": undefined;
+  "interface.RecordDialog.microphone": undefined;
+  "interface.RecordDialog.unnamedCamera": { number: FluentArgument };
+  "interface.RecordDialog.unnamedMicrophone": { number: FluentArgument };
+  "interface.RecordDialog.systemDefaultDevice": undefined;
+  "interface.RecordDialog.deviceFellBack": undefined;
+  "interface.RecordDialog.testMicrophone": undefined;
+  "interface.RecordDialog.stopTestingMicrophone": undefined;
+  "interface.RecordDialog.microphoneLevel": undefined;
   "interface.RecordDialog.standard": undefined;
   "interface.RecordDialog.high": undefined;
   "interface.RecordDialog.aboutStandardPerHour": undefined;
@@ -4562,11 +4664,34 @@ export interface MessageArgsByKey {
   "native.notice.test": undefined;
   "notifications.testButton": undefined;
   "notifications.testSent": undefined;
+  "notifications.testSentMac": undefined;
   "notifications.testWait": undefined;
   "notifications.testFailed": undefined;
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "interface.AddVideo.add": undefined;
+  "interface.AddVideo.hint": undefined;
+  "interface.AddVideo.checking": undefined;
+  "interface.AddVideo.storing": { percent: FluentArgument };
+  "interface.AddVideo.progressLabel": undefined;
+  "interface.AddVideo.cancel": undefined;
+  "interface.AddVideo.cancelling": undefined;
+  "interface.AddVideo.added": undefined;
+  "interface.AddVideo.duplicate": undefined;
+  "interface.AddVideo.cancelled": undefined;
+  "interface.AddVideo.notVideo": undefined;
+  "interface.AddVideo.hevc": undefined;
+  "interface.AddVideo.videoCodec": undefined;
+  "interface.AddVideo.audioCodec": undefined;
+  "interface.AddVideo.noVideo": undefined;
+  "interface.AddVideo.tooManyTracks": undefined;
+  "interface.AddVideo.external": undefined;
+  "interface.AddVideo.fragmented": undefined;
+  "interface.AddVideo.tooBig": undefined;
+  "interface.AddVideo.tooLarge": undefined;
+  "interface.AddVideo.damaged": undefined;
+  "interface.AddVideo.adding": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

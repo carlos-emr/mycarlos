@@ -65,6 +65,35 @@ export interface VideoSaved {
   recordId: string | null;
 }
 
+/** Why a picked video was not added (named for the page to put words to). */
+export type VideoRefusal =
+  | "notVideo"
+  | "hevc"
+  | "videoCodec"
+  | "audioCodec"
+  | "noVideo"
+  | "tooManyTracks"
+  | "external"
+  | "fragmented"
+  | "tooBig"
+  | "tooLarge"
+  | "damaged";
+
+/** How adding a picked video ended: a refusal is an answer, not an error. */
+export type VideoImportResult =
+  | { result: "imported"; recordId: string }
+  | { result: "duplicate" }
+  | { result: "refused"; reason: VideoRefusal }
+  | { result: "cancelled" };
+
+/** Where the import of a picked video is. `totalBytes` is known from the
+ * `storing` stage on (0 before). */
+export interface VideoImportProgress {
+  stage: "idle" | "checking" | "storing";
+  doneBytes: number;
+  totalBytes: number;
+}
+
 /** A video open for playback. */
 export interface VideoPlayback {
   /** Ends this playback. */
@@ -808,6 +837,22 @@ export interface VaultBridge {
     profileId: string,
     folderIds: string[],
   ): Promise<ImportOutcome>;
+  /** Opens the picker for one video. Resolves to the id of the chosen file,
+   * kept natively, or null when the picker was cancelled. */
+  pickImportVideo?(
+    profileId: string,
+    folderIds: string[],
+  ): Promise<string | null>;
+  /** Checks, cleans and adds the picked video. Resolves when it is done, refused
+   * or cancelled; watch it with `videoImportProgress`, stop it with
+   * `videoImportCancel`. */
+  importPickedVideo?(
+    pickId: string,
+    profileId: string,
+    folderIds: string[],
+  ): Promise<VideoImportResult>;
+  videoImportProgress?(): Promise<VideoImportProgress>;
+  videoImportCancel?(): Promise<void>;
   /** Opens the save picker. Resolves to the id of the chosen destination,
    * kept natively, or null when the picker was cancelled. */
   pickExportDestination(recordId: string): Promise<string | null>;
@@ -856,8 +901,8 @@ export interface VaultBridge {
   /** Whether a document's file starts as a JPEG does. Only its first bytes
    * are read; the photo itself stays native. */
   isPhoto(recordId: string): Promise<boolean>;
-  /** A document's photo, as a `data:image/jpeg` URL, if its file is a whole
-   * JPEG the vault can show; rejected with the code "not_a_photo" otherwise. */
+  /** A document's photo, as a `data:image/jpeg` or `data:image/png` URL, if its file is a whole
+   * JPEG or PNG the vault can show; rejected with the code "not_a_photo" otherwise. */
   viewPhoto(recordId: string): Promise<string>;
   /** Hides a document (#71). There is no way to delete one. */
   /** Hides a whole person (#360): one step, nothing deleted. */
@@ -1486,6 +1531,18 @@ export function createVaultBridge(): VaultBridge {
       invoke<ImportOutcome>("vault_import_picked", {
         request: { pickId, profileId, folderIds },
       }),
+    pickImportVideo: (profileId, folderIds) =>
+      invoke<string | null>("vault_import_video_pick", {
+        locale: getLocale(),
+        request: { profileId, folderIds },
+      }),
+    importPickedVideo: (pickId, profileId, folderIds) =>
+      invoke<VideoImportResult>("vault_import_video_picked", {
+        request: { pickId, profileId, folderIds },
+      }),
+    videoImportProgress: () =>
+      invoke<VideoImportProgress>("vault_video_import_progress"),
+    videoImportCancel: () => invoke<void>("vault_video_import_cancel"),
     pickExportDestination: (recordId) =>
       invoke<string | null>("vault_export_pick", { request: { recordId } }),
     exportToPicked: (pickId, recordId) =>
