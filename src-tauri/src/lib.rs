@@ -2385,7 +2385,7 @@ async fn ai_model_add_picked(
     let _open = ActivityHold::new(store.idle());
     let picker = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        let dialog = picker.dialog().file();
+        let dialog = file_dialog(&picker);
         #[cfg(desktop)]
         let dialog = dialog.add_filter(&filter, &["gguf"]);
         #[cfg(not(desktop))]
@@ -4154,6 +4154,22 @@ fn confirmed_natively<R: tauri::Runtime>(
 #[cfg(desktop)]
 const MAIN_WINDOW: &str = "main";
 
+/// A native file dialog owned by the app's window. Every file picker and save dialog of the app
+/// is opened through this and never through `app.dialog().file()`: with no owner, Windows shows
+/// the picker as a separate top-level window that is not modal to the app, so the patient can
+/// carry on in the app behind it, lose it behind the window or in the taskbar, and leave the
+/// operation waiting on a dialog that looks closed. Owned, it stays above the window and
+/// blocks it. No timeout is added: a patient may leave a dialog open as long as they like.
+fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().file();
+    #[cfg(desktop)]
+    let dialog = match app.get_webview_window(MAIN_WINDOW) {
+        Some(window) => dialog.set_parent(&window),
+        None => dialog,
+    };
+    dialog
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -4271,9 +4287,7 @@ async fn vault_recovery_kit_save(
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        dialog
-            .dialog()
-            .file()
+        file_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -4502,7 +4516,7 @@ async fn vault_backup_pick(
     let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4788,7 +4802,7 @@ async fn vault_profile_export_pick(
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog().file().set_file_name(name).blocking_save_file()
+        file_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4905,7 +4919,7 @@ async fn vault_profile_import_pick(
     let _open = ActivityHold::new(store.idle());
     // No filter: a phone's picker filters by file type, and a handover file has none it knows.
     let source =
-        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_file())
+        tauri::async_runtime::spawn_blocking(move || file_dialog(&app).blocking_pick_file())
             .await
             .map_err(|_| PublicError::from(VaultError::Storage))?;
     let Some(source) = source else {
@@ -5211,7 +5225,7 @@ async fn vault_restore_pick(
     .await?;
     let _backup_filter = locale.text(MessageId::NativeFilterBackups)?;
     let source = tauri::async_runtime::spawn_blocking(move || {
-        let picker = app.dialog().file();
+        let picker = file_dialog(&app);
         // Phone pickers filter by file type, and a backup has none they know,
         // so a filter there could hide every file.
         #[cfg(desktop)]
@@ -5576,8 +5590,7 @@ async fn vault_import_pick(
     let picked = tauri::async_runtime::spawn_blocking(move || {
         // PDF documents stay first (what the dialog shows by default); the others are one choice
         // away. JPEG and PNG pictures only: HEIC is not accepted.
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .add_filter(&pdf_filter, &["pdf"])
             .add_filter(&pictures_filter, &["jpg", "jpeg", "png"])
             .add_filter(&both_filter, &["pdf", "jpg", "jpeg", "png"])
@@ -6673,8 +6686,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -6916,8 +6928,7 @@ async fn vault_export_pick(
         run_blocking(store.arc(), move |store| store.export_name(record_id)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
+        file_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -9859,6 +9870,88 @@ mod tests {
             false
         }));
         assert!(!store.idle().is_due(due_at(armed_at)));
+    }
+
+    /// Every native file dialog is opened through `file_dialog`, which gives it the app's window as
+    /// its owner. Opened bare (`app.dialog().file()`), a Windows picker is a separate, non-modal
+    /// top-level window that can be lost behind the app while its command waits for it. The rules,
+    /// over every source file (not only this one), in non-test code:
+    ///   - the plugin's dialog extension (`DialogExt`) is imported in this file and nowhere else;
+    ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
+    ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
+    ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
+    ///   - `file_dialog(&` is called at exactly the nine sites there are today (a tenth must be added
+    ///     here on purpose, and a lost one is noticed).
+    #[test]
+    fn every_file_dialog_is_opened_through_the_owned_helper() {
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        /// The code before the file's own `mod tests {` (its tests may name anything), comment lines
+        /// dropped, and every space and line break removed (so a call split over lines or spaced
+        /// oddly still matches). A file with no such module is read whole.
+        fn code(text: &str) -> String {
+            let end = text
+                .find("\n#[cfg(test)]\nmod tests {")
+                .unwrap_or(text.len());
+            text[..end]
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//"))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .split_whitespace()
+                .collect()
+        }
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        assert!(
+            files.len() > 20,
+            "the source walk found {} files",
+            files.len()
+        );
+        let (mut dialog_ext, mut calls, mut file_calls, mut builders, mut sites) = (0, 0, 0, 0, 0);
+        for file in &files {
+            let text = std::fs::read_to_string(file).unwrap();
+            let code = code(&text);
+            let name = file.file_name().unwrap().to_string_lossy().into_owned();
+            let imports = code.matches("DialogExt").count();
+            if name != "lib.rs" {
+                assert_eq!(imports, 0, "{name} imports DialogExt");
+            }
+            dialog_ext += imports;
+            calls += code.matches(".dialog()").count();
+            file_calls += code.matches(".dialog().file()").count();
+            builders += code.matches("FileDialogBuilder::new").count();
+            sites += code.matches("file_dialog(&").count();
+        }
+        assert_eq!(dialog_ext, 1, "DialogExt is imported once, in lib.rs");
+        assert_eq!(
+            calls, 2,
+            ".dialog() is called in the helper and the native confirmation only"
+        );
+        assert_eq!(file_calls, 1, "only the helper builds a file dialog");
+        assert_eq!(builders, 0, "a file dialog builder is made directly");
+        assert_eq!(
+            sites, 9,
+            "the nine file dialog sites go through file_dialog"
+        );
+        // The helper keeps its owner.
+        let source = include_str!("lib.rs");
+        let helper = source.split("fn file_dialog(").nth(1).unwrap();
+        let helper = &helper[..helper.find("\n}\n").unwrap()];
+        assert!(helper.contains("app.dialog().file()"));
+        assert!(helper.contains("set_parent(&window)"));
+        assert!(helper.contains("get_webview_window(MAIN_WINDOW)"));
     }
 
     /// The renderer sends `hiddenPeopleDocuments` (src/vault.ts). A snake_case field without a

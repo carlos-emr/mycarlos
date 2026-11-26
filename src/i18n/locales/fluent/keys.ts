@@ -1149,6 +1149,16 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.theCameraAndMicrophoneAreOn",
   "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
   "interface.RecordDialog.pictureQuality",
+  "interface.RecordDialog.cameraAndMicrophone",
+  "interface.RecordDialog.camera",
+  "interface.RecordDialog.microphone",
+  "interface.RecordDialog.unnamedCamera",
+  "interface.RecordDialog.unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice",
+  "interface.RecordDialog.deviceFellBack",
+  "interface.RecordDialog.testMicrophone",
+  "interface.RecordDialog.stopTestingMicrophone",
+  "interface.RecordDialog.microphoneLevel",
   "interface.RecordDialog.standard",
   "interface.RecordDialog.high",
   "interface.RecordDialog.aboutStandardPerHour",
@@ -2763,6 +2773,24 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-theCameraAndMicrophoneAreOnNow",
   "interface.RecordDialog.pictureQuality":
     "interface-RecordDialog-pictureQuality",
+  "interface.RecordDialog.cameraAndMicrophone":
+    "interface-RecordDialog-cameraAndMicrophone",
+  "interface.RecordDialog.camera": "interface-RecordDialog-camera",
+  "interface.RecordDialog.microphone": "interface-RecordDialog-microphone",
+  "interface.RecordDialog.unnamedCamera":
+    "interface-RecordDialog-unnamedCamera",
+  "interface.RecordDialog.unnamedMicrophone":
+    "interface-RecordDialog-unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice":
+    "interface-RecordDialog-systemDefaultDevice",
+  "interface.RecordDialog.deviceFellBack":
+    "interface-RecordDialog-deviceFellBack",
+  "interface.RecordDialog.testMicrophone":
+    "interface-RecordDialog-testMicrophone",
+  "interface.RecordDialog.stopTestingMicrophone":
+    "interface-RecordDialog-stopTestingMicrophone",
+  "interface.RecordDialog.microphoneLevel":
+    "interface-RecordDialog-microphoneLevel",
   "interface.RecordDialog.standard": "interface-RecordDialog-standard",
   "interface.RecordDialog.high": "interface-RecordDialog-high",
   "interface.RecordDialog.aboutStandardPerHour":
@@ -4307,6 +4335,16 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.theCameraAndMicrophoneAreOn": undefined;
   "interface.RecordDialog.theCameraAndMicrophoneAreOnNow": undefined;
   "interface.RecordDialog.pictureQuality": undefined;
+  "interface.RecordDialog.cameraAndMicrophone": undefined;
+  "interface.RecordDialog.camera": undefined;
+  "interface.RecordDialog.microphone": undefined;
+  "interface.RecordDialog.unnamedCamera": { number: FluentArgument };
+  "interface.RecordDialog.unnamedMicrophone": { number: FluentArgument };
+  "interface.RecordDialog.systemDefaultDevice": undefined;
+  "interface.RecordDialog.deviceFellBack": undefined;
+  "interface.RecordDialog.testMicrophone": undefined;
+  "interface.RecordDialog.stopTestingMicrophone": undefined;
+  "interface.RecordDialog.microphoneLevel": undefined;
   "interface.RecordDialog.standard": undefined;
   "interface.RecordDialog.high": undefined;
   "interface.RecordDialog.aboutStandardPerHour": undefined;
