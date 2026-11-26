@@ -4494,10 +4494,14 @@ impl VaultStore {
     /// The name suggested for a backup's file: the date it is saved, as the
     /// patient's own calendar gives it (`YYYY-MM-DD`, already checked; the
     /// caller falls back to the UTC date). The vault's recovery key label is
-    /// not in it: backups saved on different days do not take each other's
-    /// place, but two saved on one day, under an old key and a new one, are
-    /// offered the same name (what happens to an earlier file of that name is
-    /// the platform's save dialog's to decide).
+    /// not in it, so the name no longer says which kit opens the backup (it
+    /// was the only cue on disk). Names on different days differ; two saved
+    /// on one day always had the same name under one key, and now do under
+    /// two: a backup saved after replacing the key, the same day as the one
+    /// before it, is offered the earlier file's name. On a desktop the save
+    /// dialog then replaces that file if the patient confirms, before the
+    /// older-backups guide's step to keep a copy away; Android's picker
+    /// usually makes a new name ("(1)").
     pub fn backup_file_name(&self, date: &str) -> Result<String, VaultError> {
         let guard = self.session();
         guard.as_ref().ok_or(VaultError::Locked)?;
