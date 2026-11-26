@@ -33,6 +33,9 @@ import VaultApp from "./VaultApp";
 // The library is handed the bridge `VaultApp` wraps (`trackedBridge`), and nothing else in a test
 // can reach it. This wrapper renders the real library and only remembers that bridge, so a test
 // can call a wrapped method bare, from outside `run`, as the hand-over dialogs do.
+// `vi.mock` applies to the whole file: every test below, not only the ones that read `shown`, is
+// rendered through this extra component layer (it renders the real `VaultLibrary` with the same
+// props, so nothing else about them changes).
 const shown = vi.hoisted(() => ({ bridge: null as unknown }));
 vi.mock("./native/VaultLibrary", async (importOriginal) => {
   const original =
@@ -12708,6 +12711,58 @@ describe("clinic connection operations", () => {
       );
     },
   );
+
+  it("shows a clinic result that waited for a bare transfer once the transfer ends", async () => {
+    // A clinic result that arrives while a transfer runs waits (the line belongs to the
+    // transfer). A transfer started outside `run` must show it when it ends, as `run` does.
+    let current = clinicSnapshot;
+    const pending = pendingConnection();
+    let finishImport!: (value: ImportOutcome) => void;
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current)),
+      connectPortal: vi.fn().mockReturnValue(pending.promise),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      importPickedFiles: vi.fn().mockReturnValue(
+        new Promise<ImportOutcome>((resolve) => {
+          finishImport = resolve;
+        }),
+      ),
+    });
+    shown.bridge = null;
+    render(<VaultApp bridge={bridge} />);
+    const form = await openConnectForm();
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledOnce());
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /^My records/ })[0]);
+    await waitFor(() => expect(shown.bridge).not.toBeNull());
+    // Not through `run`: nothing but `transfer()` itself brackets this call.
+    const tracked = shown.bridge as VaultBridge;
+    void tracked.importPickedFiles("pick-1", "profile-1", []);
+    await waitFor(() => expect(bridge.importPickedFiles).toHaveBeenCalled());
+    current = { ...clinicSnapshot, portalLinks: [connectedLink] };
+    await act(async () =>
+      pending.finish({ link: connectedLink, approvalError: null }),
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: /^Shared with me/ })[0],
+    );
+    expect(
+      await screen.findByRole("button", { name: "Check for new documents" }),
+    ).toBeVisible();
+    // The transfer still runs: the clinic result is held, not shown.
+    expect(screen.queryByText(/Device linked/)).not.toBeInTheDocument();
+    await act(async () =>
+      finishImport({ imported: ["FAKE.pdf"], skippedDuplicates: [] }),
+    );
+    expect(await screen.findByText(/Device linked/)).toBeVisible();
+  });
 
   it.each([
     ["during save", "announce"],
