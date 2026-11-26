@@ -104,7 +104,7 @@ describe("Add a video: the button and its status", () => {
     const onAdded = renderAdd(bridge);
     const button = screen.getByRole("button", { name: "Add a video" });
     // What it does is the description, so the name stays the visible word.
-    expect(button).toHaveAccessibleDescription(/place and device details/);
+    expect(button).toHaveAccessibleDescription(/the device's name and model/);
     await user.click(button);
     expect(bridge.pickImportVideo).toHaveBeenCalledWith("person-1", [
       "folder-1",
@@ -339,7 +339,7 @@ describe("Add a video: one state, shown once, kept when the screen goes", () => 
     const buttons = screen.getAllByRole("button", { name: "Add a video" });
     expect(buttons).toHaveLength(2);
     for (const button of buttons)
-      expect(button).toHaveAccessibleDescription(/place and device details/);
+      expect(button).toHaveAccessibleDescription(/the device's name and model/);
     const hints = buttons.map((button) =>
       button.getAttribute("aria-describedby"),
     );

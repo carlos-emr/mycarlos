@@ -2961,7 +2961,7 @@ notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, p
 
 interface-AddVideo-add = Ajouter une vidéo
 
-interface-AddVideo-hint = Choisissez une vidéo MP4 ou MOV sur cet appareil. Le lieu et les détails de l’appareil qu’elle contient sont d’abord supprimés.
+interface-AddVideo-hint = Choisissez une vidéo MP4 ou MOV sur cet appareil. Le lieu, ainsi que le nom et le modèle de l’appareil qu’elle contient, sont d’abord supprimés.
 
 interface-AddVideo-checking = Vérification de la vidéo…
 

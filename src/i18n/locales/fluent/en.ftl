@@ -2926,7 +2926,7 @@ notifications-testOff = Notices are turned off in myCarlos. Turn them on, then t
 
 interface-AddVideo-add = Add a video
 
-interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and device details it carries are removed first.
+interface-AddVideo-hint = Choose an MP4 or MOV video on this device. The place and the device's name and model it carries are removed first.
 
 interface-AddVideo-checking = Checking the video…
 

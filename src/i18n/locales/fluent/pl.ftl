@@ -3055,7 +3055,7 @@ notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i s
 
 interface-AddVideo-add = Dodaj film
 
-interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce i dane urządzenia, które zawiera, zostaną najpierw usunięte.
+interface-AddVideo-hint = Proszę wybrać film MP4 lub MOV na tym urządzeniu. Miejsce oraz nazwa i model urządzenia, które zawiera, zostaną najpierw usunięte.
 
 interface-AddVideo-checking = Sprawdzanie filmu…
 

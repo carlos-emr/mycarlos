@@ -2652,7 +2652,7 @@ notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后�
 
 interface-AddVideo-add = 添加视频
 
-interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点和设备信息会先被删除。
+interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。
 
 interface-AddVideo-checking = 正在检查视频…
 

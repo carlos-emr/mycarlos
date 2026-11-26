@@ -2652,7 +2652,7 @@ notifications-testOff = myCarlos 中的通知已關閉。請先開啟，然後�
 
 interface-AddVideo-add = 新增影片
 
-interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點和裝置資訊會先被刪除。
+interface-AddVideo-hint = 請在此裝置上選擇 MP4 或 MOV 影片。其中的地點以及裝置名稱和型號會先被刪除。
 
 interface-AddVideo-checking = 正在檢查影片…
 

@@ -2961,7 +2961,7 @@ notifications-testOff = Los avisos están desactivados en myCarlos. Actívelos y
 
 interface-AddVideo-add = Añadir un video
 
-interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y los datos del dispositivo que contiene.
+interface-AddVideo-hint = Elija un video MP4 o MOV de este dispositivo. Antes se eliminan el lugar y el nombre y modelo del dispositivo que contiene.
 
 interface-AddVideo-checking = Comprobando el video…
 
