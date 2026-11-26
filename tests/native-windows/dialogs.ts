@@ -637,10 +637,14 @@ export async function testNativeDialogs(
         await page.screenshot({
           path: testInfo.outputPath("native-pdf-reader-refitted.png"),
         });
+        // The document reader's first control is Back (it was Close before the overhaul).
         await reader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
-        // PDF Read removed Details; Close returns directly to the library.
+        // PDF Read removed Details; Back returns directly to the library.
         await expect(reader).toHaveCount(0);
         await expect(picture).toHaveCount(0);
         await expect(records).toBeVisible();
@@ -847,7 +851,10 @@ export async function testNativeDialogs(
           ),
         });
         await copyReader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
         await expect(copyReader).toHaveCount(0);
         await expect(records).toBeVisible();
@@ -939,14 +946,17 @@ export async function testNativeDialogs(
           ),
         });
         await originalReader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
         await expect(originalReader).toHaveCount(0);
         await expect(originalPicture).toHaveCount(0);
         await expect(records).toBeVisible();
         await expect(originalRow).toBeVisible();
 
-        // The same original must ask again; Close ended the reading session.
+        // The same original must ask again; Back ended the reading session.
         await originalRow.click();
         await originalReader
           .getByRole("button", {
@@ -968,7 +978,10 @@ export async function testNativeDialogs(
           ),
         });
         await originalReader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
         await expect(originalReader).toHaveCount(0);
         await expect(records).toBeVisible();
