@@ -414,8 +414,6 @@ mod tests {
         Panics,
         /// A daemon that is there but refuses the notice.
         Refuses,
-        /// A healthy daemon that is a little slow to say it is there (100 ms), as a busy one is.
-        Slow,
     }
 
     struct FakeBus {
@@ -435,10 +433,6 @@ mod tests {
                     true
                 }
                 Behaviour::Panics => panic!("FAKE: the bus fell over"),
-                Behaviour::Slow => {
-                    thread::sleep(Duration::from_millis(100));
-                    true
-                }
                 Behaviour::Present | Behaviour::Refuses => true,
             }
         }
@@ -451,7 +445,7 @@ mod tests {
                 }
                 Behaviour::Panics => panic!("FAKE: the bus fell over"),
                 Behaviour::Absent | Behaviour::Refuses => Err(()),
-                Behaviour::Present | Behaviour::Slow => {
+                Behaviour::Present => {
                     self.sent.lock().unwrap().push(notice.clone());
                     Ok(())
                 }
@@ -626,16 +620,17 @@ mod tests {
         for _ in 0..5 {
             assert_eq!(backend.permission(), Permission::Unavailable);
         }
-        // A notice while the call is still outstanding is turned away at once, with no new thread.
-        let before_notice = Instant::now();
+        // A notice while the call is still outstanding is turned away, with no new thread. Seen in
+        // what happened, not on a clock: it came back while the hung question was still out (it did
+        // not wait for the call to end), and it made no call of its own.
+        assert!(backend.gate.outstanding.load(Ordering::SeqCst));
         assert!(matches!(
             backend.accept(SENTENCE, &|| true),
             Err(Error::OsRejected)
         ));
         assert!(
-            before_notice.elapsed() < Duration::from_millis(100),
-            "{:?}",
-            before_notice.elapsed()
+            backend.gate.outstanding.load(Ordering::SeqCst),
+            "the notice waited for the hung call to end"
         );
         assert_eq!(asked.load(Ordering::SeqCst), 1);
         assert_eq!(notified.load(Ordering::SeqCst), 0);
@@ -708,39 +703,70 @@ mod tests {
     fn a_notice_is_not_lost_because_a_permission_question_is_still_on_its_way() {
         // A settings screen polls the permission (a bus call) just as a document arrives: the
         // notice waits for that young call and is then shown, instead of being turned away.
-        let (backend, sent) = backend(Behaviour::Slow);
-        // The helper's 200 ms timeout is twice the 100 ms question: on a loaded CI runner (macOS, main
-        // run 45875944268) a late wake-up of the poll's thread made it count as hung and the notice was
-        // turned away. A long timeout keeps "a young call is waited for" and leaves the hung-call cases
-        // (which use the helper's own short timeout) as they were.
-        let backend = Arc::new(backend.with_timeout(Duration::from_secs(3)));
+        //
+        // No clock decides this test (a loaded CI runner failed it once, run 45875944268, when the
+        // poll's thread woke late): the poll's question blocks on a channel until the test lets it
+        // answer, so "the notice waits for it" is something the test can see happen, in order.
+        struct Gated {
+            answer: Mutex<mpsc::Receiver<()>>,
+            sent: Arc<Mutex<Vec<Notice>>>,
+        }
+        impl Bus for Gated {
+            fn service_present(&self) -> bool {
+                // Blocks until the test releases the question (or drops the sender).
+                let _ = self.answer.lock().unwrap().recv();
+                true
+            }
+            fn notify(&self, notice: &Notice) -> Result<(), ()> {
+                self.sent.lock().unwrap().push(notice.clone());
+                Ok(())
+            }
+        }
+        let (release, answer) = mpsc::channel();
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        // A timeout so long that no wait here can be mistaken for a hung call; a bug that waits for
+        // ever would hang the test, which is the failure it should be.
+        let backend = Arc::new(
+            LinuxBackend::with_bus(Gated {
+                answer: Mutex::new(answer),
+                sent: Arc::clone(&sent),
+            })
+            .with_timeout(Duration::from_secs(60)),
+        );
         let poll = {
             let backend = Arc::clone(&backend);
             thread::spawn(move || backend.permission())
         };
         // Wait until the poll's call is really out, instead of guessing how long its thread takes to start.
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while !backend.gate.outstanding.load(Ordering::SeqCst) {
             assert!(Instant::now() < deadline, "the poll never started its call");
             thread::sleep(Duration::from_millis(1));
         }
-        let begun = Instant::now();
+        let (done_tx, done) = mpsc::channel();
+        let notice = {
+            let backend = Arc::clone(&backend);
+            thread::spawn(move || {
+                let outcome = backend.accept(SENTENCE, &|| true);
+                let _ = done_tx.send(());
+                outcome
+            })
+        };
+        // The notice has NOT been answered while the question is still unanswered: it is waiting for
+        // it (a turn-away-at-once bug returns here at once, and fails below). Waiting longer for a
+        // "no" can only make this stronger, never make it fail.
         assert!(
-            backend.accept(SENTENCE, &|| true).is_ok(),
-            "the notice was lost"
-        );
-        // It waited for the poll (up to about 100 ms) and then ran, well inside the timeout.
-        assert!(
-            begun.elapsed() >= Duration::from_millis(40),
-            "{:?}",
-            begun.elapsed()
+            done.recv_timeout(Duration::from_millis(200)).is_err(),
+            "the notice returned while the permission question was still out"
         );
         assert!(
-            begun.elapsed() < Duration::from_secs(1),
-            "{:?}",
-            begun.elapsed()
+            sent.lock().unwrap().is_empty(),
+            "a notice was shown before the question was answered"
         );
+        // The question is answered: the notice then runs, and is shown exactly once.
+        release.send(()).unwrap();
         assert_eq!(poll.join().unwrap(), Permission::Allowed);
+        assert!(notice.join().unwrap().is_ok(), "the notice was lost");
         assert_eq!(sent.lock().unwrap().len(), 1);
     }
 
@@ -780,20 +806,26 @@ mod tests {
         backend.gate.outstanding.store(true, Ordering::SeqCst);
         assert!(backend.gate.age().is_none());
         let gate = Arc::clone(&backend.gate);
-        let finishing = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(50));
-            gate.outstanding.store(false, Ordering::SeqCst);
-        });
-        let began = Instant::now();
-        let outcome = within(&backend.gate, Duration::from_millis(200), |_| {}, || 7);
+        let freed = Arc::new(AtomicBool::new(false));
+        let finishing = {
+            let freed = Arc::clone(&freed);
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(50));
+                // Said before the flag is cleared, so seeing the flag cleared means seeing this.
+                freed.store(true, Ordering::SeqCst);
+                gate.outstanding.store(false, Ordering::SeqCst);
+            })
+        };
+        let outcome = within(&backend.gate, Duration::from_secs(30), |_| {}, || 7);
         assert!(
             matches!(outcome, Call::Done(7)),
             "refused as busy in the window"
         );
+        // It waited for the call that was out: it only ran once that one had let go, which is
+        // what the call's own thread says before it does (no clock decides this).
         assert!(
-            began.elapsed() >= Duration::from_millis(40),
-            "{:?}",
-            began.elapsed()
+            freed.load(Ordering::SeqCst),
+            "ran while the other call was still out"
         );
         finishing.join().unwrap();
     }
