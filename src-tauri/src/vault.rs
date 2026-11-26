@@ -66,14 +66,14 @@ mod original_pdf;
 // the export and import commands of the later PRs.
 #[cfg(test)]
 mod hidden_profiles_tests;
-#[cfg(test)]
-mod refusal_tests;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_export;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_import;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
+#[cfg(test)]
+mod refusal_tests;
 // Backups that carry the videos or leave them out (#359 PR 6).
 mod backup_video;
 // Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
