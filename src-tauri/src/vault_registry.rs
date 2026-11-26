@@ -1043,20 +1043,31 @@ mod tests {
 
     #[test]
     fn given_the_file_when_read_as_bytes_then_no_name_is_in_it_and_the_padding_is_random() {
+        // Names long enough that random bytes cannot spell them. A 3-letter name ("ana", "mum") has a
+        // real chance of appearing by luck among the random bytes of the salts, hashes and padding
+        // (about 1 in 10^4 for a file of this size), and this test failed in CI on both. A name of
+        // 12+ characters is a chance of about 2^-96. The whole file is searched, padding included:
+        // the point is that no name is anywhere in it.
+        let long_names = ["FAKE-Ana-Lopez-Example", "FAKE-Mumford-Household"];
         let mut registry = registry();
-        registry.add_extra("Ana Lopez").unwrap();
-        registry.add_extra("Mum").unwrap();
+        for name in long_names {
+            registry.add_extra(name).unwrap();
+        }
         let first = registry.to_bytes();
         let second = registry.to_bytes();
-        let end = HEADER_BYTES + u32::from_be_bytes(first[10..14].try_into().unwrap()) as usize;
-        // Only the content is read for names: the padding is random bytes, which can spell a short
-        // name by chance (this test failed once in CI-like runs on "ana").
-        let text = String::from_utf8_lossy(&first[..end]).to_lowercase();
-        for name in ["ana", "lopez", "mum"] {
-            assert!(!text.contains(name), "{name}");
+        let text = String::from_utf8_lossy(&first).to_lowercase();
+        for name in long_names {
+            let lowered = name.to_lowercase();
+            assert!(!text.contains(&lowered), "{name}");
+            assert!(!text.contains(&lowered.replace('-', " ")), "{name}");
+            // Each part of the name that is long enough not to be found by chance.
+            for part in lowered.split('-').filter(|part| part.len() >= 7) {
+                assert!(!text.contains(part), "{part}");
+            }
         }
         // Same registry, same content, different padding: padding is not a pattern to read.
         assert_ne!(first, second);
+        let end = HEADER_BYTES + u32::from_be_bytes(first[10..14].try_into().unwrap()) as usize;
         assert_eq!(first[..end], second[..end]);
     }
 

@@ -357,6 +357,22 @@ On every platform:
       choose **Cancel**, or the vault locks.
     - **TalkBack or VoiceOver:** the shutter is read as "Take photo", and after a photo the focus
       is on **Use photo**. At the largest text size, every button can be reached.
+12a. **Pictures from files.** Take a FAKE JPEG that carries a place and time (a phone photo with Location on,
+    or one made with `exiftool -GPSLatitude=1 -GPSLongitude=1 -DateTimeOriginal=...`) and choose **New** and that
+    file: it is added, and a note under the buttons says place, time and camera details are removed. Open it:
+    it is shown upright (try a portrait photo a phone stored sideways). Run `exiftool` on the original: unchanged.
+    **Export** it (or use a readable export) and run `exiftool` on that copy: no GPS, time, make or model, no
+    thumbnail. Then choose a **HEIC** and a text file renamed `.pdf`: each is refused with a plain
+    message that names the file, and the others in the same choice are still added.
+    Choose a **PNG** (a screenshot; for one with text chunks, `exiftool -Comment=FAKE x.png`): it is added and
+    shown as it looks, `exiftool` on an export shows only the picture's own fields (size, depth), and an
+    animated PNG is refused as not a photo. An iPhone screenshot (Display P3) keeps its colours: the stored copy shows no shift against the original. A PNG whose picture data is damaged (flip a byte in the middle of the file, then fix its checksum, or use a deliberately truncated stream with correct chunk checksums) is added and then does not show; hide it from its details. This is expected: the picture data is checked for its header, not decoded. Choose a JPEG renamed
+    `.pdf`: it is cleaned as a picture, not kept as it came.
+    Try **real phone files**: one from a Pixel and one from a Samsung (they append an Ultra HDR gain map
+    after the picture) and one JPEG exported from an iPhone (Photos, Options, Most Compatible). Each must be
+    added, shown upright, and have no place or time left (`exiftool` on the export); the brightness may look
+    slightly flatter (the gain map is not kept).
+
 13. Import a large PDF, 200 MB or more (on a fast computer, import it from a USB stick or network
     drive so it takes several seconds). While it is still importing, send the app to the
     background, then come back within a minute. If the import is still running, the screen should
@@ -635,6 +651,36 @@ Then turn the screen reader off and check app zoom (and, on a phone, the device'
 When you report a problem, name the screen reader and its version, and say what it read out and
 what you expected it to read.
 
+## Nothing about a document in the device log (by hand, release build)
+
+The app writes nothing about a document to a log: its native code, its plugins and its pages have no
+logging call that names a file, a person, document text, a portal id or a token, and its errors are fixed
+codes. This check shows it on a real device, because the system and the libraries underneath (the web view,
+the document picker, the push service) write logs the app does not control. Use a **release** build (not a
+debug one: it logs more) and **FAKE data only**.
+
+1. Make a FAKE PDF with distinctive words that appear nowhere else: name it `FAKE-LOGCHECK-Zyxwv Patient.pdf`
+   and put a line of text in it such as `Zyxwv Patient, health number LOGCHECK-7731`.
+2. Install the release build on an Android phone or emulator, and on an iPhone if one is available, and
+   create a FAKE vault. On Android clear the log first: `adb logcat -c`.
+3. Do the things that handle documents: **import** the FAKE PDF, open it (**Read**), **Save a copy**
+   (export), link a FAKE clinic portal and receive a FAKE document if a test portal is at hand, turn on
+   iPhone notices and receive one on an iPhone, run the **AI helper** on a computer build, then lock and unlock.
+4. Capture the log straight afterwards. Android: `adb logcat -b all -d > logcat.txt`. iPhone: the Console
+   app on a Mac with the device selected (or `idevicesyslog`), saved to a file.
+5. Search it for the FAKE file name, the FAKE person's name, the FAKE health number, the portal's host name,
+   the document, link and clinic ids the screens show, the push token's first characters as the portal shows
+   them, and the passphrase you typed. For example:
+   `grep -n -i -E "zyxwv|logcheck|7731|<portal host>|<document id>" logcat.txt`. **Expect no hit.** Also
+   look at lines tagged `chromium` (the web view's console): a release build's page writes none.
+6. A hit is a finding: write down the line and its tag (the app's, or the system's), and say whether it
+   came from the app or from something it uses. Do not paste a log into an issue before checking it holds
+   only FAKE data.
+
+Related, recorded decision: neither the app window nor the Android reader sets `FLAG_SECURE` (owner decision of
+20 Nov 2026, see "Android PDF reader" above), so a screenshot or the recent-apps picture of an open document
+is allowed; this check is about logs, not about screenshots.
+
 ## Start over
 
 To start again with an empty vault, lock myCarlos, choose **Forgot your passphrase?** on the unlock
@@ -861,6 +907,25 @@ What it does not check yet:
 
 A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a
 false alarm; read the log in the artifact before changing the app.
+
+## The loopback portal for trust checks (FAKE data)
+
+`scripts/android-portal-fixture.py` is a small HTTPS "portal" for checking how the app trusts one,
+on a computer or from an Android emulator (`adb reverse`). It answers every POST with a fixed
+refusal, never a real portal answer, so a run proves the handshake and the HTTP exchange only:
+
+| Mode | What the app should do |
+| --- | --- |
+| `trusted` (certificate for `127.0.0.1` and `localhost` under the test root of `src-tauri/tests/fixtures/portal-test-pki`) | A build that trusts the test root (a debug Android build, #478) reads `403 link_code_invalid` as "The portal did not accept that code." A build that does not trust it says "The portal request could not be completed." and the fixture logs no request. |
+| `other` (certificate for `other.example` only) | Refused even by a build that trusts the root (wrong name): "could not be completed", no request logged. |
+| `redirect` | A `302` is not followed: one request logged, never the target. |
+| `--plain-port` | A clear-text listener that only logs a connection: a `http://` address is refused before any connection (the log stays empty). |
+
+The log (`--log`, JSON lines) holds the method, path and body length, never a body or header. Run it
+by hand with `python3 scripts/android-portal-fixture.py --mode trusted --port 8443 --log out.jsonl`;
+its own tests are `npm run test:android-portal-fixture`. It uses throwaway test keys that are never
+added to a trust store. The emulator test that drives the app against it is a proposed workflow
+change (not applied; see `for-ben/android-portal-trust-emulator-README-20261126.md`).
 
 ## Password-protected PDFs
 
@@ -1104,3 +1169,20 @@ private_native_producer_null_manifest_is_signed_but_never_matched -- --ignored
 `unknown_signer` with no pins. Private captures, metadata and certificates are not committed
 or published, and the public fixture is not regenerated. This opt-in check is separate from
 the public fixture tests and does not establish a production authenticated clinic link.
+
+### Adding a video from the device's files (#500 and the playback and page changes)
+
+Not run on a real device by the authors; the Rust and component tests use small FAKE files. By hand:
+
+1. On a computer, **Add a video** with a short H.264 + AAC MP4 from a phone that has a place set. The
+   video is added, plays, and its details show no place or device (`ffprobe` on a *Save a copy* shows no
+   `©xyz` or `com.apple.quicktime.*` keys; creation times may remain, as the threat model says).
+2. The same with an HEVC (H.265) video, an M4A voice memo and a HEIC photo renamed `.mp4`: each is refused
+   with its own words and nothing is added.
+3. A file near the limit (about 1.9 GiB on a computer; about 0.9 GiB on an Android phone): the progress
+   bar moves, Cancel stops it within a second or two, and nothing is left (library, the vault's
+   `objects/` and `staging/` folders).
+4. With little free space (under the file's size plus 256 MiB): the video is refused with the no-space words
+   before any copy.
+5. Leave the app idle during a long copy: it does not lock while the bar moves.
+6. Make a backup with **Leave videos out** ticked: the added video is left out and the size shown counts it.

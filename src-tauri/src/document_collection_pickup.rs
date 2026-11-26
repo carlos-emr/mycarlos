@@ -579,11 +579,11 @@ where
                 ) {
                     Ok((record, added)) => {
                         result.added += usize::from(added);
-                        #[cfg(windows)]
+                        #[cfg(desktop)]
                         if added {
                             store.notify_local_arrival_controlled(record, &link, session, &stopped);
                         }
-                        #[cfg(not(windows))]
+                        #[cfg(not(desktop))]
                         let _ = record;
                         // Receipt verification and settlement is bounded on the
                         // next scan/cycle; custody already committed truthfully.
