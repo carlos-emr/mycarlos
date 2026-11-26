@@ -868,10 +868,21 @@ system's authorities only.
    test portal's address and link code and choose **Connect and request approval**. The device is
    linked and its approval status is shown there. (Before this piece Android showed "Portal linking
    is not available on this device yet.")
-2. With a test portal whose certificate the phone does not trust (a self-signed one, or one from a
-   certificate authority you added by hand), a **release** build refuses with the same plain message
-   as on a computer and saves nothing; only a debug build may trust the test authority.
-3. With the phone offline, the attempt says it could not connect and can be tried again.
+2. **Which certificates are trusted.** A **release** build trusts only the phone's system
+   certificate store, and no certificate authority a person installed in the phone's own settings
+   (the network security configuration of #478 refuses user-installed authorities, and the release
+   safety gate refuses a build that allows them). A **debug** build trusts the system store plus
+   one extra authority, the bundled FAKE test root (`src/debug/res/raw`, #478's `debug-overrides`,
+   which exists only in the debug source set), and still no user-installed one. So with a test
+   portal whose certificate comes from a user-installed or any other unknown authority, linking
+   fails on both builds, and only the FAKE test portal works in a debug build. The patient sees
+   the sentence **"The portal request could not be completed. Check your connection and device
+   clock, then try again."** (`LinkError::Network`, code `portal_link_incomplete`, message
+   `portal.errorIncomplete`), the same sentence as on a computer, and nothing is saved.
+3. With the phone offline, the same sentence appears and the attempt can be tried again. Nothing
+   retries by itself: Android has no background checker, a check runs when the patient asks (or
+   once after unlocking when a notice is owed), and one check stops after three download failures
+   in a row.
 4. If the app was just started, the Connected clinics section can be missing for a moment: linking
    is offered only once the platform certificate check has been set up, and not at all if that
    failed (the old "not available on this device yet" message), never as a choice that then fails.

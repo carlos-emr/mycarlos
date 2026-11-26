@@ -27,7 +27,7 @@ pub enum LinkError {
     InvalidDeviceName,
     InvalidResponse,
     Network,
-    // Portal replies to a link request, which Android never sends.
+    // Portal replies to a link request.
     #[cfg_attr(target_os = "android", allow(dead_code))]
     CodeRejected,
     #[cfg_attr(target_os = "android", allow(dead_code))]

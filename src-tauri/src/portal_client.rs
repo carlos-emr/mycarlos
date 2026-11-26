@@ -1682,7 +1682,8 @@ mod network_tests {
         let body = &production[production.find("fn verifier_ready()").unwrap()..];
         let body = &body[..body.find("\n}\n").unwrap()];
         assert!(body.contains("tauri_plugin_android_trust::verifier_ready()"));
-        // Nothing else says an Android build may connect.
+        // Nothing else in this client says an Android build may connect (the model download keeps
+        // its own gate, in model_download.rs).
         assert_eq!(production.matches("target_os = \"android\"").count(), 3);
     }
 }
