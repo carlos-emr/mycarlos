@@ -300,15 +300,21 @@ key, today:
 
 - **Recovery kit (`.txt`):** the key itself, by design. Nothing keeps it out of search indexes or
   cloud-synced folders: no code sets an operating-system "not indexed" or "do not sync" mark on
-  any file the app writes.
+  any file the app writes (#533, in review, sets the "not indexed" mark on Windows for the kit).
 - **Single-document export:** the suggested file name is the document's own name, which can be a
   person's, a clinic's or a test's name.
 - **Hand-over package (`.mycarlosprofile`):** the number of objects and their exact sizes, whether a
   key or a passphrase protects it (and the passphrase's salt and cost), and the date in the
   name. No time, vault id, person or device.
 - **Export stage folder (`.mycarlos-export-<id>`):** shows that myCarlos saved here, and when; it
-  stays after a crash until the next start (above). The temporary file the save writes carries
-  neither the document's name nor the destination's.
+  stays after a crash until the next start (above). The readable copy and the text export write
+  their temporary file inside it. The temporary file carries neither the document's name nor the
+  destination's.
+- **A kit, a backup or a hand-over package is not in the stage folder.** These three saves write
+  through a hidden `.atomicwrite…` folder beside the chosen place. A crash during one leaves that
+  folder with a partly written file, and **nothing removes it**: for a kit that is part of the
+  key's text; for a backup or a hand-over package, part of an encrypted file. #533 (in review)
+  moves those temporary files into the journaled stage, so the next start removes them.
 - **De-identified text export:** a fixed, localised name ("Anonymized text.txt"), so it shows the
   app's language, and the text's length.
 - **`attempts.json` (the app's own folder, 0600 on Unix):** how many wrong tries of each kind, the
@@ -380,10 +386,12 @@ The Windows adapter is described in #270; Linux and macOS adapters remain future
 
 **What a clinic portal receives (audit of 26 Nov 2026, from the source; no traffic was captured:
 `portal-send-audit-20261126.md`).** One HTTPS client makes every request to a portal (HTTPS only,
-no redirect, retry, proxy or referrer). Each request carries a `Content-Type` and one signed
+no redirect, retry, proxy or referrer; the only other client is the AI model download, a plain GET
+to the model host). Each request carries a `Content-Type` and one signed
 assertion header, and nothing else: **no User-Agent**, `Authorization`, cookie or `Accept-Encoding`
 (a test pins this: #532, in review). No error report is sent back anywhere. The bodies hold keys, random ids,
-hashes and times: the link request (the one-use code, the two public keys, the device's name),
+hashes and times: the link request (the one-use code, split into two fields: its first 8 characters
+as the link id and the rest as the code; the two public keys; the device's name),
 the approval request and its 6-digit clinic code (the check digits never leave), delivery
 receipts (the document's and the sealed copy's SHA-256, the pick-up time), the push destination's
 random id (**no** Apple or Google token), and the waiting key. **No person's name, document title,
@@ -404,7 +412,8 @@ the tray poller makes) is **one fixed sentence from the app's own message catalo
 person's name, a document title, a clinic name or a file name; guard tests pin the catalogue, every
 place that hands text to the system, and the tray's call sites (#525, in review). The Windows
 toast's first line is the constant "myCarlos" (the Linux and macOS notices, #488 and #495, in
-review, do the same with their title or summary line). On an iPhone (the notice stack in #479 and #480, in
+review, do the same with their title or summary line, and will need the same guard tests when they
+merge). On an iPhone (the notice stack in #479 and #480, in
 review) the push carries only a message key, and the phone looks the sentence up in **its own
 system language**: a patient who set myCarlos to French on an English phone gets the English
 sentence. That is today, and an open question (question 24).
@@ -483,8 +492,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
 - **A copied de-identified text stays on the clipboard after the vault locks.** The AI helper's
   "Copy text" puts the approved text on the system clipboard, with a warning that a copy can stay on
   the device (Windows clipboard history, clipboard sync) and that the app cannot take it back.
-  Nothing clears it when the vault locks or after a while, unlike a copied recovery key, which the
-  app clears by itself. The remover has run on that text, but removing details is never perfect
+  Nothing clears it when the vault locks or after a while, unlike a copied hand-over key, which the
+  app takes off the clipboard after a minute or when the dialog ends. The remover has run on that text, but removing details is never perfect
   (THREAT_MODEL.md, AI-01), and it is still health text. Whether to clear it after a while is
   today, and an open question (question 23).
 - **Not yet checked:** system logs, crash files, the app-switcher preview images, "recent files"
@@ -567,7 +576,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
     note recommends no change and a gentler message when a hand-over box gets a recovery key. Not
     decided.
 23. **The clipboard (section 9):** should "Copy text" of a de-identified text be cleared after a
-    while, or when the vault locks, as a copied recovery key is?
+    while, or when the vault locks, as a copied hand-over key is?
 24. **Notice language on an iPhone (section 7):** the phone shows the notice in its own system
     language, not the one set in myCarlos. Acceptable, or should the app ask for a
     language-matched sentence?
