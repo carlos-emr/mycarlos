@@ -184,6 +184,27 @@ impl IphonePushStatus {
     };
 }
 
+/// What the refresh at opening does for the permission the iPhone reports now (the plugin's own
+/// word). The plugin's `requestToken` always begins by asking the system for authorization, and for a
+/// status that is not yet final (`provisional`, `ephemeral`) that would show the system question at
+/// unlock. So the token is asked for only when the word is exactly `authorized`; only a plain
+/// `denied` is acted on without one (the policy revokes what the portal holds); every other word,
+/// including one this app does not know, changes nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OpeningRefresh {
+    AskForToken,
+    WithoutToken,
+    Nothing,
+}
+
+pub(crate) fn opening_refresh_for(status: &str) -> OpeningRefresh {
+    match status {
+        "authorized" => OpeningRefresh::AskForToken,
+        "denied" => OpeningRefresh::WithoutToken,
+        _ => OpeningRefresh::Nothing,
+    }
+}
+
 /// The plugin's permission words (`authorized`, `denied`, ...), as a `Permission`.
 pub(crate) fn permission_from_status(status: &str) -> Permission {
     match status {
@@ -396,6 +417,34 @@ mod tests {
         assert!(memory.attention(vault) && !memory.attention(id(10)));
         memory.set_attention(vault, false);
         assert!(!memory.attention(vault));
+    }
+
+    #[test]
+    fn only_a_plain_authorized_asks_for_a_token_at_opening_and_only_denied_acts_without_one() {
+        assert_eq!(
+            opening_refresh_for("authorized"),
+            OpeningRefresh::AskForToken
+        );
+        assert_eq!(opening_refresh_for("denied"), OpeningRefresh::WithoutToken);
+        // The policy counts these as granted, but `requestToken` would show the system question.
+        for word in ["provisional", "ephemeral"] {
+            assert_eq!(permission_from_status(word), Permission::Granted);
+            assert_eq!(opening_refresh_for(word), OpeningRefresh::Nothing, "{word}");
+        }
+        for word in [
+            "notDetermined",
+            "unknown",
+            "",
+            "Authorized",
+            "DENIED",
+            "authorized ",
+        ] {
+            assert_eq!(
+                opening_refresh_for(word),
+                OpeningRefresh::Nothing,
+                "{word:?}"
+            );
+        }
     }
 
     #[test]
