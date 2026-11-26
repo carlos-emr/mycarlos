@@ -86,14 +86,31 @@ fn no_write_gets_through_while_the_vault_is_read_only_and_none_changes_anything(
     let s = &v.store;
 
     assert!(is_refused(s.create_profile("FAKE New Person", 10)));
-    assert!(is_refused(s.create_folder(v.jamie, None, "FAKE New Folder", 10)));
-    assert!(is_refused(s.update_folder(v.folder, None, "FAKE Renamed Folder")));
-    assert!(is_refused(s.rename_profile(v.robin, "FAKE Renamed Person", 10)));
+    assert!(is_refused(s.create_folder(
+        v.jamie,
+        None,
+        "FAKE New Folder",
+        10
+    )));
+    assert!(is_refused(s.update_folder(
+        v.folder,
+        None,
+        "FAKE Renamed Folder"
+    )));
+    assert!(is_refused(s.rename_profile(
+        v.robin,
+        "FAKE Renamed Person",
+        10
+    )));
     assert!(is_refused(s.assign_folders(v.record, vec![v.folder])));
     assert!(is_refused(
         s.assign_folders_batch(vec![v.record], vec![v.folder])
     ));
-    assert!(is_refused(s.move_to_profile(vec![v.record], v.robin, vec![])));
+    assert!(is_refused(s.move_to_profile(
+        vec![v.record],
+        v.robin,
+        vec![]
+    )));
     assert!(is_refused(s.hide_record(v.record, 10)));
     assert!(is_refused(s.unhide_record(v.record)));
     assert!(is_refused(s.hide_profile(v.robin, 10)));
@@ -105,9 +122,10 @@ fn no_write_gets_through_while_the_vault_is_read_only_and_none_changes_anything(
         vec![source("FAKE Second Letter.pdf", b"FAKE-SECOND")],
         10
     )));
-    assert!(is_refused(
-        s.change_passphrase(PASSWORD, "another FAKE passphrase 5521 horse")
-    ));
+    assert!(is_refused(s.change_passphrase(
+        PASSWORD,
+        "another FAKE passphrase 5521 horse"
+    )));
     assert!(is_refused(s.begin_recovery_key(PASSWORD)));
     // Even with no key waiting to be confirmed, the refusal is the read-only one, not "no key".
     assert!(is_refused(s.confirm_recovery_key(&[(0, "AAAA")], 10)));
@@ -291,5 +309,123 @@ fn a_restore_needs_a_locked_vault_and_the_say_so_to_replace_and_a_wrong_secret_c
         )
         .is_err());
     v.store.unlock(PASSWORD).unwrap();
+    assert_eq!(shape(&v.store), before);
+}
+
+#[test]
+fn a_folder_refuses_a_parent_that_is_missing_another_persons_itself_or_below_it_and_changes_nothing(
+) {
+    let v = healthy();
+    let child = v
+        .store
+        .create_folder(v.jamie, Some(v.folder), "FAKE Child Folder", 5)
+        .unwrap();
+    let robins = v
+        .store
+        .create_folder(v.robin, None, "FAKE Robin Folder", 6)
+        .unwrap();
+    let before = shape(&v.store);
+    let s = &v.store;
+
+    // Making one.
+    assert!(matches!(
+        s.create_folder(v.jamie, Some(Uuid::new_v4()), "FAKE New", 10),
+        Err(VaultError::NotFound)
+    ));
+    assert!(matches!(
+        s.create_folder(v.jamie, Some(robins), "FAKE New", 10),
+        Err(VaultError::Invalid)
+    ));
+    // Changing one.
+    assert!(matches!(
+        s.update_folder(Uuid::new_v4(), None, "FAKE Renamed"),
+        Err(VaultError::NotFound)
+    ));
+    assert!(matches!(
+        s.update_folder(v.folder, Some(v.folder), "FAKE Renamed"),
+        Err(VaultError::Invalid)
+    ));
+    assert!(matches!(
+        s.update_folder(v.folder, Some(Uuid::new_v4()), "FAKE Renamed"),
+        Err(VaultError::NotFound)
+    ));
+    assert!(matches!(
+        s.update_folder(child, Some(robins), "FAKE Renamed"),
+        Err(VaultError::Invalid)
+    ));
+    // A folder cannot move under what it holds: that would be a loop.
+    assert!(matches!(
+        s.update_folder(v.folder, Some(child), "FAKE Renamed"),
+        Err(VaultError::Invalid)
+    ));
+    assert_eq!(shape(s), before);
+}
+
+#[test]
+fn a_filing_names_at_least_one_document_and_at_most_the_most_folders_and_nothing_else_changes() {
+    let v = healthy();
+    let before = shape(&v.store);
+    assert!(matches!(
+        v.store.assign_folders_batch(vec![], vec![v.folder]),
+        Err(VaultError::Invalid)
+    ));
+    let too_many: Vec<Uuid> = (0..=MAX_FOLDER_ASSIGNMENTS)
+        .map(|_| Uuid::new_v4())
+        .collect();
+    assert!(matches!(
+        v.store.assign_folders_batch(vec![v.record], too_many),
+        Err(VaultError::Invalid)
+    ));
+    // The count itself: the most is allowed, one more is not.
+    assert!(validate_folder_assignment_count(MAX_FOLDER_ASSIGNMENTS).is_ok());
+    assert!(matches!(
+        validate_folder_assignment_count(MAX_FOLDER_ASSIGNMENTS + 1),
+        Err(VaultError::Invalid)
+    ));
+    assert_eq!(shape(&v.store), before);
+}
+
+#[test]
+fn hiding_what_is_hidden_or_restoring_what_is_visible_is_not_a_second_change() {
+    let v = healthy();
+    v.store.unhide_record(v.record).unwrap(); // already visible: nothing to do
+    let visible = shape(&v.store);
+    v.store.hide_record(v.record, 10).unwrap();
+    let hidden = shape(&v.store);
+    assert_ne!(hidden, visible, "hiding changed something");
+    // Again, later: still hidden, and the first time is not overwritten.
+    v.store.hide_record(v.record, 20).unwrap();
+    assert_eq!(shape(&v.store), hidden);
+    v.store.unhide_record(v.record).unwrap();
+    assert_eq!(shape(&v.store), visible);
+}
+
+#[test]
+fn a_passphrase_over_the_limit_is_refused_before_anything_is_tried_and_the_old_one_still_opens() {
+    let v = healthy();
+    let too_long = "a".repeat(MAX_PASSPHRASE_BYTES + 1);
+    let before = shape(&v.store);
+    assert!(matches!(
+        v.store
+            .change_passphrase(&too_long, "another FAKE passphrase 5521 horse"),
+        Err(VaultError::Invalid)
+    ));
+    assert!(matches!(
+        v.store.begin_recovery_key(&too_long),
+        Err(VaultError::Invalid)
+    ));
+    assert_eq!(shape(&v.store), before);
+    v.store.lock();
+    v.store.unlock(PASSWORD).unwrap();
+    assert_eq!(shape(&v.store), before);
+}
+
+#[test]
+fn importing_nothing_is_not_an_import_even_when_the_vault_is_read_only() {
+    let v = healthy();
+    let before = shape(&v.store);
+    read_only(&v.store);
+    let outcome = v.store.import(v.jamie, vec![], vec![], 10).unwrap();
+    assert!(outcome.imported.is_empty() && outcome.skipped_duplicates.is_empty());
     assert_eq!(shape(&v.store), before);
 }
