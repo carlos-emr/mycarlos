@@ -312,6 +312,17 @@ impl<S: WrapKeyStore> NoticeKeys<S> {
         self.wipe_where(|_| true, true)
     }
 
+    /// The keys of this vault whose link is no longer in it (a removal whose key wipe did not
+    /// finish, for example after a crash between the commit and the wipe), when `vault_id` is
+    /// unlocked with the links `links` (#160).
+    pub(crate) fn keep_only_links(
+        &self,
+        vault_id: Uuid,
+        links: &std::collections::HashSet<Uuid>,
+    ) -> Result<Wiped, NoticeKeyError> {
+        self.wipe(|entry| entry.vault_id == vault_id && !links.contains(&entry.link_id))
+    }
+
     /// The keys of any other vault, when `vault_id` is unlocked.
     pub(crate) fn keep_only_vault(&self, vault_id: Uuid) -> Result<Wiped, NoticeKeyError> {
         self.wipe(|entry| entry.vault_id != vault_id)
@@ -511,6 +522,22 @@ pub(crate) fn after_open(vault_id: Uuid) {
     }
 }
 
+/// Keys of this vault whose link is not in `links`: a removal's key wipe that did not finish (#160).
+/// Only ever called from `VaultStore::sweep_notice_keys`, which holds the vault's session guard, so
+/// `links` is the vault's real link set at that instant and the vault cannot lock under it.
+pub(crate) fn sweep_removed_links(vault_id: Uuid, links: &std::collections::HashSet<Uuid>) {
+    if let Some(keys) = kept() {
+        let _ = keys.keep_only_links(vault_id, links);
+    }
+}
+
+/// A removed link's key, wiped after the commit that removed it (#160).
+pub(crate) fn after_link_removed(link_id: Uuid) {
+    if let Some(keys) = kept() {
+        let _ = keys.wipe_link(link_id);
+    }
+}
+
 /// After the vault is reset (set aside for a new one): every key goes.
 pub(crate) fn after_reset() {
     if let Some(keys) = kept() {
@@ -573,6 +600,31 @@ mod tests {
 
     fn uuid(n: u128) -> Uuid {
         Uuid::from_u128(0xFAC0_0000_0000_4000_8000_0000_0000_0000 + n)
+    }
+
+    #[test]
+    fn keys_of_a_vault_whose_link_is_gone_are_wiped_and_the_others_stay() {
+        // #160: a removal's key wipe may not have finished (a crash after the commit); the sweep at
+        // the next open wipes this vault's keys whose link is no longer in it.
+        let (_temp, keys) = keys();
+        keys.make_for(uuid(1), uuid(10), ORIGIN).unwrap();
+        keys.make_for(uuid(1), uuid(11), ORIGIN).unwrap();
+        keys.make_for(uuid(2), uuid(20), ORIGIN).unwrap();
+        let linked = std::collections::HashSet::from([uuid(10)]);
+        let wiped = keys.keep_only_links(uuid(1), &linked).unwrap();
+        assert_eq!(wiped.key_ids.len(), 1);
+        let left: Vec<_> = keys
+            .entries()
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.vault_id, e.link_id))
+            .collect();
+        assert!(left.contains(&(uuid(1), uuid(10))));
+        assert!(
+            left.contains(&(uuid(2), uuid(20))),
+            "another vault's key is not this sweep's"
+        );
+        assert!(!left.contains(&(uuid(1), uuid(11))));
     }
 
     #[test]
