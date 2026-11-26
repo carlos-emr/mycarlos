@@ -349,6 +349,15 @@ pub struct PlaybackOpened {
     pub total_bytes: u64,
 }
 
+impl Drop for PlaybackOpened {
+    /// The token is a bearer secret for one video: this copy of it is wiped (the one in the table
+    /// of open playbacks goes with the playback).
+    fn drop(&mut self) {
+        use zeroize::Zeroize as _;
+        self.token.zeroize();
+    }
+}
+
 fn new_token() -> String {
     let mut bytes = [0_u8; 32];
     OsRng.fill_bytes(&mut bytes);
@@ -1202,7 +1211,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let (store, record, _) = stored_video(temp.path(), 2, 5000);
         let tokens: Vec<_> = (0..MAX_OPEN_PLAYBACKS + 2)
-            .map(|_| store.playback_open(record).unwrap().token)
+            .map(|_| store.playback_open(record).unwrap().token.clone())
             .collect();
         assert_eq!(store.playback.lock().unwrap().len(), MAX_OPEN_PLAYBACKS);
         assert!(serve(&store, &tokens[0], None).is_err());

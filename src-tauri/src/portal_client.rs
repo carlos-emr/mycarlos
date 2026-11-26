@@ -32,7 +32,7 @@ pub fn link(
             let mut response = client
                 .post(request.endpoint)
                 .header("Content-Type", "application/json")
-                .header("X-MyCarlos-Device-Assertion", request.assertion)
+                .header("X-MyCarlos-Device-Assertion", request.assertion.as_str())
                 .body(request.body.to_vec())
                 .send()
                 .await
@@ -1381,7 +1381,7 @@ mod network_tests {
         LinkRequest {
             endpoint: tauri::Url::parse(endpoint).unwrap(),
             body: zeroize::Zeroizing::new(br#"{"code":"x"}"#.to_vec()),
-            assertion: "FAKE.assertion".into(),
+            assertion: zeroize::Zeroizing::new("FAKE.assertion".into()),
         }
     }
 

@@ -436,11 +436,11 @@ impl StoredLink {
         Ok(LinkRequest {
             endpoint,
             body,
-            assertion: format!(
+            assertion: Zeroizing::new(format!(
                 "{}.{}",
                 B64.encode(payload),
                 B64.encode(signature.to_bytes())
-            ),
+            )),
         })
     }
 }
@@ -451,7 +451,8 @@ impl StoredLink {
 pub struct LinkRequest {
     pub endpoint: Url,
     pub body: Zeroizing<Vec<u8>>,
-    pub assertion: String,
+    /// The signed assertion (it lives at most a minute): wiped when the request is dropped.
+    pub assertion: Zeroizing<String>,
 }
 
 pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
