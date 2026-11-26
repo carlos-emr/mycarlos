@@ -2025,6 +2025,63 @@ mod tests {
     }
 
     #[test]
+    fn a_last_child_cut_short_by_its_parents_end_is_refused() {
+        // The parent's end is what bounds its children: a last child that claims more bytes than
+        // the parent has left is refused, in a track and in a fragment, and with the claim made
+        // good it parses (so it is the claim, not the box, that is refused).
+        let overrun = vec![0, 0, 0, 200, b'm', b'i', b'n', b'f'];
+        let mdia = |tail: &[u8]| {
+            boxed(
+                b"mdia",
+                &[good_mdhd(), good_hdlr(), tail.to_vec()].concat(),
+            )
+        };
+        let movie = |tail: &[u8]| {
+            let track = boxed(b"trak", &[good_tkhd(), mdia(tail)].concat());
+            push_all(&[ftyp(), moov_of(&[track])].concat()).map(|_| ())
+        };
+        assert_eq!(movie(&overrun), Err(Mp4Error::Malformed));
+        assert_eq!(movie(&boxed(b"minf", &[])), Ok(()));
+        let fragment = |tail: Vec<u8>| {
+            push_all(
+                &[
+                    ftyp(),
+                    moov(),
+                    fragment_of(&[traf_of(&[
+                        tfhd_of(0, &[]),
+                        tfdt0(),
+                        trun_sizes(1),
+                        tail,
+                    ])]),
+                ]
+                .concat(),
+            )
+            .map(|_| ())
+        };
+        assert_eq!(fragment(overrun.clone()), Err(Mp4Error::Malformed));
+        assert_eq!(fragment(boxed(b"free", &[])), Ok(()));
+    }
+
+    #[test]
+    fn a_sample_description_index_alone_moves_nothing_and_only_a_read_field_is_bounded() {
+        let parse =
+            |traf: Vec<u8>| push_all(&[ftyp(), moov(), fragment_of(&[traf])].concat()).map(|_| ());
+        // Flag 0x02 (a sample description index) with its 4 bytes: nothing reads them, the
+        // fragment parses as it did without the flag.
+        assert_eq!(
+            parse(traf_of(&[tfhd_of(0x02, &[0; 4]), tfdt0(), trun_sizes(2)])),
+            Ok(())
+        );
+        // With the 4 bytes missing, nothing reads them either, so it is not refused: only a field
+        // that IS read (the default duration of 0x08, tested above) is bounded by the box. A file
+        // whose tfhd is short for a field nobody reads is odd, not unsafe.
+        assert_eq!(
+            parse(traf_of(&[tfhd_of(0x02, &[]), tfdt0(), trun_sizes(2)])),
+            Ok(())
+        );
+    }
+
+    #[test]
     fn a_box_that_is_only_its_header_is_read_when_it_arrives_not_when_the_next_byte_does() {
         // A movie box with no payload is refused at once (it used to wait for the next byte, and
         // at the end of the stream it was never read at all).
