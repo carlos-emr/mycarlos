@@ -1285,9 +1285,25 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     ).toBeTruthy();
     expect(check.parentElement).toBe(search.parentElement);
     try {
-      await page.viewport(1100, 760);
+      // Beside the search box where the row has room for all five: the search box at its least
+      // (about 204px) + Sort 180 + View 108 + Help 59 + Check 215 + four 8px gaps = 798px of
+      // column. The sidebar takes about 205px, so a 1280px window gives about 980px.
+      await page.viewport(1280, 800);
       expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
       expect(box(check).top).toBeLessThan(box(search).bottom);
+      // At 1100px the column is right at that need (measured 798px here, about 756px in CI's
+      // browser, where a classic scrollbar and the frame take more): the button may sit beside
+      // the box or drop under it, and either way stays inside the row. Longer labels (French,
+      // Polish) and larger text wrap sooner. Whether to let the box shrink further is Ben's call.
+      await page.viewport(1100, 760);
+      const row = box(search.parentElement!);
+      const wrapped = box(check).top >= box(search).bottom;
+      expect(
+        wrapped || box(check).left >= box(search).right,
+        "beside the box, or under it",
+      ).toBe(true);
+      expect(box(check).left).toBeGreaterThanOrEqual(row.left - 0.5);
+      expect(box(check).right).toBeLessThanOrEqual(row.right + 0.5);
       // Narrow (a phone, or large text): the box keeps its width and the
       // button goes under it.
       await page.viewport(360, 800);
