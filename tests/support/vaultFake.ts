@@ -186,6 +186,9 @@ export interface FakeVaultSetup {
   /** A computer that can keep myCarlos running in the background (the tray icon), or one whose
    * icon cannot be made. Default: no such mode. */
   background?: "available" | "noIcon";
+  /** The number of videos the vault holds, as the backup's size answer tells it (#359): above
+   * zero the encrypted backup offers "Leave videos out". The fake holds no video file. */
+  backupVideos?: number;
   /** Clinic linking is built in: with no clinic linked yet, or with one
    * linked and approved, unless `approval` says the request did not end in
    * approval. */
@@ -1713,11 +1716,12 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               (sum, record) => sum + record.plaintextSize,
               4096,
             );
+            const videos = setup.backupVideos ?? 0;
             return {
-              totalBytes: bytes,
+              totalBytes: bytes + videos * 8_000_000,
               withoutVideosBytes: bytes,
-              videoBytes: 0,
-              videoCount: 0,
+              videoBytes: videos * 8_000_000,
+              videoCount: videos,
             };
           }
           case "vault_left_out_records":
@@ -2146,6 +2150,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       lockedPdf: setup.lockedPdf ?? false,
       readingAid: setup.readingAid ?? false,
       background: setup.background ?? null,
+      backupVideos: setup.backupVideos ?? 0,
       documentPassword: FAKE_DOCUMENT_PASSWORD,
       lockedOriginal: lockedOriginalName("{name}.pdf"),
       pageText: PAGE_TEXT,

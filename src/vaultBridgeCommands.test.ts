@@ -1,317 +1,1057 @@
-import { describe, expect, it } from "vitest";
-import contractText from "../src-tauri/tests/fixtures/command-args.json?raw";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const invoke = vi.hoisted(() => vi.fn());
+const listen = vi.hoisted(() => vi.fn());
+const convertFileSrc = vi.hoisted(() =>
+  vi.fn((token: string, scheme: string) => `${scheme}://localhost/${token}`),
+);
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke,
+  convertFileSrc,
+  Channel: class {
+    onmessage: (value: unknown) => void = () => undefined;
+  },
+}));
+vi.mock("@tauri-apps/api/event", () => ({ listen }));
+
+import buildScript from "../src-tauri/build.rs?raw";
+import { getLocale } from "./i18n";
 import {
-  aliasesOfInvoke,
-  problemsInCall,
-  scanInvokes,
-  shapeOfValue,
-  withoutComments,
-  wrapperCommands,
-  type Contract,
-} from "./test/commandContract";
+  NATIVE_READER_ACTIVITY_EVENT,
+  bytesToBase64,
+  createVaultBridge,
+  utf8Length,
+  type VaultBridge,
+} from "./vault";
 
-// The renderer's calls to the native commands, checked against the argument list the Rust guard
-// test writes (src-tauri/tests/fixtures/command-args.json, and that test fails when the file is
-// stale). A key with no Rust field is refused by the native side at run time; here it fails first.
+// The wire contract between this screen and the native vault: for each bridge method, the command
+// it invokes and the arguments it sends. A renamed command or a changed argument shape is a runtime
+// error that TypeScript cannot see, so each one is pinned here, and every command the renderer
+// invokes anywhere is checked against the commands the native side registers (build.rs).
+// FAKE values only.
 
-const contract = JSON.parse(contractText) as Contract;
+const locale = () => getLocale();
+/** The bridge with every optional method taken as present, as the native one has them. */
+const full = () => createVaultBridge() as Required<VaultBridge>;
 
-// The renderer's own files: every non-test source under src/.
-const SOURCES = Object.entries(
-  import.meta.glob<string>(["./**/*.ts", "./**/*.tsx", "!./**/*.test.*"], {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }),
-).filter(([path]) => !path.startsWith("./test/"));
+describe("each bridge method invokes its native command with its arguments", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    invoke.mockResolvedValue(undefined);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 0, 15, 12, 0, 0));
+  });
+  afterEach(() => vi.useRealTimers());
 
-// Calls whose command is a variable (`invoke(command, ...)`): they cannot be checked by name. A
-// new one must be added here on purpose, so it is looked at.
-const NAMED_AT_RUN_TIME: Record<string, number> = {
-  "./native/AiModelSetting.tsx": 3,
-  "./native/BackgroundSetting.tsx": 1,
-  "./native/NotificationSetting.tsx": 1,
-};
+  // [what is called, how, the command, the arguments after it (none when absent)].
+  const table: [
+    string,
+    (b: Required<VaultBridge>) => unknown,
+    string,
+    unknown?,
+  ][] = [
+    ["status", (b) => b.status(), "vault_status"],
+    [
+      "passphraseRules",
+      (b) => b.passphraseRules("FAKE phrase", "Sam"),
+      "vault_passphrase_rules",
+      { request: { passphrase: "FAKE phrase", initialProfileName: "Sam" } },
+    ],
+    [
+      "create",
+      (b) => b.create("FAKE phrase", "Sam"),
+      "vault_create",
+      { request: { passphrase: "FAKE phrase", initialProfileName: "Sam" } },
+    ],
+    [
+      "unlock",
+      (b) => b.unlock("FAKE phrase"),
+      "vault_unlock",
+      { request: { passphrase: "FAKE phrase" } },
+    ],
+    ["lock", (b) => b.lock(), "vault_lock"],
+    ["touch", (b) => b.touch(), "vault_touch"],
+    [
+      "setAutoLock",
+      (b) => b.setAutoLock(7),
+      "vault_set_auto_lock",
+      { request: { minutes: 7 } },
+    ],
+    ["snapshot", (b) => b.snapshot(), "vault_snapshot"],
+    ["history", (b) => b.history(), "vault_history"],
+    ["checkDocuments", (b) => b.checkDocuments(), "vault_check_documents"],
+    [
+      "restartDeviceApproval",
+      (b) => b.restartDeviceApproval("link-1"),
+      "vault_restart_device_approval",
+      { linkId: "link-1" },
+    ],
+    [
+      "forgetRefusedDeliveries",
+      (b) => b.forgetRefusedDeliveries("link-1"),
+      "vault_forget_refused_deliveries",
+      { linkId: "link-1" },
+    ],
+    [
+      "requestDeviceApproval",
+      (b) => b.requestDeviceApproval("link-1"),
+      "vault_request_device_approval",
+      { linkId: "link-1" },
+    ],
+    [
+      "submitApprovalCode",
+      (b) => b.submitApprovalCode("link-1", "123456789"),
+      "vault_submit_approval_code",
+      { linkId: "link-1", code: "123456789" },
+    ],
+    [
+      "refreshDeviceApproval",
+      (b) => b.refreshDeviceApproval("link-1"),
+      "vault_refresh_device_approval",
+      { linkId: "link-1" },
+    ],
+    [
+      "linkPortal",
+      (b) =>
+        b.linkPortal({
+          address: "https://clinic.example",
+          code: "FAKE",
+          deviceName: "FAKE phone",
+        } as never),
+      "vault_portal_link",
+      {
+        request: {
+          address: "https://clinic.example",
+          code: "FAKE",
+          deviceName: "FAKE phone",
+        },
+      },
+    ],
+    [
+      "connectPortal",
+      (b) => b.connectPortal({ linkId: "link-1" } as never),
+      "vault_portal_connect",
+      { request: { linkId: "link-1" } },
+    ],
+    [
+      "changePassphrase",
+      (b) => b.changePassphrase("FAKE old", "FAKE new"),
+      "vault_change_passphrase",
+      { request: { currentPassphrase: "FAKE old", newPassphrase: "FAKE new" } },
+    ],
+    [
+      "beginRecoveryKey",
+      (b) => b.beginRecoveryKey("FAKE phrase"),
+      "vault_recovery_key_begin",
+      { request: { passphrase: "FAKE phrase" } },
+    ],
+    [
+      "confirmRecoveryKey",
+      (b) => b.confirmRecoveryKey(["ABCD", "EFGH"] as never),
+      "vault_recovery_key_confirm",
+      { locale: locale(), request: { groups: ["ABCD", "EFGH"] } },
+    ],
+    [
+      "saveRecoveryKit",
+      (b) => b.saveRecoveryKit(),
+      "vault_recovery_kit_save",
+      { locale: locale() },
+    ],
+    ["benchmarkKdf", (b) => b.benchmarkKdf(), "kdf_benchmark"],
+    [
+      "recoveryKeyLabel",
+      (b) => b.recoveryKeyLabel(),
+      "vault_recovery_key_label",
+    ],
+    [
+      "cancelRecoveryKey",
+      (b) => b.cancelRecoveryKey(),
+      "vault_recovery_key_cancel",
+    ],
+    [
+      "recover",
+      (b) => b.recover("FAKE-KEY", "FAKE new"),
+      "vault_recover",
+      { request: { recoveryKey: "FAKE-KEY", newPassphrase: "FAKE new" } },
+    ],
+    [
+      "pickBackupDestination",
+      (b) => b.pickBackupDestination("2026-01-15"),
+      "vault_backup_pick",
+      { request: { localDate: "2026-01-15" } },
+    ],
+    [
+      "saveBackupToPicked (videos kept by default)",
+      (b) => b.saveBackupToPicked("pick-1"),
+      "vault_backup_picked",
+      { request: { pickId: "pick-1", leaveVideosOut: false } },
+    ],
+    [
+      "saveBackupToPicked (videos left out)",
+      (b) => b.saveBackupToPicked("pick-1", true),
+      "vault_backup_picked",
+      { request: { pickId: "pick-1", leaveVideosOut: true } },
+    ],
+    ["backupSize", (b) => b.backupSize(), "vault_backup_size"],
+    ["leftOutRecords", (b) => b.leftOutRecords(), "vault_left_out_records"],
+    [
+      "pickRestoreSource",
+      (b) => b.pickRestoreSource(),
+      "vault_restore_pick",
+      { locale: locale() },
+    ],
+    [
+      "inspectRestore",
+      (b) => b.inspectRestore("pick-1", { passphrase: "FAKE phrase" } as never),
+      "vault_restore_inspect",
+      { request: { pickId: "pick-1", passphrase: "FAKE phrase" } },
+    ],
+    [
+      "restore",
+      (b) => b.restore("pick-1", { recoveryKey: "FAKE-KEY" } as never, true),
+      "vault_restore",
+      {
+        locale: locale(),
+        request: { pickId: "pick-1", recoveryKey: "FAKE-KEY", replace: true },
+      },
+    ],
+    [
+      "createProfile (today is the patient's own date)",
+      (b) => b.createProfile("Sam"),
+      "vault_create_profile",
+      { request: { displayName: "Sam", details: {}, today: "2026-01-15" } },
+    ],
+    [
+      "createProfile with details",
+      (b) => b.createProfile("Sam", { birthDate: "2000-02-03" } as never),
+      "vault_create_profile",
+      {
+        request: {
+          displayName: "Sam",
+          details: { birthDate: "2000-02-03" },
+          today: "2026-01-15",
+        },
+      },
+    ],
+    [
+      "renameProfile",
+      (b) => b.renameProfile("p-1", "Sam E."),
+      "vault_rename_profile",
+      { request: { profileId: "p-1", displayName: "Sam E." } },
+    ],
+    [
+      "updateProfileDetails",
+      (b) =>
+        b.updateProfileDetails("p-1", { birthDate: "2000-02-03" } as never),
+      "vault_update_profile_details",
+      {
+        request: {
+          profileId: "p-1",
+          details: { birthDate: "2000-02-03" },
+          today: "2026-01-15",
+        },
+      },
+    ],
+    [
+      "sharedIdentity",
+      (b) => b.sharedIdentity("rec-1"),
+      "vault_shared_identity",
+      { recordId: "rec-1" },
+    ],
+    [
+      "createFolder",
+      (b) => b.createFolder("p-1", null, "Labs"),
+      "vault_create_folder",
+      { request: { profileId: "p-1", parentId: null, name: "Labs" } },
+    ],
+    [
+      "updateFolder",
+      (b) => b.updateFolder("f-1", "f-0", "Labs 2026"),
+      "vault_update_folder",
+      { request: { folderId: "f-1", parentId: "f-0", name: "Labs 2026" } },
+    ],
+    [
+      "renameRecord",
+      (b) => b.renameRecord("rec-1", "FAKE letter.pdf"),
+      "vault_rename_record",
+      { request: { recordId: "rec-1", name: "FAKE letter.pdf" } },
+    ],
+    [
+      "assignFolders",
+      (b) => b.assignFolders("rec-1", ["f-1", "f-2"]),
+      "vault_assign_folders",
+      { request: { recordId: "rec-1", folderIds: ["f-1", "f-2"] } },
+    ],
+    [
+      "assignFoldersBatch",
+      (b) => b.assignFoldersBatch(["rec-1", "rec-2"], ["f-1"]),
+      "vault_assign_folders_batch",
+      { request: { recordIds: ["rec-1", "rec-2"], folderIds: ["f-1"] } },
+    ],
+    [
+      "pickImportFiles",
+      (b) => b.pickImportFiles("p-1", ["f-1"]),
+      "vault_import_pick",
+      { locale: locale(), request: { profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "importPickedFiles",
+      (b) => b.importPickedFiles("pick-1", "p-1", ["f-1"]),
+      "vault_import_picked",
+      { request: { pickId: "pick-1", profileId: "p-1", folderIds: ["f-1"] } },
+    ],
+    [
+      "pickExportDestination",
+      (b) => b.pickExportDestination("rec-1"),
+      "vault_export_pick",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "exportToPicked",
+      (b) => b.exportToPicked("pick-1", "rec-1"),
+      "vault_export_picked",
+      { request: { pickId: "pick-1", recordId: "rec-1" } },
+    ],
+    [
+      "videoStart",
+      (b) => b.videoStart("p-1", ["f-1"], "Video"),
+      "vault_video_start",
+      { request: { profileId: "p-1", folderIds: ["f-1"], name: "Video" } },
+    ],
+    [
+      "videoPause",
+      (b) => b.videoPause("rec-1"),
+      "vault_video_pause",
+      { request: { recordingId: "rec-1" } },
+    ],
+    [
+      "videoResume",
+      (b) => b.videoResume("rec-1"),
+      "vault_video_resume",
+      { request: { recordingId: "rec-1" } },
+    ],
+    [
+      "videoStop",
+      (b) => b.videoStop("rec-1"),
+      "vault_video_stop",
+      { request: { recordingId: "rec-1" } },
+    ],
+    ["videoSpace", (b) => b.videoSpace(), "vault_video_space"],
+    ["videoPending", (b) => b.videoPending(), "vault_video_pending"],
+    [
+      "videoRecover",
+      (b) => b.videoRecover("rec-1", true),
+      "vault_video_recover",
+      { request: { recordingId: "rec-1", keep: true } },
+    ],
+    [
+      "isVideo",
+      (b) => b.isVideo("rec-1"),
+      "vault_is_video",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "videoClose",
+      (b) => b.videoClose("token-1"),
+      "vault_video_close",
+      { request: { token: "token-1" } },
+    ],
+    [
+      "isPhoto",
+      (b) => b.isPhoto("rec-1"),
+      "vault_is_photo",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "viewPhoto",
+      (b) => b.viewPhoto("rec-1"),
+      "vault_view_photo",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "isLockedPdf",
+      (b) => b.isLockedPdf("rec-1"),
+      "vault_is_locked_pdf",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "unlockPdf",
+      (b) => b.unlockPdf("rec-1", "FAKE password"),
+      "vault_unlock_pdf",
+      { request: { recordId: "rec-1", password: "FAKE password" } },
+    ],
+    ["listReceived", (b) => b.listReceived(), "received_list"],
+    [
+      "acceptReceived (the ones named)",
+      (b) => b.acceptReceived(["r-1", "r-2"]),
+      "received_accept",
+      { request: { ids: ["r-1", "r-2"] } },
+    ],
+    [
+      "acceptReceived (all of them)",
+      (b) => b.acceptReceived(),
+      "received_accept",
+    ],
+    [
+      "discardReceived",
+      (b) => b.discardReceived(["r-1"]),
+      "received_discard",
+      { request: { ids: ["r-1"] } },
+    ],
+    [
+      "moveToPerson",
+      (b) => b.moveToPerson(["rec-1"], "p-2", ["f-9"]),
+      "vault_move_to_person",
+      {
+        request: { recordIds: ["rec-1"], profileId: "p-2", folderIds: ["f-9"] },
+      },
+    ],
+    [
+      "pageBoxes (the span is spread, the password is null when absent)",
+      (b) => b.pageBoxes("rec-1", 2, { start: 3, end: 9 } as never),
+      "vault_page_boxes",
+      {
+        request: {
+          recordId: "rec-1",
+          page: 2,
+          start: 3,
+          end: 9,
+          password: null,
+        },
+      },
+    ],
+    [
+      "pageBoxes (with a password)",
+      (b) => b.pageBoxes("rec-1", 2, { start: 3, end: 9 } as never, "FAKE pw"),
+      "vault_page_boxes",
+      {
+        request: {
+          recordId: "rec-1",
+          page: 2,
+          start: 3,
+          end: 9,
+          password: "FAKE pw",
+        },
+      },
+    ],
+    ["aiModelStatus", (b) => b.aiModelStatus(), "ai_model_status"],
+    ["aiCancel", (b) => b.aiCancel(), "ai_cancel"],
+    ["aiModelSpeed", (b) => b.aiModelSpeed(), "ai_model_speed"],
+    [
+      "aiExplain (without a record)",
+      (b) => b.aiExplain("FAKE term", "FAKE context", "en", undefined, "ans-1"),
+      "ai_explain",
+      {
+        answerId: "ans-1",
+        request: { term: "FAKE term", context: "FAKE context", lang: "en" },
+      },
+    ],
+    [
+      "aiExplain (with a record)",
+      (b) => b.aiExplain("FAKE term", "FAKE context", "en", "rec-1", "ans-1"),
+      "ai_explain",
+      {
+        answerId: "ans-1",
+        request: {
+          term: "FAKE term",
+          context: "FAKE context",
+          lang: "en",
+          recordId: "rec-1",
+        },
+      },
+    ],
+    ["trayWaiting", (b) => b.trayWaiting(), "tray_waiting_status"],
+    [
+      "documentText",
+      (b) => b.documentText("rec-1", "read-1"),
+      "vault_document_text",
+      { request: { recordId: "rec-1", readId: "read-1", password: null } },
+    ],
+    [
+      "documentText (with a password)",
+      (b) => b.documentText("rec-1", "read-1", "FAKE pw"),
+      "vault_document_text",
+      { request: { recordId: "rec-1", readId: "read-1", password: "FAKE pw" } },
+    ],
+    [
+      "cancelDocumentText",
+      (b) => b.cancelDocumentText("read-1"),
+      "vault_document_text_cancel",
+      { request: { readId: "read-1" } },
+    ],
+    [
+      "recordKnownDetails",
+      (b) => b.recordKnownDetails("rec-1"),
+      "vault_record_known_details",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "pickTextExportDestination",
+      (b) => b.pickTextExportDestination("rec-1", "t-4"),
+      "vault_export_text_pick",
+      { request: { recordId: "rec-1", ticket: "t-4" }, locale: locale() },
+    ],
+    [
+      "exportTextToPicked (no kept ranges)",
+      (b) => b.exportTextToPicked("pick-1", "rec-1", "t-4", "FAKE text"),
+      "vault_export_text_picked",
+      {
+        request: {
+          pickId: "pick-1",
+          recordId: "rec-1",
+          ticket: "t-4",
+          text: "FAKE text",
+          kept: [],
+        },
+        locale: locale(),
+      },
+    ],
+    [
+      "exportTextToPicked (kept ranges)",
+      (b) =>
+        b.exportTextToPicked("pick-1", "rec-1", "t-4", "FAKE text", [
+          { start: 1, end: 3 },
+        ] as never),
+      "vault_export_text_picked",
+      {
+        request: {
+          pickId: "pick-1",
+          recordId: "rec-1",
+          ticket: "t-4",
+          text: "FAKE text",
+          kept: [{ start: 1, end: 3 }],
+        },
+        locale: locale(),
+      },
+    ],
+    [
+      "copyTextExport (no kept ranges)",
+      (b) => b.copyTextExport("rec-1", "t-4", "FAKE text"),
+      "vault_export_text_copy",
+      {
+        request: {
+          recordId: "rec-1",
+          ticket: "t-4",
+          text: "FAKE text",
+          kept: [],
+        },
+        locale: locale(),
+      },
+    ],
+    [
+      "saveAiResult (no sources)",
+      (b) => b.saveAiResult("rec-1", "kept-1"),
+      "vault_ai_result_save",
+      { request: { recordId: "rec-1", keptId: "kept-1" } },
+    ],
+    [
+      "saveAiResult (with sources)",
+      (b) => b.saveAiResult("rec-1", "kept-1", [{ page: 1 }] as never),
+      "vault_ai_result_save",
+      {
+        request: {
+          recordId: "rec-1",
+          keptId: "kept-1",
+          sources: [{ page: 1 }],
+        },
+      },
+    ],
+    [
+      "aiResults",
+      (b) => b.aiResults("rec-1"),
+      "vault_ai_results",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "readAiResult",
+      (b) => b.readAiResult("rec-1", "res-1"),
+      "vault_ai_result_read",
+      { request: { recordId: "rec-1", resultId: "res-1" } },
+    ],
+    [
+      "hideRecord",
+      (b) => b.hideRecord("rec-1"),
+      "vault_hide_record",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "unhideRecord",
+      (b) => b.unhideRecord("rec-1"),
+      "vault_unhide_record",
+      { request: { recordId: "rec-1" } },
+    ],
+    [
+      "hideUnavailableRecords",
+      (b) => b.hideUnavailableRecords(["rec-1"]),
+      "vault_hide_unavailable_records",
+      { request: { confirmed: ["rec-1"], hiddenPeopleDocuments: 0 } },
+    ],
+    [
+      "prepareProfileExport",
+      (b) =>
+        b.prepareProfileExport({
+          profileId: "p-1",
+          includeHistory: true,
+          passphrase: "FAKE-passphrase",
+        }),
+      "vault_profile_export_prepare",
+      {
+        request: {
+          profileId: "p-1",
+          includeHistory: true,
+          passphrase: "FAKE-passphrase",
+        },
+      },
+    ],
+    [
+      "pickProfileExportDestination",
+      (b) => b.pickProfileExportDestination("exp-1", "2026-11-24"),
+      "vault_profile_export_pick",
+      { request: { exportId: "exp-1", localDate: "2026-11-24" } },
+    ],
+    [
+      "saveProfileExportToPicked",
+      (b) => b.saveProfileExportToPicked("pick-1"),
+      "vault_profile_export_picked",
+      { request: { pickId: "pick-1" } },
+    ],
+    [
+      "pickProfileImportSource",
+      (b) => b.pickProfileImportSource(),
+      "vault_profile_import_pick",
+      undefined,
+    ],
+    [
+      "profileImportKeyKind",
+      (b) => b.profileImportKeyKind("pick-1"),
+      "vault_profile_import_key_kind",
+      { request: { pickId: "pick-1" } },
+    ],
+    [
+      "inspectProfileImport",
+      (b) => b.inspectProfileImport({ pickId: "pick-1", key: "FAKE-key" }),
+      "vault_profile_import_inspect",
+      { request: { pickId: "pick-1", key: "FAKE-key" } },
+    ],
+    [
+      "importProfile",
+      (b) =>
+        b.importProfile({
+          pickId: "pick-1",
+          passphrase: "FAKE-passphrase",
+          displayName: "FAKE Person",
+          allowDuplicate: true,
+        }),
+      "vault_profile_import",
+      {
+        request: {
+          pickId: "pick-1",
+          passphrase: "FAKE-passphrase",
+          displayName: "FAKE Person",
+          allowDuplicate: true,
+        },
+      },
+    ],
+    [
+      "hideProfile",
+      (b) => b.hideProfile("p-1"),
+      "vault_hide_profile",
+      { request: { profileId: "p-1" } },
+    ],
+    [
+      "restoreProfile",
+      (b) => b.restoreProfile("p-1"),
+      "vault_restore_profile",
+      { request: { profileId: "p-1" } },
+    ],
+    [
+      "reset",
+      (b) => b.reset("erase everything"),
+      "vault_reset",
+      { locale: locale(), request: { confirmation: "erase everything" } },
+    ],
+  ];
 
-// Calls that pass their arguments as a variable, not an object written in the call
-// (`invoke("name", payload)`): only the command's name can be checked. Pinned by file, like the
-// calls above, so a new one is looked at.
-const PAYLOAD_VARIABLE: Record<string, number> = {
-  "./vault.ts": 1,
-};
+  it.each(table)("%s", async (_label, run, command, payload) => {
+    await run(full());
+    const last = invoke.mock.calls.at(-1);
+    expect(last).toEqual(
+      payload === undefined ? [command] : [command, payload],
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
 
-// What `save("name", …)` and `mutate("name", …)` hand to the variable-command calls in each file.
-const WRAPPER_CALLS: Record<string, number> = {
-  "./native/AiModelSetting.tsx": 2,
-  "./native/BackgroundSetting.tsx": 2,
-  "./native/NotificationSetting.tsx": 2,
-};
+  // Methods with a test of their own below (or in vaultProgressListen.test.ts), because they do more
+  // than send one command: a new bridge method that is in neither place fails the next test.
+  const testedBelow = new Set([
+    "platform",
+    "videoAppend",
+    "videoOpen",
+    "savePhoto",
+    "viewPage",
+    "cancelView",
+    "readAndroidPdf",
+    "aiSummarize",
+    "onAiAnswerStarted",
+    "onVaultLocked",
+    "onTrayWaiting",
+  ]);
 
-// The commands whose arguments reach something the list cannot look into (the elements of a list
-// of structs, an enum's variants), by name. A new one is a reviewed edit of this list: read the
-// "blindSpots" entry the Rust guard wrote for it first.
-const BLIND_SPOT_COMMANDS = [
-  "ai_model_add_picked",
-  "ai_summarize",
-  "background_report_locale",
-  "background_status",
-  "vault_ai_result_save",
-  "vault_export_text_copy",
-  "vault_export_text_pick",
-  "vault_export_text_picked",
-  "vault_import_pick",
-  "vault_name_found_vaults",
-  "vault_notification_status",
-  "vault_recovery_key_confirm",
-  "vault_recovery_kit_save",
-  "vault_reset",
-  "vault_restore",
-  "vault_restore_pick",
-];
+  it("has a row for every bridge method, or names the test that covers it", () => {
+    const rowed = new Set(table.map(([label]) => label.split(" ")[0]));
+    const methods = Object.entries(createVaultBridge())
+      .filter(([, value]) => typeof value === "function")
+      .map(([name]) => name);
+    expect(methods.length).toBeGreaterThan(85);
+    const bare = methods.filter(
+      (name) => !rowed.has(name) && !testedBelow.has(name),
+    );
+    expect(bare).toEqual([]);
+    // And no row or exception names a method the bridge no longer has.
+    const have = new Set(methods);
+    expect([...rowed].filter((name) => !have.has(name))).toEqual([]);
+    expect([...testedBelow].filter((name) => !have.has(name))).toEqual([]);
+  });
 
-describe("the renderer's native calls against the commands' argument list", () => {
-  it("reads the Rust side's list: its commands, their arguments and the structs they reach", () => {
-    expect(Object.keys(contract.commands).length).toBeGreaterThan(100);
-    expect(Object.keys(contract.structs).length).toBeGreaterThan(50);
-    expect(contract.commands.vault_unlock.arguments).toEqual({
-      request: { optional: false, struct: "PassphraseRequest" },
+  it("reports the platform the native side names", async () => {
+    invoke.mockResolvedValue({ platform: "android" });
+    await expect(full().platform()).resolves.toBe("android");
+    expect(invoke).toHaveBeenLastCalledWith("runtime_info");
+  });
+
+  it("opens a video and gives the address the webview shows for it", async () => {
+    invoke.mockResolvedValue({ token: "tok-1", totalBytes: 1234 });
+    await expect(full().videoOpen("rec-1")).resolves.toEqual({
+      token: "tok-1",
+      totalBytes: 1234,
+      url: "mycarlos-video://localhost/tok-1",
     });
-    expect(contract.structs.PassphraseRequest.fields.passphrase.optional).toBe(
+    expect(invoke).toHaveBeenLastCalledWith("vault_video_open", {
+      request: { recordId: "rec-1" },
+    });
+    expect(convertFileSrc).toHaveBeenLastCalledWith("tok-1", "mycarlos-video");
+  });
+
+  it("sends a piece of video as base64 text, not as bytes", async () => {
+    await full().videoAppend("rec-1", 7, new Uint8Array([1, 2, 3]));
+    expect(invoke).toHaveBeenLastCalledWith("vault_video_append", {
+      request: { recordingId: "rec-1", sequence: 7, data: "AQID" },
+    });
+  });
+
+  it("sends a photo as one body: the target's length, the target, then the JPEG, and clears it after", async () => {
+    let sent: Uint8Array | undefined;
+    let copy: number[] = [];
+    invoke.mockImplementation(async (_command: string, body: Uint8Array) => {
+      sent = body;
+      copy = [...body];
+      return { imported: 1 };
+    });
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    await full().savePhoto("p-1", ["f-1"], "Photo", jpeg);
+    expect(invoke.mock.calls[0][0]).toBe("vault_save_photo");
+    const view = new DataView(new Uint8Array(copy).buffer);
+    const length = view.getUint32(0);
+    const target = JSON.parse(
+      new TextDecoder().decode(new Uint8Array(copy).subarray(4, 4 + length)),
+    );
+    expect(target).toEqual({
+      profileId: "p-1",
+      folderIds: ["f-1"],
+      name: "Photo",
+    });
+    expect(copy.slice(4 + length)).toEqual([0xff, 0xd8, 0xff, 0xd9]);
+    // The body that crossed is wiped once the call is over.
+    expect([...(sent as Uint8Array)].every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("clears the photo body even when the native call fails", async () => {
+    let sent: Uint8Array | undefined;
+    invoke.mockImplementation(async (_command: string, body: Uint8Array) => {
+      sent = body;
+      throw { code: "storage" };
+    });
+    await expect(
+      full().savePhoto("p-1", [], "Photo", new Uint8Array([9, 9])),
+    ).rejects.toEqual({ code: "storage" });
+    expect([...(sent as Uint8Array)].every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("is a native bridge only inside the Tauri runtime", () => {
+    expect(full().native).toBe(false);
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    try {
+      expect(full().native).toBe(true);
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+});
+
+describe("page views and their cancellation", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    invoke.mockResolvedValue(undefined);
+  });
+
+  it("asks for a page with the width and a null password when there is none", async () => {
+    await full().viewPage("rec-1", 3, 640);
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_page", {
+      request: { recordId: "rec-1", page: 3, width: 640, password: null },
+    });
+    await full().viewPage("rec-1", 3, 640, "FAKE pw");
+    expect(invoke).toHaveBeenLastCalledWith("vault_view_page", {
+      request: { recordId: "rec-1", page: 3, width: 640, password: "FAKE pw" },
+    });
+  });
+
+  it("a cancel is asked once while it is pending, and a page asked for before it is refused", async () => {
+    let finish: () => void = () => undefined;
+    invoke.mockImplementation((command: string) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => (finish = resolve))
+        : Promise.resolve(undefined),
+    );
+    const bridge = full();
+    const first = bridge.cancelView();
+    const second = bridge.cancelView();
+    expect(second).toBe(first);
+    expect(
+      invoke.mock.calls.filter(([c]) => c === "vault_view_cancel"),
+    ).toHaveLength(1);
+    // A page asked for while the cancel is pending waits for it...
+    const page = bridge.viewPage("rec-1", 1, 100);
+    // ...and is superseded by a cancel that came after it.
+    bridge.cancelView();
+    finish();
+    await expect(page).rejects.toEqual({ code: "cancelled" });
+    expect(invoke.mock.calls.some(([c]) => c === "vault_view_page")).toBe(
       false,
     );
-    // Every struct a command takes directly refuses a key it does not know.
-    const direct = new Set(
-      Object.values(contract.commands)
-        .flatMap((command) => Object.values(command.arguments))
-        .flatMap((argument) => (argument.struct ? [argument.struct] : [])),
-    );
-    expect(direct.size).toBeGreaterThan(40);
-    for (const name of direct) {
-      // A name the Rust sources define twice with different fields cannot be told apart: it is
-      // listed as ambiguous and open (see the check below).
-      if (contract.structs[name].ambiguous) continue;
-      expect(contract.structs[name].denyUnknown, name).toBe(true);
-    }
   });
 
-  it("finds every call and every one names a command the native side has", () => {
-    let checked = 0;
-    const unnamed: Record<string, number> = {};
-    const unknown: string[] = [];
-    for (const [path, source] of SOURCES) {
-      for (const call of scanInvokes(source)) {
-        if (call.command === null) {
-          unnamed[path] = (unnamed[path] ?? 0) + 1;
-          continue;
-        }
-        checked += 1;
-        if (!(call.command in contract.commands))
-          unknown.push(`${path}:${call.line} ${call.command}`);
-      }
+  it("a failed cancel is reported to its caller and does not strand the next page", async () => {
+    let call = 0;
+    invoke.mockImplementation((command: string) => {
+      if (command === "vault_view_cancel" && call++ === 0)
+        return Promise.reject({ code: "storage" });
+      return Promise.resolve(undefined);
+    });
+    const bridge = full();
+    await expect(bridge.cancelView()).rejects.toEqual({ code: "storage" });
+    await expect(bridge.viewPage("rec-1", 1, 100)).resolves.toBeUndefined();
+    // Once settled, the next cancel asks again.
+    await bridge.cancelView();
+    expect(
+      invoke.mock.calls.filter(([c]) => c === "vault_view_cancel"),
+    ).toHaveLength(2);
+  });
+
+  it("locking supersedes a page that was waiting for a cancel", async () => {
+    let finish: () => void = () => undefined;
+    invoke.mockImplementation((command: string) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => (finish = resolve))
+        : Promise.resolve(undefined),
+    );
+    const bridge = full();
+    void bridge.cancelView();
+    const page = bridge.viewPage("rec-1", 1, 100);
+    await bridge.lock();
+    finish();
+    await expect(page).rejects.toEqual({ code: "cancelled" });
+  });
+
+  it("reads an Android PDF with an activity channel that wakes the reader's idle clock", async () => {
+    const woke = vi.fn();
+    window.addEventListener(NATIVE_READER_ACTIVITY_EVENT, woke);
+    let channel: { onmessage: (value: unknown) => void } | undefined;
+    invoke.mockImplementation(
+      async (_command: string, args: { activity: typeof channel }) => {
+        channel = args.activity;
+        channel?.onmessage(undefined);
+      },
+    );
+    try {
+      await full().readAndroidPdf("rec-1", {
+        title: "FAKE",
+      } as never);
+    } finally {
+      window.removeEventListener(NATIVE_READER_ACTIVITY_EVENT, woke);
     }
-    // The scan is reading the sources (vault.ts alone has about a hundred calls).
-    expect(checked).toBeGreaterThan(100);
+    expect(invoke.mock.calls[0][0]).toBe("vault_read_android_pdf");
+    expect(invoke.mock.calls[0][1].request).toEqual({
+      recordId: "rec-1",
+      labels: { title: "FAKE" },
+    });
+    expect(woke).toHaveBeenCalledOnce();
+    // After the call the channel no longer reaches the page.
+    channel?.onmessage(undefined);
+    expect(woke).toHaveBeenCalledOnce();
+  });
+
+  it("an Android read superseded while a cancel is pending never reaches the native side", async () => {
+    let finish: () => void = () => undefined;
+    invoke.mockImplementation((command: string) =>
+      command === "vault_view_cancel"
+        ? new Promise<void>((resolve) => (finish = resolve))
+        : Promise.resolve(undefined),
+    );
+    const bridge = full();
+    void bridge.cancelView();
+    const read = bridge.readAndroidPdf("rec-1", {} as never);
+    void bridge.cancelView();
+    finish();
+    await expect(read).rejects.toEqual({ code: "cancelled" });
+    expect(
+      invoke.mock.calls.some(([c]) => c === "vault_read_android_pdf"),
+    ).toBe(false);
+  });
+});
+
+describe("native events the screen listens for", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    listen.mockReset();
+  });
+
+  it.each([
+    ["onAiAnswerStarted", "ai-answer-started", { answerId: "a-1", limitMs: 5 }],
+    ["onVaultLocked", "vault-locked", { by: "idle" }],
+  ] as const)(
+    "%s passes on the event's payload and stops listening on request",
+    async (method, name, payload) => {
+      const unlisten = vi.fn();
+      let handler: (event: { payload: unknown }) => void = () => undefined;
+      listen.mockImplementation(
+        async (_name: string, callback: typeof handler) => {
+          handler = callback;
+          return unlisten;
+        },
+      );
+      const seen = vi.fn();
+      const stop = (full()[method] as (h: (p: unknown) => void) => () => void)(
+        seen,
+      );
+      expect(listen.mock.calls[0][0]).toBe(name);
+      await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+      handler({ payload });
+      expect(seen).toHaveBeenCalledWith(payload);
+      stop();
+      await vi.waitFor(() => expect(unlisten).toHaveBeenCalledOnce());
+    },
+  );
+
+  it("onTrayWaiting passes on only a literal true", async () => {
+    let handler: (event: { payload: unknown }) => void = () => undefined;
+    listen.mockImplementation(
+      async (_name: string, callback: typeof handler) => {
+        handler = callback;
+        return () => undefined;
+      },
+    );
+    const seen = vi.fn();
+    full().onTrayWaiting(seen);
+    expect(listen.mock.calls[0][0]).toBe("tray-waiting");
+    await vi.waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+    handler({ payload: true });
+    handler({ payload: "yes" });
+    handler({ payload: false });
+    expect(seen.mock.calls).toEqual([[true], [false], [false]]);
+  });
+});
+
+describe("small helpers", () => {
+  it("bytesToBase64 builds large pieces in slices and matches the plain encoding", () => {
+    const bytes = new Uint8Array(0x8000 * 2 + 5).map((_, index) => index % 251);
+    let plain = "";
+    for (const byte of bytes) plain += String.fromCharCode(byte);
+    expect(bytesToBase64(bytes)).toBe(btoa(plain));
+    expect(bytesToBase64(new Uint8Array(0))).toBe("");
+  });
+
+  it("utf8Length counts bytes, not UTF-16 units", () => {
+    expect(utf8Length("abc")).toBe(3);
+    expect(utf8Length("é")).toBe(2);
+    expect(utf8Length("日本")).toBe(6);
+    expect(utf8Length("😀")).toBe(4);
+  });
+});
+
+describe("the commands the renderer invokes are the ones the native side registers", () => {
+  // The renderer's source, tests excluded.
+  const sources = import.meta.glob(
+    ["./**/*.{ts,tsx}", "!./**/*.test.{ts,tsx}", "!./test/**"],
+    {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    },
+  ) as Record<string, string>;
+  // `invoke("name"` and `invoke<T>("name"`: the command is written out.
+  const literalSite = /\binvoke(?:<[^>(]*>)?\(\s*"([a-z_0-9]+)"/g;
+  // `invoke(command, ...)`: the command is a variable, named at the call to its caller.
+  const variableSite = /\binvoke(?:<[^>(]*>)?\(\s*([^"\s])/g;
+  const used = new Map<string, Set<string>>();
+  const variableSites = new Map<string, number>();
+  for (const [file, text] of Object.entries(sources)) {
+    for (const found of text.matchAll(literalSite)) {
+      if (!used.has(found[1])) used.set(found[1], new Set());
+      used.get(found[1])!.add(file);
+    }
+    for (const _ of text.matchAll(variableSite))
+      variableSites.set(file, (variableSites.get(file) ?? 0) + 1);
+  }
+  // The names in build.rs's command list, and only that list (`AppManifest::new().commands(&[...])`):
+  // the other quoted strings in the file are not commands.
+  const list =
+    /AppManifest::new\(\)\s*\.commands\(\s*&\[([\s\S]*?)\]\s*\)/.exec(
+      buildScript,
+    );
+  const registered = new Set(
+    [...(list?.[1] ?? "").matchAll(/"([a-z][a-z_0-9]+)"/g)].map(
+      (found) => found[1],
+    ),
+  );
+  // The screens that pass the command as a variable. Their callers write the names as strings next
+  // to a request of that kind, and those are checked too; a new file with a variable site fails the
+  // exact pin below, so it must be added here and have its names checked.
+  const VARIABLE_SITES: Record<string, number> = {
+    "./native/AiModelSetting.tsx": 3,
+    "./native/BackgroundSetting.tsx": 1,
+    "./native/NotificationSetting.tsx": 1,
+  };
+
+  it("finds the renderer's commands and build.rs's list (a guard against the scan going quiet)", () => {
+    expect(list).not.toBeNull();
+    expect(used.size).toBeGreaterThan(90);
+    expect(registered.size).toBeGreaterThan(100);
+    expect(used.has("vault_unlock")).toBe(true);
+    expect(registered.has("vault_unlock")).toBe(true);
+    // Strings in build.rs that are not commands are not read as registered.
+    expect(registered.has("android")).toBe(false);
+  });
+
+  it("registers every command the renderer invokes", () => {
+    const missing = [...used.entries()]
+      .filter(([name]) => !registered.has(name))
+      .map(([name, files]) => `${name} (${[...files].join(", ")})`);
+    expect(missing).toEqual([]);
+  });
+
+  it("knows every place that invokes a command held in a variable, and registers the names it is given", () => {
+    expect(Object.fromEntries(variableSites)).toEqual(VARIABLE_SITES);
+    // Their callers write the command as a snake_case string; each one must be registered.
+    const names = new Set<string>();
+    // Quoted snake_case words in those files that are values and not commands (the notice
+    // permission "not_yet_asked" in NotificationSetting.tsx).
+    const notCommands = new Set(["not_yet_asked"]);
+    for (const file of Object.keys(VARIABLE_SITES)) {
+      for (const found of sources[file].matchAll(/"([a-z]+(?:_[a-z0-9]+)+)"/g))
+        if (!notCommands.has(found[1])) names.add(found[1]);
+    }
+    const unknown = [...names].filter((name) => !registered.has(name));
     expect(unknown).toEqual([]);
-    expect(unnamed).toEqual(NAMED_AT_RUN_TIME);
-  });
-
-  it("sends only keys the native side has, and every key it requires", () => {
-    const problems: string[] = [];
-    for (const [path, source] of SOURCES) {
-      for (const call of scanInvokes(source)) {
-        if (call.command === null) continue;
-        for (const problem of problemsInCall(
-          contract,
-          call.command,
-          call.args,
-        )) {
-          problems.push(`${path}:${call.line} ${problem}`);
-        }
-      }
-    }
-    expect(problems).toEqual([]);
-  });
-
-  it("pins the calls that pass a variable as the arguments, and checks those names", () => {
-    const payload: Record<string, number> = {};
-    for (const [path, source] of SOURCES) {
-      for (const call of scanInvokes(source)) {
-        if (call.args === "unknown") {
-          payload[path] = (payload[path] ?? 0) + 1;
-          if (call.command !== null)
-            expect(contract.commands[call.command], call.command).toBeDefined();
-        }
-      }
-    }
-    expect(payload).toEqual(PAYLOAD_VARIABLE);
-  });
-
-  it("checks the commands that reach a variable-command call through save(...) and mutate(...)", () => {
-    const literals: Record<string, number> = {};
-    for (const [path, source] of SOURCES) {
-      const named = wrapperCommands(source);
-      if (named.length === 0) continue;
-      literals[path] = named.length;
-      // The shapes the file's variable-command calls give them.
-      const shapes = scanInvokes(source)
-        .filter((call) => call.command === null)
-        .map((call) => call.args);
-      expect(shapes.length, path).toBeGreaterThan(0);
-      for (const command of named) {
-        const fits = shapes.some(
-          (args) => problemsInCall(contract, command, args).length === 0,
-        );
-        expect(fits, `${path}: ${command}`).toBe(true);
-      }
-    }
-    expect(literals).toEqual(WRAPPER_CALLS);
-  });
-
-  it("never reads invoke through a name it could not follow", () => {
-    for (const [path, source] of SOURCES) {
-      expect(aliasesOfInvoke(source), path).toEqual([]);
-    }
-    expect(aliasesOfInvoke('import { invoke as call } from "x";')).toHaveLength(
-      1,
-    );
-    expect(aliasesOfInvoke("const run = invoke;")).toHaveLength(1);
-    expect(aliasesOfInvoke("go(invoke);")).toHaveLength(1);
-    expect(aliasesOfInvoke('core.invoke("a");')).toHaveLength(1);
-    expect(aliasesOfInvoke("type T = typeof invoke;")).toHaveLength(1);
-    expect(aliasesOfInvoke("invoke.call(null, 'a');").length).toBeGreaterThan(
-      0,
-    );
-    expect(
-      aliasesOfInvoke("invoke.apply(null, ['a']);").length,
-    ).toBeGreaterThan(0);
-    expect(
-      aliasesOfInvoke("const f = invoke.bind(null);").length,
-    ).toBeGreaterThan(0);
-    expect(aliasesOfInvoke("invoke?.('a');").length).toBeGreaterThan(0);
-    expect(aliasesOfInvoke("export { invoke };").length).toBeGreaterThan(0);
-    expect(
-      aliasesOfInvoke("export { other, invoke as run };").length,
-    ).toBeGreaterThan(0);
-    expect(aliasesOfInvoke("const x = invoke<void>('a'); // invoke")).toEqual(
-      [],
-    );
-  });
-
-  it("lists where the keys cannot be checked, for a reviewer to read", () => {
-    // Elements of a list of structs and an enum's variants are not looked into.
-    const entries = Object.entries(contract.blindSpots);
-    expect(Object.keys(contract.blindSpots).sort()).toEqual(
-      BLIND_SPOT_COMMANDS,
-    );
-    for (const [command, spots] of entries) {
-      expect(contract.commands[command], command).toBeDefined();
-      expect(spots.length).toBeGreaterThan(0);
-      expect(spots).toEqual([...spots].sort());
-    }
-    // A struct the Rust sources define twice with different fields is read as open.
-    for (const [name, struct] of Object.entries(contract.structs)) {
-      if (struct.ambiguous) expect(struct.open, name).toBe(true);
-    }
-  });
-
-  describe("the check itself", () => {
-    const call = (text: string) => {
-      const [found] = scanInvokes(text);
-      return problemsInCall(contract, found.command ?? "?", found.args);
-    };
-
-    it("accepts a call the native side takes", () => {
-      expect(
-        call('invoke("vault_unlock", { request: { passphrase } })'),
-      ).toEqual([]);
-      expect(call('invoke<void>("vault_lock")')).toEqual([]);
-      expect(call("invoke<{ a: string; b: number }>('vault_touch');")).toEqual(
-        [],
-      );
-    });
-
-    it("refuses an unknown command, an unknown argument and an unknown field", () => {
-      expect(call('invoke("vault_unlok", {})')).toEqual([
-        "vault_unlok: not a native command",
-      ]);
-      expect(
-        call('invoke("vault_unlock", { reqest: { passphrase } })')[0],
-      ).toContain('"reqest" is not an argument');
-      expect(
-        call('invoke("vault_unlock", { request: { passphrase, extra } })')[0],
-      ).toContain('"extra" is not a field of PassphraseRequest');
-    });
-
-    it("refuses a missing argument and a missing field, but not one that may be left out", () => {
-      expect(call('invoke("vault_unlock")')[0]).toContain(
-        'required argument "request" is missing',
-      );
-      expect(call('invoke("vault_unlock", { request: {} })')[0]).toContain(
-        'required field "passphrase" of PassphraseRequest is missing',
-      );
-      const optional = Object.entries(contract.structs).find(([, struct]) =>
-        Object.values(struct.fields).some((field) => field.optional),
-      );
-      expect(optional).toBeDefined();
-    });
-
-    it("does not take a spread or a computed key for a missing one, and reads keys it can see", () => {
-      expect(call('invoke("vault_unlock", { request: { ...rest } })')).toEqual(
-        [],
-      );
-      expect(
-        call('invoke("vault_unlock", { request: { ...rest, extra: 1 } })')[0],
-      ).toContain('"extra"');
-      expect(
-        call('invoke("vault_unlock", { request: { [name]: 1 } })'),
-      ).toEqual([]);
-    });
-
-    it("reads quoted keys, nested braces, strings holding brackets, templates and trailing commas", () => {
-      expect(
-        call(
-          'invoke("vault_unlock", {\n  request: {\n    "passphrase": `a ${"}"} b`,\n  },\n},)',
-        ),
-      ).toEqual([]);
-      expect(
-        call(
-          'invoke("vault_unlock", { request: { passphrase: f({ a: [1, 2] }, "}") } })',
-        ),
-      ).toEqual([]);
-    });
-
-    it("does not read a call that is in a comment or in a string", () => {
-      expect(
-        scanInvokes('// invoke("vault_lock")\n/* invoke("vault_touch") */'),
-      ).toEqual([]);
-      expect(withoutComments('const a = "// not a comment"; // one')).toBe(
-        'const a = "// not a comment";       ',
-      );
-    });
-
-    it("reports a command that is not a string as unnamed, and takes no arguments for a shorthand name", () => {
-      expect(scanInvokes("invoke(command, { enabled })")[0].command).toBeNull();
-      expect(call('invoke("vault_unlock", payload)')).toEqual([]);
-    });
-
-    it("checks the arguments a fake invoke was really called with, in the same way", () => {
-      expect(
-        problemsInCall(
-          contract,
-          "vault_unlock",
-          shapeOfValue({ request: { passphrase: "x" } }),
-        ),
-      ).toEqual([]);
-      expect(
-        problemsInCall(
-          contract,
-          "vault_unlock",
-          shapeOfValue({ request: { passphrase: "x", pin: 1 } }),
-        ),
-      ).toHaveLength(1);
-      expect(
-        problemsInCall(contract, "vault_lock", shapeOfValue(undefined)),
-      ).toEqual([]);
-    });
+    expect(names.size).toBeGreaterThan(6);
   });
 });

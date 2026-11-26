@@ -1910,6 +1910,20 @@ describe("sentenceAround", () => {
     expect(sentenceAround(text, "malignancy")).toBe("");
     expect(sentenceAround(text, "")).toBe("");
   });
+
+  it("keeps the term in a long sentence's first 400 characters, or the 400 that end it", () => {
+    const early = `Start ${"a".repeat(100)} mass ${"b ".repeat(400)}end.`;
+    const near = sentenceAround(early, "mass");
+    expect(near.length).toBeLessThanOrEqual(400);
+    expect(near.startsWith("Start ")).toBe(true);
+    expect(near).toContain("mass");
+    // A term past the cut is not lost: the sentence's 400 characters that reach it.
+    const late = `${"a ".repeat(300)}mass ${"b ".repeat(300)}end.`;
+    const far = sentenceAround(late, "mass");
+    expect(far.length).toBeLessThanOrEqual(400);
+    expect(far).toContain("mass");
+    expect(late).toContain(far);
+  });
 });
 
 describe("Settings > AI helper", () => {
