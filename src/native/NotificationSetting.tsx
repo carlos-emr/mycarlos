@@ -135,6 +135,9 @@ export function NotificationSetting({
     status.permission === "unknown" ? `${id}-unknown` : "",
     status.permission === "not_yet_asked" ? `${id}-notYetAsked` : "",
   ].filter(Boolean);
+  // The line that says why both boxes are disabled ("These settings are unavailable right now"),
+  // read with each of them.
+  const unavailableId = !status.available && !failed ? `${id}-unavailable` : "";
   const Heading = headingLevel === 3 ? "h3" : "h2";
   const notices = status.noticesSupported === true;
   const automatic = status.automaticChecksSupported === true;
@@ -166,7 +169,14 @@ export function NotificationSetting({
                   saving ||
                   (!status.available && !status.automaticChecksEnabled)
                 }
-                aria-describedby={`${id}-auto-help ${id}-auto-consent`}
+                aria-describedby={[
+                  `${id}-help`,
+                  `${id}-auto-help`,
+                  `${id}-auto-consent`,
+                  unavailableId,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onChange={(event) =>
                   save(
                     "vault_set_automatic_document_checks",
@@ -190,9 +200,13 @@ export function NotificationSetting({
                 type="checkbox"
                 checked={status.enabled}
                 disabled={saving || (!status.available && !status.enabled)}
-                aria-describedby={[`${id}-notices-help`, ...permissionIds].join(
-                  " ",
-                )}
+                aria-describedby={[
+                  `${id}-notices-help`,
+                  ...permissionIds,
+                  unavailableId,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onChange={(event) =>
                   save("vault_set_notifications", event.currentTarget.checked)
                 }
@@ -231,8 +245,10 @@ export function NotificationSetting({
             )}
           </>
         )}
-        {!status.available && !failed && (
-          <p role="alert">{t("notifications.unavailable")}</p>
+        {unavailableId && (
+          <p id={unavailableId} role="alert">
+            {t("notifications.unavailable")}
+          </p>
         )}
         {failed && <p role="alert">{t("notifications.error")}</p>}
       </div>
