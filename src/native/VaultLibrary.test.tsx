@@ -2480,12 +2480,16 @@ describe("the AI helper's notice before the reader's first Summary", () => {
 
 describe("VaultLibrary folder tools that are not a drag", () => {
   const keyboardMove = () => {
-    const details = screen.getByText(
-      humanText("Move a folder with the keyboard"),
+    // In the overhaul the keyboard move sits in the panel the "?" button opens under the search
+    // (main's version of this test opened a closed disclosure): opened, as the patient would.
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Help: this screen") }),
     );
-    // The tools sit in a closed disclosure: opened, as the patient would.
-    fireEvent.click(details);
-    const panel = details.closest("details") as HTMLElement;
+    const panel = screen
+      .getByRole("heading", {
+        name: humanText("Move a folder with the keyboard"),
+      })
+      .closest("section") as HTMLElement;
     return {
       folder: within(panel).getByLabelText("Folder") as HTMLSelectElement,
       destination: within(panel).getByLabelText(
@@ -2589,7 +2593,9 @@ describe("VaultLibrary folder tools that are not a drag", () => {
   it("renames the open folder from its heading", () => {
     renderLibrary();
     openFolder(/^FAKE Letters/);
-    fireEvent.click(screen.getByRole("button", { name: "Rename folder" }));
+    // In the overhaul Rename is an item of the open folder's "…" menu beside its heading, not a
+    // button of its own.
+    fireEvent.click(headMenuItemNow("Rename folder"));
     expect(
       screen.getByRole("dialog", { name: humanText(/Rename/) }),
     ).toBeVisible();
