@@ -621,3 +621,6 @@ where
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod refusal_tests;
