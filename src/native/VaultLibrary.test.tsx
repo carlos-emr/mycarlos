@@ -1,5 +1,10 @@
 import { humanText, humanValue, visibleText } from "../test/humanText";
-import { headMenuItemNow, toolbarMenuItemNow } from "../test/menus";
+import {
+  addMenuItemNow,
+  headMenuItemNow,
+  queryAddMenuItem,
+  toolbarMenuItemNow,
+} from "../test/menus";
 import { LOCALES, resolveText, setLocaleOverride, translate } from "../i18n";
 import {
   act,
@@ -10,7 +15,9 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { AddVideoApi } from "./AddVideo";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -72,6 +79,8 @@ function renderLibrary(
   bridgeExtras: Record<string, unknown> = {},
   computer = true,
   activity: { busy?: boolean; portalBusy?: boolean } = {},
+  /** Further props of the library (the camera platform, adding a video). */
+  extraProps: Partial<ComponentProps<typeof VaultLibrary>> = {},
 ) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
@@ -131,6 +140,7 @@ function renderLibrary(
       onAutoLockMinutes={onAutoLockMinutes}
       sharedNew={newInShared}
       computer={computer}
+      {...extraProps}
     />
   );
   const view = render(library(shown));
@@ -2609,5 +2619,89 @@ describe("VaultLibrary folder tools that are not a drag", () => {
       screen.getByRole("dialog", { name: humanText(/Rename/) }),
     ).toBeVisible();
     expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Letters");
+  });
+});
+
+describe("VaultLibrary Add a video, an item of the Add document menu (#490)", () => {
+  const addApi = (over: Partial<AddVideoApi> = {}): AddVideoApi => ({
+    canAdd: true,
+    start: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn(),
+    reset: vi.fn(),
+    working: false,
+    cancelling: false,
+    progress: null,
+    outcome: null,
+    ...over,
+  });
+  const library = (extra: Partial<ComponentProps<typeof VaultLibrary>>) =>
+    renderLibrary(snapshot, 0, {}, true, {}, extra);
+
+  it("is offered where a video can be added, and not where it cannot", () => {
+    library({
+      addVideo: addApi(),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).not.toBeNull();
+    cleanup();
+    // An iPhone cannot add a video this way, and a bridge that cannot gives no item.
+    library({
+      addVideo: addApi(),
+      cameraPlatform: "ios",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeNull();
+    cleanup();
+    library({
+      addVideo: addApi({ canAdd: false }),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeNull();
+  });
+
+  it("waits while a video is being added", () => {
+    library({
+      addVideo: addApi({ working: true }),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeDisabled();
+  });
+
+  it("starts in the person's top level, or in the open folder", () => {
+    const addVideo = addApi();
+    library({ addVideo, cameraPlatform: "windows" });
+    fireEvent.click(addMenuItemNow("Add a video"));
+    expect(addVideo.start).toHaveBeenLastCalledWith("profile-1", []);
+    openFolder(/^FAKE Letters/);
+    fireEvent.click(addMenuItemNow("Add a video"));
+    expect(addVideo.start).toHaveBeenLastCalledWith("profile-1", ["letters"]);
+  });
+
+  it("gives the focus to the Add document button when the import ends, and takes none from a person who moved on", () => {
+    const extra: Partial<ComponentProps<typeof VaultLibrary>> = {
+      addVideo: addApi({ working: true }),
+      cameraPlatform: "windows",
+    };
+    const { rerenderSnapshot } = library(extra);
+    const cancel = document.querySelector<HTMLButtonElement>(
+      ".add-video-status button",
+    );
+    expect(cancel).not.toBeNull();
+    cancel!.focus();
+    extra.addVideo = addApi({ working: false });
+    rerenderSnapshot(snapshot);
+    // Cancel left the page with the import: the focus did not drop to the page.
+    const adds = screen.getAllByRole("button", {
+      name: humanText("Add document"),
+    });
+    expect(adds).toContain(document.activeElement);
+
+    // The same end, with the person already in the search box: it keeps the focus.
+    extra.addVideo = addApi({ working: true });
+    rerenderSnapshot(snapshot);
+    const search = screen.getByRole("searchbox");
+    search.focus();
+    extra.addVideo = addApi({ working: false });
+    rerenderSnapshot(snapshot);
+    expect(search).toHaveFocus();
   });
 });

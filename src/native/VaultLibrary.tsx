@@ -2020,6 +2020,29 @@ export function VaultLibrary({
     : profile
       ? personFolderName(profile, people)
       : translateNow("sidebar.myRecords");
+  // An import of a video ends: its Cancel button, which held the focus, leaves the page, and the
+  // focus would drop to the page (WCAG 2.4.3). Give it to the visible Add document button (the
+  // sidebar's, or the one beside the heading on a phone), unless the person has already moved on.
+  const addingVideo = Boolean(addVideo?.working);
+  const wasAddingVideo = useRef(false);
+  useEffect(() => {
+    const ended = wasAddingVideo.current && !addingVideo;
+    wasAddingVideo.current = addingVideo;
+    if (!ended) return;
+    const active = document.activeElement;
+    const lost =
+      !active ||
+      active === document.body ||
+      Boolean(active.closest(".add-video-status"));
+    if (!lost) return;
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        ".menu-button-primary > .menu-button-trigger",
+      ),
+    )
+      .find((button) => !button.disabled && button.getClientRects().length > 0)
+      ?.focus();
+  }, [addingVideo]);
   // The Add document menu (sidebar): what can be put in here. It is always on the screen, so from
   // any other section a choice first shows the open person's top level, where the result lands.
   const addHere = (action: () => void) => () => {
