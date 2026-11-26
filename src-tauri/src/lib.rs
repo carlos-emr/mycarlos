@@ -4388,16 +4388,21 @@ fn is_plain_date(text: &str) -> bool {
 /// document's own extension, never the document's name, which can be a person's, a clinic's or a
 /// test's name and is then written in the clear beside a plain copy. The dialog stays editable,
 /// so a patient who wants the original name can type it. The date is the patient's own day where
-/// the renderer gives one that reads as a date, else the UTC date; the extension is kept only
-/// when it is 1 to 8 ASCII letters or digits, so nothing odd reaches a file name.
+/// the renderer gives one that reads as a date, else the UTC date. The suffix is kept, with its
+/// own case, only when it is a kind the vault stores (`EXPORT_NAME_KINDS`): any other dotted end
+/// of a name is part of the name ("Dr.Smith", "J.Lopez", "Lab results 14.30"), not a kind, and
+/// would put it back in the file name.
 fn export_suggested_name(display_name: &str, local_date: Option<&str>, now_ms: u64) -> String {
+    /// The kinds of document the vault stores, as file name suffixes (case does not matter).
+    const EXPORT_NAME_KINDS: [&str; 5] = ["pdf", "jpg", "jpeg", "png", "mp4"];
     let date = local_date
         .filter(|date| is_plain_date(date))
         .map_or_else(|| vault::utc_date_text(now_ms), str::to_owned);
     match display_name.rsplit_once('.') {
         Some((_, extension))
-            if (1..=8).contains(&extension.len())
-                && extension.bytes().all(|byte| byte.is_ascii_alphanumeric()) =>
+            if EXPORT_NAME_KINDS
+                .iter()
+                .any(|kind| extension.eq_ignore_ascii_case(kind)) =>
         {
             format!("Document {date}.{extension}")
         }
@@ -8677,11 +8682,19 @@ mod tests {
             ("odd.é", "Document 2026-11-26"),
             ("long.extensions9", "Document 2026-11-26"),
             ("slash.p/f", "Document 2026-11-26"),
-            ("dots.p.d.f", "Document 2026-11-26.f"),
+            ("clip.MP4", "Document 2026-11-26.MP4"),
+            ("Letter.Pdf", "Document 2026-11-26.Pdf"),
+            // A dotted end that is part of a name is not a kind of file: nothing of it is kept.
+            ("dots.p.d.f", "Document 2026-11-26"),
+            ("Dr.Smith", "Document 2026-11-26"),
+            ("J.Lopez", "Document 2026-11-26"),
+            ("Lab results 14.30", "Document 2026-11-26"),
+            ("Dr.Smith referral.pdf", "Document 2026-11-26.pdf"),
         ] {
             let name = export_suggested_name(own, Some("2026-11-26"), utc);
             assert_eq!(name, expected, "{own}");
             assert!(!name.to_lowercase().contains("ana"), "{own}");
+            assert!(!name.contains("Smith") && !name.contains("Lopez"), "{own}");
         }
     }
 
