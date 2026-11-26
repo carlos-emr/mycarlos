@@ -4,7 +4,7 @@ use crate::portal_delivery::{self as wire, Receipt};
 use crate::portal_delivery::{Custody, ReceiptOutcome};
 use crate::portal_link::KeyStatus;
 
-#[cfg(windows)]
+#[cfg(desktop)]
 impl VaultStore {
     /// Only a freshly committed local custody record, never a renderer count or remote hint.
     pub(crate) fn notify_local_arrival(&self, record_id: Uuid, link: &StoredLink, session: u64) {

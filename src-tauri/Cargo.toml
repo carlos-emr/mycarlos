@@ -90,6 +90,10 @@ tauri-plugin-android-pdf = { path = "android-pdf" }
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"
 seccompiler = "=0.5.0"
+# The desktop notification service over D-Bus (document_notification_linux.rs). Already in the
+# build through tauri-plugin-single-instance on Linux, with the same default features: no new
+# crate. Pinned like its neighbours.
+zbus = "=5.19.0"
 
 # Match the WebView2 bindings already used by the pinned Tauri/Wry runtime. Data_Xml_Dom,
 # UI_Notifications and Win32_System_WinRT show document arrival notices.
