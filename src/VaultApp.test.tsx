@@ -1,4 +1,4 @@
-import { humanText, humanValue } from "./test/humanText";
+import { humanText, humanValue, visibleText } from "./test/humanText";
 import {
   addMenuItemNow,
   chooseAdd,
@@ -6759,6 +6759,330 @@ describe("durable vault UI", () => {
     } finally {
       visibility.mockRestore();
     }
+  });
+
+  // ---- Privacy across screens: how the pieces fit together, not single files ----
+
+  /** Every place a name can be read or heard from: text, and the attributes a screen reader or a
+   * tooltip uses. A field's typed value is not included (the patient typed that). */
+  function placesThatSay(name: string): Element[] {
+    return Array.from(document.querySelectorAll("*")).filter((element) => {
+      const own = Array.from(element.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? "")
+        .join("");
+      const attributes = [
+        "aria-label",
+        "title",
+        "alt",
+        "placeholder",
+        "aria-description",
+        "aria-valuetext",
+      ].map((attribute) => element.getAttribute(attribute) ?? "");
+      return [own, ...attributes].some((text) => text.includes(name));
+    });
+  }
+
+  const hiddenCasey = {
+    id: "profile-9",
+    displayName: "FAKE Casey Hiddenname",
+    hiddenAtMs: 1_700_000_000_000,
+    documents: 3,
+  };
+  const withHiddenCasey = (): VaultSnapshot => ({
+    ...snapshotWithRecord,
+    hiddenProfiles: [hiddenCasey],
+  });
+
+  it("names a hidden person only inside Hidden people: not the library, its search, a dialog, or the lock screen", async () => {
+    const user = userEvent.setup();
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(withHiddenCasey())),
+      hideProfile: vi.fn().mockResolvedValue(undefined),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const name = "Hiddenname";
+    expect(placesThatSay(name)).toEqual([]);
+    // Searching for the name finds no one, and the page still does not say it.
+    const search = screen.getByRole("searchbox");
+    await user.type(search, name);
+    expect(placesThatSay(name).filter((e) => e !== search)).toEqual([]);
+    await user.clear(search);
+    // Security shows it, and only in the Hidden people panel (and what its buttons say).
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    const panel = document.querySelector(".native-hidden-people");
+    expect(panel).not.toBeNull();
+    const found = placesThatSay(name);
+    expect(found.length).toBeGreaterThan(0);
+    for (const element of found) expect(panel!.contains(element)).toBe(true);
+    // The hand-over dialog lists the people the library shows, not the hidden one.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Hand records over…") }),
+    );
+    await screen.findByRole("dialog");
+    for (const element of placesThatSay(name))
+      expect(panel!.contains(element)).toBe(true);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: humanText("Cancel"),
+      }),
+    );
+    // Locked: the name is nowhere.
+    await user.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(placesThatSay(name)).toEqual([]);
+  });
+
+  it("after a person is hidden, nothing of theirs (name, documents, the notice) is on the library, in its search, or on the lock screen", async () => {
+    const user = userEvent.setup();
+    let hidden = false;
+    const casey = {
+      id: "profile-9",
+      displayName: "FAKE Casey Hiddenname",
+      createdAtMs: 2,
+    };
+    const letter = {
+      id: "record-9",
+      profileId: "profile-9",
+      folderIds: [],
+      displayName: "FAKE_Letter_for_Hiddenname.pdf",
+      sourceLabel: "Manual import — unverified",
+      mediaType: "application/pdf",
+      plaintextSize: 2048,
+      importedAtMs: 2,
+      available: true,
+    };
+    const current = (): VaultSnapshot =>
+      hidden
+        ? {
+            ...snapshotWithRecord,
+            hiddenProfiles: [{ ...hiddenCasey, documents: 1 }],
+          }
+        : {
+            ...snapshotWithRecord,
+            profiles: [...snapshotWithRecord.profiles, casey],
+            records: [...snapshotWithRecord.records, letter],
+          };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(current())),
+      hideProfile: vi.fn().mockImplementation(async () => {
+        hidden = true;
+      }),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    // With two people the library's heading is the person's name.
+    await screen.findByRole("heading", { name: humanText("Jamie") });
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: humanText("Hide FAKE Casey Hiddenname"),
+      }),
+    );
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: humanText("Hide FAKE Casey Hiddenname"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.hideProfile).toHaveBeenCalledWith("profile-9"),
+    );
+    const panel = await waitFor(() => {
+      const found = document.querySelector(".native-hidden-people");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // Outside the Hidden people panel the person and their document are not said anywhere.
+    // Outside the panel only the polite line that tells a screen reader it was hidden says it
+    // (the confirmation of what the patient just did).
+    const notice = (element: Element) =>
+      element.getAttribute("aria-live") === "polite" &&
+      /is now hidden/.test(element.textContent ?? "");
+    const outside = () =>
+      placesThatSay("Hiddenname").filter(
+        (element) => !panel.contains(element) && !notice(element),
+      );
+    expect(outside()).toEqual([]);
+    // Back in the library, and searching for them.
+    await user.click(
+      screen.getByRole("button", { name: humanText(/^My records/) }),
+    );
+    await screen.findByRole("heading", { name: humanText("My records") });
+    const search = screen.getByRole("searchbox");
+    await user.type(search, "Hiddenname");
+    // Only the confirmation is left (measured: it stays on the library page, see below).
+    const left = placesThatSay("Hiddenname").filter((e) => e !== search);
+    expect(left.every(notice)).toBe(true);
+    // Locked: nothing of it is left, not even the line that told a screen reader it was hidden.
+    await user.click(windowLock());
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    expect(placesThatSay("Hiddenname")).toEqual([]);
+    expect(document.body.textContent).not.toContain("Hiddenname");
+  });
+
+  /** Every bridge call that changes the vault or sends something to a clinic. In read-only
+   * recovery none may be reached from any control. (Erasing the vault stays possible: it is how
+   * a damaged vault is started over.) */
+  const BRIDGE_WRITES = [
+    "create",
+    "changePassphrase",
+    "beginRecoveryKey",
+    "confirmRecoveryKey",
+    "createProfile",
+    "renameProfile",
+    "updateProfileDetails",
+    "createFolder",
+    "updateFolder",
+    "renameRecord",
+    "assignFolders",
+    "assignFoldersBatch",
+    "importPickedFiles",
+    "importProfile",
+    "restore",
+    "savePhoto",
+    "videoStart",
+    "videoAppend",
+    "videoStop",
+    "hideProfile",
+    "restoreProfile",
+    "hideRecord",
+    "unhideRecord",
+    "hideUnavailableRecords",
+    "acceptReceived",
+    "discardReceived",
+    "moveToPerson",
+    "linkPortal",
+    "connectPortal",
+    "checkDocuments",
+    "requestDeviceApproval",
+    "submitApprovalCode",
+    "restartDeviceApproval",
+    "saveAiResult",
+    "recordKnownDetails",
+  ] as const;
+
+  it("lets no control write while the vault is read-only: every enabled button in the library, a document's details and Security", async () => {
+    const user = userEvent.setup();
+    const readOnly: VaultSnapshot = {
+      ...snapshotWithRecord,
+      recovery: "writeFailed",
+      profiles: [
+        ...snapshotWithRecord.profiles,
+        { id: "profile-2", displayName: "FAKE Robin", createdAtMs: 2 },
+      ],
+      hiddenProfiles: [hiddenCasey],
+    };
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi
+        .fn()
+        .mockImplementation(async () => captureSnapshot(readOnly)),
+      // Present, so that what they would be reached from is on the screen to be pressed.
+      hideProfile: vi.fn().mockResolvedValue(undefined),
+      restoreProfile: vi.fn().mockResolvedValue([]),
+      updateProfileDetails: vi.fn().mockResolvedValue(undefined),
+    });
+    render(<VaultApp bridge={bridge} />);
+    // With two people the library's heading is the person's name.
+    await screen.findByRole("heading", { name: humanText("Jamie") });
+    const calledWrites = () =>
+      BRIDGE_WRITES.filter((name) => {
+        const method = bridge[name as keyof VaultBridge] as unknown;
+        return vi.isMockFunction(method) && method.mock.calls.length > 0;
+      });
+    // Not pressed: they leave, close or move between pages and people, and cannot write.
+    const NOT_PRESSED =
+      /lock|cancel|close|back|not now|leave|erase|forget|reset|security|library|my records|skip|done|dismiss|^jamie|robin|shared with me|^hidden$|^records$|preferences|ai helper/i;
+    const nameOf = (element: Element) =>
+      visibleText(
+        element.getAttribute("aria-label") ?? element.textContent ?? "",
+      ).trim();
+    const dialogsOpen = () => [
+      ...screen.queryAllByRole("dialog"),
+      ...screen.queryAllByRole("alertdialog"),
+    ];
+    const enabled = (element: Element) =>
+      !(element as HTMLButtonElement).disabled &&
+      element.getAttribute("aria-disabled") !== "true";
+    const pressable = (scope?: HTMLElement) => {
+      const where = scope ? within(scope) : screen;
+      return [
+        ...where.queryAllByRole("button"),
+        ...where.queryAllByRole("menuitem"),
+      ];
+    };
+    // Dialogs a press opened beyond the `keep` already open: their buttons are pressed too (a
+    // confirmation is where a write would start), then they are closed.
+    const closeWhatOpened = async (keep: number) => {
+      for (let i = 0; i < 4 && dialogsOpen().length > keep; i += 1) {
+        const dialog = dialogsOpen()[dialogsOpen().length - 1];
+        for (const button of within(dialog).queryAllByRole("button")) {
+          const name = nameOf(button);
+          if (enabled(button) && name && !NOT_PRESSED.test(name)) {
+            pressed.push(`(in a dialog) ${name}`);
+            await user.click(button);
+          }
+        }
+        await user.keyboard("{Escape}");
+      }
+    };
+    const pressed: string[] = [];
+    /** Presses every enabled button once, by its name, in `scope` (default: the page). */
+    const sweep = async (scope?: () => HTMLElement) => {
+      const keep = dialogsOpen().length;
+      const names = Array.from(
+        new Set(
+          pressable(scope?.())
+            .filter(enabled)
+            .map(nameOf)
+            .filter((name) => name && !NOT_PRESSED.test(name)),
+        ),
+      );
+      for (const name of names) {
+        const target = pressable(scope?.()).find(
+          (element) => enabled(element) && nameOf(element) === name,
+        );
+        if (!target) continue;
+        pressed.push(name);
+        await user.click(target);
+        await closeWhatOpened(keep);
+      }
+    };
+    // The library.
+    await sweep();
+    // A document's details dialog, left open while its own buttons are pressed.
+    await user.click(screen.getByText(humanText("FAKE_Results.pdf")));
+    await screen.findByRole("dialog");
+    const pressedBefore = pressed.length;
+    await sweep(() => within(document.body).getByRole("dialog"));
+    // (Pressing some of them closes the dialog, as Back does; the rest are still pressed.)
+    expect(pressed.length).toBeGreaterThan(pressedBefore);
+    if (screen.queryByRole("dialog")) await user.keyboard("{Escape}");
+    // Security.
+    await user.click(
+      screen.getByRole("button", { name: humanText(/Security/) }),
+    );
+    await sweep();
+    // The sweep really pressed things (it is not vacuously quiet).
+    expect(pressed.length).toBeGreaterThan(5);
+    expect(calledWrites()).toEqual([]);
   });
 
   it("hides a document at once, never deletes it, and restores it from Hidden (#71)", async () => {
