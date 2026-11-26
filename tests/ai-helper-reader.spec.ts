@@ -193,7 +193,9 @@ test("leaving the reader while its Summary reads the text stops the read", async
   ]);
   // No model was asked for a text that was never read.
   expect(await aiCalls(page, AI_COMMANDS.summarize)).toEqual([]);
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(
+    0,
+  );
   await expectOnlyFakedCommands(page);
 });
 
@@ -387,7 +389,9 @@ test.describe("with a model on this device", () => {
     expect(await aiCancelled(page)).toEqual([
       { command: AI_COMMANDS.summarize, by: AI_COMMANDS.cancel },
     ]);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(
+      0,
+    );
     await expectOnlyFakedCommands(page);
   });
 

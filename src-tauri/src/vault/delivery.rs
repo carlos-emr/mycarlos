@@ -4,7 +4,7 @@ use crate::portal_delivery::{self as wire, Receipt};
 use crate::portal_delivery::{Custody, ReceiptOutcome};
 use crate::portal_link::KeyStatus;
 
-#[cfg(windows)]
+#[cfg(desktop)]
 impl VaultStore {
     /// Only a freshly committed local custody record, never a renderer count or remote hint.
     pub(crate) fn notify_local_arrival(&self, record_id: Uuid, link: &StoredLink, session: u64) {
@@ -8192,6 +8192,162 @@ mod approval_recovery_tests {
         check_listing(&store, &link, &[]);
         assert!(refused_saved(&store).is_empty());
     }
+    /// #160: removing a link that delivered nothing takes its keys, its remembered refusals and
+    /// everything else kept for it in one commit with one history entry, leaves the other links
+    /// alone, reopens, and is idempotent.
+    #[test]
+    fn should_remove_a_link_without_documents_with_what_is_kept_for_it() {
+        let (_temp, store, other, _) = setup(false);
+        let (link, base, _, _) = fixture_package();
+        add_link(&store, &link);
+        check_listing(&store, &link, &[undecryptable(&base, 7)]);
+        assert_eq!(refused_saved(&store).len(), 1);
+        let snapshot_link = |store: &VaultStore, id: Uuid| {
+            store
+                .snapshot()
+                .unwrap()
+                .portal_links
+                .into_iter()
+                .find(|l| l.id == id)
+        };
+        assert!(!snapshot_link(&store, link.id).unwrap().has_documents);
+        store.mark_link_gone(link.id);
+        let session = store.portal_link_ticket();
+        store.remove_portal_link(link.id, session).unwrap();
+        assert!(snapshot_link(&store, link.id).is_none());
+        assert!(snapshot_link(&store, other.id).is_some());
+        assert!(refused_saved(&store).is_empty());
+        assert!(!store.link_gone(link.id));
+        assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 1);
+        // Already gone, or never there: not an error, and nothing more is written.
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.remove_portal_link(link.id, session).unwrap();
+        store.remove_portal_link(Uuid::new_v4(), session).unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+        // The vault reopens with the entry in its history and the other link intact.
+        let store = restart(store);
+        assert!(snapshot_link(&store, link.id).is_none());
+        assert!(snapshot_link(&store, other.id).is_some());
+        assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 1);
+    }
+    /// #160 review: a link with a push destination enrolled (or a revocation queued) is not
+    /// removed: the portal still holds a subscription for the device. Already gone is not a write.
+    #[test]
+    fn should_refuse_removing_a_link_with_notices_on_and_not_write_when_it_is_already_gone() {
+        use crate::document_notifications::{Owner, Permission, Platform, Policy};
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        store
+            .mutate_recorded(|m, _| {
+                let mut policy = Policy::new(m.remote_notices.clone()).unwrap();
+                policy.permission_changed(Permission::Granted);
+                policy.opt_in();
+                let owner = Owner::new(link.id, link.keys.device_key_id()).unwrap();
+                policy
+                    .reserve_destination(owner, Uuid::new_v4(), Platform::WindowsWns)
+                    .unwrap();
+                m.remote_notices = policy.saved().clone();
+                Ok(())
+            })
+            .unwrap();
+        let shown = store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .into_iter()
+            .find(|l| l.id == link.id)
+            .unwrap();
+        assert!(shown.notices_enrolled && !shown.has_documents);
+        let session = store.portal_link_ticket();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .any(|l| l.id == link.id));
+        // A link that is not there is not a write: no commit and no history entry.
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.remove_portal_link(Uuid::new_v4(), session).unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+    }
+    /// #160 review: the notice-key sweep reads the vault id and its links under one guard, so a
+    /// locked vault gives no sweep (never one with an empty link set), and an open one is swept
+    /// with exactly its links.
+    #[test]
+    fn should_not_sweep_notice_keys_when_the_vault_is_locked() {
+        let (_temp, store, other, _) = setup(false);
+        let mut seen = None;
+        assert!(store.with_open_links(|vault, links| seen = Some((vault, links.clone()))));
+        let (vault, links) = seen.unwrap();
+        assert_eq!(Some(vault), store.open_vault_id());
+        assert!(links.contains(&other.id));
+        store.lock();
+        let mut called = false;
+        assert!(!store.with_open_links(|_, _| called = true));
+        assert!(!called, "a locked vault must give no sweep");
+        assert!(!store.sweep_notice_keys());
+    }
+    /// #160: a link with a filed document keeps its keys (its custody proof is checked with them at
+    /// every unlock), so removing it is refused and nothing changes.
+    #[test]
+    fn should_refuse_removing_a_link_with_a_filed_document() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _) = add_signed_pending_delivery(&store);
+        let session = store.portal_link_ticket();
+        let history = crate::vault::history_events_for_test(&store).len();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+        let shown = store.snapshot().unwrap();
+        assert!(
+            shown
+                .portal_links
+                .iter()
+                .find(|l| l.id == link.id)
+                .unwrap()
+                .has_documents
+        );
+        assert_eq!(shown.records.len(), 1);
+        // And the vault still opens: the custody check ran with the keys.
+        let store = restart(store);
+        assert_eq!(store.snapshot().unwrap().records.len(), 1);
+    }
+    /// #160: a removal is refused while portal work runs, after the session changed, and when
+    /// the vault is locked.
+    #[test]
+    fn should_refuse_removing_a_link_while_busy_after_a_lock_and_when_locked() {
+        let (_temp, store, link, _) = setup(false);
+        let session = store.portal_link_ticket();
+        {
+            let _work = store.start_portal_work().unwrap();
+            assert!(matches!(
+                store.remove_portal_link(link.id, session),
+                Err(VaultError::Portal(portal_link::LinkError::Busy))
+            ));
+        }
+        store.lock();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+        ));
+        assert!(matches!(
+            store.remove_portal_link(link.id, store.portal_link_ticket()),
+            Err(VaultError::Locked)
+        ));
+        store.unlock(PASSWORD).unwrap();
+        assert!(matches!(
+            store.remove_portal_link(link.id, session),
+            Err(VaultError::Portal(portal_link::LinkError::Cancelled))
+        ));
+        assert_eq!(store.snapshot().unwrap().portal_links.len(), 1);
+    }
     /// #143, the review's SHOULD 1: a clinic that re-sends a corrected document is
     /// not blocked by the old refusal, with or without Try again. The refusal
     /// is for one delivery id and hash; the corrected document is another, so
@@ -8471,7 +8627,7 @@ mod approval_recovery_tests {
             store.session().as_ref().unwrap().manifest.format_version,
             VAULT_FORMAT
         );
-        // Format 12 is no longer the newest (previous full names are 13).
+        // Format 12 is no longer the newest (previous full names are 13, link removal 16).
         const { assert!(VAULT_FORMAT >= MANIFEST_FORMAT_REFUSED) };
         assert!(refused_saved(&store).is_empty());
         let refused = undecryptable(&base, 7);
