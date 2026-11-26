@@ -320,13 +320,53 @@ fn the_generated_key_is_shown_as_seven_groups_and_reads_back_as_typed() {
     // Lower case, spaces for dashes and the letters Crockford folds together.
     let typed = text.to_lowercase().replace('-', " ").replace('0', "o");
     assert_eq!(*parse_package_key(&typed).unwrap(), *key);
-    // A one-character slip is caught as a typo, before any unwrapping.
-    let mut slipped: Vec<char> = text.chars().collect();
+    // A one-character slip is caught as a typo, before any unwrapping. The check is 10 bits, so for
+    // a random key about 2 slips in 1,024 would get through (as a key, or as a recovery key), which
+    // made this test fail one run in about 450. The exact answer is asserted for a fixed key; the
+    // test below counts every slip of it.
+    let fixed = Zeroizing::new([7_u8; RECOVERY_KEY_BYTES]);
+    let fixed_text = encode_key_text(&fixed, PACKAGE_KEY_CHECK_LABEL);
+    let mut slipped: Vec<char> = fixed_text.chars().collect();
     slipped[0] = if slipped[0] == '2' { '3' } else { '2' };
     assert_eq!(
         parse_package_key(&slipped.into_iter().collect::<String>()).err(),
         Some(PackageError::KeyTypo)
     );
+}
+
+#[test]
+fn every_one_symbol_slip_of_a_fixed_package_key_is_counted_so_a_change_in_the_check_shows() {
+    // The check is 10 bits: about 1 slip in 1,024 passes for the package label or for the
+    // recovery label. For a fixed key the outcome of every slip is fixed too, so the counts are
+    // exact: a check that is no longer read, a label that changed, or a different width moves them.
+    // None may ever read back as the key itself (a slip changes the key).
+    let key = Zeroizing::new([7_u8; RECOVERY_KEY_BYTES]);
+    let text: Vec<char> = encode_key_text(&key, PACKAGE_KEY_CHECK_LABEL)
+        .replace('-', "")
+        .chars()
+        .collect();
+    assert_eq!(text.len(), 28);
+    let (mut as_a_key, mut as_a_recovery_key, mut as_a_typo) = (0_u32, 0_u32, 0_u32);
+    for position in 0..text.len() {
+        for symbol in CROCKFORD_ALPHABET.iter().map(|symbol| char::from(*symbol)) {
+            if text[position] == symbol {
+                continue;
+            }
+            let mut slipped = text.clone();
+            slipped[position] = symbol;
+            match parse_package_key(&slipped.into_iter().collect::<String>()) {
+                Ok(read) => {
+                    assert_ne!(*read, *key, "a slip cannot read back as the key");
+                    as_a_key += 1;
+                }
+                Err(PackageError::RecoveryKeyEntered) => as_a_recovery_key += 1,
+                Err(PackageError::KeyTypo) => as_a_typo += 1,
+                Err(other) => panic!("a slip gave {other:?}"),
+            }
+        }
+    }
+    // 28 symbols, 31 other symbols each: 868 slips.
+    assert_eq!((as_a_key, as_a_recovery_key, as_a_typo), (0, 1, 867));
 }
 
 #[test]
@@ -1317,7 +1357,10 @@ fn the_history_excerpt_is_bounded_by_what_a_phone_can_hold() {
 
 #[test]
 fn a_package_key_and_a_recovery_key_are_told_apart() {
-    let (key, text) = generate_package_key();
+    // A fixed key: with a random one, each of the three assertions about the check below had a
+    // 1-in-1,024 chance of failing (the 10-bit checks of the two kinds can agree by chance).
+    let key = Zeroizing::new([7_u8; RECOVERY_KEY_BYTES]);
+    let text = encode_key_text(&key, PACKAGE_KEY_CHECK_LABEL);
     // The package's own key reads back, as it is shown and as a person types it.
     assert_eq!(*parse_package_key(&text).unwrap(), *key);
     assert_eq!(
