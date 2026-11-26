@@ -72,6 +72,8 @@ mod profile_export;
 mod profile_import;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
+#[cfg(test)]
+mod save_stage_tests;
 // Backups that carry the videos or leave them out (#359 PR 6).
 mod backup_video;
 // Playback of a stored video (#359): the `mycarlos-video` scheme handler and the
@@ -236,6 +238,9 @@ const ARGON_ITERATIONS: u32 = 3;
 const ARGON_LANES: u32 = 4;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+/// Windows Search leaves a file with this attribute out of its content index.
+#[cfg(any(windows, test))]
+const FILE_ATTRIBUTE_NOT_CONTENT_INDEXED: u32 = 0x0000_2000;
 #[cfg(windows)]
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
@@ -4532,8 +4537,23 @@ impl VaultStore {
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         options.mode(0o600);
-        AtomicFile::new(destination, AllowOverwrite)
-            .write_with_options(|file| file.write_all(kit.as_bytes()), options)
+        // The key is in this file in the clear: ask Windows Search not to read it into its index
+        // (best effort; the attribute is set on the file as it is created and survives the
+        // rename, and a folder that does not honour it only loses that).
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.attributes(FILE_ATTRIBUTE_NOT_CONTENT_INDEXED);
+        }
+        let stage = SaveStage::begin(&self.root, destination)?;
+        AtomicFile::new_with_tmpdir(destination, AllowOverwrite, stage.dir())
+            .write_with_options(
+                |file| {
+                    run_at_test_boundary("save.kit.during");
+                    file.write_all(kit.as_bytes())
+                },
+                options,
+            )
             .map_err(io::Error::from)?;
         Ok(())
     }
@@ -5087,16 +5107,21 @@ impl VaultStore {
         #[cfg(unix)]
         options.mode(0o600);
         let mut outcome = Ok(());
-        let written = AtomicFile::new(destination, AllowOverwrite).write_with_options(
-            |file| {
-                outcome = self.backup_planned(BufWriter::new(&mut *file), now_ms, &plan);
-                match &outcome {
-                    Ok(()) => file.sync_all(),
-                    Err(_) => Err(io::Error::other("backup failed")),
-                }
-            },
-            options,
-        );
+        let stage = SaveStage::begin(&self.root, destination)?;
+        let written = AtomicFile::new_with_tmpdir(destination, AllowOverwrite, stage.dir())
+            .write_with_options(
+                |file| {
+                    run_at_test_boundary("save.backup.during");
+                    outcome = self.backup_planned(BufWriter::new(&mut *file), now_ms, &plan);
+                    match &outcome {
+                        Ok(()) => file.sync_all(),
+                        Err(_) => Err(io::Error::other("backup failed")),
+                    }
+                },
+                options,
+            );
+        // The stage goes before anything is noted, as an export's does.
+        drop(stage);
         outcome?;
         written.map_err(io::Error::from)?;
         self.record_backup_saved(&destination.to_string_lossy());
@@ -8976,6 +9001,59 @@ fn finish_export(stage: &Path, entry: Option<&Path>) {
                 sync_parent(journal);
             }
         }
+    }
+}
+
+/// A journaled staging folder for a save to a place the patient chose: a recovery kit, a backup
+/// or a hand-over package. The temporary file `AtomicFile` writes before it renames goes inside
+/// it, not into a `.atomicwrite…` folder of its own beside the destination, so that a save the
+/// process died in leaves a folder the next start knows by name and removes
+/// (`remove_abandoned_exports`), instead of a partly written file (for a kit, the key) in a
+/// folder nothing will ever clean. The sweep touches only folders this journal names, never a
+/// folder it merely finds, and skips one an export of this process is still using.
+///
+/// No age check is needed before the sweep removes one: the sweep runs with the storage lock,
+/// which keeps another instance out while a session is open, and skips what is in flight here, so
+/// it cannot remove the live save of another instance (see `remove_abandoned_exports`).
+///
+/// The folder is made beside the destination, so the rename stays on one volume as it was. If
+/// the vault's own disk cannot take the journal entry, the save still runs, as an export does.
+/// Dropping it removes the folder and then the entry.
+pub(crate) struct SaveStage {
+    dir: PathBuf,
+    entry: Option<PathBuf>,
+    _in_flight: ExportInFlight,
+}
+
+impl SaveStage {
+    pub(crate) fn begin(root: &Path, destination: &Path) -> Result<Self, VaultError> {
+        let parent = destination.parent().ok_or(VaultError::Invalid)?;
+        let id = Uuid::new_v4();
+        let in_flight = ExportInFlight::new(id);
+        let dir = parent.join(format!("{EXPORT_STAGE_PREFIX}{id}"));
+        let entry = journal_export(root, id, &dir).ok();
+        if let Err(error) = create_stage_dir(&dir) {
+            if let Some(entry) = &entry {
+                let _ = remove_owned_file(entry, Removable::ExportStage);
+            }
+            return Err(error);
+        }
+        Ok(Self {
+            dir,
+            entry,
+            _in_flight: in_flight,
+        })
+    }
+
+    /// Where the temporary file goes.
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for SaveStage {
+    fn drop(&mut self) {
+        finish_export(&self.dir, self.entry.as_deref());
     }
 }
 
