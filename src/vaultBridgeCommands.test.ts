@@ -93,6 +93,12 @@ describe("each bridge method invokes its native command with its arguments", () 
       { linkId: "link-1" },
     ],
     [
+      "removePortalLink",
+      (b) => b.removePortalLink("link-1"),
+      "vault_portal_remove_link",
+      { linkId: "link-1" },
+    ],
+    [
       "requestDeviceApproval",
       (b) => b.requestDeviceApproval("link-1"),
       "vault_request_device_approval",
