@@ -1927,6 +1927,18 @@ mod tests {
             ok(good_tkhd(), good_mdhd(), hdlr_with(&[0; 4])).map(|_| ()),
             Err(Mp4Error::Malformed)
         );
+        // The handler box last in its parent has nothing after it, so that read ran off the end
+        // anyway; with a box after it, the four bytes where the type would be are that box's own
+        // header, and only the box's own length refuses it.
+        assert_eq!(
+            ok(
+                good_tkhd(),
+                good_mdhd(),
+                [hdlr_with(&[0; 4]), boxed(b"free", &[0; 16])].concat()
+            )
+            .map(|_| ()),
+            Err(Mp4Error::Malformed)
+        );
         // The field itself just inside its box is read: the box ends exactly after the timescale.
         let mut exact = vec![0; 8];
         exact.extend_from_slice(&30000_u32.to_be_bytes());
