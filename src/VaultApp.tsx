@@ -41,6 +41,7 @@ import {
 import { receiveNoticeText, sharedAddedText } from "./native/receivedNotice";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
+import { useAddVideo } from "./native/useAddVideo";
 import { ComfortSetup } from "./native/ComfortSetup";
 
 import { ConfirmDialog } from "./native/ConfirmDialog";
@@ -870,6 +871,17 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         }),
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
+      pickImportVideo:
+        bridge.pickImportVideo &&
+        ((profileId, folderIds) =>
+          track(bridge.pickImportVideo!(profileId, folderIds))),
+      // Adding a video can take minutes: the lock waits for it, as for any transfer.
+      importPickedVideo:
+        bridge.importPickedVideo &&
+        ((pickId, profileId, folderIds) =>
+          transfer(() =>
+            bridge.importPickedVideo!(pickId, profileId, folderIds),
+          )),
       pickExportDestination: (recordId) =>
         track(bridge.pickExportDestination(recordId)),
       // An anonymized text saved to a file is handled as a record's copy is: its picker is
@@ -927,6 +939,18 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         ),
     };
   }, [answering, bridge, requestLock, track, transferHold]);
+  // Adding a video lives here, above the screens: leaving the library mid-import keeps its progress,
+  // its Cancel and its answer, and the library shows the video when it is in.
+  const addVideo = useAddVideo({
+    bridge: trackedBridge,
+    onAdded: () => void refresh(),
+  });
+  // A lock stops an import natively. What it left (a failure, a stale "added") must not show after
+  // the next unlock.
+  const resetAddVideo = addVideo.reset;
+  useEffect(() => {
+    if (status === "locked") resetAddVideo();
+  }, [status, resetAddVideo]);
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -2157,6 +2181,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       )}
       <VaultLibrary
         bridge={trackedBridge}
+        addVideo={addVideo}
         snapshot={snapshot}
         busy={busy}
         notice={notice}
