@@ -869,8 +869,8 @@ system's authorities only.
    linked and its approval status is shown there. (Before this piece Android showed "Portal linking
    is not available on this device yet.")
 2. **Which certificates are trusted.** *Requires #478 (merged before this piece).* Without #478,
-   Android's own default for an app that targets API 24 or later (this one does, as its minimum
-   is API 24, #423) already ignores certificate authorities a person installed in the phone's settings; what only
+   Android's own default for an app that targets API 24 or later (this one does: its target SDK
+   is 36, pinned by #423, and its minimum is 24) already ignores certificate authorities a person installed in the phone's settings; what only
    #478 adds is the written configuration, the gate that refuses a release build that weakens it,
    and the debug FAKE test root. A **release** build trusts only the phone's system
    certificate store, and no certificate authority a person installed in the phone's own settings
