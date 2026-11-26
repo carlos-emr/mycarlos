@@ -3957,103 +3957,107 @@ fn iphone_push_state() -> &'static Arc<ios_push_handles::IosPushState> {
 
 /// The iPhone Settings switch, as it stands: whether this is an iPhone, the patient's choice and
 /// why notices are not coming. Asks the system nothing (it reads the permission without asking).
-#[cfg(target_os = "ios")]
+/// One function for every platform (the body differs inside), so the renderer's grant, the command
+/// count and the store-pin check each see one command; anything but an iPhone answers "not an iPhone".
 #[tauri::command]
 async fn vault_iphone_push_status(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
 ) -> CommandResult<ios_push_handles::IphonePushStatus> {
-    let state = Arc::clone(iphone_push_state());
-    if let Ok(reply) = tauri_plugin_ios_push::permission(&app).await {
-        if let Some(status) = reply.get("status").and_then(|s| s.as_str()) {
-            state.record_permission(status);
-        }
+    let store = store.pin();
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &store);
+        Ok(ios_push_handles::IphonePushStatus::NOT_AN_IPHONE)
     }
-    let store = Arc::clone(store.pin().arc());
-    let enabled = tauri::async_runtime::spawn_blocking({
-        let state = Arc::clone(&state);
-        move || {
-            store
-                .remote_notice_status(Some(&*state))
-                .map(|s| s.opted_in)
+    #[cfg(target_os = "ios")]
+    {
+        let state = Arc::clone(iphone_push_state());
+        if let Ok(reply) = tauri_plugin_ios_push::permission(&app).await {
+            if let Some(status) = reply.get("status").and_then(|s| s.as_str()) {
+                state.record_permission(status);
+            }
         }
-    })
-    .await
-    .map_err(|_| VaultError::Storage)??;
-    Ok(ios_push_handles::IphonePushStatus {
-        supported: true,
-        enabled,
-        state: state.state(),
-    })
-}
-
-#[cfg(not(target_os = "ios"))]
-#[tauri::command]
-async fn vault_iphone_push_status() -> CommandResult<ios_push_handles::IphonePushStatus> {
-    Ok(ios_push_handles::IphonePushStatus::NOT_AN_IPHONE)
+        let store = Arc::clone(store.arc());
+        let enabled = tauri::async_runtime::spawn_blocking({
+            let state = Arc::clone(&state);
+            move || {
+                store
+                    .remote_notice_status(Some(&*state))
+                    .map(|s| s.opted_in)
+            }
+        })
+        .await
+        .map_err(|_| VaultError::Storage)??;
+        Ok(ios_push_handles::IphonePushStatus {
+            supported: true,
+            enabled,
+            state: state.state(),
+        })
+    }
 }
 
 /// Turns notices for a closed myCarlos on or off. The system's permission question, and Apple's
-/// token, are asked for only when it is turned on.
-#[cfg(target_os = "ios")]
+/// token, are asked for only when it is turned on. One function for every platform, as above.
 #[tauri::command]
 async fn vault_iphone_push_set(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     enabled: bool,
 ) -> CommandResult<ios_push_handles::IphonePushStatus> {
-    let state = Arc::clone(iphone_push_state());
-    let token = if enabled {
-        match ios_push::request_token(&app).await {
-            Ok(token) => {
-                state.record_token();
-                Some(token)
+    let store = store.pin();
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &store, enabled);
+        Ok(ios_push_handles::IphonePushStatus::NOT_AN_IPHONE)
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let state = Arc::clone(iphone_push_state());
+        let token = if enabled {
+            match ios_push::request_token(&app).await {
+                Ok(token) => {
+                    state.record_token();
+                    Some(token)
+                }
+                Err(refusal) => {
+                    state.record_refusal(refusal);
+                    None
+                }
             }
-            Err(refusal) => {
-                state.record_refusal(refusal);
-                None
+        } else {
+            None
+        };
+        let store = Arc::clone(store.arc());
+        let memory = ios_push_native::KeychainMemory(app);
+        let enabled = tauri::async_runtime::spawn_blocking({
+            let state = Arc::clone(&state);
+            move || {
+                let session = store.portal_link_ticket();
+                let (_, bound) = store.set_iphone_push(
+                    enabled,
+                    token.as_ref(),
+                    &state,
+                    &memory,
+                    session,
+                    &portal_client::api,
+                )?;
+                // Settings says so when no place for notices could be left at the portal, and the
+                // Keychain keeps that across a restart (cleared when notices are turned off).
+                store.settle_attention(enabled, &bound, &state, &memory);
+                store
+                    .remote_notice_status(Some(&*state))
+                    .map(|status| status.opted_in)
             }
-        }
-    } else {
-        None
-    };
-    let store = Arc::clone(store.pin().arc());
-    let memory = ios_push_native::KeychainMemory(app);
-    let enabled = tauri::async_runtime::spawn_blocking({
-        let state = Arc::clone(&state);
-        move || {
-            let session = store.portal_link_ticket();
-            let (_, bound) = store.set_iphone_push(
-                enabled,
-                token.as_ref(),
-                &state,
-                &memory,
-                session,
-                &portal_client::api,
-            )?;
-            // Settings says so when no place for notices could be left at the portal, and the
-            // Keychain keeps that across a restart (cleared when notices are turned off).
-            store.settle_attention(enabled, &bound, &state, &memory);
-            store
-                .remote_notice_status(Some(&*state))
-                .map(|status| status.opted_in)
-        }
-    })
-    .await
-    .map_err(|_| VaultError::Storage)??;
-    Ok(ios_push_handles::IphonePushStatus {
-        supported: true,
-        enabled,
-        state: state.state(),
-    })
-}
-
-#[cfg(not(target_os = "ios"))]
-#[tauri::command]
-async fn vault_iphone_push_set(
-    _enabled: bool,
-) -> CommandResult<ios_push_handles::IphonePushStatus> {
-    Ok(ios_push_handles::IphonePushStatus::NOT_AN_IPHONE)
+        })
+        .await
+        .map_err(|_| VaultError::Storage)??;
+        Ok(ios_push_handles::IphonePushStatus {
+            supported: true,
+            enabled,
+            state: state.state(),
+        })
+    }
 }
 
 #[tauri::command]
