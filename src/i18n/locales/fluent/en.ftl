@@ -1676,6 +1676,8 @@ interface-history-event-portalLinkStarted = Clinic link started
 
 interface-history-event-portalLinked = Clinic linked
 
+interface-history-event-portalLinkRemoved = Clinic link removed
+
 interface-history-event-profileCreated = Patient profile added
 
 interface-history-event-profileDetailsChanged = Personal details changed
@@ -1837,6 +1839,21 @@ portal-tryAgain = Try again
 portal-tryAgainFor = Try again for { $clinic }
 
 portal-linkAnother = Link another clinic
+
+portal-removeLink = Remove this link
+
+portal-removeTitle = Remove this link?
+
+portal-removeBody = { $clinic }, device “{ $device }”. This device stops being linked here, and its saved device keys are erased from this device. Earlier backups of your vault still hold those keys until they are replaced. Your clinic may still list this device.
+
+portal-removeConfirm = Remove link
+
+portal-removeKept = Documents from this clinic are saved in your vault, so this link stays.
+
+portal-removeNotices = Document notices are on for this clinic. Turn them off first, then remove the link.
+
+portal-removed = Link removed.
+
 
 ai-summary-button = Summary
 

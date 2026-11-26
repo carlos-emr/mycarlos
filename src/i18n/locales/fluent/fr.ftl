@@ -1709,6 +1709,8 @@ interface-history-event-portalLinkStarted = Liaison avec la clinique commencée
 
 interface-history-event-portalLinked = Clinique liée
 
+interface-history-event-portalLinkRemoved = Lien avec la clinique supprimé
+
 interface-history-event-profileCreated = Profil patient ajouté
 
 interface-history-event-profileDetailsChanged = Renseignements personnels modifiés
@@ -1873,6 +1875,21 @@ portal-tryAgain = Réessayer
 portal-tryAgainFor = Réessayer pour { $clinic }
 
 portal-linkAnother = Associer une autre clinique
+
+portal-removeLink = Supprimer ce lien
+
+portal-removeTitle = Supprimer ce lien ?
+
+portal-removeBody = { $clinic }, appareil « { $device } ». Cet appareil n’est plus lié ici et ses clés enregistrées sont effacées de cet appareil. Les sauvegardes antérieures de votre coffre conservent ces clés jusqu’à leur remplacement. Votre clinique peut encore afficher cet appareil.
+
+portal-removeConfirm = Supprimer le lien
+
+portal-removeKept = Des documents de cette clinique sont enregistrés dans votre coffre : ce lien est donc conservé.
+
+portal-removeNotices = Les avis de documents sont activés pour cette clinique. Désactivez-les d’abord, puis supprimez le lien.
+
+portal-removed = Lien supprimé.
+
 
 ai-summary-button = Résumé
 
