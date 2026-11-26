@@ -6815,6 +6815,10 @@ describe("durable vault UI", () => {
   });
 
   // ---- A double press, or a form sent twice, never writes twice ----
+  // Two kinds of case. A second click on a button is stopped by the button being disabled while
+  // the first action runs (`busy`): React drops a click on a disabled button, so those tests
+  // fail only if that disabling is removed. A form sent twice with `fireEvent.submit` goes past
+  // the button altogether, so what stops it is the form's own guard.
 
   /** The bridge call stays pending, as a slow disk would leave it, until `finish` is called. */
   function pendingCall<T>() {
@@ -6960,6 +6964,8 @@ describe("durable vault UI", () => {
     const form = screen
       .getByRole("button", { name: "Connect and request approval" })
       .closest("form")!;
+    // Two separate submits: the state the first one leaves (connecting, the code cleared) would
+    // stop the second anyway. The next test sends both with no render between.
     fireEvent.submit(form);
     fireEvent.submit(form);
     await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalled());
@@ -7264,6 +7270,86 @@ describe("durable vault UI", () => {
       expect(document.body.textContent).not.toMatch(one.words);
     },
   );
+
+  /** The link form on a vault with a clinic portal, a first address and code typed in. */
+  async function linkFormReady(bridgeOverrides: Partial<VaultBridge>) {
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      snapshot: vi.fn().mockImplementation(async () =>
+        captureSnapshot({
+          ...snapshotWithRecord,
+          recoveryKeySetAtMs: 5,
+          portalLinkingEnabled: true,
+          portalLinks: [],
+        } as VaultSnapshot),
+      ),
+      linkPortal: vi.fn(),
+      checkDocuments: vi.fn(),
+      requestDeviceApproval: vi.fn(),
+      ...bridgeOverrides,
+    });
+    render(<VaultApp bridge={bridge} />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: humanText(/Security/) }),
+    );
+    await user.type(
+      screen.getByLabelText("Portal HTTPS address"),
+      "https://portal.example.test/patient",
+    );
+    const typeCode = async (code: string) => {
+      const field = screen.getByLabelText("Linking code");
+      await user.clear(field);
+      await user.type(field, code);
+    };
+    await typeCode("01234567-89ABCDEFGH");
+    const form = () =>
+      screen
+        .getByRole("button", { name: "Connect and request approval" })
+        .closest("form")!;
+    return { bridge, user, typeCode, form };
+  }
+
+  it("links a clinic once for a form sent twice with no render between: the page's markers or the app's clinic-job join stop that", async () => {
+    // Either of the two markers (`submitting`, and the code's revision already sent) alone is
+    // enough, so deleting only one of them leaves this passing: an equivalent mutant.
+    const slow = pendingCall<never>();
+    const { bridge, form } = await linkFormReady({
+      connectPortal: vi.fn().mockReturnValue(slow.promise),
+    });
+    const target = form();
+    act(() => {
+      fireEvent.submit(target);
+      fireEvent.submit(target);
+    });
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalled());
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a new code be linked after a link attempt failed: the one-at-a-time marker is released", async () => {
+    let failFirst: (error: unknown) => void = () => {};
+    const { bridge, typeCode, form } = await linkFormReady({
+      connectPortal: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((_, reject) => {
+              failFirst = reject;
+            }),
+        )
+        .mockReturnValue(new Promise(() => {})),
+    });
+    fireEvent.submit(form());
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(1));
+    await act(async () =>
+      failFirst({ code: "portal_link_code_rejected", message: "FAKE refusal" }),
+    );
+    expect(bridge.connectPortal).toHaveBeenCalledTimes(1);
+    // A different code can be sent now.
+    await typeCode("98765432-10ZYXWVUTS");
+    fireEvent.submit(form());
+    await waitFor(() => expect(bridge.connectPortal).toHaveBeenCalledTimes(2));
+  });
 
   it("hides a document at once, never deletes it, and restores it from Hidden (#71)", async () => {
     const user = userEvent.setup();
