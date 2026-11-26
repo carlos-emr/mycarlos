@@ -29,7 +29,7 @@ impl VaultStore {
             let open = guard.as_ref()?;
             if self.portal_link_ticket() != session
                 || open.recovery.is_some()
-                || !open.manifest.portal_links.contains(link)
+                || !link.is_held_in(&open.manifest.portal_links)
             {
                 return None;
             }
@@ -434,7 +434,7 @@ impl VaultStore {
         if self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
-        if !open.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&open.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let head = wire::head_bytes(&open.manifest.history.head).ok_or(VaultError::Corrupt)?;
@@ -468,7 +468,7 @@ impl VaultStore {
         if open.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !open.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&open.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
@@ -535,7 +535,7 @@ impl VaultStore {
         if open.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !open.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&open.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let keys = derive_keys(open.manifest.vault_id, &open.master_key)?;
@@ -626,7 +626,7 @@ impl VaultStore {
             if stop() || self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
-            if !manifest.portal_links.contains(link) {
+            if !link.is_held_in(&manifest.portal_links) {
                 return Err(VaultError::Invalid);
             }
             let record = manifest
@@ -713,7 +713,7 @@ impl VaultStore {
         if self.portal_link_ticket() != session {
             return Err(VaultError::Cancelled);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         Ok(crate::reading_aid::listed(
@@ -754,7 +754,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let others = unlocked
@@ -897,7 +897,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         let mut out = WaitingRecheck::default();
@@ -1125,7 +1125,7 @@ impl VaultStore {
             if self.portal_link_ticket() != session {
                 return Err(VaultError::Cancelled);
             }
-            if !manifest.portal_links.contains(link) {
+            if !link.is_held_in(&manifest.portal_links) {
                 return Err(VaultError::Invalid);
             }
             let record = manifest
@@ -1501,7 +1501,7 @@ impl VaultStore {
         if unlocked.recovery.is_some() {
             return Err(VaultError::RecoveryMode);
         }
-        if !unlocked.manifest.portal_links.contains(link) {
+        if !link.is_held_in(&unlocked.manifest.portal_links) {
             return Err(VaultError::Invalid);
         }
         if let Some(record) = unlocked.manifest.records.iter().find(|r| {
@@ -7998,6 +7998,219 @@ mod approval_recovery_tests {
         assert!(snapshot_link(&store, link.id).is_none());
         assert!(snapshot_link(&store, other.id).is_some());
         assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 1);
+    }
+    /// #160 stage 3: stopping a clinic that holds documents keeps its link and custody, asks the
+    /// portal nothing more, is idempotent, refuses an incomplete attempt, and survives a restart.
+    #[test]
+    fn should_stop_checking_a_clinic_and_keep_its_documents() {
+        let (_temp, store, other, _) = setup(false);
+        let (link, _, _) = add_signed_pending_delivery(&store);
+        let session = store.portal_link_ticket();
+        store.stop_checking_portal_link(link.id, session).unwrap();
+        // The link stays, with its keys: a stopped clinic is never asked again.
+        assert!(store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == link.id && l.stopped_at_ms.is_some()));
+        assert!(matches!(
+            store.refresh_device_approval(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        assert!(store
+            .delivery_links(session)
+            .unwrap()
+            .iter()
+            .any(|l| l.id == other.id && l.stopped_at_ms.is_none()));
+        assert_eq!(history_count(&store, HistoryEvent::PortalLinkStopped), 1);
+        let history = crate::vault::history_events_for_test(&store).len();
+        store.stop_checking_portal_link(link.id, session).unwrap();
+        store
+            .stop_checking_portal_link(Uuid::new_v4(), session)
+            .unwrap();
+        assert_eq!(crate::vault::history_events_for_test(&store).len(), history);
+        let store = restart(store);
+        let shown = store.snapshot().unwrap();
+        let summary = shown.portal_links.iter().find(|l| l.id == link.id).unwrap();
+        assert!(summary.stopped_at_ms.is_some() && summary.has_documents);
+        assert_eq!(shown.records.len(), 1);
+        // Still not asked, and its documents' custody still verifies at unlock.
+        let session = store.portal_link_ticket();
+        assert!(matches!(
+            store.refresh_device_approval(link.id, session),
+            Err(VaultError::Invalid)
+        ));
+        // An incomplete attempt cannot be stopped: it is removed instead.
+        let pending = crate::portal_link::StoredLink::pending(
+            "https://portal.example.test",
+            "myCarlos on Windows",
+            None,
+            1,
+        )
+        .unwrap();
+        add_link(&store, &pending);
+        assert!(matches!(
+            store.stop_checking_portal_link(pending.id, session),
+            Err(VaultError::Invalid)
+        ));
+    }
+    /// #160 stage 3: a real 403 is saved once and survives a restart; the session-only memory
+    /// (a 404 that a portal does not know the device) saves nothing.
+    #[test]
+    fn should_save_a_clinic_removal_only_from_a_real_403() {
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let flag = |store: &VaultStore| {
+            store
+                .snapshot()
+                .unwrap()
+                .portal_links
+                .into_iter()
+                .find(|l| l.id == link.id)
+                .unwrap()
+                .clinic_removed
+        };
+        store.mark_link_gone(link.id);
+        assert!(!flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            0
+        );
+        store.mark_clinic_removed(link.id);
+        store.mark_clinic_removed(link.id);
+        assert!(flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            1
+        );
+        let store = restart(store);
+        assert!(flag(&store));
+        let session = store.portal_link_ticket();
+        // Not asked again after a restart, and said as removed.
+        assert!(matches!(
+            store.refresh_device_approval(link.id, session),
+            Err(VaultError::Portal(portal_link::LinkError::DeviceRemoved))
+        ));
+    }
+    /// #160 stage 3: only a real 403 `device_removed` from a check is saved as a clinic removal;
+    /// a 404 (the portal does not know the device) saves nothing, so a restart asks again.
+    #[test]
+    fn should_save_a_removal_from_a_checks_403_and_not_from_its_404() {
+        let flag = |store: &VaultStore| saved(store).clinic_removed_at_ms.is_some();
+        let (_temp, store, _, _) = setup(false);
+        crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(reply(404, b"{}")),
+        )
+        .unwrap();
+        assert!(!flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            0
+        );
+        crate::portal_pickup::check_using(
+            &store,
+            store.portal_link_ticket(),
+            &Script::new(vec![], vec![]),
+            |_, _, _, _, _, _, _| Ok(refusal("device_removed")),
+        )
+        .unwrap();
+        assert!(flag(&store));
+        assert_eq!(
+            history_count(&store, HistoryEvent::PortalLinkClinicRemoved),
+            1
+        );
+    }
+    /// #160 stage 3 review: the notice-key sync enrols a key with a live clinic, and neither
+    /// enrols one with, nor contacts, a clinic whose checks were stopped; a key it already held
+    /// is given up and wiped.
+    #[test]
+    fn should_not_contact_a_stopped_clinic_to_sync_its_notice_key() {
+        use crate::notice_key::{FakeWrapKeyStore, NoticeKeys};
+        let (_temp, store, _, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        let keys_dir = tempfile::tempdir().unwrap();
+        let keys = NoticeKeys::new(keys_dir.path(), FakeWrapKeyStore::default());
+        let posts = std::cell::Cell::new(0usize);
+        let exchange = |sent: &StoredLink,
+                        method: &str,
+                        _: &str,
+                        _: Vec<u8>,
+                        _: Option<&str>,
+                        _: usize,
+                        _: &dyn Fn() -> bool| {
+            assert_eq!(method, "POST");
+            if sent.id == link.id {
+                posts.set(posts.get() + 1);
+            }
+            Ok(reply(201, b"{}"))
+        };
+        let held = || {
+            keys.entries()
+                .unwrap()
+                .iter()
+                .filter(|entry| entry.link_id == link.id)
+                .count()
+        };
+        let session = store.portal_link_ticket();
+        let mut given_up = 0usize;
+        store
+            .sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| given_up += 1)
+            .unwrap();
+        assert_eq!(posts.get(), 1);
+        assert_eq!(held(), 1);
+        store.stop_checking_portal_link(link.id, session).unwrap();
+        store
+            .sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| given_up += 1)
+            .unwrap();
+        assert_eq!(posts.get(), 1, "a stopped clinic is sent nothing");
+        assert_eq!(given_up, 1);
+        assert_eq!(held(), 0);
+        // And no new key is made for it on a later sync either.
+        store
+            .sync_notice_keys_with(&keys, true, session, &exchange, &mut |_| given_up += 1)
+            .unwrap();
+        assert_eq!(posts.get(), 1);
+        assert_eq!(held(), 0);
+    }
+    /// #160 stage 3: the bulk button removes every incomplete attempt and nothing else.
+    #[test]
+    fn should_remove_all_incomplete_attempts_and_only_those() {
+        let (_temp, store, other, _) = setup(false);
+        let (link, _, _, _) = fixture_package();
+        add_link(&store, &link);
+        for _ in 0..2 {
+            let pending = crate::portal_link::StoredLink::pending(
+                "https://portal.example.test",
+                "myCarlos on Windows",
+                None,
+                1,
+            )
+            .unwrap();
+            add_link(&store, &pending);
+        }
+        let session = store.portal_link_ticket();
+        assert_eq!(store.remove_incomplete_portal_links(session).unwrap(), 2);
+        assert_eq!(history_count(&store, HistoryEvent::PortalLinkRemoved), 2);
+        let ids: Vec<_> = store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .map(|l| l.id)
+            .collect();
+        assert!(ids.contains(&link.id) && ids.contains(&other.id));
+        assert!(store
+            .snapshot()
+            .unwrap()
+            .portal_links
+            .iter()
+            .all(|l| !l.incomplete));
+        assert_eq!(store.remove_incomplete_portal_links(session).unwrap(), 0);
     }
     /// #160 review: a link with a push destination enrolled (or a revocation queued) is not
     /// removed: the portal still holds a subscription for the device. Already gone is not a write.

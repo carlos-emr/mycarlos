@@ -242,6 +242,10 @@ export interface PortalLinkSummary {
   /** A document or reading aid from this clinic is saved in the vault: its custody
    * proof needs this link's keys, so the link cannot be removed (#160). */
   hasDocuments?: boolean;
+  /** When the patient stopped checking this clinic (#160): no more checks, notices or polling. */
+  stoppedAtMs?: number;
+  /** A check found this device removed by its clinic, and saved it (#160). */
+  clinicRemoved?: boolean;
   /** Document notices are on for this clinic: the link cannot be removed until they are off (#160). */
   noticesEnrolled?: boolean;
   approvalRequestLimitReached?: boolean;
@@ -555,6 +559,8 @@ export interface AuditHistoryEntry {
     | "portalLinkStarted"
     | "portalLinked"
     | "portalLinkRemoved"
+    | "portalLinkStopped"
+    | "portalLinkClinicRemoved"
     | "deviceApprovalRequested"
     | "deviceApprovalVerified"
     | "deviceApprovalStatusChanged"
@@ -663,6 +669,10 @@ export interface VaultBridge {
   forgetRefusedDeliveries?(linkId: string): Promise<void>;
   /** Removes a link that has delivered nothing (#160); refused when documents are saved. */
   removePortalLink?(linkId: string): Promise<void>;
+  /** Stops checking a clinic whose documents stay saved (#160); its link and keys stay. */
+  stopCheckingPortalLink?(linkId: string): Promise<void>;
+  /** Removes every incomplete attempt (#160); resolves with how many. */
+  removeIncompletePortalLinks?(): Promise<number>;
   /** Reads one linked device's approval status from its portal and saves the
    * clinic's answer (#131). It only reads: no request is sent or started. */
   refreshDeviceApproval?(linkId: string): Promise<PortalApprovalCheck>;
@@ -1333,6 +1343,10 @@ export function createVaultBridge(): VaultBridge {
       invoke("vault_forget_refused_deliveries", { linkId }),
     removePortalLink: (linkId) =>
       invoke("vault_portal_remove_link", { linkId }),
+    stopCheckingPortalLink: (linkId) =>
+      invoke("vault_portal_stop_checking_link", { linkId }),
+    removeIncompletePortalLinks: () =>
+      invoke("vault_portal_remove_incomplete_links"),
     requestDeviceApproval: (linkId) =>
       invoke("vault_request_device_approval", { linkId }),
     submitApprovalCode: (linkId, code) =>

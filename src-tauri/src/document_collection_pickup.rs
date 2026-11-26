@@ -353,7 +353,7 @@ where
     // after-unlock, status or earlier background check found it) is not asked
     // again. Left out before the rotation, so it spends none of the cycle's
     // link visits.
-    links.retain(|link| !store.link_gone(link.id));
+    links.retain(|link| !store.link_gone(link.id) && !link.checks_stopped());
     let deferred = cache
         .retry_first
         .take()
@@ -607,7 +607,7 @@ where
                 error,
                 VaultError::Portal(crate::portal_link::LinkError::DeviceRemoved)
             ) {
-                store.mark_link_gone(original.id);
+                store.mark_clinic_removed(original.id);
             }
         }
     }

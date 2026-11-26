@@ -76,7 +76,11 @@ impl VaultStore {
             if enabled {
                 policy.opt_in();
                 if policy.can_notify() {
-                    for link in manifest.portal_links.iter().filter(|l| l.clinic.is_some()) {
+                    for link in manifest
+                        .portal_links
+                        .iter()
+                        .filter(|l| l.clinic.is_some() && !l.checks_stopped())
+                    {
                         if policy.destination_for(link.id).is_some() {
                             continue;
                         }

@@ -1711,6 +1711,10 @@ interface-history-event-portalLinked = Clinique liée
 
 interface-history-event-portalLinkRemoved = Lien avec la clinique supprimé
 
+interface-history-event-portalLinkStopped = Vérification d’une clinique arrêtée
+
+interface-history-event-portalLinkClinicRemoved = La clinique a retiré cet appareil
+
 interface-history-event-profileCreated = Profil patient ajouté
 
 interface-history-event-profileDetailsChanged = Renseignements personnels modifiés
@@ -1889,6 +1893,28 @@ portal-removeKept = Des documents de cette clinique sont enregistrés dans votre
 portal-removeNotices = Les avis de documents sont activés pour cette clinique. Désactivez-les d’abord, puis supprimez le lien.
 
 portal-removed = Lien supprimé.
+
+portal-stopLink = Ne plus vérifier cette clinique
+
+portal-stopTitle = Ne plus vérifier cette clinique ?
+
+portal-stopBody = { $clinic }. myCarlos cessera de chercher de nouveaux documents auprès de cette clinique et de lui demander des avis. Les documents déjà enregistrés restent dans votre coffre et leur preuve reste vérifiable. La clinique peut encore afficher cet appareil.
+
+portal-stopConfirm = Ne plus vérifier
+
+portal-stopped = Arrêtée le { $date }.
+
+portal-stoppedDone = Cette clinique n’est plus vérifiée.
+
+portal-removeAll = Supprimer toutes les tentatives incomplètes ({ $count })
+
+portal-removeAllTitle = Supprimer toutes les tentatives incomplètes ?
+
+portal-removeAllBody = { $count } tentatives de liaison jamais terminées seront supprimées de cet ordinateur, avec leurs clés d’appareil enregistrées. Les cliniques liées et les documents enregistrés ne sont pas touchés.
+
+portal-removeAllConfirm = Supprimer les tentatives
+
+portal-removedAll = Tentatives incomplètes supprimées.
 
 
 ai-summary-button = Résumé

@@ -315,6 +315,12 @@ where
         // A device this run of the app already found gone from its portal is
         // not asked again (in memory only): said as removed, with no request,
         // and its receipts, which that portal can never take, are not counted.
+        // A clinic the patient stopped checking (#160) is not asked, and not mentioned.
+        if original.stopped_at_ms.is_some() {
+            continue;
+        }
+        // A saved removal (#160) is shown without a request, but a check still asks once per run:
+        // the clinic may have taken the device back, and the receipts it owes are retried.
         if store.link_gone(original.id) {
             add_issue(
                 &mut result,
@@ -578,6 +584,8 @@ where
         })();
         match outcome {
             Ok(()) => {
+                // The clinic answered this device: a removal saved earlier no longer holds.
+                store.clear_clinic_removed(original.id);
                 answered.insert(original.portal_base.clone());
             }
             Err(error) => {
@@ -585,7 +593,7 @@ where
                     return Err(error);
                 }
                 if matches!(error, VaultError::Portal(LinkError::DeviceRemoved)) {
-                    store.mark_link_gone(original.id);
+                    store.mark_clinic_removed(original.id);
                 } else if not_found.get() {
                     unknown.push(original.clone());
                 }

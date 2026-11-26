@@ -1711,6 +1711,10 @@ interface-history-event-portalLinked = Clínica vinculada
 
 interface-history-event-portalLinkRemoved = Vínculo com a clínica removido
 
+interface-history-event-portalLinkStopped = Verificação de uma clínica interrompida
+
+interface-history-event-portalLinkClinicRemoved = A clínica removeu este dispositivo
+
 interface-history-event-profileCreated = Perfil de paciente adicionado
 
 interface-history-event-profileDetailsChanged = Dados pessoais alterados
@@ -1889,6 +1893,28 @@ portal-removeKept = Os documentos desta clínica estão salvos no seu cofre, ent
 portal-removeNotices = Os avisos de documentos estão ativados para esta clínica. Desative-os primeiro e depois remova o vínculo.
 
 portal-removed = Vínculo removido.
+
+portal-stopLink = Parar de verificar esta clínica
+
+portal-stopTitle = Parar de verificar esta clínica?
+
+portal-stopBody = { $clinic }. O myCarlos vai parar de procurar novos documentos nesta clínica e de pedir avisos a ela. Os documentos já salvos continuam no seu cofre e a prova deles continua verificável. A clínica ainda pode listar este dispositivo.
+
+portal-stopConfirm = Parar de verificar
+
+portal-stopped = Interrompida em { $date }.
+
+portal-stoppedDone = Esta clínica não é mais verificada.
+
+portal-removeAll = Remover todas as tentativas incompletas ({ $count })
+
+portal-removeAllTitle = Remover todas as tentativas incompletas?
+
+portal-removeAllBody = { $count } tentativas de vínculo que nunca terminaram serão removidas deste computador, junto com as chaves de dispositivo salvas. Clínicas vinculadas e documentos salvos não são afetados.
+
+portal-removeAllConfirm = Remover tentativas
+
+portal-removedAll = Tentativas incompletas removidas.
 
 
 ai-summary-button = Resumo

@@ -1542,6 +1542,10 @@ interface-history-event-portalLinked = 已連結診所
 
 interface-history-event-portalLinkRemoved = 已移除診所連結
 
+interface-history-event-portalLinkStopped = 已停止檢查一間診所
+
+interface-history-event-portalLinkClinicRemoved = 診所已移除此裝置
+
 interface-history-event-profileCreated = 病患檔案已新增
 
 interface-history-event-profileDetailsChanged = 個人資料已變更
@@ -1701,6 +1705,28 @@ portal-removeKept = 此診所的文件已儲存在您的保管庫中，因此保
 portal-removeNotices = 已為這間診所開啟文件通知。請先關閉，再移除連結。
 
 portal-removed = 連結已移除。
+
+portal-stopLink = 不再檢查這間診所
+
+portal-stopTitle = 不再檢查這間診所？
+
+portal-stopBody = { $clinic }。myCarlos 將不再向這間診所查詢新文件，也不再向它索取通知。已儲存的文件仍留在您的保險庫中，其證明仍可檢驗。診所仍可能列出此裝置。
+
+portal-stopConfirm = 不再檢查
+
+portal-stopped = 已於 { $date } 停止。
+
+portal-stoppedDone = 不再檢查這間診所。
+
+portal-removeAll = 移除所有未完成的嘗試（{ $count }）
+
+portal-removeAllTitle = 移除所有未完成的嘗試？
+
+portal-removeAllBody = { $count } 次從未完成的連結嘗試將從這部電腦移除，其已儲存的裝置金鑰也會一併清除。已連結的診所和已儲存的文件不受影響。
+
+portal-removeAllConfirm = 移除嘗試
+
+portal-removedAll = 未完成的嘗試已移除。
 
 
 ai-summary-button = 摘要

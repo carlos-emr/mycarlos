@@ -1678,6 +1678,10 @@ interface-history-event-portalLinked = Clinic linked
 
 interface-history-event-portalLinkRemoved = Clinic link removed
 
+interface-history-event-portalLinkStopped = Stopped checking a clinic
+
+interface-history-event-portalLinkClinicRemoved = Clinic removed this device
+
 interface-history-event-profileCreated = Patient profile added
 
 interface-history-event-profileDetailsChanged = Personal details changed
@@ -1853,6 +1857,28 @@ portal-removeKept = Documents from this clinic are saved in your vault, so this 
 portal-removeNotices = Document notices are on for this clinic. Turn them off first, then remove the link.
 
 portal-removed = Link removed.
+
+portal-stopLink = Stop checking this clinic
+
+portal-stopTitle = Stop checking this clinic?
+
+portal-stopBody = { $clinic }. myCarlos will stop checking this clinic for new documents and will no longer ask it for notices. Documents already saved stay in your vault, and their proof stays checkable. The clinic may still list this device.
+
+portal-stopConfirm = Stop checking
+
+portal-stopped = Stopped on { $date }.
+
+portal-stoppedDone = No longer checking this clinic.
+
+portal-removeAll = Remove all incomplete attempts ({ $count })
+
+portal-removeAllTitle = Remove all incomplete attempts?
+
+portal-removeAllBody = { $count } linking attempts that never finished will be removed from this computer, with their saved device keys. Linked clinics and saved documents are not touched.
+
+portal-removeAllConfirm = Remove attempts
+
+portal-removedAll = Incomplete attempts removed.
 
 
 ai-summary-button = Summary

@@ -1746,6 +1746,10 @@ interface-history-event-portalLinked = Połączono z przychodnią
 
 interface-history-event-portalLinkRemoved = Usunięto powiązanie z przychodnią
 
+interface-history-event-portalLinkStopped = Przestano sprawdzać przychodnię
+
+interface-history-event-portalLinkClinicRemoved = Przychodnia usunęła to urządzenie
+
 interface-history-event-profileCreated = Dodano profil pacjenta
 
 interface-history-event-profileDetailsChanged = Zmieniono dane osobowe
@@ -1929,6 +1933,28 @@ portal-removeKept = Dokumenty z tej przychodni są zapisane w Twoim sejfie, wię
 portal-removeNotices = Powiadomienia o dokumentach są włączone dla tej przychodni. Najpierw je wyłącz, potem usuń powiązanie.
 
 portal-removed = Powiązanie usunięte.
+
+portal-stopLink = Przestań sprawdzać tę przychodnię
+
+portal-stopTitle = Przestać sprawdzać tę przychodnię?
+
+portal-stopBody = { $clinic }. myCarlos przestanie sprawdzać, czy ta przychodnia ma nowe dokumenty, i nie będzie już prosić jej o powiadomienia. Zapisane już dokumenty zostają w Twoim sejfie, a ich dowód nadal można sprawdzić. Przychodnia może nadal wyświetlać to urządzenie.
+
+portal-stopConfirm = Przestań sprawdzać
+
+portal-stopped = Zatrzymano { $date }.
+
+portal-stoppedDone = Ta przychodnia nie jest już sprawdzana.
+
+portal-removeAll = Usuń wszystkie niedokończone próby ({ $count })
+
+portal-removeAllTitle = Usunąć wszystkie niedokończone próby?
+
+portal-removeAllBody = Niedokończone próby powiązania ({ $count }) zostaną usunięte z tego komputera razem z zapisanymi kluczami urządzenia. Powiązane przychodnie i zapisane dokumenty pozostają nietknięte.
+
+portal-removeAllConfirm = Usuń próby
+
+portal-removedAll = Niedokończone próby usunięte.
 
 
 ai-summary-button = Podsumowanie
