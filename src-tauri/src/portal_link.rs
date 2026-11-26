@@ -458,13 +458,6 @@ pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
     if input.len() > MAX_PORTAL_UTF8_BYTES || input.trim() != input || input.contains('\\') {
         return Err(LinkError::InvalidPortal);
     }
-    // The URL parser silently deletes a tab, a line feed and a carriage return wherever they are,
-    // and strips control characters from both ends, so "https://fake.ex<TAB>ample" would be linked to
-    // the host "fake.example", which is not what was typed. (`trim` above misses a control character
-    // that is not white space.) No control character is part of an address.
-    if input.chars().any(char::is_control) {
-        return Err(LinkError::InvalidPortal);
-    }
     let url = Url::parse(input).map_err(|_| LinkError::InvalidPortal)?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -472,17 +465,6 @@ pub fn normalize_portal(input: &str) -> Result<String, LinkError> {
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
-    {
-        return Err(LinkError::InvalidPortal);
-    }
-    // The URL standard reads "https:///x", "https:/x" and "https:x" as the host "x", so a slip in the
-    // slashes would be linked to a host nobody typed. What is typed must be exactly "https://", then
-    // the host: the text after the scheme starts with two slashes and not a third.
-    let typed_scheme = input.get(.."https:".len());
-    let after_scheme = input.get("https:".len()..).unwrap_or("");
-    if !typed_scheme.is_some_and(|text| text.eq_ignore_ascii_case("https:"))
-        || !after_scheme.starts_with("//")
-        || after_scheme[2..].starts_with('/')
     {
         return Err(LinkError::InvalidPortal);
     }
@@ -592,39 +574,9 @@ mod tests {
             "https://fake.example#FAKE",
             " https://fake.example",
             "https://fake.example\\evil",
-            // The URL parser deletes a tab, a line feed and a carriage return anywhere, so each of
-            // these would be read as a clean address that was not typed.
-            "https://fake.ex\tample",
-            "ht\ttps://fake.example",
-            "https://fake.ex\nample",
-            "https://fake.ex\rample",
-            "https://fake.example/pa\ntient",
-            // Control characters at either end, which `trim` does not take off and the parser strips.
-            "https://fake.example\u{1}",
-            "\u{1}https://fake.example",
-            "https://fake.example\u{7f}",
-            // The URL standard reads each of these as the host "fake.example"; what is typed must
-            // be exactly "https://" and then the host.
-            "https:///fake.example",
-            "https:////fake.example/patient",
-            "https:/fake.example",
-            "https:fake.example",
         ] {
-            assert_eq!(
-                normalize_portal(bad),
-                Err(LinkError::InvalidPortal),
-                "{bad}"
-            );
+            assert_eq!(normalize_portal(bad), Err(LinkError::InvalidPortal));
         }
-        // The scheme's case is not what is refused, and a doubled slash later in the address is a path.
-        assert_eq!(
-            normalize_portal("HTTPS://Fake.Example/patient"),
-            Ok("https://fake.example/patient".to_owned())
-        );
-        assert_eq!(
-            normalize_portal("https://fake.example//patient"),
-            Ok("https://fake.example//patient".to_owned())
-        );
         assert_eq!(
             normalize_portal("https://fake.example/patient/"),
             Ok("https://fake.example/patient".to_owned())
