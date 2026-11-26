@@ -178,6 +178,10 @@ const TEXT_FIELDS: &[&str] = &[
 const ALLOWED: &[(&str, &str)] = &[
     ("Settings", "the AI model's catalogue name, public"),
     ("ModelInfo", "the AI model's catalogue name, public"),
+    (
+        "Notice",
+        "a Linux desktop notification: the app name and one fixed sentence from the catalogue, never a name or document text",
+    ),
 ];
 
 fn redacted_names(lines: &[String]) -> Vec<String> {
