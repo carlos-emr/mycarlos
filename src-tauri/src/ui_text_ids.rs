@@ -341,6 +341,7 @@ pub enum MessageId {
     HiddenPeopleTitle,
     InterfaceAddVideoAdd,
     InterfaceAddVideoAdded,
+    InterfaceAddVideoAdding,
     InterfaceAddVideoAudioCodec,
     InterfaceAddVideoCancel,
     InterfaceAddVideoCancelled,
@@ -1735,6 +1736,7 @@ impl MessageId {
         Self::HiddenPeopleTitle,
         Self::InterfaceAddVideoAdd,
         Self::InterfaceAddVideoAdded,
+        Self::InterfaceAddVideoAdding,
         Self::InterfaceAddVideoAudioCodec,
         Self::InterfaceAddVideoCancel,
         Self::InterfaceAddVideoCancelled,
@@ -3129,6 +3131,7 @@ impl MessageId {
             Self::HiddenPeopleTitle => "hiddenPeople-title",
             Self::InterfaceAddVideoAdd => "interface-AddVideo-add",
             Self::InterfaceAddVideoAdded => "interface-AddVideo-added",
+            Self::InterfaceAddVideoAdding => "interface-AddVideo-adding",
             Self::InterfaceAddVideoAudioCodec => "interface-AddVideo-audioCodec",
             Self::InterfaceAddVideoCancel => "interface-AddVideo-cancel",
             Self::InterfaceAddVideoCancelled => "interface-AddVideo-cancelled",
@@ -6470,6 +6473,7 @@ impl MessageId {
             "interface.AddVideo.tooBig" => Some(Self::InterfaceAddVideoTooBig),
             "interface.AddVideo.tooLarge" => Some(Self::InterfaceAddVideoTooLarge),
             "interface.AddVideo.damaged" => Some(Self::InterfaceAddVideoDamaged),
+            "interface.AddVideo.adding" => Some(Self::InterfaceAddVideoAdding),
             _ => None,
         }
     }
