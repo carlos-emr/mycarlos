@@ -390,9 +390,14 @@ impl VaultStore {
                 .any(|l| l.clinic.is_some() && policy.destination_for(l.id).is_none());
             (open.manifest.vault_id, missing)
         };
-        let result = if missing {
+        // Denied is saved by `set_remote_notices` (the revocations are queued in the vault first,
+        // then sent); `sync_remote_notices` alone only reads the permission, so a revoked
+        // destination would stay "active" here.
+        let denied = state.permission() == crate::document_notifications::Permission::Denied;
+        let result = if missing || denied {
             // A link with no destination (a new link, or one the portal did not know twice): the
-            // same reserve, enrol and bind as turning the switch on.
+            // same reserve, enrol and bind as turning the switch on. Also the way a denied
+            // permission is acted on.
             self.set_iphone_push(true, token, state, memory, session, exchange)
                 .map(|(_, bound)| bound)
         } else {
@@ -1971,6 +1976,67 @@ mod tests {
             assert_eq!(now.len(), 2);
             assert!(!now.contains(&lost));
             assert!(!done.needs_attention);
+        }
+
+        #[test]
+        fn a_denied_permission_at_opening_queues_the_revocations_and_sends_no_handle() {
+            let (_temp, store, _) = store_with_links();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let token = fake_token("sandbox", "ab");
+            store
+                .set_iphone_push(
+                    true,
+                    Some(&token),
+                    &state,
+                    &memory,
+                    store.portal_link_ticket(),
+                    &exchange,
+                )
+                .unwrap();
+            assert_eq!(saved(&store).active().len(), 2);
+            // iPhone Settings now says no: no token is asked for, so none is passed.
+            let denied = IosPushState::default();
+            denied.record_permission("denied");
+            // The portal does not answer: the two revocations are queued in the vault, nothing is
+            // active, and no handle was sent.
+            seen.borrow_mut().clear();
+            let offline = |_: &StoredLink,
+                           _: &str,
+                           path: &str,
+                           _: Vec<u8>,
+                           _: Option<&str>,
+                           _: usize,
+                           _: &dyn Fn() -> bool| {
+                seen.borrow_mut().push((
+                    Uuid::nil(),
+                    "POST".into(),
+                    path.into(),
+                    serde_json::json!({}),
+                ));
+                Err(LinkError::Network)
+            };
+            let first = refresh(&store, None, &denied, &memory, &offline).unwrap();
+            assert_eq!(first, HandleSync::default());
+            let queued = saved(&store);
+            assert!(queued.opted_in(), "the patient's choice is kept");
+            assert!(queued.active().is_empty());
+            assert_eq!(queued.revocations().len(), 2);
+            assert_eq!(paths(&seen), [REVOCATIONS, REVOCATIONS]);
+            // At the next opening the portal answers: the revocations are acknowledged, still
+            // with no handle.
+            seen.borrow_mut().clear();
+            refresh(&store, None, &denied, &memory, &exchange).unwrap();
+            assert!(saved(&store).revocations().is_empty());
+            assert!(!paths(&seen).contains(&HANDLES.to_string()));
+            // What the Keychain remembered stays: a later allowed opening finds the vault with no
+            // destination and makes one (the token is bound to that one only).
+            seen.borrow_mut().clear();
+            let again = refresh(&store, Some(&token), &state, &memory, &exchange).unwrap();
+            assert_eq!(again.bound, 2);
+            assert_eq!(saved(&store).active().len(), 2);
         }
 
         #[test]

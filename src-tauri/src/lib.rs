@@ -3337,10 +3337,12 @@ static IPHONE_REFRESHING: std::sync::atomic::AtomicBool = std::sync::atomic::Ato
 /// unlock and no failure of it is an unlock error; a failure that needs a look sets the attention
 /// flag, which Settings shows (and the Keychain keeps across restarts).
 ///
-/// The system's permission question is never asked here. The permission is read as it stands: if
-/// it cannot be read, or the iPhone has not been asked yet, nothing is changed (a destination is
-/// not revoked on a guess); if it is denied, no token is asked for and the policy revokes what the
-/// portal holds, as it does when the permission is withdrawn while the vault is open.
+/// The system's permission question is never asked here. The permission is read as it stands: only
+/// a plain "authorized" asks Apple for a token (`requestToken` asks the system for authorization
+/// first, which a provisional or ephemeral status would turn into the question); if it cannot be
+/// read, or is anything else but "denied", nothing is changed (a destination is not revoked on a
+/// guess); if it is "denied", no token is asked for and the policy revokes what the portal holds,
+/// as it does when the permission is withdrawn while the vault is open.
 #[cfg(target_os = "ios")]
 fn refresh_iphone_push_soon(
     store: Arc<VaultStore>,
@@ -3388,8 +3390,11 @@ fn refresh_iphone_push_soon(
             return;
         };
         state.record_permission(&status);
-        let token = match state.permission() {
-            document_notifications::Permission::Granted => {
+        // `requestToken` asks the system for authorization first, so it is called only for a plain
+        // "authorized": a "provisional" or "ephemeral" status (granted for the policy) would show
+        // the system question at unlock.
+        let token = match ios_push_handles::opening_refresh_for(&status) {
+            ios_push_handles::OpeningRefresh::AskForToken => {
                 match ios_push::request_token(&app).await {
                     Ok(token) => {
                         state.record_token();
@@ -3401,8 +3406,8 @@ fn refresh_iphone_push_soon(
                     }
                 }
             }
-            document_notifications::Permission::Denied => None,
-            document_notifications::Permission::Unknown => return,
+            ios_push_handles::OpeningRefresh::WithoutToken => None,
+            ios_push_handles::OpeningRefresh::Nothing => return,
         };
         let memory = ios_push_native::KeychainMemory(app);
         let _ = tauri::async_runtime::spawn_blocking(move || {
