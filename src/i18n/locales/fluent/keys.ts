@@ -735,6 +735,7 @@ export const MESSAGE_KEYS = [
   "interface.history.event.passphraseChanged",
   "interface.history.event.portalLinkStarted",
   "interface.history.event.portalLinked",
+  "interface.history.event.portalLinkRemoved",
   "interface.history.event.profileCreated",
   "interface.history.event.profileDetailsChanged",
   "interface.history.event.readingAidFiled",
@@ -826,6 +827,13 @@ export const MESSAGE_KEYS = [
   "portal.tryAgain",
   "portal.tryAgainFor",
   "portal.linkAnother",
+  "portal.removeLink",
+  "portal.removeTitle",
+  "portal.removeBody",
+  "portal.removeConfirm",
+  "portal.removeKept",
+  "portal.removeNotices",
+  "portal.removed",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
@@ -840,7 +848,7 @@ export const MESSAGE_KEYS = [
   "ai.label.settingsTitle",
   "ai.label.settingsBody",
   "ai.label.settingsShowFull",
-  "ai.label.settingsFullShown",
+  "ai.label.settingsFullBack",
   "ai.label.settingsShortShown",
   "ai.result.meta",
   "ai.summary.showInDocument",
@@ -2248,6 +2256,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-portalLinkStarted",
   "interface.history.event.portalLinked":
     "interface-history-event-portalLinked",
+  "interface.history.event.portalLinkRemoved":
+    "interface-history-event-portalLinkRemoved",
   "interface.history.event.profileCreated":
     "interface-history-event-profileCreated",
   "interface.history.event.profileDetailsChanged":
@@ -2350,6 +2360,13 @@ const FLUENT_IDS_BY_KEY = {
   "portal.tryAgain": "portal-tryAgain",
   "portal.tryAgainFor": "portal-tryAgainFor",
   "portal.linkAnother": "portal-linkAnother",
+  "portal.removeLink": "portal-removeLink",
+  "portal.removeTitle": "portal-removeTitle",
+  "portal.removeBody": "portal-removeBody",
+  "portal.removeConfirm": "portal-removeConfirm",
+  "portal.removeKept": "portal-removeKept",
+  "portal.removeNotices": "portal-removeNotices",
+  "portal.removed": "portal-removed",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
@@ -2365,7 +2382,7 @@ const FLUENT_IDS_BY_KEY = {
   "ai.label.settingsTitle": "ai-label-settingsTitle",
   "ai.label.settingsBody": "ai-label-settingsBody",
   "ai.label.settingsShowFull": "ai-label-settingsShowFull",
-  "ai.label.settingsFullShown": "ai-label-settingsFullShown",
+  "ai.label.settingsFullBack": "ai-label-settingsFullBack",
   "ai.label.settingsShortShown": "ai-label-settingsShortShown",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
@@ -3871,6 +3888,7 @@ export interface MessageArgsByKey {
   "interface.history.event.passphraseChanged": undefined;
   "interface.history.event.portalLinkStarted": undefined;
   "interface.history.event.portalLinked": undefined;
+  "interface.history.event.portalLinkRemoved": undefined;
   "interface.history.event.profileCreated": undefined;
   "interface.history.event.profileDetailsChanged": undefined;
   "interface.history.event.readingAidFiled": undefined;
@@ -3962,6 +3980,13 @@ export interface MessageArgsByKey {
   "portal.tryAgain": undefined;
   "portal.tryAgainFor": { clinic: FluentArgument };
   "portal.linkAnother": undefined;
+  "portal.removeLink": undefined;
+  "portal.removeTitle": undefined;
+  "portal.removeBody": { clinic: FluentArgument; device: FluentArgument };
+  "portal.removeConfirm": undefined;
+  "portal.removeKept": undefined;
+  "portal.removeNotices": undefined;
+  "portal.removed": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
@@ -3976,7 +4001,7 @@ export interface MessageArgsByKey {
   "ai.label.settingsTitle": undefined;
   "ai.label.settingsBody": undefined;
   "ai.label.settingsShowFull": undefined;
-  "ai.label.settingsFullShown": undefined;
+  "ai.label.settingsFullBack": undefined;
   "ai.label.settingsShortShown": undefined;
   "ai.result.meta": {
     date: FluentArgument;

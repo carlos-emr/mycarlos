@@ -91,6 +91,23 @@ In a native build, additionally:
    `node scripts/check-macos-pdf-association.mjs <myCarlos.app>` checks the built app's
    `Info.plist` for the same thing (role Viewer, rank Alternate, one PDF type, nothing exported).
 
+10. On Android (#50, the Share menu): from Gmail, Outlook, Samsung Email and Files, share a PDF
+   and confirm myCarlos is listed and the file arrives in **Shared with me** once the vault is
+   open. Share two PDFs at once. Open a PDF from the same apps and confirm myCarlos is **not**
+   offered to open it. Share a PDF the sender labels `application/octet-stream` and note whether
+   myCarlos is listed (it is not expected to be). On Android 11 or older, also share a PDF, leave
+   myCarlos without unlocking until its share screen is gone, then unlock: note whether the file
+   is added or named as one that could not be opened.
+   - **Known gap, to record, not to pass:** share a PDF while the vault is locked, then end the
+     app (swipe it away) and start it again: the file is **gone**. Shared files are held in
+     memory until the vault is unlocked, as the unlock screen says ("If myCarlos closes first, it
+     is not kept: share it again"). Keeping them across a quit needs the sealed inbox (#49),
+     which is not built, so that criterion of #50 stays open.
+   - Record the phone's model and Android version.
+
+   `node scripts/check-android-pdf-share.mjs <AndroidManifest.xml>` checks the manifest after
+   the Android build (the filters are written by the cargo build, not by `tauri android init`).
+
 The Rust suite automates abrupt process termination after an encrypted chunk write, completed
 staging, object rename, each redundant manifest write, and each deletion boundary. It also covers
 bit-flipped, truncated, and swapped ciphertext; structured semantic manifest mutations;

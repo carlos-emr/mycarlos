@@ -4212,12 +4212,18 @@ p {
 }
 .appearance-choice .appearance-option input {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   min-height: 0;
   margin: 0;
   padding: 0;
   border: 0;
+}
+/* Every Settings tick box is drawn in the app's own colour (it is a native box: its tick and its
+   focus ring stay the system's). */
+.appearance-choice .appearance-option input[type="checkbox"] {
+  accent-color: var(--teal);
+  cursor: pointer;
 }
 /* Appearance and Language: real radio buttons (one group, arrow keys, the name
    and the checked state read as before) drawn as buttons. The radio itself is
@@ -5115,6 +5121,18 @@ button:disabled,
 }
 .language-button .icon {
   flex: none;
+}
+/* The language dialog's title may be long in some languages: it folds onto more lines (the general
+   .dialog-head h2 cuts it to one) and Close stays at the top right of the head, as in the document
+   details. */
+.native-language-dialog .dialog-head h2 {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+.native-language-dialog .dialog-head > div {
+  flex: 1 1 auto;
 }
 /* In the language dialog the list lines up with the title above it: the same
    20px as .dialog-head. */

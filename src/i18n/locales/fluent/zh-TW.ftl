@@ -1554,6 +1554,8 @@ interface-history-event-portalLinkStarted = 已開始連結診所
 
 interface-history-event-portalLinked = 已連結診所
 
+interface-history-event-portalLinkRemoved = 已移除診所連結
+
 interface-history-event-profileCreated = 病患檔案已新增
 
 interface-history-event-profileDetailsChanged = 個人資料已變更
@@ -1700,6 +1702,21 @@ portal-tryAgainFor = 重試：{ $clinic }
 
 portal-linkAnother = 連結另一家診所
 
+portal-removeLink = 移除此連結
+
+portal-removeTitle = 要移除此連結嗎？
+
+portal-removeBody = { $clinic }，裝置「{ $device }」。此裝置將不再在此處連結，其已儲存的裝置金鑰也會從此裝置清除。您保險庫的先前備份仍保留這些金鑰，直到被取代。診所仍可能列出此裝置。
+
+portal-removeConfirm = 移除連結
+
+portal-removeKept = 此診所的文件已儲存在您的保管庫中，因此保留此連結。
+
+portal-removeNotices = 已為這間診所開啟文件通知。請先關閉，再移除連結。
+
+portal-removed = 連結已移除。
+
+
 ai-summary-button = 摘要
 
 ai-summary-title = 淺白易懂的摘要
@@ -1722,11 +1739,11 @@ aiHelper-resultLabelInfo = 「AI 草稿」是什麼意思
 
 ai-label-settingsTitle = AI 回答上的提示
 
-ai-label-settingsBody = 每則 AI 回答都會說明由 AI 撰寫、可能有誤。選擇「不再顯示」後，完整的句子會由簡短的「AI 草稿」標籤取代。標籤不會被移除。此選擇儲存在本裝置上，模型或工具更換後會重新開始。
+ai-label-settingsBody = AI 回答可能有誤，每則回答都會這樣說明。如果您在某則回答上選擇「不再顯示」，之後的回答會顯示簡短的「AI 草稿」標籤，而不是完整的句子。
 
 ai-label-settingsShowFull = 再次顯示完整提示
 
-ai-label-settingsFullShown = 每則 AI 回答都顯示完整提示。
+ai-label-settingsFullBack = 完整警告已恢復顯示在每則 AI 回答上。
 
 ai-label-settingsShortShown = 在您選擇過的 AI 回答上，顯示簡短的「AI 草稿」標籤。
 
@@ -2628,7 +2645,7 @@ library-fileSaysChecked = 隨之而來的檔案稱，它已於 { $date } 在來�
 handover-nowVerified = 透過移交檔案到來的 { $count } 份文件現已透過 { $clinic } 驗證，此保險庫持有其金鑰。
 
 
-notifications-autoSummary = 自動檢查僅在 myCarlos 開啟且已解鎖時進行。
+notifications-autoSummary = myCarlos 僅在開啟且已解鎖時才會自行收取診所的新文件。在背景處於鎖定狀態時，它只能告訴您有內容正在等待。
 
 background-keepRunningSummary = 關閉視窗後，myCarlos 可以留在背景執行。視窗關閉時，您的保險庫會鎖定。
 

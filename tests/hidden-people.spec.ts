@@ -134,7 +134,7 @@ test("Hide a person: the dialog says nothing is deleted and that it is tidiness,
   await expectOnlyFakedCommands(page);
 });
 
-test("The last visible person cannot be hidden: the button says why, and a refusal from the vault is said", async ({
+test("The last visible person has no Hide button, and a person beside another has one", async ({
   page,
 }) => {
   await fakeVaultWith(page, { start: "unlocked" });
@@ -145,11 +145,27 @@ test("The last visible person cannot be hidden: the button says why, and a refus
     .getByRole("list", { name: en("personDetails.list"), exact: true })
     .getByRole("listitem")
     .first();
-  const hide = only.getByRole("button", {
-    name: /^Hide /,
+  // No button, and no sentence in its place (the vault refuses it too).
+  await expect(only.getByRole("button", { name: /^Hide / })).toHaveCount(0);
+  await expect(
+    page.getByText(en("hiddenPeople.lastPerson"), { exact: true }),
+  ).toHaveCount(0);
+  await expectNoAxeViolations(page, "Security with one person");
+});
+
+test("With two people each has a Hide button", async ({ page }) => {
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    people: [{ displayName: CHILD }],
   });
-  await expect(hide).toBeDisabled();
-  await expect(hide).toHaveAccessibleDescription(en("hiddenPeople.lastPerson"));
+  await page.goto("/");
+  await expect(sidebar(page)).toBeVisible();
+  await openSecurity(page);
+  await expect(page.getByRole("button", { name: /^Hide / })).toHaveCount(2);
+  await expect(
+    line(page, CHILD).getByRole("button", { name: /^Hide / }),
+  ).toBeEnabled();
+  await expectNoAxeViolations(page, "Security with two people");
 });
 
 test("A document that arrived for a hidden person is offered back on restore, by title, and Move puts it with them; Leave changes nothing", async ({
