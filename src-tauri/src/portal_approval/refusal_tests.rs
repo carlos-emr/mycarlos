@@ -288,7 +288,8 @@ fn a_saved_challenge_or_acceptance_that_no_longer_verifies_is_not_trusted() {
     let first = &x["flows"]["first"];
     let good_challenge = first["challenge"]["compact"].as_str().unwrap().to_owned();
     let good_acceptance = first["acceptance"]["compact"].as_str().unwrap().to_owned();
-    let other = uuid::Uuid::new_v4().to_string();
+    // Another request's id, fixed (a valid version 4 id) so a failure repeats.
+    let other = "6f3a1c52-8d4e-4b7a-9c10-2e5f7a3b9d01".to_string();
     let complete = |challenge: &str, acceptance: Option<&str>, status: ApprovalState| Attempt {
         challenge: Some(challenge.to_owned()),
         acceptance: acceptance.map(str::to_owned),
@@ -305,6 +306,22 @@ fn a_saved_challenge_or_acceptance_that_no_longer_verifies_is_not_trusted() {
         &complete(
             &good_challenge,
             Some(&good_acceptance),
+            ApprovalState::Accepted
+        )
+    ));
+    // The helpers' re-signing alone changes nothing: the same pair made with no change is trusted
+    // in the same shape, so the request id is the one thing refused below.
+    let resigned_challenge = fixture_challenge_with(|_| {});
+    let resigned_acceptance = fixture_acceptance_with(&good_challenge, |_| {});
+    assert!(valid_saved(
+        &link,
+        &complete(&resigned_challenge, None, ApprovalState::ChallengeReady)
+    ));
+    assert!(valid_saved(
+        &link,
+        &complete(
+            &good_challenge,
+            Some(&resigned_acceptance),
             ApprovalState::Accepted
         )
     ));
