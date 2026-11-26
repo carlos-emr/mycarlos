@@ -23,6 +23,7 @@ import {
   type VaultBridge,
 } from "../vault";
 import { spoken } from "./KeyLabel";
+import { useClipboardClear } from "./useClipboardClear";
 
 /** The longest name a person can have here (the vault cuts it there). */
 const NAME_LIMIT = 120;
@@ -169,21 +170,7 @@ export function ProfileExportDialog({
   // The key copied is taken off the clipboard again after a minute, if nothing
   // else has been copied since (it is not read otherwise), and when the dialog
   // ends. Where the clipboard cannot be read, it is left alone.
-  const clipboardKey = useRef<string | null>(null);
-  const clipboardTimer = useRef(0);
-  const clearClipboard = () => {
-    window.clearTimeout(clipboardTimer.current);
-    const key = clipboardKey.current;
-    clipboardKey.current = null;
-    if (!key) return;
-    void navigator.clipboard
-      .readText()
-      .then((now) =>
-        now === key ? navigator.clipboard.writeText("") : undefined,
-      )
-      .catch(() => undefined);
-  };
-  useEffect(() => clearClipboard, []);
+  const { copy: copyToClipboard, clear: clearClipboard } = useClipboardClear();
 
   const prepare = async (event: FormEvent) => {
     event.preventDefault();
@@ -213,10 +200,7 @@ export function ProfileExportDialog({
   const copy = async () => {
     if (!prepared?.generatedKey) return;
     try {
-      await navigator.clipboard.writeText(prepared.generatedKey);
-      clipboardKey.current = prepared.generatedKey;
-      window.clearTimeout(clipboardTimer.current);
-      clipboardTimer.current = window.setTimeout(clearClipboard, 60_000);
+      await copyToClipboard(prepared.generatedKey);
       setCopied("yes");
     } catch {
       setCopied("no");

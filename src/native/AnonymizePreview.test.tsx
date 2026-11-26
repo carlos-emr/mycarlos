@@ -1,5 +1,12 @@
 import { humanText, visibleText } from "../test/humanText";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { page } from "vitest/browser";
@@ -603,7 +610,11 @@ describe("the anonymize preview (#72 part B)", () => {
       screen.getByRole("button", { name: humanText("Copy text") }),
     );
     expect(
-      await screen.findByText(humanText("The text was copied.")),
+      await screen.findByText(
+        humanText(
+          "The text was copied. If nothing else is copied meanwhile, it is cleared from the clipboard in a minute.",
+        ),
+      ),
     ).toBeInTheDocument();
     // The check ran on the shown text with the ticket, and the clipboard got what it returned.
     expect(copyText).toHaveBeenCalledWith("FAKE-ticket-1", shownString(), []);
@@ -631,6 +642,45 @@ describe("the anonymize preview (#72 part B)", () => {
     expect(saved).toBe(copyText.mock.calls[0][1]);
     expect(copied).toBe(`FAKE header line\n\n${saved}\n`);
     expect(copied).not.toMatch(/Avery|Example|1961/);
+  });
+
+  it("takes the copied text off the clipboard when the screen goes away, but never a newer copy", async () => {
+    const user = userEvent.setup();
+    const board = { text: "" };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn(async (value: string) => void (board.text = value)),
+        readText: vi.fn(async () => board.text),
+      },
+    });
+    const copiedNotice = humanText(
+      "The text was copied. If nothing else is copied meanwhile, it is cleared from the clipboard in a minute.",
+    );
+    renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    await screen.findByText(copiedNotice);
+    expect(board.text).toMatch(/^FAKE header line/);
+    cleanup();
+    await waitFor(() => expect(board.text).toBe(""));
+    // The same again, but the patient copied something else in between: it is left as it is.
+    renderPreview();
+    await screen.findByRole("region", {
+      name: humanText("The text that will be saved"),
+    });
+    await user.click(
+      screen.getByRole("button", { name: humanText("Copy text") }),
+    );
+    await screen.findByText(copiedNotice);
+    board.text = "FAKE something else";
+    cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(board.text).toBe("FAKE something else");
   });
 
   it("copies nothing when the native check refuses, and takes out what it found, as Save does", async () => {

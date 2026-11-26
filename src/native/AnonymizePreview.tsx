@@ -20,6 +20,7 @@ import { useModalFocus } from "../useModalFocus";
 import { useMediaMatch } from "./smallWindow";
 import { removalCounts, wordsToCheck } from "./anonymizeReview";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { useClipboardClear } from "./useClipboardClear";
 import {
   hasVaultErrorCode,
   vaultErrorMessage,
@@ -192,6 +193,9 @@ export function AnonymizePreview({
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const textRef = useRef<HTMLDivElement | null>(null);
+  // A copied text is taken off the clipboard after a minute, or when this screen goes away (it
+  // closes, or the vault locks), if the clipboard still holds it.
+  const { copy: copyToClipboard } = useClipboardClear();
   const [text, setText] = useState<DocumentText | null>(null);
   // The automatic result, then one entry per removal the patient made.
   const [history, setHistory] = useState<Deidentified[]>([]);
@@ -444,7 +448,7 @@ export function AnonymizePreview({
         return;
       }
       try {
-        await navigator.clipboard.writeText(outcome.approved);
+        await copyToClipboard(outcome.approved);
         setNotice(
           deferredText(() => translateNow("interface.AnonymizePreview.copied")),
         );
