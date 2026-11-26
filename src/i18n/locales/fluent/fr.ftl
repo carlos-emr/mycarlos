@@ -557,6 +557,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Déplacer un dossier avec le
 
 interface-VaultLibrary-moveFolder = Déplacer le dossier
 
+interface-VaultLibrary-moveFolderItem = Déplacer le dossier…
+
 interface-VaultLibrary-moveSelectedTo = Déplacer la sélection vers
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Déplacez-les dans vos dossiers quand vous le souhaitez.

@@ -236,6 +236,49 @@ describe("VaultLibrary folders", () => {
     );
   });
 
+  it('moves the open folder by keyboard from its "…" menu: Move folder… opens the Help panel\'s controls with the folder chosen and the focus on the destination', async () => {
+    // The keyboard way to move a folder (WCAG 2.5.7's alternative to dragging) used to sit in
+    // an always-visible block; it is in the Help panel now, so the folder's own menu leads to it.
+    const { bridge } = renderLibrary();
+    // A person's own page, and Shared with me, have no folder to move: no item.
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(/^More for /) }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: humanText("Move folder…") }),
+    ).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    openFolder(/^FAKE June Letters/);
+    const help = screen.getByRole("button", {
+      name: humanText("Help: this screen"),
+    });
+    expect(help).toHaveAttribute("aria-expanded", "false");
+    expect(help).not.toHaveAttribute("aria-controls");
+    fireEvent.click(headMenuItemNow("Move folder…"));
+    // The panel is open, the help button says so and points at it, the folder is chosen,
+    // and the focus is on the next decision.
+    expect(help).toHaveAttribute("aria-expanded", "true");
+    const panel = screen.getByRole("region", {
+      name: humanText("Help with this screen"),
+    });
+    expect(help.getAttribute("aria-controls")).toBe(panel.id);
+    const folderSelect = within(panel).getByLabelText(humanText("Folder"));
+    expect(folderSelect).toHaveValue("letters-2025-june");
+    const destination = within(panel).getByLabelText(humanText("Destination"));
+    await vi.waitFor(() => expect(destination).toHaveFocus());
+    fireEvent.change(destination, { target: { value: "letters" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Move folder" }));
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledExactlyOnceWith(
+        "letters-2025-june",
+        "letters",
+        "FAKE June Letters",
+      ),
+    );
+  });
+
   it("shows when a folder was added in the Date added column", () => {
     renderLibrary();
     const row = screen.getByRole("article", {
@@ -449,6 +492,44 @@ describe("VaultLibrary search", () => {
     ]);
     expect(bridge.updateFolder).not.toHaveBeenCalled();
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+  });
+
+  it("moves a shared document into another person's folder from its details, by keyboard: only the drag shortcut was lost with the sidebar's other-people folders", async () => {
+    // The sidebar lists only the open person's folders, so a shared document cannot be dropped
+    // on ANOTHER person's folder; the details' "Move to" still offers every person and every
+    // folder, as a native select (arrow keys), then the Move button.
+    const moveToPerson = vi
+      .fn()
+      .mockResolvedValue({ moved: ["shared-test"], alreadyThere: [] });
+    renderLibrary(separateScopes, 0, { moveToPerson });
+    const user = userEvent.setup();
+    openFolder(/^Shared with me/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("FAKE Blood shared.pdf") }),
+    );
+    const details = await screen.findByRole("dialog", {
+      name: humanText("FAKE Blood shared.pdf"),
+    });
+    const moveTo = within(details).getByRole("combobox", {
+      name: humanText("Move to"),
+    });
+    const options = within(moveTo)
+      .getAllByRole("option")
+      .map((option) => visibleText(option.textContent ?? ""));
+    expect(options.some((label) => label.includes("FAKE Blake"))).toBe(true);
+    expect(options.some((label) => label.includes("FAKE Lab results"))).toBe(
+      true,
+    );
+    // FAKE Avery has a "FAKE Lab results" folder too: choose Blake's by its value.
+    await user.selectOptions(moveTo, "profile-2|blake-lab");
+    await user.click(within(details).getByRole("button", { name: "Move" }));
+    await vi.waitFor(() =>
+      expect(moveToPerson).toHaveBeenCalledExactlyOnceWith(
+        ["shared-test"],
+        "profile-2",
+        ["blake-lab"],
+      ),
+    );
   });
 
   it("keeps hidden documents out of recursive search results and their paths", () => {
