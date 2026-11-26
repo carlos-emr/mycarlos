@@ -396,7 +396,8 @@ pub(crate) enum RunnerStatus {
 }
 
 /// Why a request or a start gave nothing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum RunnerError {
     /// The device budget refused the start.
     Budget {
@@ -419,6 +420,7 @@ pub(crate) enum RunnerError {
     /// shown on their own and never beside the document's text.
     Model(String),
 }
+redact_debug!(RunnerError);
 
 /// One page of a document's text, by its index from 0.
 #[cfg_attr(test, derive(Debug))]

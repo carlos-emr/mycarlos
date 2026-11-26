@@ -163,7 +163,8 @@ pub struct ManifestPatient {
 }
 redact_debug!(ManifestPatient);
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestDocument {
     #[serde(deserialize_with = "present_nullable")]
@@ -174,6 +175,7 @@ pub struct ManifestDocument {
     pub service_date: Option<String>,
     pub media_type: String,
 }
+redact_debug!(ManifestDocument);
 
 /// Optional v1 values may explicitly be null; their members must still exist.
 /// Plain Option/default deserialization would incorrectly accept missing keys.

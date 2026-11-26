@@ -287,7 +287,8 @@ pub(crate) struct Page {
 }
 redact_debug!(Page);
 
-#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Deserialize)]
 #[serde(tag = "tool", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
     #[serde(rename_all = "camelCase")]
@@ -313,6 +314,7 @@ enum Request {
     #[cfg(feature = "ai-helper-stub")]
     Probe { id: u64, what: String },
 }
+redact_debug!(Request);
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]

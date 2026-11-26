@@ -1,10 +1,8 @@
-/// `Debug` for a type that holds names, document text, an answer, a token or a code: a test build
-/// derives it (so an assertion failure shows the values), and a release build prints only the
-/// type's name, so a panic, a `{:?}` or an error chain can never carry them out. Use it after the
-/// type, with `#[cfg_attr(test, derive(Debug))]` in place of `Debug` in its derive list.
-macro_rules! redact_debug {
+/// A `Debug` that prints only a type's name, for a type that holds names, document text, an answer,
+/// a token or a code, so that a panic, a `{:?}` or an error chain can never carry them out. Use
+/// `redact_debug!` (below), not this, in the code.
+macro_rules! redact_debug_impl {
     ($($type:ident),+ $(,)?) => {$(
-        #[cfg(not(test))]
         impl ::std::fmt::Debug for $type {
             fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 formatter.write_str(concat!(stringify!($type), " { .. }"))
@@ -13,8 +11,21 @@ macro_rules! redact_debug {
     )+};
 }
 
+/// The redaction for a release build: a test build derives `Debug` instead (an assertion failure
+/// then shows the values), so write `#[cfg_attr(test, derive(Debug))]` in place of `Debug` in the
+/// type's derive list and `redact_debug!(Type);` after the type. `redact_debug_impl!` is the same
+/// impl with no `cfg`, which a unit test applies to a probe type to show what it prints.
+macro_rules! redact_debug {
+    ($($type:ident),+ $(,)?) => {
+        #[cfg(not(test))]
+        redact_debug_impl!($($type),+);
+    };
+}
+
 #[cfg(target_os = "macos")]
 mod native_confirmation_macos;
+#[cfg(test)]
+mod redact_debug_tests;
 mod ui_text;
 mod ui_text_ids;
 use ui_text::UiLocale;

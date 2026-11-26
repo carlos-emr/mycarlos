@@ -113,7 +113,8 @@ pub struct Patient {
     pub birth_date: String,
 }
 redact_debug!(Patient);
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
     pub title: String,
@@ -124,6 +125,7 @@ pub struct Document {
     pub size: u64,
     pub sha256: String,
 }
+redact_debug!(Document);
 #[cfg_attr(test, derive(Debug))]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -827,7 +829,8 @@ pub const MAX_WAITING_AIDS: usize = 32;
 /// A filed reading aid as the reader shows it: the checked JSON's notice, overview and points,
 /// the clinician's review time from the signed manifest, and the aid's delivery ID. Plain text
 /// only: the reader never renders any of it as markup.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadingAidView {
     pub delivery_id: String,
@@ -837,17 +840,22 @@ pub struct ReadingAidView {
     pub overview: String,
     pub points: Vec<ReadingAidPoint>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+redact_debug!(ReadingAidView);
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct ReadingAidNotice {
     pub version: String,
     pub heading: String,
     pub body: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+redact_debug!(ReadingAidNotice);
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct ReadingAidPoint {
     pub text: String,
     pub evidence: Vec<String>,
 }
+redact_debug!(ReadingAidPoint);
 impl AidCustody {
     /// The reader's view of this aid, or None when the kept JSON or manifest cannot be read as
     /// one (it was checked when it arrived and on every manifest read, so this is a safety net).
