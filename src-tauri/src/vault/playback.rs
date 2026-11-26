@@ -317,7 +317,8 @@ fn clamp(start: u64, end: u64, total: u64) -> RangeOutcome {
 }
 
 /// What the scheme handler sends back.
-#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub(crate) struct PlaybackReply {
     /// 206, or 416 when the range could not be satisfied.
     pub(crate) status: u16,
@@ -328,6 +329,7 @@ pub(crate) struct PlaybackReply {
     /// Empty for a HEAD request or a 416.
     pub(crate) body: Vec<u8>,
 }
+redact_debug!(PlaybackReply);
 
 /// Why a request got no reply.
 #[derive(Debug, PartialEq, Eq)]
@@ -340,7 +342,8 @@ pub(crate) enum PlaybackRefusal {
 }
 
 /// What a caller learns when a video is opened.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackOpened {
     /// Where to ask: the token, which is also the path of the scheme's address.
@@ -348,6 +351,7 @@ pub struct PlaybackOpened {
     /// The length of the file a player sees.
     pub total_bytes: u64,
 }
+redact_debug!(PlaybackOpened);
 
 impl Drop for PlaybackOpened {
     /// The token is a bearer secret for one video: this copy of it is wiped (the one in the table

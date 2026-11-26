@@ -596,7 +596,8 @@ pub struct RecordingProgress {
 }
 
 /// One unfinished recording found in `recordings/`, for the question at unlock.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingRecording {
     pub id: Uuid,
@@ -610,6 +611,7 @@ pub struct PendingRecording {
     /// finished when there is room again, and the notice says so.
     pub stopped: bool,
 }
+redact_debug!(PendingRecording);
 
 /// All the journals found, and how many could not be read.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]

@@ -94,7 +94,8 @@ impl StoredAiResult {
 }
 
 /// What the renderer asks the vault to keep.
-#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AiResultInput {
     pub tool: AiTool,
@@ -104,9 +105,11 @@ pub struct AiResultInput {
     pub model_name: String,
     pub model_sha256: String,
 }
+redact_debug!(AiResultInput);
 
 /// An answer as the renderer lists it: everything but the bytes.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiResultInfo {
     pub id: Uuid,
@@ -122,6 +125,7 @@ pub struct AiResultInfo {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub imported: bool,
 }
+redact_debug!(AiResultInfo);
 
 impl From<&StoredAiResult> for AiResultInfo {
     fn from(stored: &StoredAiResult) -> Self {
