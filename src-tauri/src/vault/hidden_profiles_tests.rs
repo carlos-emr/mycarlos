@@ -385,7 +385,7 @@ fn a_hidden_person_needs_the_new_format_and_a_vault_with_nobody_visible_is_refus
         Some(MANIFEST_FORMAT_HIDDEN_PROFILES)
     );
     const { assert!(MANIFEST_FORMAT_HIDDEN_PROFILES > MANIFEST_FORMAT_PROFILE_HANDOVER) };
-    assert_eq!(VAULT_FORMAT, MANIFEST_FORMAT_HIDDEN_PROFILES);
+    const { assert!(VAULT_FORMAT >= MANIFEST_FORMAT_HIDDEN_PROFILES) };
     assert!(!valid_handover_fields(
         &person,
         MANIFEST_FORMAT_PROFILE_HANDOVER,

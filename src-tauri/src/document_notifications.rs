@@ -159,6 +159,24 @@ impl RemoteNotices {
         &self.revocations
     }
 
+    /// Whether a push destination is enrolled for this link or a revocation is still queued for
+    /// it. Removing the link then would strand a subscription the portal still holds, so the
+    /// caller refuses until the notices are turned off and their revocation has gone out (#160).
+    pub fn has_destination_for(&self, link_id: Uuid) -> bool {
+        self.active
+            .iter()
+            .chain(self.revocations.iter())
+            .any(|d| d.owner.link_id == link_id)
+    }
+
+    /// Drops this link's destination and queued revocation from the manifest. Only for a link
+    /// that has none (`has_destination_for` is false): this clears nothing the portal holds, so a
+    /// caller that has not checked would strand a subscription.
+    pub fn drop_link(&mut self, link_id: Uuid) {
+        self.active.retain(|d| d.owner.link_id != link_id);
+        self.revocations.retain(|d| d.owner.link_id != link_id);
+    }
+
     pub fn is_empty(&self) -> bool {
         !self.opted_in && self.active.is_empty() && self.revocations.is_empty()
     }
