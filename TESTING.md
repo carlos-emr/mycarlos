@@ -630,6 +630,36 @@ Then turn the screen reader off and check app zoom (and, on a phone, the device'
 When you report a problem, name the screen reader and its version, and say what it read out and
 what you expected it to read.
 
+## Nothing about a document in the device log (by hand, release build)
+
+The app writes nothing about a document to a log: its native code, its plugins and its pages have no
+logging call that names a file, a person, document text, a portal id or a token, and its errors are fixed
+codes. This check shows it on a real device, because the system and the libraries underneath (the web view,
+the document picker, the push service) write logs the app does not control. Use a **release** build (not a
+debug one: it logs more) and **FAKE data only**.
+
+1. Make a FAKE PDF with distinctive words that appear nowhere else: name it `FAKE-LOGCHECK-Zyxwv Patient.pdf`
+   and put a line of text in it such as `Zyxwv Patient, health number LOGCHECK-7731`.
+2. Install the release build on an Android phone or emulator, and on an iPhone if one is available, and
+   create a FAKE vault. On Android clear the log first: `adb logcat -c`.
+3. Do the things that handle documents: **import** the FAKE PDF, open it (**Read**), **Save a copy**
+   (export), link a FAKE clinic portal and receive a FAKE document if a test portal is at hand, turn on
+   iPhone notices and receive one on an iPhone, run the **AI helper** on a computer build, then lock and unlock.
+4. Capture the log straight afterwards. Android: `adb logcat -b all -d > logcat.txt`. iPhone: the Console
+   app on a Mac with the device selected (or `idevicesyslog`), saved to a file.
+5. Search it for the FAKE file name, the FAKE person's name, the FAKE health number, the portal's host name,
+   the document, link and clinic ids the screens show, the push token's first characters as the portal shows
+   them, and the passphrase you typed. For example:
+   `grep -n -i -E "zyxwv|logcheck|7731|<portal host>|<document id>" logcat.txt`. **Expect no hit.** Also
+   look at lines tagged `chromium` (the web view's console): a release build's page writes none.
+6. A hit is a finding: write down the line and its tag (the app's, or the system's), and say whether it
+   came from the app or from something it uses. Do not paste a log into an issue before checking it holds
+   only FAKE data.
+
+Related, recorded decision: neither the app window nor the Android reader sets `FLAG_SECURE` (owner decision of
+20 Nov 2026, see "Android PDF reader" above), so a screenshot or the recent-apps picture of an open document
+is allowed; this check is about logs, not about screenshots.
+
 ## Start over
 
 To start again with an empty vault, lock myCarlos, choose **Forgot your passphrase?** on the unlock
