@@ -41,6 +41,7 @@ import {
 import { receiveNoticeText, sharedAddedText } from "./native/receivedNotice";
 import { VaultAuthFrame, CreateVault, UnlockVault } from "./native/VaultAuth";
 import { LockWarning } from "./native/LockWarning";
+import { useAddVideo } from "./native/useAddVideo";
 import { ComfortSetup } from "./native/ComfortSetup";
 
 import { ConfirmDialog } from "./native/ConfirmDialog";
@@ -889,6 +890,12 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         ),
     };
   }, [answering, bridge, track, transferHold]);
+  // Adding a video lives here, above the screens: leaving the library mid-import keeps its progress,
+  // its Cancel and its answer, and the library shows the video when it is in.
+  const addVideo = useAddVideo({
+    bridge: trackedBridge,
+    onAdded: () => void refresh(),
+  });
 
   useEffect(() => {
     if (status !== "unlocked") return;
@@ -2109,6 +2116,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       )}
       <VaultLibrary
         bridge={trackedBridge}
+        addVideo={addVideo}
         snapshot={snapshot}
         busy={busy}
         notice={notice}

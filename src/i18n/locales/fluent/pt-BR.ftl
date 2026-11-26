@@ -2983,3 +2983,5 @@ interface-AddVideo-tooBig = A imagem deste vídeo é maior do que o myCarlos pod
 interface-AddVideo-tooLarge = Este vídeo é maior do que o myCarlos pode adicionar neste dispositivo (2 GB em um computador, 1 GB em um celular). Salve uma cópia menor e adicione-a de novo.
 
 interface-AddVideo-damaged = Este vídeo está danificado ou cortado, então não pode ser adicionado. Copie-o de novo de onde ele veio e tente outra vez.
+
+interface-AddVideo-adding = Adicionando o vídeo…

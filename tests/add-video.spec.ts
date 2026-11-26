@@ -36,7 +36,9 @@ test("a picked video is added, said so, shown in the records, and the button is 
   await fakePickVideo(page, "FAKE clip.mp4");
   await addVideo(page).click();
   await expect(
-    page.getByText(en("interface.AddVideo.added"), { exact: true }),
+    page
+      .getByRole("status")
+      .filter({ hasText: en("interface.AddVideo.added") }),
   ).toBeVisible();
   await expect(page.getByText("FAKE clip.mp4").first()).toBeVisible();
   await expect(addVideo(page)).toBeFocused();
@@ -52,7 +54,7 @@ test("a refused video says why in its own words and adds nothing", async ({
   await expect(myRecords(page)).toBeVisible();
   await fakePickVideo(page, "FAKE phone.mp4", { refusal: "hevc" });
   await addVideo(page).click();
-  await expect(page.getByRole("alert")).toHaveText(
+  await expect(page.locator(".add-video-problem")).toHaveText(
     en("interface.AddVideo.hevc"),
   );
   await expect(page.getByText("FAKE phone.mp4")).toHaveCount(0);
@@ -73,14 +75,14 @@ test("a slow video shows a bar, Cancel stops it, and nothing is added", async ({
   await expect(bar).toBeVisible();
   // First an indeterminate bar while the file is checked, then a value as it is stored.
   await expect(bar).not.toHaveAttribute("value", /.+/);
-  await expect(bar).toHaveAttribute("value", /^\d+$/, { timeout: 4000 });
+  await expect(bar).toHaveAttribute("value", /^\d+$/, { timeout: 10000 });
   await expectNoAxeViolations(page, "while a video is being added");
   await page
     .getByRole("button", { name: en("interface.AddVideo.cancel"), exact: true })
     .click();
   await expect(
     page.getByText(en("interface.AddVideo.cancelled"), { exact: true }),
-  ).toBeVisible({ timeout: 4000 });
+  ).toBeVisible({ timeout: 10000 });
   await expect(bar).toHaveCount(0);
   await expect(page.getByText("FAKE long.mp4")).toHaveCount(0);
   await expect(addVideo(page)).toBeEnabled();

@@ -5069,3 +5069,8 @@ button:disabled,
   margin: 0;
   max-width: 32rem;
 }
+.add-video-progress > span {
+  display: inline-block;
+  min-width: 3.5ch;
+  text-align: end;
+}

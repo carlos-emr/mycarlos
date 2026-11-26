@@ -2000,7 +2000,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
             videoCancelled = false;
             try {
               if (video.slow) {
-                // About two seconds, in steps, so the bar and Cancel can be seen.
+                // About seven seconds, in steps, so the bar and Cancel can be seen.
                 for (let step = 0; step <= 10; step++) {
                   if (videoCancelled) return { result: "cancelled" };
                   videoProgress =
@@ -2011,7 +2011,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
                           doneBytes: (step - 3) * 100,
                           totalBytes: 700,
                         };
-                  await new Promise((resolve) => setTimeout(resolve, 200));
+                  await new Promise((resolve) => setTimeout(resolve, 600));
                 }
               }
               if (video.refusal)

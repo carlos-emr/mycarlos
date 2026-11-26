@@ -2983,3 +2983,5 @@ interface-AddVideo-tooBig = L’image de cette vidéo est plus grande que ce que
 interface-AddVideo-tooLarge = Cette vidéo est plus volumineuse que ce que myCarlos peut ajouter sur cet appareil (2 Go sur un ordinateur, 1 Go sur un téléphone). Enregistrez une copie plus petite et ajoutez-la de nouveau.
 
 interface-AddVideo-damaged = Cette vidéo est endommagée ou tronquée : elle ne peut pas être ajoutée. Copiez-la de nouveau depuis son origine et réessayez.
+
+interface-AddVideo-adding = Ajout de la vidéo…

@@ -2948,3 +2948,5 @@ interface-AddVideo-tooBig = The picture of this video is larger than myCarlos ca
 interface-AddVideo-tooLarge = This video is larger than myCarlos can add on this device (2 GB on a computer, 1 GB on a phone). Save a smaller copy and add it again.
 
 interface-AddVideo-damaged = This video is damaged or cut short, so it cannot be added. Copy it again from where it came from and try again.
+
+interface-AddVideo-adding = Adding the video…

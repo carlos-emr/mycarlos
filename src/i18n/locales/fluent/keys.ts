@@ -1390,6 +1390,7 @@ export const MESSAGE_KEYS = [
   "interface.AddVideo.tooBig",
   "interface.AddVideo.tooLarge",
   "interface.AddVideo.damaged",
+  "interface.AddVideo.adding",
 ] as const;
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
@@ -3050,6 +3051,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.AddVideo.tooBig": "interface-AddVideo-tooBig",
   "interface.AddVideo.tooLarge": "interface-AddVideo-tooLarge",
   "interface.AddVideo.damaged": "interface-AddVideo-damaged",
+  "interface.AddVideo.adding": "interface-AddVideo-adding",
 } as const satisfies Record<MessageKey, string>;
 export const fluentId = (key: MessageKey) => FLUENT_IDS_BY_KEY[key];
 
@@ -4575,6 +4577,7 @@ export interface MessageArgsByKey {
   "interface.AddVideo.tooBig": undefined;
   "interface.AddVideo.tooLarge": undefined;
   "interface.AddVideo.damaged": undefined;
+  "interface.AddVideo.adding": undefined;
 }
 
 export type MessageArgs<K extends MessageKey> = MessageArgsByKey[K];

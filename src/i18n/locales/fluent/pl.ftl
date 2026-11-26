@@ -3077,3 +3077,5 @@ interface-AddVideo-tooBig = Obraz tego filmu jest większy, niż myCarlos może 
 interface-AddVideo-tooLarge = Ten film jest większy, niż myCarlos może dodać na tym urządzeniu (2 GB na komputerze, 1 GB na telefonie). Proszę zapisać mniejszą kopię i dodać ją ponownie.
 
 interface-AddVideo-damaged = Ten film jest uszkodzony lub ucięty, więc nie można go dodać. Proszę skopiować go ponownie z miejsca, z którego pochodzi, i spróbować jeszcze raz.
+
+interface-AddVideo-adding = Dodawanie filmu…

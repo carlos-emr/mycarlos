@@ -2674,3 +2674,5 @@ interface-AddVideo-tooBig = 此视频的画面大于 myCarlos 可添加的尺寸
 interface-AddVideo-tooLarge = 此视频大于 myCarlos 在此设备上可添加的大小（电脑 2 GB，手机 1 GB）。请另存为较小的副本后再添加。
 
 interface-AddVideo-damaged = 此视频已损坏或被截断，无法添加。请从来源处重新复制后再试。
+
+interface-AddVideo-adding = 正在添加视频…

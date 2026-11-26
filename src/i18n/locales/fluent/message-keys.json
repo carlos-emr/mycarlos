@@ -1388,5 +1388,6 @@
   "interface.AddVideo.fragmented",
   "interface.AddVideo.tooBig",
   "interface.AddVideo.tooLarge",
-  "interface.AddVideo.damaged"
+  "interface.AddVideo.damaged",
+  "interface.AddVideo.adding"
 ]
