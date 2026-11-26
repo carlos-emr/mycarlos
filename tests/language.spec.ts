@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { LOCALES } from "../src/i18n/types";
 import { translate } from "./support/fluent";
-import { expectOnlyFakedCommands, fakeVault } from "./support/a11y";
+import {
+  expectNoAxeViolations,
+  expectOnlyFakedCommands,
+  fakeVault,
+} from "./support/a11y";
 
 async function preferences(page: Page) {
   await page
@@ -291,9 +296,17 @@ for (const width of [320, 412, 1100]) {
     expect(title.x - box.x).toBeGreaterThanOrEqual(16);
     expect(firstOption.x - box.x).toBeGreaterThanOrEqual(16);
     expect(Math.abs(firstOption.x - title.x)).toBeLessThan(2);
-    // Close is the dialog's own button, inside the dialog.
+    // Close is the dialog's own button, inside the dialog, in the title's row at the right with a
+    // little room from the edge (the same place as the document details' Close), and no footer.
     expect(close.x).toBeGreaterThanOrEqual(box.x - 1);
-    expect(close.x + close.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    expect(close.x + close.width).toBeLessThanOrEqual(box.x + box.width - 12);
+    expect(close.x).toBeGreaterThan(title.x + title.width / 2);
+    expect(close.y).toBeLessThan(title.y + title.height);
+    expect(close.y + close.height).toBeLessThan(firstOption.y);
+    expect(close.height).toBeGreaterThanOrEqual(44);
+    await expect(dialog.locator("footer")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+    await expectNoAxeViolations(page, `the language dialog at ${width}px`);
     // Nothing runs out of the dialog sideways.
     expect(
       await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
@@ -304,6 +317,64 @@ for (const width of [320, 412, 1100]) {
     await expectOnlyFakedCommands(page);
   });
 }
+
+// With 200% text on a phone the title may take more than one line in some languages: it folds and
+// Close stays at the top right of the dialog, inside it, with room from the edge.
+test("the language dialog's Close stays at the top right of its title with 200% text, in every language", async ({
+  browser,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "sets its own sizes");
+  const problems: string[] = [];
+  for (const locale of LOCALES) {
+    const context = await browser.newContext({
+      baseURL: info.project.use.baseURL,
+      viewport: { width: 320, height: 900 },
+      isMobile: true,
+      hasTouch: true,
+    });
+    try {
+      const page = await context.newPage();
+      await page.addInitScript((locale) => {
+        localStorage.setItem("mycarlos.language.v1", locale);
+      }, locale);
+      await fakeVault(page, "locked");
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Page.setFontSizes", { fontSizes: { standard: 32 } });
+      await page.goto("/");
+      await expect(page.locator("html")).toHaveAttribute("lang", locale);
+      const title = translate(locale, "language.title");
+      await page
+        .getByRole("button", { name: new RegExp(`\\(${title}\\)$`) })
+        .click();
+      const dialog = page.getByRole("dialog", { name: title });
+      await expect(dialog).toBeVisible();
+      const box = (await dialog.boundingBox())!;
+      const heading = (await dialog
+        .getByRole("heading", { name: title })
+        .boundingBox())!;
+      const closeName = translate(locale, "interface.AnonymizePreview.close");
+      const close = dialog.getByRole("button", { name: closeName });
+      const at = (await close.boundingBox())!;
+      if (at.x + at.width > box.x + box.width - 8)
+        problems.push(`${locale}: Close touches the dialog's right edge`);
+      if (at.x < box.x) problems.push(`${locale}: Close starts outside`);
+      if (at.y > heading.y + heading.height)
+        problems.push(`${locale}: Close is below the title's row`);
+      if (heading.x + heading.width > at.x + 1)
+        problems.push(`${locale}: the title runs under Close`);
+      if (!(await dialog.evaluate((n) => n.scrollWidth <= n.clientWidth)))
+        problems.push(`${locale}: the dialog scrolls sideways`);
+      await expect(close).toBeFocused();
+      await expectNoAxeViolations(page, `the language dialog in ${locale}`);
+      await page.screenshot({
+        path: info.outputPath(`language-dialog-200pc-${locale}.png`),
+      });
+    } finally {
+      await context.close();
+    }
+  }
+  expect(problems).toEqual([]);
+});
 
 // The language list (in the dialog Preferences opens) is a grid of real radio buttons: one column in a narrow
 // space or with enlarged text, two in a medium one (the dialog's, even in a wide window). The breakpoints are

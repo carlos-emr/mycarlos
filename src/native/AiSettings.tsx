@@ -1,4 +1,4 @@
-import { useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   aiLabelSnapshot,
   anyShortAiLabel,
@@ -32,6 +32,11 @@ export function AiSettings({
   useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
   const shortLabel = anyShortAiLabel();
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  // The full warning was just brought back from this screen: said once, for a screen reader.
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    if (shortLabel) setRestored(false);
+  }, [shortLabel]);
   return (
     <main className="library-main purpose-screen">
       <div className="main-head">
@@ -73,12 +78,17 @@ export function AiSettings({
             <p>{t("ai.label.settingsBody")}</p>
           </div>
           <div>
-            {/* Always on the page, so that a change of its words is read out; the button goes
-                when there is nothing to bring back, and the focus goes to the row's heading. */}
+            {/* Always on the page, so that its words are read out when they come; the sentence and
+                the button go when there is nothing to bring back, and the focus goes to the row's
+                heading. */}
             <p role="status">
-              {shortLabel
-                ? t("ai.label.settingsShortShown")
-                : t("ai.label.settingsFullShown")}
+              {shortLabel ? (
+                t("ai.label.settingsShortShown")
+              ) : restored ? (
+                <span className="sr-only">
+                  {t("ai.label.settingsFullBack")}
+                </span>
+              ) : null}
             </p>
             {shortLabel && (
               <button
@@ -86,6 +96,9 @@ export function AiSettings({
                 type="button"
                 onClick={() => {
                   showFullAiLabelAgain();
+                  // The button and its sentence go and the focus moves to the heading: this is
+                  // said once, to a screen reader only, in the standing status region.
+                  setRestored(true);
                   headingRef.current?.focus();
                 }}
               >

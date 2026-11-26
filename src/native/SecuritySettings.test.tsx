@@ -1119,6 +1119,10 @@ describe("SecuritySettings backup layout", () => {
   });
 });
 
+const LEAVE_OUT_HELP_TEXT =
+  "The backup will not contain your videos. If you restore it, the videos are not brought back.";
+const LEAVE_OUT_HELP = humanText(LEAVE_OUT_HELP_TEXT);
+
 describe("the backup's size and leaving the videos out (#359)", () => {
   const sizes = (videos: number) =>
     vi.fn(async () => ({
@@ -1140,6 +1144,8 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     expect(
       screen.getByRole("checkbox", { name: humanText("Leave videos out") }),
     ).not.toBeChecked();
+    // What leaving them out means is said only once the box is ticked.
+    expect(screen.queryByText(LEAVE_OUT_HELP)).toBeNull();
   });
 
   it("shows the size without the videos when the box is ticked, with no second question, and says what that means, and saves without them", async () => {
@@ -1155,17 +1161,34 @@ describe("the backup's size and leaving the videos out (#359)", () => {
     ).toBeVisible();
     // Asked once: ticking the box does not ask again.
     expect(onBackupSize).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByText(
-        humanText(
-          "The backup will not contain your videos. If you restore it, the videos are not brought back.",
-        ),
-      ),
-    ).toBeVisible();
+    expect(screen.getByText(LEAVE_OUT_HELP)).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: humanText("Save encrypted backup…") }),
     );
     expect(props.onSaveBackup).toHaveBeenCalledWith(true);
+  });
+
+  it("says what leaving the videos out means only while the box is ticked, to a screen reader too", async () => {
+    setLocaleOverride("en");
+    renderSettings({ onBackupSize: sizes(3) });
+    const leave = await screen.findByRole("checkbox", {
+      name: humanText("Leave videos out"),
+    });
+    // Unticked: no sentence, nothing to describe the box, and an empty polite region that is ready.
+    expect(screen.queryByText(LEAVE_OUT_HELP)).toBeNull();
+    expect(leave).not.toHaveAccessibleDescription(LEAVE_OUT_HELP_TEXT);
+    const region = leave.closest(".appearance-choice")?.nextElementSibling;
+    expect(region).toHaveAttribute("role", "status");
+    expect(region).toBeEmptyDOMElement();
+    // Ticked: the sentence is put in the polite region (announced), and describes the box.
+    fireEvent.click(leave);
+    const help = screen.getByText(LEAVE_OUT_HELP);
+    expect(help.closest("[role='status']")).toBe(region);
+    expect(leave).toHaveAccessibleDescription(LEAVE_OUT_HELP_TEXT);
+    // Unticked again: gone.
+    fireEvent.click(leave);
+    expect(screen.queryByText(LEAVE_OUT_HELP)).toBeNull();
+    expect(leave).not.toHaveAttribute("aria-describedby");
   });
 
   it("says the size is being worked out until it is known", async () => {

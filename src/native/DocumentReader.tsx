@@ -69,7 +69,13 @@ export function sentenceAround(text: string, term: string): string {
     ) + 1;
   const after = text.slice(at + term.length).search(/[.!?](\s|$)|\n/);
   const end = after < 0 ? text.length : at + term.length + after + 1;
-  return text.slice(start, end).trim().slice(0, CONTEXT_MAX);
+  const sentence = text.slice(start, end);
+  const lead = sentence.length - sentence.trimStart().length;
+  const body = sentence.trim();
+  // A long sentence is cut to CONTEXT_MAX, but never before its term has ended: the native
+  // side refuses a sentence that does not hold the term (#240).
+  const from = Math.max(0, at + term.length - start - lead - CONTEXT_MAX);
+  return body.slice(from, from + CONTEXT_MAX).trim();
 }
 
 /** Let a burst of zoom input settle before sharpening the visible page. */
