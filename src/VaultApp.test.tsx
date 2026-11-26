@@ -26,8 +26,25 @@ const windowLock = (name: string | RegExp = "Lock now") =>
     "button",
     { name: typeof name === "string" ? humanText(name) : name },
   );
-import { StrictMode } from "react";
+import { StrictMode, createElement } from "react";
+import type { ComponentProps } from "react";
 import VaultApp from "./VaultApp";
+
+// The library is handed the bridge `VaultApp` wraps (`trackedBridge`), and nothing else in a test
+// can reach it. This wrapper renders the real library and only remembers that bridge, so a test
+// can call a wrapped method bare, from outside `run`, as the hand-over dialogs do.
+const shown = vi.hoisted(() => ({ bridge: null as unknown }));
+vi.mock("./native/VaultLibrary", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("./native/VaultLibrary")>();
+  return {
+    ...original,
+    VaultLibrary: (props: ComponentProps<typeof original.VaultLibrary>) => {
+      shown.bridge = props.bridge;
+      return createElement(original.VaultLibrary, props);
+    },
+  };
+});
 import type {
   ImportOutcome,
   PortalApprovalCheck,
@@ -5060,6 +5077,101 @@ describe("durable vault UI", () => {
       const { bridge, setVisibility, finish } =
         await handOverSavePending(which);
       await finish();
+      await setVisibility("hidden");
+      await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    },
+  );
+
+  /** Every bridge method that runs a transfer, as `VaultApp` wraps it, with a bare call (not
+   * inside `run`, the way a dialog that talks to the bridge itself calls it). A new transfer
+   * added to the wrapper must be added here: the hold is only freed, and a lock owed only taken,
+   * if the wrapper itself brackets the transfer. */
+  const bareTransfers: [string, (bridge: VaultBridge) => Promise<unknown>][] = [
+    ["saveBackupToPicked", (b) => b.saveBackupToPicked("pick-1")],
+    ["saveProfileExportToPicked", (b) => b.saveProfileExportToPicked("pick-1")],
+    [
+      "importProfile",
+      (b) => b.importProfile({ pickId: "pick-1", secret: "FAKE" } as never),
+    ],
+    [
+      "importPickedFiles",
+      (b) => b.importPickedFiles("pick-1", "profile-1", []),
+    ],
+    ["exportToPicked", (b) => b.exportToPicked("pick-1", "record-1")],
+  ];
+
+  async function bareTransferPending(method: string) {
+    let finish: (value: never) => void = () => {};
+    let fail: (error: unknown) => void = () => {};
+    const bridge = nativeBridge({
+      status: vi.fn().mockResolvedValue("unlocked"),
+      [method]: vi.fn(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          }),
+      ),
+      lock: vi.fn(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 50)),
+      ),
+    } as Partial<VaultBridge>);
+    let visibilityState: DocumentVisibilityState = "visible";
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibilityState);
+    onTestFinished(() => visibility.mockRestore());
+    shown.bridge = null;
+    render(<VaultApp bridge={bridge} />);
+    await waitFor(() => expect(shown.bridge).not.toBeNull());
+    const setVisibility = (state: DocumentVisibilityState) =>
+      act(async () => {
+        visibilityState = state;
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    return {
+      bridge,
+      tracked: shown.bridge as VaultBridge,
+      setVisibility,
+      finish: () => act(async () => finish(undefined as never)),
+      fail: () =>
+        act(async () => fail({ code: "export_failed", message: "FAKE" })),
+    };
+  }
+
+  it.each(bareTransfers)(
+    "a bare %s holds a lock that is owed while it runs and locks when it is done",
+    async (method, call) => {
+      const { bridge, tracked, setVisibility, finish } =
+        await bareTransferPending(method);
+      let settled = false;
+      void call(tracked).then(() => (settled = true));
+      await waitFor(() =>
+        expect(bridge[method as keyof VaultBridge]).toHaveBeenCalled(),
+      );
+      await setVisibility("hidden");
+      // Locking now would cut the transfer off: the lock is owed, not taken.
+      expect(bridge.lock).not.toHaveBeenCalled();
+      await finish();
+      await waitFor(() => expect(settled).toBe(true));
+      await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
+    },
+  );
+
+  it.each(bareTransfers)(
+    "a bare %s that fails frees the hold: a page hidden afterwards locks",
+    async (method, call) => {
+      const { bridge, tracked, setVisibility, fail } =
+        await bareTransferPending(method);
+      const failed = call(tracked).then(
+        () => false,
+        () => true,
+      );
+      await waitFor(() =>
+        expect(bridge[method as keyof VaultBridge]).toHaveBeenCalled(),
+      );
+      await fail();
+      expect(await failed).toBe(true);
       await setVisibility("hidden");
       await waitFor(() => expect(bridge.lock).toHaveBeenCalledOnce());
     },

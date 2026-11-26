@@ -816,24 +816,22 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     }
   }, [status, busy, requestLock]);
   const trackedBridge = useMemo<VaultBridge>(() => {
+    // Every transfer is its own operation, bracketed here as `run` brackets its own, so that no
+    // caller has to remember to: a transfer started outside `run` (the hand-over dialogs call the
+    // bridge themselves) would otherwise leave the hold at "a transfer ran" for good, and an
+    // automatic lock would hide the screen but never lock the vault. Inside `run` the operations
+    // nest: the count only reaches zero at the outermost end, so `run` still locks once the
+    // operation has reported the transfer's outcome. When the last operation is over the hold is
+    // freed, and a lock owed meanwhile now happens.
     const transfer = async <T,>(start: () => Promise<T>): Promise<T> => {
-      // `run` locks once the operation has reported the transfer's outcome.
-      transferHold.transferStarted();
-      transferOutcomeRef.current = null;
-      // iOS suspends an app in the background, and its transfer with it.
-      if (platformRef.current === "ios")
-        setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
-      return start();
-    };
-    // The hand-over dialogs (a person's records saved to a file, or added from one) call the
-    // bridge themselves, not through `run`, so nothing else would end their operation: the hold
-    // would stay "a transfer ran" for good, and an automatic lock would hide the screen but
-    // never lock the vault. Bracketed here as `run` brackets its own: when the last operation
-    // is over the hold is freed, and a lock owed meanwhile now happens.
-    const handover = async <T,>(start: () => Promise<T>): Promise<T> => {
       transferHold.operationStarted();
       try {
-        return await transfer(start);
+        transferHold.transferStarted();
+        transferOutcomeRef.current = null;
+        // iOS suspends an app in the background, and its transfer with it.
+        if (platformRef.current === "ios")
+          setNotice(deferredText(() => translateCurrent("notice.iosKeepOpen")));
+        return await start();
       } finally {
         const idle = transferHold.operationEnded();
         if (idle && lockHeldRef.current) requestLock(true);
@@ -866,9 +864,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       pickProfileExportDestination: (exportId, localDate) =>
         track(bridge.pickProfileExportDestination(exportId, localDate)),
       saveProfileExportToPicked: (pickId) =>
-        handover(() => bridge.saveProfileExportToPicked(pickId)),
+        transfer(() => bridge.saveProfileExportToPicked(pickId)),
       pickProfileImportSource: () => track(bridge.pickProfileImportSource()),
-      importProfile: (request) => handover(() => bridge.importProfile(request)),
+      importProfile: (request) => transfer(() => bridge.importProfile(request)),
       pickRestoreSource: () => track(bridge.pickRestoreSource()),
       restore: async (pickId, credential, replace) => {
         try {
