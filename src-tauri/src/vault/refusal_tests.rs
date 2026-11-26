@@ -256,3 +256,40 @@ fn a_package_is_refused_by_a_locked_vault_after_it_has_been_read_with_the_right_
         Err(VaultError::Locked)
     ));
 }
+
+#[test]
+fn a_restore_needs_a_locked_vault_and_the_say_so_to_replace_and_a_wrong_secret_changes_nothing() {
+    let v = healthy();
+    let dir = tempfile::tempdir().unwrap();
+    let backup = dir.path().join("FAKE.mycarlosbackup");
+    v.store.backup_atomic(&backup, 50).unwrap();
+    let before = shape(&v.store);
+    let open = || std::fs::File::open(&backup).unwrap();
+
+    // A vault that is open is not restored over: it would be replaced under the patient's hands.
+    assert!(matches!(
+        v.store
+            .restore(open(), RestoreCredential::Passphrase(PASSWORD), true),
+        Err(VaultError::Invalid)
+    ));
+    assert_eq!(shape(&v.store), before);
+
+    // Locked, a vault that is there is replaced only when the caller says so.
+    v.store.lock();
+    assert!(matches!(
+        v.store
+            .restore(open(), RestoreCredential::Passphrase(PASSWORD), false),
+        Err(VaultError::AlreadyExists)
+    ));
+    // And a secret that does not open the backup leaves the vault exactly as it was.
+    assert!(v
+        .store
+        .restore(
+            open(),
+            RestoreCredential::Passphrase("a different FAKE passphrase 4410 river"),
+            true
+        )
+        .is_err());
+    v.store.unlock(PASSWORD).unwrap();
+    assert_eq!(shape(&v.store), before);
+}
