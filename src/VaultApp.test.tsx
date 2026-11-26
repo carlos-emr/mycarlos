@@ -190,10 +190,6 @@ function nativeBridge(overrides: Partial<VaultBridge> = {}): VaultBridge {
     importPickedFiles: vi
       .fn()
       .mockResolvedValue({ imported: [], skippedDuplicates: [] }),
-    pickImportVideo: vi.fn().mockResolvedValue("pick-1"),
-    importPickedVideo: vi
-      .fn()
-      .mockResolvedValue({ result: "imported", recordId: "FAKE-video-1" }),
     pickExportDestination: vi.fn().mockResolvedValue(null),
     exportToPicked: vi.fn().mockResolvedValue(undefined),
     savePhoto: vi
@@ -5181,8 +5177,14 @@ describe("durable vault UI", () => {
   async function bareTransferPending(method: string) {
     let finish: (value: never) => void = () => {};
     let fail: (error: unknown) => void = () => {};
+    // The video's two methods are on this bridge only: the library shows "Add a video" (and its
+    // status line) when a bridge has them, and most tests do not look at that screen.
     const bridge = nativeBridge({
       status: vi.fn().mockResolvedValue("unlocked"),
+      pickImportVideo: vi.fn().mockResolvedValue("pick-1"),
+      importPickedVideo: vi
+        .fn()
+        .mockResolvedValue({ result: "imported", recordId: "FAKE-video-1" }),
       [method]: vi.fn(
         () =>
           new Promise((resolve, reject) => {
