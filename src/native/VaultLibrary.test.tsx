@@ -249,6 +249,15 @@ describe("VaultLibrary folders", () => {
     );
     expect(row).not.toHaveHumanTextContent(/\bFolder\b/);
   });
+
+  it("says that pictures lose their place, time and camera details when they are added", () => {
+    renderLibrary();
+    expect(
+      screen.getByText(
+        humanText(/place, time and camera details are removed/i),
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 const folder = (id: string, name: string, parentId: string | null) => ({
