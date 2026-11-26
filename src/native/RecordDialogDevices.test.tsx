@@ -437,6 +437,45 @@ describe("choosing the camera and the microphone", () => {
     ).toBeVisible();
   });
 
+  it("does not switch the microphone test on again behind the patient's back after the camera stopped during a switch", async () => {
+    const Real = AudioContext;
+    class LoudContext extends Real {
+      override createAnalyser() {
+        const analyser = super.createAnalyser();
+        analyser.getByteTimeDomainData = (samples: Uint8Array<ArrayBuffer>) =>
+          void samples.fill(192);
+        return analyser;
+      }
+    }
+    vi.stubGlobal("AudioContext", LoudContext);
+    open();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Test microphone" }));
+    await screen.findByRole("meter", { name: "Microphone level" });
+    let release: (() => void) | undefined;
+    const real = getUserMedia.getMockImplementation()!;
+    getUserMedia.mockImplementationOnce(
+      async (constraints?: MediaStreamConstraints) => {
+        await new Promise<void>((resolve) => (release = resolve));
+        return real(constraints);
+      },
+    );
+    fireEvent.change(microphoneList(), { target: { value: "mic-b" } });
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(2));
+    // The camera stops while the headset is still opening: the dialog says so and goes to failed.
+    streams[0]!.getVideoTracks()[0]!.dispatchEvent(new Event("ended"));
+    await screen.findByRole("button", { name: /Try again/ });
+    release!();
+    await Promise.resolve();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/ }));
+    await screen.findByRole("button", { name: "Start recording" });
+    // Back at ready, the test is off until the patient turns it on.
+    expect(screen.queryByRole("meter")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Test microphone" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("ignores a second choice while the first is still opening", async () => {
     open();
     await ready();

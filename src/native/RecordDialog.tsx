@@ -850,7 +850,9 @@ export function RecordDialog({
     } finally {
       switchingRef.current = false;
       setSwitching(false);
-      if (resumeTest) setTesting(true);
+      // Only if the dialog is still the one the switch began in: after a camera that stopped, a
+      // close or a retry the test is not switched on again behind the patient's back.
+      if (resumeTest && attempt === attemptRef.current) setTesting(true);
     }
   };
 
