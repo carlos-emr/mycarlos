@@ -426,8 +426,11 @@ describe("useAddVideo, by itself", () => {
   });
 
   it("forgets everything on reset (the vault locked): a late failure of the stopped import and a stale answer do not show after the next unlock", async () => {
-    const stopped = later<VideoImportResult>();
-    const bridge = bridgeFor(stopped.promise);
+    let fail: (reason: unknown) => void = () => undefined;
+    const stopped = new Promise<VideoImportResult>((_resolve, reject) => {
+      fail = reject;
+    });
+    const bridge = bridgeFor(stopped);
     const { result } = renderHook(() => useAddVideo({ bridge }));
     let first: Promise<void> = Promise.resolve();
     act(() => {
@@ -438,8 +441,7 @@ describe("useAddVideo, by itself", () => {
     act(() => result.current.reset());
     expect(result.current.working).toBe(false);
     await act(async () => {
-      bridge.importPickedVideo.mockRejectedValueOnce({ code: "locked" });
-      stopped.finish({ result: "duplicate" });
+      fail({ code: "locked" });
       await first;
     });
     expect(result.current.outcome).toBeNull();
