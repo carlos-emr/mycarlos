@@ -7090,31 +7090,109 @@ describe("durable vault UI", () => {
       expect(optionsSaying(), `${where} (options)`).toEqual([]);
     };
     clean("the library");
-    // Every button that opens a menu or a dialog, one at a time, and closes it again.
-    let opened = 0;
-    for (const opener of Array.from(
+    // Every button that opens a menu or a dialog, one at a time, and closes it again. The openers
+    // are named here: one that is dropped or renamed fails this test, and a click that brings no
+    // popup is not counted as having been looked at.
+    const isolates = /[\u2066-\u2069]/g;
+    const labelOf = (button: HTMLElement) =>
+      (button.getAttribute("aria-label") ?? button.textContent ?? "")
+        .replace(isolates, "")
+        .trim();
+    const openers = Array.from(
       document.querySelectorAll<HTMLButtonElement>("button[aria-haspopup]"),
-    )) {
-      if (opener.disabled || !opener.isConnected) continue;
-      await user.click(opener);
-      opened += 1;
-      clean(
-        `after pressing ${opener.getAttribute("aria-label") ?? opener.textContent}`,
+    );
+    expect(openers.map(labelOf).sort()).toEqual([
+      // The sidebar's and the header's Add control (the overhaul renders it twice; one of them is
+      // not on screen in this window's layout).
+      "Add document▾",
+      "Add document▾",
+      "More for Jamie",
+      "Sort by: Newest first",
+      "View: List",
+    ]);
+    const popups =
+      "[role=menu],[role=dialog],[role=alertdialog],[role=listbox]";
+    // The popups that can be seen now (a closed one may stay in the page, hidden).
+    const shown = () =>
+      Array.from(document.querySelectorAll<HTMLElement>(popups)).filter(
+        (popup) => popup.checkVisibility(),
       );
+    // Only an opener the patient can see can be pressed: the one the layout hides is named above
+    // and left out, and the ones that remain are exactly these four.
+    const onScreen = openers.filter((opener) => opener.checkVisibility());
+    expect(onScreen.map(labelOf).sort()).toEqual([
+      "Add document▾",
+      "More for Jamie",
+      "Sort by: Newest first",
+      "View: List",
+    ]);
+    for (const opener of onScreen) {
+      const label = labelOf(opener);
+      expect(opener.isConnected, `${label} is still on screen`).toBe(true);
+      expect(opener, `${label} can be pressed`).toBeEnabled();
+      await user.click(opener);
+      // A popup really opened (an opener that does nothing would pass every check below).
+      expect(opener.getAttribute("aria-expanded"), `${label} opened`).toBe(
+        "true",
+      );
+      await waitFor(() =>
+        expect(shown().length, `${label} brought a popup`).toBeGreaterThan(0),
+      );
+      clean(`after pressing ${label}`);
       await user.keyboard("{Escape}");
+      await waitFor(() => expect(shown()).toEqual([]));
     }
-    expect(opened).toBeGreaterThan(1);
+    // The head menu's own items open dialogs: each one's dialog is looked at too.
+    const lookAtHeadMenuItem = async (item: RegExp) => {
+      await user.click(
+        screen.getByRole("button", { name: humanText(/^More for /) }),
+      );
+      const entry = await screen.findByRole("menuitem", {
+        name: humanText(item),
+      });
+      const label = labelOf(entry);
+      await user.click(entry);
+      await waitFor(() =>
+        expect(shown().length, `${label} brought a dialog`).toBeGreaterThan(0),
+      );
+      // The dialog itself, not the screen behind it: Edit details leads to Security, whose Hidden
+      // people list names the hidden person on purpose (another test pins that).
+      for (const dialog of shown().filter((popup) =>
+        popup.matches("[role=dialog],[role=alertdialog]"),
+      )) {
+        expect(
+          placesThatSay(name).filter((place) => dialog.contains(place)),
+          `the dialog of ${label}`,
+        ).toEqual([]);
+        expect(
+          Array.from(dialog.querySelectorAll("option")).filter((option) =>
+            (option.textContent ?? "").includes(name),
+          ),
+          `the dialog of ${label} (options)`,
+        ).toEqual([]);
+      }
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(shown()).toEqual([]));
+    };
+    // Edit details goes last (at the end of this test): it leaves the library for Security.
+    for (const item of [/^Rename /, /^Hide /]) await lookAtHeadMenuItem(item);
     // A document's details, and the person choices that a selection brings.
     await user.click(screen.getByText(humanText("FAKE_Results.pdf")));
     await screen.findByRole("dialog");
     clean("a document's details");
     await user.keyboard("{Escape}");
-    for (const tick of screen.queryAllByRole("button", {
+    const ticks = screen.queryAllByRole("button", {
       name: humanText(/^Select /),
-    })) {
+    });
+    // The loop below must have something to look at.
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const tick of ticks) {
+      expect(tick.isConnected).toBe(true);
       await user.click(tick);
       clean("a selection");
     }
+    // Edit details leads to Security: its dialog is looked at last, since the library is left.
+    await lookAtHeadMenuItem(/^Edit details$/);
   });
 
   it("lets no control write while the vault is read-only: every enabled button in the library, a document's details and Security", async () => {
