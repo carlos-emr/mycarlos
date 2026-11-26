@@ -15,6 +15,9 @@ fn a_package_is_one_to_four_parts_each_as_long_as_it_says() {
     let four = framed(&[b"a", b"", b"ccc", b"dddd"]);
     let parts = unframe(&four).unwrap();
     assert_eq!(parts, vec![&b"a"[..], &b""[..], &b"ccc"[..], &b"dddd"[..]]);
+    // An empty LAST part is a part: the eight bytes of its length are all that is left.
+    let empty_last = framed(&[b"x", b""]);
+    assert_eq!(unframe(&empty_last).unwrap(), vec![&b"x"[..], &b""[..]]);
     // Nothing at all is not a package.
     assert!(matches!(unframe(&[]), Err(Refusal::BadPackage)));
     // A fifth part is more than a package holds.
@@ -46,8 +49,9 @@ fn a_compact_signed_object_is_a_payload_a_dot_and_a_signature_within_its_limit()
         split_compact("nodothere", 100),
         Err(Refusal::BadManifest)
     ));
-    // Not base64url on either side, not the one canonical way of writing the bytes, and a
-    // signature that is not 64 bytes long.
+    // Not base64url on either side, a payload with leftover bits (`AB` is refused by the strict
+    // decoder itself; `decode`'s own re-encode comparison behind it is a defensive second line
+    // that no input reaches), and a signature that is not 64 bytes long.
     let signature = B64.encode([7_u8; 64]);
     assert!(matches!(
         split_compact(&format!("not base64!.{signature}"), 1000),
@@ -63,6 +67,10 @@ fn a_compact_signed_object_is_a_payload_a_dot_and_a_signature_within_its_limit()
     ));
     assert!(matches!(
         split_compact(&format!("AAAA.{}", B64.encode([7_u8; 63])), 1000),
+        Err(Refusal::BadManifest)
+    ));
+    assert!(matches!(
+        split_compact(&format!("AAAA.{}", B64.encode([7_u8; 65])), 1000),
         Err(Refusal::BadManifest)
     ));
     // And exactly the limit is accepted.

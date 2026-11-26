@@ -124,7 +124,8 @@ fn a_clinic_key_is_one_canonical_p256_key_that_names_itself() {
         with(&|k| k.kid = "A".repeat(43)),
         Err(LinkError::InvalidResponse)
     ));
-    // The key is not base64url, or not written in its one canonical way.
+    // The key is not base64url (a trailing "=" is refused by the strict decoder; the re-encode
+    // comparison behind it is a defensive second line that no input reaches).
     assert!(with(&|k| k.spki = format!("{}=", k.spki)).is_err());
     assert!(with(&|k| k.spki = "not base64!".into()).is_err());
     // It names itself correctly but is not a key: bytes that are not DER, and a DER key with
