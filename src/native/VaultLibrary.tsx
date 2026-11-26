@@ -1215,6 +1215,9 @@ export function VaultLibrary({
       if (
         cameraPlatform !== "ios" &&
         addVideo?.canAdd &&
+        // A video is being added: a second video could not be taken (one at a time), so the picker
+        // that may hand one over is not opened. Documents and pictures can still be added.
+        !addVideo.working &&
         bridge.pickImportAny
       ) {
         const picked = await bridge.pickImportAny(profileId, folderIds);

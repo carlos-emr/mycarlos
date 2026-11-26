@@ -2079,7 +2079,12 @@ fn now_ms() -> u64 {
 /// The name given to a picked document whose Android id holds no file name.
 const IMPORTED_DOCUMENT_NAME: &str = "Imported document.pdf";
 
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+/// What a picked file is called before any stand-in is chosen: a desktop path as it is, a file
+/// URL's decoded final segment, and for an Android document the tail of its id
+/// ("primary:Movies/clip.mp4" gives "clip.mp4"; an opaque id such as "msf:31" gives "31").
+/// Only the first colon of a document id separates the root from the path; a later one belongs
+/// to the file name ("primary:Documents/Scan 10:30.pdf").
+fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     let tauri_plugin_fs::FilePath::Url(url) = path else {
         return path.to_string();
     };
@@ -2093,13 +2098,19 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         // colon ("Scan 10:30.pdf") and need not have an extension.
         return decoded.into_owned();
     }
+    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
+    path.rsplit('/').next().unwrap_or_default().to_owned()
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let name = picked_name_tail(path);
+    if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
+        return name;
+    }
     // The picker offers only PDFs and pictures, so a tail that does not end in
     // ".pdf", ".jpg", ".jpeg" or ".png" is part of an opaque id rather than a name. The fallback keeps the extension
     // so that an export still suggests a file the platform can open.
-    // A document id is "<root>:<path>". Only the first colon separates them; a
-    // later one belongs to the file name ("primary:Documents/Scan 10:30.pdf").
-    let path = decoded.split_once(':').map_or(&*decoded, |(_, path)| path);
-    let name = path.rsplit('/').next().unwrap_or_default();
+    let name = name.as_str();
     let is_file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
         !stem.is_empty()
             && ["pdf", "jpg", "jpeg", "png"]
@@ -2110,6 +2121,22 @@ fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
         name.to_owned()
     } else {
         IMPORTED_DOCUMENT_NAME.to_owned()
+    }
+}
+
+/// The name given to a picked video whose Android id holds no file name.
+const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
+
+/// Name recorded for an imported video: the name it came with, or for an Android document id that
+/// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
+/// "Imported document.pdf", which a video must never be named.
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
+    let name = picked_name_tail(path);
+    let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
+    if content && !is_video_name(&name) {
+        IMPORTED_VIDEO_NAME.to_owned()
+    } else {
+        name
     }
 }
 
@@ -5769,7 +5796,10 @@ async fn vault_import_any_pick(
         return Ok(None);
     };
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
-    let names: Vec<String> = paths.iter().map(import_display_name).collect();
+    // The name the provider gave, not the display name: an Android document id that does not end in
+    // a known extension is shown as "Imported document.pdf", which would send a video down the
+    // document path.
+    let names: Vec<String> = paths.iter().map(picked_name_tail).collect();
     Ok(Some(match route_pick(&names) {
         None => AnyPick::VideoAlone,
         Some(video) => {
@@ -5842,7 +5872,7 @@ async fn vault_import_video_picked(
     let job = picks.start_video_import()?;
     let running = Arc::clone(&job);
     let result = run_blocking(store.arc(), move |store| {
-        let name = import_display_name(&path);
+        let name = video_import_display_name(&path);
         let idle = Arc::clone(store.idle());
         // Opening a source can block (a network path, or a provider that fetches the file first).
         let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
@@ -11640,6 +11670,51 @@ mod tests {
                 "/home/jamie/FAKE.pdf".into()
             )),
             "/home/jamie/FAKE.pdf"
+        );
+    }
+
+    #[test]
+    fn a_picked_video_is_recognised_from_the_name_the_provider_gave_not_the_display_name() {
+        let tail = |value: &str| picked_name_tail(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()));
+        // An Android document id that ends in a video extension is a video, though the document
+        // import would call it "Imported document.pdf".
+        let clip = "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
+        assert_eq!(tail(clip), "clip.mp4");
+        assert_eq!(
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap())),
+            "Imported document.pdf"
+        );
+        assert!(is_video_name(&tail(clip)));
+        // A video among documents is therefore refused, not sent down the document path.
+        let pdf = "content://com.android.externalstorage.documents/document/primary%3ADocuments%2Flabs.pdf";
+        assert_eq!(route_pick(&[tail(clip), tail(pdf)]), None);
+        assert_eq!(route_pick(&[tail(clip)]), Some(true));
+        // An opaque id says nothing: it is not a video, so it stays on the document path as before.
+        let opaque = "content://com.android.providers.downloads.documents/document/msf%3A31";
+        assert_eq!(tail(opaque), "31");
+        assert_eq!(route_pick(&[tail(opaque)]), Some(false));
+        // Desktop paths and file URLs are their own names.
+        assert!(is_video_name(&picked_name_tail(&tauri_plugin_fs::FilePath::Path("/home/x/CLIP.MOV".into()))));
+        assert!(is_video_name(&tail("file:///private/var/mobile/Inbox/My%20Clip.m4v")));
+    }
+
+    #[test]
+    fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
+        let named = |value: &str| {
+            video_import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+        };
+        assert_eq!(
+            named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
+            "clip.mp4"
+        );
+        assert_eq!(
+            named("content://com.android.providers.downloads.documents/document/msf%3A31"),
+            "Imported video.mp4"
+        );
+        assert_eq!(named("file:///private/var/mobile/Inbox/My%20Clip.mov"), "My Clip.mov");
+        assert_eq!(
+            video_import_display_name(&tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into())),
+            "/home/x/clip.mp4"
         );
     }
 

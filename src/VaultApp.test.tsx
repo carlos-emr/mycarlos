@@ -1116,7 +1116,10 @@ describe("durable vault UI", () => {
 
   describe("+ New takes documents, pictures and videos from one picker", () => {
     /** A bridge that can add a video and answers the combined picker with `picked`. */
-    async function openWithPick(picked: unknown) {
+    async function openWithPick(
+      picked: unknown,
+      overrides: Partial<VaultBridge> = {},
+    ) {
       const user = userEvent.setup();
       const bridge = nativeBridge({
         pickImportAny: vi.fn().mockResolvedValue(picked),
@@ -1127,6 +1130,7 @@ describe("durable vault UI", () => {
         importPickedFiles: vi
           .fn()
           .mockResolvedValue({ imported: ["record-1"], skippedDuplicates: [] }),
+        ...overrides,
       } as Partial<VaultBridge>);
       render(<VaultApp bridge={bridge} />);
       await screen.findByRole("heading", {
@@ -1182,6 +1186,36 @@ describe("durable vault UI", () => {
       ).toBeVisible();
       expect(bridge.importPickedFiles).not.toHaveBeenCalled();
       expect(bridge.importPickedVideo).not.toHaveBeenCalled();
+    });
+
+    it("keeps the document picker when the bridge has no combined picker", async () => {
+      const bridge = await openWithPick(null, { pickImportAny: undefined });
+
+      await waitFor(() =>
+        expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []),
+      );
+      expect(bridge.importPickedVideo).not.toHaveBeenCalled();
+    });
+
+    it("keeps the document picker while a video is already being added", async () => {
+      // The first video never finishes: the second "+ New" must not open a picker that could hand over
+      // another video (one at a time), so it is the document picker.
+      const user = userEvent.setup();
+      const bridge = await openWithPick(
+        { kind: "video", pickId: "pick-v1" },
+        {
+          importPickedVideo: vi.fn(() => new Promise<never>(() => undefined)),
+          pickImportFiles: vi.fn().mockResolvedValue(null),
+        },
+      );
+      await waitFor(() => expect(bridge.importPickedVideo).toHaveBeenCalled());
+
+      await user.click(await screen.findByRole("button", { ...IMPORT_BUTTON }));
+
+      await waitFor(() =>
+        expect(bridge.pickImportFiles).toHaveBeenCalledWith("profile-1", []),
+      );
+      expect(bridge.pickImportAny).toHaveBeenCalledTimes(1);
     });
 
     it("says nothing was chosen when the picker is closed", async () => {
