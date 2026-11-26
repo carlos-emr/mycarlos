@@ -5,6 +5,7 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { translate } from "../support/fluent";
+import { chooseAdd } from "../support/menus";
 
 type Request = { id: number; action: string; title: string; value: string };
 type State = {
@@ -392,13 +393,10 @@ export async function testNativeDialogs(
         ).toBe(
           "41e61a36137b8f4c79a284a73adb36d634708625831c88c60e05e961756d51a9",
         );
+        // The overhaul's one Add document menu replaced the "New" button: open it and press
+        // its "Import a file" item (the same helper the browser specs use).
         const imported = await Promise.allSettled([
-          page
-            .getByRole("button", {
-              name: translate("en", "interface.VaultLibrary.new"),
-              exact: true,
-            })
-            .click(),
+          chooseAdd(page, translate("en", "interface.AddMenu.importFile")),
           native("FILE_OPEN", "file", pdfPath),
         ]);
         for (const result of imported)
@@ -736,12 +734,7 @@ export async function testNativeDialogs(
           "ddee7f163612ef7b893fafa12baeaf9970650850dcc5fcc65789b8b6f230cc72",
         );
         const importedSpaced = await Promise.allSettled([
-          page
-            .getByRole("button", {
-              name: translate("en", "interface.VaultLibrary.new"),
-              exact: true,
-            })
-            .click(),
+          chooseAdd(page, translate("en", "interface.AddMenu.importFile")),
           native("FILE_OPEN", "file", spacedPath),
         ]);
         for (const result of importedSpaced)
