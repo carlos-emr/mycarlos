@@ -323,7 +323,12 @@ On every platform:
 10. In **Security**, set **Automatic lock delay** to 1 minute, leave the app alone (on a phone,
     keep the screen on), and confirm it locks.
 11. Send the app to the background (minimize it, or go to the home screen on a phone) and confirm
-    it is locked when you come back.
+    it is locked when you come back. On the unlock, set-up and restore screens, press **Show
+    passphrase** (or **Show recovery key**) first: the text must be back to dots when you return,
+    and what you typed must still be there. On a computer the text also goes back to dots whenever
+    the window loses the focus: copying a shown key to or from a password manager, or a native
+    dialog over the app, hides it again. That is by design (a phone takes the app switcher's
+    picture before the page is reported hidden); press **Show** again to see it.
 12. On a computer with a camera (Windows, macOS or Linux), choose **Add document**, then **Take a photo**.
     The first time, the window explains why myCarlos uses the camera; choose **Use the
     camera**. On a Mac, macOS then asks whether myCarlos may use the camera, with the same reason;
