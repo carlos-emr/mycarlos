@@ -7718,6 +7718,8 @@ describe("durable vault UI", () => {
     assignFolders: "write",
     assignFoldersBatch: "write",
     pickImportFiles: "allowed",
+    // One picker for documents, pictures and videos (#556): picking is not a write.
+    pickImportAny: "allowed",
     importPickedFiles: "write",
     // A video is picked like a picture; adding it is a write, and its progress and cancel are not.
     pickImportVideo: "allowed",
