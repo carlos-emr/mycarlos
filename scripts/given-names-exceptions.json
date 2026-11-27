@@ -1,0 +1,21 @@
+{
+  "_note": "Names dropped by hand from every list, each with its reason. Ordinary words that are also given names are KEPT (a missed name is the worse mistake); a name goes here only when it does real harm as a gate in a header such as 'Plan for X Y'. Keys are lower case; one object per language, applied to that language's list.",
+  "en": {
+    "baby": "Ontario's registrations hold \"Baby\" for an unnamed newborn (22,709 births): a placeholder, not a name, and an everyday care word",
+    "female": "a care word (\"Screening for Female Patients\"), not a name",
+    "male": "a care word (\"Screening for Male Patients\"), not a name",
+    "infant": "a care word (\"Care plan for Infant Feeding\"), not a name",
+    "walker": "a mobility aid (\"Assessment for Walker Use\")",
+    "ward": "a hospital ward (\"Plan for Ward Round\")",
+    "not": "an ordinary word that registrations hold as a rare name",
+    "real": "an ordinary word that registrations hold as a rare name",
+    "line": "\"line management\", \"line change\"; the French name Line stays in the French list"
+  },
+  "fr": {
+    "elder": "an English care word (\"elder care\") held as a rare name",
+    "junior": "an English word held as a rare name (a suffix of a name, not a name)"
+  },
+  "pl": {
+    "inna": "an ordinary Polish word (\"another\"); documented false positive in pasteBackForms.test.ts"
+  }
+}

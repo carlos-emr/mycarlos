@@ -1,0 +1,76 @@
+{
+  "hosts": [
+    "www.insee.fr",
+    "www.donneesquebec.ca",
+    "data.ontario.ca",
+    "api.dane.gov.pl",
+    "opdadm.moi.gov.tw"
+  ],
+  "sources": {
+    "insee-prenoms": {
+      "file": "insee-nat2022_csv.zip",
+      "url": "https://www.insee.fr/fr/statistiques/fichier/7633685/nat2022_csv.zip",
+      "sha256": "c13b45e770c684b3c8531f28b6e3eae62194dc6dc86205fa17e4c6447b01b81d",
+      "licence": "Licence Ouverte 2.0 (Etalab), https://www.etalab.gouv.fr/licence-ouverte-open-licence/",
+      "attribution": "Insee, Fichier des prénoms (naissances en France jusqu'en 2022)"
+    },
+    "quebec-filles": {
+      "file": "qc-filles.csv",
+      "url": "https://www.donneesquebec.ca/recherche/dataset/13db2583-427a-4e5f-b679-8532d3df571f/resource/bf77b504-54b9-4db8-be53-b92156175c12/download/grande_listef_csv.csv",
+      "sha256": "08a0768fc5a1c2a930d0a651e228787efd68d325ceff8393f3f8df72f91434e5",
+      "licence": "Attribution (CC-BY 4.0), https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Retraite Québec, Banque de prénoms - Filles, Données Québec"
+    },
+    "quebec-garcons": {
+      "file": "qc-garcons.csv",
+      "url": "https://www.donneesquebec.ca/recherche/dataset/93d640ec-d059-4768-b7ed-388604b278aa/resource/039539f5-af55-4d8f-9010-ca718e45c2a5/download/grande_listeg_csv.csv",
+      "sha256": "de0a0396c1317d61e02a6dc33f9d0f58a463644d96b76832a39a0b7fc42a3207",
+      "licence": "Attribution (CC-BY 4.0), https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Retraite Québec, Banque de prénoms - Garçons, Données Québec"
+    },
+    "ontario-male": {
+      "file": "on-male.csv",
+      "url": "https://data.ontario.ca/dataset/eb4c585c-6ada-4de7-8ff1-e876fb1a6b0b/resource/5d8b8ece-fa01-43c5-955b-4b642b28c559/download/baby_names_-_male.csv",
+      "sha256": "61b3bede993a38f6e104b662295017bfc77266b56f46e88372bb5ed8b9282861",
+      "licence": "Open Government Licence – Ontario (OGL-ON-1.0), https://www.ontario.ca/page/open-government-licence-ontario",
+      "attribution": "Contains information licensed under the Open Government Licence – Ontario: Ontario top baby names (male)"
+    },
+    "ontario-female": {
+      "file": "on-female.csv",
+      "url": "https://data.ontario.ca/dataset/4d339626-98f9-49fe-aede-d64f03fa914f/resource/acc72e92-3100-4a04-8f5f-4fad9cd77cc5/download/baby_names_-_female_.csv",
+      "sha256": "93831ff6a0ee7e79b91859d5301c78d4d33afd6aea915779fdeadb9c51237226",
+      "licence": "Open Government Licence – Ontario (OGL-ON-1.0), https://www.ontario.ca/page/open-government-licence-ontario",
+      "attribution": "Contains information licensed under the Open Government Licence – Ontario: Ontario top baby names (female)"
+    },
+    "ssa-national": {
+      "file": "ssa-names.zip",
+      "manual": true,
+      "url": "https://www.ssa.gov/oact/babynames/names.zip",
+      "sha256": "",
+      "licence": "US federal government work (not protected by copyright, 17 U.S.C. 105)",
+      "attribution": "US Social Security Administration, Baby Names from Social Security Card Applications - National Data",
+      "note": "The SSA site refuses scripts (HTTP 403). A person downloads names.zip in a browser; build --ssa-zip PATH checks it against this pin once the pin is recorded."
+    },
+    "pl-pesel-male": {
+      "file": "pl-pesel-male-2026.xlsx",
+      "url": "https://api.dane.gov.pl/media/resources/20260130/8_-_Wykaz_imion_m%C4%99skich_os%C3%B3b_%C5%BCyj%C4%85cych_wg_pola_imi%C4%99_pierwsze_wyst%C4%99puj%C4%85cych_w_rejestrze_PESEL_bez_zgon%C3%B3w.xlsx",
+      "sha256": "b9faca8309390781d61475f868dbfe2e5afe6a15a1f15cec529c911a855a58b4",
+      "licence": "CC0 1.0 (dane.gov.pl dataset 1667, Lista imion występujących w rejestrze PESEL), https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": "none required (CC0)"
+    },
+    "pl-pesel-female": {
+      "file": "pl-pesel-female-2026.xlsx",
+      "url": "https://api.dane.gov.pl/media/resources/20260130/8_-_Wykaz_imion_%C5%BCe%C5%84skich_os%C3%B3b_%C5%BCyj%C4%85cych_wg_pola_imi%C4%99_pierwsze_wyst%C4%99puj%C4%85cych_w_rejestrze_PESEL_bez_zgon%C3%B3w.xlsx",
+      "sha256": "00a7b8f202ea8af7684aff21da1ff47c7a2e935fd12df3b99583303b7d441eea",
+      "licence": "CC0 1.0 (dane.gov.pl dataset 1667, Lista imion występujących w rejestrze PESEL), https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": "none required (CC0)"
+    },
+    "taiwan-surnames": {
+      "file": "tw-surnames.csv",
+      "url": "https://opdadm.moi.gov.tw/api/v1/no-auth/resource/api/dataset/5D318346-EDFF-42C7-B914-946665D483F5/resource/E4A6518E-FF4C-4925-8D59-48ECE4401820/download",
+      "sha256": "db1e762e6e96045964d1b2b5927da1582528ddf0c6ab167503dfb76a0391fffd",
+      "licence": "Government Open Data License, version 1 (政府資料開放授權條款-第1版), https://data.gov.tw/license",
+      "attribution": "Ministry of the Interior (Taiwan), 姓氏排名與人數按三階段年齡分 (data.gov.tw dataset 126774)"
+    }
+  }
+}

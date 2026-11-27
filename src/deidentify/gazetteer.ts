@@ -1,8 +1,15 @@
 // Names of Canadian health facilities and municipalities, matched on the device (#72). Public
 // data, Open Government Licence – Canada (see LICENSE_NOTES.md); no text leaves the computer.
+// Also the given names and Chinese surnames that gate one rule of the anonymizer (see
+// `isKnownGivenName` and `startsWithKnownSurname`), from public statistics built by
+// `scripts/build-given-names.py`, each source and licence in LICENSE_NOTES.md.
 import { matchingCopy } from "./textCleaning";
 import facilities from "./gazetteers/healthcare-facilities.json";
 import municipalities from "./gazetteers/municipalities.json";
+import givenNamesEn from "./gazetteers/given-names-en.json";
+import givenNamesFr from "./gazetteers/given-names-fr.json";
+import givenNamesPl from "./gazetteers/given-names-pl.json";
+import surnamesZh from "./gazetteers/surnames-zh.json";
 
 const WORD = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
 const fold = (value: string) => matchingCopy(value).copy.toLowerCase();
@@ -310,4 +317,194 @@ export function bracketedMunicipalities(text: string): Span[] {
     spans.push({ start, end: start + inner.length });
   }
   return spans;
+}
+
+// Given names (English, French and Polish lists together) in the matching copy's folding: lower
+// case, accents removed. The lists keep names that are also ordinary words (Rose, May, Faith) on
+// purpose: the gate only widens one rule that still needs its own shape, and a missed name is the
+// worse mistake.
+const GIVEN_NAMES = new Set(
+  [givenNamesEn, givenNamesFr, givenNamesPl].flatMap((list) =>
+    list.names.map((name) => fold(name).replace(/’/gu, "'")),
+  ),
+);
+
+/**
+ * Whether `word` is a given name found in public statistics for the app's Latin-script
+ * languages. A hyphenated name ("Jean-Philippe") counts when the whole or its first part is.
+ */
+export function isKnownGivenName(word: string): boolean {
+  const folded = fold(word).replace(/’/gu, "'");
+  if (GIVEN_NAMES.has(folded)) return true;
+  const hyphen = folded.indexOf("-");
+  return hyphen > 1 && GIVEN_NAMES.has(folded.slice(0, hyphen));
+}
+
+const SURNAMES_ZH = new Set(surnamesZh.names);
+
+// Care words and topics that begin with a character that is also a surname (高血压 "high blood
+// pressure", 白内障 "cataract", 康复 "rehabilitation", 居家 "at home", 常规 "routine"). A header such
+// as "居家护理计划 为高血压" is a topic, not a person. Checked as a prefix, simplified and
+// traditional forms. Not complete: a Han name is only taken when it also has the length of a
+// surname and a given name (see `isLikelyHanName`), so a long topic never reaches this list.
+const HAN_TOPIC_PREFIXES = [
+  ...[
+    "高血压",
+    "高血壓",
+    "高血脂",
+    "高血糖",
+    "高龄",
+    "高齡",
+    "白内障",
+    "白內障",
+    "白血病",
+  ],
+  ...[
+    "白癜风",
+    "白癜風",
+    "黄疸",
+    "黃疸",
+    "黄斑",
+    "黃斑",
+    "康复",
+    "康復",
+    "家庭",
+    "家人",
+  ],
+  ...[
+    "家属",
+    "家屬",
+    "居家",
+    "常规",
+    "常規",
+    "成人",
+    "成年",
+    "阳性",
+    "陽性",
+    "阴性",
+    "陰性",
+  ],
+  ...[
+    "严重",
+    "嚴重",
+    "危重",
+    "危险",
+    "危險",
+    "麻醉",
+    "干预",
+    "干預",
+    "宣教",
+    "包扎",
+    "包紮",
+  ],
+  ...[
+    "滑倒",
+    "焦虑",
+    "焦慮",
+    "暴力",
+    "怀孕",
+    "懷孕",
+    "全身",
+    "全面",
+    "全科",
+    "全程",
+    "宫颈",
+  ],
+  ...[
+    "宮頸",
+    "阴道",
+    "陰道",
+    "梅毒",
+    "霍乱",
+    "霍亂",
+    "艾滋",
+    "房颤",
+    "房顫",
+    "步态",
+    "步態",
+  ],
+  ...[
+    "步行",
+    "关节",
+    "關節",
+    "后续",
+    "後續",
+    "后期",
+    "後期",
+    "养老",
+    "養老",
+    "支气管",
+  ],
+  ...[
+    "支氣管",
+    "支持",
+    "管理",
+    "能力",
+    "舒适",
+    "舒適",
+    "路径",
+    "路徑",
+    "安宁",
+    "安寧",
+  ],
+  ...[
+    "安全",
+    "平衡",
+    "单侧",
+    "單側",
+    "双侧",
+    "雙側",
+    "左侧",
+    "左側",
+    "石膏",
+    "金属",
+    "金屬",
+  ],
+  ...[
+    "周围",
+    "周圍",
+    "温度",
+    "溫度",
+    "连续",
+    "連續",
+    "空腹",
+    "简易",
+    "簡易",
+    "通常",
+  ],
+  ...[
+    "红肿",
+    "紅腫",
+    "冷冻",
+    "冷凍",
+    "毛细",
+    "毛細",
+    "季节",
+    "季節",
+    "田间",
+    "常见",
+    "常見",
+  ],
+];
+
+/**
+ * Whether Han text looks like a person's name: a known surname (the Hundred Family Surnames and
+ * Taiwan's register) of one character and a given name of one or two, or a surname of two
+ * characters and a given name of one or two, and not a care topic that merely begins with a
+ * surname character. A Han given name is one or two ordinary characters, so the surname, not a
+ * given-name list, is the gate for Chinese.
+ */
+export function isLikelyHanName(text: string): boolean {
+  const characters = [...text];
+  const one =
+    characters.length >= 2 &&
+    characters.length <= 3 &&
+    SURNAMES_ZH.has(characters[0]);
+  const two =
+    characters.length >= 3 &&
+    characters.length <= 4 &&
+    SURNAMES_ZH.has(characters.slice(0, 2).join(""));
+  return (
+    (one || two) && !HAN_TOPIC_PREFIXES.some((word) => text.startsWith(word))
+  );
 }

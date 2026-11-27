@@ -94,3 +94,14 @@ This file records what the project declares. It is not legal advice.
 ## Anonymizer gazetteers (src/deidentify/gazetteers)
 
 Contains information licensed under the Open Government Licence – Canada (https://open.canada.ca/en/open-government-licence-canada): Statistics Canada, Open Database of Healthcare Facilities, version 1.1; and Statistics Canada, Standard Geographical Classification (SGC) 2021. The names were tidied and filtered for use as an on-device list; Statistics Canada does not endorse this product.
+
+### Given names and surnames (given-names-en, -fr, -pl and surnames-zh)
+
+Built by `scripts/build-given-names.py` from the sources pinned, with their SHA-256 and licences, in `scripts/given-names-sources.json`. The lists only gate one rule of the on-device anonymizer (a header such as "Home-care plan for Avery Example" is a person when its first word is a known given name; for Chinese, when it starts with a known surname). They hold lower-case names, no counts and no person's data. The names were tidied and cut to the commonest (98 % of the births or people counted) for use as an on-device list; none of the publishers endorses this product.
+
+- **English:** Contains information licensed under the Open Government Licence – Ontario (https://www.ontario.ca/page/open-government-licence-ontario): Ontario top baby names (male) and (female), Government of Ontario. The US Social Security Administration's "Baby Names from Social Security Card Applications – National Data" is a US federal government work, not protected by copyright (17 U.S.C. §105); it is added to this list only when its row appears in the file's `sources` (a person downloads the file; the SSA site refuses scripts).
+- **French:** Insee, "Fichier des prénoms" (births in France to 2022), reused under the Licence Ouverte 2.0 (Etalab, https://www.etalab.gouv.fr/licence-ouverte-open-licence/); and Retraite Québec, "Banque de prénoms – Filles" and "– Garçons" (Données Québec), reused under the Creative Commons Attribution 4.0 licence (https://creativecommons.org/licenses/by/4.0/); the data were tidied and cut, not endorsed by Insee or Retraite Québec.
+- **Polish:** "Lista imion występujących w rejestrze PESEL" (first names, as at 20 January 2026), Ministry of Digital Affairs, dane.gov.pl, released under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/); no attribution is required.
+- **Chinese:** the Ministry of the Interior of Taiwan's "姓氏排名與人數按三階段年齡分" (data.gov.tw dataset 126774), released under the Government Open Data License, version 1 (https://data.gov.tw/license), the commonest surnames only; and the Hundred Family Surnames (百家姓), a Song-dynasty text in the public domain, in the project's own transcription (`scripts/hundred-family-surnames.txt`).
+
+Spanish and Brazilian Portuguese have no list yet: no source with a clear licence has been approved for them (see the research notes).
