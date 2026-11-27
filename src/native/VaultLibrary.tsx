@@ -279,6 +279,7 @@ export function VaultLibrary({
     };
   }, []);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folderToHide, setFolderToHide] = useState<VaultFolder | null>(null);
   const [query, setQuery] = useState("");
   // Only a change made in the search box requests an announcement. Folder
   // and person changes also clear the query, but must not announce that reset.
@@ -752,6 +753,7 @@ export function VaultLibrary({
       renameTarget ||
       cameraOpen ||
       videoUiOpen ||
+      folderToHide ||
       confirmHideDamaged ||
       recoverySetup ||
       (section !== "records" && !inShared),
@@ -1036,6 +1038,7 @@ export function VaultLibrary({
         cameraOpen ||
         videoUiOpen ||
         confirmation ||
+        folderToHide ||
         confirmHideDamaged ||
         recoverySetup ||
         profileDialogOpen,
@@ -1073,6 +1076,7 @@ export function VaultLibrary({
       videoUiOpen ||
       shownPhoto ||
       confirmation ||
+      folderToHide ||
       confirmHideDamaged ||
       recoverySetup ||
       profileDialogOpen ||
@@ -1104,6 +1108,7 @@ export function VaultLibrary({
     activeRecordId,
     busy,
     confirmation,
+    folderToHide,
     confirmHideDamaged,
     notice,
     profileId,
@@ -1688,15 +1693,16 @@ export function VaultLibrary({
     });
   };
 
-  // Every damaged document in the vault, not only those in view: removal
-  // takes them all, so the confirmation names them all.
+  // The confirmation names damaged documents the patient can see. The native
+  // snapshot supplies separate counts for hidden people and hidden folders.
   const damaged = snapshot.records.filter(
     (record) => !record.available && record.hidden?.reason !== "damaged",
   );
   const damagedIds = damaged.map((record) => record.id);
-  // Damaged documents of hidden people are in no list: counted, never named (#360).
   const hiddenPeopleDamaged = snapshot.hiddenPeopleDamaged ?? 0;
-  const damagedCount = damagedIds.length + hiddenPeopleDamaged;
+  const hiddenFoldersDamaged = snapshot.hiddenFoldersDamaged ?? 0;
+  const damagedCount =
+    damagedIds.length + hiddenPeopleDamaged + hiddenFoldersDamaged;
   const profileName = (id: string) =>
     id === sharedProfileId
       ? translateNow("interface.LibrarySidebar.sharedWithMe")
@@ -1711,6 +1717,7 @@ export function VaultLibrary({
         removed = await bridge.hideUnavailableRecords(
           damagedIds,
           hiddenPeopleDamaged,
+          hiddenFoldersDamaged,
         );
       } catch (error) {
         // A refusal can change what the vault reports (more documents
@@ -1801,6 +1808,32 @@ export function VaultLibrary({
           translateNow("interface.notice.restored", {
             name: record.displayName,
           }),
+        ),
+      );
+    });
+  };
+
+  const hideFolder = (folder: VaultFolder) => {
+    setFolderToHide(null);
+    void run(async () => {
+      await bridge.hideFolder!(folder.id);
+      openPerson(folder.profileId, folder.parentId);
+      setActiveRecordId(null);
+      await refresh();
+      setSharedAnnouncement(
+        deferredText(() =>
+          translateNow("interface.history.event.folderHidden"),
+        ),
+      );
+    });
+  };
+  const restoreFolder = (folderId: string) => {
+    void run(async () => {
+      await bridge.restoreFolder!(folderId);
+      await refresh();
+      setSharedAnnouncement(
+        deferredText(() =>
+          translateNow("interface.history.event.folderRestored"),
         ),
       );
     });
@@ -2086,6 +2119,7 @@ export function VaultLibrary({
                 videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
+                folderToHide ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -2128,6 +2162,7 @@ export function VaultLibrary({
                 videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
+                folderToHide ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -2178,6 +2213,7 @@ export function VaultLibrary({
                 videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
+                folderToHide ||
                 confirmHideDamaged ||
                 recoverySetup,
             )}
@@ -2409,6 +2445,17 @@ export function VaultLibrary({
                           onClick={() => renameFolder(currentFolder)}
                         >
                           {translateNow("rename.title.folder")}
+                        </button>
+                      )}
+                      {currentFolder && bridge.hideFolder && (
+                        <button
+                          className="button"
+                          type="button"
+                          disabled={busy || readOnly}
+                          aria-haspopup="dialog"
+                          onClick={() => setFolderToHide(currentFolder)}
+                        >
+                          {t("hiddenFolders.hide")}
                         </button>
                       )}
                       {!currentFolder && profile && (
@@ -3047,6 +3094,11 @@ export function VaultLibrary({
                 focusHandover={handoverFocus}
                 onAddFromFile={() => setHandover("import")}
                 hiddenPeople={snapshot.hiddenProfiles}
+                hiddenFolders={snapshot.hiddenFolders}
+                headingRef={pageHeadingRef}
+                onRestoreFolder={
+                  bridge.restoreFolder ? restoreFolder : undefined
+                }
                 onHidePerson={bridge.hideProfile ? hidePerson : undefined}
                 onRestorePerson={
                   bridge.restoreProfile ? restorePerson : undefined
@@ -3579,6 +3631,16 @@ export function VaultLibrary({
               }}
             />
           )}
+          {folderToHide && (
+            <ConfirmDialog
+              title={t("hiddenFolders.confirm", { name: folderToHide.name })}
+              confirmLabel={t("hiddenFolders.hide")}
+              onConfirm={() => hideFolder(folderToHide)}
+              onCancel={() => setFolderToHide(null)}
+            >
+              <p>{t("hiddenFolders.confirmBody")}</p>
+            </ConfirmDialog>
+          )}
           {confirmHideDamaged && (
             <ConfirmDialog
               title={translateNow("interface.hideDamaged.title", {
@@ -3588,30 +3650,39 @@ export function VaultLibrary({
               onConfirm={hideDamaged}
               onCancel={() => setConfirmHideDamaged(false)}
               details={
-                // It scrolls when it is long, so it takes focus, to be
-                // scrolled with the keyboard. It is not read out with the
-                // dialog: the title counts the documents.
-                <ul
-                  className="native-confirm-list"
-                  aria-label={translateNow(
-                    "interface.VaultLibrary.documentsToHide",
-                  )}
-                  tabIndex={0}
-                >
-                  {damaged.map((record) => (
-                    <li key={record.id}>
-                      {record.displayName}
-                      {snapshot.profiles.length > 1 &&
-                        ` (${profileName(record.profileId)})`}
-                    </li>
-                  ))}
-                </ul>
+                damaged.length > 0 && (
+                  // It scrolls when it is long, so it takes focus, to be
+                  // scrolled with the keyboard. It is not read out with the
+                  // dialog: the title counts the documents.
+                  <ul
+                    className="native-confirm-list"
+                    aria-label={translateNow(
+                      "interface.VaultLibrary.documentsToHide",
+                    )}
+                    tabIndex={0}
+                  >
+                    {damaged.map((record) => (
+                      <li key={record.id}>
+                        {record.displayName}
+                        {snapshot.profiles.length > 1 &&
+                          ` (${profileName(record.profileId)})`}
+                      </li>
+                    ))}
+                  </ul>
+                )
               }
             >
               {hiddenPeopleDamaged > 0 && (
                 <p>
                   {translateNow("hiddenPeople.damagedToo", {
                     count: hiddenPeopleDamaged,
+                  })}
+                </p>
+              )}
+              {hiddenFoldersDamaged > 0 && (
+                <p>
+                  {t("hiddenFolders.damagedToo", {
+                    count: hiddenFoldersDamaged,
                   })}
                 </p>
               )}

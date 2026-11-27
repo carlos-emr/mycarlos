@@ -250,6 +250,8 @@ export interface FakeVaultSetup {
   boxesAbsent?: string;
   /** People (by display name) who are hidden when the vault opens (#360). */
   hiddenPeople?: string[];
+  /** Folders (by name) already hidden when the vault opens (#574). */
+  hiddenFolders?: string[];
   /** The patient the clinic's first delivery names (#340): the document arrives in Shared
    * with me carrying these words. */
   clinicPatient?: {
@@ -367,6 +369,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           parentId: string | null;
           name: string;
           createdAtMs: number;
+          hiddenAtMs?: number;
         }[];
         records: FakeRecord[];
         recovery: "lostObjects" | null;
@@ -471,6 +474,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           previousFullNames?: string[];
         };
         confirmed?: string[];
+        hiddenPeopleDocuments?: number;
+        hiddenFolderDocuments?: number;
         pickId?: string;
         replace?: boolean;
         confirmation?: string;
@@ -678,6 +683,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         for (const profile of snapshot.profiles)
           if ((setup.hiddenPeople ?? []).includes(profile.displayName))
             profile.hidden = { atMs: Date.UTC(2026, 9, 2, 12) };
+        for (const folder of snapshot.folders)
+          if (setup.hiddenFolders.includes(folder.name))
+            folder.hiddenAtMs = Date.UTC(2026, 9, 2, 12);
         const history: HistoryEntry[] = [
           {
             seq: 1,
@@ -746,16 +754,59 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
         }
       };
       save();
+      type Folder = Snapshot["folders"][number];
+      const folderPath = (folder: Folder, folders: Folder[]) => {
+        const path = [folder];
+        for (let depth = 0; depth < folders.length; depth++) {
+          const parentId = path.at(-1)?.parentId;
+          if (parentId === null) return path;
+          const parent = folders.find((entry) => entry.id === parentId);
+          if (!parent) break;
+          path.push(parent);
+        }
+        return [];
+      };
+      const folderReach = (snapshot: Snapshot) => {
+        const hiddenPeople = new Set(
+          snapshot.profiles
+            .filter((person) => person.hidden)
+            .map((person) => person.id),
+        );
+        const paths = new Map(
+          snapshot.folders.map((folder) => [
+            folder.id,
+            folderPath(folder, snapshot.folders),
+          ]),
+        );
+        const visibleFolders = new Set(
+          snapshot.folders
+            .filter((folder) => {
+              const path = paths.get(folder.id) ?? [];
+              return (
+                !hiddenPeople.has(folder.profileId) &&
+                path.length > 0 &&
+                path.every((entry) => entry.hiddenAtMs === undefined)
+              );
+            })
+            .map((folder) => folder.id),
+        );
+        const obscuredByFolder = (record: FakeRecord) =>
+          record.folderIds.length > 0 &&
+          !record.folderIds.some((id) => visibleFolders.has(id));
+        return { hiddenPeople, paths, visibleFolders, obscuredByFolder };
+      };
       const captured = () => {
         const capture = {
           epoch: state.captureEpoch,
           sequence: ++state.captureSequence,
         };
         const whole = copy(state.snapshot);
-        // A hidden person is in no list the library shows, only in Hidden people (#360).
-        const hiddenIds = new Set(
-          whole.profiles.filter((p) => p.hidden).map((p) => p.id),
-        );
+        const {
+          hiddenPeople: hiddenIds,
+          paths,
+          visibleFolders,
+          obscuredByFolder,
+        } = folderReach(whole);
         const snapshot = {
           ...whole,
           profiles: whole.profiles
@@ -776,8 +827,54 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               documents: whole.records.filter((r) => r.profileId === p.id)
                 .length,
             })),
-          folders: whole.folders.filter((f) => !hiddenIds.has(f.profileId)),
-          records: whole.records.filter((r) => !hiddenIds.has(r.profileId)),
+          hiddenFolders: whole.folders.flatMap((folder) => {
+            if (
+              folder.hiddenAtMs === undefined ||
+              hiddenIds.has(folder.profileId) ||
+              (folder.parentId !== null && !visibleFolders.has(folder.parentId))
+            )
+              return [];
+            const subtree = new Set(
+              whole.folders
+                .filter((candidate) =>
+                  paths.get(candidate.id)?.includes(folder),
+                )
+                .map((candidate) => candidate.id),
+            );
+            return [
+              {
+                id: folder.id,
+                profileId: folder.profileId,
+                name: folder.name,
+                hiddenAtMs: folder.hiddenAtMs,
+                documents: whole.records.filter((record) =>
+                  record.folderIds.some((id) => subtree.has(id)),
+                ).length,
+                subfolders: subtree.size - 1,
+              },
+            ];
+          }),
+          hiddenFoldersDamaged: whole.records.filter(
+            (record) =>
+              !hiddenIds.has(record.profileId) &&
+              obscuredByFolder(record) &&
+              !record.available &&
+              record.hidden?.reason !== "damaged",
+          ).length,
+          folders: whole.folders.filter((folder) =>
+            visibleFolders.has(folder.id),
+          ),
+          records: whole.records
+            .filter(
+              (record) =>
+                !hiddenIds.has(record.profileId) && !obscuredByFolder(record),
+            )
+            .map((record) => ({
+              ...record,
+              folderIds: record.folderIds.filter((id) =>
+                visibleFolders.has(id),
+              ),
+            })),
           capture,
         };
         save();
@@ -1574,6 +1671,30 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_unhide_record":
             recordById(request.recordId).hidden = null;
             return;
+          case "vault_hide_folder":
+          case "vault_restore_folder": {
+            refusePaused();
+            const folder = snapshot.folders.find(
+              (entry) => entry.id === request.folderId,
+            );
+            const { hiddenPeople, visibleFolders } = folderReach(snapshot);
+            if (
+              !folder ||
+              hiddenPeople.has(folder.profileId) ||
+              (folder.parentId !== null && !visibleFolders.has(folder.parentId))
+            )
+              throw refuse("not_found", "native.error.18");
+            if (command === "vault_hide_folder") {
+              if (!visibleFolders.has(folder.id))
+                throw refuse("not_found", "native.error.18");
+              folder.hiddenAtMs = Date.now();
+              wrote("folderHidden", { name: folder.name, how: "patient" });
+            } else if (folder.hiddenAtMs !== undefined) {
+              delete folder.hiddenAtMs;
+              wrote("folderRestored", { name: folder.name, how: "patient" });
+            }
+            return;
+          }
           // Hiding a whole person (#360): the last visible person and Shared with me stay.
           case "vault_hide_profile": {
             refuseLocked();
@@ -1761,13 +1882,18 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_profile_export_prepare": {
             refusePaused();
             profileOf(request.profileId);
+            const hiddenFolders = snapshot.folders.filter(
+              (folder) =>
+                folder.profileId === request.profileId &&
+                folder.hiddenAtMs !== undefined,
+            ).length;
             return {
               exportId: makePick("handoverExport"),
               generatedKey:
                 request.passphrase === undefined
                   ? "2345-6789-ABCD-EFGH-JKMN-PQRS-TVWX"
                   : null,
-              summary: HANDOVER_SUMMARY,
+              summary: { ...HANDOVER_SUMMARY, hiddenFolders },
             };
           }
           case "vault_profile_export_pick":
@@ -2065,29 +2191,35 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           // --- Recovery mode: hide the documents whose files are missing ---
           case "vault_hide_unavailable_records": {
             refuseLocked();
-            const hiddenIds = new Set(
-              snapshot.profiles.filter((p) => p.hidden).map((p) => p.id),
-            );
+            const { hiddenPeople: hiddenIds, obscuredByFolder } =
+              folderReach(snapshot);
             const lost = snapshot.records.filter(
               (r) => !r.available && r.hidden?.reason !== "damaged",
             );
             // What the patient was shown is the people who are shown; the damaged
             // documents of hidden people are counted, not listed (#360).
             const missing = lost
-              .filter((r) => !hiddenIds.has(r.profileId))
+              .filter(
+                (r) => !hiddenIds.has(r.profileId) && !obscuredByFolder(r),
+              )
               .map((r) => r.id);
             const lostOfHidden = lost.filter((r) => hiddenIds.has(r.profileId));
+            const lostInHiddenFolders = lost.filter(
+              (r) => !hiddenIds.has(r.profileId) && obscuredByFolder(r),
+            );
             const confirmed = [...(request.confirmed ?? [])].sort();
             if (
               JSON.stringify(confirmed) !==
                 JSON.stringify([...missing].sort()) ||
-              (request.hiddenPeopleDocuments ?? 0) !== lostOfHidden.length
+              (request.hiddenPeopleDocuments ?? 0) !== lostOfHidden.length ||
+              (request.hiddenFolderDocuments ?? 0) !==
+                lostInHiddenFolders.length
             )
               throw refuse("list_changed", "native.error.38");
             for (const record of lost)
               record.hidden = { atMs: Date.now(), reason: "damaged" };
             snapshot.recovery = null;
-            return missing;
+            return lost.map((record) => record.id);
           }
           // --- The speed test, for testers (#39): the device's timings ---
           case "kdf_benchmark":
@@ -2273,6 +2405,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],
+      hiddenFolders: setup.hiddenFolders ?? [],
       fileSays: setup.fileSays ?? [],
       received: setup.received ?? [],
       identities: setup.identities ?? {},

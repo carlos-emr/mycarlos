@@ -17,6 +17,7 @@ import {
 } from "./PersonDetails";
 import type {
   BackupSize,
+  HiddenFolder,
   HiddenProfile,
   PatientProfile,
   PersonDetails,
@@ -29,6 +30,7 @@ import {
   useState,
   type FormEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { Icon } from "../Icon";
 
@@ -102,6 +104,9 @@ interface SecuritySettingsProps {
   hiddenPeople?: HiddenProfile[];
   onHidePerson?: (profileId: string) => void;
   onRestorePerson?: (profileId: string) => void;
+  hiddenFolders?: HiddenFolder[];
+  onRestoreFolder?: (folderId: string) => void;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
   /** Hand a hidden person's records over. */
   onHandOverHidden?: (person: HiddenProfile) => void;
   onSpeedTest: () => Promise<SpeedTestReport>;
@@ -196,6 +201,9 @@ export function SecuritySettings({
   hiddenPeople,
   onHidePerson,
   onRestorePerson,
+  hiddenFolders = [],
+  onRestoreFolder,
+  headingRef,
   onHandOverHidden,
   clinicDocuments,
   busy,
@@ -231,7 +239,7 @@ export function SecuritySettings({
   dialogHost,
   onDialogChange,
 }: SecuritySettingsProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   // The size a backup would be, with or without the videos (#359).
   // The button that opened the handover takes the focus back once a hide that came from its dialog
   // has finished (it is disabled while the library is busy).
@@ -409,7 +417,9 @@ export function SecuritySettings({
     <main className="library-main purpose-screen">
       <div className="main-head">
         <div>
-          <h1>{translateNow("security.title")}</h1>
+          <h1 ref={headingRef} tabIndex={-1}>
+            {translateNow("security.title")}
+          </h1>
           <p>{translateNow("security.subtitle")}</p>
         </div>
       </div>
@@ -760,6 +770,51 @@ export function SecuritySettings({
               onRestore={onRestorePerson}
               onHandOver={onHandOverHidden}
             />
+          )}
+          {onRestoreFolder && hiddenFolders.length > 0 && (
+            <div>
+              <h3>{t("hiddenFolders.title")}</h3>
+              <ul
+                className="native-person-details-list"
+                aria-label={t("hiddenFolders.title")}
+              >
+                {hiddenFolders.map((folder) => (
+                  <li key={folder.id}>
+                    <span>
+                      <strong>{folder.name}</strong>
+                      {" · "}
+                      {t("hiddenPeople.since", {
+                        date: new Date(folder.hiddenAtMs).toLocaleDateString(
+                          locale,
+                          { year: "numeric", month: "long", day: "numeric" },
+                        ),
+                      })}
+                      {" · "}
+                      {t("hiddenPeople.documents", { count: folder.documents })}
+                      {folder.subfolders > 0 && (
+                        <>
+                          {" · "}
+                          {t("interface.count.folders", {
+                            count: folder.subfolders,
+                          })}
+                        </>
+                      )}
+                    </span>
+                    <button
+                      className="button"
+                      type="button"
+                      disabled={busy || readOnly}
+                      aria-label={t("hiddenFolders.restoreFor", {
+                        name: folder.name,
+                      })}
+                      onClick={() => onRestoreFolder(folder.id)}
+                    >
+                      {t("hiddenPeople.restore")}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {addOpen &&
             inDialogHost(

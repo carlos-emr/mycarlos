@@ -617,10 +617,34 @@ describe("each bridge method invokes its native command with its arguments", () 
       { request: { recordId: "rec-1" } },
     ],
     [
+      "hideFolder",
+      (b) => b.hideFolder!("folder-1"),
+      "vault_hide_folder",
+      { request: { folderId: "folder-1" } },
+    ],
+    [
+      "restoreFolder",
+      (b) => b.restoreFolder!("folder-1"),
+      "vault_restore_folder",
+      { request: { folderId: "folder-1" } },
+    ],
+    [
       "hideUnavailableRecords",
       (b) => b.hideUnavailableRecords(["rec-1"]),
       "vault_hide_unavailable_records",
       { request: { confirmed: ["rec-1"], hiddenPeopleDocuments: 0 } },
+    ],
+    [
+      "hideUnavailableRecords (with hidden folders)",
+      (b) => b.hideUnavailableRecords(["rec-1"], 2, 3),
+      "vault_hide_unavailable_records",
+      {
+        request: {
+          confirmed: ["rec-1"],
+          hiddenPeopleDocuments: 2,
+          hiddenFolderDocuments: 3,
+        },
+      },
     ],
     [
       "prepareProfileExport",

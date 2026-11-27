@@ -1353,6 +1353,13 @@ export const MESSAGE_KEYS = [
   "hiddenPeople.documents",
   "hiddenPeople.restore",
   "hiddenPeople.restoreFor",
+  "hiddenFolders.hide",
+  "hiddenFolders.confirm",
+  "hiddenFolders.confirmBody",
+  "hiddenFolders.title",
+  "hiddenFolders.restoreFor",
+  "hiddenFolders.damagedToo",
+  "hiddenFolders.handover",
   "hiddenPeople.handOver",
   "hiddenPeople.handOverFor",
   "hiddenPeople.hide",
@@ -3065,6 +3072,13 @@ const FLUENT_IDS_BY_KEY = {
   "hiddenPeople.documents": "hiddenPeople-documents",
   "hiddenPeople.restore": "hiddenPeople-restore",
   "hiddenPeople.restoreFor": "hiddenPeople-restoreFor",
+  "hiddenFolders.hide": "hiddenFolders-hide",
+  "hiddenFolders.confirm": "hiddenFolders-confirm",
+  "hiddenFolders.confirmBody": "hiddenFolders-confirmBody",
+  "hiddenFolders.title": "hiddenFolders-title",
+  "hiddenFolders.restoreFor": "hiddenFolders-restoreFor",
+  "hiddenFolders.damagedToo": "hiddenFolders-damagedToo",
+  "hiddenFolders.handover": "hiddenFolders-handover",
   "hiddenPeople.handOver": "hiddenPeople-handOver",
   "hiddenPeople.handOverFor": "hiddenPeople-handOverFor",
   "hiddenPeople.hide": "hiddenPeople-hide",
@@ -4632,6 +4646,13 @@ export interface MessageArgsByKey {
   "hiddenPeople.documents": { count: FluentArgument };
   "hiddenPeople.restore": undefined;
   "hiddenPeople.restoreFor": { name: FluentArgument };
+  "hiddenFolders.hide": undefined;
+  "hiddenFolders.confirm": { name: FluentArgument };
+  "hiddenFolders.confirmBody": undefined;
+  "hiddenFolders.title": undefined;
+  "hiddenFolders.restoreFor": { name: FluentArgument };
+  "hiddenFolders.damagedToo": { count: FluentArgument };
+  "hiddenFolders.handover": { count: FluentArgument };
   "hiddenPeople.handOver": undefined;
   "hiddenPeople.handOverFor": { name: FluentArgument };
   "hiddenPeople.hide": undefined;

@@ -112,6 +112,8 @@ Clinic delivery packages are encrypted for the receiving device. myCarlos checks
 
 ## Keeping, hiding, erasing
 
+[IN REVIEW: #574] A hidden folder and its subfolders leave the library and search. A document stays visible through any other folder that is still visible. Hidden folders stay encrypted in backups and remain hidden when imported from a handover. Anyone with the passphrase can restore a hidden folder. The Security history combines entries about hidden folders and hidden people in one count.
+
 Hiding a document does not delete it. It stays encrypted in the vault and in later backups. The vault keeps an encrypted history of actions, which can include names, earlier names and saved file locations. **The app has no button that deletes a single document or the history.** A few things can be removed: a downloaded AI model, the clinic's refused-delivery records ("Try again" forgets them), and [IN REVIEW: #419] a clinic link that never delivered a document.
 
 The reset in the app is called **"Set vault aside"**: it, and restoring a backup, **set the old vault aside** rather than erasing it. Anyone who can reach it and has its old unlocking secret may still open it. To remove a vault set aside and free its space: on a computer, close myCarlos and delete the vault folder shown in the app; **on a phone, the only way is to clear myCarlos's data in the phone's settings or uninstall it, which removes every vault on the phone.** Copies you saved elsewhere, backups, and records held by a clinic are not erased by any of these steps.

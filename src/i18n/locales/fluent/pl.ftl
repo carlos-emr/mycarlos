@@ -2956,6 +2956,14 @@ hiddenPeople-restore = Przywróć
 
 hiddenPeople-restoreFor = Przywróć: { $name }
 
+hiddenFolders-hide = Ukryj folder
+hiddenFolders-confirm = Ukryć folder { $name }?
+hiddenFolders-confirmBody = Folder i jego podfoldery znikną z biblioteki. Dokumenty znajdujące się także w innym widocznym folderze pozostaną tam dostępne. Każda osoba znająca hasło może przywrócić folder w ustawieniach zabezpieczeń.
+hiddenFolders-title = Ukryte foldery
+hiddenFolders-restoreFor = Przywróć folder { $name }
+hiddenFolders-damagedToo = W tym dokumenty z ukrytych folderów: { $count }.
+hiddenFolders-handover = Ukryte foldery pozostają ukryte po zaimportowaniu. Liczba dołączonych ukrytych folderów: { $count }.
+
 hiddenPeople-handOver = Przekaż…
 
 hiddenPeople-handOverFor = Przekaż dokumenty osoby { $name }
