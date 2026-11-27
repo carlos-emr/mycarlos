@@ -8226,7 +8226,8 @@ describe("durable vault UI", () => {
     "native/ProfileHandover.tsx handover.import.says": "unmounted",
     "native/ProfileHandover.tsx hiddenPeople.confirm.body": "unmounted",
     "native/RecordDetails.tsx fileUnder.words": "unmounted",
-    "native/RecordDialog.tsx interface.RecordDialog.recordAVideoFor": "unmounted",
+    "native/RecordDialog.tsx interface.RecordDialog.recordAVideoFor":
+      "unmounted",
     "native/RecordSource.tsx library.source.clinic": "unmounted",
     "native/RecordingRecovery.tsx interface.RecordingRecovery.name":
       "unmounted",
