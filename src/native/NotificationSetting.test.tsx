@@ -146,7 +146,7 @@ describe("Document notice preference", () => {
     await screen.findByRole("checkbox", {
       name: humanText("Show a notice when a document arrives"),
     });
-    // In view: the notice is generic, and automatic checks happen only while open and unlocked.
+    // In view: the notice is generic, and documents are collected only while open and unlocked; locked, it only says something is waiting.
     expect(
       screen.getByText(
         humanText(/Windows can show a generic notice after a clinic document/),
@@ -155,7 +155,7 @@ describe("Document notice preference", () => {
     expect(
       screen.getByText(
         humanText(
-          "Automatic checks run only while myCarlos is open and unlocked.",
+          "myCarlos collects new clinic documents on its own only while it is open and unlocked. While it is locked in the background, it can only tell you that something is waiting.",
         ),
       ),
     ).toBeVisible();
@@ -277,6 +277,32 @@ describe("Document notice preference", () => {
     expect(
       screen.queryByText(humanText(/could not be checked/)),
     ).not.toBeInTheDocument();
+  });
+
+  it("uses the macOS words for a refused or not-yet-asked permission, never Windows's", async () => {
+    for (const [permission, line, never] of [
+      [
+        "blocked",
+        /macOS is not allowing notifications from myCarlos/,
+        /Windows/,
+      ],
+      [
+        "not_yet_asked",
+        /macOS has not been asked yet. It will ask when you turn on notices/,
+        /Windows/,
+      ],
+    ] as const) {
+      native.invoke.mockResolvedValue({
+        ...allowed,
+        system: "macos",
+        permission,
+      });
+      const { unmount } = render(<NotificationSetting />);
+      const text = await screen.findByText(humanText(line));
+      expect(text).toBeVisible();
+      expect(text.textContent).not.toMatch(never);
+      unmount();
+    }
   });
 
   it("keeps consent off until a person acts and bounds the native call to one boolean", async () => {

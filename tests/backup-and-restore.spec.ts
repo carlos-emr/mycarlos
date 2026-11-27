@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectOnlyFakedCommands } from "./support/a11y";
+import { expectNoAxeViolations, expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import {
   FAKE_IDS,
@@ -110,6 +110,40 @@ test("Save a backup saves where the patient chose and says so, and a cancelled p
   ]);
   // The vault itself is untouched by a backup.
   await expect(save).toBeEnabled();
+  await expectOnlyFakedCommands(page);
+});
+
+test("Leave videos out: a big, whole-row box, and what it means is said only while it is ticked", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked", backupVideos: 2 });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await openSecurity(page);
+  const leave = page.getByRole("checkbox", { name: "Leave videos out" });
+  const help = page.getByText(en("security.backup.leaveVideosOutHelp"), {
+    exact: true,
+  });
+  await expect(leave).toBeVisible();
+  await expect(help).toHaveCount(0);
+  // The box is 22px, in a row of at least 44px that is all one target: a click on the words ticks it.
+  const box = (await leave.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(20);
+  expect(box.height).toBeGreaterThanOrEqual(20);
+  const row = (await page
+    .locator("label.appearance-option", { has: leave })
+    .boundingBox())!;
+  expect(row.height).toBeGreaterThanOrEqual(44);
+  await page.getByText("Leave videos out", { exact: true }).click();
+  await expect(leave).toBeChecked();
+  await expect(help).toBeVisible();
+  await expect(leave).toHaveAccessibleDescription(
+    en("security.backup.leaveVideosOutHelp"),
+  );
+  await expectNoAxeViolations(page, "Security with Leave videos out ticked");
+  await leave.uncheck();
+  await expect(help).toHaveCount(0);
+  await expectNoAxeViolations(page, "Security with Leave videos out unticked");
   await expectOnlyFakedCommands(page);
 });
 

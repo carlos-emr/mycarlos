@@ -237,6 +237,8 @@ interface-UnlockPdfDialog-unlocking = 正在解锁…
 
 interface-VaultApp-chooseFilesToImport = 选择要导入的文件
 
+interface-VaultLibrary-picturesNote = 您添加的图片会去掉拍摄地点、时间和相机信息。
+
 interface-VaultApp-finishingTheTransfer = 正在完成传输
 
 interface-VaultApp-lockNowAndCancelTheTransfer = 立即锁定并取消传输
@@ -670,7 +672,7 @@ native-error-20 = 请选择较不容易猜测的密码短语，不要使用常�
 
 native-error-21 = 每次导入最多可选择 100 个文件。
 
-native-error-22 = 其中一个文件不是 PDF 文档，因此没有添加任何内容。myCarlos 只保留 PDF 文档。
+native-error-22 = 其中一个文件既不是 PDF 文档也不是 JPEG 或 PNG 图片，因此没有添加任何内容。myCarlos 保留 PDF 文档以及 JPEG 和 PNG 图片。如果是 iPhone 图片（HEIC），请改为以 JPEG 分享。
 
 native-error-23 = 此文档使用密码锁定。请输入患者门户网站提供的文档密码。
 
@@ -720,7 +722,7 @@ native-error-45 = myCarlos 无法打开该文件。如果文件位于云端或�
 
 native-error-46 = 保险库中的文档已损毁且无法再读取，因此没有保存备份。没有变更任何内容。
 
-native-error-47 = myCarlos 无法保存或显示此相片：相片必须是完整的 JPEG 图片、大小不得超过 25 MB，且每边不得超过 8,192 像素。没有变更任何内容。
+native-error-47 = myCarlos 无法保存或显示此相片：相片必须是完整的 JPEG 或 PNG 图片（不能是动画）、大小不得超过 25 MB，每边不得超过 8,192 像素，总计不得超过 5,000 万像素（手机上为 2,400 万）。没有变更任何内容。
 
 native-error-48 = 备份已检查，但还原作业尚未完成。请关闭 myCarlos 再重新打开以完成作业，接着使用创建备份时的密码短语或恢复密钥打开保险库。
 
@@ -729,6 +731,11 @@ native-error-speedTest = 速度测试尚未完成就停止了。没有变更任�
 native-filter-backups = myCarlos 备份
 
 native-filter-pdf = PDF 文档
+
+native-filter-video = 视频（MP4 或 MOV）
+native-filter-pictures = JPEG 和 PNG 图片
+
+native-filter-pdfAndPictures = PDF 文档以及 JPEG 和 PNG 图片
 
 native-kit-text =
     myCarlos 恢复工具包
@@ -1552,6 +1559,8 @@ interface-history-event-portalLinkStarted = 已开始关联诊所
 
 interface-history-event-portalLinked = 已关联诊所
 
+interface-history-event-portalLinkRemoved = 已移除诊所关联
+
 interface-history-event-profileCreated = 患者档案已添加
 
 interface-history-event-profileDetailsChanged = 个人资料已更改
@@ -1698,6 +1707,21 @@ portal-tryAgainFor = 重试：{ $clinic }
 
 portal-linkAnother = 关联另一家诊所
 
+portal-removeLink = 移除此关联
+
+portal-removeTitle = 要移除此关联吗？
+
+portal-removeBody = { $clinic }，设备“{ $device }”。此设备将不再在此处关联，其已保存的设备密钥也会从此设备清除。您保险库的早期备份仍保留这些密钥，直到被替换。诊所仍可能列出此设备。
+
+portal-removeConfirm = 移除关联
+
+portal-removeKept = 此诊所的文档已保存在您的保管库中，因此保留此关联。
+
+portal-removeNotices = 已为这家诊所开启文件通知。请先关闭，再移除关联。
+
+portal-removed = 关联已移除。
+
+
 ai-summary-button = 摘要
 
 ai-summary-title = 通俗易懂的摘要
@@ -1720,11 +1744,11 @@ aiHelper-resultLabelInfo = “AI 草稿”是什么意思
 
 ai-label-settingsTitle = AI 回答上的提示
 
-ai-label-settingsBody = 每条 AI 回答都会说明由 AI 撰写、可能有误。选择“不再显示”后，完整的句子会由简短的“AI 草稿”标签代替。标签不会被移除。此选择保存在本设备上，模型或工具更换后会重新开始。
+ai-label-settingsBody = AI 回答可能有误，每条回答都会这样说明。如果您在某条回答上选择“不再显示”，之后的回答会显示简短的“AI 草稿”标签，而不是完整的句子。
 
 ai-label-settingsShowFull = 再次显示完整提示
 
-ai-label-settingsFullShown = 每条 AI 回答都显示完整提示。
+ai-label-settingsFullBack = 完整警告已恢复显示在每条 AI 回答上。
 
 ai-label-settingsShortShown = 在您选择过的 AI 回答上，显示简短的“AI 草稿”标签。
 
@@ -2164,6 +2188,8 @@ notifications-error = 无法保存此设置。本次会话的通知和自动检�
 notifications-unavailable = 这些设置目前不可用。请按通常方式打开 myCarlos 查看文档。
 notifications-helpAutomatic = myCarlos 可以在打开且已解锁时自行检查诊所的新文档。新文档随后会出现在您的记录库中。
 notifications-notYetAsked = Windows 尚未显示过 myCarlos 的通知，因此还没有针对它的设置。在您于 Windows 设置中将其关闭之前，通知是允许的。
+notifications-blockedMac = macOS 不允许 myCarlos 发送通知。请在“系统设置”的“通知”中打开。
+notifications-notYetAskedMac = 尚未询问 macOS。您打开通知时，它会询问。
 notifications-autoAllow = 保险库解锁时自动检查诊所文档
 notifications-autoConsent = 开启后，myCarlos 会按计划联系您诊所的门户，每次尝试至少间隔两分钟，且仅在其打开并已解锁时进行。关闭即可停止。
 notifications-noticesHelp = 保存诊所文档后，Windows 可以显示不含具体内容的通知。请照常打开 myCarlos 阅读文档。
@@ -2279,6 +2305,16 @@ interface-RecordDialog-yourPhoneAsksOnce = 手机会询问一次 myCarlos 是否
 interface-RecordDialog-theCameraAndMicrophoneAreOn = 相机和麦克风只在录制时开启，停止录制、关闭此窗口或 myCarlos 锁定时会关闭。
 interface-RecordDialog-theCameraAndMicrophoneAreOnNow = 相机和麦克风已开启，但在您选择“开始录制”之前不会录制任何内容。
 interface-RecordDialog-pictureQuality = 画质
+interface-RecordDialog-cameraAndMicrophone = 摄像头和麦克风
+interface-RecordDialog-camera = 摄像头
+interface-RecordDialog-microphone = 麦克风
+interface-RecordDialog-unnamedCamera = 摄像头 { $number }
+interface-RecordDialog-unnamedMicrophone = 麦克风 { $number }
+interface-RecordDialog-systemDefaultDevice = 系统默认
+interface-RecordDialog-deviceFellBack = 上次使用的摄像头或麦克风未连接，因此正在使用系统默认设备。
+interface-RecordDialog-testMicrophone = 测试麦克风
+interface-RecordDialog-stopTestingMicrophone = 停止测试
+interface-RecordDialog-microphoneLevel = 麦克风音量
 interface-RecordDialog-standard = 标准（720p）
 interface-RecordDialog-high = 高（1080p）
 interface-RecordDialog-aboutStandardPerHour = 每小时约 1.1 GB
@@ -2626,7 +2662,7 @@ library-fileSaysChecked = 随之而来的文件称，它已于 { $date } 在来�
 handover-nowVerified = 通过移交文件到来的 { $count } 份文档现已通过 { $clinic } 验证，此保险库持有其密钥。
 
 
-notifications-autoSummary = 自动检查仅在 myCarlos 打开且已解锁时进行。
+notifications-autoSummary = myCarlos 仅在打开且已解锁时才会自行收取诊所的新文档。在后台处于锁定状态时，它只能告诉您有内容在等待。
 
 background-keepRunningSummary = 关闭窗口后，myCarlos 可以留在后台运行。窗口关闭时，您的保险库会锁定。
 
@@ -2641,6 +2677,7 @@ native-notice-test = 这是来自 myCarlos 的测试通知。
 notifications-testButton = 显示测试通知
 
 notifications-testSent = 测试通知已发送。如果您没有看到，请检查 Windows 的通知设置。
+notifications-testSentMac = 已发送测试通知。如果没有看到，请检查“系统设置”中的“通知”。
 
 notifications-testWait = 请等待几秒钟后再试。
 
@@ -2676,3 +2713,47 @@ interface-clinicNew-markAll = 全部标记为已查看
 interface-clinicNew-showing = 仅显示新文件。
 
 interface-VaultLibrary-newTag = 新
+
+interface-AddVideo-add = 添加视频
+
+interface-AddVideo-hint = 请在此设备上选择 MP4 或 MOV 视频。其中的地点以及设备名称和型号会先被删除。
+
+interface-AddVideo-checking = 正在检查视频…
+
+interface-AddVideo-storing = 正在添加视频：{ $percent }%
+
+interface-AddVideo-progressLabel = 正在添加视频
+
+interface-AddVideo-cancel = 取消
+
+interface-AddVideo-cancelling = 正在取消…
+
+interface-AddVideo-added = 视频已添加。
+
+interface-AddVideo-duplicate = 此视频已在这里，未添加任何内容。
+
+interface-AddVideo-cancelled = 已取消，未添加任何内容。
+
+interface-AddVideo-notVideo = 此文件不是 myCarlos 可以添加的视频。请选择 MP4 或 MOV 视频。
+
+interface-AddVideo-hevc = 此视频使用 H.265（HEVC），许多电脑无法播放。请另存为 H.264 MP4 后再添加。
+
+interface-AddVideo-videoCodec = 此视频的画面格式 myCarlos 无法播放。请另存为 H.264 MP4 后再添加。
+
+interface-AddVideo-audioCodec = 此视频的声音格式 myCarlos 无法播放。请另存为 AAC 声音后再添加。
+
+interface-AddVideo-noVideo = 此文件没有画面，所以不是视频。请选择 MP4 或 MOV 视频。
+
+interface-AddVideo-tooManyTracks = 此视频的画面或声音多于 myCarlos 可添加的数量。请另存为只有一路画面和一路声音的简单副本后再添加。
+
+interface-AddVideo-external = 此视频的一部分存放在文件之外，无法添加。请另存为完整副本后再添加。
+
+interface-AddVideo-fragmented = 此视频是流媒体格式。请另存为普通 MP4 后再添加。
+
+interface-AddVideo-tooBig = 此视频的画面大于 myCarlos 可添加的尺寸。请另存为较小的副本后再添加。
+
+interface-AddVideo-tooLarge = 此视频大于 myCarlos 在此设备上可添加的大小（电脑 2 GB，手机 1 GB）。请另存为较小的副本后再添加。
+
+interface-AddVideo-damaged = 此视频已损坏或被截断，无法添加。请从来源处重新复制后再试。
+
+interface-AddVideo-adding = 正在添加视频…

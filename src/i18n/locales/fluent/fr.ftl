@@ -485,6 +485,8 @@ interface-UnlockPdfDialog-unlocking = Déverrouillage…
 
 interface-VaultApp-chooseFilesToImport = Choisir les fichiers à importer
 
+interface-VaultLibrary-picturesNote = Le lieu, l’heure et les détails de l’appareil sont retirés des images que vous ajoutez.
+
 interface-VaultApp-finishingTheTransfer = Fin du transfert
 
 interface-VaultApp-lockNowAndCancelTheTransfer = Verrouiller maintenant et annuler le transfert
@@ -775,7 +777,7 @@ native-error-20 = Choisissez une phrase secrète moins prévisible, qui ne soit 
 
 native-error-21 = Ne choisissez pas plus de 100 fichiers par importation.
 
-native-error-22 = L’un des fichiers n’est pas un document PDF; aucun fichier n’a donc été ajouté. myCarlos ne conserve que les documents PDF.
+native-error-22 = L’un des fichiers n’est ni un document PDF ni une image JPEG ou PNG; aucun fichier n’a donc été ajouté. myCarlos conserve les documents PDF et les images JPEG et PNG. S’il s’agit d’une image d’iPhone (HEIC), partagez-la plutôt en JPEG.
 
 native-error-23 = Ce document est verrouillé par un mot de passe. Saisissez le mot de passe du document indiqué dans votre portail patient.
 
@@ -825,7 +827,7 @@ native-error-45 = myCarlos n’a pas pu ouvrir ce fichier. S’il se trouve dans
 
 native-error-46 = Un document du coffre-fort est endommagé et ne peut plus être lu; aucune sauvegarde n’a donc été enregistrée. Rien n’a été modifié.
 
-native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG complète d’au plus 25 MB et de 8 192 pixels par côté. Rien n’a été modifié.
+native-error-47 = Cette photo ne peut pas être enregistrée ou affichée par myCarlos : il doit s’agir d’une image JPEG ou PNG complète (non animée) d’au plus 25 MB, de 8 192 pixels par côté et de 50 millions de pixels au total (24 millions sur un téléphone). Rien n’a été modifié.
 
 native-error-48 = La sauvegarde a été vérifiée, mais la restauration n’est pas terminée. Fermez myCarlos et ouvrez-le de nouveau pour terminer. Ouvrez ensuite le coffre-fort avec la phrase secrète ou la clé de récupération de la sauvegarde.
 
@@ -834,6 +836,11 @@ native-error-speedTest = Le test de vitesse s’est arrêté avant la fin. Rien 
 native-filter-backups = Sauvegardes myCarlos
 
 native-filter-pdf = Documents PDF
+
+native-filter-video = Vidéos (MP4 ou MOV)
+native-filter-pictures = Images JPEG et PNG
+
+native-filter-pdfAndPictures = Documents PDF et images JPEG et PNG
 
 native-kit-text =
     Trousse de récupération myCarlos
@@ -1721,6 +1728,8 @@ interface-history-event-portalLinkStarted = Liaison avec la clinique commencée
 
 interface-history-event-portalLinked = Clinique liée
 
+interface-history-event-portalLinkRemoved = Lien avec la clinique supprimé
+
 interface-history-event-profileCreated = Profil patient ajouté
 
 interface-history-event-profileDetailsChanged = Renseignements personnels modifiés
@@ -1886,6 +1895,21 @@ portal-tryAgainFor = Réessayer pour { $clinic }
 
 portal-linkAnother = Associer une autre clinique
 
+portal-removeLink = Supprimer ce lien
+
+portal-removeTitle = Supprimer ce lien ?
+
+portal-removeBody = { $clinic }, appareil « { $device } ». Cet appareil n’est plus lié ici et ses clés enregistrées sont effacées de cet appareil. Les sauvegardes antérieures de votre coffre conservent ces clés jusqu’à leur remplacement. Votre clinique peut encore afficher cet appareil.
+
+portal-removeConfirm = Supprimer le lien
+
+portal-removeKept = Des documents de cette clinique sont enregistrés dans votre coffre : ce lien est donc conservé.
+
+portal-removeNotices = Les avis de documents sont activés pour cette clinique. Désactivez-les d’abord, puis supprimez le lien.
+
+portal-removed = Lien supprimé.
+
+
 ai-summary-button = Résumé
 
 ai-summary-title = Résumé en mots simples
@@ -1908,11 +1932,11 @@ aiHelper-resultLabelInfo = Ce que signifie « Brouillon IA »
 
 ai-label-settingsTitle = Avertissement sur les réponses de l’IA
 
-ai-label-settingsBody = Chaque réponse de l’IA indique qu’elle a été écrite par une IA et peut contenir des erreurs. Après « Ne plus afficher », une courte étiquette « Brouillon IA » remplace la phrase complète. L’étiquette n’est jamais retirée. Le choix est gardé sur cet appareil et recommence si le modèle ou l’outil change.
+ai-label-settingsBody = Les réponses de l’IA peuvent contenir des erreurs, et chacune l’indique. Si vous choisissez « Ne plus afficher » sur une réponse, les réponses suivantes affichent une courte étiquette « Brouillon IA » au lieu de la phrase complète.
 
 ai-label-settingsShowFull = Afficher de nouveau l’avertissement complet
 
-ai-label-settingsFullShown = L’avertissement complet est affiché sur chaque réponse de l’IA.
+ai-label-settingsFullBack = L’avertissement complet est de nouveau affiché sur chaque réponse de l’IA.
 
 ai-label-settingsShortShown = Une courte étiquette « Brouillon IA » est affichée sur les réponses de l’IA pour lesquelles vous l’avez choisie.
 
@@ -2417,6 +2441,8 @@ notifications-error = Ce réglage n’a pas pu être enregistré. Les avis et le
 notifications-unavailable = Ces réglages ne sont pas disponibles pour le moment. Ouvrez myCarlos normalement pour consulter vos documents.
 notifications-helpAutomatic = myCarlos peut vérifier lui-même les nouveaux documents de la clinique lorsqu’il est ouvert et déverrouillé. Les nouveaux documents apparaissent alors dans votre bibliothèque.
 notifications-notYetAsked = Windows n’a pas encore affiché d’avis myCarlos, il n’a donc pas encore de paramètre pour eux. Les avis sont autorisés jusqu’à ce que vous les désactiviez dans les paramètres de Windows.
+notifications-blockedMac = macOS n’autorise pas les notifications de myCarlos. Activez-les dans Réglages Système, sous Notifications.
+notifications-notYetAskedMac = macOS n’a pas encore été interrogé. Il le fera quand vous activerez les avis.
 notifications-autoAllow = Vérifier automatiquement les documents des cliniques lorsque le coffre est déverrouillé
 notifications-autoConsent = En activant ceci, vous permettez à myCarlos de contacter le portail de votre clinique selon un calendrier, avec au moins deux minutes entre les tentatives, uniquement lorsqu’il est ouvert et déverrouillé. Désactivez-le pour l’arrêter.
 notifications-noticesHelp = Windows peut afficher un avis générique après l’enregistrement d’un document de la clinique. Ouvrez myCarlos normalement pour le lire.
@@ -2532,6 +2558,16 @@ interface-RecordDialog-yourPhoneAsksOnce = Votre téléphone demande une seule f
 interface-RecordDialog-theCameraAndMicrophoneAreOn = L’appareil photo et le microphone ne sont actifs que pendant l’enregistrement. Ils s’éteignent quand vous arrêtez, fermez cette fenêtre ou que myCarlos se verrouille.
 interface-RecordDialog-theCameraAndMicrophoneAreOnNow = L’appareil photo et le microphone sont actifs, mais rien n’est enregistré tant que vous ne choisissez pas Démarrer l’enregistrement.
 interface-RecordDialog-pictureQuality = Qualité de l’image
+interface-RecordDialog-cameraAndMicrophone = Caméra et microphone
+interface-RecordDialog-camera = Caméra
+interface-RecordDialog-microphone = Microphone
+interface-RecordDialog-unnamedCamera = Caméra { $number }
+interface-RecordDialog-unnamedMicrophone = Microphone { $number }
+interface-RecordDialog-systemDefaultDevice = Par défaut du système
+interface-RecordDialog-deviceFellBack = La caméra ou le microphone utilisé la dernière fois n’est pas branché ; celui par défaut du système est utilisé.
+interface-RecordDialog-testMicrophone = Tester le microphone
+interface-RecordDialog-stopTestingMicrophone = Arrêter le test
+interface-RecordDialog-microphoneLevel = Niveau du microphone
 interface-RecordDialog-standard = Standard (720p)
 interface-RecordDialog-high = Élevée (1080p)
 interface-RecordDialog-aboutStandardPerHour = Environ 1,1 Go par heure
@@ -2935,7 +2971,7 @@ handover-nowVerified =
     }
 
 
-notifications-autoSummary = Les vérifications automatiques n’ont lieu que lorsque myCarlos est ouvert et déverrouillé.
+notifications-autoSummary = myCarlos ne récupère de lui-même les nouveaux documents de la clinique que lorsqu’il est ouvert et déverrouillé. Lorsqu’il est verrouillé en arrière-plan, il peut seulement vous signaler que quelque chose vous attend.
 
 background-keepRunningSummary = myCarlos peut rester en arrière-plan après la fermeture de sa fenêtre. Votre coffre se verrouille à la fermeture de la fenêtre.
 
@@ -2950,6 +2986,7 @@ native-notice-test = Ceci est un avis de test de myCarlos.
 notifications-testButton = Afficher un avis de test
 
 notifications-testSent = Avis de test envoyé. Si vous ne le voyez pas, vérifiez les paramètres de notification de Windows.
+notifications-testSentMac = Avis de test envoyé. Si vous ne le voyez pas, vérifiez Réglages Système, sous Notifications.
 
 notifications-testWait = Patientez quelques secondes, puis réessayez.
 
@@ -2995,3 +3032,47 @@ interface-clinicNew-markAll = Tout marquer comme vu
 interface-clinicNew-showing = Seuls les nouveaux documents sont affichés.
 
 interface-VaultLibrary-newTag = Nouveau
+
+interface-AddVideo-add = Ajouter une vidéo
+
+interface-AddVideo-hint = Choisissez une vidéo MP4 ou MOV sur cet appareil. Le lieu, ainsi que le nom et le modèle de l’appareil qu’elle contient, sont d’abord supprimés.
+
+interface-AddVideo-checking = Vérification de la vidéo…
+
+interface-AddVideo-storing = Ajout de la vidéo : { $percent } %
+
+interface-AddVideo-progressLabel = Ajout de la vidéo
+
+interface-AddVideo-cancel = Annuler
+
+interface-AddVideo-cancelling = Annulation…
+
+interface-AddVideo-added = La vidéo a été ajoutée.
+
+interface-AddVideo-duplicate = Cette vidéo est déjà ici. Rien n’a été ajouté.
+
+interface-AddVideo-cancelled = Annulé. Rien n’a été ajouté.
+
+interface-AddVideo-notVideo = Ce fichier n’est pas une vidéo que myCarlos peut ajouter. Choisissez une vidéo MP4 ou MOV.
+
+interface-AddVideo-hevc = Cette vidéo utilise le H.265 (HEVC), que de nombreux ordinateurs ne peuvent pas lire. Enregistrez-la en MP4 H.264 et ajoutez-la de nouveau.
+
+interface-AddVideo-videoCodec = Cette vidéo utilise un format d’image que myCarlos ne peut pas lire. Enregistrez-la en MP4 H.264 et ajoutez-la de nouveau.
+
+interface-AddVideo-audioCodec = Le son de cette vidéo utilise un format que myCarlos ne peut pas lire. Enregistrez-la avec un son AAC et ajoutez-la de nouveau.
+
+interface-AddVideo-noVideo = Ce fichier n’a pas d’image : ce n’est donc pas une vidéo. Choisissez une vidéo MP4 ou MOV.
+
+interface-AddVideo-tooManyTracks = Cette vidéo contient plus d’images ou de sons que myCarlos ne peut en ajouter. Enregistrez une copie simple avec une image et un son, puis ajoutez-la de nouveau.
+
+interface-AddVideo-external = Une partie de cette vidéo est stockée hors du fichier : elle ne peut pas être ajoutée. Enregistrez une copie complète et ajoutez-la de nouveau.
+
+interface-AddVideo-fragmented = Cette vidéo est dans un format de diffusion en continu. Enregistrez-la en MP4 ordinaire et ajoutez-la de nouveau.
+
+interface-AddVideo-tooBig = L’image de cette vidéo est plus grande que ce que myCarlos peut ajouter. Enregistrez une copie plus petite et ajoutez-la de nouveau.
+
+interface-AddVideo-tooLarge = Cette vidéo est plus volumineuse que ce que myCarlos peut ajouter sur cet appareil (2 Go sur un ordinateur, 1 Go sur un téléphone). Enregistrez une copie plus petite et ajoutez-la de nouveau.
+
+interface-AddVideo-damaged = Cette vidéo est endommagée ou tronquée : elle ne peut pas être ajoutée. Copiez-la de nouveau depuis son origine et réessayez.
+
+interface-AddVideo-adding = Ajout de la vidéo…
