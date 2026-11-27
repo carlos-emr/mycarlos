@@ -33,11 +33,9 @@ impl VaultStore {
             {
                 return None;
             }
-            let record = open
-                .manifest
-                .records
-                .iter()
-                .find(|r| r.id == record_id && r.hidden.is_none())?;
+            let record = open.manifest.records.iter().find(|r| {
+                r.id == record_id && r.hidden.is_none() && open.manifest.record_in_reach(r)
+            })?;
             if record.delivery.as_ref()?.link_id != link.id
                 || !valid_custody(record, &open.manifest.portal_links)
             {
@@ -1557,7 +1555,7 @@ impl VaultStore {
         };
         // A person who is hidden is not filed into: the document waits in Shared with me, in
         // plain view, with the person it was for on its history entry (#360, section 8.6).
-        let person_hidden = matched.is_some_and(|id| unlocked.manifest.person_is_hidden(id));
+        let person_hidden = matched.is_some_and(|id| !unlocked.manifest.person_in_reach(id));
         let profile_id = match matched {
             Some(id) if !person_hidden => id,
             _ => shared,

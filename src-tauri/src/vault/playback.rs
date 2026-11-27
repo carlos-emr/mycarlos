@@ -384,9 +384,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         if unlocked.unavailable.contains(&record.id) {
             return Err(VaultError::Corrupt);
