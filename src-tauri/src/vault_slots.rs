@@ -2178,6 +2178,11 @@ mod tests {
                 if path.is_dir() {
                     into.insert(relative, None);
                     walk(base, &path, into);
+                } else if path.file_name().is_some_and(|name| name == "vault-v1.lock") {
+                    // Windows prevents reads of the held storage lock. It must stay empty and
+                    // its path must still be included so the comparison can catch removal.
+                    assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+                    into.insert(relative, Some(Vec::new()));
                 } else {
                     into.insert(relative, Some(fs::read(&path).unwrap()));
                 }
