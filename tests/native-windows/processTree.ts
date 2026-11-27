@@ -16,12 +16,17 @@ export interface StopOptions {
 
 /** Ends the installed app and its WebView2 children with `taskkill /T /F`.
  * A child can end by itself while the tree is being killed, and taskkill then
- * fails with exit code 128 for it. That is a finished shutdown only if the
- * app itself has gone: either `waitForExit` answers true (false after its own
- * time limit) or, as a second witness, the root process is no longer in the
- * process table within `waitMs` (15 s). If neither shows it, the error says
- * taskkill's exit code and how the app looks. Any other failure is thrown as it
- * came. */
+ * fails with exit code 128 for it. A child that is already on its way out can
+ * also be refused with "ERROR: The process with PID n (child process of PID m)
+ * could not be terminated. Reason: The operation attempted is not supported."
+ * (Windows run 45962064313): the same race, reported per child. Either is a
+ * finished shutdown only if the app itself has gone: either `waitForExit`
+ * answers true (false after its own time limit) or, as a second witness, the
+ * root process is no longer in the process table within `waitMs` (15 s). If
+ * neither shows it, the error says what taskkill reported and how the app
+ * looks. Any other failure is thrown as it came, including a "not supported"
+ * refusal for the app's own process (it is not a child that was leaving) and
+ * one mixed with any other kind of refusal. */
 export async function stopAppTree(
   pid: number,
   run: (file: string, args: string[]) => Promise<unknown>,
@@ -31,7 +36,13 @@ export async function stopAppTree(
   try {
     await run("taskkill", ["/PID", String(pid), "/T", "/F"]);
   } catch (error) {
-    if (exitCodeOf(error) !== TASKKILL_NOT_RUNNING) throw error;
+    const report =
+      exitCodeOf(error) === TASKKILL_NOT_RUNNING
+        ? `taskkill exit code ${TASKKILL_NOT_RUNNING}`
+        : onlyChildrenLeavingRefused(error)
+          ? "taskkill refused only children that were leaving (not supported)"
+          : null;
+    if (report === null) throw error;
     const watch = { stopped: false };
     const witnesses = [waitForExit()];
     if (options.rootGone)
@@ -48,7 +59,7 @@ export async function stopAppTree(
     if (gone) return;
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `${message} (taskkill exit code ${TASKKILL_NOT_RUNNING}; the app, PID ${pid}, was not seen to exit: ${
+      `${message} (${report}; the app, PID ${pid}, was not seen to exit: ${
         options.describeApp?.() ?? "its state is unknown"
       })`,
       { cause: error },
@@ -82,6 +93,29 @@ async function pollUntil(
     await new Promise((resolve) => setTimeout(resolve, everyMs));
   }
   return false;
+}
+
+/** True when everything taskkill complained about is a CHILD it could not end because "The
+ * operation attempted is not supported" (the child was already exiting): at least one such
+ * refusal, and no other "ERROR:" line (the app's own process, another reason). */
+function onlyChildrenLeavingRefused(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  // One source, so a line is not counted twice: taskkill writes its errors to stderr, which
+  // `execFile` also copies into the message; use stderr when it has text, else the message.
+  const stderr = "stderr" in error ? String(error.stderr ?? "") : "";
+  const text =
+    stderr.trim() !== ""
+      ? stderr
+      : "message" in error
+        ? String(error.message)
+        : "";
+  const errors = text.match(/ERROR:/g)?.length ?? 0;
+  const childRefusals = [
+    ...text.matchAll(
+      /ERROR: The process with PID \d+ \(child process of PID \d+\) could not be terminated\.\s*Reason: The operation attempted is not supported\./g,
+    ),
+  ].length;
+  return childRefusals > 0 && childRefusals === errors;
 }
 
 /** Node's `execFile` rejects with the exit code as `code`. */
