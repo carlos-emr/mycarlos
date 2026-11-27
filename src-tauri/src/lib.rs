@@ -57,6 +57,10 @@ mod model_helper;
 mod model_limits;
 mod model_runtime;
 mod video_scheme;
+
+// The clinic key inventory check (the clinic-key refresh design, M1): nothing calls it yet.
+mod clinic_key_proofs;
+
 // The recording core (#359) and, in the next step, the playback address use it.
 #[allow(dead_code)]
 mod mp4_stream;
