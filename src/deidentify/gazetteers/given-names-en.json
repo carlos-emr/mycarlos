@@ -19,7 +19,18 @@
   "counted": 9761488,
   "distinct names counted": 8970,
   "below the 98 % cutoff": 5659,
-  "exceptions": 8,
+  "exceptions": {
+   "baby": 22709,
+   "infant": 2123,
+   "not": 881,
+   "walker": 821,
+   "male": 381,
+   "female": 276,
+   "real": 190,
+   "ward": 174,
+   "junior": 134,
+   "vida": 103
+  },
   "not a plain single-word name": 147
  },
  "note": "First names of children born since 1940 (Ontario registrations; the US Social Security national file when listed in sources), lower case, the commonest names holding 98 % of the births counted. Names that are also common words are kept on purpose.",

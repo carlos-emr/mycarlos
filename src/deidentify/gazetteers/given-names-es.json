@@ -19,7 +19,20 @@
   "counted": 101902157,
   "distinct names counted": 135303,
   "below the 98 % cutoff": 130382,
-  "exceptions": 7,
+  "exceptions": {
+   "santa": 12330,
+   "junior": 6413,
+   "salud": 3826,
+   "santo": 2654,
+   "elder": 693,
+   "vida": 578,
+   "mama": 398,
+   "walker": 42,
+   "baby": 26,
+   "male": 6,
+   "ward": 6,
+   "real": 3
+  },
   "not a plain single-word name": 1108
  },
  "note": "First words of first names: births since 1940 in Argentina (RENAPER) and the people in Spain's Padron Continuo at 1 Jan 2022 whose name is held by 20 or more (INE), lower case, the commonest names holding 98 % of the counted. Names that are also common words are kept on purpose.",

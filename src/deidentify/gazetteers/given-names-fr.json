@@ -24,7 +24,15 @@
   "counted": 68055515,
   "distinct names counted": 69529,
   "below the 98 % cutoff": 59985,
-  "exceptions": 2,
+  "exceptions": {
+   "junior": 2015,
+   "elder": 185,
+   "real": 106,
+   "walker": 58,
+   "ward": 58,
+   "vida": 51,
+   "male": 10
+  },
   "not a plain single-word name": 26889
  },
  "note": "First names of children born since 1940 in France (INSEE, to 2022) and since 1980 in Quebec (Retraite Quebec), lower case, the commonest names holding 98 % of the births counted. Names that are also common words are kept on purpose.",

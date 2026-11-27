@@ -62,7 +62,8 @@ class Cut(unittest.TestCase):
         names, stats = builder.cut(tally, {"inna": "an ordinary word"})
         # 98 % of 1000 is 980: anna, rose and inna reach 990, so zed and rare fall below the cutoff.
         self.assertEqual(names, ["anna", "rose"])
-        self.assertEqual(stats["exceptions"], 1)
+        # The exception's weight in the counted data is recorded, whether or not it was kept.
+        self.assertEqual(stats["exceptions"], {"inna": 90})
         self.assertEqual(stats["below the 98 % cutoff"], 2)
         self.assertEqual(stats["counted"], 1000)
 

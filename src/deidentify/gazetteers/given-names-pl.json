@@ -19,7 +19,17 @@
   "counted": 44000062,
   "distinct names counted": 62097,
   "below the 98 % cutoff": 60396,
-  "exceptions": 1,
+  "exceptions": {
+   "inna": 22557,
+   "junior": 72,
+   "vida": 25,
+   "elder": 13,
+   "baby": 11,
+   "ward": 10,
+   "walker": 6,
+   "male": 2,
+   "real": 2
+  },
   "not a plain single-word name": 9418
  },
  "note": "First names of people alive in the PESEL register (20 Jan 2026), lower case, the commonest names holding 98 % of the people counted. Names that are also common words are kept on purpose.",

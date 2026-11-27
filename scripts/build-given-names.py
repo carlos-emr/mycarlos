@@ -190,7 +190,13 @@ def cut(tally: Tally, exceptions: dict[str, str]) -> tuple[list[str], dict]:
         "counted": total,
         "distinct names counted": len(ordered),
         "below the 98 % cutoff": len(ordered) - len(kept) - len(excepted),
-        "exceptions": len(excepted),
+        # What each hand exception stood for in this list's counted data (births or people), so a
+        # reader can see how much a dropped word weighed: only the words this list's data held.
+        "exceptions": {
+            name: tally.counts[name]
+            for name in sorted(exceptions, key=lambda word: (-tally.counts.get(word, 0), word))
+            if name in tally.counts
+        },
     }
     return sorted(kept), {**stats, **tally.dropped}
 
