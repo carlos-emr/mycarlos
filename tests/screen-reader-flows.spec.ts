@@ -6,6 +6,7 @@ import {
   recordAnnouncements,
   screenReaderSmoke,
 } from "./support/a11y";
+import { addButton, chooseToolbar } from "./support/menus";
 
 // The main flows as a screen reader meets them (Ben, 28 Oct): the browser's
 // accessibility tree for each screen (toMatchAriaSnapshot, which also allows
@@ -48,25 +49,29 @@ test("the library: the sidebar says what it counts, controls lead with their vis
   const nav = page.getByRole("navigation", { name: "Record library" });
   await expect(nav).toMatchAriaSnapshot(`
     - navigation "Record library":
+      - button "Shared with me"
+      - text: People
       - button /^My records .?1.? document$/
+      - text: Folders
       - button /^FAKE Letters .?0.? documents$/
       - button /^FAKE Results .?1.? document$/
-      - button "Shared with me"
-      - button "Security"
-      - button "Preferences"
+      - group "Settings":
+        - button "Security"
+        - button "Preferences"
+        - button "AI helper"
   `);
   await expect(
     nav.getByRole("button", { name: /^My records/ }),
   ).toHaveAttribute("aria-current", "page");
 
-  // "New" is named by what it shows; what it does is its description.
-  const newButton = page.getByRole("button", { name: "New", exact: true });
-  await expect(newButton).toHaveAccessibleDescription(/import/i);
+  // "Add document" is a menu button: named by what it shows, and it says it opens a menu.
+  const addMenu = addButton(page);
+  await expect(addMenu).toHaveAttribute("aria-haspopup", "menu");
 
   // A folder is named first by its name, then says it opens; the count is
   // its description. The same in the list and in the grid.
-  for (const view of ["List view", "Grid view"]) {
-    await page.getByRole("button", { name: view }).click();
+  for (const view of ["List", "Grid"]) {
+    await chooseToolbar(page, "View", view);
     const folder = page.getByRole("button", {
       name: /^.?FAKE Results.?, open folder$/,
     });

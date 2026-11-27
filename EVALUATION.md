@@ -38,7 +38,7 @@ native builds open the vault instead, which the native checks below cover:
 
 1. Confirm the evaluation warning is visible without scrolling.
 2. Review the synthetic record library at desktop and phone widths.
-3. Choose a synthetic PDF with the **New** button and confirm only its filename appears with the
+3. Choose a synthetic PDF with **Add document ▸ Import a file** and confirm only its filename appears with the
    `session only` label.
 4. Reset the session and confirm the imported filename disappears.
 5. Open **Evaluation details** and confirm it reports `Browser preview`.

@@ -1,4 +1,5 @@
 import { humanText } from "../test/humanText";
+import { addMenuItemNow, queryAddMenuItem } from "../test/menus";
 import { useTextState } from "../i18n";
 import {
   act,
@@ -215,9 +216,7 @@ describe("taking a photo from the library", () => {
   it("opens with no message left over from the library", async () => {
     renderLibrary(base, {}, "windows", "Vault unlocked.");
     expect(screen.getByText(humanText("Vault unlocked."))).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    );
+    fireEvent.click(addMenuItemNow("Take a photo"));
     const camera = screen.getByRole("dialog", {
       name: humanText("Take a photo"),
     });
@@ -235,9 +234,7 @@ describe("taking a photo from the library", () => {
         throw { code: "storage", message: "FAKE" };
       }),
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    );
+    fireEvent.click(addMenuItemNow("Take a photo"));
     const camera = screen.getByRole("dialog", {
       name: humanText("Take a photo"),
     });
@@ -259,22 +256,19 @@ describe("taking a photo from the library", () => {
 
   it("is offered on a computer", () => {
     renderLibrary(base);
-    expect(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    ).toBeEnabled();
+    expect(addMenuItemNow("Take a photo")).toBeEnabled();
   });
 
   it("keeps the library out of reach while open, and gives the focus back", async () => {
     renderLibrary(base);
-    const take = screen.getByRole("button", {
-      name: humanText("Take a photo"),
-    });
-    take.focus();
-    fireEvent.click(take);
+    // The Add document menu: the photo is an item of it, and the menu returns the focus to its
+    // button before the camera opens, so that is where the focus comes back to.
+    const add = screen.getByRole("button", { name: humanText("Add document") });
+    fireEvent.click(addMenuItemNow("Take a photo"));
     const camera = screen.getByRole("dialog", {
       name: humanText("Take a photo"),
     });
-    expect(take.closest("[inert]")).not.toBeNull();
+    expect(add.closest("[inert]")).not.toBeNull();
     await waitFor(() =>
       expect(
         within(camera).getByRole("button", { name: humanText("Take photo") }),
@@ -284,21 +278,19 @@ describe("taking a photo from the library", () => {
       within(camera).getByRole("button", { name: humanText("Cancel") }),
     );
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(take.closest("[inert]")).toBeNull();
-    await waitFor(() => expect(take).toHaveFocus());
+    expect(add.closest("[inert]")).toBeNull();
+    await waitFor(() => expect(add).toHaveFocus());
   });
 
   it("is not offered on a phone or tablet", () => {
     renderLibrary(base, {}, null);
-    expect(
-      screen.queryByRole("button", { name: humanText("Take a photo") }),
-    ).toBeNull();
+    expect(queryAddMenuItem("Take a photo")).toBeNull();
   });
 
   it("is not offered while the vault is read-only", () => {
     renderLibrary({ ...base, recovery: "writeFailed" });
     expect(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
+      screen.getByRole("button", { name: humanText("Add document") }),
     ).toBeDisabled();
   });
 
@@ -310,9 +302,7 @@ describe("taking a photo from the library", () => {
     fireEvent.click(
       within(sidebar).getByRole("button", { name: humanText(/^FAKE Cards/) }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    );
+    fireEvent.click(addMenuItemNow("Take a photo"));
     const camera = screen.getByRole("dialog", {
       name: humanText("Take a photo"),
     });
@@ -373,9 +363,7 @@ describe("taking a photo from the library", () => {
         skippedDuplicates: ["Photo, 17 Oct 2026, 3.05 PM.jpg"],
       })),
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Take a photo") }),
-    );
+    fireEvent.click(addMenuItemNow("Take a photo"));
     const shutter = screen.getByRole("button", {
       name: humanText("Take photo"),
     });

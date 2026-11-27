@@ -10,6 +10,7 @@ import {
   scriptFake,
   sidebar,
 } from "./support/vaultFake";
+import { chooseAdd } from "./support/menus";
 
 // The automatic lock (#68): the delay is set in Security, a warning comes
 // 30 seconds before the lock and Keep open puts it off, and the lock comes
@@ -138,12 +139,7 @@ test("minimized under a picker it opened, the vault stays open; once the picker 
   // Android) when myCarlos is minimized: no lock, the chosen files would be
   // lost with the session.
   await scriptFake(page, "vault_import_any_pick", { pending: true });
-  await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.new"),
-      exact: true,
-    })
-    .click();
+  await chooseAdd(page, en("interface.AddMenu.importFile"));
   await expect
     .poll(async () => (await fakeCalls(page, "vault_import_any_pick")).length)
     .toBe(1);

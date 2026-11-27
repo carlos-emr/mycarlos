@@ -529,7 +529,12 @@ describe("SecuritySettings privacy notice", () => {
       // at the row's right edge.
       await page.viewport(360, 800);
       expect(box(hidden).top).toBeGreaterThanOrEqual(box(last).bottom);
-      expect(box(section).right - box(hidden).right).toBeLessThan(3);
+      // (the card's own padding is the space at its edge)
+      expect(
+        box(section).right -
+          Number.parseFloat(getComputedStyle(section).paddingRight) -
+          box(hidden).right,
+      ).toBeLessThan(3);
       expect(box(audit).top).toBeGreaterThanOrEqual(box(hidden).bottom);
       expect(section.scrollWidth).toBeLessThanOrEqual(section.clientWidth + 1);
     } finally {
@@ -597,7 +602,7 @@ describe("SecuritySettings passphrase change", () => {
     ).toBeInTheDocument();
   });
 
-  it("lists its sections in this order: encryption, passphrase, recovery key, backup, lock, connected clinics, profiles, what myCarlos keeps", () => {
+  it("lists its sections in this order: connected clinics, backup, encryption, passphrase, recovery key, lock, profiles, what myCarlos keeps", () => {
     renderSettings({
       clinicDocuments: (
         <section aria-labelledby="clinics-heading">
@@ -609,12 +614,12 @@ describe("SecuritySettings passphrase change", () => {
       .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent ?? "");
     const order = [
+      /^Connected clinics/,
+      /^Encrypted backup/,
       /^Encryption/,
       /^Change passphrase/,
       /^Recovery key/,
-      /^Encrypted backup/,
       /^Lock automatically/,
-      /^Connected clinics/,
       /^Patient profiles/,
       /^What myCarlos keeps/,
     ];

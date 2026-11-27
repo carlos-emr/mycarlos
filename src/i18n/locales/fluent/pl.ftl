@@ -500,8 +500,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = Ten dokument jest 
 
 interface-UnlockPdfDialog-unlocking = Odblokowywanie…
 
-interface-VaultApp-chooseFilesToImport = Wybierz pliki do importu
-
 interface-VaultLibrary-picturesNote = Z dodawanych obrazów usuwane są miejsce, czas i dane o aparacie.
 
 interface-VaultApp-finishingTheTransfer = Kończenie przesyłania
@@ -576,6 +574,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Przenieś folder za pomocą 
 
 interface-VaultLibrary-moveFolder = Przenieś folder
 
+interface-VaultLibrary-moveFolderItem = Przenieś folder…
+
 interface-VaultLibrary-moveSelectedTo = Przenieś wybrane do
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Można je przenieść do swoich folderów w dowolnym momencie.
@@ -587,8 +587,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos nie mógł zapis
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteka zaszyfrowanych dokumentów myCarlos
 
 interface-VaultLibrary-nameAZ = Nazwa A–Z
-
-interface-VaultLibrary-new = Nowy
 
 interface-VaultLibrary-newestFirst = Od najnowszych
 
@@ -629,6 +627,12 @@ interface-VaultLibrary-section = Sekcja
 interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Na tym urządzeniu brakuje niektórych zaszyfrowanych plików. Dokumentów oznaczonych jako uszkodzone nie można otworzyć ani skopiować; proszę teraz zapisać kopie pozostałych. Aby znów wprowadzać zmiany, proszę przywrócić folder danych myCarlos z kopii zapasowej lub ukryć uszkodzone dokumenty.
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Nie udało się odczytać niektórych plików sejfu, a mogą być nowsze lub nieuszkodzone, więc na razie nie można nic zmieniać, w tym hasła głównego i klucza odzyskiwania. Nadal można otwierać dokumenty i zapisywać ich kopie, z wyjątkiem tych oznaczonych jako „Plik niedostępny”. Proszę sprawdzić, czy dysk z folderem danych myCarlos jest podłączony, czy żaden inny program nie blokuje folderu i czy narzędzie synchronizacji z chmurą przechowuje pliki na tym urządzeniu, a następnie zablokować i odblokować sejf.
+
+interface-VaultLibrary-view = Widok
+
+interface-VaultLibrary-helpWithThisScreen = Pomoc dla tego ekranu
+
+interface-VaultLibrary-moreFor = Więcej dla: { $name }
 
 interface-VaultLibrary-sortBy = Sortuj według
 
@@ -1364,9 +1368,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Foldery
+
+sidebar-foldersOf = Foldery: { $name }
+
 sidebar-label = Biblioteka dokumentów
 
 sidebar-myRecords = Moje dokumenty
+
+sidebar-people = Osoby
 
 sidebar-preferences = Preferencje
 
@@ -2212,6 +2222,10 @@ interface-history-receipt-pickedUp = Przychodnia odnotowała odbiór
 interface-history-status = Stan
 
 interface-RecordDetails-anonymizeText = Przygotuj tekst dla AI…
+
+interface-AddMenu-addDocument = Dodaj dokument
+
+interface-AddMenu-importFile = Importuj plik
 
 interface-AnonymizePreview-title = Tekst bez danych identyfikujących
 
@@ -3077,6 +3091,20 @@ notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
 notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
+
+unlock-brand-tagline = Twoje dokumenty zdrowotne, prywatne na tym urządzeniu.
+
+reader-back = Wstecz
+
+reader-panel-label = O tym dokumencie
+
+reader-panel-more = Więcej…
+
+reader-panel-ai = Wyjaśnij z pomocą AI
+
+interface-VaultLibrary-help = Pomoc
+
+interface-VaultLibrary-helpButtonName = Pomoc: ten ekran
 
 interface-AddVideo-add = Dodaj film
 

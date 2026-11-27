@@ -255,6 +255,37 @@ describe("Document notice preference", () => {
     );
   });
 
+  it("reads why the automatic-check box is disabled with it, and the short line above it too (review of #489, agent 1)", async () => {
+    native.invoke.mockResolvedValue({
+      ...allowed,
+      available: false,
+      automaticChecksSupported: true,
+      automaticChecksEnabled: false,
+    });
+    render(<NotificationSetting />);
+    const automatic = await screen.findByRole("checkbox", {
+      name: humanText(
+        "Check for clinic documents automatically while unlocked",
+      ),
+    });
+    expect(automatic).toBeDisabled();
+    // The reason it is disabled, and the line that says what the box does, both read with it.
+    expect(automatic).toHaveHumanAccessibleDescription(
+      /These settings are unavailable right now/,
+    );
+    expect(automatic).toHaveHumanAccessibleDescription(
+      /can check for new clinic documents by itself/,
+    );
+    // The notice box is disabled for the same reason and says so too.
+    expect(
+      screen.getByRole("checkbox", {
+        name: humanText("Show a notice when a document arrives"),
+      }),
+    ).toHaveHumanAccessibleDescription(
+      /These settings are unavailable right now/,
+    );
+  });
+
   it("says Windows has no setting for it yet without blocking the box", async () => {
     native.invoke.mockResolvedValue({
       ...allowed,

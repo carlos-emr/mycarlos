@@ -18,6 +18,7 @@ import {
   fakeVaultWith,
   myRecords,
 } from "./support/vaultFake";
+import { chooseAdd } from "./support/menus";
 
 // The demo runbook (kept outside the repo), step by step: Preferences → AI
 // helper → Download the default model → Installed →
@@ -185,17 +186,15 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
   ).toBeChecked();
   await named(row, `Remove ${MODEL}`, "step 3");
 
-  // Step 5: New (the button that imports files) → the three, Unverified,
-  // Manual import. The button shows "New" and is named by it (WCAG 2.5.3);
-  // "Choose files to import" is its description (#149; the runbook changes
-  // when this merges).
+  // Step 5: Add document ▸ Import a file (the menu that imports files; it was the "New"
+  // button before the overhaul) → the three, Unverified, Manual import.
   await page
     .getByRole("button", { name: /My records/ })
     .locator("visible=true")
     .first()
     .click();
   await fakePickFiles(page, DOCUMENTS);
-  await (await named(page.locator("body"), "New", "step 5")).click();
+  await chooseAdd(page, "Import a file");
   for (const name of DOCUMENTS)
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 
@@ -341,7 +340,7 @@ test("the demo runbook, steps 3 to 12, matches the app", async ({ page }) => {
       );
     }
     // Step 10: Close.
-    await (await named(reader, "Close", "step 10")).click();
+    await (await named(reader, "Back", "step 10")).click();
     await expect(reader).toBeHidden();
   }
   await expectOnlyFakedCommands(page);

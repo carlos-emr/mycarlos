@@ -483,8 +483,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = Este documento est
 
 interface-UnlockPdfDialog-unlocking = Desbloqueando…
 
-interface-VaultApp-chooseFilesToImport = Escolha os arquivos para importar
-
 interface-VaultLibrary-picturesNote = O local, a hora e os dados da câmera são removidos das imagens que você adiciona.
 
 interface-VaultApp-finishingTheTransfer = Concluindo a transferência
@@ -559,6 +557,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Mover uma pasta com o teclad
 
 interface-VaultLibrary-moveFolder = Mover pasta
 
+interface-VaultLibrary-moveFolderItem = Mover pasta…
+
 interface-VaultLibrary-moveSelectedTo = Mover selecionados para
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Mova-os para suas pastas quando quiser.
@@ -570,8 +570,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = O myCarlos não conseguiu
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Biblioteca de documentos criptografados do myCarlos
 
 interface-VaultLibrary-nameAZ = Nome A–Z
-
-interface-VaultLibrary-new = Novo
 
 interface-VaultLibrary-newestFirst = Mais recentes primeiro
 
@@ -612,6 +610,12 @@ interface-VaultLibrary-section = Seção
 interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Alguns arquivos criptografados estão faltando neste dispositivo. Os documentos marcados como danificados não podem ser abertos nem copiados; salve cópias dos outros agora. Para voltar a fazer alterações, restaure a pasta de dados do myCarlos a partir de um backup ou oculte os documentos danificados.
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Não foi possível ler alguns arquivos do cofre, e eles podem ser mais recentes ou estar intactos, então nada pode ser alterado por enquanto, incluindo sua frase secreta e sua chave de recuperação. Você ainda pode abrir documentos e salvar cópias, exceto os marcados como “Arquivo indisponível”. Verifique se a unidade que contém a pasta de dados do myCarlos está conectada, se nenhum outro programa está usando a pasta e se a ferramenta de sincronização com a nuvem mantém os arquivos neste dispositivo. Depois, bloqueie e desbloqueie o cofre.
+
+interface-VaultLibrary-view = Visualização
+
+interface-VaultLibrary-helpWithThisScreen = Ajuda sobre esta tela
+
+interface-VaultLibrary-moreFor = Mais ações para { $name }
 
 interface-VaultLibrary-sortBy = Ordenar por
 
@@ -1334,9 +1338,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Pastas
+
+sidebar-foldersOf = Pastas de { $name }
+
 sidebar-label = Biblioteca de documentos
 
 sidebar-myRecords = Meus documentos
+
+sidebar-people = Pessoas
 
 sidebar-preferences = Preferências
 
@@ -2169,6 +2179,10 @@ interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Preparar o texto para uma IA…
 
+interface-AddMenu-addDocument = Adicionar documento
+
+interface-AddMenu-importFile = Importar um arquivo
+
 interface-AnonymizePreview-title = Texto sem os dados de identificação
 
 interface-AnonymizePreview-reading = Lendo o documento…
@@ -2983,6 +2997,20 @@ notifications-testWait = Aguarde alguns segundos e tente novamente.
 
 notifications-testFailed = Não foi possível mostrar o aviso de teste.
 notifications-testOff = Os avisos estão desativados no myCarlos. Ative-os e tente novamente.
+
+unlock-brand-tagline = Seus documentos de saúde, privados neste dispositivo.
+
+reader-back = Voltar
+
+reader-panel-label = Sobre este documento
+
+reader-panel-more = Mais…
+
+reader-panel-ai = Explicar com IA
+
+interface-VaultLibrary-help = Ajuda
+
+interface-VaultLibrary-helpButtonName = Ajuda: esta tela
 
 interface-AddVideo-add = Adicionar um vídeo
 

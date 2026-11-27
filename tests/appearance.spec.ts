@@ -1,6 +1,7 @@
 import { translate } from "./support/fluent";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { addButton, chooseToolbar, toolbarButton } from "./support/menus";
 
 async function fakeVault(
   page: Page,
@@ -435,9 +436,7 @@ test("manual high contrast persists with readable controls and yields to OS colo
   await accessible(page);
   await screenshot(page, info, "manual-high-contrast-preferences");
   await section(page, info, "records");
-  await expect(
-    page.getByRole("button", { name: "New", exact: true }),
-  ).toBeDisabled();
+  await expect(addButton(page)).toBeDisabled();
   await contrast(page, text, "color", 7);
   await contrast(page, fields, "border-top-color", 3);
   await page.reload();
@@ -616,7 +615,7 @@ for (const theme of ["light", "dark"] as const) {
     await accessible(page);
     await screenshot(page, info, `${theme}-selected-bulk`);
     await selected.click();
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await chooseToolbar(page, "View", "Grid");
     await contrast(page, text);
     await accessible(page);
     await screenshot(page, info, `${theme}-grid`);
@@ -706,11 +705,9 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await expect(selected).toHaveCSS("outline-style", "solid");
   await expect(selected).toHaveCSS("opacity", "1");
   await expect(selected).toHaveCSS("box-shadow", "none");
-  // A selected sort choice shows focus differently from its selection (#121).
-  const newest = page.getByRole("button", {
-    name: translate("en", "interface.VaultLibrary.newestFirst"),
-  });
-  await expect(newest).toHaveAttribute("aria-pressed", "true");
+  // The Sort menu button shows focus visibly in forced colours (#121).
+  const newest = toolbarButton(page, "Sort by");
+  await expect(newest).toHaveAttribute("aria-haspopup", "menu");
   const ring = () =>
     newest.evaluate((element) => {
       const style = getComputedStyle(element);
@@ -723,9 +720,28 @@ test("forced colours preserve focus, selection and icons over a remembered dark 
   await page.keyboard.press("Shift+Tab");
   await expect(newest).toBeFocused();
   expect(await ring()).not.toBe(atRest);
-  // A phone shows no sidebar, so no brand mark.
-  if (info.project.name !== "phone")
-    await expect(page.locator(".brand-mark .icon")).toBeVisible();
+  // With the menu open, the selected choice is told apart from the focused one by more than
+  // colour: it is checked (aria-checked) and carries a tick; the focused item has its own ring (#121).
+  await page.keyboard.press("Enter");
+  const choices = page.getByRole("menuitemradio");
+  const selectedChoice = choices.filter({
+    has: page.locator(".menu-button-tick", { hasText: "✓" }),
+  });
+  await expect(selectedChoice).toHaveCount(1);
+  await expect(selectedChoice).toHaveAttribute("aria-checked", "true");
+  await expect(selectedChoice).toContainText(
+    translate("en", "interface.VaultLibrary.newestFirst"),
+  );
+  await expect(selectedChoice).toBeFocused();
+  await expect(selectedChoice).toHaveCSS("outline-style", "solid");
+  // The other choice (Name A–Z) is not checked and has no tick.
+  const other = choices.nth(1);
+  await expect(other).toHaveAttribute("aria-checked", "false");
+  await expect(other.locator(".menu-button-tick")).toHaveText("");
+  await page.keyboard.press("Escape");
+  await expect(newest).toBeFocused();
+  // The logo sits in the title bar, on a phone too.
+  await expect(page.locator(".titlebar-logo img")).toBeVisible();
   await contrast(page, ".icon", "stroke", 3);
   await accessible(page);
   await readableOnBackplate(page);

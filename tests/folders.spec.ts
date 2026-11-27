@@ -13,6 +13,7 @@ import {
   scriptFake,
   sidebar,
 } from "./support/vaultFake";
+import { chooseAdd } from "./support/menus";
 
 // Folders: a new folder in My records, a folder inside it, several documents
 // moved into a folder from the selection bar, one moved into the nested
@@ -49,12 +50,7 @@ async function expectFolderCount(
 }
 
 async function newFolder(page: import("@playwright/test").Page, name: string) {
-  await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.newFolder"),
-      exact: true,
-    })
-    .click();
+  await chooseAdd(page, en("interface.VaultLibrary.newFolder"));
   await page.getByLabel(en("rename.label.folder"), { exact: true }).fill(name);
   await page
     .getByRole("button", {

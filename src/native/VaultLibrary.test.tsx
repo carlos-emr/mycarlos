@@ -1,4 +1,10 @@
 import { humanText, humanValue, visibleText } from "../test/humanText";
+import {
+  addMenuItemNow,
+  headMenuItemNow,
+  queryAddMenuItem,
+  toolbarMenuItemNow,
+} from "../test/menus";
 import { LOCALES, resolveText, setLocaleOverride, translate } from "../i18n";
 import {
   act,
@@ -9,7 +15,9 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { ANNOUNCE_DELAY_MS } from "./announce";
+import type { AddVideoApi } from "./AddVideo";
 import userEvent from "@testing-library/user-event";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -71,6 +79,8 @@ function renderLibrary(
   bridgeExtras: Record<string, unknown> = {},
   computer = true,
   activity: { busy?: boolean; portalBusy?: boolean } = {},
+  /** Further props of the library (the camera platform, adding a video). */
+  extraProps: Partial<ComponentProps<typeof VaultLibrary>> = {},
 ) {
   const bridge = {
     platform: vi.fn().mockResolvedValue("windows"),
@@ -130,6 +140,7 @@ function renderLibrary(
       onAutoLockMinutes={onAutoLockMinutes}
       sharedNew={newInShared}
       computer={computer}
+      {...extraProps}
     />
   );
   const view = render(library(shown));
@@ -158,9 +169,7 @@ function dragFolder(from: Element, to: Element) {
 describe("VaultLibrary folders", () => {
   it("sends a person's top-level name correction to that same profile, not the folder mutator", async () => {
     const { bridge } = renderLibrary();
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Rename “FAKE Avery”") }),
-    );
+    fireEvent.click(headMenuItemNow("Rename “FAKE Avery”"));
     expect(
       screen.getByRole("dialog", { name: "Rename person's folder" }),
     ).toBeVisible();
@@ -182,9 +191,7 @@ describe("VaultLibrary folders", () => {
 
   it("cancels a person's name correction without any native mutation", () => {
     const { bridge } = renderLibrary();
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Rename “FAKE Avery”") }),
-    );
+    fireEvent.click(headMenuItemNow("Rename “FAKE Avery”"));
     fireEvent.change(screen.getByLabelText("Folder name"), {
       target: { value: "FAKE Corrected" },
     });
@@ -232,6 +239,49 @@ describe("VaultLibrary folders", () => {
     );
     await vi.waitFor(() =>
       expect(bridge.updateFolder).toHaveBeenCalledWith(
+        "letters-2025-june",
+        "letters",
+        "FAKE June Letters",
+      ),
+    );
+  });
+
+  it('moves the open folder by keyboard from its "…" menu: Move folder… opens the Help panel\'s controls with the folder chosen and the focus on the destination', async () => {
+    // The keyboard way to move a folder (WCAG 2.5.7's alternative to dragging) used to sit in
+    // an always-visible block; it is in the Help panel now, so the folder's own menu leads to it.
+    const { bridge } = renderLibrary();
+    // A person's own page, and Shared with me, have no folder to move: no item.
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(/^More for /) }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: humanText("Move folder…") }),
+    ).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    openFolder(/^FAKE June Letters/);
+    const help = screen.getByRole("button", {
+      name: humanText("Help: this screen"),
+    });
+    expect(help).toHaveAttribute("aria-expanded", "false");
+    expect(help).not.toHaveAttribute("aria-controls");
+    fireEvent.click(headMenuItemNow("Move folder…"));
+    // The panel is open, the help button says so and points at it, the folder is chosen,
+    // and the focus is on the next decision.
+    expect(help).toHaveAttribute("aria-expanded", "true");
+    const panel = screen.getByRole("region", {
+      name: humanText("Help with this screen"),
+    });
+    expect(help.getAttribute("aria-controls")).toBe(panel.id);
+    const folderSelect = within(panel).getByLabelText(humanText("Folder"));
+    expect(folderSelect).toHaveValue("letters-2025-june");
+    const destination = within(panel).getByLabelText(humanText("Destination"));
+    await vi.waitFor(() => expect(destination).toHaveFocus());
+    fireEvent.change(destination, { target: { value: "letters" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Move folder" }));
+    await vi.waitFor(() =>
+      expect(bridge.updateFolder).toHaveBeenCalledExactlyOnceWith(
         "letters-2025-june",
         "letters",
         "FAKE June Letters",
@@ -295,7 +345,7 @@ describe("clinic service dates", () => {
       expect(
         screen.getByText(humanText(`Service date: ${value}`)),
       ).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+      fireEvent.click(toolbarMenuItemNow("View", "Grid"));
       expect(
         screen.getByText(humanText(`Service date: ${value}`)),
       ).toBeVisible();
@@ -461,6 +511,44 @@ describe("VaultLibrary search", () => {
     ]);
     expect(bridge.updateFolder).not.toHaveBeenCalled();
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
+  });
+
+  it("moves a shared document into another person's folder from its details, by keyboard: only the drag shortcut was lost with the sidebar's other-people folders", async () => {
+    // The sidebar lists only the open person's folders, so a shared document cannot be dropped
+    // on ANOTHER person's folder; the details' "Move to" still offers every person and every
+    // folder, as a native select (arrow keys), then the Move button.
+    const moveToPerson = vi
+      .fn()
+      .mockResolvedValue({ moved: ["shared-test"], alreadyThere: [] });
+    renderLibrary(separateScopes, 0, { moveToPerson });
+    const user = userEvent.setup();
+    openFolder(/^Shared with me/);
+    await user.click(
+      screen.getByRole("button", { name: humanText("FAKE Blood shared.pdf") }),
+    );
+    const details = await screen.findByRole("dialog", {
+      name: humanText("FAKE Blood shared.pdf"),
+    });
+    const moveTo = within(details).getByRole("combobox", {
+      name: humanText("Move to"),
+    });
+    const options = within(moveTo)
+      .getAllByRole("option")
+      .map((option) => visibleText(option.textContent ?? ""));
+    expect(options.some((label) => label.includes("FAKE Blake"))).toBe(true);
+    expect(options.some((label) => label.includes("FAKE Lab results"))).toBe(
+      true,
+    );
+    // FAKE Avery has a "FAKE Lab results" folder too: choose Blake's by its value.
+    await user.selectOptions(moveTo, "profile-2|blake-lab");
+    await user.click(within(details).getByRole("button", { name: "Move" }));
+    await vi.waitFor(() =>
+      expect(moveToPerson).toHaveBeenCalledExactlyOnceWith(
+        ["shared-test"],
+        "profile-2",
+        ["blake-lab"],
+      ),
+    );
   });
 
   it("keeps hidden documents out of recursive search results and their paths", () => {
@@ -711,44 +799,54 @@ describe("VaultLibrary controls for older patients (#67)", () => {
       name: humanText("Details for FAKE Results.pdf"),
     });
     expect(details).toHaveHumanTextContent(/^Details$/);
+    // Sort and View are small menus that say their current choice (#121): the button's name
+    // holds the words it shows, and each choice is a radio item of the menu.
+    const sortButton = screen.getByRole("button", {
+      name: humanText("Sort by: Newest first"),
+    });
+    expect(sortButton).toHaveHumanTextContent("Newest first");
+    const viewButton = screen.getByRole("button", {
+      name: humanText("View: List"),
+    });
+    expect(viewButton).toHaveHumanTextContent("List");
+    fireEvent.click(sortButton);
     expect(
-      screen.getByRole("button", { name: humanText("List view") }),
-    ).toHaveHumanTextContent("List");
+      humanValue(
+        within(screen.getByRole("menu", { name: humanText("Sort by") }))
+          .getAllByRole("menuitemradio")
+          .map((choice) => choice.textContent?.replace("✓", "")),
+      ),
+    ).toEqual(["Newest first", "Name A–Z"]);
     expect(
-      screen.getByRole("button", { name: humanText("Grid view") }),
+      screen.getByRole("menuitemradio", { name: humanText("Newest first") }),
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: humanText("Name A–Z") }),
+    );
+    expect(
+      screen.getByRole("button", { name: humanText("Sort by: Name A–Z") }),
+    ).toBeVisible();
+    expect(documentNames()).toEqual([
+      "FAKE Blood pressure log.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Results.pdf",
+    ]);
+    fireEvent.click(toolbarMenuItemNow("Sort by", "Newest first"));
+    expect(documentNames()).toEqual([
+      "FAKE Results.pdf",
+      "FAKE Manual document.pdf",
+      "FAKE Blood pressure log.pdf",
+    ]);
+    fireEvent.click(toolbarMenuItemNow("View", "Grid"));
+    expect(
+      screen.getByRole("button", { name: humanText("View: Grid") }),
     ).toHaveHumanTextContent("Grid");
-    // Sort is a row of words, not a dropdown with only an icon, and each
-    // choice is its own Tab stop (#121).
-    const sort = screen.getByRole("group", { name: humanText("Sort by") });
-    const sortChoices = within(sort).getAllByRole("button");
-    expect(sortChoices.map((choice) => choice.textContent)).toEqual([
-      "Newest first",
-      "Name A–Z",
-    ]);
-    expect(sortChoices.map((choice) => choice.tabIndex)).toEqual([0, 0]);
-    expect(sortChoices[0]).toHaveAttribute("aria-pressed", "true");
-    expect(documentNames()).toEqual([
-      "FAKE Results.pdf",
-      "FAKE Manual document.pdf",
-      "FAKE Blood pressure log.pdf",
-    ]);
-    fireEvent.click(sortChoices[1]);
-    expect(sortChoices[1]).toHaveAttribute("aria-pressed", "true");
-    expect(sortChoices[0]).toHaveAttribute("aria-pressed", "false");
-    expect(documentNames()).toEqual([
-      "FAKE Blood pressure log.pdf",
-      "FAKE Manual document.pdf",
-      "FAKE Results.pdf",
-    ]);
-    fireEvent.click(sortChoices[0]);
-    expect(sortChoices[0]).toHaveAttribute("aria-pressed", "true");
-    expect(sortChoices[1]).toHaveAttribute("aria-pressed", "false");
-    expect(documentNames()).toEqual([
-      "FAKE Results.pdf",
-      "FAKE Manual document.pdf",
-      "FAKE Blood pressure log.pdf",
-    ]);
-    fireEvent.click(details);
+    fireEvent.click(toolbarMenuItemNow("View", "List"));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText("Details for FAKE Results.pdf"),
+      }),
+    );
     expect(
       screen.getByRole("button", { name: humanText("Close document details") }),
     ).toHaveHumanTextContent(/^Close$/);
@@ -773,8 +871,11 @@ describe("VaultLibrary moving and selecting without dragging (#67)", () => {
     ],
   };
 
-  it("says how to move without dragging", () => {
+  it("says how to move without dragging, in the help the question mark opens", () => {
     renderLibrary(withRecord);
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Help: this screen") }),
+    );
     expect(
       screen.getByText(
         humanText(
@@ -791,9 +892,7 @@ describe("VaultLibrary moving and selecting without dragging (#67)", () => {
     });
     const box = listTick.getBoundingClientRect();
     expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Grid view") }),
-    );
+    fireEvent.click(toolbarMenuItemNow("View", "Grid"));
     const gridTick = screen.getByRole("button", {
       name: humanText("Select FAKE Results.pdf"),
     });
@@ -826,13 +925,14 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
       Array.from(library.querySelectorAll(".native-nav-name")).map(
         (name) => name.textContent,
       );
+    // Shared with me, then the people, then the open person's folders only.
     expect(names()).toEqual([
+      "Shared with me",
       "FAKE Avery",
+      "FAKE Blake",
       "FAKE Letters",
       "FAKE 2025 Letters",
       "FAKE June Letters",
-      "FAKE Blake",
-      "Shared with me",
     ]);
     // Shared with me is no one's: at the top level, never indented under a
     // person as their folders are.
@@ -844,6 +944,7 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     });
     expect(shared.style.paddingLeft).toBe("");
     expect(letters.style.paddingLeft).not.toBe("");
+    // Another person's folders are listed when that person is open, not before.
     // Whose folder it is, for a screen reader.
     expect(letters).toHaveHumanAccessibleName(
       "FAKE Letters (FAKE Avery) 0 documents",
@@ -864,8 +965,16 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(
       screen.queryByRole("article", { name: humanText("FAKE Letters folder") }),
     ).toBeNull();
-    // Opening one of Avery's folders from Blake's opens it at once, with
-    // the person in the path.
+    // Avery's folders are not listed while Blake is open.
+    expect(
+      within(library).queryByRole("button", {
+        name: humanText(/^FAKE 2025 Letters/),
+      }),
+    ).toBeNull();
+    // Back to Avery: a folder of theirs opens, with the person in the path.
+    fireEvent.click(
+      within(library).getByRole("button", { name: humanText(/^FAKE Avery/) }),
+    );
     fireEvent.click(
       within(library).getByRole("button", {
         name: humanText(/^FAKE 2025 Letters/),
@@ -893,11 +1002,11 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
           .querySelectorAll(".native-nav-name"),
       ).map((name) => name.textContent),
     ).toEqual([
+      "Shared with me",
       "My records",
       "FAKE Letters",
       "FAKE 2025 Letters",
       "FAKE June Letters",
-      "Shared with me",
     ]);
   });
 
@@ -930,6 +1039,10 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     expect(oldDestination).toHaveValue("letters");
     expect(bridge.assignFoldersBatch).not.toHaveBeenCalled();
 
+    // Blake is opened first (their folders are listed then), and a folder of theirs after it.
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText(/^FAKE Blake( |$)/) }),
+    );
     openFolder(/^FAKE Blake visits/);
     expect(
       await screen.findByRole("heading", {
@@ -996,11 +1109,12 @@ describe("VaultLibrary choices without dropdowns (#67)", () => {
     const library = screen.getByRole("navigation", {
       name: humanText("Record library"),
     });
-    // Avery is open: Blake's folder shows, but does not move by drag.
-    const blakes = within(library).getByRole("button", {
-      name: humanText(/^FAKE School forms/),
-    });
-    expect(blakes).not.toHaveAttribute("draggable");
+    // Avery is open: Blake's folder is not listed, so it cannot be moved by drag from here.
+    expect(
+      within(library).queryByRole("button", {
+        name: humanText(/^FAKE School forms/),
+      }),
+    ).toBeNull();
     expect(
       within(library).getByRole("button", {
         name: humanText(/^FAKE June Letters/),
@@ -1271,9 +1385,25 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     ).toBeTruthy();
     expect(check.parentElement).toBe(search.parentElement);
     try {
-      await page.viewport(1100, 760);
+      // Beside the search box where the row has room for all five: the search box at its least
+      // (about 204px) + Sort 180 + View 108 + Help 59 + Check 215 + four 8px gaps = 798px of
+      // column. The sidebar takes about 205px, so a 1280px window gives about 980px.
+      await page.viewport(1280, 800);
       expect(box(check).left).toBeGreaterThanOrEqual(box(search).right);
       expect(box(check).top).toBeLessThan(box(search).bottom);
+      // At 1100px the column is right at that need (measured 798px here, about 756px in CI's
+      // browser, where a classic scrollbar and the frame take more): the button may sit beside
+      // the box or drop under it, and either way stays inside the row. Longer labels (French,
+      // Polish) and larger text wrap sooner. Whether to let the box shrink further is Ben's call.
+      await page.viewport(1100, 760);
+      const row = box(search.parentElement!);
+      const wrapped = box(check).top >= box(search).bottom;
+      expect(
+        wrapped || box(check).left >= box(search).right,
+        "beside the box, or under it",
+      ).toBe(true);
+      expect(box(check).left).toBeGreaterThanOrEqual(row.left - 0.5);
+      expect(box(check).right).toBeLessThanOrEqual(row.right + 0.5);
       // Narrow (a phone, or large text): the box keeps its width and the
       // button goes under it.
       await page.viewport(360, 800);
@@ -1283,7 +1413,7 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
     }
   });
 
-  it("leaves the search box the whole row when there is no clinic link", () => {
+  it("leaves the search box the room that is left in the row when there is no clinic link", () => {
     renderLibrary({ ...snapshot, portalLinkingEnabled: true }, 0, portal);
     const search = screen.getByRole("searchbox").closest("label")!;
     expect(
@@ -1291,7 +1421,11 @@ describe("VaultLibrary Check for new documents (Ben, 29 Oct)", () => {
         name: humanText("Check for new documents"),
       }),
     ).toBeNull();
-    expect(box(search).width).toBeCloseTo(box(search.parentElement!).width, 0);
+    // The row is shared with the Sort and View menus and the help button, but the box keeps
+    // the room that is left: more than any of them.
+    expect(box(search).width).toBeGreaterThan(
+      box(search.parentElement!).width / 3,
+    );
   });
   it("only offers Check in actual Shared with me through folder and settings transitions", () => {
     renderLibrary(linked, 0, portal);
@@ -1819,6 +1953,8 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     // then the folder opens, and only then does the heading take focus.
     await user.click(person("FAKE Blake"));
     await vi.waitFor(() => expect(heading()).toHaveFocus());
+    await user.click(person("FAKE Avery"));
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
     person("FAKE 2025 Letters").focus();
     await user.keyboard("{Enter}");
     expect(heading()).toHaveHumanTextContent("FAKE 2025 Letters");
@@ -1827,6 +1963,8 @@ describe("VaultLibrary for a screen reader (#121)", () => {
     await vi.waitFor(() =>
       expect(heading()).toHaveHumanTextContent("FAKE Blake"),
     );
+    await user.click(person("FAKE Avery"));
+    await vi.waitFor(() => expect(heading()).toHaveFocus());
     await user.click(person("FAKE June Letters"));
     expect(heading()).toHaveHumanTextContent("FAKE June Letters");
     await vi.waitFor(() => expect(heading()).toHaveFocus());
@@ -1928,10 +2066,13 @@ describe("VaultLibrary for a screen reader (#121)", () => {
       expect(pill).toHaveHumanTextContent(
         `${translate(locale, "library.lock.unlocked")} · ${lockNow}`,
       );
+      // Sort is a menu button that names its choice: "Sort by: Newest first" in this language.
       const label = translate(locale, "interface.VaultLibrary.sortBy");
-      const sort = screen.getByRole("group", { name: humanText(label) });
-      expect(within(sort).getByText(humanText(label))).toBeVisible();
-      expect(within(sort).getAllByRole("button")).toHaveLength(2);
+      const sortButton = screen.getByRole("button", {
+        name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+      });
+      expect(sortButton).toBeVisible();
+      expect(sortButton).toHaveAttribute("aria-haspopup", "menu");
     },
   );
 });
@@ -2229,7 +2370,7 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     // Seen from the AI helper section (#355) while the model's status could
     // not be read: the export's text only.
     fireEvent.click(
-      within(reader).getByRole("button", { name: humanText("Close") }),
+      within(reader).getByRole("button", { name: humanText("Back") }),
     );
     fireEvent.click(
       screen.getByRole("button", { name: humanText("AI helper") }),
@@ -2307,7 +2448,7 @@ describe("the AI helper's notice before the reader's first Summary", () => {
     await waitFor(() => expect(native.documentText).toHaveBeenCalledTimes(1));
     const readerRead = native.documentText.mock.calls[0][1] as string;
     fireEvent.click(
-      within(reader).getByRole("button", { name: humanText("Close") }),
+      within(reader).getByRole("button", { name: humanText("Back") }),
     );
     expect(native.cancelDocumentText).toHaveBeenCalledTimes(1);
     expect(native.cancelDocumentText).toHaveBeenLastCalledWith(readerRead);
@@ -2358,12 +2499,16 @@ describe("the AI helper's notice before the reader's first Summary", () => {
 
 describe("VaultLibrary folder tools that are not a drag", () => {
   const keyboardMove = () => {
-    const details = screen.getByText(
-      humanText("Move a folder with the keyboard"),
+    // In the overhaul the keyboard move sits in the panel the "?" button opens under the search
+    // (main's version of this test opened a closed disclosure): opened, as the patient would.
+    fireEvent.click(
+      screen.getByRole("button", { name: humanText("Help: this screen") }),
     );
-    // The tools sit in a closed disclosure: opened, as the patient would.
-    fireEvent.click(details);
-    const panel = details.closest("details") as HTMLElement;
+    const panel = screen
+      .getByRole("heading", {
+        name: humanText("Move a folder with the keyboard"),
+      })
+      .closest("section") as HTMLElement;
     return {
       folder: within(panel).getByLabelText("Folder") as HTMLSelectElement,
       destination: within(panel).getByLabelText(
@@ -2467,10 +2612,98 @@ describe("VaultLibrary folder tools that are not a drag", () => {
   it("renames the open folder from its heading", () => {
     renderLibrary();
     openFolder(/^FAKE Letters/);
-    fireEvent.click(screen.getByRole("button", { name: "Rename folder" }));
+    // In the overhaul Rename is an item of the open folder's "…" menu beside its heading, not a
+    // button of its own.
+    fireEvent.click(headMenuItemNow("Rename folder"));
     expect(
       screen.getByRole("dialog", { name: humanText(/Rename/) }),
     ).toBeVisible();
     expect(screen.getByLabelText("Folder name")).toHaveValue("FAKE Letters");
+  });
+});
+
+describe("VaultLibrary Add a video, an item of the Add document menu (#490)", () => {
+  const addApi = (over: Partial<AddVideoApi> = {}): AddVideoApi => ({
+    canAdd: true,
+    start: vi.fn().mockResolvedValue(undefined),
+    // Main's one picker hands a picked video over here.
+    addPicked: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn(),
+    reset: vi.fn(),
+    working: false,
+    cancelling: false,
+    progress: null,
+    outcome: null,
+    ...over,
+  });
+  const library = (extra: Partial<ComponentProps<typeof VaultLibrary>>) =>
+    renderLibrary(snapshot, 0, {}, true, {}, extra);
+
+  it("is offered where a video can be added, and not where it cannot", () => {
+    library({
+      addVideo: addApi(),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).not.toBeNull();
+    cleanup();
+    // An iPhone cannot add a video this way, and a bridge that cannot gives no item.
+    library({
+      addVideo: addApi(),
+      cameraPlatform: "ios",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeNull();
+    cleanup();
+    library({
+      addVideo: addApi({ canAdd: false }),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeNull();
+  });
+
+  it("waits while a video is being added", () => {
+    library({
+      addVideo: addApi({ working: true }),
+      cameraPlatform: "windows",
+    });
+    expect(queryAddMenuItem("Add a video")).toBeDisabled();
+  });
+
+  it("starts in the person's top level, or in the open folder", () => {
+    const addVideo = addApi();
+    library({ addVideo, cameraPlatform: "windows" });
+    fireEvent.click(addMenuItemNow("Add a video"));
+    expect(addVideo.start).toHaveBeenLastCalledWith("profile-1", []);
+    openFolder(/^FAKE Letters/);
+    fireEvent.click(addMenuItemNow("Add a video"));
+    expect(addVideo.start).toHaveBeenLastCalledWith("profile-1", ["letters"]);
+  });
+
+  it("gives the focus to the Add document button when the import ends, and takes none from a person who moved on", () => {
+    const extra: Partial<ComponentProps<typeof VaultLibrary>> = {
+      addVideo: addApi({ working: true }),
+      cameraPlatform: "windows",
+    };
+    const { rerenderSnapshot } = library(extra);
+    const cancel = document.querySelector<HTMLButtonElement>(
+      ".add-video-status button",
+    );
+    expect(cancel).not.toBeNull();
+    cancel!.focus();
+    extra.addVideo = addApi({ working: false });
+    rerenderSnapshot(snapshot);
+    // Cancel left the page with the import: the focus did not drop to the page.
+    const adds = screen.getAllByRole("button", {
+      name: humanText("Add document"),
+    });
+    expect(adds).toContain(document.activeElement);
+
+    // The same end, with the person already in the search box: it keeps the focus.
+    extra.addVideo = addApi({ working: true });
+    rerenderSnapshot(snapshot);
+    const search = screen.getByRole("searchbox");
+    search.focus();
+    extra.addVideo = addApi({ working: false });
+    rerenderSnapshot(snapshot);
+    expect(search).toHaveFocus();
   });
 });

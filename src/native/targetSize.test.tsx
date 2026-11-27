@@ -1,4 +1,5 @@
 import { humanText } from "../test/humanText";
+import { addMenuItemNow, toolbarMenuItemNow } from "../test/menus";
 import {
   within,
   cleanup,
@@ -254,15 +255,15 @@ describe("targets and text sizes in the app (#67)", () => {
         press("Select FAKE Results.pdf");
         expectComfortable("selected, with the bulk bar");
         press("Clear");
-        press(/^New folder/);
+        fireEvent.click(addMenuItemNow("New folder"));
         expectComfortable("new folder form");
         press("Cancel");
         press("Rename folder FAKE Letters");
         expectComfortable("rename folder");
         press("Cancel");
-        press("Grid view");
+        fireEvent.click(toolbarMenuItemNow("View", "Grid"));
         expectComfortable("grid");
-        press("List view");
+        fireEvent.click(toolbarMenuItemNow("View", "List"));
         press("Details for FAKE Results.pdf");
         expectComfortable("details");
         press("Rename document");
@@ -298,9 +299,16 @@ describe("targets and text sizes in the app (#67)", () => {
       return summaries.length;
     };
     renderLibrary();
+    // The library itself has no folded section now (the keyboard move help is the "?" panel's) and
+    // Preferences folds only where the platform supports what they explain, so the rule is
+    // checked on a folded section made here as well: a summary taller than a line keeps its triangle.
+    expectTriangles();
+    const folded = document.createElement("details");
+    folded.innerHTML =
+      "<summary>More about something with a long label</summary><p>FAKE</p>";
+    document.body.append(folded);
     expect(expectTriangles()).toBeGreaterThan(0);
-    // Security has none since its reset controls went (#71's third part):
-    // any it gains keeps its triangle too.
+    folded.remove();
     press(/^Security/);
     expectTriangles();
   });
@@ -330,22 +338,18 @@ describe("targets and text sizes in the app (#67)", () => {
           current: false,
         }),
       ],
-      [
-        screen.getByRole("button", {
-          name: humanText("List view"),
-          pressed: true,
-        }),
-        screen.getByRole("button", {
-          name: humanText("Grid view"),
-          pressed: false,
-        }),
-      ],
     ];
     for (const [chosen, other] of pairs) {
       expect(bar(chosen), chosen.textContent!).toContain("inset");
       expect(bar(chosen), chosen.textContent!).toContain(teal);
       expect(bar(other), other.textContent!).not.toContain("inset");
     }
+    // The chosen view and sort in their menus are told by a tick, not by colour.
+    const list = toolbarMenuItemNow("View", "List");
+    const grid = screen.getByRole("menuitemradio", { name: humanText("Grid") });
+    expect(list).toHaveAttribute("aria-checked", "true");
+    expect(list.textContent).toContain("✓");
+    expect(grid.textContent).not.toContain("✓");
   });
 
   it("draws an unticked box's edge at 3:1 or more (WCAG 1.4.11)", () => {
@@ -385,12 +389,14 @@ describe("targets and text sizes in the app (#67)", () => {
 
   it("shows body text at 16px", () => {
     renderLibrary();
+    // The drag hint is in the help the question mark opens.
+    press("Help: this screen");
     for (const element of [
+      screen.getByText(humanText(/Hold and drag a document or folder/)),
       screen.getByRole("button", { name: humanText("FAKE Results.pdf") }),
       screen.getByRole("button", {
         name: humanText("Details for FAKE Results.pdf"),
       }),
-      screen.getByText(humanText(/Hold and drag a document or folder/)),
     ])
       expect(getComputedStyle(element).fontSize).toBe("16px");
   });

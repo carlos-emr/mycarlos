@@ -235,8 +235,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = 此文档使用密
 
 interface-UnlockPdfDialog-unlocking = 正在解锁…
 
-interface-VaultApp-chooseFilesToImport = 选择要导入的文件
-
 interface-VaultLibrary-picturesNote = 您添加的图片会去掉拍摄地点、时间和相机信息。
 
 interface-VaultApp-finishingTheTransfer = 正在完成传输
@@ -311,6 +309,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = 使用键盘移动文件夹
 
 interface-VaultLibrary-moveFolder = 移动文件夹
 
+interface-VaultLibrary-moveFolderItem = 移动文件夹…
+
 interface-VaultLibrary-moveSelectedTo = 将所选项目移至
 
 interface-VaultLibrary-moveTheSelectedDocuments = 移动所选文档。
@@ -322,8 +322,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos 无法将变更�
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos 加密记录库
 
 interface-VaultLibrary-nameAZ = 名称 A–Z
-
-interface-VaultLibrary-new = 新建
 
 interface-VaultLibrary-newFolder = 新建文件夹
 
@@ -364,6 +362,12 @@ interface-VaultLibrary-section = 区段
 interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = 此设备上有些加密文件遗失。标示为损毁的文档无法打开或拷贝；请立即保存其他文档的副本。若要恢复变更功能，请从备份还原 myCarlos 文件夹，或隐藏损毁的文档。
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = 无法读取保险库中的部分文件；这些文件可能较新或仍完整，因此目前无法进行任何变更，包括变更密码短语和恢复密钥。您仍可打开文档并另存副本，但标示为「文件无法使用」的项目除外。请确认存放 myCarlos 文件夹的磁盘已连接、没有其他程序正在使用该文件夹，且云端同步工具已将文件保留在此设备上，然后锁定并重新解锁。
+
+interface-VaultLibrary-view = 视图
+
+interface-VaultLibrary-helpWithThisScreen = 本页帮助
+
+interface-VaultLibrary-moreFor = { $name } 的更多操作
 
 interface-VaultLibrary-sortBy = 排序方式
 
@@ -1184,9 +1188,15 @@ sidebar-folderCount = { $count } 个文件夹
 
 sidebar-folderOfPerson = { $folder }（{ $person }）
 
+sidebar-folders = 文件夹
+
+sidebar-foldersOf = { $name } 的文件夹
+
 sidebar-label = 记录库
 
 sidebar-myRecords = 我的记录
+
+sidebar-people = 人员
 
 sidebar-preferences = 偏好设置
 
@@ -1970,6 +1980,10 @@ interface-history-status = 状态
 
 interface-RecordDetails-anonymizeText = 为 AI 准备文本…
 
+interface-AddMenu-addDocument = 添加文档
+
+interface-AddMenu-importFile = 导入文件
+
 interface-AnonymizePreview-title = 已移除身份信息的文本
 
 interface-AnonymizePreview-reading = 正在读取文档…
@@ -2674,6 +2688,20 @@ notifications-testWait = 请等待几秒钟后再试。
 
 notifications-testFailed = 无法显示测试通知。
 notifications-testOff = myCarlos 中的通知已关闭。请先开启，然后重试。
+
+unlock-brand-tagline = 您的健康文档，私密保存在此设备上。
+
+reader-back = 返回
+
+reader-panel-label = 关于此文档
+
+reader-panel-more = 更多…
+
+reader-panel-ai = 用 AI 解释
+
+interface-VaultLibrary-help = 帮助
+
+interface-VaultLibrary-helpButtonName = 帮助：本页
 
 interface-AddVideo-add = 添加视频
 

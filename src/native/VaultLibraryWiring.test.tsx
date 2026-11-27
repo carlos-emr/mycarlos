@@ -1,4 +1,5 @@
 import { humanText, visibleText } from "../test/humanText";
+import { addMenuItemNow } from "../test/menus";
 import { useTextState } from "../i18n";
 import {
   act,
@@ -183,9 +184,7 @@ describe("the recording the library is told has ended", () => {
     snapshot: VaultSnapshot = base,
   ) => {
     const view = renderLibrary(snapshot, props);
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Record a video") }),
-    );
+    fireEvent.click(addMenuItemNow("Record a video"));
     await screen.findByRole("dialog", { name: "FAKE recording dialog" });
     return view;
   };

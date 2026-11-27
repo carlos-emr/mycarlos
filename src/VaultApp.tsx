@@ -447,8 +447,8 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         setNotice(
           deferredText(() =>
             translateCurrent("notice.dropRefused", {
-              // The import button, named as the library shows it ("New").
-              button: translateCurrent("interface.VaultLibrary.new"),
+              // The way to import, named as the library shows it: the Add document menu's item.
+              button: `${translateCurrent("interface.AddMenu.addDocument")} › ${translateCurrent("interface.AddMenu.importFile")}`,
             }),
           ),
         );

@@ -119,7 +119,6 @@ export const MESSAGE_KEYS = [
   "interface.SecuritySettings.whatMyCarlosKeeps",
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking",
-  "interface.VaultApp.chooseFilesToImport",
   "interface.VaultLibrary.picturesNote",
   "interface.VaultApp.finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer",
@@ -157,13 +156,13 @@ export const MESSAGE_KEYS = [
   "interface.VaultLibrary.listView",
   "interface.VaultLibrary.moveAFolderWithTheKeyboard",
   "interface.VaultLibrary.moveFolder",
+  "interface.VaultLibrary.moveFolderItem",
   "interface.VaultLibrary.moveSelectedTo",
   "interface.VaultLibrary.moveTheSelectedDocuments",
   "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou",
   "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo",
   "interface.VaultLibrary.myCarlosEncryptedRecordLibrary",
   "interface.VaultLibrary.nameAZ",
-  "interface.VaultLibrary.new",
   "interface.VaultLibrary.newFolder",
   "interface.VaultLibrary.newestFirst",
   "interface.VaultLibrary.noFilesSelectedNothingChanged",
@@ -1397,6 +1396,21 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "interface.AddMenu.addDocument",
+  "interface.AddMenu.importFile",
+  "sidebar.folders",
+  "sidebar.foldersOf",
+  "sidebar.people",
+  "interface.VaultLibrary.view",
+  "interface.VaultLibrary.helpWithThisScreen",
+  "interface.VaultLibrary.moreFor",
+  "unlock.brand.tagline",
+  "reader.back",
+  "reader.panel.label",
+  "reader.panel.more",
+  "reader.panel.ai",
+  "interface.VaultLibrary.help",
+  "interface.VaultLibrary.helpButtonName",
   "interface.AddVideo.add",
   "interface.AddVideo.hint",
   "interface.AddVideo.checking",
@@ -1579,8 +1593,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword":
     "interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking": "interface-UnlockPdfDialog-unlocking",
-  "interface.VaultApp.chooseFilesToImport":
-    "interface-VaultApp-chooseFilesToImport",
   "interface.VaultLibrary.picturesNote": "interface-VaultLibrary-picturesNote",
   "interface.VaultApp.finishingTheTransfer":
     "interface-VaultApp-finishingTheTransfer",
@@ -1643,6 +1655,8 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.moveAFolderWithTheKeyboard":
     "interface-VaultLibrary-moveAFolderWithTheKeyboard",
   "interface.VaultLibrary.moveFolder": "interface-VaultLibrary-moveFolder",
+  "interface.VaultLibrary.moveFolderItem":
+    "interface-VaultLibrary-moveFolderItem",
   "interface.VaultLibrary.moveSelectedTo":
     "interface-VaultLibrary-moveSelectedTo",
   "interface.VaultLibrary.moveTheSelectedDocuments":
@@ -1654,7 +1668,6 @@ const FLUENT_IDS_BY_KEY = {
   "interface.VaultLibrary.myCarlosEncryptedRecordLibrary":
     "interface-VaultLibrary-myCarlosEncryptedRecordLibrary",
   "interface.VaultLibrary.nameAZ": "interface-VaultLibrary-nameAZ",
-  "interface.VaultLibrary.new": "interface-VaultLibrary-new",
   "interface.VaultLibrary.newFolder": "interface-VaultLibrary-newFolder",
   "interface.VaultLibrary.newestFirst": "interface-VaultLibrary-newestFirst",
   "interface.VaultLibrary.noFilesSelectedNothingChanged":
@@ -3096,6 +3109,23 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "interface.AddMenu.addDocument": "interface-AddMenu-addDocument",
+  "interface.AddMenu.importFile": "interface-AddMenu-importFile",
+  "sidebar.folders": "sidebar-folders",
+  "sidebar.foldersOf": "sidebar-foldersOf",
+  "sidebar.people": "sidebar-people",
+  "interface.VaultLibrary.view": "interface-VaultLibrary-view",
+  "interface.VaultLibrary.helpWithThisScreen":
+    "interface-VaultLibrary-helpWithThisScreen",
+  "interface.VaultLibrary.moreFor": "interface-VaultLibrary-moreFor",
+  "unlock.brand.tagline": "unlock-brand-tagline",
+  "reader.back": "reader-back",
+  "reader.panel.label": "reader-panel-label",
+  "reader.panel.more": "reader-panel-more",
+  "reader.panel.ai": "reader-panel-ai",
+  "interface.VaultLibrary.help": "interface-VaultLibrary-help",
+  "interface.VaultLibrary.helpButtonName":
+    "interface-VaultLibrary-helpButtonName",
   "interface.AddVideo.add": "interface-AddVideo-add",
   "interface.AddVideo.hint": "interface-AddVideo-hint",
   "interface.AddVideo.checking": "interface-AddVideo-checking",
@@ -3257,7 +3287,6 @@ export interface MessageArgsByKey {
   "interface.SecuritySettings.whatMyCarlosKeeps": undefined;
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword": undefined;
   "interface.UnlockPdfDialog.unlocking": undefined;
-  "interface.VaultApp.chooseFilesToImport": undefined;
   "interface.VaultLibrary.picturesNote": undefined;
   "interface.VaultApp.finishingTheTransfer": undefined;
   "interface.VaultApp.lockNowAndCancelTheTransfer": undefined;
@@ -3295,13 +3324,13 @@ export interface MessageArgsByKey {
   "interface.VaultLibrary.listView": undefined;
   "interface.VaultLibrary.moveAFolderWithTheKeyboard": undefined;
   "interface.VaultLibrary.moveFolder": undefined;
+  "interface.VaultLibrary.moveFolderItem": undefined;
   "interface.VaultLibrary.moveSelectedTo": undefined;
   "interface.VaultLibrary.moveTheSelectedDocuments": undefined;
   "interface.VaultLibrary.moveThemIntoYourFoldersWheneverYou": undefined;
   "interface.VaultLibrary.myCarlosCouldNotSaveAChangeTo": undefined;
   "interface.VaultLibrary.myCarlosEncryptedRecordLibrary": undefined;
   "interface.VaultLibrary.nameAZ": undefined;
-  "interface.VaultLibrary.new": undefined;
   "interface.VaultLibrary.newFolder": undefined;
   "interface.VaultLibrary.newestFirst": undefined;
   "interface.VaultLibrary.noFilesSelectedNothingChanged": undefined;
@@ -4655,6 +4684,21 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "interface.AddMenu.addDocument": undefined;
+  "interface.AddMenu.importFile": undefined;
+  "sidebar.folders": undefined;
+  "sidebar.foldersOf": { name: FluentArgument };
+  "sidebar.people": undefined;
+  "interface.VaultLibrary.view": undefined;
+  "interface.VaultLibrary.helpWithThisScreen": undefined;
+  "interface.VaultLibrary.moreFor": { name: FluentArgument };
+  "unlock.brand.tagline": undefined;
+  "reader.back": undefined;
+  "reader.panel.label": undefined;
+  "reader.panel.more": undefined;
+  "reader.panel.ai": undefined;
+  "interface.VaultLibrary.help": undefined;
+  "interface.VaultLibrary.helpButtonName": undefined;
   "interface.AddVideo.add": undefined;
   "interface.AddVideo.hint": undefined;
   "interface.AddVideo.checking": undefined;

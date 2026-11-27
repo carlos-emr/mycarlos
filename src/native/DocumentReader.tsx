@@ -6,6 +6,7 @@ import {
 } from "../i18n";
 import { ClinicServiceDate } from "./ClinicServiceDate";
 import { RecordSource } from "./RecordSource";
+import { formatBytes } from "./recordPresentation";
 
 import {
   useEffect,
@@ -174,6 +175,12 @@ type DocumentReaderProps = {
   startWithAid?: boolean;
   /** A platform-native original reader, when the reading aid remains in the app. */
   onOpenOriginal?: () => void;
+  /** Where the document is kept, in words, for the panel's facts. */
+  placeLabel?: string;
+  /** Save a copy of the document to this computer (the panel's button). */
+  onSaveCopy?: () => void;
+  /** Opens the document's full details: move, rename, hide and the rest. */
+  onMore?: () => void;
 };
 
 /** Reads a stored document inside myCarlos, one page at a time. Each page is
@@ -195,6 +202,9 @@ function ReadingDocument({
   ai,
   startWithAid = false,
   onOpenOriginal,
+  placeLabel,
+  onSaveCopy,
+  onMore,
 }: DocumentReaderProps) {
   useI18n();
   const aid = record.readingAid;
@@ -311,26 +321,28 @@ function ReadingDocument({
     };
   }, [showingAid]);
 
-  // When the reader scrolls (large text, small window), the page bar stays
-  // over its foot. Its height is kept as the reader's scroll padding, so that
-  // a control the focus moves to is scrolled clear of the bar, not under it.
+  // When the reader scrolls (large text, small window), the top toolbar stays over its top. Its
+  // height is kept as the reader's scroll padding, so that a control the focus moves to is
+  // scrolled clear of it, not under it. The toolbar is there whenever the original is shown (its
+  // zoom row too), also while the first page loads, while the document asks for its password and
+  // when a page fails, so the padding follows the toolbar, not the page bar inside it.
   const barRef = useRef<HTMLDivElement | null>(null);
   const hasBar = pageCount !== null && !showingAid;
   useEffect(() => {
-    const bar = barRef.current;
+    const toolbar = barRef.current;
     const reader = dialogRef.current;
-    if (!bar || !reader) return;
+    if (!toolbar || !reader) return;
     const pad = () => {
-      reader.style.scrollPaddingBottom = `${bar.offsetHeight}px`;
+      reader.style.scrollPaddingTop = `${toolbar.offsetHeight}px`;
     };
     pad();
     const observer = new ResizeObserver(pad);
-    observer.observe(bar);
+    observer.observe(toolbar);
     return () => {
       observer.disconnect();
-      reader.style.scrollPaddingBottom = "";
+      reader.style.scrollPaddingTop = "";
     };
-  }, [hasBar]);
+  }, [showingAid]);
 
   const remember = (key: string, result: ViewedPage) =>
     cacheDrawnPage(drawn.current, key, result);
@@ -437,7 +449,7 @@ function ReadingDocument({
   };
   // The text box keeps its height while the next page is drawn. Emptied, it
   // would let a scrolling reader scroll up, and the new text would then come
-  // back under the page bar (WebKit has no scroll anchoring to keep the
+  // back under the top toolbar (WebKit has no scroll anchoring to keep the
   // focused box in place).
   const textHeight = useRef(0);
   useLayoutEffect(() => {
@@ -635,6 +647,46 @@ function ReadingDocument({
     else if (ai?.beforeFirstUse) ai.beforeFirstUse(() => setAiTool(tool));
     else setAiTool(tool);
   };
+  // The panel beside the page: the facts about the document, then what can be done with it.
+  const panel = (
+    <>
+      <dl className="record-metadata native-reader-facts">
+        <div>
+          <dt>{translateNow("library.column.added")}</dt>
+          <dd>{new Date(record.importedAtMs).toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>{translateNow("interface.RecordDetails.file")}</dt>
+          <dd>{formatBytes(record.plaintextSize)}</dd>
+        </div>
+        {placeLabel && (
+          <div>
+            <dt>{translateNow("interface.RecordDetails.folder")}</dt>
+            <dd>{placeLabel}</dd>
+          </div>
+        )}
+      </dl>
+      {(onSaveCopy || onMore) && (
+        <div className="native-reader-panel-actions">
+          {onSaveCopy && (
+            <button className="button" type="button" onClick={onSaveCopy}>
+              {translateNow("interface.RecordDetails.saveACopyToThisComputer")}
+            </button>
+          )}
+          {onMore && (
+            <button
+              className="button"
+              type="button"
+              aria-haspopup="dialog"
+              onClick={onMore}
+            >
+              {translateNow("reader.panel.more")}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -651,6 +703,15 @@ function ReadingDocument({
         onKeyDown={turnPageWithKeys}
       >
         <header className="dialog-head native-reader-head native-reader-head-flow">
+          <button
+            ref={closeRef}
+            className="button native-reader-back"
+            type="button"
+            onClick={onClose}
+          >
+            <span aria-hidden="true">‹</span>
+            <span>{translateNow("reader.back")}</span>
+          </button>
           <div>
             <h2 id="reader-title">{record.displayName}</h2>
             <p id="reader-trust">
@@ -668,14 +729,6 @@ function ReadingDocument({
                 {translateNow("readingAid.open")}
               </button>
             )}
-            <button
-              ref={closeRef}
-              className="button"
-              type="button"
-              onClick={onClose}
-            >
-              {translateNow("photo.close")}
-            </button>
           </span>
         </header>
         {showingAid && aid ? (
@@ -693,9 +746,63 @@ function ReadingDocument({
           />
         ) : (
           <>
-            {/* Zoom at the top left, then the AI helper's actions; the page
-                buttons are in the bar at the foot (D144). */}
-            <div className="native-reader-controls">
+            {/* The top bar (RestReader): the pages, then the zoom. The back button is in the header
+                above, and what can be done with the document is in the panel beside the page. */}
+            <div className="native-reader-toolbar" ref={barRef}>
+              {/* The page bar, in the sticky toolbar over the reader's top. In words, not
+                arrows. On a narrow reader the count is on top, then Previous | Next, then
+                First | Last (styles.css); the order read out stays this one. */}
+              {hasBar && (
+                <div
+                  className={
+                    turnsPages
+                      ? "native-reader-pages"
+                      : "native-reader-pages one-page"
+                  }
+                >
+                  {turnsPages && (
+                    <>
+                      <ReaderButton
+                        className="native-reader-first"
+                        keys="Home"
+                        unavailable={loading || page === 0}
+                        onPress={() => goTo(0)}
+                      >
+                        {translateNow("interface.DocumentReader.firstPage")}
+                      </ReaderButton>
+                      <ReaderButton
+                        className="native-reader-previous"
+                        keys="PageUp"
+                        unavailable={loading || page === 0}
+                        onPress={() => goTo(page - 1)}
+                      >
+                        {translateNow("interface.DocumentReader.previousPage")}
+                      </ReaderButton>
+                    </>
+                  )}
+                  <span className="native-reader-where">{where}</span>
+                  {turnsPages && (
+                    <>
+                      <ReaderButton
+                        className="native-reader-next"
+                        keys="PageDown"
+                        unavailable={loading || page >= last}
+                        onPress={() => goTo(page + 1)}
+                      >
+                        {translateNow("interface.DocumentReader.nextPage")}
+                      </ReaderButton>
+                      <ReaderButton
+                        className="native-reader-last"
+                        keys="End"
+                        unavailable={loading || page >= last}
+                        onPress={() => goTo(last)}
+                      >
+                        {translateNow("interface.DocumentReader.lastPage")}
+                      </ReaderButton>
+                    </>
+                  )}
+                </div>
+              )}
               <span className="native-reader-zoom">
                 <ReaderButton
                   unavailable={!zoomable || zoom <= ZOOM_MIN}
@@ -729,272 +836,242 @@ function ReadingDocument({
                   {translateNow("interface.DocumentReader.fitWidth")}
                 </ReaderButton>
               </span>
-              {ai && (
-                <span className="native-reader-ai-actions">
-                  <button
-                    className="button"
-                    type="button"
-                    ref={summaryButtonRef}
-                    aria-expanded={aiTool === "summary"}
-                    aria-controls={
-                      aiTool === "summary" ? "reader-ai-panel" : undefined
-                    }
-                    onClick={() => toggleAi("summary")}
+            </div>
+            <div className="native-reader-body">
+              <div className="native-reader-main">
+                <p
+                  className={
+                    loading && !asking ? "native-dialog-status" : "sr-only"
+                  }
+                  role="status"
+                >
+                  {loading && !asking
+                    ? translateNow("interface.reader.opening", {
+                        page: page + 1,
+                      })
+                    : current
+                      ? translateNow("interface.reader.where", {
+                          page: shown.page + 1,
+                          total: shown.pageCount,
+                        })
+                      : ""}
+                </p>
+                {asking && (
+                  <form
+                    className="native-reader-password"
+                    onSubmit={giveDocumentPassword}
                   >
-                    {translateNow("ai.summary.button")}
-                  </button>
-                  {AI_EXPLAIN_ENABLED && (
+                    <p id="reader-password-help">
+                      {translateNow(
+                        "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
+                      )}
+                    </p>
+                    <label htmlFor="reader-password">
+                      {translateNow(
+                        "interface.DocumentReader.documentPassword",
+                      )}
+                    </label>
+                    <input
+                      ref={passwordRef}
+                      id="reader-password"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={typed}
+                      aria-describedby={
+                        wrongTries
+                          ? "reader-password-help reader-password-error"
+                          : "reader-password-help"
+                      }
+                      aria-invalid={wrongTries ? true : undefined}
+                      onChange={(event) => setTyped(event.target.value)}
+                    />
+                    {wrongTries > 0 && (
+                      <p
+                        id="reader-password-error"
+                        role="alert"
+                        key={wrongTries}
+                      >
+                        {translateNow(
+                          "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+                        )}
+                      </p>
+                    )}
+                    <button className="button primary" disabled={!typed}>
+                      {translateNow("interface.DocumentReader.open")}
+                    </button>
+                  </form>
+                )}
+                {error && <p role="alert">{error}</p>}
+                {/* Focusable, so that a zoomed page can be moved with the arrow keys
+            where the webview does not focus scrolling areas itself. */}
+                <div
+                  className="native-reader-page"
+                  aria-busy={loading}
+                  ref={pageRef}
+                  tabIndex={0}
+                  role="region"
+                  aria-label={translateNow("interface.reader.page", {
+                    page: current ? shown.page + 1 : page + 1,
+                  })}
+                >
+                  {current && (
+                    <span className="native-reader-picture">
+                      <img
+                        src={shown.image}
+                        alt={translateNow("interface.reader.textFollows", {
+                          page: shown.page + 1,
+                          total: shown.pageCount,
+                        })}
+                        style={{ width: `${cssWidth}px` }}
+                        onLoad={() => {
+                          setLoadedImage(shown.image);
+                          pageDrawn(shown.page);
+                        }}
+                        onError={() => setLoadedImage(null)}
+                      />
+                      {/* The quoted words on the picture: for seeing only. The
+                  marked text below is what a screen reader reads (#292). */}
+                      {boxes && boxes.length > 0 && (
+                        <span
+                          className="native-reader-boxes"
+                          aria-hidden="true"
+                        >
+                          {boxes.map((box, index) => (
+                            <span
+                              key={index}
+                              ref={index === 0 ? firstBoxRef : undefined}
+                              style={boxStyle(box)}
+                            />
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+                {/* Said once the boxes are known (#292). A live region of its
+            own, beside the reader's status, which says the page. */}
+                {pageBoxes && (
+                  <p className="sr-only" id="reader-marked" aria-live="polite">
+                    {boxes && highlight
+                      ? translateNow(
+                          boxes.length > 0
+                            ? "interface.reader.markedOnPage"
+                            : "interface.reader.markedInText",
+                          { page: highlight.page + 1 },
+                        )
+                      : ""}
+                  </p>
+                )}
+                {/* Kept while the next page is drawn (empty and busy), so that a
+                page turned with the keys from inside the text keeps the focus
+                there, and the box stays open for the next page. */}
+                {shown && !asking && !error && (
+                  <details
+                    className={`native-reader-text${
+                      markQuiet ? " native-reader-text-mark-quiet" : ""
+                    }`}
+                    open={textOpen}
+                    onToggle={(event) => setTextOpen(event.currentTarget.open)}
+                  >
+                    <summary id="reader-text-title">
+                      {translateNow("interface.DocumentReader.textOnThisPage")}
+                    </summary>
+                    {/* Focusable and scrolled on its own, so that a click in the
+                    text lets the keys scroll it, and the page keys turn the
+                    page only at its top or end. */}
+                    <div
+                      ref={textRef}
+                      tabIndex={0}
+                      role="region"
+                      aria-labelledby="reader-text-title"
+                      aria-busy={!current}
+                      style={
+                        current
+                          ? undefined
+                          : { minHeight: `${textHeight.current}px` }
+                      }
+                    >
+                      {!current ? (
+                        ""
+                      ) : !shownText ? (
+                        translateNow(
+                          "interface.DocumentReader.noTextCouldBeReadOnThis",
+                        )
+                      ) : marked && marked.end > marked.start ? (
+                        <>
+                          {shownText.slice(0, marked.start)}
+                          <mark ref={markRef} tabIndex={-1}>
+                            {shownText.slice(marked.start, marked.end)}
+                          </mark>
+                          {shownText.slice(marked.end)}
+                        </>
+                      ) : (
+                        shownText
+                      )}
+                    </div>
+                  </details>
+                )}
+              </div>
+              <aside
+                className="native-reader-panel"
+                aria-label={translateNow("reader.panel.label")}
+              >
+                {panel}
+                {ai && (
+                  <h3 className="native-reader-panel-heading">
+                    {translateNow("reader.panel.ai")}
+                  </h3>
+                )}
+                {ai && (
+                  <span className="native-reader-ai-actions">
                     <button
                       className="button"
                       type="button"
-                      aria-expanded={aiTool === "explain"}
+                      ref={summaryButtonRef}
+                      aria-expanded={aiTool === "summary"}
                       aria-controls={
-                        aiTool === "explain" ? "reader-ai-panel" : undefined
+                        aiTool === "summary" ? "reader-ai-panel" : undefined
                       }
-                      onClick={() => toggleAi("explain")}
+                      onClick={() => toggleAi("summary")}
                     >
-                      {translateNow("ai.explain.title")}
+                      {translateNow("ai.summary.button")}
                     </button>
-                  )}
-                </span>
-              )}
-            </div>
-            <p
-              className={
-                loading && !asking ? "native-dialog-status" : "sr-only"
-              }
-              role="status"
-            >
-              {loading && !asking
-                ? translateNow("interface.reader.opening", { page: page + 1 })
-                : current
-                  ? translateNow("interface.reader.where", {
-                      page: shown.page + 1,
-                      total: shown.pageCount,
-                    })
-                  : ""}
-            </p>
-            {asking && (
-              <form
-                className="native-reader-password"
-                onSubmit={giveDocumentPassword}
-              >
-                <p id="reader-password-help">
-                  {translateNow(
-                    "interface.DocumentReader.thisDocumentIsLockedWithItsOwn",
-                  )}
-                </p>
-                <label htmlFor="reader-password">
-                  {translateNow("interface.DocumentReader.documentPassword")}
-                </label>
-                <input
-                  ref={passwordRef}
-                  id="reader-password"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={typed}
-                  aria-describedby={
-                    wrongTries
-                      ? "reader-password-help reader-password-error"
-                      : "reader-password-help"
-                  }
-                  aria-invalid={wrongTries ? true : undefined}
-                  onChange={(event) => setTyped(event.target.value)}
-                />
-                {wrongTries > 0 && (
-                  <p id="reader-password-error" role="alert" key={wrongTries}>
-                    {translateNow(
-                      "interface.DocumentReader.thatPasswordDidNotOpenTheDocument",
+                    {AI_EXPLAIN_ENABLED && (
+                      <button
+                        className="button"
+                        type="button"
+                        aria-expanded={aiTool === "explain"}
+                        aria-controls={
+                          aiTool === "explain" ? "reader-ai-panel" : undefined
+                        }
+                        onClick={() => toggleAi("explain")}
+                      >
+                        {translateNow("ai.explain.title")}
+                      </button>
                     )}
-                  </p>
+                  </span>
                 )}
-                <button className="button primary" disabled={!typed}>
-                  {translateNow("interface.DocumentReader.open")}
-                </button>
-              </form>
-            )}
-            {error && <p role="alert">{error}</p>}
-            {/* Focusable, so that a zoomed page can be moved with the arrow keys
-            where the webview does not focus scrolling areas itself. */}
-            <div
-              className="native-reader-page"
-              aria-busy={loading}
-              ref={pageRef}
-              tabIndex={0}
-              role="region"
-              aria-label={translateNow("interface.reader.page", {
-                page: current ? shown.page + 1 : page + 1,
-              })}
-            >
-              {current && (
-                <span className="native-reader-picture">
-                  <img
-                    src={shown.image}
-                    alt={translateNow("interface.reader.textFollows", {
-                      page: shown.page + 1,
-                      total: shown.pageCount,
-                    })}
-                    style={{ width: `${cssWidth}px` }}
-                    onLoad={() => {
-                      setLoadedImage(shown.image);
-                      pageDrawn(shown.page);
+                {ai && aiTool && (
+                  <ReaderAiPanel
+                    key={aiTool}
+                    ai={ai}
+                    tool={aiTool}
+                    initialTerm={aiTool === "explain" ? selected.current : ""}
+                    contextFor={(term) => sentenceAround(pageText, term)}
+                    onShowSource={showSource}
+                    quoteShown={marked !== null}
+                    // Not summarizing a document too long to read at once
+                    // closes the panel, back on the button that opened it.
+                    onCancel={() => {
+                      setAiTool(null);
+                      summaryButtonRef.current?.focus();
                     }}
-                    onError={() => setLoadedImage(null)}
+                    onReturnFocus={() => summaryButtonRef.current?.focus()}
                   />
-                  {/* The quoted words on the picture: for seeing only. The
-                  marked text below is what a screen reader reads (#292). */}
-                  {boxes && boxes.length > 0 && (
-                    <span className="native-reader-boxes" aria-hidden="true">
-                      {boxes.map((box, index) => (
-                        <span
-                          key={index}
-                          ref={index === 0 ? firstBoxRef : undefined}
-                          style={boxStyle(box)}
-                        />
-                      ))}
-                    </span>
-                  )}
-                </span>
-              )}
+                )}
+              </aside>
             </div>
-            {/* Said once the boxes are known (#292). A live region of its
-            own, beside the reader's status, which says the page. */}
-            {pageBoxes && (
-              <p className="sr-only" id="reader-marked" aria-live="polite">
-                {boxes && highlight
-                  ? translateNow(
-                      boxes.length > 0
-                        ? "interface.reader.markedOnPage"
-                        : "interface.reader.markedInText",
-                      { page: highlight.page + 1 },
-                    )
-                  : ""}
-              </p>
-            )}
-            {/* Kept while the next page is drawn (empty and busy), so that a
-                page turned with the keys from inside the text keeps the focus
-                there, and the box stays open for the next page. */}
-            {shown && !asking && !error && (
-              <details
-                className={`native-reader-text${
-                  markQuiet ? " native-reader-text-mark-quiet" : ""
-                }`}
-                open={textOpen}
-                onToggle={(event) => setTextOpen(event.currentTarget.open)}
-              >
-                <summary id="reader-text-title">
-                  {translateNow("interface.DocumentReader.textOnThisPage")}
-                </summary>
-                {/* Focusable and scrolled on its own, so that a click in the
-                    text lets the keys scroll it, and the page keys turn the
-                    page only at its top or end. */}
-                <div
-                  ref={textRef}
-                  tabIndex={0}
-                  role="region"
-                  aria-labelledby="reader-text-title"
-                  aria-busy={!current}
-                  style={
-                    current
-                      ? undefined
-                      : { minHeight: `${textHeight.current}px` }
-                  }
-                >
-                  {!current ? (
-                    ""
-                  ) : !shownText ? (
-                    translateNow(
-                      "interface.DocumentReader.noTextCouldBeReadOnThis",
-                    )
-                  ) : marked && marked.end > marked.start ? (
-                    <>
-                      {shownText.slice(0, marked.start)}
-                      <mark ref={markRef} tabIndex={-1}>
-                        {shownText.slice(marked.start, marked.end)}
-                      </mark>
-                      {shownText.slice(marked.end)}
-                    </>
-                  ) : (
-                    shownText
-                  )}
-                </div>
-              </details>
-            )}
-            {ai && aiTool && (
-              <ReaderAiPanel
-                key={aiTool}
-                ai={ai}
-                tool={aiTool}
-                initialTerm={aiTool === "explain" ? selected.current : ""}
-                contextFor={(term) => sentenceAround(pageText, term)}
-                onShowSource={showSource}
-                quoteShown={marked !== null}
-                // Not summarizing a document too long to read at once
-                // closes the panel, back on the button that opened it.
-                onCancel={() => {
-                  setAiTool(null);
-                  summaryButtonRef.current?.focus();
-                }}
-                onReturnFocus={() => summaryButtonRef.current?.focus()}
-              />
-            )}
-            {/* D144: the page bar, kept in view at the reader's foot, after
-                everything it turns. In words, not arrows. On a narrow reader
-                the count is on top, then Previous | Next, then First | Last
-                (styles.css); the order read out stays this one. */}
-            {hasBar && (
-              <div
-                ref={barRef}
-                className={
-                  turnsPages
-                    ? "native-reader-pages"
-                    : "native-reader-pages one-page"
-                }
-              >
-                {turnsPages && (
-                  <>
-                    <ReaderButton
-                      className="native-reader-first"
-                      keys="Home"
-                      unavailable={loading || page === 0}
-                      onPress={() => goTo(0)}
-                    >
-                      {translateNow("interface.DocumentReader.firstPage")}
-                    </ReaderButton>
-                    <ReaderButton
-                      className="native-reader-previous"
-                      keys="PageUp"
-                      unavailable={loading || page === 0}
-                      onPress={() => goTo(page - 1)}
-                    >
-                      {translateNow("interface.DocumentReader.previousPage")}
-                    </ReaderButton>
-                  </>
-                )}
-                <span className="native-reader-where">{where}</span>
-                {turnsPages && (
-                  <>
-                    <ReaderButton
-                      className="native-reader-next"
-                      keys="PageDown"
-                      unavailable={loading || page >= last}
-                      onPress={() => goTo(page + 1)}
-                    >
-                      {translateNow("interface.DocumentReader.nextPage")}
-                    </ReaderButton>
-                    <ReaderButton
-                      className="native-reader-last"
-                      keys="End"
-                      unavailable={loading || page >= last}
-                      onPress={() => goTo(last)}
-                    >
-                      {translateNow("interface.DocumentReader.lastPage")}
-                    </ReaderButton>
-                  </>
-                )}
-              </div>
-            )}
           </>
         )}
       </section>

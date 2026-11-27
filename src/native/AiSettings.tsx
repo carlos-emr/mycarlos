@@ -5,6 +5,7 @@ import {
   showFullAiLabelAgain,
   subscribeAiLabel,
 } from "../aiLabelPreference";
+import { Icon } from "../Icon";
 import { useI18n } from "../i18n";
 import type { ModelStatus } from "../ai/types";
 import { AiModelSetting } from "./AiModelSetting";
@@ -44,7 +45,12 @@ export function AiSettings({
           <p>{t("ai.settings.subtitle")}</p>
         </div>
       </div>
-      <div className="setting-list">
+      {/* The warning that goes with every AI answer, in words that are always on this page. */}
+      <div className="purpose-note warning">
+        <Icon name="info" />
+        <span>{t("aiHelper.notice.adviceBody")}</span>
+      </div>
+      <div className="setting-list setting-cards">
         <section className="setting-row">
           <div>
             <h2>

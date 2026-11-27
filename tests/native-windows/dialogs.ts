@@ -5,6 +5,7 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { translate } from "../support/fluent";
+import { chooseAdd } from "../support/menus";
 
 type Request = { id: number; action: string; title: string; value: string };
 type State = {
@@ -392,13 +393,10 @@ export async function testNativeDialogs(
         ).toBe(
           "41e61a36137b8f4c79a284a73adb36d634708625831c88c60e05e961756d51a9",
         );
+        // The overhaul's one Add document menu replaced the "New" button: open it and press
+        // its "Import a file" item (the same helper the browser specs use).
         const imported = await Promise.allSettled([
-          page
-            .getByRole("button", {
-              name: translate("en", "interface.VaultLibrary.new"),
-              exact: true,
-            })
-            .click(),
+          chooseAdd(page, translate("en", "interface.AddMenu.importFile")),
           native("FILE_OPEN", "file", pdfPath),
         ]);
         for (const result of imported)
@@ -639,10 +637,14 @@ export async function testNativeDialogs(
         await page.screenshot({
           path: testInfo.outputPath("native-pdf-reader-refitted.png"),
         });
+        // The document reader's first control is Back (it was Close before the overhaul).
         await reader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
-        // PDF Read removed Details; Close returns directly to the library.
+        // PDF Read removed Details; Back returns directly to the library.
         await expect(reader).toHaveCount(0);
         await expect(picture).toHaveCount(0);
         await expect(records).toBeVisible();
@@ -736,12 +738,7 @@ export async function testNativeDialogs(
           "ddee7f163612ef7b893fafa12baeaf9970650850dcc5fcc65789b8b6f230cc72",
         );
         const importedSpaced = await Promise.allSettled([
-          page
-            .getByRole("button", {
-              name: translate("en", "interface.VaultLibrary.new"),
-              exact: true,
-            })
-            .click(),
+          chooseAdd(page, translate("en", "interface.AddMenu.importFile")),
           native("FILE_OPEN", "file", spacedPath),
         ]);
         for (const result of importedSpaced)
@@ -854,7 +851,10 @@ export async function testNativeDialogs(
           ),
         });
         await copyReader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
         await expect(copyReader).toHaveCount(0);
         await expect(records).toBeVisible();
@@ -946,14 +946,17 @@ export async function testNativeDialogs(
           ),
         });
         await originalReader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
         await expect(originalReader).toHaveCount(0);
         await expect(originalPicture).toHaveCount(0);
         await expect(records).toBeVisible();
         await expect(originalRow).toBeVisible();
 
-        // The same original must ask again; Close ended the reading session.
+        // The same original must ask again; Back ended the reading session.
         await originalRow.click();
         await originalReader
           .getByRole("button", {
@@ -975,7 +978,10 @@ export async function testNativeDialogs(
           ),
         });
         await originalReader
-          .getByRole("button", { name: "Close", exact: true })
+          .getByRole("button", {
+            name: translate("en", "reader.back"),
+            exact: true,
+          })
           .click();
         await expect(originalReader).toHaveCount(0);
         await expect(records).toBeVisible();

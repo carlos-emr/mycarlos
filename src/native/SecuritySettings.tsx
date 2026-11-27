@@ -423,131 +423,9 @@ export function SecuritySettings({
       <p className="status-line" role="status" aria-live="polite">
         {notice}
       </p>
-      <div className="setting-list">
-        <section className="setting-row">
-          <div>
-            <h2>
-              {translateNow("security.encryption.title")}{" "}
-              <span className="state-pill">
-                {translateNow("security.encryption.state")}
-              </span>
-            </h2>
-            <p>{translateNow("security.encryption.body")}</p>
-          </div>
-        </section>
-        <section className="setting-row native-setting-form">
-          <div>
-            <h2>{translateNow("security.passphrase.title")}</h2>
-            <p>
-              {translateNow("security.passphrase.rules", {
-                min: MIN_PASSPHRASE_CHARS,
-              })}
-            </p>
-            <p>{translateNow("security.passphrase.copies")}</p>
-          </div>
-          <form onSubmit={submitPassphrase}>
-            <label>
-              {translateNow("security.passphrase.current")}
-              <SecretInput
-                aria-label={translateNow("security.passphrase.current")}
-                required
-                type="password"
-                autoComplete="current-password"
-                value={currentPassphrase}
-                onChange={(event) => setCurrentPassphrase(event.target.value)}
-              />
-            </label>
-            <label>
-              {translateNow("passphrase.new.label")}
-              <SecretInput
-                aria-label={translateNow("passphrase.new.label")}
-                required
-                type="password"
-                autoComplete="new-password"
-                value={newPassphrase}
-                onChange={(event) => setNewPassphrase(event.target.value)}
-              />
-            </label>
-            <label>
-              {translateNow("passphrase.confirmNew.label")}
-              <SecretInput
-                aria-label={translateNow("passphrase.confirmNew.label")}
-                required
-                type="password"
-                autoComplete="new-password"
-                value={newPassphraseConfirmation}
-                onChange={(event) =>
-                  setNewPassphraseConfirmation(event.target.value)
-                }
-              />
-            </label>
-            {currentPassphraseTooLong && (
-              <p role="alert">
-                {translateNow("security.passphrase.currentTooLong")}
-              </p>
-            )}
-            {newPassphraseConfirmation &&
-              newPassphrase !== newPassphraseConfirmation && (
-                <p role="alert">
-                  {translateNow("security.passphrase.mismatch")}
-                </p>
-              )}
-            {newPassphraseTooLong && (
-              <p role="alert">
-                {translateNow("security.passphrase.newTooLong")}
-              </p>
-            )}
-            {newPassphraseTooShort && newPassphraseConfirmation && (
-              <p role="alert">
-                {translateNow("security.passphrase.newTooShort", {
-                  min: MIN_PASSPHRASE_CHARS,
-                })}
-              </p>
-            )}
-            <button
-              className="button"
-              disabled={busy || readOnly || passphraseFormInvalid}
-            >
-              {translateNow("security.passphrase.submit")}
-            </button>
-          </form>
-        </section>
-        <section className="setting-row">
-          <div>
-            <h2>
-              {translateNow("security.recoveryKey.title")}{" "}
-              <span className="state-pill">
-                {recoveryKeySetAtMs
-                  ? translateNow("security.recoveryKey.setUpOn", {
-                      date: printedDate(new Date(recoveryKeySetAtMs)),
-                    })
-                  : translateNow("security.recoveryKey.notSetUp")}
-              </span>
-            </h2>
-            <p>{translateNow("security.recoveryKey.body")}</p>
-            {recoveryKeySetAtMs && recoveryKeyLabel && (
-              <p>
-                {withElements(
-                  "security.recoveryKey.current",
-                  { label: <KeyLabel label={recoveryKeyLabel} /> },
-                  { date: printedDate(new Date(recoveryKeySetAtMs)) },
-                )}
-              </p>
-            )}
-          </div>
-          <div>
-            <button
-              className="button"
-              type="button"
-              disabled={busy || readOnly}
-              onClick={onSetUpRecoveryKey}
-            >
-              {recoveryKeySetAtMs
-                ? translateNow("security.recoveryKey.replace")
-                : translateNow("security.recoveryKey.setUp")}
-            </button>
-          </div>
-        </section>
+      {/* Connected clinics first: what arrives is what people open this page for. */}
+      {clinicDocuments}
+      <div className="setting-list setting-cards">
         <section className="setting-row native-backup-settings">
           <div>
             <h2>{translateNow("security.backup.title")}</h2>
@@ -677,6 +555,130 @@ export function SecuritySettings({
             )}
           </div>
         </section>
+        <section className="setting-row">
+          <div>
+            <h2>
+              {translateNow("security.encryption.title")}{" "}
+              <span className="state-pill">
+                {translateNow("security.encryption.state")}
+              </span>
+            </h2>
+            <p>{translateNow("security.encryption.body")}</p>
+          </div>
+        </section>
+        <section className="setting-row native-setting-form">
+          <div>
+            <h2>{translateNow("security.passphrase.title")}</h2>
+            <p>
+              {translateNow("security.passphrase.rules", {
+                min: MIN_PASSPHRASE_CHARS,
+              })}
+            </p>
+            <p>{translateNow("security.passphrase.copies")}</p>
+          </div>
+          <form onSubmit={submitPassphrase}>
+            <label>
+              {translateNow("security.passphrase.current")}
+              <SecretInput
+                aria-label={translateNow("security.passphrase.current")}
+                required
+                type="password"
+                autoComplete="current-password"
+                value={currentPassphrase}
+                onChange={(event) => setCurrentPassphrase(event.target.value)}
+              />
+            </label>
+            <label>
+              {translateNow("passphrase.new.label")}
+              <SecretInput
+                aria-label={translateNow("passphrase.new.label")}
+                required
+                type="password"
+                autoComplete="new-password"
+                value={newPassphrase}
+                onChange={(event) => setNewPassphrase(event.target.value)}
+              />
+            </label>
+            <label>
+              {translateNow("passphrase.confirmNew.label")}
+              <SecretInput
+                aria-label={translateNow("passphrase.confirmNew.label")}
+                required
+                type="password"
+                autoComplete="new-password"
+                value={newPassphraseConfirmation}
+                onChange={(event) =>
+                  setNewPassphraseConfirmation(event.target.value)
+                }
+              />
+            </label>
+            {currentPassphraseTooLong && (
+              <p role="alert">
+                {translateNow("security.passphrase.currentTooLong")}
+              </p>
+            )}
+            {newPassphraseConfirmation &&
+              newPassphrase !== newPassphraseConfirmation && (
+                <p role="alert">
+                  {translateNow("security.passphrase.mismatch")}
+                </p>
+              )}
+            {newPassphraseTooLong && (
+              <p role="alert">
+                {translateNow("security.passphrase.newTooLong")}
+              </p>
+            )}
+            {newPassphraseTooShort && newPassphraseConfirmation && (
+              <p role="alert">
+                {translateNow("security.passphrase.newTooShort", {
+                  min: MIN_PASSPHRASE_CHARS,
+                })}
+              </p>
+            )}
+            <button
+              className="button"
+              disabled={busy || readOnly || passphraseFormInvalid}
+            >
+              {translateNow("security.passphrase.submit")}
+            </button>
+          </form>
+        </section>
+        <section className="setting-row">
+          <div>
+            <h2>
+              {translateNow("security.recoveryKey.title")}{" "}
+              <span className="state-pill">
+                {recoveryKeySetAtMs
+                  ? translateNow("security.recoveryKey.setUpOn", {
+                      date: printedDate(new Date(recoveryKeySetAtMs)),
+                    })
+                  : translateNow("security.recoveryKey.notSetUp")}
+              </span>
+            </h2>
+            <p>{translateNow("security.recoveryKey.body")}</p>
+            {recoveryKeySetAtMs && recoveryKeyLabel && (
+              <p>
+                {withElements(
+                  "security.recoveryKey.current",
+                  { label: <KeyLabel label={recoveryKeyLabel} /> },
+                  { date: printedDate(new Date(recoveryKeySetAtMs)) },
+                )}
+              </p>
+            )}
+          </div>
+          <div>
+            <button
+              className="button"
+              type="button"
+              disabled={busy || readOnly}
+              onClick={onSetUpRecoveryKey}
+            >
+              {recoveryKeySetAtMs
+                ? translateNow("security.recoveryKey.replace")
+                : translateNow("security.recoveryKey.setUp")}
+            </button>
+          </div>
+        </section>
         <section className="setting-row native-setting-form">
           <div>
             <div className="native-auto-lock-heading">
@@ -706,9 +708,7 @@ export function SecuritySettings({
           </div>
         </section>
       </div>
-      {/* Connected clinics, between the settings of this vault and the people in it. */}
-      {clinicDocuments}
-      <div className="setting-list">
+      <div className="setting-list setting-cards">
         <section className="setting-row native-setting-form native-profile-settings">
           <div>
             <h2>{translateNow("security.profiles.title")}</h2>

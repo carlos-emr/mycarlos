@@ -751,7 +751,7 @@ describe("the document reader", () => {
     expect(viewPage).toHaveBeenCalledTimes(1);
     expect(cancelView).toHaveBeenCalledTimes(1);
     expect(
-      screen.getByRole("button", { name: humanText("Close") }),
+      screen.getByRole("button", { name: humanText("Back") }),
     ).toHaveFocus();
     unmount();
     expect(cancelView).toHaveBeenCalledTimes(2);
@@ -815,6 +815,30 @@ describe("the document reader", () => {
       unmount();
       vi.useRealTimers();
     }
+  });
+
+  it("keeps the reader's scroll padding at the top toolbar's height while the first page loads and while the password is asked for (review of #489, agent 4)", async () => {
+    const paddingIsToolbar = () => {
+      const reader = screen.getByRole("dialog", {
+        name: humanText("FAKE_Bloodwork.pdf"),
+      });
+      const toolbar = reader.querySelector<HTMLElement>(
+        ".native-reader-toolbar",
+      )!;
+      expect(toolbar.offsetHeight).toBeGreaterThan(0);
+      // So a field the focus is sent to is scrolled clear of the sticky toolbar, not under it.
+      expect(reader.style.scrollPaddingTop).toBe(`${toolbar.offsetHeight}px`);
+    };
+    // The first page is still being drawn: no page count yet, so no page bar.
+    const loading = renderReader(
+      vi.fn(() => new Promise<ViewedPage>(() => undefined)),
+    );
+    paddingIsToolbar();
+    loading.unmount();
+    // The document asks for its password: still no page bar.
+    renderReader(vi.fn().mockRejectedValue(refusal("pdf_locked")));
+    await screen.findByLabelText(humanText("Document password"));
+    paddingIsToolbar();
   });
 
   it("starts a new cache and password session when the document changes", async () => {
@@ -977,7 +1001,7 @@ describe("the document reader", () => {
     expect(failure).toBeVisible();
     await user.click(
       within(screen.getByRole("dialog")).getByRole("button", {
-        name: humanText("Close"),
+        name: humanText("Back"),
       }),
     );
     await user.keyboard("{Escape}");
@@ -1180,7 +1204,7 @@ describe("the document reader", () => {
 // #312: on a phone Close (with the reading-aid button) stays on the title's
 // line whenever the whole title fits beside it, and has a row of its own under
 // the title only when it does not.
-describe("the reader's Close button (#311, #312)", () => {
+describe("the reader's Back button (#311, #312)", () => {
   const SHORT_NAME = "FAKE_Rx.pdf";
   const LONG_NAME =
     "FAKE Discharge summary from the FAKE Regional Health Centre, cardiology follow-up visit, with FAKE laboratory results and a FAKE imaging report attached.pdf";
@@ -1197,21 +1221,9 @@ describe("the reader's Close button (#311, #312)", () => {
     points: [],
   };
 
-  /** The title's width on one line, which is what decides whether the actions fit beside it. */
-  const oneLineWidth = (title: HTMLElement) => {
-    const probe = title.cloneNode(true) as HTMLElement;
-    probe.removeAttribute("id");
-    probe.style.cssText =
-      "position: absolute; visibility: hidden; white-space: nowrap; width: max-content";
-    title.parentElement!.append(probe);
-    const width = probe.getBoundingClientRect().width;
-    probe.remove();
-    return width;
-  };
-
   for (const width of [1100, 412, 360] as const)
     for (const direction of ["ltr", "rtl"] as const)
-      it(`is the header's last control, at its end edge, at ${width}px (${direction})`, async () => {
+      it(`is the header's first control, at its start edge, with the title whole beside it, at ${width}px (${direction})`, async () => {
         const original = {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -1233,35 +1245,26 @@ describe("the reader's Close button (#311, #312)", () => {
               const head = document.querySelector<HTMLElement>(
                 ".native-reader-head",
               )!;
-              const close = within(head).getByRole("button", {
-                name: humanText("Close"),
+              const back = within(head).getByRole("button", {
+                name: humanText("Back"),
               });
-              expect(within(head).getAllByRole("button").at(-1)).toBe(close);
-
+              // Back leads the header (in reading order and on screen), at its start edge.
+              expect(within(head).getAllByRole("button").at(0)).toBe(back);
               const style = getComputedStyle(head);
               const box = head.getBoundingClientRect();
-              const shut = close.getBoundingClientRect();
-              const fromEnd =
+              const shut = back.getBoundingClientRect();
+              const fromStart =
                 direction === "rtl"
-                  ? shut.left - (box.left + parseFloat(style.paddingLeft))
-                  : box.right - parseFloat(style.paddingRight) - shut.right;
-              expect(Math.abs(fromEnd)).toBeLessThanOrEqual(1);
+                  ? box.right - parseFloat(style.paddingRight) - shut.right
+                  : shut.left - (box.left + parseFloat(style.paddingLeft));
+              expect(Math.abs(fromStart)).toBeLessThanOrEqual(1);
               expect(shut.left).toBeGreaterThanOrEqual(0);
               expect(shut.right).toBeLessThanOrEqual(window.innerWidth);
-
-              if (aid) {
-                const opened = within(head)
-                  .getByRole("button", {
-                    name: humanText("Read the reading aid"),
-                  })
-                  .getBoundingClientRect();
-                expect(Math.abs(opened.top - shut.top)).toBeLessThanOrEqual(1);
-                if (direction === "rtl")
-                  expect(opened.left).toBeGreaterThanOrEqual(shut.right);
-                else expect(opened.right).toBeLessThanOrEqual(shut.left);
-              }
+              expect(shut.height).toBeGreaterThanOrEqual(44);
 
               const title = head.querySelector("h2")!;
+              // The whole title is shown (it wraps, it is never cut), and it is beside Back or
+              // under it, never over it.
               expect(title.scrollWidth).toBeLessThanOrEqual(
                 title.clientWidth + 1,
               );
@@ -1269,38 +1272,49 @@ describe("the reader's Close button (#311, #312)", () => {
                 expect(title.getBoundingClientRect().height).toBeGreaterThan(
                   parseFloat(getComputedStyle(title).lineHeight) * 1.5,
                 );
-
-              // #312: beside the title's first line when the whole title fits
-              // beside the actions (always on a wide window, where it wraps
-              // beside them), and otherwise on a row of its own under it.
               const heading = title.getBoundingClientRect();
-              // The buttons themselves, wherever their row's box ends.
-              const buttons = within(head)
-                .getAllByRole("button")
-                .map((button) => button.getBoundingClientRect());
-              const start = Math.min(...buttons.map((button) => button.left));
-              const end = Math.max(...buttons.map((button) => button.right));
-              const inner =
-                head.clientWidth -
-                parseFloat(style.paddingLeft) -
-                parseFloat(style.paddingRight);
-              const fits =
-                width > 640 ||
-                oneLineWidth(title) +
-                  (parseFloat(style.columnGap) || 0) +
-                  (end - start) <=
-                  inner + 0.5;
-              if (width === 360 && !aid && displayName !== LONG_NAME)
-                expect(fits).toBe(true);
-              if (width < 640 && displayName === LONG_NAME)
-                expect(fits).toBe(false);
-              if (fits) {
+              const overlapsBack =
+                heading.left < shut.right - 1 &&
+                heading.right > shut.left + 1 &&
+                heading.top < shut.bottom - 1 &&
+                heading.bottom > shut.top + 1;
+              expect(overlapsBack).toBe(false);
+              // #312: Back is on the title's first line when the window is wide, and on a row of
+              // its own above the title when it is narrow; the status and source line are always
+              // under both (never beside Back, never over it).
+              const trust = document.getElementById("reader-trust")!;
+              expect(shut.bottom).toBeLessThanOrEqual(
+                trust.getBoundingClientRect().top + 0.5,
+              );
+              if (width > 640)
                 expect(Math.abs(shut.top - heading.top)).toBeLessThanOrEqual(1);
-                if (direction === "rtl")
-                  expect(end).toBeLessThanOrEqual(heading.left + 1);
-                else expect(start).toBeGreaterThanOrEqual(heading.right - 1);
-              } else
-                expect(shut.top).toBeGreaterThanOrEqual(heading.bottom - 1);
+              else expect(shut.bottom).toBeLessThanOrEqual(heading.top + 0.5);
+
+              if (aid) {
+                const opened = within(head)
+                  .getByRole("button", {
+                    name: humanText("Read the reading aid"),
+                  })
+                  .getBoundingClientRect();
+                expect(opened.left).toBeGreaterThanOrEqual(0);
+                expect(opened.right).toBeLessThanOrEqual(window.innerWidth);
+                // The reading-aid button is on Back's row, at the end, on a wide window, and on
+                // the row under Back on a narrow one; over neither the title nor the status line.
+                expect(opened.bottom).toBeLessThanOrEqual(
+                  document
+                    .getElementById("reader-trust")!
+                    .getBoundingClientRect().top + 0.5,
+                );
+                if (width > 640) {
+                  expect(Math.abs(opened.top - shut.top)).toBeLessThanOrEqual(
+                    1,
+                  );
+                  if (direction === "rtl")
+                    expect(opened.right).toBeLessThanOrEqual(shut.left);
+                  else expect(opened.left).toBeGreaterThanOrEqual(shut.right);
+                } else
+                  expect(opened.top).toBeGreaterThanOrEqual(shut.bottom - 0.5);
+              }
               unmount();
             }
         } finally {
@@ -1327,8 +1341,8 @@ const rowsOf = (elements: Element[]) =>
     return Math.round((top + bottom) / 2);
   });
 
-// D144 (Ben, 28 Oct): the page buttons in a bar at the reader's foot, in
-// words, with First and Last; the zoom alone at the top left.
+// D144 (Ben, 28 Oct): the page buttons in words, with First and Last. Overhaul: they sit in the
+// top bar with the zoom, above the page, instead of at the reader's foot.
 describe("the reader's page bar", () => {
   it("is not shown over the clinic's reading aid, and the page keys leave the aid alone", async () => {
     const viewPage = pagesOf(5);
@@ -1367,13 +1381,15 @@ describe("the reader's page bar", () => {
     expect(bar()).toHaveHumanTextContent("Page 1 of 5");
   });
 
-  it("is at the foot, in words and in reading order, with the zoom alone at the top left", async () => {
+  it("is in the top bar, in words and in reading order, with the zoom after it", async () => {
     renderReader(pagesOf(5));
     const picture = await screen.findByRole("img", {
       name: humanText(/^Page 1 of 5/),
     });
-    const reader = screen.getByRole("dialog");
-    expect(reader.lastElementChild).toBe(bar());
+    const toolbar = document.querySelector<HTMLElement>(
+      ".native-reader-toolbar",
+    )!;
+    expect(bar().parentElement).toBe(toolbar);
     expect(
       Array.from(bar().children, (child) =>
         visibleText(child.textContent ?? ""),
@@ -1385,25 +1401,32 @@ describe("the reader's page bar", () => {
       "Next page",
       "Last page",
     ]);
-    // Below the page, in one row on a wide reader. The picture sits in a span
-    // (for the highlight) inside the scrolling page, so the page is measured,
-    // not the picture's parent.
-    expect(bar().getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      picture.closest(".native-reader-page")!.getBoundingClientRect().bottom -
-        1,
+    // Above the page, in one row on a wide reader; the page is measured, not the picture's parent
+    // (the picture sits in a span, for the highlight, inside the scrolling page).
+    expect(bar().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      picture.closest(".native-reader-page")!.getBoundingClientRect().top + 1,
     );
     expect(new Set(rowsOf(Array.from(bar().children))).size).toBe(1);
-    // The top row holds the zoom only, from the reader's left.
-    const controls = document.querySelector(".native-reader-controls")!;
-    expect(within(controls as HTMLElement).queryAllByRole("button")).toEqual(
-      within(controls as HTMLElement).getAllByRole("button", {
-        name: /Smaller|Larger|Fit width/,
-      }),
-    );
-    const zoom = controls.querySelector(".native-reader-zoom")!;
+    // The zoom follows the pages in the same bar.
+    const zoom = toolbar.querySelector(".native-reader-zoom") as HTMLElement;
     expect(
-      zoom.getBoundingClientRect().left - reader.getBoundingClientRect().left,
-    ).toBeLessThanOrEqual(24);
+      Boolean(
+        bar().compareDocumentPosition(zoom) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(
+      within(zoom)
+        .getAllByRole("button")
+        .map((button) => visibleText(button.textContent ?? "")),
+    ).toEqual(["Smaller", "Larger", "Fit width"]);
+    // The panel is beside the page, after it in reading order.
+    const panel = document.querySelector<HTMLElement>(".native-reader-panel")!;
+    expect(
+      Boolean(
+        picture.compareDocumentPosition(panel) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
     // Each button names its key, for screen readers.
     expect(
       ["First page", "Previous page", "Next page", "Last page"].map((name) =>
@@ -1490,7 +1513,7 @@ describe("the reader's page bar", () => {
     await screen.findByRole("img", { name: humanText(/^Page 1 of 5/) });
     // From a button too, and the key does not also scroll.
     const close = within(screen.getByRole("dialog")).getByRole("button", {
-      name: humanText("Close"),
+      name: humanText("Back"),
     });
     close.focus();
     expect(fireEvent.keyDown(close, { key: "PageDown" })).toBe(false);

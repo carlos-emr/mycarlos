@@ -1,15 +1,13 @@
 import { t as translateNow, useI18n } from "../i18n";
-import { Fragment, useMemo } from "react";
+import { useMemo } from "react";
 import { Icon } from "../Icon";
 
 import type { PatientProfile, VaultFolder, VaultRecord } from "../vault";
 import type { VaultDragDrop } from "./useVaultDragDrop";
 import { SpokenCount } from "./SpokenCount";
+import { AddDocumentMenu, type AddMenuItem } from "./AddDocumentMenu";
 
 interface LibrarySidebarProps {
-  /** The brand line: the open person's name, or the vault's while Shared
-   * with me is open. */
-  profileName: string;
   /** The people whose records the vault keeps, each a top-level folder
    * (Ben, 21 Oct). */
   people: PatientProfile[];
@@ -41,6 +39,11 @@ interface LibrarySidebarProps {
   onOpenFolder: (profileId: string, folderId: string) => void;
   /** Hidden can be opened from Shared with me; keep its whole-vault footer. */
   hiddenFromShared?: boolean;
+  /** What the Add document menu offers here, and whether it can be used now. */
+  addItems: AddMenuItem[];
+  addDisabled: boolean;
+  /** Something is running: the Add document button says "Working…". */
+  addWorking?: boolean;
   onOpenSecurity: () => void;
   onOpenPreferences: () => void;
   /** The AI helper's settings (#72): given only where the helper can run,
@@ -80,8 +83,16 @@ export const personFolderName = (
 ) =>
   people.length > 1 ? person.displayName : translateNow("sidebar.myRecords");
 
+/** Up to two initials of a name, for the badge beside it (the name itself is always shown too). */
+export const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => Array.from(word)[0]!.toLocaleUpperCase())
+    .join("");
+
 export function LibrarySidebar({
-  profileName,
   people,
   profileId,
   section,
@@ -96,6 +107,9 @@ export function LibrarySidebar({
   onOpenShared,
   vaultTotals,
   hiddenFromShared = false,
+  addItems,
+  addDisabled,
+  addWorking = false,
   onOpenSecurity,
   onOpenPreferences,
   onOpenAi,
@@ -137,93 +151,16 @@ export function LibrarySidebar({
             .length,
         };
   const several = people.length > 1;
+  // The person whose folders are listed: the one open, or the last one open.
+  const folderPerson = people.find((person) => person.id === profileId);
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <span className="brand-mark">
-          <Icon name="activity" />
-        </span>
-        <span>
-          <strong>myCarlos</strong>
-          <small>{profileName}</small>
-        </span>
-      </div>
+      <AddDocumentMenu
+        items={addItems}
+        disabled={addDisabled}
+        working={addWorking}
+      />
       <nav className="side-nav" aria-label={translateNow("sidebar.label")}>
-        {people.map((person) => {
-          const open = section === "records" && person.id === profileId;
-          // Only the open person's folders move by drag: a folder does not
-          // go to another person (Ben's possible follow-up, not now). Every
-          // person's folders still take documents dropped from Shared with me.
-          const movable = open && !disabled;
-          const rootZone = `sidebar:person:${person.id}`;
-          return (
-            <Fragment key={person.id}>
-              <button
-                className={dropClass(
-                  open && !currentFolderId ? "selected" : "",
-                  rootZone,
-                )}
-                type="button"
-                aria-current={open && !currentFolderId ? "page" : undefined}
-                onClick={() => onOpenPerson(person.id)}
-                onDragOver={(event) => dragOver(event, rootZone)}
-                onDrop={(event) => dropInto(event, null, person.id)}
-              >
-                <Icon name="folder" />{" "}
-                <span className="native-nav-name">
-                  {several
-                    ? person.displayName
-                    : translateNow("sidebar.myRecords")}
-                </span>
-                <SpokenCount count={counts.loose.get(person.id) ?? 0} />
-              </button>
-              {(trees.get(person.id) ?? []).map(({ folder, depth }) => {
-                const zone = `sidebar:${folder.id}`;
-                const here = open && currentFolderId === folder.id;
-                return (
-                  <button
-                    className={dropClass(
-                      dragClass(here ? "selected" : "", {
-                        kind: "folder",
-                        id: folder.id,
-                      }),
-                      zone,
-                    )}
-                    style={{
-                      paddingLeft: `${10 + Math.min(depth + 1, 8) * 14}px`,
-                    }}
-                    type="button"
-                    key={folder.id}
-                    aria-current={here ? "page" : undefined}
-                    // Two people can each have a "Lab results": say whose,
-                    // with each language's own brackets.
-                    aria-label={
-                      several
-                        ? `${translateNow("sidebar.folderOfPerson", {
-                            folder: folder.name,
-                            person: person.displayName,
-                          })} ${translateNow("sidebar.documents", { count: counts.byFolder.get(folder.id) ?? 0 })}`
-                        : undefined
-                    }
-                    draggable={movable || undefined}
-                    onDragStart={(event) => {
-                      if (!movable) return event.preventDefault();
-                      startDrag(event, { kind: "folder", id: folder.id });
-                    }}
-                    onDragEnd={dragEnd}
-                    onDragOver={(event) => dragOver(event, zone)}
-                    onDrop={(event) => dropInto(event, folder.id, person.id)}
-                    onClick={() => onOpenFolder(person.id, folder.id)}
-                  >
-                    <Icon name="folder" />{" "}
-                    <span className="native-nav-name">{folder.name}</span>
-                    <SpokenCount count={counts.byFolder.get(folder.id) ?? 0} />
-                  </button>
-                );
-              })}
-            </Fragment>
-          );
-        })}
         {/* Beside the people and inside no one's: what cannot be placed yet.
             It cannot be renamed, moved or deleted. */}
         <button
@@ -261,44 +198,143 @@ export function LibrarySidebar({
             </span>
           )}
         </button>
-        <span className="nav-label">{translateNow("sidebar.settings")}</span>
-        <button
-          className={
-            section === "security" ||
-            section === "hidden" ||
-            section === "history"
-              ? "selected"
-              : ""
-          }
-          aria-current={
-            section === "security" ||
-            section === "hidden" ||
-            section === "history"
-              ? "page"
-              : undefined
-          }
-          type="button"
-          onClick={onOpenSecurity}
-        >
-          <Icon name="shield" /> {translateNow("security.title")}
-        </button>
-        <button
-          className={section === "preferences" ? "selected" : ""}
-          type="button"
-          aria-current={section === "preferences" ? "page" : undefined}
-          onClick={onOpenPreferences}
-        >
-          <Icon name="settings" /> {translateNow("sidebar.preferences")}
-        </button>
-        {onOpenAi && (
-          <button
-            className={section === "ai" ? "selected" : ""}
-            type="button"
-            onClick={onOpenAi}
-          >
-            <Icon name="sparkle" /> {translateNow("ai.preferences.title")}
-          </button>
+        <span className="nav-label">{translateNow("sidebar.people")}</span>
+        {people.map((person) => {
+          const open = section === "records" && person.id === profileId;
+          const rootZone = `sidebar:person:${person.id}`;
+          return (
+            <button
+              key={person.id}
+              className={dropClass(
+                open && !currentFolderId ? "selected" : "",
+                rootZone,
+              )}
+              type="button"
+              aria-current={open && !currentFolderId ? "page" : undefined}
+              onClick={() => onOpenPerson(person.id)}
+              onDragOver={(event) => dragOver(event, rootZone)}
+              onDrop={(event) => dropInto(event, null, person.id)}
+            >
+              {/* Drawn by CSS from the attribute: the badge is decoration, so it is neither text a
+                  screen reader or a label-in-name check could take for part of the name. */}
+              <span
+                className="person-initials"
+                aria-hidden="true"
+                data-initials={initialsOf(person.displayName)}
+              />
+              <span className="native-nav-name">
+                {several
+                  ? person.displayName
+                  : translateNow("sidebar.myRecords")}
+              </span>
+              <SpokenCount count={counts.loose.get(person.id) ?? 0} />
+            </button>
+          );
+        })}
+        {/* The open person's folders: only theirs (a folder does not go to another person), so
+            only these move by drag. Documents dropped from Shared with me go to a person above. */}
+        {folderPerson && (
+          <>
+            <span className="nav-label">
+              {several
+                ? translateNow("sidebar.foldersOf", {
+                    name: folderPerson.displayName,
+                  })
+                : translateNow("sidebar.folders")}
+            </span>
+            {(trees.get(folderPerson.id) ?? []).map(({ folder, depth }) => {
+              const zone = `sidebar:${folder.id}`;
+              const here =
+                section === "records" && currentFolderId === folder.id;
+              const movable = section === "records" && !disabled;
+              return (
+                <button
+                  className={dropClass(
+                    dragClass(here ? "selected" : "", {
+                      kind: "folder",
+                      id: folder.id,
+                    }),
+                    zone,
+                  )}
+                  style={{
+                    paddingLeft: `${10 + Math.min(depth, 8) * 14}px`,
+                  }}
+                  type="button"
+                  key={folder.id}
+                  aria-current={here ? "page" : undefined}
+                  // Two people can each have a "Lab results": say whose,
+                  // with each language's own brackets.
+                  aria-label={
+                    several
+                      ? `${translateNow("sidebar.folderOfPerson", {
+                          folder: folder.name,
+                          person: folderPerson.displayName,
+                        })} ${translateNow("sidebar.documents", { count: counts.byFolder.get(folder.id) ?? 0 })}`
+                      : undefined
+                  }
+                  draggable={movable || undefined}
+                  onDragStart={(event) => {
+                    if (!movable) return event.preventDefault();
+                    startDrag(event, { kind: "folder", id: folder.id });
+                  }}
+                  onDragEnd={dragEnd}
+                  onDragOver={(event) => dragOver(event, zone)}
+                  onDrop={(event) =>
+                    dropInto(event, folder.id, folderPerson.id)
+                  }
+                  onClick={() => onOpenFolder(folderPerson.id, folder.id)}
+                >
+                  <Icon name="folder" />{" "}
+                  <span className="native-nav-name">{folder.name}</span>
+                  <SpokenCount count={counts.byFolder.get(folder.id) ?? 0} />
+                </button>
+              );
+            })}
+          </>
         )}
+        <div
+          className="side-settings"
+          role="group"
+          aria-label={translateNow("sidebar.settings")}
+        >
+          <button
+            className={
+              section === "security" ||
+              section === "hidden" ||
+              section === "history"
+                ? "selected"
+                : ""
+            }
+            aria-current={
+              section === "security" ||
+              section === "hidden" ||
+              section === "history"
+                ? "page"
+                : undefined
+            }
+            type="button"
+            onClick={onOpenSecurity}
+          >
+            <Icon name="shield" /> {translateNow("security.title")}
+          </button>
+          <button
+            className={section === "preferences" ? "selected" : ""}
+            type="button"
+            aria-current={section === "preferences" ? "page" : undefined}
+            onClick={onOpenPreferences}
+          >
+            <Icon name="settings" /> {translateNow("sidebar.preferences")}
+          </button>
+          {onOpenAi && (
+            <button
+              className={section === "ai" ? "selected" : ""}
+              type="button"
+              onClick={onOpenAi}
+            >
+              <Icon name="sparkle" /> {translateNow("ai.preferences.title")}
+            </button>
+          )}
+        </div>
       </nav>
       <div className="storage">
         <span>{translateNow("sidebar.storage")}</span>

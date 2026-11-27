@@ -466,8 +466,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = This document is l
 
 interface-UnlockPdfDialog-unlocking = Unlocking…
 
-interface-VaultApp-chooseFilesToImport = Choose files to import
-
 interface-VaultLibrary-picturesNote = Place, time and camera details are removed from pictures you add.
 
 interface-VaultApp-finishingTheTransfer = Finishing the transfer
@@ -542,6 +540,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Move a folder with the keybo
 
 interface-VaultLibrary-moveFolder = Move folder
 
+interface-VaultLibrary-moveFolderItem = Move folder…
+
 interface-VaultLibrary-moveSelectedTo = Move selected to
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Move them into your folders whenever you like.
@@ -553,8 +553,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos could not save a
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = myCarlos encrypted record library
 
 interface-VaultLibrary-nameAZ = Name A–Z
-
-interface-VaultLibrary-new = New
 
 interface-VaultLibrary-newestFirst = Newest first
 
@@ -595,6 +593,12 @@ interface-VaultLibrary-section = Section
 interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Some encrypted files are missing from this device. Documents marked damaged cannot be opened or copied; save copies of the others now. To make changes again, restore the myCarlos data folder from a backup, or hide the damaged documents.
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Some of the vault's files could not be read, and they may be newer or intact, so nothing can be changed for now, including your passphrase and recovery key. Your documents can still be opened and saved as copies, except any marked “File unavailable”. Check that the drive holding the myCarlos data folder is connected, that no other program holds the folder, and that a cloud sync tool keeps its files on this device, then lock and unlock again.
+
+interface-VaultLibrary-view = View
+
+interface-VaultLibrary-helpWithThisScreen = Help with this screen
+
+interface-VaultLibrary-moreFor = More for { $name }
 
 interface-VaultLibrary-sortBy = Sort by
 
@@ -1304,9 +1308,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Folders
+
+sidebar-foldersOf = { $name }’s folders
+
 sidebar-label = Record library
 
 sidebar-myRecords = My records
+
+sidebar-people = People
 
 sidebar-preferences = Preferences
 
@@ -2134,6 +2144,10 @@ interface-history-status = Status
 
 interface-RecordDetails-anonymizeText = Prepare text for an AI…
 
+interface-AddMenu-addDocument = Add document
+
+interface-AddMenu-importFile = Import a file
+
 interface-AnonymizePreview-title = Text with identifying details removed
 
 interface-AnonymizePreview-reading = Reading the document…
@@ -2948,6 +2962,20 @@ notifications-testWait = Wait a few seconds, then try again.
 
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
+
+unlock-brand-tagline = Your health documents, kept private on this device.
+
+reader-back = Back
+
+reader-panel-label = About this document
+
+reader-panel-more = More…
+
+reader-panel-ai = Explain with AI
+
+interface-VaultLibrary-help = Help
+
+interface-VaultLibrary-helpButtonName = Help: this screen
 
 interface-AddVideo-add = Add a video
 

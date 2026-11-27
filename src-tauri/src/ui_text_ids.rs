@@ -339,6 +339,8 @@ pub enum MessageId {
     HiddenPeopleRestored,
     HiddenPeopleSince,
     HiddenPeopleTitle,
+    InterfaceAddMenuAddDocument,
+    InterfaceAddMenuImportFile,
     InterfaceAddVideoAdd,
     InterfaceAddVideoAdded,
     InterfaceAddVideoAdding,
@@ -594,7 +596,6 @@ pub enum MessageId {
     InterfaceSecuritySettingsWhatMyCarlosKeeps,
     InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword,
     InterfaceUnlockPdfDialogUnlocking,
-    InterfaceVaultAppChooseFilesToImport,
     InterfaceVaultAppFinishingTheTransfer,
     InterfaceVaultAppLockNowAndCancelTheTransfer,
     InterfaceVaultAppMyCarlosCouldNotLockTheVaultIts,
@@ -623,21 +624,25 @@ pub enum MessageId {
     InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual,
     InterfaceVaultLibraryGrid,
     InterfaceVaultLibraryGridView,
+    InterfaceVaultLibraryHelp,
+    InterfaceVaultLibraryHelpButtonName,
+    InterfaceVaultLibraryHelpWithThisScreen,
     InterfaceVaultLibraryHideDamagedDocuments,
     InterfaceVaultLibraryHoldAndDragADocumentOrFolder,
     InterfaceVaultLibraryIfYouForgetYourPassphraseWithoutOne,
     InterfaceVaultLibraryInsideFolder,
     InterfaceVaultLibraryList,
     InterfaceVaultLibraryListView,
+    InterfaceVaultLibraryMoreFor,
     InterfaceVaultLibraryMoveAFolderWithTheKeyboard,
     InterfaceVaultLibraryMoveFolder,
+    InterfaceVaultLibraryMoveFolderItem,
     InterfaceVaultLibraryMoveSelectedTo,
     InterfaceVaultLibraryMoveTheSelectedDocuments,
     InterfaceVaultLibraryMoveThemIntoYourFoldersWheneverYou,
     InterfaceVaultLibraryMyCarlosCouldNotSaveAChangeTo,
     InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary,
     InterfaceVaultLibraryNameAZ,
-    InterfaceVaultLibraryNew,
     InterfaceVaultLibraryNewFolder,
     InterfaceVaultLibraryNewestFirst,
     InterfaceVaultLibraryNoFilesSelectedNothingChanged,
@@ -666,6 +671,7 @@ pub enum MessageId {
     InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil,
     InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
     InterfaceVaultLibraryTopLevel,
+    InterfaceVaultLibraryView,
     InterfaceVaultLibraryWorking,
     InterfaceVideoHelpEngine,
     InterfaceVideoHelpRestWorks,
@@ -1221,6 +1227,10 @@ pub enum MessageId {
     ReaderAndroidUnavailable,
     ReaderAndroidZoomIn,
     ReaderAndroidZoomOut,
+    ReaderBack,
+    ReaderPanelAi,
+    ReaderPanelLabel,
+    ReaderPanelMore,
     ReadingAidAvailable,
     ReadingAidChecked,
     ReadingAidEvidence,
@@ -1397,8 +1407,11 @@ pub enum MessageId {
     SidebarDocuments,
     SidebarFolderCount,
     SidebarFolderOfPerson,
+    SidebarFolders,
+    SidebarFoldersOf,
     SidebarLabel,
     SidebarMyRecords,
+    SidebarPeople,
     SidebarPreferences,
     SidebarSettings,
     SidebarStorage,
@@ -1416,6 +1429,7 @@ pub enum MessageId {
     TextSizeSmallest,
     TextSizeTitle,
     UnlockAutoLock,
+    UnlockBrandTagline,
     UnlockForgotSummary,
     UnlockNoKeyBody,
     UnlockNoKeyHeading,
@@ -1763,6 +1777,8 @@ impl MessageId {
         Self::HiddenPeopleRestored,
         Self::HiddenPeopleSince,
         Self::HiddenPeopleTitle,
+        Self::InterfaceAddMenuAddDocument,
+        Self::InterfaceAddMenuImportFile,
         Self::InterfaceAddVideoAdd,
         Self::InterfaceAddVideoAdded,
         Self::InterfaceAddVideoAdding,
@@ -2018,7 +2034,6 @@ impl MessageId {
         Self::InterfaceSecuritySettingsWhatMyCarlosKeeps,
         Self::InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword,
         Self::InterfaceUnlockPdfDialogUnlocking,
-        Self::InterfaceVaultAppChooseFilesToImport,
         Self::InterfaceVaultAppFinishingTheTransfer,
         Self::InterfaceVaultAppLockNowAndCancelTheTransfer,
         Self::InterfaceVaultAppMyCarlosCouldNotLockTheVaultIts,
@@ -2047,21 +2062,25 @@ impl MessageId {
         Self::InterfaceVaultLibraryFoldersStayWithTheirPersonMoveIndividual,
         Self::InterfaceVaultLibraryGrid,
         Self::InterfaceVaultLibraryGridView,
+        Self::InterfaceVaultLibraryHelp,
+        Self::InterfaceVaultLibraryHelpButtonName,
+        Self::InterfaceVaultLibraryHelpWithThisScreen,
         Self::InterfaceVaultLibraryHideDamagedDocuments,
         Self::InterfaceVaultLibraryHoldAndDragADocumentOrFolder,
         Self::InterfaceVaultLibraryIfYouForgetYourPassphraseWithoutOne,
         Self::InterfaceVaultLibraryInsideFolder,
         Self::InterfaceVaultLibraryList,
         Self::InterfaceVaultLibraryListView,
+        Self::InterfaceVaultLibraryMoreFor,
         Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard,
         Self::InterfaceVaultLibraryMoveFolder,
+        Self::InterfaceVaultLibraryMoveFolderItem,
         Self::InterfaceVaultLibraryMoveSelectedTo,
         Self::InterfaceVaultLibraryMoveTheSelectedDocuments,
         Self::InterfaceVaultLibraryMoveThemIntoYourFoldersWheneverYou,
         Self::InterfaceVaultLibraryMyCarlosCouldNotSaveAChangeTo,
         Self::InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary,
         Self::InterfaceVaultLibraryNameAZ,
-        Self::InterfaceVaultLibraryNew,
         Self::InterfaceVaultLibraryNewFolder,
         Self::InterfaceVaultLibraryNewestFirst,
         Self::InterfaceVaultLibraryNoFilesSelectedNothingChanged,
@@ -2090,6 +2109,7 @@ impl MessageId {
         Self::InterfaceVaultLibraryTheyAreInNoOnesRecordsUntil,
         Self::InterfaceVaultLibraryThisPhotoIsAlreadyInTheVault,
         Self::InterfaceVaultLibraryTopLevel,
+        Self::InterfaceVaultLibraryView,
         Self::InterfaceVaultLibraryWorking,
         Self::InterfaceVideoHelpEngine,
         Self::InterfaceVideoHelpRestWorks,
@@ -2645,6 +2665,10 @@ impl MessageId {
         Self::ReaderAndroidUnavailable,
         Self::ReaderAndroidZoomIn,
         Self::ReaderAndroidZoomOut,
+        Self::ReaderBack,
+        Self::ReaderPanelAi,
+        Self::ReaderPanelLabel,
+        Self::ReaderPanelMore,
         Self::ReadingAidAvailable,
         Self::ReadingAidChecked,
         Self::ReadingAidEvidence,
@@ -2821,8 +2845,11 @@ impl MessageId {
         Self::SidebarDocuments,
         Self::SidebarFolderCount,
         Self::SidebarFolderOfPerson,
+        Self::SidebarFolders,
+        Self::SidebarFoldersOf,
         Self::SidebarLabel,
         Self::SidebarMyRecords,
+        Self::SidebarPeople,
         Self::SidebarPreferences,
         Self::SidebarSettings,
         Self::SidebarStorage,
@@ -2840,6 +2867,7 @@ impl MessageId {
         Self::TextSizeSmallest,
         Self::TextSizeTitle,
         Self::UnlockAutoLock,
+        Self::UnlockBrandTagline,
         Self::UnlockForgotSummary,
         Self::UnlockNoKeyBody,
         Self::UnlockNoKeyHeading,
@@ -3187,6 +3215,8 @@ impl MessageId {
             Self::HiddenPeopleRestored => "hiddenPeople-restored",
             Self::HiddenPeopleSince => "hiddenPeople-since",
             Self::HiddenPeopleTitle => "hiddenPeople-title",
+            Self::InterfaceAddMenuAddDocument => "interface-AddMenu-addDocument",
+            Self::InterfaceAddMenuImportFile => "interface-AddMenu-importFile",
             Self::InterfaceAddVideoAdd => "interface-AddVideo-add",
             Self::InterfaceAddVideoAdded => "interface-AddVideo-added",
             Self::InterfaceAddVideoAdding => "interface-AddVideo-adding",
@@ -3672,7 +3702,6 @@ impl MessageId {
                 "interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword"
             }
             Self::InterfaceUnlockPdfDialogUnlocking => "interface-UnlockPdfDialog-unlocking",
-            Self::InterfaceVaultAppChooseFilesToImport => "interface-VaultApp-chooseFilesToImport",
             Self::InterfaceVaultAppFinishingTheTransfer => {
                 "interface-VaultApp-finishingTheTransfer"
             }
@@ -3735,6 +3764,11 @@ impl MessageId {
             }
             Self::InterfaceVaultLibraryGrid => "interface-VaultLibrary-grid",
             Self::InterfaceVaultLibraryGridView => "interface-VaultLibrary-gridView",
+            Self::InterfaceVaultLibraryHelp => "interface-VaultLibrary-help",
+            Self::InterfaceVaultLibraryHelpButtonName => "interface-VaultLibrary-helpButtonName",
+            Self::InterfaceVaultLibraryHelpWithThisScreen => {
+                "interface-VaultLibrary-helpWithThisScreen"
+            }
             Self::InterfaceVaultLibraryHideDamagedDocuments => {
                 "interface-VaultLibrary-hideDamagedDocuments"
             }
@@ -3747,10 +3781,12 @@ impl MessageId {
             Self::InterfaceVaultLibraryInsideFolder => "interface-VaultLibrary-insideFolder",
             Self::InterfaceVaultLibraryList => "interface-VaultLibrary-list",
             Self::InterfaceVaultLibraryListView => "interface-VaultLibrary-listView",
+            Self::InterfaceVaultLibraryMoreFor => "interface-VaultLibrary-moreFor",
             Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard => {
                 "interface-VaultLibrary-moveAFolderWithTheKeyboard"
             }
             Self::InterfaceVaultLibraryMoveFolder => "interface-VaultLibrary-moveFolder",
+            Self::InterfaceVaultLibraryMoveFolderItem => "interface-VaultLibrary-moveFolderItem",
             Self::InterfaceVaultLibraryMoveSelectedTo => "interface-VaultLibrary-moveSelectedTo",
             Self::InterfaceVaultLibraryMoveTheSelectedDocuments => {
                 "interface-VaultLibrary-moveTheSelectedDocuments"
@@ -3765,7 +3801,6 @@ impl MessageId {
                 "interface-VaultLibrary-myCarlosEncryptedRecordLibrary"
             }
             Self::InterfaceVaultLibraryNameAZ => "interface-VaultLibrary-nameAZ",
-            Self::InterfaceVaultLibraryNew => "interface-VaultLibrary-new",
             Self::InterfaceVaultLibraryNewFolder => "interface-VaultLibrary-newFolder",
             Self::InterfaceVaultLibraryNewestFirst => "interface-VaultLibrary-newestFirst",
             Self::InterfaceVaultLibraryNoFilesSelectedNothingChanged => {
@@ -3832,6 +3867,7 @@ impl MessageId {
                 "interface-VaultLibrary-thisPhotoIsAlreadyInTheVault"
             }
             Self::InterfaceVaultLibraryTopLevel => "interface-VaultLibrary-topLevel",
+            Self::InterfaceVaultLibraryView => "interface-VaultLibrary-view",
             Self::InterfaceVaultLibraryWorking => "interface-VaultLibrary-working",
             Self::InterfaceVideoHelpEngine => "interface-VideoHelp-engine",
             Self::InterfaceVideoHelpRestWorks => "interface-VideoHelp-restWorks",
@@ -4453,6 +4489,10 @@ impl MessageId {
             Self::ReaderAndroidUnavailable => "reader-android-unavailable",
             Self::ReaderAndroidZoomIn => "reader-android-zoomIn",
             Self::ReaderAndroidZoomOut => "reader-android-zoomOut",
+            Self::ReaderBack => "reader-back",
+            Self::ReaderPanelAi => "reader-panel-ai",
+            Self::ReaderPanelLabel => "reader-panel-label",
+            Self::ReaderPanelMore => "reader-panel-more",
             Self::ReadingAidAvailable => "readingAid-available",
             Self::ReadingAidChecked => "readingAid-checked",
             Self::ReadingAidEvidence => "readingAid-evidence",
@@ -4629,8 +4669,11 @@ impl MessageId {
             Self::SidebarDocuments => "sidebar-documents",
             Self::SidebarFolderCount => "sidebar-folderCount",
             Self::SidebarFolderOfPerson => "sidebar-folderOfPerson",
+            Self::SidebarFolders => "sidebar-folders",
+            Self::SidebarFoldersOf => "sidebar-foldersOf",
             Self::SidebarLabel => "sidebar-label",
             Self::SidebarMyRecords => "sidebar-myRecords",
+            Self::SidebarPeople => "sidebar-people",
             Self::SidebarPreferences => "sidebar-preferences",
             Self::SidebarSettings => "sidebar-settings",
             Self::SidebarStorage => "sidebar-storage",
@@ -4648,6 +4691,7 @@ impl MessageId {
             Self::TextSizeSmallest => "textSize-smallest",
             Self::TextSizeTitle => "textSize-title",
             Self::UnlockAutoLock => "unlock-autoLock",
+            Self::UnlockBrandTagline => "unlock-brand-tagline",
             Self::UnlockForgotSummary => "unlock-forgot-summary",
             Self::UnlockNoKeyBody => "unlock-noKey-body",
             Self::UnlockNoKeyHeading => "unlock-noKey-heading",
@@ -4849,9 +4893,6 @@ impl MessageId {
                 Some(Self::InterfaceUnlockPdfDialogThisDocumentIsLockedWithAPassword)
             }
             "interface.UnlockPdfDialog.unlocking" => Some(Self::InterfaceUnlockPdfDialogUnlocking),
-            "interface.VaultApp.chooseFilesToImport" => {
-                Some(Self::InterfaceVaultAppChooseFilesToImport)
-            }
             "interface.VaultLibrary.picturesNote" => Some(Self::InterfaceVaultLibraryPicturesNote),
             "interface.VaultApp.finishingTheTransfer" => {
                 Some(Self::InterfaceVaultAppFinishingTheTransfer)
@@ -4939,6 +4980,9 @@ impl MessageId {
                 Some(Self::InterfaceVaultLibraryMoveAFolderWithTheKeyboard)
             }
             "interface.VaultLibrary.moveFolder" => Some(Self::InterfaceVaultLibraryMoveFolder),
+            "interface.VaultLibrary.moveFolderItem" => {
+                Some(Self::InterfaceVaultLibraryMoveFolderItem)
+            }
             "interface.VaultLibrary.moveSelectedTo" => {
                 Some(Self::InterfaceVaultLibraryMoveSelectedTo)
             }
@@ -4955,7 +4999,6 @@ impl MessageId {
                 Some(Self::InterfaceVaultLibraryMyCarlosEncryptedRecordLibrary)
             }
             "interface.VaultLibrary.nameAZ" => Some(Self::InterfaceVaultLibraryNameAZ),
-            "interface.VaultLibrary.new" => Some(Self::InterfaceVaultLibraryNew),
             "interface.VaultLibrary.newFolder" => Some(Self::InterfaceVaultLibraryNewFolder),
             "interface.VaultLibrary.newestFirst" => Some(Self::InterfaceVaultLibraryNewestFirst),
             "interface.VaultLibrary.noFilesSelectedNothingChanged" => {
@@ -6595,6 +6638,25 @@ impl MessageId {
             "notifications.testOff" => Some(Self::NotificationsTestOff),
             "preferences.moreAutomatic" => Some(Self::PreferencesMoreAutomatic),
             "preferences.moreBackground" => Some(Self::PreferencesMoreBackground),
+            "interface.AddMenu.addDocument" => Some(Self::InterfaceAddMenuAddDocument),
+            "interface.AddMenu.importFile" => Some(Self::InterfaceAddMenuImportFile),
+            "sidebar.folders" => Some(Self::SidebarFolders),
+            "sidebar.foldersOf" => Some(Self::SidebarFoldersOf),
+            "sidebar.people" => Some(Self::SidebarPeople),
+            "interface.VaultLibrary.view" => Some(Self::InterfaceVaultLibraryView),
+            "interface.VaultLibrary.helpWithThisScreen" => {
+                Some(Self::InterfaceVaultLibraryHelpWithThisScreen)
+            }
+            "interface.VaultLibrary.moreFor" => Some(Self::InterfaceVaultLibraryMoreFor),
+            "unlock.brand.tagline" => Some(Self::UnlockBrandTagline),
+            "reader.back" => Some(Self::ReaderBack),
+            "reader.panel.label" => Some(Self::ReaderPanelLabel),
+            "reader.panel.more" => Some(Self::ReaderPanelMore),
+            "reader.panel.ai" => Some(Self::ReaderPanelAi),
+            "interface.VaultLibrary.help" => Some(Self::InterfaceVaultLibraryHelp),
+            "interface.VaultLibrary.helpButtonName" => {
+                Some(Self::InterfaceVaultLibraryHelpButtonName)
+            }
             "interface.AddVideo.add" => Some(Self::InterfaceAddVideoAdd),
             "interface.AddVideo.hint" => Some(Self::InterfaceAddVideoHint),
             "interface.AddVideo.checking" => Some(Self::InterfaceAddVideoChecking),

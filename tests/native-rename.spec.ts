@@ -1,6 +1,7 @@
 import { translate } from "./support/fluent";
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { chooseToolbar } from "./support/menus";
 
 test("renames native-library folders and documents with accessible dialogs", async ({
   page,
@@ -103,7 +104,7 @@ test("renames native-library folders and documents with accessible dialogs", asy
       name: translate("en", "library.folder.label", { name: "FAKE Results" }),
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Grid view" }).click();
+  await chooseToolbar(page, "View", "Grid");
   await page
     .getByRole("button", {
       name: translate("en", "library.folder.rename", { name: "FAKE Results" }),

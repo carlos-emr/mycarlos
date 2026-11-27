@@ -1,5 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { expectNoAxeViolations } from "./support/a11y";
+import { addButton, chooseAdd } from "./support/menus";
 import { translate } from "./support/fluent";
 import {
   FAKE_PASSPHRASE,
@@ -9,40 +10,45 @@ import {
   myRecords,
 } from "./support/vaultFake";
 
-// Add a video: the library's button picks one video, the vault checks it, and the page shows the
-// progress with Cancel, the answer in words, and the new record. The native side is faked
-// (support/vaultFake.ts); the real checks are Rust tests.
+// Add a video: the Add document menu's item picks one video, the vault checks it, and the page shows
+// the progress with Cancel, the answer in words, and the new record. The native side is faked
+// (support/vaultFake.ts); the real checks are Rust tests. The menu is the sidebar's on a computer
+// and the one beside the heading on a phone: `chooseAdd` presses the visible one.
 
 const en = (
   key: Parameters<typeof translate>[1],
   params?: Parameters<typeof translate>[2],
 ) => translate("en", key, params);
 
-test.beforeEach(({}, testInfo) => {
-  test.skip(
-    testInfo.project.name === "phone",
-    "the button row's phone layout is covered by large-text-accessibility.spec.ts",
-  );
-});
+/** Presses "Add a video" in the Add document menu (opening it first). */
+const addVideo = (page: Page) => chooseAdd(page, en("interface.AddVideo.add"));
 
-const addVideo = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: en("interface.AddVideo.add"), exact: true });
+/** The menu's item, with the menu opened if it is closed: it is only on the page while open. */
+async function addVideoItem(page: Page) {
+  const add = addButton(page);
+  if ((await add.getAttribute("aria-expanded")) !== "true") await add.click();
+  return page.getByRole("menuitem", {
+    name: en("interface.AddVideo.add"),
+    exact: true,
+  });
+}
 
-test("a picked video is added, said so, shown in the records, and the button is back in focus", async ({
+test("a picked video is added, said so, shown in the records, and the focus is back on the Add document button", async ({
   page,
 }) => {
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await fakePickVideo(page, "FAKE clip.mp4");
-  await addVideo(page).click();
+  await addVideo(page);
   await expect(
     page
       .getByRole("status")
       .filter({ hasText: en("interface.AddVideo.added") }),
   ).toBeVisible();
   await expect(page.getByText("FAKE clip.mp4").first()).toBeVisible();
-  await expect(addVideo(page)).toBeFocused();
+  // Cancel left the page with the import; the focus did not drop to the page.
+  await expect(addButton(page)).toBeFocused();
   expect(await fakeCalls(page, "vault_import_video_picked")).toHaveLength(1);
   await expectNoAxeViolations(page, "after adding a video");
 });
@@ -54,7 +60,7 @@ test("a refused video says why in its own words and adds nothing", async ({
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await fakePickVideo(page, "FAKE phone.mp4", { refusal: "hevc" });
-  await addVideo(page).click();
+  await addVideo(page);
   await expect(page.locator(".add-video-problem")).toHaveText(
     en("interface.AddVideo.hevc"),
   );
@@ -69,7 +75,7 @@ test("a slow video shows a bar, Cancel stops it, and nothing is added", async ({
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await fakePickVideo(page, "FAKE long.mp4", { slow: true });
-  await addVideo(page).click();
+  await addVideo(page);
   const bar = page.getByRole("progressbar", {
     name: en("interface.AddVideo.progressLabel"),
   });
@@ -86,7 +92,7 @@ test("a slow video shows a bar, Cancel stops it, and nothing is added", async ({
   ).toBeVisible({ timeout: 10000 });
   await expect(bar).toHaveCount(0);
   await expect(page.getByText("FAKE long.mp4")).toHaveCount(0);
-  await expect(addVideo(page)).toBeEnabled();
+  await expect(await addVideoItem(page)).toBeEnabled();
 });
 
 test("a lock in the middle of adding a video leaves no bar, no alert and no stale answer after the next unlock", async ({
@@ -96,7 +102,7 @@ test("a lock in the middle of adding a video leaves no bar, no alert and no stal
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await fakePickVideo(page, "FAKE locked.mp4", { slow: true });
-  await addVideo(page).click();
+  await addVideo(page);
   await expect(
     page.getByRole("progressbar", {
       name: en("interface.AddVideo.progressLabel"),
@@ -122,22 +128,19 @@ test("a lock in the middle of adding a video leaves no bar, no alert and no stal
   await expect(page.getByRole("progressbar")).toHaveCount(0);
   await expect(page.locator(".add-video-problem")).toBeEmpty();
   await expect(page.locator(".add-video-result[role=status]")).toBeEmpty();
-  await expect(addVideo(page)).toBeEnabled();
+  await expect(await addVideoItem(page)).toBeEnabled();
 });
 
-test('"+ New" takes one video from the same picker and adds it as a video', async ({
+test("the Add menu's file item takes one video from the same picker and adds it as a video", async ({
   page,
 }) => {
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
   await fakePickVideo(page, "FAKE new clip.mp4");
-  await page
-    .getByRole("button", {
-      name: en("interface.VaultLibrary.new"),
-      exact: true,
-    })
-    .click();
+  // The Add menu's file item (there is no "+ New" button any more): the one picker, which hands a
+  // video that is the whole pick to the video import.
+  await chooseAdd(page, en("interface.AddMenu.importFile"));
   await expect(
     page
       .getByRole("status")

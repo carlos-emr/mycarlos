@@ -483,8 +483,6 @@ interface-UnlockPdfDialog-thisDocumentIsLockedWithAPassword = Ce document est ve
 
 interface-UnlockPdfDialog-unlocking = Déverrouillage…
 
-interface-VaultApp-chooseFilesToImport = Choisir les fichiers à importer
-
 interface-VaultLibrary-picturesNote = Le lieu, l’heure et les détails de l’appareil sont retirés des images que vous ajoutez.
 
 interface-VaultApp-finishingTheTransfer = Fin du transfert
@@ -559,6 +557,8 @@ interface-VaultLibrary-moveAFolderWithTheKeyboard = Déplacer un dossier avec le
 
 interface-VaultLibrary-moveFolder = Déplacer le dossier
 
+interface-VaultLibrary-moveFolderItem = Déplacer le dossier…
+
 interface-VaultLibrary-moveSelectedTo = Déplacer la sélection vers
 
 interface-VaultLibrary-moveThemIntoYourFoldersWheneverYou = Déplacez-les dans vos dossiers quand vous le souhaitez.
@@ -570,8 +570,6 @@ interface-VaultLibrary-myCarlosCouldNotSaveAChangeTo = myCarlos n’a pas pu enr
 interface-VaultLibrary-myCarlosEncryptedRecordLibrary = Bibliothèque de documents chiffrés myCarlos
 
 interface-VaultLibrary-nameAZ = Nom de A à Z
-
-interface-VaultLibrary-new = Nouveau
 
 interface-VaultLibrary-newestFirst = Les plus récents d’abord
 
@@ -612,6 +610,12 @@ interface-VaultLibrary-section = Section
 interface-VaultLibrary-someEncryptedFilesAreMissingFromThis = Certains fichiers chiffrés sont absents de cet appareil. Les documents indiqués comme endommagés ne peuvent être ni ouverts ni copiés; enregistrez dès maintenant des copies des autres documents. Pour pouvoir de nouveau modifier le coffre-fort, restaurez le dossier de données myCarlos à partir d’une sauvegarde ou masquez les documents endommagés.
 
 interface-VaultLibrary-someOfTheVaultsFilesCouldNot = Certains fichiers du coffre-fort n’ont pas pu être lus et pourraient être plus récents ou intacts. Aucune modification n’est donc possible pour le moment, y compris celle de votre phrase secrète ou de votre clé de récupération. Vous pouvez toujours ouvrir vos documents et en enregistrer des copies, sauf ceux indiqués comme « Fichier indisponible ». Vérifiez que le lecteur contenant le dossier de données myCarlos est connecté, qu’aucun autre programme n’utilise ce dossier et qu’un outil de synchronisation infonuagique conserve ses fichiers sur cet appareil, puis verrouillez et déverrouillez de nouveau.
+
+interface-VaultLibrary-view = Affichage
+
+interface-VaultLibrary-helpWithThisScreen = Aide sur cet écran
+
+interface-VaultLibrary-moreFor = Plus d’actions pour { $name }
 
 interface-VaultLibrary-sortBy = Trier par
 
@@ -1334,9 +1338,15 @@ sidebar-folderCount =
 
 sidebar-folderOfPerson = { $folder } ({ $person })
 
+sidebar-folders = Dossiers
+
+sidebar-foldersOf = Dossiers de { $name }
+
 sidebar-label = Bibliothèque de documents
 
 sidebar-myRecords = Mes documents
+
+sidebar-people = Personnes
 
 sidebar-preferences = Préférences
 
@@ -2169,6 +2179,10 @@ interface-history-status = État
 
 interface-RecordDetails-anonymizeText = Préparer le texte pour une IA…
 
+interface-AddMenu-addDocument = Ajouter un document
+
+interface-AddMenu-importFile = Importer un fichier
+
 interface-AnonymizePreview-title = Texte sans les détails identifiants
 
 interface-AnonymizePreview-reading = Lecture du document…
@@ -2983,6 +2997,20 @@ notifications-testWait = Patientez quelques secondes, puis réessayez.
 
 notifications-testFailed = L’avis de test n’a pas pu être affiché.
 notifications-testOff = Les avis sont désactivés dans myCarlos. Activez-les, puis réessayez.
+
+unlock-brand-tagline = Vos documents de santé, gardés privés sur cet appareil.
+
+reader-back = Retour
+
+reader-panel-label = À propos de ce document
+
+reader-panel-more = Plus…
+
+reader-panel-ai = Expliquer avec l’IA
+
+interface-VaultLibrary-help = Aide
+
+interface-VaultLibrary-helpButtonName = Aide : cet écran
 
 interface-AddVideo-add = Ajouter une vidéo
 

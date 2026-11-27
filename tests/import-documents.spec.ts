@@ -10,6 +10,7 @@ import {
   fakeVaultWith,
   myRecords,
 } from "./support/vaultFake";
+import { chooseAdd } from "./support/menus";
 
 // Adding documents the native way: the picker, the import of what it chose
 // into the folder that is open, duplicates skipped and said, a cancelled
@@ -35,10 +36,10 @@ test("Add documents: a cancelled picker changes nothing, chosen files are added 
   await fakeVaultWith(page, { start: "unlocked" });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
-  const add = page.getByRole("button", {
-    name: en("interface.VaultLibrary.new"),
-    exact: true,
-  });
+  // Importing is the Add document menu's first item.
+  const add = {
+    click: () => chooseAdd(page, en("interface.AddMenu.importFile")),
+  };
   const row = (name: string) => page.getByRole("button", { name, exact: true });
 
   // Cancelled: said, and nothing imported.

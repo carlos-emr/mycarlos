@@ -90,7 +90,7 @@ async function open(page: Page, reader: Locator, tool: string, first = false) {
 }
 
 async function close(reader: Locator) {
-  await button(reader, en("photo.close")).click();
+  await button(reader, en("reader.back")).click();
   await expect(reader).toBeHidden();
 }
 

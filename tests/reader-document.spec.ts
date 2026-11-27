@@ -277,7 +277,7 @@ test("reads a document page by page, with zoom and the page's text, and Close go
 
   // Close: the reader is gone, a page still being drawn is stopped, and the
   // focus is back on the document it was opened from.
-  await button("photo.close").click();
+  await button("reader.back").click();
   await expect(reader).toBeHidden();
   await expect(
     page.getByRole("button", { name: LETTER, exact: true }),
@@ -356,7 +356,7 @@ test(
     await expect(button("interface.DocumentReader.open")).toBeInViewport({
       ratio: 1,
     });
-    await expect(button("photo.close")).toBeInViewport({ ratio: 1 });
+    await expect(button("reader.back")).toBeInViewport({ ratio: 1 });
     const retryGeometry = await reader.evaluate((dialog) => ({
       viewportWidth: window.innerWidth,
       pageWidth: document.documentElement.scrollWidth,
@@ -417,7 +417,7 @@ test(
         ),
     ).not.toContain(FAKE_DOCUMENT_PASSWORD);
 
-    await button("photo.close").click();
+    await button("reader.back").click();
     await expect(reader).toBeHidden();
     await expect(
       page.getByRole("button", { name: LOCKED, exact: true }),
@@ -504,7 +504,7 @@ test("Unlock in a locked document's details adds a copy that opens without the p
     },
   });
   await reader
-    .getByRole("button", { name: en("photo.close"), exact: true })
+    .getByRole("button", { name: en("reader.back"), exact: true })
     .click();
   await expect(reader).toBeHidden();
 
@@ -605,7 +605,7 @@ test("a clinic reading aid opens under its notice before the original, and the o
     reader.getByRole("note").getByText("FAKE notice heading"),
   ).toBeVisible();
   await reader
-    .getByRole("button", { name: en("photo.close"), exact: true })
+    .getByRole("button", { name: en("reader.back"), exact: true })
     .click();
   await expect(reader).toHaveCount(0);
 });
@@ -627,7 +627,7 @@ test("Read still opens the original, with the aid one tap away; a document witho
   await expect(reader.getByRole("note")).toHaveCount(0);
   await expect(button("readingAid.open")).toBeVisible();
   await reader
-    .getByRole("button", { name: en("photo.close"), exact: true })
+    .getByRole("button", { name: en("reader.back"), exact: true })
     .click();
 });
 

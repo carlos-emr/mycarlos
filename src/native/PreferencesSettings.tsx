@@ -1,5 +1,5 @@
 import { TextSizeSetting, useNativeZoom } from "./TextSizeSetting";
-import { LanguageSetting } from "./LanguageSetting";
+import { LanguagePreference } from "./LanguagePreference";
 import { AppearanceSetting } from "./AppearanceSetting";
 import { useI18n } from "../i18n";
 import { NotificationSetting } from "./NotificationSetting";
@@ -19,11 +19,9 @@ export function PreferencesSettings() {
           <p>{t("preferences.subtitle")}</p>
         </div>
       </div>
-      <div className="setting-list">
-        <LanguageSetting />
+      <div className="setting-list setting-cards">
+        <LanguagePreference />
         <AppearanceSetting />
-        <NotificationSetting />
-        <BackgroundSetting />
         {native ? (
           <TextSizeSetting zoom={native.zoom} mac={native.mac} />
         ) : (
@@ -34,6 +32,8 @@ export function PreferencesSettings() {
             </div>
           </section>
         )}
+        <NotificationSetting />
+        <BackgroundSetting />
       </div>
     </main>
   );
