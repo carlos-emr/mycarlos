@@ -2407,6 +2407,7 @@ notifications-checkBusy = A document check is stopping. Choose Check for new doc
 noticesStep-title = Documents from your clinic
 noticesStep-intro = Your clinic is linked. myCarlos can check for new documents for you, and show a notice when one arrives on a computer that can. Nothing is turned on unless you tick it.
 noticesStep-later = You can change these any time in { $settings }, under { $preferences }: { $notices }.
+noticesStep-laterBackground = You can change the background choices any time in { $settings }, under { $preferences }: { $background }.
 noticesStep-done = Done
 noticesStep-notNow = Not now
 

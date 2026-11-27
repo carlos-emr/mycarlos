@@ -2442,6 +2442,7 @@ notifications-checkBusy = Une vérification de documents est en cours d’arrêt
 noticesStep-title = Documents de votre clinique
 noticesStep-intro = Votre clinique est associée. myCarlos peut vérifier les nouveaux documents pour vous, et afficher un avis à l’arrivée de l’un d’eux sur un ordinateur qui le permet. Rien n’est activé à moins que vous ne le cochiez.
 noticesStep-later = Vous pouvez les modifier à tout moment dans { $settings }, sous { $preferences } : { $notices }.
+noticesStep-laterBackground = Vous pouvez modifier les choix d’arrière-plan à tout moment dans { $settings }, sous { $preferences } : { $background }.
 noticesStep-done = Terminé
 noticesStep-notNow = Pas maintenant
 
