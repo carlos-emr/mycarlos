@@ -95,14 +95,18 @@ describe("ComfortSetup (#69)", () => {
     expect(onDone).toHaveBeenCalledOnce();
   });
 
-  it("says where text size comes from where myCarlos does not set it", () => {
+  it("says nothing about text size where myCarlos does not set it (it is in Preferences)", () => {
     const { onDone } = show(false);
     expect(
       screen.queryByRole("button", { name: humanText("Zoom in") }),
     ).not.toBeInTheDocument();
+    // Ben: "the text is unneeded, it just takes up more space": no sentence and no empty row.
     expect(
-      screen.getByText(humanText(/text size follows your device/)),
-    ).toBeVisible();
+      screen.queryByText(humanText(/text size follows your device/)),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: humanText("App zoom") }),
+    ).not.toBeInTheDocument();
     // The lock delay is still offered, and skipping still works.
     expect(
       screen.getByRole("group", { name: humanText("Automatic lock delay") }),
