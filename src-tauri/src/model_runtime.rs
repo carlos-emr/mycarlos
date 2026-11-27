@@ -1736,6 +1736,13 @@ pub mod engine_testing {
             )
         }
 
+        /// Structured counts and timings for the native engine's integration tests.
+        pub fn last_stats_json(&self) -> Option<serde_json::Value> {
+            self.runner
+                .last_stats()
+                .and_then(|stats| serde_json::to_value(stats).ok())
+        }
+
         /// The last answer's instruction prefix: its length in tokens, whether its state was put
         /// back rather than read, and the size of that kept state.
         pub fn last_prefix(&self) -> Option<(u32, bool, u64)> {
