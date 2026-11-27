@@ -383,20 +383,18 @@ describe("CameraDialog: choosing the camera", () => {
     connected = [LAPTOP, MICROPHONE];
     open();
     await startCamera();
-    await screen.findByText("FAKE Laptop camera");
-    expect(cameraList()).toBeNull();
+    await screen.findByRole("option", { name: "FAKE Laptop camera" });
+    expect(cameraList()).toBeDisabled();
+    expect(cameraList()).toHaveValue(LAPTOP.deviceId);
 
     connected = [LAPTOP, WEBCAM, MICROPHONE];
     await act(async () => {
       navigator.mediaDevices.dispatchEvent(new Event("devicechange"));
     });
 
-    const list = await waitFor(() => {
-      const found = cameraList();
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    expect(within(list).getAllByRole("option")).toHaveLength(2);
+    await screen.findByRole("option", { name: WEBCAM.label });
+    expect(cameraList()).toBeEnabled();
+    expect(within(cameraList()!).getAllByRole("option")).toHaveLength(2);
   });
 
   it("fits a 320-pixel window at twice the text size, the list inside the dialog", async () => {
