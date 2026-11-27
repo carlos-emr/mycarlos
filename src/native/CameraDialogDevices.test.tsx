@@ -282,6 +282,25 @@ describe("CameraDialog: choosing the camera", () => {
     });
   });
 
+  it("does not remember a camera picked from the list that vanished before it opened", async () => {
+    open();
+    await startCamera();
+    const list = await waitFor(() => {
+      const found = cameraList();
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // The webcam is unplugged after the list was made and before the pick is opened.
+    connected = [LAPTOP, MICROPHONE];
+
+    fireEvent.change(list, { target: { value: "cam-b" } });
+
+    // The system's default opened instead, and said so; the gone camera is NOT the remembered one.
+    expect(await screen.findByText(FELL_BACK)).toBeInTheDocument();
+    await waitFor(() => expect(shutter()).toBeEnabled());
+    expect(readDeviceChoice().camera).toBeNull();
+  });
+
   it("says the same in each language", async () => {
     window.localStorage.setItem(
       KEY,
@@ -305,7 +324,7 @@ describe("CameraDialog: choosing the camera", () => {
     }
   });
 
-  it("keeps the camera that was in use when the chosen one cannot be opened", async () => {
+  it("shows the failure and does not remember a chosen camera that is busy, and Try again opens the remembered one", async () => {
     open();
     await startCamera();
     const list = await waitFor(() => {

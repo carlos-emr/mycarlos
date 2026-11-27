@@ -300,6 +300,11 @@ test("chooses the camera for a photo, remembers it, and takes the photo with it"
   await camera.getByRole("button", { name: "Use photo" }).click();
   await expect(camera).toBeHidden();
   expect(await fakeCalls(page, "vault_save_photo")).toHaveLength(1);
+  // The saved photo's details open (as after any photo): closed before the next one is taken.
+  const details = page.getByRole("dialog", { name: /^Photo, .+\.jpg$/ });
+  await expect(details).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toBeHidden();
 
   // The choice is remembered: the next photo opens the second camera at once.
   await page.getByRole("button", { name: "Take a photo" }).click();

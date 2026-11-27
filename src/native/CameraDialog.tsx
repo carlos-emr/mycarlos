@@ -177,8 +177,10 @@ export function CameraDialog({
         setFellBack(gone);
         // A camera picked from the list is remembered only now that its stream is open: one that
         // is busy or refuses must not become the one asked for every time. The microphone choice
-        // of the video dialog, which shares the stored choice, is kept as it was.
-        if (chosen)
+        // of the video dialog, which shares the stored choice, is kept as it was. A pick that
+        // vanished before it opened (`gone`: the system's default opened instead) is not
+        // remembered either: the default's id may not be matchable, and the gone id would stick.
+        if (chosen && !gone)
           rememberDeviceChoice({
             ...readDeviceChoice(),
             camera: used ?? chosen,
@@ -186,6 +188,8 @@ export function CameraDialog({
         setStage("live");
       } catch (error) {
         if (attempt !== attemptRef.current) return;
+        // A switch that failed must not send the focus to the list after a later, successful try.
+        switchedRef.current = false;
         setFailure(cameraFailure(error));
         setStage("failed");
         setStatus("");
@@ -426,6 +430,9 @@ export function CameraDialog({
           </p>
           {stage === "live" && devices.cameras.length > 0 && (
             <div className="record-devices">
+              {/* The same chooser as the video recording dialog, and its words: renaming the
+                  `interface.RecordDialog.camera / unnamedCamera / systemDefaultDevice` messages
+                  renames them here too. */}
               <DevicePick
                 kind="camera"
                 label={translateNow("interface.RecordDialog.camera")}
