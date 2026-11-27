@@ -10,11 +10,19 @@ import {
   type UiText,
   type MessageKey,
 } from "../i18n";
-import type { PersonDetails } from "../vault";
+import type {
+  ArrivedWhileHidden,
+  BackupSize,
+  PatientProfile,
+  PendingRecording,
+  PersonDetails,
+} from "../vault";
 import { PersonSuggestion } from "./PersonSuggestion";
 import { usePersonSuggestions } from "./usePersonSuggestions";
 import { LibrarySidebar, personFolderName } from "./LibrarySidebar";
+import { sharedAddedText } from "./receivedNotice";
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -45,13 +53,17 @@ import {
   RecoveryKeySetup,
   type OpeningRecoverySetup,
 } from "./RecoveryKeySetup";
+import { ProfileExportDialog, ProfileImportDialog } from "./ProfileHandover";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { PreferencesSettings } from "./PreferencesSettings";
 import { AiSettings } from "./AiSettings";
 import { PortalDocuments } from "./PortalDocuments";
 import type { PollApproval, PortalWaits } from "./useApprovalPolling";
 import { SecuritySettings } from "./SecuritySettings";
+import { ArrivedWhileHiddenDialog } from "./HiddenPeople";
+import { FileUnderDialog, fileUnderPlan } from "./FileUnder";
 import { RecordDetails } from "./RecordDetails";
+import { AndroidDocumentReader } from "./AndroidDocumentReader";
 import { DocumentReader } from "./DocumentReader";
 import { modelRunsHere, nativeLocalModel } from "../ai/localModel";
 import type { ModelStatus } from "../ai/types";
@@ -60,6 +72,12 @@ import { AiHelperNotice } from "./AiHelperNotice";
 import { MoveTargetSelect, parseMoveTarget } from "./MoveTargetSelect";
 import { CameraDialog } from "./CameraDialog";
 import { PhotoViewer } from "./PhotoViewer";
+import { RecordDialog, type RecordEnd } from "./RecordDialog";
+import { AddVideoButton, AddVideoStatus, type AddVideoApi } from "./AddVideo";
+import { VideoViewer } from "./VideoViewer";
+import { VideoHelp } from "./VideoHelp";
+import { RecordingRecovery } from "./RecordingRecovery";
+import { isNoSpace, videoRecordingAvailable } from "./video";
 import { namedAsPdf, photoName } from "./photo";
 import { LibraryItems } from "./LibraryItems";
 import {
@@ -143,13 +161,17 @@ export function VaultLibrary({
   onOpeningRecoverySetupShown,
   onOfferClosed,
   onUnfinishedRecoveryKey,
+  onUnfinishedHandover,
   canPrint = false,
   keyboardHints = true,
   computer = true,
   sizesIn1024s = false,
   covered = false,
   cameraPlatform = null,
+  addVideo,
+  androidPdfReader = false,
   cameraAsking,
+  holdMedia,
   sharedNew = 0,
   onSharedSeen,
   onSecurityEntry,
@@ -188,6 +210,8 @@ export function VaultLibrary({
   /** Whether a recovery key setup has shown a key and not ended: a lock then
    * ends it, and the patient is told after the next unlock. */
   onUnfinishedRecoveryKey?: (unfinished: UnfinishedRecoveryKey | null) => void;
+  /** A handover's key is shown and unused (true), or the handover ended (false). */
+  onUnfinishedHandover?: (unfinished: boolean) => void;
   /** Whether this platform can print the recovery kit. */
   canPrint?: boolean;
   /** Whether to show keyboard-only instructions (Tab, Escape): false on
@@ -204,15 +228,24 @@ export function VaultLibrary({
   /** The platform the camera dialog runs on (a computer, or since D97 a
    * phone), or null where photos cannot be taken. */
   cameraPlatform?: string | null;
+  /** Adding a video: its state lives above the library (VaultApp), so leaving the library mid-import
+   * keeps the progress, the Cancel and the answer. */
+  addVideo?: AddVideoApi;
+  /** Android alone has a native PdfRenderer reader for stored PDFs (#358). */
+  androidPdfReader?: boolean;
   /** On a phone: holds the lock on a hidden app while the system asks
    * whether myCarlos may use the camera (see CameraDialog). */
   cameraAsking?: <T>(question: Promise<T>) => Promise<T>;
+  /** Holds the automatic lock while video is recording or playing (#359) and
+   * returns how to let go. The recording dialog holds it only while it is
+   * recording, not while paused; the player only while it is playing. */
+  holdMedia?: () => () => void;
   /** Files added to Shared with me since the vault was unlocked, until the
    * patient opens it (#61). */
   sharedNew?: number;
   /** The patient opened Shared with me: its new files have been seen. */
   onSharedSeen?: () => void;
-  /** Security opened (Clinic documents lives there): a chance to show arrivals. */
+  /** Security opened (Connected clinics lives there): a chance to show arrivals. */
   onSecurityEntry?: () => Promise<void>;
 }) {
   const { t } = useI18n();
@@ -342,6 +375,27 @@ export function VaultLibrary({
   };
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Video (#359): the recording dialog, the "Why?" help, the player, and the
+  // recordings a crash or a lock left to ask about.
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [whyNoVideoOpen, setWhyNoVideoOpen] = useState(false);
+  const [videoRecordId, setVideoRecordId] = useState<string | null>(null);
+  const [shownVideo, setShownVideo] = useState<{
+    recordId: string;
+    token: string;
+    url: string;
+  } | null>(null);
+  const [pendingRecordings, setPendingRecordings] = useState<
+    PendingRecording[]
+  >([]);
+  const videoUiOpen =
+    recordOpen ||
+    whyNoVideoOpen ||
+    shownVideo !== null ||
+    pendingRecordings.length > 0;
+  const videoRecording = useMemo(() => videoRecordingAvailable(), []);
+  const videoRequestRef = useRef<symbol | null>(null);
+  const playingReleaseRef = useRef<(() => void) | null>(null);
   // Security's profile dialogs (Ben, 29 Oct): drawn in this host, beside the
   // other dialogs, and the page behind them is inert.
   const [profileDialogHost, setProfileDialogHost] =
@@ -426,6 +480,51 @@ export function VaultLibrary({
   // Shared with me is a reserved profile, shown as a folder (#61): with one
   // person, inside their records; with several, outside everyone's.
   const people = useMemo(() => peopleOf(snapshot), [snapshot]);
+  // Handing a person's records over, or adding one from a file (#360).
+  const [handover, setHandover] = useState<"export" | "import" | null>(null);
+  // A clinic document being filed under a person the patient chooses (#340).
+  const [fileUnderId, setFileUnderId] = useState<string | null>(null);
+  // Documents that came in a handover file stand on what the file says until a link of this
+  // vault to the same clinic holds its signing key (#360): say when that happens.
+  const claimedIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const claimed = new Set(
+      snapshot.records
+        .filter((record) => record.fileSaysCheckedAtMs !== undefined)
+        .map((record) => record.id),
+    );
+    const before = claimedIds.current;
+    claimedIds.current = claimed;
+    if (!before) return;
+    const perClinic = new Map<string, number>();
+    for (const record of snapshot.records)
+      if (before.has(record.id) && record.verifiedClinicName)
+        perClinic.set(
+          record.verifiedClinicName,
+          (perClinic.get(record.verifiedClinicName) ?? 0) + 1,
+        );
+    if (perClinic.size === 0) return;
+    setNoticeRef.current(
+      deferredText(() =>
+        [...perClinic]
+          .map(([clinic, count]) =>
+            translateNow("handover.nowVerified", { clinic, count }),
+          )
+          .join(" "),
+      ),
+    );
+  }, [snapshot.records]);
+  // A hidden person whose records are being handed over: the dialog offers only them.
+  const [handoverHidden, setHandoverHidden] = useState<PatientProfile | null>(
+    null,
+  );
+  // Documents that arrived for a person while they were hidden, offered back once they are
+  // restored (#360, section 8.6).
+  const [arrivedFor, setArrivedFor] = useState<{
+    profileId: string;
+    name: string;
+    arrived: ArrivedWhileHidden[];
+  } | null>(null);
   const [detailsFor, setDetailsFor] = useState<{ profileId: string } | null>(
     null,
   );
@@ -652,6 +751,7 @@ export function VaultLibrary({
       shownPhoto ||
       renameTarget ||
       cameraOpen ||
+      videoUiOpen ||
       confirmHideDamaged ||
       recoverySetup ||
       (section !== "records" && !inShared),
@@ -732,6 +832,61 @@ export function VaultLibrary({
       photoRequestRef.current = null;
     };
   }, [bridge, photoCandidate]);
+  // A document whose file is an MP4 can be played (#359). Asked like the photo:
+  // the vault decides from the file's first bytes, whatever the name says.
+  const videoCandidate =
+    activeRecord?.available &&
+    !namedAsPdf(activeRecord.displayName) &&
+    typeof bridge.isVideo === "function"
+      ? activeRecord.id
+      : null;
+  useEffect(() => {
+    videoRequestRef.current = null;
+    setVideoRecordId(null);
+    if (!videoCandidate) return;
+    let current = true;
+    bridge.isVideo(videoCandidate).then(
+      (video) => {
+        if (current && video) setVideoRecordId(videoCandidate);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+      videoRequestRef.current = null;
+    };
+  }, [bridge, videoCandidate]);
+  // Recordings a crash or a lock left unfinished are asked about once the
+  // library is up, each unlock. One a lock parked is saved, and the patient is
+  // told; one a crash cut short is asked about: Keep (the default) or Delete.
+  const keepParkedRef = useRef<(parked: PendingRecording[]) => Promise<void>>(
+    async () => undefined,
+  );
+  useEffect(() => {
+    if (typeof bridge.videoPending !== "function") return;
+    let current = true;
+    bridge.videoPending().then(
+      (pending) => {
+        if (!current) return;
+        setPendingRecordings(pending.recordings.filter((r) => !r.parked));
+        const parked = pending.recordings.filter((r) => r.parked);
+        if (parked.length > 0) void keepParkedRef.current(parked);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge]);
+  // The player lets go of the lock when it closes, and the vault's lock closes
+  // it: whichever comes first.
+  useEffect(
+    () => () => {
+      playingReleaseRef.current?.();
+      playingReleaseRef.current = null;
+    },
+    [],
+  );
   // A PDF that may be locked with a password can be unlocked from its details
   // (#54). The vault scans the file's PDF names only, when the details open.
   const lockedCandidate =
@@ -879,6 +1034,7 @@ export function VaultLibrary({
         shownPhoto ||
         renameTarget ||
         cameraOpen ||
+        videoUiOpen ||
         confirmation ||
         confirmHideDamaged ||
         recoverySetup ||
@@ -914,6 +1070,7 @@ export function VaultLibrary({
       !dialogResult ||
       renameTarget ||
       cameraOpen ||
+      videoUiOpen ||
       shownPhoto ||
       confirmation ||
       confirmHideDamaged ||
@@ -956,6 +1113,7 @@ export function VaultLibrary({
     recoverySetup,
     renameTarget,
     cameraOpen,
+    videoUiOpen,
     shownPhoto,
   ]);
 
@@ -1039,11 +1197,7 @@ export function VaultLibrary({
   useEffect(() => {
     const added = sharedNew - sharedSeen.current;
     if (added > 0)
-      setSharedAnnouncement(
-        deferredText(() =>
-          translateNow("interface.notice.sharedAdded", { count: added }),
-        ),
-      );
+      setSharedAnnouncement(deferredText(() => sharedAddedText(added)));
     sharedSeen.current = sharedNew;
   }, [sharedNew]);
   // Seen as soon as Shared with me is open.
@@ -1054,7 +1208,31 @@ export function VaultLibrary({
   const importFiles = () =>
     run(async () => {
       const folderIds = currentFolderId ? [currentFolderId] : [];
-      const pickId = await bridge.pickImportFiles(profileId, folderIds);
+      // Where a video can be added, one picker takes documents, pictures and videos; a video that
+      // is the whole pick goes to the video import (its progress and Cancel show by the Add a
+      // video button), anything else keeps the document path.
+      let pickId: string | null;
+      if (
+        cameraPlatform !== "ios" &&
+        addVideo?.canAdd &&
+        // A video is being added: a second video could not be taken (one at a time), so the picker
+        // that may hand one over is not opened. Documents and pictures can still be added.
+        !addVideo.working &&
+        bridge.pickImportAny
+      ) {
+        const picked = await bridge.pickImportAny(profileId, folderIds);
+        if (picked?.kind === "videoAlone") {
+          setNotice(message("interface.AddVideo.videoAlone"));
+          return;
+        }
+        if (picked?.kind === "video") {
+          void addVideo.addPicked(picked.pickId, profileId, folderIds);
+          return;
+        }
+        pickId = picked?.pickId ?? null;
+      } else {
+        pickId = await bridge.pickImportFiles(profileId, folderIds);
+      }
       if (!pickId) {
         setNotice(
           deferredText(() =>
@@ -1099,6 +1277,130 @@ export function VaultLibrary({
 
   // Saved into the folder that is open, as an import is. The details of the
   // new document open, so that it can be renamed at once.
+  const playVideo = (recordId: string) =>
+    run(async () => {
+      const request = Symbol();
+      videoRequestRef.current = request;
+      const opened = await bridge.videoOpen(recordId);
+      if (
+        mountedRef.current &&
+        videoRequestRef.current === request &&
+        activeRecordIdRef.current === recordId
+      )
+        setShownVideo({
+          recordId,
+          token: opened.token,
+          url: opened.url,
+        });
+      else void bridge.videoClose(opened.token).catch(() => undefined);
+    });
+  const closeVideo = () => {
+    const shown = shownVideo;
+    setShownVideo(null);
+    if (shown) void bridge.videoClose(shown.token).catch(() => undefined);
+  };
+  // The recording ended: the library shows what there is, and says how it ended.
+  const recordSaved = (recordId: string | null, endedBy: RecordEnd) =>
+    run(async () => {
+      setRecordOpen(false);
+      const next = await refresh();
+      if (endedBy === "unfinished") {
+        // Kept, not lost: it is finished at the next unlock, when there is room.
+        setNotice(message("interface.RecordDialog.videoKeptUnfinished"));
+        return;
+      }
+      const saved = recordId
+        ? next.records.find((record) => record.id === recordId)
+        : undefined;
+      if (!saved) {
+        setNotice(message("interface.RecordDialog.nothingWasRecorded"));
+        return;
+      }
+      setActiveRecordId(saved.id);
+      setNotice("");
+      setDialogResult({
+        message: message(
+          endedBy === "asked"
+            ? "interface.RecordDialog.videoSaved"
+            : endedBy === "hidden"
+              ? "interface.RecordDialog.videoSavedHidden"
+              : endedBy === "slow"
+                ? "interface.RecordDialog.videoSavedSlow"
+                : endedBy === "space"
+                  ? "interface.RecordDialog.videoSavedNoRoom"
+                  : endedBy === "failed"
+                    ? "interface.RecordDialog.videoSavedFailed"
+                    : "interface.RecordDialog.videoSavedStopped",
+          { name: saved.displayName },
+        ),
+        recordId: saved.id,
+      });
+    });
+  const keepParked = (parked: PendingRecording[]) =>
+    run(async () => {
+      const kept: PendingRecording[] = [];
+      const waiting: PendingRecording[] = [];
+      for (const recording of parked) {
+        try {
+          const saved = await bridge.videoRecover(recording.id, true);
+          if (saved.recordId) kept.push(recording);
+        } catch (error) {
+          // Not enough room to finish it yet: it stays as it is, the others
+          // are still tried, and the notice says so (not a generic failure).
+          if (!isNoSpace(error)) throw error;
+          waiting.push(recording);
+        }
+      }
+      await refresh();
+      const told = [
+        ...kept.map((recording) =>
+          message(
+            recording.stopped
+              ? "interface.RecordingRecovery.finishedWithRoom"
+              : recording.paused
+                ? "interface.RecordingRecovery.savedLockedPaused"
+                : "interface.RecordingRecovery.savedLocked",
+            { name: recording.displayName },
+          ),
+        ),
+        ...waiting.map((recording) =>
+          message("interface.RecordingRecovery.stillNoRoom", {
+            name: recording.displayName,
+          }),
+        ),
+      ];
+      setNotice(
+        told.length === 0
+          ? message("interface.RecordingRecovery.nothingToKeep")
+          : joinText(...told),
+      );
+    });
+  keepParkedRef.current = keepParked;
+  const answerRecording = (keep: boolean) =>
+    run(async () => {
+      const [first, ...rest] = pendingRecordings;
+      if (!first) return;
+      const saved = await bridge.videoRecover(first.id, keep);
+      setPendingRecordings(rest);
+      if (keep && saved.recordId) {
+        const next = await refresh();
+        const record = next.records.find((r) => r.id === saved.recordId);
+        setNotice(
+          message("interface.RecordingRecovery.kept", {
+            name: record?.displayName ?? first.displayName,
+          }),
+        );
+      } else {
+        setNotice(
+          message(
+            keep
+              ? "interface.RecordingRecovery.nothingToKeep"
+              : "interface.RecordingRecovery.deleted",
+          ),
+        );
+      }
+    });
+
   const savePhoto = (jpeg: Uint8Array) =>
     run(async () => {
       const folderIds = currentFolderId ? [currentFolderId] : [];
@@ -1266,7 +1568,55 @@ export function VaultLibrary({
       : [recordId],
   });
 
-  const saveBackup = () =>
+  // Which hidden records a backup was made without the file of, asked when the
+  // Hidden list opens (from the history, so that nothing more is stored).
+  const [leftOutIds, setLeftOutIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (section !== "hidden" || typeof bridge.leftOutRecords !== "function") {
+      return;
+    }
+    let current = true;
+    bridge.leftOutRecords().then(
+      (ids) => {
+        if (current) setLeftOutIds(new Set(ids));
+      },
+      () => {
+        if (current) setLeftOutIds(new Set());
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [bridge, section, hiddenRecords.length]);
+  // Asked for the screen that offers a backup: how big it would be.
+  // Told once for each set of documents, not each time Security opens or the box
+  // is ticked: working it out reads the start of the recorded videos. A failed
+  // answer is not kept.
+  const sizeAnswer = useRef<{
+    key: string;
+    answer: Promise<BackupSize>;
+  } | null>(null);
+  const documentsKey = records
+    .map(
+      (record) =>
+        `${record.id}${record.available ? "" : "-"}${record.hidden ? "h" : ""}`,
+    )
+    .join(",");
+  const backupSize = useCallback(() => {
+    if (sizeAnswer.current?.key === documentsKey) {
+      return sizeAnswer.current.answer;
+    }
+    const answer =
+      typeof bridge.backupSize === "function"
+        ? bridge.backupSize()
+        : Promise.reject(new Error("no backup size"));
+    sizeAnswer.current = { key: documentsKey, answer };
+    answer.catch(() => {
+      if (sizeAnswer.current?.answer === answer) sizeAnswer.current = null;
+    });
+    return answer;
+  }, [bridge, documentsKey]);
+  const saveBackup = (leaveVideosOut = false) =>
     run(async () => {
       // Named by the patient's own date, not the UTC one.
       const pickId = await bridge.pickBackupDestination(
@@ -1284,7 +1634,7 @@ export function VaultLibrary({
       }
       let saved: SavedBackup | undefined;
       try {
-        saved = await bridge.saveBackupToPicked(pickId);
+        saved = await bridge.saveBackupToPicked(pickId, leaveVideosOut);
       } catch (error) {
         // On Android the steps may name no file, and this save may have been
         // over the one they say to keep, now emptied: a new backup comes
@@ -1344,7 +1694,9 @@ export function VaultLibrary({
     (record) => !record.available && record.hidden?.reason !== "damaged",
   );
   const damagedIds = damaged.map((record) => record.id);
-  const damagedCount = damagedIds.length;
+  // Damaged documents of hidden people are in no list: counted, never named (#360).
+  const hiddenPeopleDamaged = snapshot.hiddenPeopleDamaged ?? 0;
+  const damagedCount = damagedIds.length + hiddenPeopleDamaged;
   const profileName = (id: string) =>
     id === sharedProfileId
       ? translateNow("interface.LibrarySidebar.sharedWithMe")
@@ -1356,7 +1708,10 @@ export function VaultLibrary({
       let removed: string[];
       try {
         // The vault removes only what this screen showed as damaged.
-        removed = await bridge.hideUnavailableRecords(damagedIds);
+        removed = await bridge.hideUnavailableRecords(
+          damagedIds,
+          hiddenPeopleDamaged,
+        );
       } catch (error) {
         // A refusal can change what the vault reports (more documents
         // damaged, or files that cannot be read): show that, then the reason.
@@ -1402,6 +1757,39 @@ export function VaultLibrary({
           translateNow("interface.notice.hidden", { name: record.displayName }),
         ),
       );
+    });
+  };
+  // A whole person is hidden or restored in one step (#360): nothing is deleted, and the
+  // person's documents, folders and AI answers leave or rejoin the library together.
+  // Moved on when a hide that came from the handover dialog has finished: Security's Hand records
+  // over button takes the focus then (it is disabled while the hide runs).
+  const [handoverFocus, setHandoverFocus] = useState(0);
+  const hidePerson = (id: string, afterHide?: () => void) => {
+    const name = profileName(id);
+    void run(async () => {
+      await bridge.hideProfile!(id);
+      setSelectedIds([]);
+      setActiveRecordId(null);
+      await refresh();
+      afterHide?.();
+      // Said to a screen reader (the polite line the library keeps for news), with no line on the
+      // screen: the person leaving the lists is what shows.
+      setSharedAnnouncement(
+        deferredText(() => translateNow("hiddenPeople.hidden", { name })),
+      );
+    });
+  };
+  const restorePerson = (id: string) => {
+    const name =
+      snapshot.hiddenProfiles?.find((person) => person.id === id)
+        ?.displayName ?? "";
+    void run(async () => {
+      const arrived = await bridge.restoreProfile!(id);
+      await refresh();
+      setSharedAnnouncement(
+        deferredText(() => translateNow("hiddenPeople.restored", { name })),
+      );
+      if (arrived.length > 0) setArrivedFor({ profileId: id, name, arrived });
     });
   };
   const unhideRecord = (record: VaultRecord) => {
@@ -1491,6 +1879,8 @@ export function VaultLibrary({
     ids: string[],
     toProfileId: string,
     folderId: string | null,
+    /** Run once the move has happened, before the library is read again. */
+    afterMove?: () => Promise<void>,
   ) =>
     void run(async () => {
       const names = new Map(
@@ -1508,6 +1898,7 @@ export function VaultLibrary({
       setSelectedIds((current) =>
         current.filter((id) => !outcome.moved.includes(id)),
       );
+      if (afterMove && outcome.moved.length > 0) await afterMove();
       await refresh();
       const said = () => {
         const theirs =
@@ -1692,6 +2083,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
@@ -1733,6 +2125,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
@@ -1782,6 +2175,7 @@ export function VaultLibrary({
               activeRecord ||
                 renameTarget ||
                 cameraOpen ||
+                videoUiOpen ||
                 profileDialogOpen ||
                 clinicDialogOpen ||
                 confirmHideDamaged ||
@@ -2065,6 +2459,54 @@ export function VaultLibrary({
                           </span>
                         </button>
                       )}
+                      {cameraPlatform &&
+                        typeof bridge.videoStart === "function" &&
+                        videoRecording && (
+                          <button
+                            className="button"
+                            type="button"
+                            disabled={busy || readOnly || !profileId}
+                            onClick={() => {
+                              setNotice("");
+                              setRecordOpen(true);
+                            }}
+                          >
+                            <Icon name="video" />
+                            <span>
+                              {translateNow(
+                                "interface.RecordDialog.recordAVideo",
+                              )}
+                            </span>
+                          </button>
+                        )}
+                      {cameraPlatform &&
+                        typeof bridge.videoStart === "function" &&
+                        !videoRecording && (
+                          // Where the button would be, a line says why it is not
+                          // (Ben, Q4b): the camera works, video does not.
+                          <span className="video-unavailable">
+                            <span>
+                              {translateNow(
+                                "interface.RecordDialog.unavailable",
+                              )}
+                            </span>
+                            <button
+                              className="link-action"
+                              type="button"
+                              onClick={() => setWhyNoVideoOpen(true)}
+                            >
+                              {translateNow("interface.RecordDialog.why")}
+                            </button>
+                          </span>
+                        )}
+                      {cameraPlatform !== "ios" && addVideo?.canAdd && (
+                        <AddVideoButton
+                          add={addVideo}
+                          profileId={profileId}
+                          folderIds={currentFolderId ? [currentFolderId] : []}
+                          disabled={busy || readOnly || !profileId}
+                        />
+                      )}
                       <button
                         className="button primary"
                         type="button"
@@ -2088,6 +2530,18 @@ export function VaultLibrary({
                     </div>
                   )}
                 </div>
+                {cameraPlatform !== "ios" && addVideo?.canAdd && (
+                  <AddVideoStatus add={addVideo} />
+                )}
+
+                {!readOnly && profileId && (
+                  <p className="purpose-note native-pictures-note">
+                    <Icon name="info" />
+                    <span>
+                      {translateNow("interface.VaultLibrary.picturesNote")}
+                    </span>
+                  </p>
+                )}
 
                 {inShared && (
                   <p className="purpose-note native-shared-intro">
@@ -2509,6 +2963,7 @@ export function VaultLibrary({
 
             {section === "hidden" && (
               <HiddenDocuments
+                leftOutIds={leftOutIds}
                 records={hiddenRecords}
                 rootName={hiddenScopeName}
                 onBack={backToSecurity}
@@ -2532,7 +2987,11 @@ export function VaultLibrary({
             {section === "preferences" && <PreferencesSettings />}
 
             {section === "ai" && computer && (
-              <AiSettings aiStatus={aiStatus} onAiStatus={setAiStatus} />
+              <AiSettings
+                aiStatus={aiStatus}
+                onAiStatus={setAiStatus}
+                onOpenAiHelperNotice={() => openAiNotice({ before: null })}
+              />
             )}
 
             {section === "security" && (
@@ -2573,9 +3032,6 @@ export function VaultLibrary({
                   setReturnFocusToHistory(false);
                   setSection("history");
                 }}
-                onOpenAiHelperNotice={
-                  computer ? () => openAiNotice({ before: null }) : undefined
-                }
                 people={people}
                 onUpdateProfileDetails={
                   bridge.updateProfileDetails ? updateProfileDetails : undefined
@@ -2587,6 +3043,23 @@ export function VaultLibrary({
                 sizesIn1024s={sizesIn1024s}
                 onOldBackupsGuideDone={() => setOldBackupsGuide(null)}
                 onSaveBackup={saveBackup}
+                onHandOver={() => setHandover("export")}
+                focusHandover={handoverFocus}
+                onAddFromFile={() => setHandover("import")}
+                hiddenPeople={snapshot.hiddenProfiles}
+                onHidePerson={bridge.hideProfile ? hidePerson : undefined}
+                onRestorePerson={
+                  bridge.restoreProfile ? restorePerson : undefined
+                }
+                onHandOverHidden={(person) => {
+                  setHandoverHidden({
+                    id: person.id,
+                    displayName: person.displayName,
+                    createdAtMs: 0,
+                  });
+                  setHandover("export");
+                }}
+                onBackupSize={backupSize}
                 onSpeedTest={() => bridge.benchmarkKdf()}
                 onSetUpRecoveryKey={() => setRecoverySetup({ required: false })}
               />
@@ -2684,6 +3157,103 @@ export function VaultLibrary({
               onLockAndLeave={onRequestLock ?? (() => void onLock())}
             />
           )}
+          {fileUnderId &&
+            (() => {
+              const record = snapshot.records.find(
+                (candidate) => candidate.id === fileUnderId,
+              );
+              const clinic = record?.clinicPatient;
+              if (!record || !clinic) return null;
+              return (
+                <FileUnderDialog
+                  documentName={record.displayName}
+                  clinic={clinic}
+                  people={people}
+                  busy={busy}
+                  onCancel={() => setFileUnderId(null)}
+                  onConfirm={(to, saveDetails) => {
+                    setFileUnderId(null);
+                    const person = people.find((p) => p.id === to);
+                    const fill =
+                      saveDetails && person
+                        ? fileUnderPlan(person, clinic).fill
+                        : {};
+                    moveToPerson(
+                      [record.id],
+                      to,
+                      null,
+                      Object.keys(fill).length > 0 && person
+                        ? async () => {
+                            // Only what the person had none of, and the rest as it was.
+                            await bridge.updateProfileDetails!(to, {
+                              fullName: fill.fullName ?? person.fullName,
+                              birthDate: fill.birthDate ?? person.birthDate,
+                              previousFullNames: person.previousFullNames,
+                            });
+                          }
+                        : undefined,
+                    );
+                  }}
+                />
+              );
+            })()}
+          {arrivedFor && (
+            <ArrivedWhileHiddenDialog
+              name={arrivedFor.name}
+              arrived={arrivedFor.arrived}
+              onLeave={() => setArrivedFor(null)}
+              onMove={() => {
+                const { profileId: to, arrived } = arrivedFor;
+                setArrivedFor(null);
+                moveToPerson(
+                  arrived.map((document) => document.recordId),
+                  to,
+                  null,
+                );
+              }}
+            />
+          )}
+          {handover === "export" && (
+            <ProfileExportDialog
+              bridge={bridge}
+              people={handoverHidden ? [handoverHidden] : people}
+              sizesIn1024s={sizesIn1024s}
+              // On a phone, leaving myCarlos to paste the key elsewhere locks the
+              // vault and ends the key: no Copy there.
+              canCopy={keyboardHints}
+              onUnfinished={onUnfinishedHandover}
+              // A person already hidden cannot be hidden again; otherwise the saved file offers it.
+              onHidePerson={
+                handoverHidden || !bridge.hideProfile
+                  ? undefined
+                  : (id) =>
+                      hidePerson(id, () =>
+                        setHandoverFocus((count) => count + 1),
+                      )
+              }
+              onClose={() => {
+                setHandover(null);
+                setHandoverHidden(null);
+              }}
+              onLocked={() => {
+                setHandover(null);
+                setHandoverHidden(null);
+                void lockAndConceal();
+              }}
+            />
+          )}
+          {handover === "import" && (
+            <ProfileImportDialog
+              bridge={bridge}
+              sizesIn1024s={sizesIn1024s}
+              onClose={() => setHandover(null)}
+              onLocked={() => {
+                setHandover(null);
+                void lockAndConceal();
+              }}
+              onImported={() => void refresh()}
+            />
+          )}
           {renameTarget && (
             <RenameDialog
               target={renameTarget}
@@ -2708,6 +3278,45 @@ export function VaultLibrary({
               onClose={() => setCameraOpen(false)}
             />
           )}
+          {recordOpen &&
+            cameraPlatform &&
+            typeof bridge.videoStart === "function" && (
+              <RecordDialog
+                platform={cameraPlatform}
+                bridge={bridge}
+                profileId={profileId}
+                folderIds={currentFolderId ? [currentFolderId] : []}
+                whileAsking={cameraAsking}
+                holdLock={holdMedia}
+                notice={notice}
+                onSaved={recordSaved}
+                onClose={() => setRecordOpen(false)}
+              />
+            )}
+          {whyNoVideoOpen && (
+            <VideoHelp onClose={() => setWhyNoVideoOpen(false)} />
+          )}
+          {activeRecord && shownVideo?.recordId === activeRecord.id && (
+            <VideoViewer
+              name={activeRecord.displayName}
+              url={shownVideo.url}
+              onPlaying={(playing) => {
+                playingReleaseRef.current?.();
+                playingReleaseRef.current = playing
+                  ? (holdMedia?.() ?? null)
+                  : null;
+              }}
+              onClose={closeVideo}
+            />
+          )}
+          {pendingRecordings[0] && !recordOpen && (
+            <RecordingRecovery
+              recording={pendingRecordings[0]}
+              busy={busy}
+              onAnswer={(keep) => void answerRecording(keep)}
+              onLater={() => setPendingRecordings([])}
+            />
+          )}
           {activeRecord && shownPhoto?.recordId === activeRecord.id && (
             <PhotoViewer
               name={activeRecord.displayName}
@@ -2726,8 +3335,13 @@ export function VaultLibrary({
           )}
           {activeRecord &&
             !renameTarget &&
+            !fileUnderId &&
             !pendingAction &&
             !shownPhoto &&
+            // The details dialog is later in the page than the player, so left up it would sit
+            // over it: like a photo, a playing video replaces the details, which come back when
+            // the player closes.
+            shownVideo?.recordId !== activeRecord.id &&
             unlocking?.recordId !== activeRecord.id && (
               <RecordDetails
                 record={activeRecord}
@@ -2735,6 +3349,14 @@ export function VaultLibrary({
                 folders={folders}
                 moveTargets={
                   inShared || people.length > 1 ? moveTargets : undefined
+                }
+                onFileUnder={
+                  inShared &&
+                  activeRecord.clinicPatient &&
+                  people.length > 0 &&
+                  bridge.updateProfileDetails
+                    ? () => setFileUnderId(activeRecord.id)
+                    : undefined
                 }
                 onMoveTo={(to, folderId) =>
                   to === activeRecord.profileId
@@ -2773,6 +3395,11 @@ export function VaultLibrary({
                 onViewPhoto={
                   photoRecordId === activeRecord.id
                     ? () => void viewPhoto(activeRecord.id)
+                    : undefined
+                }
+                onPlayVideo={
+                  videoRecordId === activeRecord.id
+                    ? () => void playVideo(activeRecord.id)
                     : undefined
                 }
                 locked={lockedPdfId === activeRecord.id}
@@ -2842,22 +3469,46 @@ export function VaultLibrary({
               pickDestination={(ticket) =>
                 bridge.pickTextExportDestination(anonymizeRecord.id, ticket)
               }
-              saveText={(pickId, ticket, text) =>
+              saveText={(pickId, ticket, text, kept) =>
                 bridge.exportTextToPicked(
                   pickId,
                   anonymizeRecord.id,
                   ticket,
                   text,
+                  kept,
                 )
+              }
+              copyText={(ticket, text, kept) =>
+                bridge.copyTextExport(anonymizeRecord.id, ticket, text, kept)
               }
               exportHeader={translateNow("aiHelper.exportHeader")}
               onClose={() => setAnonymizeRecordId(null)}
             />
           )}
-          {readerRecord && (
+          {readerRecord &&
+            androidPdfReader &&
+            bridge.readAndroidPdf &&
+            !readerShowsAid && (
+              <AndroidDocumentReader
+                record={readerRecord}
+                read={(id, labels) =>
+                  bridge.readAndroidPdf!(id, labels).catch((error: unknown) => {
+                    if (mountedRef.current && isLockedError(error))
+                      void lockAndConceal();
+                    throw error;
+                  })
+                }
+                cancel={() => bridge.cancelView()}
+                onClose={() => setReaderRecordId(null)}
+              />
+            )}
+          {readerRecord && (!androidPdfReader || readerShowsAid) && (
             <DocumentReader
               record={readerRecord}
               startWithAid={readerShowsAid}
+              onOpenOriginal={
+                androidPdfReader ? () => setReaderShowsAid(false) : undefined
+              }
               viewPage={(page, width, password) =>
                 bridge
                   .viewPage(readerRecord.id, page, width, password)
@@ -2902,6 +3553,8 @@ export function VaultLibrary({
                         setReaderRecordId(null);
                         setSection("ai");
                       },
+                      // The reader's Summary offers the notice (#355).
+                      onOpenAiNotice: () => openAiNotice({ before: null }),
                       beforeFirstUse: beforeFirstAiUse,
                     }
                   : undefined
@@ -2954,6 +3607,13 @@ export function VaultLibrary({
                 </ul>
               }
             >
+              {hiddenPeopleDamaged > 0 && (
+                <p>
+                  {translateNow("hiddenPeople.damagedToo", {
+                    count: hiddenPeopleDamaged,
+                  })}
+                </p>
+              )}
               <p>
                 {translateNow(
                   "interface.VaultLibrary.theirEncryptedFilesAreMissingFromThis",

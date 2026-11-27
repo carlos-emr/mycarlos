@@ -13,7 +13,7 @@ provider, **Anthropic**, from myCarlos itself, using the **patient's own API key
 
 - **One provider, one host:** `api.anthropic.com`, paths `POST /v1/messages` and `GET /v1/models` only,
   HTTPS with the platform's certificate verifier, no redirects, no proxy, no cookies. The address is a
-  constant in Rust (THREAT_MODEL NET-05).
+  constant in Rust (THREAT_MODEL NET-09).
 - **The key:** stored encrypted in the vault (a manifest field, so a format bump taken at merge), only ever
   in Rust, shown masked, removable, never returned to the page; an admin key (`sk-ant-admin…`) is refused.
   It is in backups; older backups keep it after removal.

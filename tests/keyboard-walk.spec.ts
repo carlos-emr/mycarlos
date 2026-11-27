@@ -36,11 +36,11 @@ test("first setup works from the keyboard alone", async ({ page }) => {
   ).toBeVisible();
   await walk(page, "comfort settings");
 
-  const size = page.getByRole("textbox", { name: "Text size in percent" });
-  await page.getByRole("button", { name: "Larger text" }).focus();
+  const size = page.getByRole("textbox", { name: "App zoom in percent" });
+  await page.getByRole("button", { name: "Zoom in" }).focus();
   await page.keyboard.press("Enter");
   await expect(size).not.toHaveValue("100");
-  await expectAnnounced(page, `Text size ${await size.inputValue()}%`);
+  await expectAnnounced(page, `App zoom ${await size.inputValue()}%`);
 
   await page.getByRole("button", { name: "Longer delay" }).focus();
   await page.keyboard.press("Space");
@@ -436,6 +436,14 @@ test("the keyboard walk handles native date parts and still detects a trapped da
     <label>Birth date <input type="date"></label>
     <button>After</button>
   `);
+  // A page set up from text has drawn nothing yet: on a busy machine the first screenshot of the
+  // walk was refused ("Unable to capture screenshot"). Wait for two painted frames first.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   expect((await tabRound(page)).problems).toEqual([]);
   await page.locator('input[type="date"]').evaluate((input) => {
     input.addEventListener("keydown", (event) => {

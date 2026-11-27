@@ -54,5 +54,34 @@
         "FAKE Test Results"
       ]
     }
+  ],
+  "media": [
+    {
+      "fileName": "FAKE_Picture_with_location.jpg",
+      "kind": "picture",
+      "profileName": "FAKE Avery Patient",
+      "folders": [
+        "FAKE Test Results"
+      ],
+      "description": "JPEG test pattern with a FAKE GPS position in its EXIF, to show picture cleaning"
+    },
+    {
+      "fileName": "FAKE_Picture_with_details.png",
+      "kind": "picture",
+      "profileName": "FAKE Avery Patient",
+      "folders": [
+        "FAKE Test Results"
+      ],
+      "description": "PNG test pattern with FAKE text chunks and EXIF details, to show picture cleaning"
+    },
+    {
+      "fileName": "FAKE_demo_clip.mp4",
+      "kind": "video",
+      "profileName": "FAKE Morgan Patient",
+      "folders": [
+        "FAKE Imaging"
+      ],
+      "description": "2 second 160x112 test-pattern clip (H.264, no sound)"
+    }
   ]
 }

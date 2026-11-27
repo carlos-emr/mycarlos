@@ -26,7 +26,7 @@ production end-of-support schedule remain an owner decision and release gate.
   app's fixed instructions and schema, the patient's API key in the `x-api-key` header, a fixed
   `myCarlos` user-agent with no identifier, and the time. Nothing else: no profile, vault, device or
   document identifier, no cookies, no referrer. The key, the text, the answer and the request and
-  response bodies are never logged (THREAT_MODEL AI-11, NET-05).
+  response bodies are never logged (THREAT_MODEL AI-11, NET-09).
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.
@@ -165,7 +165,7 @@ was not active in the key list it pinned at linking (it does not yet learn of a 
 
 ## Tray notices (#230): the waiting key
 
-The myCarlos poller is planned in #230; its storage implementation is in #270
+The myCarlos enrollment, poller and notice are built in #230 (with the tray, #206); the storage is #270
 ([THREAT_MODEL](THREAT_MODEL.md) NET-04). The Portal contract is implemented in carlos-portal#88
 (for carlos-portal#87). With the tray (#206), closing the window locks the vault, and the device
 keys are inside it. A waiting key lets the locked app ask each linked portal one question:
@@ -173,7 +173,7 @@ is anything waiting for this device?
 
 **What may leave the device:**
 
-- **Registering** (while unlocked, at link time): `POST /api/mycarlos/availability/waiting-keys`,
+- **Registering** (while unlocked, when tray notices are wanted: tray mode and notices both on; at link time, at every unlock and when a switch turns on): `POST /api/mycarlos/availability/waiting-keys`,
   signed with the link's device key as any device request, carrying the waiting key's public half
   and its `key_id`, with `alg: "ed25519"`. A key the link already had is replaced.
 - **Asking** (locked, in the tray): `POST /api/mycarlos/availability/waiting`, body `key_id` only,
@@ -189,14 +189,23 @@ A yes shows one generic notice, in the last-used language, with no clinic, docum
 once until the next unlock. Clicking it opens the unlock screen; after unlock the normal document
 check takes over.
 
-New links retain link-time registration. Before tray checks resume for an older link, a restored
-backup or a key wiped when notices were disabled, the planned #230 integration must reconcile
-missing or unusable registrations at an authorized unlocked opportunity, respecting the patient's
-switches. A confirmed revoked key id requires a fresh key. This transition remains an activation
-requirement, not implemented enrollment or a new opt-in decision.
+**Enrolling again.** Each unlock, each change of the tray or notices switch and each new link runs one
+reconciliation (`sync_keys`) while the vault is open, respecting the switches: every completed link
+without a key gets one, registered with the Portal in the same step. A key the Portal refuses, or
+cannot be asked about, is not kept (an unregistered key would only be a secret at rest) and is
+made again at the next unlock. A restored backup holds no key; the next unlock makes one. Supervisor
+default while Ben is away: a key is made only while tray notices are wanted, so a vault that never
+turns them on keeps no key outside it (the 5 November note said "at link time" in any case).
 
-**Revoking and wiping.** The local waiting key is wiped (its slot in `notice-keys.v1`; the OS item
-too when no key is left), and portal revocation is requested. It may remain pending while offline:
+**Revoking and wiping (as built).** The local waiting key is wiped (its slot in `notice-keys.v1`; the
+OS item too when no key is left), after the key tells the Portal it is finished with itself
+(`DELETE /api/mycarlos/availability/waiting`, best effort, with or without the vault) in every case
+below **except two, which wipe without telling the Portal**: a different vault being opened
+(`notice_key::after_open`) and a vault reset or set-aside (`after_reset`). **There is no retry:** a failed self-revocation leaves the Portal holding a
+public key that nothing can sign for any more (the private half is gone), and the next
+registration for that device replaces it; removing the device in the portal revokes it at once.
+Local wiping does not confirm remote revocation. The cases, as the design listed them (the
+paragraphs after this one describe the earlier plan and are kept for their reasoning):
 
 - when the patient turns tray notices or the tray off, or unlinks the clinic while unlocked:
   the device revokes it with the link's device key
@@ -210,11 +219,12 @@ too when no key is left), and portal revocation is requested. It may remain pend
   (`DELETE /api/mycarlos/availability/waiting`, signed by the waiting key), subject to the
   authorization/retry handoff before local wiping described below;
 - when the portal answers `404`: the key was revoked there, the device was removed, or the portal
-  refused it for another reason it doesn't give. The device stops asking with that key. Open
-  (#230): whether it wipes the key at the first `404`, or only after a few, since a portal whose
-  notices are switched off may answer the same way. Before activation, #230 must also define the
-  user-visible unavailable state and safe authorized unlocked recovery/re-enrollment transition;
-  the wipe threshold and retry policy remain open.
+  refused it for another reason it doesn't give. **Decided (supervisor default while Ben is away):
+  the first `404` wipes the key and the device stops asking.** A wrong wipe heals itself: at the
+  next unlock the reconciliation finds a completed link without a key and makes a fresh one (a
+  device the Portal really removed is refused again, and the link is marked gone). The
+  user-visible "tray notices unavailable on this computer" message for a missing OS credential store
+  is still open.
 
 Local wiping does not confirm remote revocation. The locked self-revocation branch also needs
 a reviewed durable authorization/retry handoff before local wiping, or an accepted manual fallback,

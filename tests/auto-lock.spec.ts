@@ -137,7 +137,7 @@ test("minimized under a picker it opened, the vault stays open; once the picker 
   // The file picker is open (natively, it may even hide the page, as on
   // Android) when myCarlos is minimized: no lock, the chosen files would be
   // lost with the session.
-  await scriptFake(page, "vault_import_pick", { pending: true });
+  await scriptFake(page, "vault_import_any_pick", { pending: true });
   await page
     .getByRole("button", {
       name: en("interface.VaultLibrary.new"),
@@ -145,7 +145,7 @@ test("minimized under a picker it opened, the vault stays open; once the picker 
     })
     .click();
   await expect
-    .poll(async () => (await fakeCalls(page, "vault_import_pick")).length)
+    .poll(async () => (await fakeCalls(page, "vault_import_any_pick")).length)
     .toBe(1);
   await shown(page, false);
   // A lock would show the unlock screen within a few frames: give it time.
@@ -157,7 +157,7 @@ test("minimized under a picker it opened, the vault stays open; once the picker 
   // The picker closes without a choice while myCarlos is still minimized:
   // locked at once, for that reason, with no warning first. (null is what
   // a cancelled picker answers: vault.ts's invoke<string | null>.)
-  await fakeSettle(page, "vault_import_pick", { resolve: null });
+  await fakeSettle(page, "vault_import_any_pick", { resolve: null });
   await expect(unlockTitle).toBeVisible();
   await expect(
     page.getByLabel(en("passphrase.label"), { exact: true }),

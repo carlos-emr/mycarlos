@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expectOnlyFakedCommands } from "./support/a11y";
 import { FAKE_CLINIC, fakeVaultWith } from "./support/vaultFake";
 
-// #145: once a clinic is linked, Clinic documents shows the clinics first and
+// #145: once a clinic is linked, Connected clinics shows the clinics first and
 // keeps the link form behind "Link another clinic", in a dialog. The native
 // side is main's shared fake (support/vaultFake.ts) with one FAKE clinic whose
 // device is approved, so no automatic approval check runs; a command the fake
