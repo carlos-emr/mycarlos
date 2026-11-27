@@ -46,6 +46,40 @@ describe("a webview that cannot say what it records", () => {
     ).toBe(false);
     expect(highQualityAvailable(track({}))).toBe(false);
     expect(highQualityAvailable(undefined)).toBe(false);
+    // More than 1080p is still High; one pixel short of it, in either dimension, is not.
+    expect(
+      highQualityAvailable(
+        track({ width: { max: 3840 }, height: { max: 2160 } }),
+      ),
+    ).toBe(true);
+    expect(
+      highQualityAvailable(
+        track({
+          width: { max: QUALITIES.high.width - 1 },
+          height: { max: QUALITIES.high.height },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      highQualityAvailable(
+        track({
+          width: { max: QUALITIES.high.width },
+          height: { max: QUALITIES.high.height - 1 },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("offers only Standard when the camera cannot even be asked what it can do", () => {
+    // A track whose capability question throws (some webviews do) is "cannot say", not an error.
+    const refusing = {
+      getCapabilities: () => {
+        throw new Error("FAKE: not implemented");
+      },
+    };
+    expect(highQualityAvailable(refusing)).toBe(false);
+    // And a track that has no such question at all.
+    expect(highQualityAvailable({})).toBe(false);
   });
 
   it("falls back to Standard when the device cannot read or keep the chosen quality", () => {
