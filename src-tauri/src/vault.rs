@@ -5879,20 +5879,36 @@ fn file_extension(name: &str) -> &str {
     }
 }
 
+/// The characters a file name never keeps: the control characters (`char::is_control`, which
+/// leaves out the Unicode line and paragraph separators and the format characters) and the
+/// invisible ones that show nothing or change how the text around them reads: the Arabic letter
+/// mark, the zero-width characters and direction marks (U+200B to U+200F), the line and paragraph
+/// separators (U+2028, U+2029), the embeddings and overrides (U+202A to U+202E), the word joiner
+/// (U+2060), the isolates (U+2066 to U+2069) and the byte order mark (U+FEFF). **The one predicate**
+/// of `sanitize_basename` (what is stored) and of the routing of a provider's own file name
+/// (`routing_name` in `lib.rs`), so that a character the routing lets through is never one the store then drops.
+pub(crate) fn is_hidden_name_char(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{061c}'
+                | '\u{200b}'..='\u{200f}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{feff}'
+        )
+}
+
 pub(crate) fn sanitize_basename(value: &str) -> String {
     let raw = value.rsplit(['/', '\\']).next().unwrap_or("Imported file");
     let mut cleaned = String::new();
-    for character in raw.chars().filter(|character| {
-        !character.is_control()
-            && !matches!(
-                *character,
-                '\u{061c}'
-                    | '\u{200b}'..='\u{200f}'
-                    | '\u{202a}'..='\u{202e}'
-                    | '\u{2066}'..='\u{2069}'
-                    | '\u{feff}'
-            )
-    }) {
+    for character in raw
+        .chars()
+        .filter(|character| !is_hidden_name_char(*character))
+    {
         let character = if matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
             '_'
         } else {
@@ -20503,6 +20519,16 @@ mod tests {
         assert_eq!(sanitize_basename("report\u{202e}fdp.exe"), "reportfdp.exe");
         assert_eq!(sanitize_basename("bad:name?.pdf. "), "bad_name_.pdf");
         assert_eq!(sanitize_basename("\u{200b}\u{feff}"), "Imported file");
+        // The line and paragraph separators and the word joiner are dropped too (one predicate with
+        // the routing of a provider's name), and a name that is only those is the stand-in.
+        assert_eq!(
+            sanitize_basename("a\u{2028}b\u{2029}c\u{2060}d.pdf"),
+            "abcd.pdf"
+        );
+        assert_eq!(
+            sanitize_basename("\u{2028}\u{2029}\u{2060}"),
+            "Imported file"
+        );
         assert!(sanitize_basename(&"🩺".repeat(100)).len() <= 240);
     }
 

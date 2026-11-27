@@ -2143,8 +2143,129 @@ fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     path.rsplit('/').next().unwrap_or_default().to_owned()
 }
 
-fn import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
-    let name = picked_name_tail(path);
+/// The longest display name an Android provider is believed (characters). A longer one is
+/// not used: the id's own tail is, as before.
+const MAX_PROVIDED_NAME_CHARS: usize = 255;
+
+/// The name a pick is routed and stored under: the one the document provider reported
+/// (`OpenableColumns.DISPLAY_NAME`) when it is a plain file name, otherwise the tail of the id
+/// (`picked_name_tail`). An opaque Android id (`msf:31`) says nothing about the file, while the
+/// provider's name ("clip.mp4") does. The provider's name is another app's text, so it is used
+/// only when it is one path-free line with a stem and an extension, of a bounded length; anything
+/// else is as if the provider had given none. "Plain" is the vault's own rule for what a stored
+/// name keeps: no character `vault::is_hidden_name_char` names (controls, zero-width and direction
+/// characters, line and paragraph separators, the word joiner, the byte order mark), the same
+/// predicate `sanitize_basename` drops, so nothing the routing accepts is later changed by the store.
+fn routing_name(tail: &str, provided: Option<&str>) -> String {
+    let usable = provided.map(str::trim).filter(|name| {
+        has_stem_and_extension(name)
+            && name.chars().count() <= MAX_PROVIDED_NAME_CHARS
+            && !name
+                .chars()
+                .any(|c| vault::is_hidden_name_char(c) || c == '/' || c == '\\')
+    });
+    usable.unwrap_or(tail).to_owned()
+}
+
+/// Whether `name` ends in `.extension` after a stem (`clip.mp4`, not `31`, `.pdf` or `name.`). A
+/// tail of an Android document id that does not is **opaque** (`msf:31`): it says nothing about the
+/// file, so only then is the provider asked what it calls it.
+fn has_stem_and_extension(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+}
+
+/// How long one file's provider is given to say its name (Android). Asking only reads a column,
+/// but a provider backed by a cloud service may fetch first.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How long a whole pick may spend asking providers, however many files it holds: a slow provider
+/// is given at most this much in all, not 3 seconds for each of up to 100 files. Once it is spent
+/// the rest are not asked and keep the tail of their ids, as if the provider had given no name.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+const PROVIDER_NAMES_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Asks for the names of the files `askable` says to ask about, one after another, within ONE
+/// time budget: each question gets at most `each`, and at most what is left of `budget`; when
+/// nothing is left a file is not asked. An unanswered, late or refused question is `None`. The
+/// asking itself is `ask` (the Android plugin call), so the rule is the same, and testable, on
+/// every platform.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+async fn ask_names_within<F, Fut>(
+    count: usize,
+    askable: impl Fn(usize) -> bool,
+    budget: std::time::Duration,
+    each: std::time::Duration,
+    mut ask: F,
+) -> Vec<Option<String>>
+where
+    F: FnMut(usize) -> Fut,
+    Fut: std::future::Future<Output = Option<String>>,
+{
+    let deadline = std::time::Instant::now() + budget;
+    let mut names = Vec::with_capacity(count);
+    for index in 0..count {
+        if !askable(index) {
+            names.push(None);
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            names.push(None);
+            continue;
+        }
+        names.push(
+            tokio::time::timeout(left.min(each), ask(index))
+                .await
+                .ok()
+                .flatten(),
+        );
+    }
+    names
+}
+
+/// What each picked file's provider calls it. Only an Android `content://` pick is asked
+/// (`ContentResolver`, through the plugin); every other pick, and any answer that is missing or
+/// fails, is `None`, which `routing_name` treats as "use the tail of the id".
+async fn provider_display_names(
+    _app: &tauri::AppHandle,
+    paths: &[tauri_plugin_fs::FilePath],
+) -> Vec<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        // Only an opaque `content://` id is asked (a tail that already names a file needs no
+        // question), and the whole pick shares one time budget.
+        let tails: Vec<String> = paths.iter().map(picked_name_tail).collect();
+        let urls: Vec<Option<String>> = paths
+            .iter()
+            .map(|path| match path {
+                tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content" => {
+                    Some(url.as_str().to_owned())
+                }
+                _ => None,
+            })
+            .collect();
+        ask_names_within(
+            paths.len(),
+            |index| urls[index].is_some() && !has_stem_and_extension(&tails[index]),
+            PROVIDER_NAMES_BUDGET,
+            PROVIDER_NAME_TIMEOUT,
+            |index| {
+                let url = urls[index].clone().unwrap_or_default();
+                async move { tauri_plugin_android_pdf::display_name(_app, &url).await }
+            },
+        )
+        .await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        vec![None; paths.len()]
+    }
+}
+
+fn import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
     if !matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content") {
         return name;
     }
@@ -2171,8 +2292,8 @@ const IMPORTED_VIDEO_NAME: &str = "Imported video.mp4";
 /// Name recorded for an imported video: the name it came with, or for an Android document id that
 /// holds none (`msf:31`) a stand-in that says what it is. `import_display_name` would call it
 /// "Imported document.pdf", which a video must never be named.
-fn video_import_display_name(path: &tauri_plugin_fs::FilePath) -> String {
-    let name = picked_name_tail(path);
+fn video_import_display_name(path: &tauri_plugin_fs::FilePath, provided: Option<&str>) -> String {
+    let name = routing_name(&picked_name_tail(path), provided);
     let content = matches!(path, tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content");
     if content && !is_video_name(&name) {
         IMPORTED_VIDEO_NAME.to_owned()
@@ -5862,6 +5983,9 @@ async fn vault_import_picked(
         folder_ids: request.folder_ids.clone(),
     };
     let paths = picks.take_import(request.pick_id, &picked_for)?;
+    // The names the providers give (Android), asked before the blocking work: a stored name is a
+    // real one even where the id is opaque.
+    let provided = provider_display_names(&app, &paths).await;
     // Opening a source can block: a network path, or a content provider that
     // fetches the document first. It belongs on the blocking pool with the import.
     run_blocking(store.arc(), move |store| {
@@ -5870,8 +5994,8 @@ async fn vault_import_picked(
             // A provider may download a whole document before the open returns,
             // with no progress to report meanwhile.
             let _opening = Opening::new(store.idle());
-            for path in paths {
-                sources.push(open_import_source(&app, path)?);
+            for (path, provided) in paths.into_iter().zip(provided) {
+                sources.push(open_import_source(&app, path, provided.as_deref())?);
             }
         }
         store.import(request.profile_id, request.folder_ids, sources, now_ms())
@@ -5944,6 +6068,8 @@ async fn vault_import_any_pick(
     let pdf_filter = locale.text(MessageId::NativeFilterPdf)?;
     let pictures_filter = locale.text(MessageId::NativeFilterPictures)?;
     let video_filter = locale.text(MessageId::NativeFilterVideo)?;
+    // The picker takes `app`; the providers' names are asked afterwards.
+    let names_app = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         // Everything first (what the dialog shows by default), each kind one choice away. JPEG and
         // PNG pictures only: HEIC is not accepted.
@@ -5965,8 +6091,13 @@ async fn vault_import_any_pick(
     vault::validate_import_count(paths.len()).map_err(PublicError::from)?;
     // The name the provider gave, not the display name: an Android document id that does not end in
     // a known extension is shown as "Imported document.pdf", which would send a video down the
-    // document path.
-    let names: Vec<String> = paths.iter().map(picked_name_tail).collect();
+    // document path. An opaque id ("msf:31") is routed by what the provider calls the file.
+    let provided = provider_display_names(&names_app, &paths).await;
+    let names: Vec<String> = paths
+        .iter()
+        .zip(&provided)
+        .map(|(path, provided)| routing_name(&picked_name_tail(path), provided.as_deref()))
+        .collect();
     Ok(Some(match route_pick(&names) {
         None => AnyPick::VideoAlone,
         Some(video) => {
@@ -6036,10 +6167,14 @@ async fn vault_import_video_picked(
     let (Some(path), true) = (paths.pop(), paths.is_empty()) else {
         return Err(VaultError::ImportBatchLimit.into());
     };
+    let provided = provider_display_names(&app, std::slice::from_ref(&path))
+        .await
+        .pop()
+        .flatten();
     let job = picks.start_video_import()?;
     let running = Arc::clone(&job);
     let result = run_blocking(store.arc(), move |store| {
-        let name = video_import_display_name(&path);
+        let name = video_import_display_name(&path, provided.as_deref());
         let idle = Arc::clone(store.idle());
         // Opening a source can block (a network path, or a provider that fetches the file first).
         let open = || -> Result<Box<dyn std::io::Read + Send>, VaultError> {
@@ -6087,8 +6222,9 @@ fn vault_video_import_cancel(picks: State<'_, Arc<PendingPicks>>) {
 fn open_import_source(
     app: &tauri::AppHandle,
     path: tauri_plugin_fs::FilePath,
+    provided: Option<&str>,
 ) -> Result<ImportSource, VaultError> {
-    let display_name = import_display_name(&path);
+    let display_name = import_display_name(&path, provided);
     let (kind, reader) = open_supported_file(open_source_reader(app, path)?)?;
     Ok(ImportSource {
         display_name: picture_import_name(display_name, kind),
@@ -12448,7 +12584,10 @@ mod tests {
     #[test]
     fn mobile_imports_are_named_after_the_file_not_the_uri() {
         let named = |value: &str| {
-            import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
         };
         assert_eq!(
             named("file:///private/var/mobile/Inbox/My%20Report.pdf"),
@@ -12479,9 +12618,10 @@ mod tests {
             "Imported document.pdf"
         );
         assert_eq!(
-            import_display_name(&tauri_plugin_fs::FilePath::Path(
-                "/home/jamie/FAKE.pdf".into()
-            )),
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/jamie/FAKE.pdf".into()),
+                None
+            ),
             "/home/jamie/FAKE.pdf"
         );
     }
@@ -12496,7 +12636,7 @@ mod tests {
             "content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4";
         assert_eq!(tail(clip), "clip.mp4");
         assert_eq!(
-            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap())),
+            import_display_name(&tauri_plugin_fs::FilePath::Url(clip.parse().unwrap()), None),
             "Imported document.pdf"
         );
         assert!(is_video_name(&tail(clip)));
@@ -12520,7 +12660,10 @@ mod tests {
     #[test]
     fn a_video_with_no_name_in_its_android_id_is_called_a_video_not_a_document() {
         let named = |value: &str| {
-            video_import_display_name(&tauri_plugin_fs::FilePath::Url(value.parse().unwrap()))
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Url(value.parse().unwrap()),
+                None,
+            )
         };
         assert_eq!(
             named("content://com.android.externalstorage.documents/document/primary%3AMovies%2Fclip.mp4"),
@@ -12535,9 +12678,245 @@ mod tests {
             "My Clip.mov"
         );
         assert_eq!(
-            video_import_display_name(&tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into())),
+            video_import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/clip.mp4".into()),
+                None
+            ),
             "/home/x/clip.mp4"
         );
+    }
+
+    #[test]
+    fn the_providers_own_name_routes_and_names_an_opaque_android_pick() {
+        let url = |value: &str| tauri_plugin_fs::FilePath::Url(value.parse().unwrap());
+        let opaque = url("content://com.android.providers.downloads.documents/document/msf%3A31");
+        let tail = picked_name_tail(&opaque);
+        assert_eq!(tail, "31");
+        // The provider's name wins over the tail of the id.
+        assert_eq!(routing_name(&tail, Some("clip.mp4")), "clip.mp4");
+        // No answer, or none that can be used, is as before.
+        assert_eq!(routing_name(&tail, None), "31");
+        for unusable in [
+            "",
+            "   ",
+            "noextension",
+            ".pdf",
+            "trailing.",
+            "a/b.mp4",
+            "a\\b.mp4",
+            "line\nbreak.mp4",
+            "nul\0.mp4",
+            // Direction controls that make a name read as another one.
+            "clip\u{202E}4pm.mp4",
+            "clip\u{202A}.mp4",
+            "clip\u{202D}.mp4",
+            "clip\u{2066}.mp4",
+            "clip\u{2069}.mp4",
+            "clip\u{200E}.mp4",
+            "clip\u{200F}.mp4",
+            "clip\u{061C}.mp4",
+            // The invisible characters the vault's stored names drop too (one predicate): the
+            // zero-width ones, the byte order mark, the line and paragraph separators and the word
+            // joiner.
+            "clip\u{200B}.mp4",
+            "clip\u{200C}.mp4",
+            "clip\u{200D}.mp4",
+            "\u{FEFF}clip.mp4",
+            "clip\u{2028}.mp4",
+            "clip\u{2029}.mp4",
+            "clip\u{2060}.mp4",
+        ] {
+            assert_eq!(routing_name(&tail, Some(unusable)), "31", "{unusable:?}");
+        }
+        let too_long = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS));
+        assert_eq!(routing_name(&tail, Some(&too_long)), "31");
+        let longest = format!("{}.mp4", "x".repeat(MAX_PROVIDED_NAME_CHARS - 4));
+        assert_eq!(routing_name(&tail, Some(&longest)), longest);
+        // Surrounding space is not part of the name; a space or a dot inside it is.
+        assert_eq!(
+            routing_name(&tail, Some("  FAKE Scan 10.30.pdf ")),
+            "FAKE Scan 10.30.pdf"
+        );
+
+        // The routing: an opaque id that the provider calls a video is that video, and a PDF
+        // beside it is a refused mix, as for ids that carry their names.
+        let route = |picks: &[(&tauri_plugin_fs::FilePath, Option<&str>)]| {
+            let names: Vec<String> = picks
+                .iter()
+                .map(|(path, provided)| routing_name(&picked_name_tail(path), *provided))
+                .collect();
+            route_pick(&names)
+        };
+        assert_eq!(route(&[(&opaque, Some("clip.mp4"))]), Some(true));
+        assert_eq!(route(&[(&opaque, None)]), Some(false));
+        let other = url("content://com.android.providers.downloads.documents/document/msf%3A32");
+        assert_eq!(
+            route(&[(&opaque, Some("clip.mp4")), (&other, Some("labs.pdf"))]),
+            None
+        );
+        assert_eq!(
+            route(&[(&opaque, Some("movie.mov")), (&other, Some("b.m4v"))]),
+            None
+        );
+        assert_eq!(route(&[(&opaque, Some("labs.pdf"))]), Some(false));
+
+        // The stored name is the provider's, not a stand-in.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("clip.mp4")),
+            "clip.mp4"
+        );
+        assert_eq!(
+            video_import_display_name(&opaque, None),
+            "Imported video.mp4"
+        );
+        // A name that is not a video's still gets the stand-in for a video import.
+        assert_eq!(
+            video_import_display_name(&opaque, Some("labs.pdf")),
+            "Imported video.mp4"
+        );
+        assert_eq!(
+            import_display_name(&opaque, Some("FAKE labs.pdf")),
+            "FAKE labs.pdf"
+        );
+        assert_eq!(import_display_name(&opaque, None), "Imported document.pdf");
+        // Only what the picker offers is kept as a document's name.
+        assert_eq!(
+            import_display_name(&opaque, Some("photo.heic")),
+            "Imported document.pdf"
+        );
+        // A desktop path is its own name (only an Android `content://` pick is ever asked).
+        assert_eq!(
+            import_display_name(
+                &tauri_plugin_fs::FilePath::Path("/home/x/FAKE.pdf".into()),
+                None
+            ),
+            "/home/x/FAKE.pdf"
+        );
+    }
+
+    #[test]
+    fn the_routing_and_the_stored_name_drop_exactly_the_same_hidden_characters() {
+        // Every character there is: the routing accepts a provider's name that holds it exactly
+        // when the vault's one predicate does not name it (a path separator never), and the store
+        // drops it exactly when that predicate names it. So a character the routing lets through
+        // is never one the store then silently drops (the two filters used to differ).
+        for code in 0..=0x10_FFFF_u32 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let name = format!("a{c}b.mp4");
+            let routed = routing_name("31", Some(&name));
+            if vault::is_hidden_name_char(c) || c == '/' || c == '\\' {
+                assert_eq!(routed, "31", "U+{code:04X} must not route");
+            } else {
+                assert_eq!(routed, name, "U+{code:04X} must route");
+            }
+            if vault::is_hidden_name_char(c) {
+                assert_eq!(
+                    vault::sanitize_basename(&name),
+                    "ab.mp4",
+                    "U+{code:04X} must be dropped from a stored name"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_an_opaque_id_is_asked_what_its_file_is_called() {
+        // An id's tail that already names a file (a stem and an extension) needs no question; the
+        // tail of an opaque document id ("msf:31" leaves "31") does.
+        for named in ["clip.mp4", "FAKE Scan 10.30.pdf", "a.b", "photo.jpeg"] {
+            assert!(has_stem_and_extension(named), "{named}");
+        }
+        for opaque in ["31", "", ".pdf", "name.", "msf", "raw:", "noextension"] {
+            assert!(!has_stem_and_extension(opaque), "{opaque:?}");
+        }
+    }
+
+    fn block_on<T>(future: impl std::future::Future<Output = T>) -> T {
+        tauri::async_runtime::block_on(future)
+    }
+
+    #[test]
+    fn a_whole_pick_asks_its_providers_within_one_budget_not_one_each() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Six files, a provider that needs 250 ms for each, and a budget of 400 ms in all: the old
+        // rule (a limit per file) would spend 6 x 250 ms; the budget spends about 400 ms and the
+        // files after it are not asked at all.
+        let asked = AtomicUsize::new(0);
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            6,
+            |_| true,
+            Duration::from_millis(400),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    Some(format!("clip{index}.mp4"))
+                }
+            },
+        ));
+        let spent = started.elapsed();
+        assert_eq!(names.len(), 6);
+        // The first answered in time; the second ran out of budget; the rest were never asked.
+        assert_eq!(names[0].as_deref(), Some("clip0.mp4"));
+        assert!(names[1..].iter().all(Option::is_none), "{names:?}");
+        assert!(asked.load(Ordering::SeqCst) <= 3, "asked {asked:?}");
+        assert!(spent < Duration::from_millis(1200), "spent {spent:?}");
+    }
+
+    #[test]
+    fn one_slow_question_is_cut_at_its_own_limit_and_a_spent_budget_asks_nothing() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        // Each question is cut at `each`, however much of the budget is left.
+        let started = Instant::now();
+        let names = block_on(ask_names_within(
+            3,
+            |_| true,
+            Duration::from_secs(30),
+            Duration::from_millis(60),
+            |_| async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Some("never.mp4".to_owned())
+            },
+        ));
+        assert_eq!(names, vec![None, None, None]);
+        assert!(started.elapsed() < Duration::from_secs(3));
+        // A budget that is already spent asks nobody.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |_| true,
+            Duration::ZERO,
+            Duration::from_secs(3),
+            |_| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async { Some("late.mp4".to_owned()) }
+            },
+        ));
+        assert_eq!(names, vec![None, None, None, None]);
+        assert_eq!(asked.load(Ordering::SeqCst), 0);
+        // Only the files `askable` says are asked, and each one only once.
+        let asked = AtomicUsize::new(0);
+        let names = block_on(ask_names_within(
+            4,
+            |index| index % 2 == 1,
+            Duration::from_secs(5),
+            Duration::from_secs(3),
+            |index| {
+                asked.fetch_add(1, Ordering::SeqCst);
+                async move { Some(format!("n{index}.mp4")) }
+            },
+        ));
+        assert_eq!(
+            names,
+            vec![None, Some("n1.mp4".into()), None, Some("n3.mp4".into())]
+        );
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
     }
 
     #[cfg(all(unix, desktop))]
