@@ -2102,9 +2102,25 @@ fn picked_name_tail(path: &tauri_plugin_fs::FilePath) -> String {
     path.rsplit('/').next().unwrap_or_default().to_owned()
 }
 
+/// How long one file's provider is given to say its name (Android). Asking only reads a column,
+/// but a provider backed by a cloud service may fetch first.
+#[cfg(target_os = "android")]
+const PROVIDER_NAME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// The longest display name an Android provider is believed (characters). A longer one is
 /// not used: the id's own tail is, as before.
 const MAX_PROVIDED_NAME_CHARS: usize = 255;
+
+/// The invisible direction controls `char::is_control` misses (they are format characters, not
+/// control characters): the left-to-right and right-to-left marks, the Arabic letter mark, the
+/// embeddings and overrides (U+202A to U+202E) and the isolates (U+2066 to U+2069). A name holding
+/// one can be shown as another ("clip.mp4" made to read "4pm.pilc"), so it is not used.
+fn is_bidi_or_mark_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
 
 /// The name a pick is routed and stored under: the one the document provider reported
 /// (`OpenableColumns.DISPLAY_NAME`) when it is a plain file name, otherwise the tail of the id
@@ -2121,7 +2137,7 @@ fn routing_name(tail: &str, provided: Option<&str>) -> String {
             && name.chars().count() <= MAX_PROVIDED_NAME_CHARS
             && !name
                 .chars()
-                .any(|c| c.is_control() || c == '/' || c == '\\')
+                .any(|c| c.is_control() || c == '/' || c == '\\' || is_bidi_or_mark_control(c))
     });
     usable.unwrap_or(tail).to_owned()
 }
@@ -2139,7 +2155,15 @@ async fn provider_display_names(
         for path in paths {
             names.push(match path {
                 tauri_plugin_fs::FilePath::Url(url) if url.scheme() == "content" => {
-                    tauri_plugin_android_pdf::display_name(_app, url.as_str()).await
+                    // A provider that fetches before it answers (a cloud one) must not hold the
+                    // pick: no answer in time is no name.
+                    tokio::time::timeout(
+                        PROVIDER_NAME_TIMEOUT,
+                        tauri_plugin_android_pdf::display_name(_app, url.as_str()),
+                    )
+                    .await
+                    .ok()
+                    .flatten()
                 }
                 _ => None,
             });
@@ -11822,6 +11846,15 @@ mod tests {
             "a\\b.mp4",
             "line\nbreak.mp4",
             "nul\0.mp4",
+            // Direction controls that make a name read as another one.
+            "clip\u{202E}4pm.mp4",
+            "clip\u{202A}.mp4",
+            "clip\u{202D}.mp4",
+            "clip\u{2066}.mp4",
+            "clip\u{2069}.mp4",
+            "clip\u{200E}.mp4",
+            "clip\u{200F}.mp4",
+            "clip\u{061C}.mp4",
         ] {
             assert_eq!(routing_name(&tail, Some(unusable)), "31", "{unusable:?}");
         }
