@@ -871,6 +871,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         }),
       pickImportFiles: (profileId, folderIds) =>
         track(bridge.pickImportFiles(profileId, folderIds)),
+      pickImportAny:
+        bridge.pickImportAny &&
+        ((profileId, folderIds) =>
+          track(bridge.pickImportAny!(profileId, folderIds))),
       pickImportVideo:
         bridge.pickImportVideo &&
         ((profileId, folderIds) =>

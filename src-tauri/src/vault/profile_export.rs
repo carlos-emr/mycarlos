@@ -331,16 +331,22 @@ impl VaultStore {
         #[cfg(unix)]
         open.mode(0o600);
         let mut outcome: Result<ExportReport, VaultError> = Err(VaultError::Storage);
-        let written = AtomicFile::new(destination, AllowOverwrite).write_with_options(
-            |file| {
-                outcome = self.write_and_verify(profile_id, options, secret, &mut *file, now_ms);
-                match &outcome {
-                    Ok(_) => Ok(()),
-                    Err(_) => Err(io::Error::other("export failed")),
-                }
-            },
-            open,
-        );
+        let stage = SaveStage::begin(&self.root, destination)?;
+        let written = AtomicFile::new_with_tmpdir(destination, AllowOverwrite, stage.dir())
+            .write_with_options(
+                |file| {
+                    run_at_test_boundary("save.package.during");
+                    outcome =
+                        self.write_and_verify(profile_id, options, secret, &mut *file, now_ms);
+                    match &outcome {
+                        Ok(_) => Ok(()),
+                        Err(_) => Err(io::Error::other("export failed")),
+                    }
+                },
+                open,
+            );
+        // The stage goes before anything is noted, as an export's does.
+        drop(stage);
         let report = outcome?;
         written.map_err(io::Error::from)?;
         terminate_at_test_boundary("export.after-rename");

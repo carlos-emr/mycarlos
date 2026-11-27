@@ -121,6 +121,26 @@ describe("Add a video: the button and its status", () => {
     await vi.waitFor(() => expect(button).toHaveFocus());
   });
 
+  it("adds a video that + New already picked, without opening the video picker", async () => {
+    const bridge = bridgeFor({ result: "imported", recordId: "record-7" });
+    const onAdded = vi.fn();
+    const { result } = renderHook(() => useAddVideo({ bridge, onAdded }));
+
+    await act(async () => {
+      await result.current.addPicked("pick-9", "person-1", ["folder-1"]);
+    });
+
+    expect(bridge.pickImportVideo).not.toHaveBeenCalled();
+    expect(bridge.importPickedVideo).toHaveBeenCalledWith(
+      "pick-9",
+      "person-1",
+      ["folder-1"],
+    );
+    expect(onAdded).toHaveBeenCalledWith("record-7");
+    expect(result.current.outcome).toEqual({ kind: "added" });
+    expect(result.current.working).toBe(false);
+  });
+
   it("does nothing, and says nothing, when the picker is closed", async () => {
     setLocaleOverride("en");
     const user = userEvent.setup();
