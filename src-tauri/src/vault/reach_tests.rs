@@ -377,7 +377,40 @@ const ENTRY_POINTS: &[(&str, Reach)] = &[
 ];
 
 /// Functions that take such an id and are not entry points: the helpers themselves.
-const NOT_ENTRY_POINTS: &[&str] = &["folder_in_reach"];
+const NOT_ENTRY_POINTS: &[&str] = &[
+    // The helper itself.
+    "folder_in_reach",
+    // `ChunkReader::open` (playback.rs): a constructor handed a record that `playback_open` has
+    // already found in reach; it looks nothing up.
+    "open",
+];
+
+/// The code of a source file before its first INLINE test module (`#[cfg(test)] mod name {`).
+/// A `#[cfg(test)] mod name;` declaration is a line, not a cut: vault.rs has several of them
+/// ahead of its production code.
+fn production_code(text: &str) -> &str {
+    let marker = "\n#[cfg(test)]\nmod ";
+    let mut from = 0;
+    while let Some(found) = text[from..].find(marker) {
+        let at = from + found;
+        let line_end = text[at + marker.len()..]
+            .find('\n')
+            .map_or(text.len(), |n| at + marker.len() + n);
+        if text[at + marker.len()..line_end].trim_end().ends_with('{') {
+            return &text[..at];
+        }
+        from = at + marker.len();
+    }
+    text
+}
+
+/// A function body without its comment lines (a doc comment that names a helper is not a call).
+fn without_comments(body: &str) -> String {
+    body.lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 const ID_PARAMETERS: &[&str] = &[
     "record_id",
@@ -396,8 +429,7 @@ struct Function {
 /// The functions declared four spaces in (members of an `impl`), in the code before the file's
 /// first test module.
 fn functions(text: &str) -> Vec<Function> {
-    let end = text.find("\n#[cfg(test)]\nmod ").unwrap_or(text.len());
-    let code = &text[..end];
+    let code = production_code(text);
     let mut starts = Vec::new();
     let mut offset = 0;
     for line in code.split_inclusive('\n') {
@@ -478,15 +510,27 @@ fn every_function_taking_a_record_or_folder_id_asks_the_reach_helpers() {
         "the scan found only {} functions",
         all.len()
     );
-    let by_name = |name: &str| all.iter().find(|function| function.name == name);
-
-    // 1. Nothing takes such an id without being registered (and a registered one still exists).
+    // The scan must reach vault.rs's own methods (it once stopped at a `mod x;` line near the top
+    // and saw none of them): these are in vault.rs, and the registry depends on finding them.
+    for name in ["create_folder", "assign_folders_batch", "rename_record"] {
+        assert!(
+            all.iter().any(|function| function.name == name),
+            "the scan did not find `{name}` in vault.rs"
+        );
+    }
     let takes_an_id = |function: &Function| {
         function.parameters.split(',').any(|parameter| {
             let name = parameter.split(':').next().unwrap_or("").trim();
             ID_PARAMETERS.contains(&name)
         })
     };
+    // A name can be declared more than once (in different impls): the one that takes the id.
+    let by_name = |name: &str| {
+        all.iter()
+            .find(|function| function.name == name && takes_an_id(function))
+    };
+
+    // 1. Nothing takes such an id without being registered (and a registered one still exists).
     for function in all.iter().filter(|function| takes_an_id(function)) {
         assert!(
             NOT_ENTRY_POINTS.contains(&function.name.as_str())
@@ -507,14 +551,16 @@ fn every_function_taking_a_record_or_folder_id_asks_the_reach_helpers() {
     // 2. Each one asks, or hands the work to one that does.
     for (name, how) in ENTRY_POINTS {
         let function = by_name(name).unwrap();
+        // Comment lines do not count: a doc comment that names a helper is not a call.
+        let code = without_comments(&function.body);
         match how {
             Reach::Asks(helper) => assert!(
-                function.body.contains(helper),
+                code.contains(helper),
                 "`{name}` no longer mentions `{helper}`"
             ),
             Reach::Delegates(callee) => {
                 assert!(
-                    function.body.contains(&format!("{callee}(")),
+                    code.contains(&format!("{callee}(")),
                     "`{name}` no longer calls `{callee}`"
                 );
                 assert!(
@@ -528,16 +574,22 @@ fn every_function_taking_a_record_or_folder_id_asks_the_reach_helpers() {
 }
 
 #[test]
-fn the_reach_helpers_are_the_only_readers_of_a_persons_flag_for_documents_and_folders() {
+fn the_retired_person_is_hidden_is_gone_and_the_three_helpers_are_there() {
+    let mut scanned_vault_rs = false;
     for (path, text) in vault_sources() {
-        let end = text.find("\n#[cfg(test)]\nmod ").unwrap_or(text.len());
-        let code = &text[..end];
+        let code = production_code(&text);
+        scanned_vault_rs |= path.ends_with("vault.rs") && code.contains("fn create_folder");
         assert!(
             !code.contains("person_is_hidden"),
             "{path} reads the retired `person_is_hidden`: ask person_in_reach / record_in_reach / \
              folder_in_reach (#574)"
         );
     }
+    // The scan really read vault.rs's methods, not only the lines before its first `mod x;`.
+    assert!(
+        scanned_vault_rs,
+        "the scan did not reach vault.rs's own code"
+    );
     // The three helpers are the ones the lists use.
     let main = include_str!("../vault.rs");
     for helper in [

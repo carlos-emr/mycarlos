@@ -867,10 +867,12 @@ impl Manifest {
     /// A profile that is not in the manifest is in reach here (the caller's own lookup says it
     /// is missing).
     ///
-    /// **The only place the person's own flag is read.** Everything else asks one of the three
-    /// reach helpers below, so that a later reason a document or folder can be out of reach
-    /// (hiding a folder, #574) is added in exactly these bodies, never at call sites where one
-    /// could be missed. `the_reach_helpers_are_the_only_readers_of_hidden` pins it.
+    /// **The person's flag, as far as documents and folders are concerned, is read here.** Their
+    /// lookups ask one of the three reach helpers, so that a later reason a document or folder
+    /// can be out of reach (hiding a folder, #574) is added in exactly these bodies, never at
+    /// call sites where one could be missed. (Operations on the person's own record, renaming,
+    /// hiding and restoring them, listing people, still read `profile.hidden` directly: they
+    /// are about the person, not about reach.)
     pub(crate) fn person_in_reach(&self, profile_id: Uuid) -> bool {
         !self
             .profiles
@@ -892,35 +894,56 @@ impl Manifest {
     /// panic). It also runs on a manifest inside a mutation closure, which no validation has
     /// seen yet.
     pub(crate) fn folder_in_reach(&self, folder_id: Uuid) -> bool {
+        self.walk_in_reach(folder_id, |id| {
+            self.folders
+                .iter()
+                .find(|folder| folder.id == id)
+                .map(|folder| (folder.profile_id, folder.parent_id))
+        })
+    }
+
+    /// The ids of every folder in reach, found once (the snapshot and the history view filter
+    /// every folder and document). The same answer, by the same walk, as asking
+    /// `folder_in_reach` of each folder, but through an id map built once: O(folders x depth),
+    /// not a scan of every folder at every step.
+    pub(crate) fn folders_in_reach(&self) -> HashSet<Uuid> {
+        let by_id: HashMap<Uuid, (Uuid, Option<Uuid>)> = self
+            .folders
+            .iter()
+            .map(|folder| (folder.id, (folder.profile_id, folder.parent_id)))
+            .collect();
+        self.folders
+            .iter()
+            .filter(|folder| self.walk_in_reach(folder.id, |id| by_id.get(&id).copied()))
+            .map(|folder| folder.id)
+            .collect()
+    }
+
+    /// The one walk behind both: from `folder_id` up through `parent_id`, asking `lookup` for a
+    /// folder's (person, parent). Bounded and fail closed (see `folder_in_reach`).
+    fn walk_in_reach(
+        &self,
+        folder_id: Uuid,
+        lookup: impl Fn(Uuid) -> Option<(Uuid, Option<Uuid>)>,
+    ) -> bool {
         let mut current = folder_id;
         let mut seen = HashSet::new();
         for _ in 0..=MAX_FOLDER_DEPTH {
             if !seen.insert(current) {
                 return false;
             }
-            let Some(folder) = self.folders.iter().find(|folder| folder.id == current) else {
+            let Some((profile_id, parent_id)) = lookup(current) else {
                 return false;
             };
-            if !self.person_in_reach(folder.profile_id) {
+            if !self.person_in_reach(profile_id) {
                 return false;
             }
-            match folder.parent_id {
+            match parent_id {
                 None => return true,
                 Some(parent) => current = parent,
             }
         }
         false
-    }
-
-    /// The ids of every folder in reach, found once (the snapshot and the history view filter
-    /// every folder and document, and `folder_in_reach` walks the manifest for each call).
-    /// The same answer as asking `folder_in_reach` of each folder.
-    pub(crate) fn folders_in_reach(&self) -> HashSet<Uuid> {
-        self.folders
-            .iter()
-            .filter(|folder| self.folder_in_reach(folder.id))
-            .map(|folder| folder.id)
-            .collect()
     }
 }
 
