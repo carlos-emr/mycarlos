@@ -1,0 +1,2 @@
+/* Generated from src/i18n/locales/fluent by scripts/generate-ios-push-strings.mjs. Do not edit. */
+"MYCARLOS_DOCUMENT_WAITING" = "有一份新文档在等待。请解锁 myCarlos 查看。";

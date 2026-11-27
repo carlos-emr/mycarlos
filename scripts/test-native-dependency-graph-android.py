@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The dependency graph check accepts the reviewed first-party Android plugin and nothing else."""
+"""The dependency graph check accepts the reviewed first-party Android and iPhone plugins and nothing else."""
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 import unittest
@@ -36,6 +36,9 @@ def metadata(**changes):
         ),
         "tauri-plugin-android-trust": package(
             "tauri-plugin-android-trust", ROOT / "src-tauri/android-trust/Cargo.toml", None
+        ),
+        "tauri-plugin-ios-push": package(
+            "tauri-plugin-ios-push", ROOT / "src-tauri/ios-push/Cargo.toml", None
         ),
     }
     packages.update(changes)

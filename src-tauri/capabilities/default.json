@@ -44,6 +44,8 @@
     "allow-vault-set-notifications",
     "allow-vault-send-test-notice",
     "allow-vault-set-automatic-document-checks",
+    "allow-vault-iphone-push-status",
+    "allow-vault-iphone-push-set",
     "allow-vault-request-device-approval",
     "allow-vault-restart-device-approval",
     "allow-vault-refresh-device-approval",

@@ -293,6 +293,8 @@ async function mockNativeVault(page: Page, status: "absent" | "locked") {
             automaticChecksPaused: false,
             lastOutcome: null,
           };
+        if (command === "vault_iphone_push_status")
+          return { supported: false, enabled: false, state: "ok" };
         if (command === "vault_unlock") {
           current = "unlocked";
           return {

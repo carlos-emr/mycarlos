@@ -207,6 +207,17 @@ export interface FakeVaultSetup {
     status: "pending" | "refused" | "expired" | "cancelled";
     canRestart?: boolean;
   };
+  /** An iPhone with notices for a closed myCarlos available: the setting is shown, off, and `state` says
+   * why notices are not coming once it is on (the iPhone push setting). Default: not an iPhone. */
+  iphonePush?: {
+    state?:
+      | "ok"
+      | "refused"
+      | "iosOff"
+      | "unavailable"
+      | "timedOut"
+      | "needsAttention";
+  };
   /** The backup file a restore would choose: what it replaces on this
    * device, whether the vault here differs, the documents it holds (FAKE
    * names), and the passphrase it was made with (the vault's by default). */
@@ -955,6 +966,8 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           ...fields,
         });
       };
+      // The iPhone push switch, in memory for the page's life.
+      let iphonePushEnabled = false;
       const sharedProfile = () => {
         const snapshot = state.snapshot;
         if (!snapshot.sharedProfileId) {
@@ -1173,6 +1186,20 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
               automaticChecksSupported: false,
               automaticChecksPaused: false,
               lastOutcome: null,
+            };
+          // The iPhone push setting: not an iPhone unless the setup says so.
+          case "vault_iphone_push_status":
+            return {
+              supported: setup.iphonePush !== null,
+              enabled: iphonePushEnabled,
+              state: setup.iphonePush?.state ?? "ok",
+            };
+          case "vault_iphone_push_set":
+            iphonePushEnabled = Boolean(args.enabled);
+            return {
+              supported: setup.iphonePush !== null,
+              enabled: iphonePushEnabled,
+              state: setup.iphonePush?.state ?? "ok",
             };
           // Files shared to myCarlos wait until the vault is unlocked (#61).
           case "received_list":
@@ -2270,6 +2297,7 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
       refusedDeliveries: setup.refusedDeliveries ?? 0,
       approval: setup.approval ?? null,
       backup: setup.backup ?? null,
+      iphonePush: setup.iphonePush ?? null,
       missingFiles: setup.missingFiles ?? [],
       people: setup.people ?? [],
       hiddenPeople: setup.hiddenPeople ?? [],

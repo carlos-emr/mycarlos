@@ -538,6 +538,19 @@
       },
       "raw": false
     },
+    "vault_iphone_push_set": {
+      "arguments": {
+        "enabled": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "raw": false
+    },
+    "vault_iphone_push_status": {
+      "arguments": {},
+      "raw": false
+    },
     "vault_is_locked_pdf": {
       "arguments": {
         "request": {

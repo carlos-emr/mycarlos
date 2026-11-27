@@ -397,6 +397,15 @@ impl Policy {
         self.saved.active.retain(|d| d.id != id);
     }
 
+    /// The destination is no longer used (the portal did not know it twice): it leaves the active
+    /// list and waits for its revocation, so that no place is left behind at the portal.
+    pub fn revoke_destination(&mut self, id: Uuid) {
+        if let Some(index) = self.saved.active.iter().position(|d| d.id == id) {
+            let old = self.saved.active.remove(index);
+            self.saved.revocations.push(old);
+        }
+    }
+
     /// The link is gone from this vault: its destination waits for its revocation.
     pub fn remove_link(&mut self, link_id: Uuid) {
         if let Some(index) = self

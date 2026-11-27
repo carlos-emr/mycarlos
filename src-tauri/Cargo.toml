@@ -89,6 +89,9 @@ tauri-plugin-android-trust = { path = "android-trust" }
 # The same jni the platform verifier is built with (see android-trust/Cargo.toml).
 jni = "=0.22.4"
 
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-ios-push = { path = "ios-push" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_8"] }
 landlock = "=0.4.7"

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY = {
     "tauri-plugin-android-pdf": "src-tauri/android-pdf/Cargo.toml",
     "tauri-plugin-android-trust": "src-tauri/android-trust/Cargo.toml",
+    "tauri-plugin-ios-push": "src-tauri/ios-push/Cargo.toml",
 }
 
 
@@ -52,7 +53,7 @@ def main():
         "--manifest-path", str(ROOT / "src-tauri/Cargo.toml"),
     ], text=True))
     validate_metadata(metadata)
-    print("All-target graph selects upstream Tauri, the reviewed glib, wry and single-instance patches, and the first-party Android plugin")
+    print("All-target graph selects upstream Tauri, the reviewed glib, wry and single-instance patches, and the first-party Android and iPhone plugins")
 
 
 if __name__ == "__main__":

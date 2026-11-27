@@ -141,6 +141,8 @@ fn main() {
             "vault_set_notifications",
             "vault_send_test_notice",
             "vault_set_automatic_document_checks",
+            "vault_iphone_push_status",
+            "vault_iphone_push_set",
             "vault_request_device_approval",
             "vault_restart_device_approval",
             "vault_refresh_device_approval",

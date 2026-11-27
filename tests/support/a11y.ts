@@ -208,6 +208,9 @@ export async function fakeVault(
                 automaticChecksPaused: false,
                 lastOutcome: null,
               };
+            // Not an iPhone: nothing to show (the iPhone push setting).
+            case "vault_iphone_push_status":
+              return { supported: false, enabled: false, state: "ok" };
             // These accessibility journeys have no files waiting to be shared.
             // The app still polls the intake while locked and after unlocking.
             case "received_list":

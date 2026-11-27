@@ -2954,6 +2954,24 @@ notifications-testWait = Wait a few seconds, then try again.
 notifications-testFailed = The test notice could not be shown.
 notifications-testOff = Notices are turned off in myCarlos. Turn them on, then try again.
 
+iphonePush-title = Notices when myCarlos is closed
+
+iphonePush-allow = Show notices when myCarlos is closed (iPhone)
+
+iphonePush-help = When a clinic has a document for you, Apple’s push service shows a notice on this iPhone even when myCarlos is closed. The notice only says that a document is waiting. Apple sees when a push is sent, never what is in it. This is off until you turn it on, and the iPhone asks for your permission then.
+
+iphonePush-refused = You did not allow notices when the iPhone asked. To allow them, open Settings on your iPhone, choose Notifications, then myCarlos, and turn on Allow Notifications. Then turn this on again.
+
+iphonePush-iosOff = Notices are turned off for myCarlos in your iPhone’s Settings. To allow them, open Settings, choose Notifications, then myCarlos, and turn on Allow Notifications.
+
+iphonePush-unavailable = Apple’s notice service could not be reached from this iPhone. Try again later.
+
+iphonePush-timedOut = Apple did not answer in time. Turn this off and on again to try again.
+
+iphonePush-needsAttention = Notices could not be set up with your clinic. Turn this off and on again. If it still does not work, tell your clinic.
+
+iphonePush-error = The setting could not be saved. Try again.
+
 native-backupExclusionFailed = This phone could not keep the vault out of device backups. Try again.
 
 interface-AddVideo-add = Add a video

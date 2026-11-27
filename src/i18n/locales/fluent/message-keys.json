@@ -1424,5 +1424,14 @@
   "interface.AddVideo.tooBig",
   "interface.AddVideo.tooLarge",
   "interface.AddVideo.damaged",
-  "interface.AddVideo.adding"
+  "interface.AddVideo.adding",
+  "iphonePush.title",
+  "iphonePush.allow",
+  "iphonePush.help",
+  "iphonePush.refused",
+  "iphonePush.iosOff",
+  "iphonePush.unavailable",
+  "iphonePush.timedOut",
+  "iphonePush.needsAttention",
+  "iphonePush.error"
 ]
