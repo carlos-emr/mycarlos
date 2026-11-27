@@ -11593,23 +11593,19 @@ mod tests {
             assert!(build_script.contains(&format!("\"{command}\"")));
             not_granted += usize::from(!granted);
         }
-        // Registered and compiled, but not granted to the renderer until a screen calls them
-        // (least privilege): the grant arrives with the screen that needs it.
-        const WITHHELD: &[&str] = &[
+        // The several-vaults screen (#357 PR 5) calls these four, so they are granted with it; a
+        // command that is registered but not granted is only a switched-off feature (`SWITCHABLE`).
+        for command in [
             "vault_unlock_named",
             "vault_add_vault",
             "vault_find_other_vaults",
             "vault_name_found_vaults",
-        ];
-        for &command in WITHHELD {
+        ] {
             let grant = format!("allow-{}", command.replace('_', "-"));
             assert!(
-                !permissions.contains(&grant.as_str()),
-                "{grant} is withheld until its screen exists (#357 PR 5)"
+                permissions.contains(&grant.as_str()),
+                "{grant} is granted with the several-vaults screen (#357 PR 5)"
             );
-            assert!(library.contains(&format!("fn {command}(")));
-            assert!(build_script.contains(&format!("\"{command}\"")));
-            not_granted += 1;
         }
         assert_eq!(
             permissions.len() + not_granted,
@@ -11662,10 +11658,10 @@ mod tests {
     /// the VaultStore type is `no_source_file_takes_or_manages_the_store_directly` in
     /// `vault_source.rs`, and `scripts/vault-store-handle-codemod.py` rewrites what that one finds.
     #[test]
-    fn the_named_unlock_command_is_registered_but_not_granted_until_its_screen_exists() {
-        // Least privilege (#357 PR 4b): `vault_unlock_named` is declared and compiled, so the next
-        // PR's screen only needs a grant, but nothing in the renderer may call it before then. The
-        // grant is added with the screen (PR 5) and this test is then changed with it.
+    fn the_named_unlock_command_is_registered_and_granted_with_its_screen() {
+        // Least privilege (#357 PR 4b) withheld `vault_unlock_named` until a screen needed it; the
+        // several-vaults screen (PR 5) does, so it is granted now, and the renderer's own call is
+        // pinned in `src/vaultBridgeCommands.test.ts`.
         let capability: serde_json::Value =
             serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         let permissions: Vec<&str> = capability["permissions"]
@@ -11675,8 +11671,8 @@ mod tests {
             .map(|permission| permission.as_str().unwrap())
             .collect();
         assert!(
-            !permissions.contains(&"allow-vault-unlock-named"),
-            "the renderer may not call vault_unlock_named before a screen needs it"
+            permissions.contains(&"allow-vault-unlock-named"),
+            "the screen's unlock by name needs its grant"
         );
         assert!(include_str!("../build.rs").contains("\"vault_unlock_named\""));
         assert!(include_str!("lib.rs").contains("async fn vault_unlock_named("));

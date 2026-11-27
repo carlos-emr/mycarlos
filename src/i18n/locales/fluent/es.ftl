@@ -1381,6 +1381,74 @@ unlock-submit = Desbloquear
 
 unlock-title = Desbloquee su bóveda
 
+unlock-otherVault-summary = Usar otra bóveda
+
+unlock-otherVault-name = Nombre de la bóveda
+
+unlock-otherVault-hint = El nombre que le dio a esa bóveda. Déjelo vacío para abrir la bóveda propia de esta pantalla. myCarlos no guarda una lista de bóvedas, así que no puede mostrarle sus nombres.
+
+unlock-otherVault-find = Buscar mis otras bóvedas
+
+unlock-otherVault-findHelp = Prueba la frase de contraseña que escriba en cada carpeta que myCarlos no conoce. Cada intento cuenta como un intento de frase de contraseña.
+
+unlock-otherVault-findButton = Buscar bóvedas
+
+unlock-otherVault-found =
+    { $count ->
+    [one] Se encontró { $count } bóveda.
+    *[other] Se encontraron { $count } bóvedas.
+    }
+
+unlock-otherVault-notOpened =
+    { $count ->
+    [one] { $count } carpeta no se abrió con esa frase de contraseña.
+    *[other] { $count } carpetas no se abrieron con esa frase de contraseña.
+    }
+
+unlock-otherVault-empty =
+    { $count ->
+    [one] { $count } carpeta estaba vacía.
+    *[other] { $count } carpetas estaban vacías.
+    }
+
+unlock-otherVault-none = Ninguna otra bóveda se abrió con esa frase de contraseña.
+
+unlock-otherVault-nameTitle = Dé a cada bóveda el nombre que escribirá para abrirla
+
+unlock-otherVault-nameLabel = Bóveda { $number } de { $count }
+
+unlock-otherVault-save = Guardar nombres
+
+unlock-otherVault-named = Se guardaron los nombres. No se desbloqueó nada.
+
+unlock-otherVault-nameFailed = No se guardaron los nombres. No se cambió nada.
+
+newVault-title = Crear una bóveda nueva
+
+newVault-intro = Una bóveda nueva en este dispositivo tiene su propia frase de contraseña, clave de recuperación y personas. Esta bóveda se bloquea primero.
+
+newVault-others = Sus otras bóvedas no se tocan: cada una conserva su propia frase de contraseña y su clave de recuperación.
+
+newVault-name-label = Nombre de esta bóveda
+
+newVault-name-hint = Escribirá este nombre en la pantalla de desbloqueo para abrir esta bóveda. No es una contraseña: quien tenga este dispositivo y una copia de sus archivos podría probar suposiciones, así que no reemplaza la frase de contraseña.
+
+newVault-name-invalid = Elija un nombre de 1 a 64 caracteres.
+
+newVault-lockNote = Al elegir Crear bóveda se bloquea esta bóveda y luego se abre la nueva.
+
+newVault-submit = Crear bóveda
+
+newVault-cancel = Cancelar
+
+security-newVault-title = Otra bóveda en este dispositivo
+
+security-newVault-body = Cree una bóveda aparte con su propio nombre, frase de contraseña y personas. Esta bóveda se bloquea primero.
+
+security-newVault-button = Crear una bóveda nueva…
+
+notice-newVaultReady = La bóveda nueva está lista. Bloquéela cuando termine y vuelva a desbloquearla con su nombre y su frase de contraseña.
+
 unlock-waiting =
     { $count ->
     [one] Hay { $count } archivo compartido en espera. Desbloquee la bóveda: myCarlos preguntará primero antes de añadirlo a «{ $folder }». Si myCarlos se cierra antes, no se conservará: compártalo de nuevo.

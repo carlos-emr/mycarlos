@@ -1226,6 +1226,62 @@ unlock-submit = 解锁
 
 unlock-title = 解锁保险库
 
+unlock-otherVault-summary = 使用其他保险库
+
+unlock-otherVault-name = 保险库名称
+
+unlock-otherVault-hint = 您给该保险库起的名称。留空则打开此屏幕自己的保险库。myCarlos 不保存保险库列表，因此无法向您显示它们的名称。
+
+unlock-otherVault-find = 查找我的其他保险库
+
+unlock-otherVault-findHelp = 用您输入的密码短语尝试 myCarlos 不认识的每个文件夹。每次尝试都计为一次密码短语尝试。
+
+unlock-otherVault-findButton = 查找保险库
+
+unlock-otherVault-found = 找到 { $count } 个保险库。
+
+unlock-otherVault-notOpened = 有 { $count } 个文件夹无法用该密码短语打开。
+
+unlock-otherVault-empty = 有 { $count } 个文件夹是空的。
+
+unlock-otherVault-none = 没有其他保险库能用该密码短语打开。
+
+unlock-otherVault-nameTitle = 为每个保险库起一个您打开它时要输入的名称
+
+unlock-otherVault-nameLabel = 第 { $number } 个保险库，共 { $count } 个
+
+unlock-otherVault-save = 保存名称
+
+unlock-otherVault-named = 名称已保存。没有解锁任何保险库。
+
+unlock-otherVault-nameFailed = 名称未保存。没有更改任何内容。
+
+newVault-title = 设置新保险库
+
+newVault-intro = 此设备上的新保险库有自己的密码短语、恢复密钥和人员。此保险库会先被锁定。
+
+newVault-others = 您的其他保险库不受影响：每个保险库保留各自的密码短语和恢复密钥。
+
+newVault-name-label = 此保险库的名称
+
+newVault-name-hint = 您在解锁屏幕输入此名称来打开这个保险库。它不是密码：任何持有此设备及其文件副本的人都可以尝试猜测，所以它不能取代密码短语。
+
+newVault-name-invalid = 请选择 1 至 64 个字符的名称。
+
+newVault-lockNote = 选择「设置保险库」会先锁定此保险库，然后打开新的保险库。
+
+newVault-submit = 设置保险库
+
+newVault-cancel = 取消
+
+security-newVault-title = 此设备上的另一个保险库
+
+security-newVault-body = 设置一个单独的保险库，有自己的名称、密码短语和人员。此保险库会先被锁定。
+
+security-newVault-button = 设置新保险库…
+
+notice-newVaultReady = 新保险库已就绪。完成后请将其锁定，之后用它的名称和密码短语再次解锁。
+
 unlock-waiting = 有 { $count } 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它们加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。
 
 unlock-waiting-one = 有 1 个分享文件正在等候。解锁后，myCarlos 会先询问，再将它加入「{ $folder }」。如果 myCarlos 先关闭，文件就不会保留，请重新分享。

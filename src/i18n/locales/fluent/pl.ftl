@@ -1412,6 +1412,80 @@ unlock-submit = Odblokuj
 
 unlock-title = Odblokuj sejf
 
+unlock-otherVault-summary = Użyj innego sejfu
+
+unlock-otherVault-name = Nazwa sejfu
+
+unlock-otherVault-hint = Nazwa, którą nadano temu sejfowi. Zostaw puste, aby otworzyć własny sejf tego ekranu. myCarlos nie przechowuje listy sejfów, więc nie może pokazać ich nazw.
+
+unlock-otherVault-find = Znajdź moje inne sejfy
+
+unlock-otherVault-findHelp = Wypróbowuje wpisane hasło główne na każdym folderze, którego myCarlos nie zna. Każda próba liczy się jako próba hasła głównego.
+
+unlock-otherVault-findButton = Znajdź sejfy
+
+unlock-otherVault-found =
+    { $count ->
+    [one] Znaleziono { $count } sejf.
+    [few] Znaleziono { $count } sejfy.
+    [many] Znaleziono { $count } sejfów.
+    *[other] Znaleziono { $count } sejfu.
+    }
+
+unlock-otherVault-notOpened =
+    { $count ->
+    [one] { $count } folder nie otworzył się tym hasłem głównym.
+    [few] { $count } foldery nie otworzyły się tym hasłem głównym.
+    [many] { $count } folderów nie otworzyło się tym hasłem głównym.
+    *[other] { $count } folderu nie otworzyło się tym hasłem głównym.
+    }
+
+unlock-otherVault-empty =
+    { $count ->
+    [one] { $count } folder był pusty.
+    [few] { $count } foldery były puste.
+    [many] { $count } folderów było pustych.
+    *[other] { $count } folderu było pustych.
+    }
+
+unlock-otherVault-none = Żaden inny sejf nie otworzył się tym hasłem głównym.
+
+unlock-otherVault-nameTitle = Nadaj każdemu sejfowi nazwę, którą wpiszesz, aby go otworzyć
+
+unlock-otherVault-nameLabel = Sejf { $number } z { $count }
+
+unlock-otherVault-save = Zapisz nazwy
+
+unlock-otherVault-named = Nazwy zapisano. Nic nie zostało odblokowane.
+
+unlock-otherVault-nameFailed = Nie zapisano nazw. Nic nie zostało zmienione.
+
+newVault-title = Utwórz nowy sejf
+
+newVault-intro = Nowy sejf na tym urządzeniu ma własne hasło główne, klucz odzyskiwania i własne osoby. Ten sejf zostanie najpierw zablokowany.
+
+newVault-others = Twoje inne sejfy nie są zmieniane: każdy zachowuje własne hasło główne i klucz odzyskiwania.
+
+newVault-name-label = Nazwa tego sejfu
+
+newVault-name-hint = Wpisujesz tę nazwę na ekranie odblokowania, aby otworzyć ten sejf. To nie jest hasło: każdy, kto ma to urządzenie i kopię jego plików, mógłby próbować zgadywać, więc nie zastępuje ona hasła głównego.
+
+newVault-name-invalid = Wybierz nazwę o długości od 1 do 64 znaków.
+
+newVault-lockNote = Wybranie opcji Utwórz sejf blokuje ten sejf, a potem otwiera nowy.
+
+newVault-submit = Utwórz sejf
+
+newVault-cancel = Anuluj
+
+security-newVault-title = Inny sejf na tym urządzeniu
+
+security-newVault-body = Utwórz osobny sejf z własną nazwą, hasłem głównym i osobami. Ten sejf zostanie najpierw zablokowany.
+
+security-newVault-button = Utwórz nowy sejf…
+
+notice-newVaultReady = Nowy sejf jest gotowy. Zablokuj go po skończeniu, a potem odblokuj ponownie jego nazwą i hasłem głównym.
+
 unlock-waiting =
     { $count ->
     [one] { $count } udostępniony plik czeka. Po odblokowaniu sejfu myCarlos najpierw zapyta, zanim doda go do „{ $folder }”. Jeśli myCarlos zostanie wcześniej zamknięty, plik nie zostanie zachowany: proszę udostępnić go ponownie.

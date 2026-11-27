@@ -1381,6 +1381,74 @@ unlock-submit = Déverrouiller
 
 unlock-title = Déverrouiller votre coffre-fort
 
+unlock-otherVault-summary = Utiliser un autre coffre-fort
+
+unlock-otherVault-name = Nom du coffre-fort
+
+unlock-otherVault-hint = Le nom que vous avez donné à ce coffre-fort. Laissez-le vide pour ouvrir le coffre-fort propre à cet écran. myCarlos ne garde aucune liste de coffres-forts : il ne peut donc pas vous en montrer les noms.
+
+unlock-otherVault-find = Retrouver mes autres coffres-forts
+
+unlock-otherVault-findHelp = Essaie la phrase secrète que vous saisissez sur chaque dossier que myCarlos ne connaît pas. Chaque essai compte comme un essai de phrase secrète.
+
+unlock-otherVault-findButton = Retrouver les coffres-forts
+
+unlock-otherVault-found =
+    { $count ->
+    [one] { $count } coffre-fort trouvé.
+    *[other] { $count } coffres-forts trouvés.
+    }
+
+unlock-otherVault-notOpened =
+    { $count ->
+    [one] { $count } dossier ne s’est pas ouvert avec cette phrase secrète.
+    *[other] { $count } dossiers ne se sont pas ouverts avec cette phrase secrète.
+    }
+
+unlock-otherVault-empty =
+    { $count ->
+    [one] { $count } dossier était vide.
+    *[other] { $count } dossiers étaient vides.
+    }
+
+unlock-otherVault-none = Aucun autre coffre-fort ne s’est ouvert avec cette phrase secrète.
+
+unlock-otherVault-nameTitle = Donnez à chaque coffre-fort le nom que vous saisirez pour l’ouvrir
+
+unlock-otherVault-nameLabel = Coffre-fort { $number } sur { $count }
+
+unlock-otherVault-save = Enregistrer les noms
+
+unlock-otherVault-named = Les noms ont été enregistrés. Rien n’a été déverrouillé.
+
+unlock-otherVault-nameFailed = Les noms n’ont pas été enregistrés. Rien n’a été modifié.
+
+newVault-title = Configurer un nouveau coffre-fort
+
+newVault-intro = Un nouveau coffre-fort sur cet appareil a sa propre phrase secrète, sa propre clé de récupération et ses propres personnes. Ce coffre-fort est d’abord verrouillé.
+
+newVault-others = Vos autres coffres-forts ne sont pas touchés : chacun garde sa propre phrase secrète et sa clé de récupération.
+
+newVault-name-label = Nom de ce coffre-fort
+
+newVault-name-hint = Vous saisissez ce nom sur l’écran de déverrouillage pour ouvrir ce coffre-fort. Ce n’est pas un mot de passe : quiconque détient cet appareil et une copie de ses fichiers pourrait essayer des suppositions, il ne remplace donc pas la phrase secrète.
+
+newVault-name-invalid = Choisissez un nom de 1 à 64 caractères.
+
+newVault-lockNote = Choisir Configurer le coffre-fort verrouille ce coffre-fort, puis ouvre le nouveau.
+
+newVault-submit = Configurer le coffre-fort
+
+newVault-cancel = Annuler
+
+security-newVault-title = Un autre coffre-fort sur cet appareil
+
+security-newVault-body = Configurez un coffre-fort distinct, avec son propre nom, sa propre phrase secrète et ses propres personnes. Ce coffre-fort est d’abord verrouillé.
+
+security-newVault-button = Configurer un nouveau coffre-fort…
+
+notice-newVaultReady = Le nouveau coffre-fort est prêt. Verrouillez-le quand vous avez terminé, puis déverrouillez-le de nouveau avec son nom et sa phrase secrète.
+
 unlock-waiting =
     { $count ->
     [one] { $count } fichier partagé est en attente. Déverrouillez le coffre-fort : myCarlos demandera d'abord avant de l'ajouter à « { $folder } ». Si myCarlos se ferme avant, il ne sera pas conservé : partagez-le de nouveau.

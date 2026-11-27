@@ -1350,6 +1350,74 @@ unlock-submit = Unlock
 
 unlock-title = Unlock your vault
 
+unlock-otherVault-summary = Use a different vault
+
+unlock-otherVault-name = Vault name
+
+unlock-otherVault-hint = The name you gave that vault. Leave it empty to open this screen's own vault. myCarlos keeps no list of vaults, so it cannot show you their names.
+
+unlock-otherVault-find = Find my other vaults
+
+unlock-otherVault-findHelp = Tries the passphrase you type on each folder myCarlos does not know about. Each try counts as a passphrase try.
+
+unlock-otherVault-findButton = Find vaults
+
+unlock-otherVault-found =
+    { $count ->
+    [one] Found { $count } vault.
+    *[other] Found { $count } vaults.
+    }
+
+unlock-otherVault-notOpened =
+    { $count ->
+    [one] { $count } folder did not open with that passphrase.
+    *[other] { $count } folders did not open with that passphrase.
+    }
+
+unlock-otherVault-empty =
+    { $count ->
+    [one] { $count } folder was empty.
+    *[other] { $count } folders were empty.
+    }
+
+unlock-otherVault-none = No other vault opened with that passphrase.
+
+unlock-otherVault-nameTitle = Give each vault the name you will type to open it
+
+unlock-otherVault-nameLabel = Vault { $number } of { $count }
+
+unlock-otherVault-save = Save names
+
+unlock-otherVault-named = The names were saved. Nothing was unlocked.
+
+unlock-otherVault-nameFailed = The names were not saved. Nothing was changed.
+
+newVault-title = Set up a new vault
+
+newVault-intro = A new vault on this device has its own passphrase, recovery key and people. This vault is locked first.
+
+newVault-others = Your other vaults are not touched: each keeps its own passphrase and recovery key.
+
+newVault-name-label = Name for this vault
+
+newVault-name-hint = You type this name on the unlock screen to open this vault. It is not a password: anyone who holds this device and a copy of its files could try guesses at it, so it does not replace the passphrase.
+
+newVault-name-invalid = Choose a name of 1 to 64 characters.
+
+newVault-lockNote = Choosing Set up vault locks this vault, then opens the new one.
+
+newVault-submit = Set up vault
+
+newVault-cancel = Cancel
+
+security-newVault-title = Another vault on this device
+
+security-newVault-body = Set up a separate vault with its own name, passphrase and people. This vault is locked first.
+
+security-newVault-button = Set up a new vault…
+
+notice-newVaultReady = The new vault is ready. Lock it when you are done, and unlock it again with its name and passphrase.
+
 unlock-waiting =
     { $count ->
     [one] { $count } shared file is waiting. Unlock and myCarlos asks first before adding it to { $folder }. If myCarlos closes first, it is not kept: share it again.

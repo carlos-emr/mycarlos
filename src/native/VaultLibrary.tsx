@@ -175,6 +175,7 @@ export function VaultLibrary({
   sharedNew = 0,
   onSharedSeen,
   onSecurityEntry,
+  onSetUpNewVault,
 }: {
   bridge: VaultBridge;
   snapshot: VaultSnapshot;
@@ -247,6 +248,8 @@ export function VaultLibrary({
   onSharedSeen?: () => void;
   /** Security opened (Connected clinics lives there): a chance to show arrivals. */
   onSecurityEntry?: () => Promise<void>;
+  /** Several vaults (#357): opens the screen that sets up another vault, from Security. */
+  onSetUpNewVault?: () => void;
 }) {
   const { t } = useI18n();
   const [profileId, setProfileId] = useState(
@@ -3022,6 +3025,7 @@ export function VaultLibrary({
                 onHandOver={() => setHandover("export")}
                 focusHandover={handoverFocus}
                 onAddFromFile={() => setHandover("import")}
+                onSetUpNewVault={onSetUpNewVault}
                 hiddenPeople={snapshot.hiddenProfiles}
                 onHidePerson={bridge.hideProfile ? hidePerson : undefined}
                 onRestorePerson={

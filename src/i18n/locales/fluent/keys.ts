@@ -608,6 +608,34 @@ export const MESSAGE_KEYS = [
   "unlock.noKey.heading",
   "unlock.submit",
   "unlock.title",
+  "unlock.otherVault.summary",
+  "unlock.otherVault.name",
+  "unlock.otherVault.hint",
+  "unlock.otherVault.find",
+  "unlock.otherVault.findHelp",
+  "unlock.otherVault.findButton",
+  "unlock.otherVault.found",
+  "unlock.otherVault.notOpened",
+  "unlock.otherVault.empty",
+  "unlock.otherVault.none",
+  "unlock.otherVault.nameTitle",
+  "unlock.otherVault.nameLabel",
+  "unlock.otherVault.save",
+  "unlock.otherVault.named",
+  "unlock.otherVault.nameFailed",
+  "newVault.title",
+  "newVault.intro",
+  "newVault.others",
+  "newVault.name.label",
+  "newVault.name.hint",
+  "newVault.name.invalid",
+  "newVault.lockNote",
+  "newVault.submit",
+  "newVault.cancel",
+  "security.newVault.title",
+  "security.newVault.body",
+  "security.newVault.button",
+  "notice.newVaultReady",
   "unlock.waiting",
   "unlock.waiting.one",
   "language.error.formatting",
@@ -2134,6 +2162,34 @@ const FLUENT_IDS_BY_KEY = {
   "unlock.noKey.heading": "unlock-noKey-heading",
   "unlock.submit": "unlock-submit",
   "unlock.title": "unlock-title",
+  "unlock.otherVault.summary": "unlock-otherVault-summary",
+  "unlock.otherVault.name": "unlock-otherVault-name",
+  "unlock.otherVault.hint": "unlock-otherVault-hint",
+  "unlock.otherVault.find": "unlock-otherVault-find",
+  "unlock.otherVault.findHelp": "unlock-otherVault-findHelp",
+  "unlock.otherVault.findButton": "unlock-otherVault-findButton",
+  "unlock.otherVault.found": "unlock-otherVault-found",
+  "unlock.otherVault.notOpened": "unlock-otherVault-notOpened",
+  "unlock.otherVault.empty": "unlock-otherVault-empty",
+  "unlock.otherVault.none": "unlock-otherVault-none",
+  "unlock.otherVault.nameTitle": "unlock-otherVault-nameTitle",
+  "unlock.otherVault.nameLabel": "unlock-otherVault-nameLabel",
+  "unlock.otherVault.save": "unlock-otherVault-save",
+  "unlock.otherVault.named": "unlock-otherVault-named",
+  "unlock.otherVault.nameFailed": "unlock-otherVault-nameFailed",
+  "newVault.title": "newVault-title",
+  "newVault.intro": "newVault-intro",
+  "newVault.others": "newVault-others",
+  "newVault.name.label": "newVault-name-label",
+  "newVault.name.hint": "newVault-name-hint",
+  "newVault.name.invalid": "newVault-name-invalid",
+  "newVault.lockNote": "newVault-lockNote",
+  "newVault.submit": "newVault-submit",
+  "newVault.cancel": "newVault-cancel",
+  "security.newVault.title": "security-newVault-title",
+  "security.newVault.body": "security-newVault-body",
+  "security.newVault.button": "security-newVault-button",
+  "notice.newVaultReady": "notice-newVaultReady",
   "unlock.waiting": "unlock-waiting",
   "unlock.waiting.one": "unlock-waiting-one",
   "language.error.formatting": "language-error-formatting",
@@ -3806,6 +3862,37 @@ export interface MessageArgsByKey {
   "unlock.noKey.heading": undefined;
   "unlock.submit": undefined;
   "unlock.title": undefined;
+  "unlock.otherVault.summary": undefined;
+  "unlock.otherVault.name": undefined;
+  "unlock.otherVault.hint": undefined;
+  "unlock.otherVault.find": undefined;
+  "unlock.otherVault.findHelp": undefined;
+  "unlock.otherVault.findButton": undefined;
+  "unlock.otherVault.found": { count: FluentArgument };
+  "unlock.otherVault.notOpened": { count: FluentArgument };
+  "unlock.otherVault.empty": { count: FluentArgument };
+  "unlock.otherVault.none": undefined;
+  "unlock.otherVault.nameTitle": undefined;
+  "unlock.otherVault.nameLabel": {
+    count: FluentArgument;
+    number: FluentArgument;
+  };
+  "unlock.otherVault.save": undefined;
+  "unlock.otherVault.named": undefined;
+  "unlock.otherVault.nameFailed": undefined;
+  "newVault.title": undefined;
+  "newVault.intro": undefined;
+  "newVault.others": undefined;
+  "newVault.name.label": undefined;
+  "newVault.name.hint": undefined;
+  "newVault.name.invalid": undefined;
+  "newVault.lockNote": undefined;
+  "newVault.submit": undefined;
+  "newVault.cancel": undefined;
+  "security.newVault.title": undefined;
+  "security.newVault.body": undefined;
+  "security.newVault.button": undefined;
+  "notice.newVaultReady": undefined;
   "unlock.waiting": { count: FluentArgument; folder: FluentArgument };
   "unlock.waiting.one": { folder: FluentArgument };
   "language.error.formatting": undefined;

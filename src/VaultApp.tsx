@@ -30,6 +30,7 @@ import {
   isRestoreUnfinished,
   vaultErrorMessage,
   vaultErrorNote,
+  type FoundVaults,
   type ReceivedFile,
   type SnapshotCapture,
   type PortalLinkSummary,
@@ -325,6 +326,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     offerOpen: boolean;
   } | null>(null);
   const [concealed, setConcealed] = useState(false);
+  // "Set up a new vault" (#357), opened from Security in an unlocked vault: the only place another
+  // vault can be added from. A lock ends it, so it is never left open on a locked screen.
+  const [addingVault, setAddingVault] = useState(false);
   const [lockFailed, setLockFailed] = useState(false);
   // An automatic or background lock owed while a transfer runs, or before the
   // operation that ran it has finished, waits for that operation, with content
@@ -578,6 +582,7 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
       setLockFailed(false);
       holdLock(false);
       mediaHoldsRef.current.clear();
+      setAddingVault(false);
       setStatus("locked");
       if (endsTransfer && transferOutcomeRef.current)
         holdForUnlock(transferOutcomeRef.current);
@@ -1986,6 +1991,49 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
     );
   }
 
+  // Another vault on this device (#357), set up from an unlocked vault: this vault is locked
+  // first (the native side adds a vault only while the screen's vault is at rest), then the new one
+  // is made and opened as a new vault is. If the lock does not happen, nothing is added and the
+  // vault stays open with the reason shown.
+  const setUpNewVault = async (
+    profile: string,
+    passphrase: string,
+    vaultName: string,
+  ) => {
+    lockReasonRef.current = null;
+    await lock();
+    const afterLock = await bridge.status().catch(() => "unlocked" as const);
+    if (afterLock !== "locked") return;
+    await run(async () => {
+      const current = await bridge.addVault!(vaultName, passphrase, profile);
+      setOpeningRecoverySetup(null);
+      installOpeningSnapshot(current);
+      setConcealed(false);
+      setStatus("unlocked");
+      setUnlockCheck({ session: sessionRef.current, offerOpen: false });
+      setLibraryNotice({
+        message: deferredText(() => t("notice.newVaultReady")),
+        outcome: null,
+      });
+    }, ["box.passphrase"]);
+  };
+
+  if (addingVault && status === "unlocked" && snapshot && bridge.addVault) {
+    return (
+      <CreateVault
+        busy={busy}
+        notice={notice}
+        checkRules={bridge.passphraseRules}
+        restoreBridge={trackedBridge}
+        onRestored={restored}
+        newVault={{ onCancel: () => setAddingVault(false) }}
+        onCreate={(profile, passphrase, _details, vaultName) =>
+          setUpNewVault(profile, passphrase, vaultName ?? "")
+        }
+      />
+    );
+  }
+
   if (status === "locked" || !snapshot) {
     return (
       <UnlockVault
@@ -1996,9 +2044,34 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         restoreBridge={trackedBridge}
         onRestored={restored}
         autoLockMinutes={autoLockMinutes}
-        onUnlock={(passphrase) =>
+        severalVaults={
+          bridge.unlockNamed && bridge.findOtherVaults && bridge.nameFoundVaults
+            ? {
+                onFind: async (passphrase) => {
+                  // Counted as passphrase tries by the native side; a wait or a refusal is shown
+                  // as for any unlock.
+                  const found: { value: FoundVaults | null } = { value: null };
+                  await run(async () => {
+                    found.value = await bridge.findOtherVaults!(passphrase);
+                  }, ["box.passphrase"]);
+                  return found.value;
+                },
+                onNameFound: async (vaults) => {
+                  const saved = { value: false };
+                  await run(async () => {
+                    await bridge.nameFoundVaults!(vaults);
+                    saved.value = true;
+                  });
+                  return saved.value;
+                },
+              }
+            : undefined
+        }
+        onUnlock={(passphrase, vaultName) =>
           run(async () => {
-            const current = await bridge.unlock(passphrase);
+            const current = vaultName
+              ? await bridge.unlockNamed!(vaultName, passphrase)
+              : await bridge.unlock(passphrase);
             const outcome = takeHeldOutcome(current);
             // A vault without a recovery key is one forgotten passphrase from
             // being set aside for good, so the library opens on the offer of
@@ -2196,6 +2269,9 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
         refresh={refresh}
         onLock={lockAsked}
         onRequestLock={requestLockAsked}
+        onSetUpNewVault={
+          bridge.addVault ? () => setAddingVault(true) : undefined
+        }
         autoLockMinutes={autoLockMinutes}
         onAutoLockMinutes={updateAutoLockMinutes}
         openingRecoverySetup={openingRecoverySetup}

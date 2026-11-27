@@ -69,6 +69,36 @@ describe("each bridge method invokes its native command with its arguments", () 
       "vault_unlock",
       { request: { passphrase: "FAKE phrase" } },
     ],
+    [
+      "unlockNamed",
+      (b) => b.unlockNamed("FAKE vault", "FAKE phrase"),
+      "vault_unlock_named",
+      { request: { name: "FAKE vault", passphrase: "FAKE phrase" } },
+    ],
+    [
+      "addVault",
+      (b) => b.addVault("FAKE vault", "FAKE phrase", "FAKE Person"),
+      "vault_add_vault",
+      {
+        request: {
+          name: "FAKE vault",
+          passphrase: "FAKE phrase",
+          initialProfileName: "FAKE Person",
+        },
+      },
+    ],
+    [
+      "findOtherVaults",
+      (b) => b.findOtherVaults("FAKE phrase"),
+      "vault_find_other_vaults",
+      { request: { passphrase: "FAKE phrase" } },
+    ],
+    [
+      "nameFoundVaults",
+      (b) => b.nameFoundVaults([{ id: "slot-1", name: "FAKE vault" }]),
+      "vault_name_found_vaults",
+      { request: { vaults: [{ id: "slot-1", name: "FAKE vault" }] } },
+    ],
     ["lock", (b) => b.lock(), "vault_lock"],
     ["touch", (b) => b.touch(), "vault_touch"],
     [

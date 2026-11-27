@@ -662,6 +662,15 @@ export interface AndroidReaderLabels {
   pageFailed: string;
 }
 
+/** What "Find my other vaults" found: opaque folder ids of the vaults the
+ * passphrase opened, and how many folders did not open or were empty.
+ * Nothing about names or contents. */
+export interface FoundVaults {
+  found: string[];
+  notOpened: number;
+  empty: number;
+}
+
 export interface VaultBridge {
   readonly native: boolean;
   status(): Promise<VaultStatus>;
@@ -675,6 +684,22 @@ export interface VaultBridge {
     initialProfileName: string,
   ): Promise<VaultSnapshot>;
   unlock(passphrase: string): Promise<VaultSnapshot>;
+  /** Several vaults on one device (#357). Opens the vault of that name with
+   * its passphrase; an empty name is the device's own vault. A wrong name and
+   * a wrong passphrase are one and the same refusal. */
+  unlockNamed?(name: string, passphrase: string): Promise<VaultSnapshot>;
+  /** Makes another vault on this device, and opens it. The screen's vault must
+   * be at rest, so it is locked first. */
+  addVault?(
+    name: string,
+    passphrase: string,
+    initialProfileName: string,
+  ): Promise<VaultSnapshot>;
+  /** Tries one passphrase on each folder the device does not list; each try
+   * counts as a passphrase try. */
+  findOtherVaults?(passphrase: string): Promise<FoundVaults>;
+  /** Gives each vault the search found the name its owner chose, all or none. */
+  nameFoundVaults?(vaults: { id: string; name: string }[]): Promise<void>;
   lock(): Promise<void>;
   /** Reports user input to the native idle deadline, which cannot see it. */
   touch(): Promise<void>;
@@ -1377,6 +1402,20 @@ export function createVaultBridge(): VaultBridge {
       }),
     unlock: (passphrase) =>
       invoke<VaultSnapshot>("vault_unlock", { request: { passphrase } }),
+    unlockNamed: (name, passphrase) =>
+      invoke<VaultSnapshot>("vault_unlock_named", {
+        request: { name, passphrase },
+      }),
+    addVault: (name, passphrase, initialProfileName) =>
+      invoke<VaultSnapshot>("vault_add_vault", {
+        request: { name, passphrase, initialProfileName },
+      }),
+    findOtherVaults: (passphrase) =>
+      invoke<FoundVaults>("vault_find_other_vaults", {
+        request: { passphrase },
+      }),
+    nameFoundVaults: (vaults) =>
+      invoke<void>("vault_name_found_vaults", { request: { vaults } }),
     lock: () => {
       viewGeneration += 1;
       return invoke<void>("vault_lock");
