@@ -9,6 +9,8 @@ import {
   fakeUnlisted,
   fakeVaultWith,
   myRecords,
+  refusal,
+  scriptFake,
 } from "./support/vaultFake";
 
 // Several vaults on one device (#357): "Use a different vault" on the unlock screen (by keyboard
@@ -166,6 +168,40 @@ for (const entry of ["library", "security"] as const) {
     );
   });
 }
+
+test("a successful retry keeps the sign-out landing after a refused lock", async ({
+  page,
+}) => {
+  await fakeVaultWith(page, { start: "unlocked" });
+  await page.goto("/");
+  await expect(myRecords(page)).toBeVisible();
+  await scriptFake(page, "vault_lock", {
+    reject: refusal("storage", "native.error.01"),
+  });
+  await page
+    .locator(".titlebar")
+    .getByRole("button", { name: en("security.signOut"), exact: true })
+    .click();
+
+  const retry = page.getByRole("button", {
+    name: en("interface.VaultApp.tryLockingAgain"),
+    exact: true,
+  });
+  await expect(retry).toBeVisible();
+  await expect(
+    page.getByText(en("notice.signedOut"), { exact: true }),
+  ).toHaveCount(0);
+  await retry.click();
+
+  await expect(
+    page.getByText(en("notice.signedOut"), { exact: true }),
+  ).toBeVisible();
+  await expect(disclosure(page)).toHaveAttribute("data-highlighted", "true");
+  await expect(
+    page.getByLabel(en("unlock.otherVault.name"), { exact: true }),
+  ).toBeHidden();
+  expect(await fakeCalls(page, "vault_lock")).toHaveLength(2);
+});
 
 test("Find my other vaults says counts only, asks a number for each, and saves the names together", async ({
   page,
