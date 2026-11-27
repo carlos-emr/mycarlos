@@ -36,11 +36,39 @@ A timeout, interruption, test failure, leftover child process, LLVM diagnostic, 
 incomplete report returns a nonzero exit status. On shared hosts, acquire the existing heavy-job
 and browser/global leases before invoking the runner, just as for ordinary native tests.
 
+## In CI: the test step that already runs
+
+The Linux job's Rust library tests run **once, instrumented**; there is no second build and no
+separate coverage job. The workflow runs
+
+```bash
+python3 scripts/coverage-rust.py --features ai-helper-stub --target-dir src-tauri/target \
+  --jobs 2 --require-floor --floor-file scripts/coverage-rust-floor.json
+```
+
+in place of `cargo test --features ai-helper-stub -- --test-threads=1` for the library, then runs the
+other test targets (`--test '*'`) as before. `--features` gives the library the same features the
+ordinary step uses (the model helper's stub, so llama.cpp is not run); `--target-dir` builds into the
+target directory `cargo test` and the app build already use, with no explicit `--target`, so their
+dependencies are shared and only the library test unit is built again, with `-C instrument-coverage`.
+`--require-floor` makes the runner refuse, before building anything, if no floor is in force (no
+`--floor-file` and no `--fail-under-*`): a dropped flag then stops the job instead of turning the
+gate off. A run without it may still have no floor (a plain measurement on a developer machine).
+The tests keep the one-thread setting, the report is checked against the floor file when they finish,
+and the report is kept as an artifact. The floor gate itself is `python3 -m unittest
+scripts/test_coverage_rust.py`, run in the same job.
+
+The figures of such a run are for the library tests **with the stub feature**: tests that need the
+stub run and count, and nothing needs a model. They are not the figures of the default-feature
+measurement below it, which stays available for a run on a developer machine.
+
 ## Outputs and isolation
 
 Each invocation creates a fresh private directory under the already ignored `coverage/rust/`.
-The runner accepts no reusable target/output directory and performs no deletion or `cargo clean`.
-The normal `src-tauri/target`, shared build caches and earlier reports are not reused or cleaned.
+By default the runner uses a private target directory and performs no deletion or `cargo clean`:
+the normal `src-tauri/target`, shared build caches and earlier reports are not reused or cleaned.
+With `--target-dir PATH` it builds into that existing directory instead (CI does), still without
+deleting anything in it.
 Allow enough disk space for a complete native dependency build and instrumented library test binary.
 
 The run retains:

@@ -1638,3 +1638,6 @@ impl ApprovalExchange for ApprovalHttp {
         crate::portal_approval::send_code(link, attempt, code_r, anchor, cancelled)
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

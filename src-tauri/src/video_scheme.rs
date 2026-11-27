@@ -27,12 +27,14 @@ pub const SCHEME: &str = "mycarlos-video";
 
 /// A reply before it becomes an HTTP response, so that it can be tested
 /// without a webview.
-#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
 pub struct Reply {
     pub status: u16,
     pub headers: Vec<(&'static str, String)>,
     pub body: Vec<u8>,
 }
+redact_debug!(Reply);
 
 fn bare(status: u16) -> Reply {
     Reply {

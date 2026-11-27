@@ -2,8 +2,10 @@ package ca.carlos.mycarlos.pdf
 
 import android.app.Activity
 import android.app.Application
+import android.net.Uri
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -38,6 +40,11 @@ class OpenArgs {
 @InvokeArg
 class CloseArgs {
     var generation: Long = 0
+}
+
+@InvokeArg
+class DisplayNameArgs {
+    var url: String = ""
 }
 
 /**
@@ -183,7 +190,44 @@ class PdfReaderPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve()
     }
 
+    /**
+     * The name a document provider gives a picked `content://` document
+     * (`OpenableColumns.DISPLAY_NAME`): the id of such a document is often opaque ("msf:31"), and
+     * the provider's name ("clip.mp4") is what says what it is. Answers `{}` (no name) for a
+     * `content://` document that has none, for any other scheme, and for any failure (a revoked
+     * grant, a provider that is gone or throws, an unreadable column): it never rejects, so a name
+     * that cannot be had never stops a pick. The name is another app's text and is checked by the
+     * caller; only its length is bounded here, so that nothing large crosses to Rust.
+     */
+    @Command
+    fun displayName(invoke: Invoke) {
+        val result = JSObject()
+        try {
+            val args = invoke.parseArgs(DisplayNameArgs::class.java)
+            val uri = Uri.parse(args.url)
+            if (uri.scheme == "content") {
+                activity.contentResolver
+                    .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { cursor ->
+                        val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (column >= 0 && cursor.moveToFirst() && !cursor.isNull(column)) {
+                            val name = cursor.getString(column)
+                            if (!name.isNullOrBlank() && name.length <= MAX_NAME_CHARS) {
+                                result.put("name", name)
+                            }
+                        }
+                    }
+            }
+        } catch (error: Exception) {
+            // No name: the caller falls back to the tail of the id.
+        }
+        invoke.resolve(result)
+    }
+
     companion object {
+        /** More than any file name: a longer answer is not used (the Rust side checks 255). */
+        const val MAX_NAME_CHARS = 1024
+
         /** The same bound as the Rust side (`android_pdf::MAX_BYTES`). */
         const val MAX_BYTES = 20L * 1024 * 1024
     }

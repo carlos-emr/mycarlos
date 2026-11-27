@@ -1408,3 +1408,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

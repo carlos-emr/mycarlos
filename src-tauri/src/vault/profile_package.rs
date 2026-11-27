@@ -257,7 +257,8 @@ pub(crate) struct PackageRecord {
     pub carried: Option<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PackageAiAnswer {
     pub object: PackageObject,
@@ -271,6 +272,7 @@ pub(crate) struct PackageAiAnswer {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub superseded: bool,
 }
+redact_debug!(PackageAiAnswer);
 
 // A manifest holds names, birth dates and clinic evidence. A `{:?}` of one (an
 // `unwrap` message, a log line, a failed assertion) must never print them, so its
