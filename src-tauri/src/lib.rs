@@ -6315,26 +6315,59 @@ fn received_discard(
     received.forget(&request.ids)
 }
 
-/// What the patient chose to Remove (not Not now): the waiting files named are forgotten, and the
-/// sealed ones among them are deleted from the inbox. Returns how many were removed.
+/// What the patient chose to Remove (not Not now): the sealed files among those named are deleted
+/// from the inbox, and each one that really was deleted is forgotten. Returns how many were removed.
+///
+/// Refused as `Locked` before anything is touched when the vault is not open: the inbox folder is
+/// named by the vault's id, and a lock that came between the question and this answer must not turn
+/// into "removed" with nothing deleted (and the waiting files forgotten). A delete that fails is an
+/// error (`Storage`), not a count: the files it could not delete keep waiting, so the question comes
+/// again, and the others that were deleted are gone and not asked about again.
 #[tauri::command]
 fn received_remove(
     app: tauri::AppHandle,
     store: State<'_, StoreHandle>,
     received: State<'_, Arc<ReceivedFiles>>,
     request: ReceivedDiscardRequest,
-) -> usize {
+) -> CommandResult<usize> {
     let store = store.pin();
-    let sealed = received.remove_sealed(&request.ids);
-    if let (Ok(base), Ok((vault_id, _))) =
-        (app.path().app_local_data_dir(), store.arc().inbox_keys())
-    {
-        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
-        for item in &sealed {
-            let _ = folder.remove_item_by_id(item);
+    let base = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| PublicError::from(VaultError::Storage))?;
+    Ok(remove_sealed_files(
+        store.arc(),
+        &base,
+        &received,
+        &request.ids,
+    )?)
+}
+
+/// `received_remove` without the app handle: the vault must be open, each named sealed item is
+/// deleted (one that is already gone counts as removed), and only those are forgotten and counted.
+/// A failed delete leaves its file waiting and makes the answer `Storage`, after the rest were done.
+fn remove_sealed_files(
+    store: &VaultStore,
+    base: &std::path::Path,
+    received: &ReceivedFiles,
+    ids: &[Uuid],
+) -> Result<usize, VaultError> {
+    // The first thing, before anything is forgotten: a locked vault is refused.
+    let (vault_id, _) = store.inbox_keys()?;
+    let folder = inbox_folder::InboxFolder::new(base, vault_id);
+    let mut deleted = Vec::new();
+    let mut failed = false;
+    for (id, item) in received.sealed_named(ids) {
+        match folder.remove_item_by_id(&item) {
+            Ok(()) => deleted.push(id),
+            Err(_) => failed = true,
         }
     }
-    sealed.len()
+    received.forget(&deleted);
+    if failed {
+        return Err(VaultError::Storage);
+    }
+    Ok(deleted.len())
 }
 
 /// Adds every waiting file to Shared with me (#61): the renderer asks at unlock, and whenever a
@@ -14189,9 +14222,11 @@ mod photo_command_tests {
         assert_eq!(offer(&waiting), 0, "already waiting");
         // Remove: forgotten and deleted, and not offered again.
         let id = waiting.list()[0].id;
-        let removed = waiting.remove_sealed(&[id]);
-        assert_eq!(removed, vec![item]);
-        folder.remove_item_by_id(&item).unwrap();
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &[id]).unwrap(),
+            1
+        );
+        assert!(waiting.list().is_empty());
         assert!(!folder.item_path(&item).exists());
         store.reopen_inbox_check();
         assert_eq!(offer(&waiting), 0);
@@ -14213,12 +14248,122 @@ mod photo_command_tests {
             .unwrap();
         let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
         assert_eq!(ids.len(), 2);
-        // The patient chose Delete with both in the list: only the sealed one goes.
-        assert_eq!(waiting.remove_sealed(&ids), vec![item]);
+        // The patient chose Delete with both in the list: only the sealed one is named, and
+        // naming it forgets nothing (the caller forgets what it really deleted).
+        let sealed_id = waiting.list().iter().find(|file| file.sealed).unwrap().id;
+        assert_eq!(waiting.sealed_named(&ids), vec![(sealed_id, item)]);
+        assert_eq!(waiting.list().len(), 2);
+        assert_eq!(waiting.forget(&[sealed_id]), 1);
         let left = waiting.list();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].id, opened[0]);
         assert!(!left[0].sealed);
+    }
+
+    #[test]
+    fn remove_is_refused_while_locked_and_changes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE letter.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        let waiting = received::ReceivedFiles::default();
+        assert_eq!(
+            waiting.add_sealed(vec![(item, "FAKE letter.pdf".to_owned())]),
+            1
+        );
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        // The lock came between the question and the answer.
+        store.lock();
+        assert!(matches!(
+            remove_sealed_files(&store, &base, &waiting, &ids),
+            Err(VaultError::Locked)
+        ));
+        // Nothing was forgotten and nothing deleted: the file is there, and still waiting.
+        assert!(folder.item_path(&item).exists());
+        assert_eq!(waiting.list().len(), 1);
+        assert_eq!(waiting.sealed_named(&ids), vec![(ids[0], item)]);
+    }
+
+    #[test]
+    fn a_delete_that_fails_is_an_error_and_not_a_count_and_its_file_keeps_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (good, _) = sealed_pdf(&base, vault_id, &keys, "FAKE good.pdf");
+        let (stuck, _) = sealed_pdf(&base, vault_id, &keys, "FAKE stuck.pdf");
+        let (gone, _) = sealed_pdf(&base, vault_id, &keys, "FAKE gone.pdf");
+        let folder = inbox_folder::InboxFolder::new(&base, vault_id);
+        // Nothing here removes a file by hand (#71: only `remove_owned_file` does, and clippy
+        // refuses `std::fs::remove_*` even in a test): the conditions are made by moving files.
+        // `stuck` cannot be deleted: its file is moved aside and a folder with something in it
+        // stands where the file was, so that deleting the path fails.
+        let aside = temp.path().join("stuck-item-aside");
+        std::fs::rename(folder.item_path(&stuck), &aside).unwrap();
+        std::fs::create_dir(folder.item_path(&stuck)).unwrap();
+        std::fs::write(folder.item_path(&stuck).join("FAKE"), b"x").unwrap();
+        // `gone` was taken away already by something else: that is not a failure.
+        std::fs::rename(folder.item_path(&gone), temp.path().join("gone-item-aside")).unwrap();
+        let waiting = received::ReceivedFiles::default();
+        assert_eq!(
+            waiting.add_sealed(vec![
+                (good, "FAKE good.pdf".to_owned()),
+                (stuck, "FAKE stuck.pdf".to_owned()),
+                (gone, "FAKE gone.pdf".to_owned()),
+            ]),
+            3
+        );
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        // The delete that failed is reported, not hidden and not counted ...
+        assert!(matches!(
+            remove_sealed_files(&store, &base, &waiting, &ids),
+            Err(VaultError::Storage)
+        ));
+        // ... the others were done: the good one is deleted, the one already gone is forgotten ...
+        assert!(!folder.item_path(&good).exists());
+        // ... and only the one that could not be deleted is still waiting, to be asked about again.
+        let left = waiting.list();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].name, "FAKE stuck.pdf");
+        assert!(left[0].sealed && folder.item_path(&stuck).exists());
+        // Once it can be deleted (the folder moved out of the way, the file back in its place),
+        // it is, and counted.
+        std::fs::rename(folder.item_path(&stuck), temp.path().join("folder-aside")).unwrap();
+        std::fs::rename(&aside, folder.item_path(&stuck)).unwrap();
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &ids).unwrap(),
+            1
+        );
+        assert!(waiting.list().is_empty());
+    }
+
+    #[test]
+    fn remove_counts_only_the_sealed_files_it_deleted_and_leaves_an_open_with_file_waiting() {
+        let temp = tempfile::tempdir().unwrap();
+        let (store, base, vault_id, keys) = sealed_world(&temp);
+        let (item, _) = sealed_pdf(&base, vault_id, &keys, "FAKE kept.pdf");
+        let waiting = received::ReceivedFiles::default();
+        assert_eq!(
+            waiting.add_sealed(vec![(item, "FAKE kept.pdf".to_owned())]),
+            1
+        );
+        let opened = waiting
+            .add_share(vec![received::ReceivedSource::Path(
+                "/FAKE/opened.pdf".into(),
+            )])
+            .unwrap();
+        let ids: Vec<Uuid> = waiting.list().iter().map(|file| file.id).collect();
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &ids).unwrap(),
+            1
+        );
+        let left = waiting.list();
+        assert_eq!((left.len(), left[0].id), (1, opened[0]));
+        // Nothing named, nothing removed.
+        assert_eq!(
+            remove_sealed_files(&store, &base, &waiting, &[]).unwrap(),
+            0
+        );
+        assert_eq!(waiting.list().len(), 1);
     }
 
     #[test]

@@ -427,6 +427,12 @@ describe("each bridge method invokes its native command with its arguments", () 
       { request: { ids: ["r-1"] } },
     ],
     [
+      "removeReceived",
+      (b) => b.removeReceived(["r-1"]),
+      "received_remove",
+      { request: { ids: ["r-1"] } },
+    ],
+    [
       "moveToPerson",
       (b) => b.moveToPerson(["rec-1"], "p-2", ["f-9"]),
       "vault_move_to_person",

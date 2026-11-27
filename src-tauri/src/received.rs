@@ -418,25 +418,21 @@ impl ReceivedFiles {
         added
     }
 
-    /// Forgets the SEALED files among those named, and returns their items so that the caller
-    /// deletes them (the patient chose Delete, not Not now). A file that is not sealed (an "Open
-    /// with" file waiting in the same question) is not touched: it stays waiting.
-    pub(crate) fn remove_sealed(&self, ids: &[Uuid]) -> Vec<ItemId> {
-        let mut waiting = self.waiting();
-        let mut removed = Vec::new();
-        waiting.files.retain(|(id, file)| {
-            if !ids.contains(id) {
-                return true;
-            }
-            match file.source {
-                ReceivedSource::Inbox(item) => {
-                    removed.push(item);
-                    false
-                }
-                _ => true,
-            }
-        });
-        removed
+    /// The SEALED files among those named, as (waiting id, item), WITHOUT forgetting any: the
+    /// caller deletes each item (the patient chose Remove, not Not now) and then forgets only the
+    /// ones it really deleted (`forget`), so a file that could not be deleted keeps waiting. A file
+    /// that is not sealed (an "Open with" file waiting in the same question) is not named: it
+    /// stays waiting.
+    pub(crate) fn sealed_named(&self, ids: &[Uuid]) -> Vec<(Uuid, ItemId)> {
+        self.waiting()
+            .files
+            .iter()
+            .filter(|(id, _)| ids.contains(id))
+            .filter_map(|(id, file)| match file.source {
+                ReceivedSource::Inbox(item) => Some((*id, item)),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Adds what an unlock's reconciliation of the sealed inbox says to the notice the page reads.
