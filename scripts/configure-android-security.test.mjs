@@ -14,7 +14,10 @@ import {
   configureAndroidSecurity,
   copyLauncherIcons,
   declareCamera,
+  declareMicrophone,
   keepPageClearOfSystemBars,
+  setNetworkSecurityConfig,
+  writeNetworkSecurityConfig,
 } from "./configure-android-security.mjs";
 
 test("Android backup exclusions are applied exactly once", async () => {
@@ -41,8 +44,12 @@ test("Android backup exclusions are applied exactly once", async () => {
       "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
     );
 
-    await configureAndroidSecurity(manifestPath);
-    await configureAndroidSecurity(manifestPath);
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
     // The page is kept clear of the system bars, once.
     const activity = await readFile(activityPath, "utf8");
     assert.equal(
@@ -99,7 +106,7 @@ test("Android backup exclusions are applied exactly once", async () => {
   }
 });
 
-test("the camera is declared once, not required, and the microphone not at all (D97)", async () => {
+test("the camera and the microphone are each declared once, neither required (D97, #359)", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-camera-"));
   try {
     await mkdir(join(directory, "res"));
@@ -115,8 +122,12 @@ test("the camera is declared once, not required, and the microphone not at all (
       join(directory, "java", "ca", "carlos", "mycarlos", "MainActivity.kt"),
       "package ca.carlos.mycarlos\n\nclass MainActivity : TauriActivity()\n",
     );
-    await configureAndroidSecurity(manifestPath);
-    await configureAndroidSecurity(manifestPath);
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
+    await configureAndroidSecurity(manifestPath, undefined, {
+      debugDirectory: join(directory, "debug"),
+    });
     const manifest = await readFile(manifestPath, "utf8");
     assert.equal(
       (
@@ -143,10 +154,60 @@ test("the camera is declared once, not required, and the microphone not at all (
       ).length,
       1,
     );
-    assert.doesNotMatch(manifest, /RECORD_AUDIO|MODIFY_AUDIO_SETTINGS/);
+    // The microphone (#359): once each, and the feature is not required, so a
+    // device without one can still install the app. The test used to assert the
+    // opposite while nothing asked for sound; video with sound now does.
+    for (const permission of ["RECORD_AUDIO", "MODIFY_AUDIO_SETTINGS"]) {
+      assert.equal(
+        (
+          manifest.match(
+            new RegExp(
+              `<uses-permission android:name="android\\.permission\\.${permission}" />`,
+              "g",
+            ),
+          ) ?? []
+        ).length,
+        1,
+        permission,
+      );
+    }
+    assert.equal(
+      (
+        manifest.match(
+          /<uses-feature android:name="android\.hardware\.microphone" android:required="false" \/>/g,
+        ) ?? []
+      ).length,
+      1,
+    );
+    // The permissions are exactly these: an allowlist, so that adding one (sound
+    // recording in the background, storage, location, ...) fails here and has to
+    // be argued, not slipped in beside the microphone. INTERNET is the one the
+    // fixture manifest started with.
+    const permissions = [
+      ...manifest.matchAll(/<uses-permission android:name="([^"]+)"/g),
+    ]
+      .map((match) => match[1])
+      .sort();
+    assert.deepEqual(permissions, [
+      "android.permission.CAMERA",
+      "android.permission.INTERNET",
+      "android.permission.MODIFY_AUDIO_SETTINGS",
+      "android.permission.RECORD_AUDIO",
+    ]);
+    // And only these hardware features, none of them required.
+    const features = [
+      ...manifest.matchAll(
+        /<uses-feature android:name="([^"]+)" android:required="([^"]+)"/g,
+      ),
+    ].map((match) => `${match[1]}=${match[2]}`);
+    assert.deepEqual(features.sort(), [
+      "android.hardware.camera.autofocus=false",
+      "android.hardware.camera=false",
+      "android.hardware.microphone=false",
+    ]);
     // What was there stays.
     assert.match(manifest, /android\.permission\.INTERNET/);
-    assert.match(manifest, /<application android:allowBackup="false"/);
+    assert.match(manifest, /<application [^>]*android:allowBackup="false"/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -169,6 +230,20 @@ test("a camera feature marked required is replaced by one that is not", () => {
   assert.throws(() => declareCamera("<application />"), /manifest element/);
 });
 
+test("a microphone feature marked required is replaced by one that is not", () => {
+  const manifest = declareMicrophone(
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-feature android:name="android.hardware.microphone" android:required="true" /><application /></manifest>',
+  );
+  assert.doesNotMatch(manifest, /android:required="true"/);
+  assert.equal(manifest.match(/RECORD_AUDIO/g)?.length, 1);
+  assert.equal(manifest.match(/MODIFY_AUDIO_SETTINGS/g)?.length, 1);
+  assert.match(
+    manifest,
+    /<uses-feature android:name="android\.hardware\.microphone" android:required="false" \/>/,
+  );
+  assert.throws(() => declareMicrophone("<application />"), /manifest element/);
+});
+
 test("the page is kept clear of the status bar, the gesture bar and the keyboard, once", () => {
   const withBody = [
     "package ca.carlos.mycarlos",
@@ -188,6 +263,16 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
   ]) {
     const patched = keepPageClearOfSystemBars(source);
     assert.match(patched, /override fun onWebViewCreate\(webView: WebView\)/);
+    // Page inspection is on only when the app is debuggable (a debug build), never unconditionally.
+    assert.match(
+      patched,
+      /if \(\(applicationInfo\.flags and ApplicationInfo\.FLAG_DEBUGGABLE\) != 0\) \{\s*WebView\.setWebContentsDebuggingEnabled\(true\)\s*\}/,
+    );
+    assert.equal(
+      patched.split("setWebContentsDebuggingEnabled").length - 1,
+      1,
+      "one call, inside the debuggable check",
+    );
     assert.match(patched, /WindowInsetsCompat\.Type\.systemBars\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
     assert.match(patched, /WindowInsetsCompat\.Type\.ime\(\)/);
@@ -216,6 +301,7 @@ test("the page is kept clear of the status bar, the gesture bar and the keyboard
       /runOnUiThread \{ setStripColour\(value, darkBackground\) \}/,
     );
     for (const line of [
+      "import android.content.pm.ApplicationInfo",
       "import android.content.res.Configuration",
       "import android.graphics.Color",
       "import android.graphics.drawable.ColorDrawable",
@@ -348,4 +434,105 @@ test("the strip behind the status bar uses the header's colours from styles.css"
   );
   assert.ok(patched.includes(`0xFF${light.toUpperCase()}`), "light colour");
   assert.ok(patched.includes(`0xFF${dark.toUpperCase()}`), "dark colour");
+});
+
+test("the manifest names the network security config and turns cleartext off, once", () => {
+  const before =
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/other" android:label="myCarlos" /></manifest>';
+  const once = setNetworkSecurityConfig(before);
+  assert.equal(setNetworkSecurityConfig(once), once);
+  assert.equal((once.match(/android:networkSecurityConfig=/g) ?? []).length, 1);
+  assert.equal((once.match(/android:usesCleartextTraffic=/g) ?? []).length, 1);
+  assert.match(
+    once,
+    /android:networkSecurityConfig="@xml\/mycarlos_network_security_config"/,
+  );
+  assert.match(once, /android:usesCleartextTraffic="false"/);
+  assert.throws(() => setNetworkSecurityConfig("<manifest />"), /application/);
+});
+
+test("the release config trusts the system's authorities only; the test root is in the debug source set alone", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-nsc-"));
+  try {
+    const res = join(directory, "main", "res");
+    const debug = join(directory, "debug");
+    await writeNetworkSecurityConfig(res, debug);
+    // Writing again changes nothing.
+    await writeNetworkSecurityConfig(res, debug);
+
+    const release = await readFile(
+      join(res, "xml", "mycarlos_network_security_config.xml"),
+      "utf8",
+    );
+    assert.match(release, /<base-config cleartextTrafficPermitted="false">/);
+    assert.match(release, /<certificates src="system" \/>/);
+    // Nothing else to trust in a release build: no user authorities, no test root, no override.
+    assert.doesNotMatch(
+      release,
+      /src="user"|debug-overrides|@raw|mycarlos_test_ca/,
+    );
+    assert.equal((release.match(/<certificates /g) ?? []).length, 1);
+
+    const debugConfig = await readFile(
+      join(debug, "res", "xml", "mycarlos_network_security_config.xml"),
+      "utf8",
+    );
+    assert.match(
+      debugConfig,
+      /<base-config cleartextTrafficPermitted="false">/,
+    );
+    assert.match(debugConfig, /<debug-overrides>/);
+    // Exactly one extra authority, the raw test root; never a user-installed one.
+    assert.equal(
+      (
+        debugConfig.match(/<certificates src="@raw\/mycarlos_test_ca" \/>/g) ??
+        []
+      ).length,
+      1,
+    );
+    assert.doesNotMatch(debugConfig, /src="user"/);
+
+    // The test root is the repository's FAKE CA, as DER, in the debug source set only.
+    const raw = await readFile(
+      join(debug, "res", "raw", "mycarlos_test_ca.der"),
+    );
+    const fixture = await readFile(
+      new URL(
+        "../src-tauri/tests/fixtures/portal-test-pki/ca.der.b64",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    assert.deepEqual(raw, Buffer.from(fixture.trim(), "base64"));
+    assert.equal(raw[0], 0x30);
+    assert.deepEqual(await readdir(join(res)), ["xml"]);
+    assert.deepEqual(await readdir(join(res, "xml")), [
+      "mycarlos_network_security_config.xml",
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a missing or damaged test root stops the configuration, loudly", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-nsc-"));
+  try {
+    const res = join(directory, "res");
+    const debug = join(directory, "debug");
+    await assert.rejects(
+      writeNetworkSecurityConfig(res, debug, join(directory, "nowhere")),
+      /test root certificate/,
+    );
+    const pki = join(directory, "pki");
+    await mkdir(pki);
+    await writeFile(join(pki, "ca.der.b64"), "bm90IGEgY2VydGlmaWNhdGU=");
+    await assert.rejects(
+      writeNetworkSecurityConfig(res, debug, pki),
+      /test root certificate/,
+    );
+    // Nothing was written for a debug build that could not reach the test portal.
+    assert.deepEqual(await readdir(directory), ["pki"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

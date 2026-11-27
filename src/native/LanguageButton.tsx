@@ -57,18 +57,16 @@ function LanguageDialog({ onClose }: { onClose: () => void }) {
           <div>
             <h2 id="language-dialog-title">{t("language.title")}</h2>
           </div>
-        </header>
-        <LanguageSetting compact />
-        <footer className="native-dialog-actions">
           <button
             ref={closeRef}
-            className="button primary"
+            className="dialog-close native-dialog-close"
             type="button"
             onClick={onClose}
           >
             {t("interface.AnonymizePreview.close")}
           </button>
-        </footer>
+        </header>
+        <LanguageSetting compact showTitle={false} />
       </section>
     </div>
   );

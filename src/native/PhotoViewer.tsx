@@ -16,7 +16,7 @@ function viewCentre(frame: HTMLElement) {
 }
 
 /** A photo from the vault, fitted to the window, with Zoom in and Zoom out.
- * `url` is the `data:image/jpeg` URL the vault gave (vault_view_photo).
+ * `url` is the `data:image/jpeg` or `data:image/png` URL the vault gave (vault_view_photo).
  * Zooming keeps the middle of the view where it was (Ben, #73), and when
  * zoomed in the photo can be dragged with a mouse or pen to move around; the
  * arrow keys still scroll it, and a finger pans it as any page. */

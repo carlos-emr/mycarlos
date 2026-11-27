@@ -5,6 +5,9 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct CheckResult {
     pub added: usize,
+    /// The clinics (by name, one entry per document) whose new documents were for a person who
+    /// is hidden and wait in Shared with me (#360). Names no person.
+    pub for_hidden: Vec<String>,
     pub refused: usize,
     pub receipts_pending: usize,
     pub issues: Vec<CheckIssue>,
@@ -293,6 +296,8 @@ where
         Ok(n)
     };
     let mut result = CheckResult::default();
+    // What an earlier check filed for a hidden person and nobody took is not this check's.
+    store.clear_arrived_for_hidden();
     let links = store.delivery_links(session)?;
     // Refusals whose deliveries have expired are no longer offered (#143).
     // Only tidying: an expired refusal is ignored anyway, so a failure to
@@ -467,11 +472,20 @@ where
                     match store.receive_delivery(&outer, &response.body, &link, session) {
                         Ok((record_id, added)) => {
                             result.added += usize::from(added);
-                            #[cfg(windows)]
+                            if added && store.take_arrived_for_hidden(record_id) {
+                                // No clinic name yet: said without one, never as an empty name.
+                                result.for_hidden.push(
+                                    link.clinic
+                                        .as_ref()
+                                        .map(|clinic| clinic.clinic_name.clone())
+                                        .unwrap_or_default(),
+                                );
+                            }
+                            #[cfg(desktop)]
                             if added {
                                 store.notify_local_arrival(record_id, &link, session);
                             }
-                            #[cfg(not(windows))]
+                            #[cfg(not(desktop))]
                             let _ = record_id;
                             send_pending(&link)?;
                         }

@@ -2,17 +2,19 @@ import { humanText } from "../test/humanText";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { AppearanceProvider } from "../AppearanceProvider";
+import { APPEARANCE_STORAGE_KEY, startAppearance } from "../appearance";
 import { ComfortSetup } from "./ComfortSetup";
 import { NativeZoomProvider } from "./TextSizeSetting";
 import { startZoom } from "./zoom";
 
-function show(native: boolean, autoLockMinutes = 5) {
+function show(native: boolean, autoLockMinutes = 5, withAppearance = false) {
   const onAutoLockMinutes = vi.fn();
   const onDone = vi.fn();
   const setZoom = vi.fn().mockResolvedValue(undefined);
   const zoom = startZoom(setZoom, false);
   onTestFinished(zoom.stop);
-  render(
+  const screen = (
     <NativeZoomProvider
       initial={native ? { zoom, mac: false } : null}
       installed={Promise.resolve(null)}
@@ -22,16 +24,29 @@ function show(native: boolean, autoLockMinutes = 5) {
         onAutoLockMinutes={onAutoLockMinutes}
         onDone={onDone}
       />
-    </NativeZoomProvider>,
+    </NativeZoomProvider>
+  );
+  render(
+    withAppearance ? (
+      <AppearanceProvider appearance={startAppearance()}>
+        {screen}
+      </AppearanceProvider>
+    ) : (
+      screen
+    ),
   );
   return { onAutoLockMinutes, onDone, setZoom, zoom };
 }
 
 describe("ComfortSetup (#69)", () => {
   // Other test files share this storage.
-  afterEach(() => window.localStorage.removeItem("mycarlos.zoom.v1"));
+  afterEach(() => {
+    window.localStorage.removeItem("mycarlos.zoom.v1");
+    window.localStorage.removeItem(APPEARANCE_STORAGE_KEY);
+    delete document.documentElement.dataset.theme;
+  });
 
-  it("offers Text size with a sample, and the lock delay, each applied at once", async () => {
+  it("offers App zoom with a sample, and the lock delay, each applied at once", async () => {
     const user = userEvent.setup();
     const { onAutoLockMinutes, onDone, setZoom } = show(true);
     expect(
@@ -48,7 +63,7 @@ describe("ComfortSetup (#69)", () => {
 
     // The same control as Settings: the size changes as it is pressed.
     await user.click(
-      screen.getByRole("button", { name: humanText("Larger text") }),
+      screen.getByRole("button", { name: humanText("Zoom in") }),
     );
     expect(setZoom).toHaveBeenLastCalledWith(1.1);
 
@@ -70,9 +85,7 @@ describe("ComfortSetup (#69)", () => {
 
   it("puts the usual settings back when they are asked for, and goes on", () => {
     const { onAutoLockMinutes, onDone, zoom } = show(true, 9);
-    fireEvent.click(
-      screen.getByRole("button", { name: humanText("Larger text") }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: humanText("Zoom in") }));
     expect(zoom.level()).toBe(1.1);
     fireEvent.click(
       screen.getByRole("button", { name: humanText("Use the usual settings") }),
@@ -85,7 +98,7 @@ describe("ComfortSetup (#69)", () => {
   it("says where text size comes from where myCarlos does not set it", () => {
     const { onDone } = show(false);
     expect(
-      screen.queryByRole("button", { name: humanText("Larger text") }),
+      screen.queryByRole("button", { name: humanText("Zoom in") }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText(humanText(/text size follows your device/)),
@@ -98,5 +111,45 @@ describe("ComfortSetup (#69)", () => {
       screen.getByRole("button", { name: humanText("Use the usual settings") }),
     );
     expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it("offers Appearance with the other choices, applied at once, and the usual settings put it back", async () => {
+    const user = userEvent.setup();
+    const { onDone } = show(true, 5, true);
+    const group = screen.getByRole("group", { name: humanText("Appearance") });
+    expect(
+      within(group).getByRole("radio", { name: humanText("System") }),
+    ).toBeChecked();
+    await user.click(
+      within(group).getByRole("radio", { name: humanText("Dark") }),
+    );
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("dark");
+    // Where to change it later names it beside App zoom (the desktop "Text size" control, #356).
+    expect(
+      screen.getByText(humanText(/App zoom and Appearance under Preferences/)),
+    ).toBeVisible();
+    // Continue keeps it.
+    await user.click(
+      screen.getByRole("button", { name: humanText("Continue") }),
+    );
+    expect(window.localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe("dark");
+    expect(onDone).toHaveBeenCalledOnce();
+  });
+
+  it("puts Appearance back to System with the usual settings", async () => {
+    const user = userEvent.setup();
+    show(true, 5, true);
+    const group = screen.getByRole("group", { name: humanText("Appearance") });
+    await user.click(
+      within(group).getByRole("radio", { name: humanText("Dark") }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: humanText("Use the usual settings") }),
+    );
+    expect(
+      within(group).getByRole("radio", { name: humanText("System") }),
+    ).toBeChecked();
+    expect(document.documentElement.dataset.theme).not.toBe("dark");
   });
 });
