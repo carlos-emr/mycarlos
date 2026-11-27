@@ -2436,6 +2436,7 @@ notifications-checkBusy = Se está deteniendo una consulta de documentos. Vuelva
 noticesStep-title = Documentos de su clínica
 noticesStep-intro = Su clínica está vinculada. myCarlos puede buscar documentos nuevos por usted y mostrar un aviso cuando llegue uno, en un equipo que pueda hacerlo. No se activa nada a menos que usted lo marque.
 noticesStep-later = Puede cambiarlos cuando quiera en { $settings }, en { $preferences }: { $notices }.
+noticesStep-laterBackground = Puede cambiar las opciones de segundo plano cuando quiera en { $settings }, en { $preferences }: { $background }.
 noticesStep-done = Listo
 noticesStep-notNow = Ahora no
 

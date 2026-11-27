@@ -2183,6 +2183,7 @@ notifications-checkBusy = 正在停止文件檢查。請稍後再次選擇「檢
 noticesStep-title = 來自診所的文件
 noticesStep-intro = 您的診所已連結。myCarlos 可以為您檢查新文件，並在可顯示通知的電腦上於新文件送達時通知您。除非您勾選，否則不會開啟任何選項。
 noticesStep-later = 您隨時可以在 { $settings } 的 { $preferences } 中變更這些設定：{ $notices }。
+noticesStep-laterBackground = 您隨時可以在 { $settings } 的 { $preferences } 中變更背景執行的設定：{ $background }。
 noticesStep-done = 完成
 noticesStep-notNow = 暫不
 

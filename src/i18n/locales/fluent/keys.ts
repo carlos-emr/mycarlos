@@ -1083,6 +1083,7 @@ export const MESSAGE_KEYS = [
   "noticesStep.title",
   "noticesStep.intro",
   "noticesStep.later",
+  "noticesStep.laterBackground",
   "noticesStep.done",
   "noticesStep.notNow",
   "ai.settings.subtitle",
@@ -2727,6 +2728,7 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.title": "noticesStep-title",
   "noticesStep.intro": "noticesStep-intro",
   "noticesStep.later": "noticesStep-later",
+  "noticesStep.laterBackground": "noticesStep-laterBackground",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
   "ai.settings.subtitle": "ai-settings-subtitle",
@@ -4314,6 +4316,11 @@ export interface MessageArgsByKey {
   "noticesStep.intro": undefined;
   "noticesStep.later": {
     notices: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
+  "noticesStep.laterBackground": {
+    background: FluentArgument;
     preferences: FluentArgument;
     settings: FluentArgument;
   };

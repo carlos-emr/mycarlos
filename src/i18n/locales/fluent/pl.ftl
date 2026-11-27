@@ -2516,6 +2516,7 @@ notifications-checkBusy = Trwa zatrzymywanie sprawdzania dokumentów. Proszę za
 noticesStep-title = Dokumenty z przychodni
 noticesStep-intro = Przychodnia jest połączona. myCarlos może sprawdzać nowe dokumenty za Państwa i pokazywać powiadomienie o nowym dokumencie na komputerze, który to umożliwia. Nic nie zostanie włączone bez zaznaczenia.
 noticesStep-later = Można je zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $notices }”.
+noticesStep-laterBackground = Wybory dotyczące pracy w tle można zmienić w każdej chwili w sekcji „{ $settings }”, w części „{ $preferences }”: „{ $background }”.
 noticesStep-done = Gotowe
 noticesStep-notNow = Nie teraz
 
