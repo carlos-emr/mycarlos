@@ -5,8 +5,12 @@ Run: python3 scripts/build-given-names.test.py
 """
 
 import io
+import tempfile
 import unittest
+import urllib.error
+import urllib.request
 import zipfile
+from unittest import mock
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
@@ -98,6 +102,89 @@ class Readers(unittest.TestCase):
     def test_taiwan_surnames_add_up_the_three_age_groups(self):
         csv_text = "﻿年度,ranking,lastname,age,人口數\n112,1,陳,0~14歲,3\n112,1,陳,15~64歲,5\n112,2,林,0~14歲,2\n".encode("utf-8")
         self.assertEqual(builder.taiwan_surnames(csv_text), {"陳": 8, "林": 2})
+
+
+class FakeReply:
+    def __init__(self, data):
+        self.data = data
+
+    def read(self, limit=None):
+        return self.data if limit is None else self.data[:limit]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class FakeOpener:
+    def __init__(self, data=b"x"):
+        self.calls = []
+        self.data = data
+
+    def open(self, request, timeout=None):
+        self.calls.append(request.full_url)
+        return FakeReply(self.data)
+
+
+HOSTS = {"data.example"}
+
+
+class Fetch(unittest.TestCase):
+    def test_an_unlisted_host_or_a_plain_http_url_is_refused_before_any_request(self):
+        opener = FakeOpener()
+        for url in ["https://evil.example/a.csv", "http://data.example/a.csv", "ftp://data.example/a"]:
+            with self.assertRaises(ValueError, msg=url):
+                builder.download(url, HOSTS, opener)
+        self.assertEqual(opener.calls, [])
+
+    def test_a_listed_https_url_is_downloaded(self):
+        opener = FakeOpener(b"names")
+        self.assertEqual(builder.download("https://data.example/a.csv", HOSTS, opener), b"names")
+        self.assertEqual(opener.calls, ["https://data.example/a.csv"])
+
+    def test_a_reply_over_the_cap_is_refused(self):
+        with mock.patch.object(builder, "MAX_DOWNLOAD", 4):
+            with self.assertRaises(ValueError):
+                builder.download("https://data.example/a.csv", HOSTS, FakeOpener(b"12345"))
+
+    def test_a_redirect_off_the_listed_hosts_is_refused_before_the_next_request_is_made(self):
+        handler = builder.ListedHostsOnly(HOSTS)
+        request = urllib.request.Request("https://data.example/a.csv")
+        for target in ["https://evil.example/x", "http://data.example/x", "file:///etc/passwd"]:
+            with self.assertRaises(urllib.error.HTTPError, msg=target):
+                handler.redirect_request(request, None, 302, "Found", {}, target)
+        followed = handler.redirect_request(request, None, 302, "Found", {}, "https://data.example/b.csv")
+        self.assertEqual(followed.full_url, "https://data.example/b.csv")
+
+    def pins(self, sha=""):
+        return {
+            "hosts": ["data.example"],
+            "sources": {"one": {"file": "one.csv", "url": "https://data.example/one.csv", "sha256": sha}},
+        }
+
+    def run_fetch(self, pins, opener, update=False):
+        with tempfile.TemporaryDirectory() as folder:
+            pins_file = Path(folder) / "pins.json"
+            with mock.patch.object(builder, "load_pins", return_value=pins), mock.patch.object(builder, "PINS", pins_file):
+                code = builder.fetch(Path(folder), update, opener)
+            return code, (Path(folder) / "one.csv").exists(), pins_file.exists()
+
+    def test_a_changed_source_is_not_taken(self):
+        code, written, _ = self.run_fetch(self.pins("0" * 64), FakeOpener(b"changed"))
+        self.assertEqual((code, written), (1, False))
+
+    def test_an_unpinned_file_needs_update_pins_and_is_then_pinned(self):
+        pins = self.pins("")
+        self.assertEqual(self.run_fetch(pins, FakeOpener(b"data"))[:2], (1, False))
+        code, written, rewrote = self.run_fetch(pins, FakeOpener(b"data"), update=True)
+        self.assertEqual((code, written, rewrote), (0, True, True))
+        self.assertEqual(pins["sources"]["one"]["sha256"], builder.sha256(b"data"))
+
+    def test_a_matching_pin_is_taken(self):
+        code, written, _ = self.run_fetch(self.pins(builder.sha256(b"same")), FakeOpener(b"same"))
+        self.assertEqual((code, written), (0, True))
 
 
 if __name__ == "__main__":

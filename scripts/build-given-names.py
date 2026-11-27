@@ -44,6 +44,7 @@ import json
 import re
 import sys
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -69,7 +70,34 @@ def load_pins() -> dict:
     return json.loads(PINS.read_text(encoding="utf-8"))
 
 
-def fetch(raw: Path, update_pins: bool) -> int:
+class ListedHostsOnly(urllib.request.HTTPRedirectHandler):
+    """Refuses a redirect to anything but https on a listed host BEFORE the request is sent."""
+
+    def __init__(self, hosts: set[str]) -> None:
+        self.hosts = hosts
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parts = urllib.parse.urlsplit(newurl)
+        if parts.scheme != "https" or parts.hostname not in self.hosts:
+            raise urllib.error.HTTPError(newurl, code, "redirect off the listed hosts refused", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def download(url: str, hosts: set[str], opener=None) -> bytes:
+    """The bytes at an https URL on a listed host; raises ValueError for anything else or a reply over the cap."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or parts.hostname not in hosts:
+        raise ValueError(f"{url} is not an https URL on a listed host")
+    opener = opener or urllib.request.build_opener(ListedHostsOnly(hosts))
+    request = urllib.request.Request(url, headers={"User-Agent": CLIENT})
+    with opener.open(request, timeout=120) as reply:
+        data = reply.read(MAX_DOWNLOAD + 1)
+    if len(data) > MAX_DOWNLOAD:
+        raise ValueError(f"larger than {MAX_DOWNLOAD} bytes")
+    return data
+
+
+def fetch(raw: Path, update_pins: bool, opener=None) -> int:
     pins = load_pins()
     raw.mkdir(parents=True, exist_ok=True)
     hosts = set(pins["hosts"])
@@ -78,21 +106,10 @@ def fetch(raw: Path, update_pins: bool) -> int:
         if source.get("manual"):
             print(f"{key}: downloaded by a person, see its note")
             continue
-        url = source["url"]
-        parts = urllib.parse.urlsplit(url)
-        if parts.scheme != "https" or parts.hostname not in hosts:
-            print(f"{key}: refused, {url} is not an https URL on a listed host")
-            bad += 1
-            continue
-        request = urllib.request.Request(url, headers={"User-Agent": CLIENT})
-        with urllib.request.urlopen(request, timeout=120) as reply:
-            if urllib.parse.urlsplit(reply.geturl()).hostname not in hosts:
-                print(f"{key}: redirected off the listed hosts, refused")
-                bad += 1
-                continue
-            data = reply.read(MAX_DOWNLOAD + 1)
-        if len(data) > MAX_DOWNLOAD:
-            print(f"{key}: larger than {MAX_DOWNLOAD} bytes, refused")
+        try:
+            data = download(source["url"], hosts, opener)
+        except (ValueError, urllib.error.URLError) as error:
+            print(f"{key}: refused: {error}")
             bad += 1
             continue
         digest = sha256(data)

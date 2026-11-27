@@ -44,6 +44,17 @@ describe("a header's subject after 'for' is a person when it starts with a known
     expect(send(text)).not.toContain(surname);
   });
 
+  it("replaces the name with a placeholder and keeps the header's words", () => {
+    const out = send(
+      "Plan de soins pour Margaux Vellacourt\nNAM : VELM 4163 1412",
+    );
+    expect(out).toMatch(/^Plan de soins pour \[NAME[^\]]*\]\n/u);
+    expect(out).not.toContain("Margaux");
+    expect(out).not.toContain("Vellacourt");
+    const english = send("Home-care plan for Avery Example");
+    expect(english).toMatch(/^Home-care plan for \[NAME[^\]]*\]$/u);
+  });
+
   it.each([
     "Care Plan: Fall Prevention",
     "Home-care plan for Fall Prevention",
