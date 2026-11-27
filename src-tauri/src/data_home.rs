@@ -20,7 +20,7 @@
 //! otherwise leave a test acting on the real account.
 use std::{
     ffi::OsString,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -89,7 +89,8 @@ pub(crate) fn resolve(
     if !metadata.file_type().is_dir() {
         return Err(Refused::NotADirectory);
     }
-    let canonical = fs::canonicalize(&requested).map_err(|_| Refused::Unreadable)?;
+    let canonical =
+        without_verbatim(fs::canonicalize(&requested).map_err(|_| Refused::Unreadable)?);
     // The real folder may not exist yet on a fresh account: compare what can be compared.
     let real_canonical = fs::canonicalize(real).unwrap_or_else(|_| real.to_path_buf());
     if overlaps(&canonical, &real_canonical) {
@@ -103,8 +104,12 @@ pub(crate) fn resolve(
 /// anything else is refused.
 fn claim(directory: &Path) -> Result<(), Refused> {
     let marker = directory.join(MARKER);
-    if marker.is_file() {
-        return Ok(());
+    // Look at the marker without following a link: a link or a folder standing there is not ours.
+    match fs::symlink_metadata(&marker) {
+        Ok(metadata) if metadata.file_type().is_file() => return Ok(()),
+        Ok(_) => return Err(Refused::NotEmptyAndNotATestHome),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(Refused::Unreadable),
     }
     let empty = fs::read_dir(directory)
         .map_err(|_| Refused::Unreadable)?
@@ -113,7 +118,25 @@ fn claim(directory: &Path) -> Result<(), Refused> {
     if !empty {
         return Err(Refused::NotEmptyAndNotATestHome);
     }
-    fs::write(&marker, b"made for a myCarlos test run\n").map_err(|_| Refused::Unreadable)
+    // `create_new`: fails if anything (a link made in the meantime) is already there.
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker)
+        .map_err(|_| Refused::Unreadable)?;
+    io::Write::write_all(&mut file, b"made for a myCarlos test run\n")
+        .map_err(|_| Refused::Unreadable)
+}
+
+/// A canonical path without Windows' `\\?\` verbatim prefix (`canonicalize` adds it): the app joins
+/// names onto this folder and hands it to code that does not all accept the prefix. A `\\?\UNC\`
+/// path is left alone.
+fn without_verbatim(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with(r"UNC\") => PathBuf::from(rest.to_string()),
+        _ => path,
+    }
 }
 
 /// A path as comparable text: without Windows' `\\?\` verbatim prefix (`canonicalize` adds it, and
@@ -134,6 +157,22 @@ fn overlaps(a: &Path, b: &Path) -> bool {
     a.starts_with(&b) || b.starts_with(&a)
 }
 
+/// Whether the variable may be read: a debug build, and not Cargo's release profile either, so a
+/// release build with `debug_assertions` forced on (a RUSTFLAGS flip) still ignores it. The cfg is
+/// set by build.rs from Cargo's `PROFILE`.
+const fn debug_build() -> bool {
+    cfg!(debug_assertions) && !cfg!(mycarlos_release_profile)
+}
+
+/// Where the reason for a refused test data home is written, in the temporary folder.
+pub(crate) const REFUSAL_FILE: &str = "mycarlos-test-data-home-refused.txt";
+
+/// Writes the fixed reason (see [`Refused`]: never a path) to `directory`/[`REFUSAL_FILE`], best
+/// effort: a failure to write it must not hide the refusal itself.
+pub(crate) fn write_refusal_note(directory: &Path, refused: &Refused) {
+    let _ = fs::write(directory.join(REFUSAL_FILE), format!("{refused}\n"));
+}
+
 /// The machine-local data folder every part of the app uses: Tauri's, or in a debug build the
 /// validated `MYCARLOS_TEST_DATA_DIR`. A refused override is an error, so the app does not start
 /// against the wrong folder.
@@ -141,11 +180,15 @@ pub(crate) fn local_data_dir<R: tauri::Runtime>(
     app: &impl tauri::Manager<R>,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let real = app.path().app_local_data_dir()?;
-    let chosen = resolve(
-        cfg!(debug_assertions),
-        std::env::var_os(OVERRIDE_VAR),
-        &real,
-    )?;
+    let chosen = match resolve(debug_build(), std::env::var_os(OVERRIDE_VAR), &real) {
+        Ok(chosen) => chosen,
+        Err(refused) => {
+            // A GUI build that fails in setup shows nothing, so the fixed reason (never a path) is
+            // also written where a test can read it.
+            write_refusal_note(&std::env::temp_dir(), &refused);
+            return Err(Box::new(refused));
+        }
+    };
     if chosen != real && !OVERRIDE_IN_USE.swap(true, Ordering::Relaxed) {
         // Once, with no path.
         eprintln!("test data home in use");
@@ -285,5 +328,118 @@ mod tests {
             assert!(text.contains(OVERRIDE_VAR), "{text}");
             assert!(!text.contains('/') && !text.contains('\\'), "{text}");
         }
+    }
+
+    #[test]
+    fn the_cargo_release_profile_ignores_the_variable_even_with_debug_assertions_on() {
+        // build.rs sets `mycarlos_release_profile` from Cargo's PROFILE: when it is set, the
+        // variable is never read, whatever `debug_assertions` says.
+        if cfg!(mycarlos_release_profile) {
+            assert!(!debug_build());
+        } else {
+            assert_eq!(debug_build(), cfg!(debug_assertions));
+        }
+        // And what a "not debug" answer does with a perfectly good folder:
+        let real = tempfile::tempdir().unwrap();
+        let test_home = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve(false, os(test_home.path()), real.path()).unwrap(),
+            real.path().to_path_buf()
+        );
+    }
+
+    #[test]
+    fn a_marker_that_is_a_folder_or_a_link_is_not_ours() {
+        let real = tempfile::tempdir().unwrap();
+        let folder_marker = tempfile::tempdir().unwrap();
+        fs::create_dir(folder_marker.path().join(MARKER)).unwrap();
+        assert_eq!(
+            resolve(true, os(folder_marker.path()), real.path()),
+            Err(Refused::NotEmptyAndNotATestHome)
+        );
+        #[cfg(unix)]
+        {
+            let link_marker = tempfile::tempdir().unwrap();
+            let elsewhere = tempfile::tempdir().unwrap();
+            let target = elsewhere.path().join("a-file");
+            fs::write(&target, b"x").unwrap();
+            std::os::unix::fs::symlink(&target, link_marker.path().join(MARKER)).unwrap();
+            // A link to a real file is not the marker this module wrote.
+            assert_eq!(
+                resolve(true, os(link_marker.path()), real.path()),
+                Err(Refused::NotEmptyAndNotATestHome)
+            );
+        }
+    }
+
+    #[test]
+    fn the_marker_is_written_once_with_create_new() {
+        let real = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        resolve(true, os(home.path()), real.path()).unwrap();
+        let marker = home.path().join(MARKER);
+        assert!(fs::symlink_metadata(&marker).unwrap().file_type().is_file());
+        // A second resolve keeps it (and does not need to write it again).
+        resolve(true, os(home.path()), real.path()).unwrap();
+        // create_new refuses an existing marker, as a link planted in between would be.
+        assert!(fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker)
+            .is_err());
+    }
+
+    #[test]
+    fn the_windows_verbatim_prefix_is_stripped_but_a_unc_path_is_not() {
+        assert_eq!(
+            without_verbatim(PathBuf::from(r"\\?\C:\Users\x\home")),
+            PathBuf::from(r"C:\Users\x\home")
+        );
+        assert_eq!(
+            without_verbatim(PathBuf::from(r"\\?\UNC\server\share")),
+            PathBuf::from(r"\\?\UNC\server\share")
+        );
+        assert_eq!(
+            without_verbatim(PathBuf::from("/tmp/plain")),
+            PathBuf::from("/tmp/plain")
+        );
+    }
+
+    #[test]
+    fn a_refusal_note_holds_only_the_fixed_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        write_refusal_note(dir.path(), &Refused::NotAbsolute);
+        let text = fs::read_to_string(dir.path().join(REFUSAL_FILE)).unwrap();
+        assert!(
+            text.contains(OVERRIDE_VAR) && text.contains("absolute"),
+            "{text}"
+        );
+        assert!(!text.contains('/') && !text.contains('\\'), "{text}");
+        // An unwritable place does not turn into a panic: the refusal itself must still be raised.
+        write_refusal_note(
+            &dir.path().join("missing").join("deeper"),
+            &Refused::NotAbsolute,
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_is_refused_like_a_link() {
+        let real = tempfile::tempdir().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let target = scratch.path().join("target");
+        fs::create_dir(&target).unwrap();
+        let junction = scratch.path().join("junction");
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "mklink /J failed");
+        assert_eq!(
+            resolve(true, os(&junction), real.path()),
+            Err(Refused::NotADirectory)
+        );
     }
 }

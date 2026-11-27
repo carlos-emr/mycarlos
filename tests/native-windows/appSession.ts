@@ -13,7 +13,7 @@ import type {
   TestInfo,
 } from "@playwright/test";
 import { execFile, spawn } from "node:child_process";
-import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -53,6 +53,33 @@ export interface AppSession {
   stop(): Promise<void>;
 }
 
+/**
+ * Background mode (keep running after the window closes, start at login) writes a login entry
+ * (HKCU Run) that the test data home does NOT redirect, so no playtest may turn it on. Refused
+ * here, at the one place every command goes through.
+ */
+const BACKGROUND_MODE_COMMANDS = [
+  "background_set_keep_running",
+  "background_set_start_at_login",
+];
+export function refuseBackgroundMode(command: string) {
+  if (BACKGROUND_MODE_COMMANDS.includes(command))
+    throw new Error(
+      `Refusing ${command}: background mode writes a login entry the test data home does not redirect`,
+    );
+}
+
+const REFUSAL_FILE = "mycarlos-test-data-home-refused.txt";
+
+/** The fixed reason a debug app wrote when it refused the test data home (no path), if any. */
+async function refusalReason(): Promise<string> {
+  try {
+    return `: ${(await readFile(join(tmpdir(), REFUSAL_FILE), "utf8")).trim()}`;
+  } catch {
+    return "";
+  }
+}
+
 async function freePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((done, fail) => {
@@ -88,6 +115,8 @@ export async function openInstalledApp(
   // A fresh EMPTY folder for the app's data (a debug build reads MYCARLOS_TEST_DATA_DIR, data_home.rs).
   const createdTestHome = await mkdtemp(join(tmpdir(), "mycarlos-test-home-"));
   const testHome = createdTestHome;
+  // A reason left by an earlier run must not be mistaken for this one's.
+  await rm(join(tmpdir(), REFUSAL_FILE), { force: true });
   const port =
     Number(process.env.MYCARLOS_WINDOWS_CDP_PORT) || (await freePort());
   // Fake camera and microphone for the media journey: only honoured when the harness is not the
@@ -117,7 +146,9 @@ export async function openInstalledApp(
   for (;;) {
     if (launchError) throw launchError;
     if (app.exitCode !== null)
-      throw new Error("App exited before WebView2 was ready");
+      throw new Error(
+        `App exited before WebView2 was ready${await refusalReason()}`,
+      );
     try {
       const response = await fetch(`${endpoint}/json/version`, {
         signal: AbortSignal.timeout(1000),
@@ -135,8 +166,9 @@ export async function openInstalledApp(
   page.setDefaultTimeout(10_000);
   await page.waitForFunction(() => "__TAURI_INTERNALS__" in window);
 
-  const call = <T>(command: string, args: Record<string, unknown> = {}) =>
-    page.evaluate(
+  const call = <T>(command: string, args: Record<string, unknown> = {}) => {
+    refuseBackgroundMode(command);
+    return page.evaluate(
       ([name, body]) =>
         (
           window as unknown as {
@@ -147,6 +179,7 @@ export async function openInstalledApp(
         ).__TAURI_INTERNALS__.invoke(name, body),
       [command, args] as const,
     ) as Promise<T>;
+  };
 
   const driver = async (title: string, action: string, value?: string) =>
     JSON.parse(
@@ -182,6 +215,7 @@ export async function openInstalledApp(
     testHomeHonoured: false,
     call,
     async withDialog(command, args, title, action, value) {
+      refuseBackgroundMode(command);
       const id = `playtest-${++serial}`;
       // Start the command WITHOUT waiting: the dialog is open while Rust awaits it, and the
       // driver below must operate it from outside the page.

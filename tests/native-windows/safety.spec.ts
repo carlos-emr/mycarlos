@@ -1,5 +1,6 @@
 // Guard test for safety.ts: pure, so it runs anywhere (also on Linux), unlike the journeys.
 import { expect, test } from "@playwright/test";
+import { refuseBackgroundMode } from "./appSession";
 import {
   provesFakeVault,
   removableOwnDirectory,
@@ -70,6 +71,16 @@ test.describe("the native-windows journeys never touch a real account", () => {
         overrideHonoured: false,
       }),
     ).toThrow(/Refusing to run/);
+  });
+
+  test("no playtest may turn background mode on: its login entry is not redirected", () => {
+    expect(() => refuseBackgroundMode("background_set_keep_running")).toThrow(
+      /Refusing/,
+    );
+    expect(() => refuseBackgroundMode("background_set_start_at_login")).toThrow(
+      /Refusing/,
+    );
+    expect(() => refuseBackgroundMode("vault_snapshot")).not.toThrow();
   });
 
   test("refuse when LOCALAPPDATA is unset or relative, or the WebView profile is relative", () => {
