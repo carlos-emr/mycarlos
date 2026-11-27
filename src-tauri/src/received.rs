@@ -195,11 +195,13 @@ pub(crate) enum ShareRefused {
 }
 
 /// One file waiting for the patient's decision.
-#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone)]
 pub(crate) struct ReceivedFile {
     pub(crate) source: ReceivedSource,
     pub(crate) name: String,
 }
+redact_debug!(ReceivedFile);
 
 /// What the app could not take since the page last asked, so the patient is told. It holds
 /// counts only, never a name or address.
@@ -214,7 +216,8 @@ pub(crate) struct ReceiveNotice {
 }
 
 /// What the page may see of a waiting file.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReceivedSummary {
     pub(crate) id: Uuid,
@@ -225,6 +228,7 @@ pub(crate) struct ReceivedSummary {
     /// rather than shared by another app: the renderer asks the patient before it is added.
     pub(crate) needs_confirm: bool,
 }
+redact_debug!(ReceivedSummary);
 
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
 /// received while the vault is locked is lost if the app closes first (the sealed inbox is

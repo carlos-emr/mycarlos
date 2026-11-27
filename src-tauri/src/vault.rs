@@ -936,7 +936,8 @@ struct HistorySegment {
     entry_count: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultRecord {
     pub id: Uuid,
@@ -979,6 +980,7 @@ pub struct VaultRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reading_aid: Option<crate::portal_delivery::ReadingAidView>,
 }
+redact_debug!(VaultRecord);
 
 // JSON numbers must remain exact when the renderer compares capture order.
 const MAX_SNAPSHOT_SEQUENCE: u64 = (1_u64 << 53) - 1;
@@ -1027,15 +1029,18 @@ pub(crate) const HOW_PERSON_HIDDEN: &str = "personHidden";
 
 /// A document that arrived for a person while they were hidden and now waits in Shared with
 /// me (#360): offered back to them when they are restored.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArrivedWhileHidden {
     pub record_id: Uuid,
     pub display_name: String,
 }
+redact_debug!(ArrivedWhileHidden);
 
 /// The clinic's own words for the patient of a document (#340): as the signed delivery says them.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClinicPatient {
     pub name: String,
@@ -1053,9 +1058,11 @@ pub struct ClinicPatient {
     /// with me, so filing under one of them does not make the next documents file themselves.
     pub matching_people: Vec<Uuid>,
 }
+redact_debug!(ClinicPatient);
 
 /// A hidden person as Security's Hidden people list shows them (#360).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HiddenProfile {
     pub id: Uuid,
@@ -1064,12 +1071,14 @@ pub struct HiddenProfile {
     /// All the person's documents, those hidden one by one included.
     pub documents: usize,
 }
+redact_debug!(HiddenProfile);
 
 /// Why an unlocked session refuses changes. Each reason has its own way out.
 /// What the vault knows about a document's patient (#72 part B). Names and
 /// birth dates feed the native re-check; the provider and the clinic feed
 /// the remover in page code.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KnownIdentifiers {
     pub names: Vec<String>,
@@ -1078,6 +1087,7 @@ pub struct KnownIdentifiers {
     pub doctor_names: Vec<String>,
     pub clinic_names: Vec<String>,
 }
+redact_debug!(KnownIdentifiers);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
