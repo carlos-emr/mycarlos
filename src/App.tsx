@@ -1077,7 +1077,7 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                   <section className="setting-row">
                     <div>
                       <h2>
-                        Keep the vault out of device backups{" "}
+                        Device backup exclusion demo{" "}
                         <span
                           className={`state-pill ${cloudBackup ? "" : "off"}`}
                         >
@@ -1085,15 +1085,17 @@ export default function App({ bridge = defaultBridge }: AppProps) {
                         </span>
                       </h2>
                       <p>
-                        In the real app the vault stays out of the phone's and
-                        computer's own backups; only a myCarlos encrypted backup
-                        that you make holds it.
+                        This switch changes only this preview. The installed
+                        Android app disables system cloud backup and
+                        phone-to-phone transfer. On iPhone and iPad, myCarlos
+                        asks the system to exclude its data folder from backups.
+                        Computer backups may include the encrypted vault.
                       </p>
                     </div>
                     <button
                       className={`toggle ${cloudBackup ? "" : "off"}`}
                       type="button"
-                      aria-label="Keep vault out of device backups demo"
+                      aria-label="Preview device backup exclusion"
                       aria-pressed={cloudBackup}
                       onClick={() => setCloudBackup((current) => !current)}
                     />

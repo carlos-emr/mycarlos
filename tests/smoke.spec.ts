@@ -163,7 +163,7 @@ test("shows the purpose of the library navigation sections", async ({
 
   await openSection("security", "Security & backup");
   const cloudBackup = page.getByRole("button", {
-    name: "Keep vault out of device backups demo",
+    name: "Preview device backup exclusion",
   });
   await expect(cloudBackup).toHaveAttribute("aria-pressed", "true");
   await page.screenshot({
@@ -172,6 +172,9 @@ test("shows the purpose of the library navigation sections", async ({
   });
   await cloudBackup.click();
   await expect(cloudBackup).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.getByText(/This switch changes only this preview/),
+  ).toBeVisible();
 
   await openSection("health", "Health data");
   await expect(page.getByText("Nothing connected")).toBeVisible();

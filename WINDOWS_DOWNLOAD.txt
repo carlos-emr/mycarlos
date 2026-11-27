@@ -28,11 +28,12 @@ Windows security features to install this evaluation.
 The app can link to a clinic's patient portal (Security > Connected clinics > Connect and
 request approval) to receive documents; link only to a test portal. It never connects to
 CARLOS EMR itself.
-Forgetting the passphrase loses access to this test vault.
-Uninstalling the app can leave its vault data behind. myCarlos has no erase button: Security >
-Set vault aside starts a new vault and keeps the old one encrypted on this computer. To remove a
-vault for good, close myCarlos and delete its folder (the app shows where). Neither step deletes any
-readable copies you exported.
+If you forget your passphrase, a matching recovery key can reopen the test vault.
+To start again, open "Forgot your passphrase?" on the lock screen. Under "No recovery key?",
+type the phrase shown, choose "Set vault aside", then confirm with "Set it aside". The old vault
+stays encrypted on this computer.
+Uninstalling the app can leave vault data behind. To remove a vault for good, close myCarlos and
+delete its folder (the app shows where). Readable copies you exported stay where you saved them.
 
 BUILD.txt identifies the source commit and GitHub build. SHA256SUMS.txt identifies the installer.
 Updates are manual: download and run the installer from a newer successful Windows native build.

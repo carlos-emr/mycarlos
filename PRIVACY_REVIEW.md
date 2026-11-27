@@ -190,8 +190,10 @@ The vault lives in the app's own data folder on the device, on that device only:
 
 - **Windows:** the user's own application data folder that stays on this computer, so on a work
   network it does not follow the user to other computers.
-- **macOS and iPhone/iPad:** the app's own data folder. Normal device backups (for example to a
-  computer or iCloud) carry the encrypted files; restoring them still needs the passphrase.
+- **macOS** keeps the vault in the app's own data folder. A computer backup can include its
+  encrypted files.
+- **iPhone and iPad** mark the app's data folder for exclusion from device backups. Vault creation,
+  unlock and recovery require the exclusion to succeed. Confirmation on a physical device is pending.
 - **Android:** the app's private storage. Android's own cloud backup and phone-to-phone transfer
   are switched off for the app, and the app cannot be built without that setting. Whether phone
   makers' own transfer tools respect it has not been tested on a phone.
@@ -353,7 +355,7 @@ a developer works on the phone versions; an installed app loads its screens from
   (for example iCloud Drive, Google Drive or OneDrive), the system or that drive's app moves the
   file over the network, not myCarlos: a readable copy then goes to that service unencrypted, and
   a backup encrypted.
-- Apple device backups can carry the encrypted vault to iCloud (section 3).
+- Computer backup software can copy the encrypted vault. Section 3 describes the platform controls.
 - The Windows installer may, without asking, download WebView2 (the Microsoft component that
   draws the app's screens) if the computer lacks it (open question 9).
 - Parts of the system the app does not control have not been checked: for example the operating
@@ -497,7 +499,7 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
   recovery key the backup was made with. The screen and the system window say so before the
   patient agrees.
 - **A kit and backups kept together.** A recovery kit is a plain-text key. A kit and backups in the
-  same cloud account (or a kit in iCloud and an iCloud device backup) together open everything,
+  same cloud account (for example a kit and an encrypted myCarlos backup in iCloud Drive) together open everything,
   for whoever gets into that account.
 - **Originals.** The file a document was added from stays where it was (section 2).
 - **PDF safety.** There is no viewer, safe or otherwise: documents are read in other apps. A
@@ -550,8 +552,8 @@ These are stated in the repository's own documents (`THREAT_MODEL.md`, `VAULT_FO
    advice about where to keep them needed?
 9. **Windows installer:** it can download Microsoft's WebView2 component during installation,
    without asking, if the computer lacks it. Is that acceptable, or should the installer carry it?
-10. **Device backups on Apple devices:** these carry the encrypted vault by design. Should that
-    change?
+10. **iPhone and iPad backups** need a physical-device test confirming that a system backup and
+    restore omit the vault. On macOS, is inclusion of the encrypted vault in computer backups acceptable?
 11. **Screenshots:** the app allows them, as a recorded product decision. Is that acceptable?
 12. **Retention:** how long should backups and deleted documents be kept, if any rule applies?
 13. **The planned link with CARLOS:** consent, and what the clinic's systems would see (for example
