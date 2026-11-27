@@ -218,8 +218,36 @@ pub(crate) fn permission_from_status(status: &str) -> Permission {
 struct Observed {
     permission: Permission,
     refusal: Option<Refusal>,
-    /// The last pass could not bind the token to a place at the portal, even after enrolling anew.
-    attention: bool,
+}
+
+/// Apple token requests are serial. While one runs, retain the latest vault opening for the
+/// worker to handle next.
+pub(crate) struct OpeningRefreshQueue<T> {
+    pending: Option<T>,
+    running: bool,
+}
+
+impl<T> OpeningRefreshQueue<T> {
+    pub(crate) const fn new() -> Self {
+        Self {
+            pending: None,
+            running: false,
+        }
+    }
+
+    /// Returns whether the caller needs to start the worker.
+    pub(crate) fn enqueue(&mut self, opening: T) -> bool {
+        self.pending = Some(opening);
+        !std::mem::replace(&mut self.running, true)
+    }
+
+    pub(crate) fn take(&mut self) -> Option<T> {
+        let opening = self.pending.take();
+        if opening.is_none() {
+            self.running = false;
+        }
+        opening
+    }
 }
 
 /// What this run knows about iPhone push: the permission the plugin last reported and why the last
@@ -254,12 +282,7 @@ impl IosPushState {
         seen.refusal = None;
     }
 
-    /// Whether the last pass could not leave a place for notices at the portal.
-    pub(crate) fn record_attention(&self, attention: bool) {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).attention = attention;
-    }
-
-    pub(crate) fn state(&self) -> PushState {
+    pub(crate) fn state(&self, attention: bool) -> PushState {
         let seen = self.0.lock().unwrap_or_else(|e| e.into_inner());
         match seen.refusal {
             Some(Refusal::PermissionRefused) => PushState::Refused,
@@ -268,7 +291,7 @@ impl IosPushState {
                 PushState::Unavailable
             }
             None if seen.permission == Permission::Denied => PushState::IosOff,
-            None if seen.attention => PushState::NeedsAttention,
+            None if attention => PushState::NeedsAttention,
             None => PushState::Ok,
         }
     }
@@ -333,6 +356,20 @@ pub(crate) fn fake_token(environment: &str, hex: &str) -> Token {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn switching_vaults_during_a_refresh_keeps_only_the_latest_opening() {
+        let mut queue = OpeningRefreshQueue::new();
+        assert!(queue.enqueue(("A", 1)));
+        assert_eq!(queue.take(), Some(("A", 1)));
+        assert!(!queue.enqueue(("B", 2)));
+        assert!(!queue.enqueue(("A", 3)));
+        assert!(!queue.enqueue(("B", 4)));
+        assert_eq!(queue.take(), Some(("B", 4)));
+        assert_eq!(queue.take(), None);
+        assert!(queue.enqueue(("A", 5)));
+        assert_eq!(queue.take(), Some(("A", 5)));
+    }
 
     fn id(n: u128) -> Uuid {
         Uuid::from_u128(n)
@@ -461,24 +498,24 @@ mod tests {
     #[test]
     fn each_failure_has_its_own_state_and_a_refusal_ends_when_notices_are_allowed_again() {
         let state = IosPushState::default();
-        assert_eq!(state.state(), PushState::Ok);
+        assert_eq!(state.state(false), PushState::Ok);
         assert_eq!(state.permission(), Permission::Unknown);
         assert_eq!(state.platform(), Platform::IosApns);
 
         state.record_refusal(Refusal::PermissionRefused);
-        assert_eq!(state.state(), PushState::Refused);
+        assert_eq!(state.state(false), PushState::Refused);
         assert_eq!(state.permission(), Permission::Denied);
         // Still denied when polled: still the patient's refusal.
         state.record_permission("denied");
-        assert_eq!(state.state(), PushState::Refused);
+        assert_eq!(state.state(false), PushState::Refused);
         // Allowed in iPhone Settings meanwhile.
         state.record_permission("authorized");
-        assert_eq!(state.state(), PushState::Ok);
+        assert_eq!(state.state(false), PushState::Ok);
         assert_eq!(state.permission(), Permission::Granted);
 
         // Notices turned off in iPhone Settings later, with no refusal of ours.
         state.record_permission("denied");
-        assert_eq!(state.state(), PushState::IosOff);
+        assert_eq!(state.state(false), PushState::IosOff);
 
         for (refusal, expected) in [
             (Refusal::TimedOut, PushState::TimedOut),
@@ -487,13 +524,13 @@ mod tests {
             (Refusal::NotAnIphone, PushState::Unavailable),
         ] {
             state.record_refusal(refusal);
-            assert_eq!(state.state(), expected, "{refusal:?}");
+            assert_eq!(state.state(false), expected, "{refusal:?}");
         }
         // Those do not clear because the permission looks fine: only a token does.
         state.record_permission("authorized");
-        assert_eq!(state.state(), PushState::Unavailable);
+        assert_eq!(state.state(false), PushState::Unavailable);
         state.record_token();
-        assert_eq!(state.state(), PushState::Ok);
+        assert_eq!(state.state(false), PushState::Ok);
     }
 
     #[test]

@@ -269,6 +269,9 @@ impl VaultStore {
         session: u64,
         exchange: &impl Exchange,
     ) -> Result<(RemoteSync, HandleSync), VaultError> {
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
         if !enabled {
             for id in self.iphone_destination_ids()? {
                 memory.forget(id);
@@ -318,38 +321,63 @@ impl VaultStore {
         Ok((synced, bound))
     }
 
-    /// The first step of the refresh at opening: reads the vault's remembered attention flag into
-    /// `state` (so Settings is right before any network call, and one vault's flag never shows on
-    /// another), and says whether there is anything to refresh at all: the vault is open (not in
-    /// recovery) and the patient has remote notices on. Asks Apple and the portal nothing.
-    pub(crate) fn iphone_push_refresh_due(
+    /// Settings combines the device's permission with the pinned vault's Keychain flag.
+    pub(crate) fn iphone_push_status(
         &self,
         state: &crate::ios_push_handles::IosPushState,
         memory: &dyn HandleMemory,
-    ) -> bool {
+    ) -> Result<crate::ios_push_handles::IphonePushStatus, VaultError> {
+        let (vault, enabled, session) = {
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            (
+                open.manifest.vault_id,
+                open.manifest.remote_notices.opted_in(),
+                self.portal_link_ticket(),
+            )
+        };
+        let state = state.state(enabled && memory.attention(vault));
+        if self.portal_link_ticket() != session {
+            return Err(VaultError::Cancelled);
+        }
+        Ok(crate::ios_push_handles::IphonePushStatus {
+            supported: true,
+            enabled,
+            state,
+        })
+    }
+
+    /// The opening still needs a refresh if its session is current and notices are enabled.
+    pub(crate) fn iphone_push_refresh_due(&self, session: u64) -> bool {
         let guard = self.session();
         let Some(open) = guard.as_ref() else {
             return false;
         };
-        state.record_attention(memory.attention(open.manifest.vault_id));
-        open.recovery.is_none() && open.manifest.remote_notices.opted_in()
+        self.portal_link_ticket() == session
+            && open.recovery.is_none()
+            && open.manifest.remote_notices.opted_in()
     }
 
-    /// Keeps the attention flag (in `state` for Settings, in `memory` across restarts) as the pass
-    /// that just ran leaves it; off whenever notices are off.
+    /// Keeps the vault's Keychain attention flag as the pass just ran leaves it.
     pub(crate) fn settle_attention(
         &self,
+        session: u64,
         enabled: bool,
         pass: &HandleSync,
-        state: &crate::ios_push_handles::IosPushState,
         memory: &dyn HandleMemory,
     ) {
-        let Some(vault) = self.open_vault_id() else {
-            return;
+        let vault = {
+            let guard = self.session();
+            let Some(open) = guard.as_ref() else {
+                return;
+            };
+            if self.portal_link_ticket() != session {
+                return;
+            }
+            open.manifest.vault_id
         };
         let prior = memory.attention(vault);
         let now = enabled && attention_after(prior, pass);
-        state.record_attention(now);
         if now != prior {
             memory.set_attention(vault, now);
         }
@@ -375,6 +403,9 @@ impl VaultStore {
     ) -> Result<HandleSync, VaultError> {
         let (vault, missing) = {
             let guard = self.session();
+            if self.portal_link_ticket() != session {
+                return Err(VaultError::Cancelled);
+            }
             let open = guard.as_ref().ok_or(VaultError::Locked)?;
             if open.recovery.is_some() {
                 return Err(VaultError::RecoveryMode);
@@ -413,12 +444,11 @@ impl VaultStore {
         };
         match result {
             Ok(pass) => {
-                self.settle_attention(true, &pass, state, memory);
+                self.settle_attention(session, true, &pass, memory);
                 Ok(pass)
             }
             Err(error) => {
-                if failure_needs_a_look(&error) {
-                    state.record_attention(true);
+                if failure_needs_a_look(&error) && self.portal_link_ticket() == session {
                     memory.set_attention(vault, true);
                 }
                 Err(error)
@@ -1584,9 +1614,8 @@ mod tests {
             // 2 lost + 2 revocations + 2 enrollments + 2 bindings of the new ones (only noted).
             assert_eq!(seen.borrow().len(), 8);
             assert_eq!(second.suspected, 2);
-            state.record_attention(second.needs_attention);
             assert_eq!(
-                state.state(),
+                state.state(second.needs_attention),
                 crate::ios_push_handles::PushState::NeedsAttention
             );
         }
@@ -1826,7 +1855,7 @@ mod tests {
                     .any(|file| file.windows(4).any(|w| w == b"cdcd")));
             }
             assert!(!state
-                .state()
+                .state(memory.attention(store.open_vault_id().unwrap()))
                 .eq(&crate::ios_push_handles::PushState::NeedsAttention));
         }
 
@@ -1838,7 +1867,7 @@ mod tests {
             let state = allowed();
             let memory = FakeHandleMemory::default();
             let token = fake_token("sandbox", "ab");
-            assert!(!store.iphone_push_refresh_due(&state, &memory));
+            assert!(!store.iphone_push_refresh_due(store.portal_link_ticket()));
             let done = refresh(&store, Some(&token), &state, &memory, &exchange).unwrap();
             assert_eq!(done, HandleSync::default());
             assert!(paths(&seen).is_empty());
@@ -1853,11 +1882,12 @@ mod tests {
             let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
             let state = allowed();
             let memory = FakeHandleMemory::default();
-            assert!(!store.iphone_push_refresh_due(&state, &memory));
+            assert!(!store.iphone_push_refresh_due(store.portal_link_ticket()));
             opted_in(&store, &state, &exchange);
-            assert!(store.iphone_push_refresh_due(&state, &memory));
+            let session = store.portal_link_ticket();
+            assert!(store.iphone_push_refresh_due(session));
             store.lock();
-            assert!(!store.iphone_push_refresh_due(&state, &memory));
+            assert!(!store.iphone_push_refresh_due(session));
             assert!(matches!(
                 refresh(&store, None, &state, &memory, &exchange),
                 Err(VaultError::Locked)
@@ -1891,7 +1921,10 @@ mod tests {
             assert!(paths(&seen).is_empty());
             assert_eq!(*memory.kept.lock().unwrap(), kept);
             // Settings says why, and nothing is said to need attention.
-            assert_eq!(state.state(), crate::ios_push_handles::PushState::TimedOut);
+            assert_eq!(
+                store.iphone_push_status(&state, &memory).unwrap().state,
+                crate::ios_push_handles::PushState::TimedOut
+            );
         }
 
         #[test]
@@ -1913,15 +1946,13 @@ mod tests {
             assert!(second.needs_attention);
             assert!(memory.attention(vault));
             assert_eq!(
-                state.state(),
+                store.iphone_push_status(&state, &memory).unwrap().state,
                 crate::ios_push_handles::PushState::NeedsAttention
             );
-            // A restart: a fresh state reads the flag at opening, before any network call.
+            // A restart: Settings reads the remembered flag before any refresh.
             let restarted = allowed();
-            assert_eq!(restarted.state(), crate::ios_push_handles::PushState::Ok);
-            assert!(store.iphone_push_refresh_due(&restarted, &memory));
             assert_eq!(
-                restarted.state(),
+                store.iphone_push_status(&restarted, &memory).unwrap().state,
                 crate::ios_push_handles::PushState::NeedsAttention
             );
             // A pass that learns nothing (the portal does not answer in time) leaves it on.
@@ -1941,7 +1972,42 @@ mod tests {
             let healed = refresh(&store, Some(&token), &restarted, &memory, &working).unwrap();
             assert!(healed.bound + healed.unchanged > 0);
             assert!(!memory.attention(vault));
-            assert_eq!(restarted.state(), crate::ios_push_handles::PushState::Ok);
+            assert_eq!(
+                store.iphone_push_status(&restarted, &memory).unwrap().state,
+                crate::ios_push_handles::PushState::Ok
+            );
+        }
+
+        #[test]
+        fn switching_vaults_reads_only_the_selected_vaults_attention_flag() {
+            use crate::ios_push_handles::PushState;
+
+            let (_first_dir, first, _) = store_with_links();
+            let (_second_dir, second, _) = store_with_links();
+            let state = allowed();
+            let memory = FakeHandleMemory::default();
+            let seen = RefCell::new(Vec::new());
+            let exchange = iphone_portal(&seen, |_| (201, serde_json::json!({})));
+            opted_in(&first, &state, &exchange);
+            opted_in(&second, &state, &exchange);
+            let first_session = first.portal_link_ticket();
+            let first_id = first.open_vault_id().unwrap();
+            let second_id = second.open_vault_id().unwrap();
+            assert_ne!(first_id, second_id);
+
+            memory.set_attention(first_id, true);
+            assert_eq!(
+                first.iphone_push_status(&state, &memory).unwrap().state,
+                PushState::NeedsAttention
+            );
+            first.lock();
+            assert!(!first.iphone_push_refresh_due(first_session));
+            assert!(second.iphone_push_refresh_due(second.portal_link_ticket()));
+            assert_eq!(
+                second.iphone_push_status(&state, &memory).unwrap().state,
+                PushState::Ok
+            );
+            assert!(memory.attention(first_id));
         }
 
         #[test]
@@ -2058,29 +2124,23 @@ mod tests {
         fn turning_notices_off_clears_the_flag_and_a_refresh_without_a_session_sets_none() {
             let (_temp, store, _) = store_with_links();
             let vault = store.open_vault_id().unwrap();
-            let state = allowed();
             let memory = FakeHandleMemory::default();
             memory.set_attention(vault, true);
-            state.record_attention(true);
+            let session = store.portal_link_ticket();
             let off = HandleSync::default();
-            store.settle_attention(false, &off, &state, &memory);
+            store.settle_attention(session, false, &off, &memory);
             assert!(!memory.attention(vault));
-            assert_eq!(state.state(), crate::ios_push_handles::PushState::Ok);
-            // On, with a pass that says so: set in both places.
+            // On, with a pass that says so: persist the flag for this vault.
             let needs = HandleSync {
                 needs_attention: true,
                 ..HandleSync::default()
             };
-            store.settle_attention(true, &needs, &state, &memory);
+            store.settle_attention(session, true, &needs, &memory);
             assert!(memory.attention(vault));
-            assert_eq!(
-                state.state(),
-                crate::ios_push_handles::PushState::NeedsAttention
-            );
             // A locked vault has no id to key the flag by: nothing is written.
             store.lock();
             memory.set_attention(vault, false);
-            store.settle_attention(true, &needs, &state, &memory);
+            store.settle_attention(session, true, &needs, &memory);
             assert!(!memory.attention(vault));
         }
 

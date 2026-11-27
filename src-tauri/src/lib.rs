@@ -3749,6 +3749,8 @@ async fn wipe_notice_keys_of_reset_vault(
 fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
     #[cfg(target_os = "ios")]
     let for_push = Arc::clone(store);
+    #[cfg(target_os = "ios")]
+    let push_session = store.portal_link_ticket();
     let store = Arc::clone(store);
     let vaults = vaults.to_vec();
     let opened = tauri::async_runtime::spawn_blocking(move || {
@@ -3776,7 +3778,7 @@ fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
     // iPhone: the push token is asked for again and bound if it changed, after the work above so
     // that two syncs never run side by side. Also in the background, and never an unlock error.
     #[cfg(target_os = "ios")]
-    refresh_iphone_push_soon(for_push, opened);
+    refresh_iphone_push_soon(for_push, push_session, opened);
     #[cfg(not(target_os = "ios"))]
     drop(opened);
 }
@@ -3786,10 +3788,16 @@ fn after_open(store: &Arc<VaultStore>, vaults: &[Arc<VaultStore>]) {
 #[cfg(target_os = "ios")]
 static IPHONE_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
-/// One refresh at a time: an opening while one still waits for Apple does not start another (the
-/// next opening does).
 #[cfg(target_os = "ios")]
-static IPHONE_REFRESHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+struct IphonePushOpening {
+    store: Arc<VaultStore>,
+    session: u64,
+    after_open: tauri::async_runtime::JoinHandle<()>,
+}
+
+#[cfg(target_os = "ios")]
+static IPHONE_OPENINGS: std::sync::Mutex<ios_push_handles::OpeningRefreshQueue<IphonePushOpening>> =
+    std::sync::Mutex::new(ios_push_handles::OpeningRefreshQueue::new());
 
 /// After the vault opens, while iPhone notices are on (the iPhone push refresh, #494's follow-up):
 /// ask Apple for the token again, bind it to the portal only if its digest differs from the one
@@ -3807,83 +3815,99 @@ static IPHONE_REFRESHING: std::sync::atomic::AtomicBool = std::sync::atomic::Ato
 #[cfg(target_os = "ios")]
 fn refresh_iphone_push_soon(
     store: Arc<VaultStore>,
+    session: u64,
     after_open: tauri::async_runtime::JoinHandle<()>,
 ) {
-    use document_push::PushSource as _;
-    use std::sync::atomic::Ordering;
     let Some(app) = IPHONE_APP.get().cloned() else {
         return;
     };
-    if IPHONE_REFRESHING.swap(true, Ordering::SeqCst) {
+    if !IPHONE_OPENINGS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .enqueue(IphonePushOpening {
+            store,
+            session,
+            after_open,
+        })
+    {
         return;
     }
-    struct Done;
-    impl Drop for Done {
-        fn drop(&mut self) {
-            IPHONE_REFRESHING.store(false, Ordering::SeqCst);
-        }
-    }
     tauri::async_runtime::spawn(async move {
-        let _done = Done;
-        let _ = after_open.await;
-        let state = Arc::clone(iphone_push_state());
-        let due = tauri::async_runtime::spawn_blocking({
-            let store = Arc::clone(&store);
-            let state = Arc::clone(&state);
-            let memory = ios_push_native::KeychainMemory(app.clone());
-            move || store.iphone_push_refresh_due(&state, &memory)
-        })
-        .await
-        .unwrap_or(false);
-        if !due {
-            return;
+        loop {
+            let opening = IPHONE_OPENINGS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+            let Some(opening) = opening else {
+                break;
+            };
+            refresh_iphone_push(app.clone(), opening).await;
         }
-        let Some(status) = tauri_plugin_ios_push::permission(&app)
-            .await
-            .ok()
-            .and_then(|reply| {
-                reply
-                    .get("status")
-                    .and_then(|s| s.as_str())
-                    .map(str::to_owned)
-            })
-        else {
-            return;
-        };
-        state.record_permission(&status);
-        // `requestToken` asks the system for authorization first, so it is called only for a plain
-        // "authorized": a "provisional" or "ephemeral" status (granted for the policy) would show
-        // the system question at unlock.
-        let token = match ios_push_handles::opening_refresh_for(&status) {
-            ios_push_handles::OpeningRefresh::AskForToken => {
-                match ios_push::request_token(&app).await {
-                    Ok(token) => {
-                        state.record_token();
-                        Some(token)
-                    }
-                    Err(refusal) => {
-                        state.record_refusal(refusal);
-                        None
-                    }
+    });
+}
+
+#[cfg(target_os = "ios")]
+async fn refresh_iphone_push(app: tauri::AppHandle, opening: IphonePushOpening) {
+    let IphonePushOpening {
+        store,
+        session,
+        after_open,
+    } = opening;
+    let _ = after_open.await;
+    let due = tauri::async_runtime::spawn_blocking({
+        let store = Arc::clone(&store);
+        move || store.iphone_push_refresh_due(session)
+    })
+    .await
+    .unwrap_or(false);
+    if !due {
+        return;
+    }
+    let state = Arc::clone(iphone_push_state());
+    let Some(status) = tauri_plugin_ios_push::permission(&app)
+        .await
+        .ok()
+        .and_then(|reply| {
+            reply
+                .get("status")
+                .and_then(|s| s.as_str())
+                .map(str::to_owned)
+        })
+    else {
+        return;
+    };
+    state.record_permission(&status);
+    // `requestToken` asks the system for authorization first, so it is called only for a plain
+    // "authorized": a "provisional" or "ephemeral" status (granted for the policy) would show
+    // the system question at unlock.
+    let token = match ios_push_handles::opening_refresh_for(&status) {
+        ios_push_handles::OpeningRefresh::AskForToken => {
+            match ios_push::request_token(&app).await {
+                Ok(token) => {
+                    state.record_token();
+                    Some(token)
+                }
+                Err(refusal) => {
+                    state.record_refusal(refusal);
+                    None
                 }
             }
-            ios_push_handles::OpeningRefresh::WithoutToken => None,
-            ios_push_handles::OpeningRefresh::Nothing => return,
-        };
-        let memory = ios_push_native::KeychainMemory(app);
-        let _ = tauri::async_runtime::spawn_blocking(move || {
-            let session = store.portal_link_ticket();
-            // Failures are recorded as the attention flag inside; nothing is returned to a caller.
-            let _ = store.refresh_push_handle(
-                token.as_ref(),
-                &state,
-                &memory,
-                session,
-                &portal_client::api,
-            );
-        })
-        .await;
-    });
+        }
+        ios_push_handles::OpeningRefresh::WithoutToken => None,
+        ios_push_handles::OpeningRefresh::Nothing => return,
+    };
+    let memory = ios_push_native::KeychainMemory(app);
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        // Failures are recorded as the attention flag inside; nothing is returned to a caller.
+        let _ = store.refresh_push_handle(
+            token.as_ref(),
+            &state,
+            &memory,
+            session,
+            &portal_client::api,
+        );
+    })
+    .await;
 }
 
 /// After a switch changes, or a link is made, while the vault is open (#230): the keys follow.
@@ -4455,21 +4479,11 @@ async fn vault_iphone_push_status(
             }
         }
         let store = Arc::clone(store.arc());
-        let enabled = tauri::async_runtime::spawn_blocking({
-            let state = Arc::clone(&state);
-            move || {
-                store
-                    .remote_notice_status(Some(&*state))
-                    .map(|s| s.opted_in)
-            }
-        })
-        .await
-        .map_err(|_| VaultError::Storage)??;
-        Ok(ios_push_handles::IphonePushStatus {
-            supported: true,
-            enabled,
-            state: state.state(),
-        })
+        let memory = ios_push_native::KeychainMemory(app);
+        tauri::async_runtime::spawn_blocking(move || store.iphone_push_status(&state, &memory))
+            .await
+            .map_err(|_| VaultError::Storage)?
+            .map_err(Into::into)
     }
 }
 
@@ -4490,6 +4504,7 @@ async fn vault_iphone_push_set(
     #[cfg(target_os = "ios")]
     {
         let state = Arc::clone(iphone_push_state());
+        let session = store.portal_link_ticket();
         let token = if enabled {
             match ios_push::request_token(&app).await {
                 Ok(token) => {
@@ -4506,33 +4521,23 @@ async fn vault_iphone_push_set(
         };
         let store = Arc::clone(store.arc());
         let memory = ios_push_native::KeychainMemory(app);
-        let enabled = tauri::async_runtime::spawn_blocking({
-            let state = Arc::clone(&state);
-            move || {
-                let session = store.portal_link_ticket();
-                let (_, bound) = store.set_iphone_push(
-                    enabled,
-                    token.as_ref(),
-                    &state,
-                    &memory,
-                    session,
-                    &portal_client::api,
-                )?;
-                // Settings says so when no place for notices could be left at the portal, and the
-                // Keychain keeps that across a restart (cleared when notices are turned off).
-                store.settle_attention(enabled, &bound, &state, &memory);
-                store
-                    .remote_notice_status(Some(&*state))
-                    .map(|status| status.opted_in)
-            }
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_, bound) = store.set_iphone_push(
+                enabled,
+                token.as_ref(),
+                &state,
+                &memory,
+                session,
+                &portal_client::api,
+            )?;
+            // Settings says so when no place for notices could be left at the portal, and the
+            // Keychain keeps that across a restart (cleared when notices are turned off).
+            store.settle_attention(session, enabled, &bound, &memory);
+            store.iphone_push_status(&state, &memory)
         })
         .await
-        .map_err(|_| VaultError::Storage)??;
-        Ok(ios_push_handles::IphonePushStatus {
-            supported: true,
-            enabled,
-            state: state.state(),
-        })
+        .map_err(|_| VaultError::Storage)?
+        .map_err(Into::into)
     }
 }
 
