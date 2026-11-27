@@ -894,6 +894,10 @@ What it checks:
   (read with `aapt2`) that is really inside the APK.
 - The app installs on the emulator, opens, comes to the front and is still running ten seconds
   later, with nothing in the crash log and no fatal exception or "not responding" in the log.
+- The picker journey requires a fresh emulator and the installed debug APK. It creates a
+  synthetic vault with a one-minute lock, waits 65 seconds in the Android picker, imports a
+  FAKE PDF from Downloads, and compares the saved copy's SHA-256 with the fixture. It then
+  presses Home with the picker open and checks the lock screen on return.
 - A screenshot of the first screen, the log and the check output are kept as the
   `myCarlos-Android-Emulator-Smoke` artifact for 14 days.
 
@@ -901,8 +905,8 @@ What it does not check yet:
 
 - The status-bar inset, the keyboard and how the icon looks. The screenshot lets a person look
   at them; nothing asserts them.
-- Anything inside the page. WebView debugging is not enabled in the app, so Playwright cannot
-  attach to it on Android yet; that is a follow-up.
+- Opening the exported file in a separate Android PDF viewer and using a slow cloud provider
+  for a large transfer, including cancellation. These need separate device evidence.
 - A phone (arm64). The emulator is x86_64.
 
 A red run is a real failure: nothing is retried. Emulator boot is the likeliest cause of a

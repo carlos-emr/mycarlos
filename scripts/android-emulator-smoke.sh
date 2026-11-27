@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # The Android emulator smoke test, run by .github/workflows/mycarlos-android-emulator.yml
-# inside the started emulator (adb already sees it). It checks only that the debug app
-# installs, opens and stays up with nothing in the crash log, keeps a screenshot of its first
-# screen, and that the APK names a launcher icon that is really inside it.
-# It does NOT assert the status-bar inset, the keyboard or the icon's look, and it drives no
-# page content: WebView debugging is not enabled, so there is no Playwright-on-Android yet.
+# inside a fresh emulator. Check the APK, initial launch and a vault transfer through
+# Android's system picker. The screenshot is taken before creating the synthetic vault.
 # Usage: scripts/android-emulator-smoke.sh <output-dir>
 set -euo pipefail
 
@@ -67,3 +64,7 @@ if grep -E "FATAL EXCEPTION|ANR in $package" "$out/logcat.txt" > "$out/problems.
   fail "the log shows a fatal exception or ANR"
 fi
 echo "SMOKE OK: $package installed, open, no crash; screenshot $out/first-screen.png"
+
+# Only Playwright's two UI Automator driver APKs; the emulator and SDK already exist.
+./node_modules/.bin/playwright install android
+node scripts/android-picker-journey.mjs | tee "$out/picker-journey.txt"
