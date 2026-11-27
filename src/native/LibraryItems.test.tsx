@@ -125,7 +125,8 @@ describe.each(["list", "grid"] as const)("the library's %s view", (view) => {
   });
 
   it("opens, renames and selects through the handlers it is given", () => {
-    const { onOpenFolder, onRenameFolder, onOpenRecord } = open(view);
+    const { onOpenFolder, onRenameFolder, onOpenRecord, onToggleSelected } =
+      open(view);
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -143,6 +144,12 @@ describe.each(["list", "grid"] as const)("the library's %s view", (view) => {
       screen.getByRole("button", { name: /^FAKE clinic letter\.pdf/ }),
     );
     expect(onOpenRecord).toHaveBeenCalledWith("record-1");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: humanText(/Select FAKE clinic letter\.pdf/),
+      }),
+    );
+    expect(onToggleSelected).toHaveBeenCalledExactlyOnceWith("record-1");
   });
 
   it("says where each result is while searching, and what is empty", () => {
