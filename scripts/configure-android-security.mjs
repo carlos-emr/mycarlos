@@ -191,18 +191,62 @@ const REPOSITORY_TEST_PKI = fileURLToPath(
   new URL("../src-tauri/tests/fixtures/portal-test-pki", import.meta.url),
 );
 
-/** The manifest pointing at the network security config, with cleartext traffic off, once. */
+const TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"';
+const REPLACED_ATTRIBUTE = "android:networkSecurityConfig";
+
+/**
+ * The manifest pointing at the network security config, with cleartext traffic off, once.
+ *
+ * The manifest also says `tools:replace="android:networkSecurityConfig"`: the platform certificate
+ * verifier (`org.rustls:rustls-platform-verifier`, #493) ships a manifest that names a network
+ * security config of its own, and the manifest merger refuses two values for one attribute
+ * ("Attribute application@networkSecurityConfig ... is also present at ..."). Replacing, rather
+ * than removing the attribute or giving way to the library's, is what keeps the security
+ * decision here: the merged app uses THIS config (system authorities only, no cleartext; the
+ * test root only in the debug source set), never the library's.
+ */
 export function setNetworkSecurityConfig(manifest) {
   if (!/<application\b/.test(manifest)) {
     throw new Error("Android application element not found");
   }
-  return manifest
+  const withConfig = manifest
     .replace(/\s+android:networkSecurityConfig="[^"]*"/g, "")
     .replace(/\s+android:usesCleartextTraffic="[^"]*"/g, "")
     .replace(
       /<application\b/,
       `<application android:networkSecurityConfig="@xml/${NETWORK_CONFIG_NAME}" android:usesCleartextTraffic="false"`,
     );
+  return withToolsReplace(withToolsNamespace(withConfig));
+}
+
+/** The `tools` namespace on the `<manifest>` element, which `tools:replace` needs. */
+function withToolsNamespace(manifest) {
+  return manifest.replace(/<manifest\b[^>]*>/, (tag) =>
+    tag.includes("xmlns:tools=")
+      ? tag
+      : tag.replace(/<manifest\b/, `<manifest ${TOOLS_NAMESPACE}`),
+  );
+}
+
+/** `android:networkSecurityConfig` in the application's `tools:replace` list, added once. */
+function withToolsReplace(manifest) {
+  return manifest.replace(/<application\b[^>]*>/, (tag) => {
+    const existing = /\s+tools:replace="([^"]*)"/.exec(tag);
+    if (!existing) {
+      // After the cleartext attribute this function has just written, so that a second run, which
+      // strips and writes those two again, leaves the same text.
+      return tag.replace(
+        'android:usesCleartextTraffic="false"',
+        `android:usesCleartextTraffic="false" tools:replace="${REPLACED_ATTRIBUTE}"`,
+      );
+    }
+    const listed = existing[1].split(",").map((name) => name.trim());
+    if (listed.includes(REPLACED_ATTRIBUTE)) return tag;
+    return tag.replace(
+      existing[0],
+      ` tools:replace="${[...listed, REPLACED_ATTRIBUTE].join(",")}"`,
+    );
+  });
 }
 
 /**

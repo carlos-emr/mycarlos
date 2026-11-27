@@ -451,6 +451,48 @@ test("the manifest names the network security config and turns cleartext off, on
   assert.throws(() => setNetworkSecurityConfig("<manifest />"), /application/);
 });
 
+test("the manifest replaces the network security config of the platform certificate verifier's manifest, once", () => {
+  const tools = 'xmlns:tools="http://schemas.android.com/tools"';
+  // No tools namespace and no tools:replace yet: both are added, once, and a second run is a no-op.
+  const bare =
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:label="myCarlos" /></manifest>';
+  const once = setNetworkSecurityConfig(bare);
+  assert.equal(setNetworkSecurityConfig(once), once);
+  assert.equal((once.match(/xmlns:tools=/g) ?? []).length, 1);
+  assert.ok(once.includes(tools));
+  assert.equal((once.match(/tools:replace=/g) ?? []).length, 1);
+  assert.match(
+    once,
+    /<application[^>]*tools:replace="android:networkSecurityConfig"/,
+  );
+  // The namespace is on <manifest>, the replace on <application>.
+  assert.match(once, /<manifest[^>]*xmlns:tools=/);
+  // An existing namespace and an existing list are kept and added to, never doubled.
+  const listed = `<manifest xmlns:android="http://schemas.android.com/apk/res/android" ${tools}><application tools:replace="android:label" android:label="myCarlos" /></manifest>`;
+  const merged = setNetworkSecurityConfig(listed);
+  assert.equal(setNetworkSecurityConfig(merged), merged);
+  assert.equal((merged.match(/xmlns:tools=/g) ?? []).length, 1);
+  assert.match(
+    merged,
+    /tools:replace="android:label,android:networkSecurityConfig"/,
+  );
+  // The values that decide the security are still this app's own, and exactly one each.
+  for (const manifest of [once, merged]) {
+    assert.equal(
+      (
+        manifest.match(
+          /android:networkSecurityConfig="@xml\/mycarlos_network_security_config"/g,
+        ) ?? []
+      ).length,
+      1,
+    );
+    assert.equal(
+      (manifest.match(/android:usesCleartextTraffic="false"/g) ?? []).length,
+      1,
+    );
+  }
+});
+
 test("the release config trusts the system's authorities only; the test root is in the debug source set alone", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mycarlos-android-nsc-"));
   try {
