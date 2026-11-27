@@ -78,13 +78,6 @@ pub(crate) struct Swept {
     pub(crate) items: usize,
 }
 
-/// What `InboxFolder::discover` found.
-pub(crate) enum Discovered {
-    None,
-    One(InboxFolder),
-    Several,
-}
-
 /// The most directory entries one unlock's listing looks at: far above the item cap (so a real
 /// folder is always listed whole), and a bound on the walk of a flooded one: every directory entry
 /// counts against it, whatever its name.
@@ -225,40 +218,21 @@ impl InboxFolder {
         &self.dir
     }
 
-    /// The inbox a locked app seals to. The app cannot read which vault it holds without the
-    /// passphrase, so it looks at what the unlock left: the one folder under `<base>/inbox` that
-    /// has a usable public key. None, or more than one (a device with several vaults, #357, or a
-    /// vault that was reset and whose old folder is still there), means there is no inbox to seal
-    /// to, and a received file is held in memory as before.
-    pub(crate) fn discover(base: &Path) -> Discovered {
-        let Ok(listing) = fs::read_dir(base.join("inbox")) else {
-            return Discovered::None;
-        };
-        let mut found = None;
-        for entry in listing.flatten() {
-            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-                continue;
-            };
-            // Exactly the spelling a folder of ours has, and a real folder (not a link to one).
-            let Some(vault_id) = Uuid::parse_str(&name)
-                .ok()
-                .filter(|id| id.hyphenated().to_string() == name)
-            else {
-                continue;
-            };
-            if !entry.metadata().is_ok_and(|meta| meta.file_type().is_dir()) {
-                continue;
-            }
-            let folder = Self::new(base, vault_id);
-            if folder.public_key().is_none() {
-                continue;
-            }
-            if found.is_some() {
-                return Discovered::Several;
-            }
-            found = Some(folder);
+    /// The inbox of the vault `vault_id`, which a locked app seals to when that vault is the only
+    /// one the device holds (`inbox_receipt::lock_screen_of`; `vault_id` is named in the clear by
+    /// its header, which needs no key). Found by the vault's id and NEVER by looking at which
+    /// folders exist: with several vaults a folder exists only for a vault that has been unlocked
+    /// since the sealed inbox arrived, so "the one folder there is" can belong to another person's
+    /// vault. The folder must be a real directory (not a link to one) holding a usable public key.
+    /// `None` means this vault has no inbox yet, and a received file is held in memory as before;
+    /// it is not sealed to anything else.
+    pub(crate) fn for_locked_vault(base: &Path, vault_id: Uuid) -> Option<Self> {
+        let folder = Self::new(base, vault_id);
+        let meta = fs::symlink_metadata(folder.dir()).ok()?;
+        if !meta.file_type().is_dir() {
+            return None;
         }
-        found.map_or(Discovered::None, Discovered::One)
+        folder.public_key().is_some().then_some(folder)
     }
 
     /// The public key a locked app seals to, or `None` where there is no usable one: no file, a
@@ -1734,39 +1708,77 @@ mod tests {
     }
 
     #[test]
-    fn a_locked_app_finds_the_one_inbox_that_has_a_key_and_none_when_there_are_none_or_several() {
+    fn a_locked_app_uses_only_the_named_vaults_own_folder_and_never_another_vaults() {
         let temp = tempfile::tempdir().unwrap();
         let base = temp.path();
+        let id = Uuid::from_u128;
         assert!(
-            matches!(InboxFolder::discover(base), Discovered::None),
-            "no inbox folder"
+            InboxFolder::for_locked_vault(base, id(1)).is_none(),
+            "no inbox folder at all"
         );
-        let make = |id: u128, key: bool| {
-            let folder = InboxFolder::new(base, Uuid::from_u128(id));
+        let make = |n: u128, key: bool| {
+            let folder = InboxFolder::new(base, id(n));
             fs::create_dir_all(folder.dir()).unwrap();
             if key {
-                let public = InboxKeys::derive(&[id as u8; 32], Uuid::from_u128(id)).unwrap();
+                let public = InboxKeys::derive(&[n as u8; 32], id(n)).unwrap();
                 fs::write(folder.dir().join(PUBLIC_FILE), public.public().to_bytes()).unwrap();
             }
             folder
         };
-        // A folder with no key, a file and a folder with a name that is not a vault id.
+        // A folder with no key, and unrelated entries beside it.
         make(1, false);
         fs::write(base.join("inbox").join("README"), b"x").unwrap();
         fs::create_dir_all(base.join("inbox").join("not-a-vault")).unwrap();
-        fs::create_dir_all(
-            base.join("inbox")
-                .join(Uuid::from_u128(9).simple().to_string()),
+        assert!(
+            InboxFolder::for_locked_vault(base, id(1)).is_none(),
+            "a folder with no key"
+        );
+        // A folder for vault 2 only: vault 1, whose lock screen may be up, gets NOTHING from it.
+        let two = make(2, true);
+        assert!(
+            InboxFolder::for_locked_vault(base, id(1)).is_none(),
+            "another vault's folder is never offered for this one"
+        );
+        assert!(
+            InboxFolder::for_locked_vault(base, id(3)).is_none(),
+            "a vault with no folder"
+        );
+        assert_eq!(
+            InboxFolder::for_locked_vault(base, id(2)).unwrap().dir(),
+            two.dir()
+        );
+        // Several folders with keys: each vault gets its own, none the other's.
+        let three = make(3, true);
+        assert_eq!(
+            InboxFolder::for_locked_vault(base, id(2)).unwrap().dir(),
+            two.dir()
+        );
+        assert_eq!(
+            InboxFolder::for_locked_vault(base, id(3)).unwrap().dir(),
+            three.dir()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_standing_where_a_vaults_folder_should_be_is_not_an_inbox() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path();
+        let real = InboxFolder::new(base, Uuid::from_u128(5));
+        fs::create_dir_all(real.dir()).unwrap();
+        let public = InboxKeys::derive(&[5; 32], Uuid::from_u128(5)).unwrap();
+        fs::write(real.dir().join(PUBLIC_FILE), public.public().to_bytes()).unwrap();
+        // Vault 6's folder is a link to vault 5's real folder, and a plain file stands for vault 7's.
+        let linked = InboxFolder::new(base, Uuid::from_u128(6));
+        std::os::unix::fs::symlink(real.dir(), linked.dir()).unwrap();
+        fs::write(
+            InboxFolder::new(base, Uuid::from_u128(7)).dir(),
+            b"not a folder",
         )
         .unwrap();
-        assert!(matches!(InboxFolder::discover(base), Discovered::None));
-        let one = make(2, true);
-        match InboxFolder::discover(base) {
-            Discovered::One(found) => assert_eq!(found.dir(), one.dir()),
-            _ => panic!("the one folder with a key"),
-        }
-        make(3, true);
-        assert!(matches!(InboxFolder::discover(base), Discovered::Several));
+        assert!(InboxFolder::for_locked_vault(base, Uuid::from_u128(6)).is_none());
+        assert!(InboxFolder::for_locked_vault(base, Uuid::from_u128(7)).is_none());
+        assert!(InboxFolder::for_locked_vault(base, Uuid::from_u128(5)).is_some());
     }
 
     #[test]

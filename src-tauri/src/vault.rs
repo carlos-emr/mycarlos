@@ -9812,6 +9812,21 @@ impl VaultStore {
         self.session().as_ref().map(|open| open.manifest.vault_id)
     }
 
+    /// The id of the vault in this store, read from its header's clear text, which needs no key: it
+    /// is how a LOCKED app knows whose lock screen is up (#49: the inbox a file shared while locked
+    /// is sealed to must be this vault's, never another vault's). `None` when no valid header can
+    /// be read, or when the readable headers name different vaults: a damaged or mixed folder is
+    /// not guessed about.
+    pub(crate) fn header_vault_id(&self) -> Option<Uuid> {
+        let files = read_header_files(&self.root);
+        let first = files.candidates.first()?.vault_id;
+        files
+            .candidates
+            .iter()
+            .all(|header| header.vault_id == first)
+            .then_some(first)
+    }
+
     /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the
     /// vault id and its links under ONE session guard and doing the wipe inside it, so a lock in
     /// between cannot turn into a sweep with an empty link set that wipes every live key. Returns
@@ -13887,6 +13902,39 @@ mod tests {
             VaultError::from(writer.write(b"blocked").unwrap_err()),
             VaultError::Cancelled
         ));
+    }
+
+    #[test]
+    fn the_header_names_its_vault_without_a_key_and_a_mixed_or_missing_one_names_none() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("vault");
+        let store = VaultStore::new(root.clone());
+        // No vault yet: nothing to name.
+        assert_eq!(store.header_vault_id(), None);
+        store.create(PASSWORD, "Jamie", 1).unwrap();
+        let id = store.open_vault_id().unwrap();
+        // Unlocked, locked, and a fresh store over the same folder (a restart, locked): the same
+        // id, read from the header's clear text, with no key.
+        assert_eq!(store.header_vault_id(), Some(id));
+        store.lock();
+        assert_eq!(store.open_vault_id(), None);
+        assert_eq!(store.header_vault_id(), Some(id));
+        assert_eq!(VaultStore::new(root.clone()).header_vault_id(), Some(id));
+        // Two readable headers that name DIFFERENT vaults (a mixed folder): not guessed about.
+        let existing = HEADER_SLOTS
+            .iter()
+            .find(|name| root.join(name).is_file())
+            .unwrap();
+        let mut header: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root.join(existing)).unwrap()).unwrap();
+        header["vaultId"] = serde_json::Value::String(Uuid::from_u128(7).to_string());
+        let other = HEADER_SLOTS.iter().find(|name| *name != existing).unwrap();
+        std::fs::write(root.join(other), serde_json::to_vec(&header).unwrap()).unwrap();
+        assert_eq!(VaultStore::new(root.clone()).header_vault_id(), None);
+        // No readable header at all (overwritten: #71 allows no direct removal, even in a test).
+        std::fs::write(root.join(other), b"not a header").unwrap();
+        std::fs::write(root.join(existing), b"not a header").unwrap();
+        assert_eq!(VaultStore::new(root).header_vault_id(), None);
     }
 
     #[test]

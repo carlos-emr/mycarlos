@@ -6008,8 +6008,12 @@ async fn received_list(
         })
         .await;
     }
+    // Native code, not the screen, keeps names off the lock screen: while the vault is locked (or
+    // busy being unlocked or moved) a page is told how many files wait and nothing that names one.
+    // The arguments are evaluated in order: the list first, the lock state AFTER it, so a lock
+    // between the two hides the names and never shows them.
     Ok(ReceivedState {
-        files: files.list(),
+        files: received::without_names_unless_unlocked(files.list(), store.arc().is_unlocked_now()),
         notice: files.take_notice(),
     })
 }
@@ -8456,15 +8460,21 @@ pub fn run() {
             // A file shared while the vault is locked is sealed into the inbox beside it (#49),
             // once an unlock has made that inbox a key; until then it is held in memory as before.
             {
-                let unlocked_app = app.handle().clone();
+                let screen_app = app.handle().clone();
                 let open_app = app.handle().clone();
                 app.state::<Arc<ReceivedFiles>>().set_sealer(Arc::new(
                     inbox_receipt::LockedSealer::new(
                         app.path().app_local_data_dir()?,
+                        // Read together from one pinned handle: sealing happens only when the
+                        // vault is known locked AND is the only vault the device holds (with
+                        // several, whose share it is cannot be told; #357), and the inbox is that
+                        // vault's own, named by its header.
                         Box::new(move || {
-                            unlocked_app
+                            screen_app
                                 .try_state::<StoreHandle>()
-                                .and_then(|store| store.arc().is_unlocked_now())
+                                .map_or(inbox_receipt::LockScreen::NotSingle, |store| {
+                                    inbox_receipt::lock_screen_of(&store)
+                                })
                         }),
                         Box::new(move |source| open_sealing_source(&open_app, source)),
                     ),

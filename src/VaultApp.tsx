@@ -231,7 +231,10 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 // The question in front of the patient is never changed under their cursor: a
                 // file that arrives while it is open waits, and is asked about after the answer
                 // (the answer asks again).
-                if (!confirmOpen.current) {
+                // Only in an unlocked session: native code tells a locked page how many files wait
+                // and no name, so a question opened from that list would be asked, after the next
+                // unlock, with blank names; the unlock lists again and asks then.
+                if (!confirmOpen.current && statusRef.current === "unlocked") {
                   confirmOpen.current = true;
                   setConfirmReceived(ask);
                 }

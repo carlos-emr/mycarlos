@@ -1761,6 +1761,52 @@ describe("durable vault UI", () => {
     return made;
   }
 
+  it("asks about a waiting file by its name after an unlock, though the list asked for while locked had no name (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
+    // Native code tells a locked page how many files wait and no name; after the unlock it names them.
+    let unlocked = false;
+    const named = vi.mocked(bridge.listReceived).getMockImplementation()!;
+    vi.mocked(bridge.listReceived).mockImplementation(async () => {
+      const listed = await named();
+      return {
+        ...listed,
+        files: listed.files.map((file) =>
+          unlocked ? file : { ...file, name: "" },
+        ),
+      };
+    });
+    const unlock = vi.mocked(bridge.unlock).getMockImplementation()!;
+    vi.mocked(bridge.unlock).mockImplementation(async (...args) => {
+      unlocked = true;
+      return unlock(...args);
+    });
+    render(<VaultApp bridge={bridge} />);
+    await screen.findByRole("heading", {
+      name: humanText("Unlock your vault"),
+    });
+    // The lock screen asked for the list and got the count only: no question is opened from it.
+    await waitFor(() => expect(bridge.listReceived).toHaveBeenCalled());
+    // A file arrives while the lock screen is up: the list is asked for again, after the page
+    // knows it is locked, and is again a count with no name.
+    const asked = vi.mocked(bridge.listReceived).mock.calls.length;
+    await act(async () =>
+      window.dispatchEvent(new Event("mycarlos-received-changed")),
+    );
+    await waitFor(() =>
+      expect(vi.mocked(bridge.listReceived).mock.calls.length).toBeGreaterThan(
+        asked,
+      ),
+    );
+    await unlockWith(user);
+    // The question names the file the unlock's own list gave, never a blank.
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_Opened.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+  });
+
   it("asks before adding a file Open with named, stores nothing until Import, and adds exactly that file (#133)", async () => {
     const user = userEvent.setup();
     const { bridge, vault } = openedWithVault(["FAKE_Opened.pdf"]);

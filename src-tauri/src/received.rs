@@ -247,6 +247,24 @@ pub(crate) struct ReceivedSummary {
     pub(crate) sealed: bool,
 }
 
+/// What a page may be told of the waiting files while the vault is NOT known to be unlocked
+/// (locked, or busy being unlocked or moved): that they wait, and how many, and nothing that
+/// names one. A file's name can be a diagnosis or a person's name, and the in-memory fallback
+/// (a share made while no inbox could take it) holds it with its name, so keeping names off the
+/// lock screen is enforced here, in native code, and not left to the screen's own rule. Only
+/// `Some(true)` leaves the names in.
+pub(crate) fn without_names_unless_unlocked(
+    mut files: Vec<ReceivedSummary>,
+    unlocked: Option<bool>,
+) -> Vec<ReceivedSummary> {
+    if unlocked != Some(true) {
+        for file in &mut files {
+            file.name.clear();
+        }
+    }
+    files
+}
+
 /// Files received and not yet imported or discarded, in arrival order. Memory only: a file
 /// received while the vault is locked is lost if the app closes first (the sealed inbox is
 /// a later step of #49).
@@ -510,6 +528,40 @@ mod tests {
 
     fn url(text: &str) -> Url {
         Url::parse(text).unwrap()
+    }
+
+    #[test]
+    fn a_page_is_told_only_how_many_files_wait_unless_the_vault_is_known_to_be_unlocked() {
+        // The in-memory fallback holds a share with its name (no inbox could take it).
+        let waiting = ReceivedFiles::default();
+        waiting
+            .add_share(vec![
+                ReceivedSource::Path("/FAKE/Diagnosis of FAKE Person.pdf".into()),
+                ReceivedSource::Path("/FAKE/second.pdf".into()),
+            ])
+            .unwrap();
+        let listed = waiting.list();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|file| !file.name.is_empty()));
+        // Unlocked: the names are the patient's to see.
+        let unlocked = without_names_unless_unlocked(listed.clone(), Some(true));
+        assert_eq!(unlocked, listed);
+        // Locked, or busy (not known): the same files, so the count is right, with no name.
+        for state in [Some(false), None] {
+            let hidden = without_names_unless_unlocked(listed.clone(), state);
+            assert_eq!(hidden.len(), 2, "{state:?}");
+            assert!(hidden.iter().all(|file| file.name.is_empty()), "{state:?}");
+            let serialized = serde_json::to_string(&hidden).unwrap();
+            assert!(
+                !serialized.contains("FAKE") && !serialized.contains(".pdf"),
+                "no part of a name is sent: {serialized}"
+            );
+            // Everything else a count needs is kept.
+            assert_eq!(
+                hidden.iter().map(|file| file.id).collect::<Vec<_>>(),
+                listed.iter().map(|file| file.id).collect::<Vec<_>>()
+            );
+        }
     }
 
     const ANDROID: OpenedPlatform<'static> = OpenedPlatform::Android {
