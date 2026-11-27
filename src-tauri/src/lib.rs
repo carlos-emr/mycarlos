@@ -4268,6 +4268,18 @@ fn file_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder
     dialog
 }
 
+/// `file_dialog` for every "Save as": opened in the person's Documents folder, never in the
+/// folder the system last used. That could be the folder that holds the vault, where a save is
+/// refused, and an export that was refused for where it was going looked like a typing mistake
+/// (#360 export error 19). Every save picker goes through here; a source-scan test pins it.
+fn save_dialog(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let dialog = file_dialog(app);
+    match app.path().document_dir() {
+        Ok(folder) => dialog.set_directory(folder),
+        Err(_) => dialog,
+    }
+}
+
 /// Only the button that goes ahead counts as agreement: not the first
 /// button, a closed dialog, or an answer the dialog could not give.
 #[cfg(any(test, not(target_os = "macos")))]
@@ -4385,7 +4397,7 @@ async fn vault_recovery_kit_save(
     let _open = ActivityHold::new(store.idle());
     let dialog = app.clone();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&dialog)
+        save_dialog(&dialog)
             .set_file_name(name)
             .blocking_save_file()
     })
@@ -4640,7 +4652,7 @@ async fn vault_backup_pick(
     let name = run_blocking(store.arc(), move |store| store.backup_file_name(&date)).await?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app).set_file_name(name).blocking_save_file()
+        save_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -4925,16 +4937,8 @@ async fn vault_profile_export_pick(
     .await?;
     let name = format!("mycarlos-handover-{date}.mycarlosprofile");
     let _open = ActivityHold::new(store.idle());
-    // Opened in the person's Documents folder, not in whatever folder the system last used: that
-    // could be the folder that holds the vault, which the save refuses (#360 export error 19).
-    let start = app.path().document_dir().ok();
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        let dialog = file_dialog(&app).set_file_name(name);
-        let dialog = match start {
-            Some(folder) => dialog.set_directory(folder),
-            None => dialog,
-        };
-        dialog.blocking_save_file()
+        save_dialog(&app).set_file_name(name).blocking_save_file()
     })
     .await
     .map_err(|_| PublicError::from(VaultError::Storage))?;
@@ -7030,7 +7034,7 @@ async fn vault_export_text_pick(
         .text(MessageId::AiHelperExportFileName)?;
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app)
+        save_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -7278,7 +7282,7 @@ async fn vault_export_pick(
     );
     let _open = ActivityHold::new(store.idle());
     let destination = tauri::async_runtime::spawn_blocking(move || {
-        file_dialog(&app)
+        save_dialog(&app)
             .set_file_name(suggested_name)
             .blocking_save_file()
     })
@@ -10434,8 +10438,9 @@ mod tests {
     ///   - `.dialog()` is called exactly twice: in the helper, for the file dialog, and in the native
     ///     confirmation, for its message (so `let d = app.dialog(); d.file()` cannot pass);
     ///   - a file dialog builder is never made directly (`FileDialogBuilder::new`);
-    ///   - `file_dialog(&` is called at exactly the eleven sites there are today (a twelfth must be added
-    ///     here on purpose, and a lost one is noticed).
+    ///   - `file_dialog(&` is called at exactly the six open-file sites there are today, and the five
+    ///     "Save as" sites go through `save_dialog(&` (a new one must be added here on purpose, and a
+    ///     lost one is noticed).
     #[test]
     fn every_file_dialog_is_opened_through_the_owned_helper() {
         fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
@@ -10496,9 +10501,31 @@ mod tests {
         assert_eq!(file_calls, 1, "only the helper builds a file dialog");
         assert_eq!(builders, 0, "a file dialog builder is made directly");
         assert_eq!(
-            sites, 11,
-            "the eleven file dialog sites go through file_dialog"
+            sites, 6,
+            "the six open (not save) file dialog sites go through file_dialog"
         );
+        // Every "Save as" goes through `save_dialog`, which starts it in the person's Documents
+        // folder: not one of them opens in the last-used folder, which may be the vault's own
+        // (#360 export error 19). The five save pickers there are today are counted on both sides,
+        // so a save that skips the helper, or a sixth that is added, is noticed.
+        let (mut saves, mut save_sites) = (0, 0);
+        for file in &files {
+            let code = code(&std::fs::read_to_string(file).unwrap());
+            saves += code.matches(".blocking_save_file()").count();
+            save_sites += code.matches("save_dialog(&").count();
+        }
+        assert_eq!(saves, 5, "the five save pickers");
+        assert_eq!(
+            save_sites, 5,
+            "every save picker is opened through save_dialog"
+        );
+        // The helper keeps its starting folder, and is built on the owned helper.
+        let source = include_str!("lib.rs");
+        let save_helper = source.split("fn save_dialog(").nth(1).unwrap();
+        let save_helper = &save_helper[..save_helper.find("\n}\n").unwrap()];
+        assert!(save_helper.contains("file_dialog(app)"));
+        assert!(save_helper.contains("document_dir()"));
+        assert!(save_helper.contains("set_directory("));
         // The helper keeps its owner.
         let source = include_str!("lib.rs");
         let helper = source.split("fn file_dialog(").nth(1).unwrap();
