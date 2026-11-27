@@ -476,8 +476,35 @@ test("the manifest replaces the network security config of the platform certific
     merged,
     /tools:replace="android:label,android:networkSecurityConfig"/,
   );
+  // Single-quoted attributes are the same XML: nothing is doubled, and the quote style of an
+  // existing list is kept.
+  const single = `<manifest xmlns:android='http://schemas.android.com/apk/res/android' ${tools}><application android:networkSecurityConfig='@xml/other' android:usesCleartextTraffic='true' tools:replace='android:label' android:label='myCarlos' /></manifest>`;
+  const fromSingle = setNetworkSecurityConfig(single);
+  assert.equal(setNetworkSecurityConfig(fromSingle), fromSingle);
+  assert.match(
+    fromSingle,
+    /tools:replace='android:label,android:networkSecurityConfig'/,
+  );
+  assert.equal((fromSingle.match(/tools:replace=/g) ?? []).length, 1);
+  assert.equal(
+    (fromSingle.match(/android:networkSecurityConfig=/g) ?? []).length,
+    1,
+  );
+  assert.equal(
+    (fromSingle.match(/android:usesCleartextTraffic=/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(fromSingle, /@xml\/other|usesCleartextTraffic='true'/);
+  // A form it cannot make sense of stops the build rather than writes a doubled attribute.
+  assert.throws(
+    () =>
+      setNetworkSecurityConfig(
+        `<manifest ${tools}><application tools:replace="android:label" tools:replace="android:icon" /></manifest>`,
+      ),
+    /2 tools:replace attributes/,
+  );
   // The values that decide the security are still this app's own, and exactly one each.
-  for (const manifest of [once, merged]) {
+  for (const manifest of [once, merged, fromSingle]) {
     assert.equal(
       (
         manifest.match(

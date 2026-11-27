@@ -209,14 +209,32 @@ export function setNetworkSecurityConfig(manifest) {
   if (!/<application\b/.test(manifest)) {
     throw new Error("Android application element not found");
   }
+  // An XML attribute may be quoted with " or ': both are recognised, so none is left beside the
+  // one written here (two of the same attribute are malformed XML).
   const withConfig = manifest
-    .replace(/\s+android:networkSecurityConfig="[^"]*"/g, "")
-    .replace(/\s+android:usesCleartextTraffic="[^"]*"/g, "")
+    .replace(/\s+android:networkSecurityConfig=(?:"[^"]*"|'[^']*')/g, "")
+    .replace(/\s+android:usesCleartextTraffic=(?:"[^"]*"|'[^']*')/g, "")
     .replace(
       /<application\b/,
       `<application android:networkSecurityConfig="@xml/${NETWORK_CONFIG_NAME}" android:usesCleartextTraffic="false"`,
     );
-  return withToolsReplace(withToolsNamespace(withConfig));
+  const result = withToolsReplace(withToolsNamespace(withConfig));
+  // A form this does not understand must stop the build, not write a manifest with a doubled
+  // attribute: each of the three is in the application element exactly once.
+  const application = /<application\b[^>]*>/.exec(result)?.[0] ?? "";
+  for (const name of [
+    "android:networkSecurityConfig",
+    "android:usesCleartextTraffic",
+    "tools:replace",
+  ]) {
+    const count = application.split(new RegExp(`\\s${name}\\s*=`)).length - 1;
+    if (count !== 1) {
+      throw new Error(
+        `Android application element has ${count} ${name} attributes after editing, expected 1`,
+      );
+    }
+  }
+  return result;
 }
 
 /** The `tools` namespace on the `<manifest>` element, which `tools:replace` needs. */
@@ -231,7 +249,8 @@ function withToolsNamespace(manifest) {
 /** `android:networkSecurityConfig` in the application's `tools:replace` list, added once. */
 function withToolsReplace(manifest) {
   return manifest.replace(/<application\b[^>]*>/, (tag) => {
-    const existing = /\s+tools:replace="([^"]*)"/.exec(tag);
+    // Either quote; the list is rewritten in the quote style it came in.
+    const existing = /\s+tools:replace=(["'])([^"']*)\1/.exec(tag);
     if (!existing) {
       // After the cleartext attribute this function has just written, so that a second run, which
       // strips and writes those two again, leaves the same text.
@@ -240,11 +259,12 @@ function withToolsReplace(manifest) {
         `android:usesCleartextTraffic="false" tools:replace="${REPLACED_ATTRIBUTE}"`,
       );
     }
-    const listed = existing[1].split(",").map((name) => name.trim());
+    const quote = existing[1];
+    const listed = existing[2].split(",").map((name) => name.trim());
     if (listed.includes(REPLACED_ATTRIBUTE)) return tag;
     return tag.replace(
       existing[0],
-      ` tools:replace="${[...listed, REPLACED_ATTRIBUTE].join(",")}"`,
+      ` tools:replace=${quote}${[...listed, REPLACED_ATTRIBUTE].join(",")}${quote}`,
     );
   });
 }
