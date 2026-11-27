@@ -2167,7 +2167,11 @@ function NativeVault({ bridge }: { bridge: VaultBridge }) {
                 ),
               )
               .then(() => refreshReceivedRef.current())
-              .catch(() => undefined);
+              // A delete that was refused (locked) or failed (storage) claims nothing: the list is
+              // read again, which drops what native already forgot, and asks again about what
+              // still waits (a failed file keeps waiting). No new text: the question coming back is
+              // the answer; the listing never rejects.
+              .catch(() => refreshReceivedRef.current());
           }}
           details={
             confirmReceived.length > 1 ? (

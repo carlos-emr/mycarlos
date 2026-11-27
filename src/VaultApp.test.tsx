@@ -1947,6 +1947,52 @@ describe("durable vault UI", () => {
     ).toBeVisible();
   });
 
+  it("a Delete that fails claims nothing: the list is read again and the files still waiting are asked about again (#49)", async () => {
+    const user = userEvent.setup();
+    const { bridge, vault } = sealedWithVault(["FAKE_One.pdf", "FAKE_Two.pdf"]);
+    // Native deleted the first file, then failed on the second (a Storage error, not a count).
+    const deleted = bridge.removeReceived!;
+    bridge.removeReceived = vi.fn(async (ids: string[]) => {
+      await deleted([ids[0]]);
+      throw new Error("native: could not delete");
+    });
+    render(<VaultApp bridge={bridge} />);
+    await unlockWith(user);
+    const dialog = await screen.findByRole("alertdialog", {
+      name: humanText("Import 2 documents into Shared with me?"),
+    });
+    const listedBefore = vi.mocked(bridge.listReceived).mock.calls.length;
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: humanText("Delete the 2 kept files"),
+      }),
+    );
+    await waitFor(() =>
+      expect(bridge.removeReceived).toHaveBeenCalledWith([
+        "shared-1",
+        "shared-2",
+      ]),
+    );
+    // The list was read again (not trusted to have been deleted) ...
+    await waitFor(() =>
+      expect(vi.mocked(bridge.listReceived).mock.calls.length).toBeGreaterThan(
+        listedBefore,
+      ),
+    );
+    // ... and the file that is still waiting is asked about again, on its own: the one native
+    // already forgot is gone from the question.
+    expect(
+      await screen.findByRole("alertdialog", {
+        name: humanText("Import FAKE_Two.pdf into Shared with me?"),
+      }),
+    ).toBeVisible();
+    // Nothing was claimed removed, nothing was imported, and nothing was said in the page.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(bridge.acceptReceived).not.toHaveBeenCalled();
+    expect(bridge.discardReceived).not.toHaveBeenCalled();
+    expect(vault.records).toEqual([]);
+  });
+
   it("offers Cancel, not Delete, for files that are not sealed (#49)", async () => {
     const user = userEvent.setup();
     const { bridge } = openedWithVault(["FAKE_Opened.pdf"]);
