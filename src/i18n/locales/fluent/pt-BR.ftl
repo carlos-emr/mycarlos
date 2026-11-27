@@ -836,6 +836,8 @@ native-filter-pictures = Imagens JPEG e PNG
 
 native-filter-pdfAndPictures = Documentos PDF e imagens JPEG e PNG
 
+native-filter-pdfPicturesAndVideos = Documentos PDF, imagens JPEG e PNG e vídeos (MP4 ou MOV)
+
 native-kit-text =
     Kit de recuperação do myCarlos
 
@@ -1065,6 +1067,8 @@ recoveryKey-reason-legend = Por que você está substituindo a chave?
 
 recoveryKey-reason-routine = Só quero uma chave nova: o kit dela está seguro
 
+recoveryKey-kitCloudWarning = Este arquivo não é criptografado. Uma pasta sincronizada com a nuvem (OneDrive, iCloud Drive, Dropbox, Google Drive) o envia, então salve-o em um lugar que não seja sincronizado.
+
 recoveryKey-saveKit = Salvar o kit de recuperação…
 
 recoveryKey-threeMisses = Não coincidiu três vezes. Olhe de novo sua chave de recuperação e depois verifique-a.
@@ -1205,6 +1209,8 @@ security-autoLock-shorter = Tempo menor
 security-autoLock-title = Bloqueio automático
 
 security-backup-body = Um único arquivo com todo o seu cofre, ainda criptografado. Guarde-o em outro lugar que não este dispositivo, como um pen drive. Ele abre com a frase secreta ou a chave de recuperação que você tiver ao salvá-lo, e continua abrindo com elas mesmo depois que você as mudar aqui. Para restaurar uma cópia, bloqueie o cofre e escolha Restaurar a partir de uma cópia de segurança.
+
+security-backup-cloudWarning = Este arquivo é criptografado, mas mostra quantos documentos contém e o tamanho de cada um. Uma pasta sincronizada com a nuvem (OneDrive, iCloud Drive, Dropbox, Google Drive) o envia.
 
 security-backup-save = Salvar cópia de segurança criptografada…
 
@@ -2436,6 +2442,7 @@ notifications-checkBusy = Uma consulta de documentos está sendo interrompida. E
 noticesStep-title = Documentos da sua clínica
 noticesStep-intro = Sua clínica está vinculada. O myCarlos pode verificar os documentos novos para você e mostrar um aviso quando um chegar, em um computador que possa fazê-lo. Nada é ativado a menos que você marque.
 noticesStep-later = Você pode mudar isso a qualquer momento em { $settings }, em { $preferences }: { $notices }.
+noticesStep-laterBackground = Você pode mudar as opções de segundo plano a qualquer momento em { $settings }, em { $preferences }: { $background }.
 noticesStep-done = Concluído
 noticesStep-notNow = Agora não
 
@@ -2751,7 +2758,7 @@ handover-import-opening = Abrindo…
 
 handover-import-error-typo = Essa chave não parece correta. Compare-a com a que lhe deram.
 
-handover-import-error-recovery = Essa é uma chave de recuperação, não a chave deste arquivo. Peça a chave criada para o arquivo.
+handover-import-error-recovery = Isso parece uma chave de recuperação, não a chave deste arquivo. Confira a chave que lhe deram para o arquivo e veja se não há erro de digitação. Se não lhe deram nenhuma, peça a chave criada para o arquivo.
 
 handover-import-error-wrong = Isso não abre este arquivo.
 
@@ -3000,6 +3007,8 @@ interface-AddVideo-duplicate = Esse vídeo já está aqui. Nada foi adicionado.
 interface-AddVideo-cancelled = Cancelado. Nada foi adicionado.
 
 interface-AddVideo-notVideo = Este arquivo não é um vídeo que o myCarlos possa adicionar. Escolha um vídeo MP4 ou MOV.
+
+interface-AddVideo-videoAlone = Um vídeo é adicionado sozinho. Escolha um único vídeo, ou escolha documentos e imagens, mas não os dois juntos. Nada foi adicionado.
 
 interface-AddVideo-hevc = Este vídeo usa H.265 (HEVC), que muitos computadores não conseguem reproduzir. Salve-o como MP4 H.264 e adicione-o de novo.
 

@@ -11,6 +11,56 @@ import { dirname, extname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RULES_NAME = "mycarlos_data_extraction_rules";
+
+// The Android trust plugin fetches the platform verifier's Kotlin half from the crate authors' Maven
+// archive (src-tauri/android-trust/android/build.gradle.kts, a URL pinned to a commit). Gradle
+// checks the bytes it gets against these SHA-256 values, so a changed archive fails the build. They
+// are the hashes of the 0.2.0 files at that commit
+// (`curl -L <commit URL>/org/rustls/rustls-platform-verifier/0.2.0/rustls-platform-verifier-0.2.0.aar | sha256sum`);
+// when Cargo.lock moves rustls-platform-verifier-android, the version, the commit and the values
+// move together (scripts/android-trust-gradle.test.mjs fails until they do).
+export const VERIFIER_COMPONENT = {
+  group: "org.rustls",
+  name: "rustls-platform-verifier",
+  version: "0.2.0",
+  files: {
+    "rustls-platform-verifier-0.2.0.aar":
+      "aa021794230fbc2f0be355999e2cf67398dd563de066a2e17001ffbd0b69101b",
+    "rustls-platform-verifier-0.2.0.pom":
+      "78dcb69a1a20e91e72017de9a67104bba1874a7ecc8e6dcdfb2fe1a85de6b362",
+  },
+};
+
+/**
+ * Gradle's dependency-verification file for the generated project: the verifier component's files
+ * must match the SHA-256 values above; everything else the build fetches is trusted as before (the
+ * file verifies one component, it does not turn the whole build's resolution into a lock file).
+ */
+export function verificationMetadata(component = VERIFIER_COMPONENT) {
+  const artifacts = Object.entries(component.files)
+    .map(
+      ([file, sha256]) =>
+        `      <artifact name="${file}">\n        <sha256 value="${sha256}"/>\n      </artifact>`,
+    )
+    .join("\n");
+  const group = component.group.replaceAll(".", "\\.");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<verification-metadata xmlns="https://schema.gradle.org/dependency-verification" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://schema.gradle.org/dependency-verification https://schema.gradle.org/dependency-verification/dependency-verification-1.3.xsd">
+  <configuration>
+    <verify-metadata>false</verify-metadata>
+    <verify-signatures>false</verify-signatures>
+    <trusted-artifacts>
+      <trust group="^(?!${group}$).*" regex="true"/>
+    </trusted-artifacts>
+  </configuration>
+  <components>
+    <component group="${component.group}" name="${component.name}" version="${component.version}">
+${artifacts}
+    </component>
+  </components>
+</verification-metadata>
+`;
+}
 const DOMAINS = [
   "root",
   "file",
@@ -117,6 +167,8 @@ export function declareMicrophone(manifest) {
 // AAB at all. `debug-overrides` also only applies to a debuggable app, and the release safety gate
 // refuses a build that carries either (scripts/release-safety/checks.mjs).
 const NETWORK_CONFIG_NAME = "mycarlos_network_security_config";
+// The resource name the platform certificate verifier's AAR uses for its own configuration.
+const VERIFIER_NETWORK_CONFIG_NAME = "network_security_config";
 const TEST_CA_NAME = "mycarlos_test_ca";
 const NETWORK_BASE = `  <base-config cleartextTrafficPermitted="false">
     <trust-anchors>
@@ -141,18 +193,82 @@ const REPOSITORY_TEST_PKI = fileURLToPath(
   new URL("../src-tauri/tests/fixtures/portal-test-pki", import.meta.url),
 );
 
-/** The manifest pointing at the network security config, with cleartext traffic off, once. */
+const TOOLS_NAMESPACE = 'xmlns:tools="http://schemas.android.com/tools"';
+const REPLACED_ATTRIBUTE = "android:networkSecurityConfig";
+
+/**
+ * The manifest pointing at the network security config, with cleartext traffic off, once.
+ *
+ * The manifest also says `tools:replace="android:networkSecurityConfig"`: the platform certificate
+ * verifier (`org.rustls:rustls-platform-verifier`, #493) ships a manifest that names a network
+ * security config of its own, and the manifest merger refuses two values for one attribute
+ * ("Attribute application@networkSecurityConfig ... is also present at ..."). Replacing, rather
+ * than removing the attribute or giving way to the library's, is what keeps the security
+ * decision here: the merged app uses THIS config (system authorities only, no cleartext; the
+ * test root only in the debug source set), never the library's.
+ */
 export function setNetworkSecurityConfig(manifest) {
   if (!/<application\b/.test(manifest)) {
     throw new Error("Android application element not found");
   }
-  return manifest
-    .replace(/\s+android:networkSecurityConfig="[^"]*"/g, "")
-    .replace(/\s+android:usesCleartextTraffic="[^"]*"/g, "")
+  // An XML attribute may be quoted with " or ': both are recognised, so none is left beside the
+  // one written here (two of the same attribute are malformed XML).
+  const withConfig = manifest
+    .replace(/\s+android:networkSecurityConfig=(?:"[^"]*"|'[^']*')/g, "")
+    .replace(/\s+android:usesCleartextTraffic=(?:"[^"]*"|'[^']*')/g, "")
     .replace(
       /<application\b/,
       `<application android:networkSecurityConfig="@xml/${NETWORK_CONFIG_NAME}" android:usesCleartextTraffic="false"`,
     );
+  const result = withToolsReplace(withToolsNamespace(withConfig));
+  // A form this does not understand must stop the build, not write a manifest with a doubled
+  // attribute: each of the three is in the application element exactly once.
+  const application = /<application\b[^>]*>/.exec(result)?.[0] ?? "";
+  for (const name of [
+    "android:networkSecurityConfig",
+    "android:usesCleartextTraffic",
+    "tools:replace",
+  ]) {
+    const count = application.split(new RegExp(`\\s${name}\\s*=`)).length - 1;
+    if (count !== 1) {
+      throw new Error(
+        `Android application element has ${count} ${name} attributes after editing, expected 1`,
+      );
+    }
+  }
+  return result;
+}
+
+/** The `tools` namespace on the `<manifest>` element, which `tools:replace` needs. */
+function withToolsNamespace(manifest) {
+  return manifest.replace(/<manifest\b[^>]*>/, (tag) =>
+    tag.includes("xmlns:tools=")
+      ? tag
+      : tag.replace(/<manifest\b/, `<manifest ${TOOLS_NAMESPACE}`),
+  );
+}
+
+/** `android:networkSecurityConfig` in the application's `tools:replace` list, added once. */
+function withToolsReplace(manifest) {
+  return manifest.replace(/<application\b[^>]*>/, (tag) => {
+    // Either quote; the list is rewritten in the quote style it came in.
+    const existing = /\s+tools:replace=(["'])([^"']*)\1/.exec(tag);
+    if (!existing) {
+      // After the cleartext attribute this function has just written, so that a second run, which
+      // strips and writes those two again, leaves the same text.
+      return tag.replace(
+        'android:usesCleartextTraffic="false"',
+        `android:usesCleartextTraffic="false" tools:replace="${REPLACED_ATTRIBUTE}"`,
+      );
+    }
+    const quote = existing[1];
+    const listed = existing[2].split(",").map((name) => name.trim());
+    if (listed.includes(REPLACED_ATTRIBUTE)) return tag;
+    return tag.replace(
+      existing[0],
+      ` tools:replace=${quote}${[...listed, REPLACED_ATTRIBUTE].join(",")}${quote}`,
+    );
+  });
 }
 
 /**
@@ -182,6 +298,19 @@ export async function writeNetworkSecurityConfig(
   await mkdir(xml, { recursive: true });
   await writeFile(
     join(xml, `${NETWORK_CONFIG_NAME}.xml`),
+    NETWORK_CONFIG,
+    "utf8",
+  );
+  // The platform certificate verifier's AAR ships a resource of its own with the name
+  // `network_security_config` (res/xml, 27 KB): `<base-config cleartextTrafficPermitted="false">`
+  // plus one `<domain-config cleartextTrafficPermitted="true">` listing the CRL hosts of public
+  // certificate authorities. The manifest does not use it (`tools:replace`, above), but a library
+  // resource stays in the merged APK whether or not anything refers to it, and the release safety
+  // gate reads every compiled XML in the APK and refuses cleartext anywhere. An app resource of
+  // the same name takes the library's place in the merge, so the APK holds this app's own
+  // system-authorities-only file under that name too, and no cleartext allowance at all.
+  await writeFile(
+    join(xml, `${VERIFIER_NETWORK_CONFIG_NAME}.xml`),
     NETWORK_CONFIG,
     "utf8",
   );
@@ -403,6 +532,21 @@ export async function configureAndroidSecurity(
   await writeFile(join(resources, `${RULES_NAME}.xml`), RULES, "utf8");
   await writeNetworkSecurityConfig(resDirectory, debugDirectory, pkiDirectory);
   await writeFile(manifestPath, manifest, "utf8");
+
+  // The generated Gradle project is three levels above the manifest (app/src/main).
+  const gradleDirectory = join(
+    dirname(manifestPath),
+    "..",
+    "..",
+    "..",
+    "gradle",
+  );
+  await mkdir(gradleDirectory, { recursive: true });
+  await writeFile(
+    join(gradleDirectory, "verification-metadata.xml"),
+    verificationMetadata(),
+    "utf8",
+  );
 
   const activity = await findMainActivity(join(dirname(manifestPath), "java"));
   if (!activity) {
