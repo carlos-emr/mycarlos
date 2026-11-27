@@ -1665,7 +1665,7 @@ library-source-clinic = 来自 { $clinic }
 
 library-source-manualImport = 手动导入
 
-library-status-keyRevoked = 诊所已吊销签名密钥
+library-status-keyRevoked = 诊所已吊销 签名密钥
 
 library-status-unverified = 未验证
 

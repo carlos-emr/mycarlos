@@ -272,7 +272,10 @@ describe("a document's status before its source (#135)", () => {
       within(revoked).queryByText("Unverified", { exact: true }),
     ).not.toBeInTheDocument();
     expect(
-      within(revoked).getByText(`From ${LONG_CLINIC}`),
+      within(revoked).getByText(
+        translate("en", "library.source.clinic", { clinic: LONG_CLINIC }),
+        { exact: true },
+      ),
     ).toBeInTheDocument();
     // A handover file's claim of a check is not shown beside the revoked status.
     const claimed = row("en", REVOKED_CLAIM);

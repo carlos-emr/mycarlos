@@ -1675,6 +1675,9 @@ p {
   font-weight: 700;
   line-height: 1.45;
   white-space: normal;
+  /* Wrap between the words of a status, never inside one: Chinese has no spaces, and the long
+     "Signature key revoked by the clinic" (#88) is written as two words in zh-CN and zh-TW. */
+  word-break: keep-all;
   overflow-wrap: break-word;
 }
 .record-source.verified .record-status {

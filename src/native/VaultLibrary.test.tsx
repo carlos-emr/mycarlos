@@ -394,20 +394,20 @@ describe("search and filter by the clinic a document came from (#88)", () => {
       withClinic("a2", "FAKE Letter.pdf", "clinic-a", "FAKE Riverside Clinic"),
     ],
   };
-  const names = () => shownDocuments().map(([name]) => name);
+  const names = () => humanValue(shownDocuments()).map(([name]) => name);
   const clinicSelect = () =>
     screen.getByRole("combobox", { name: humanText("Clinic") });
 
   it("finds a document by its clinic's name as well as its own name", () => {
     renderLibrary(clinics);
-    search("Search everything in FAKE Avery", "riverside");
+    search("Search everything in My records", "riverside");
     expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
     // The document's own name still matches, and a clinic name matches in any case.
-    search("Search everything in FAKE Avery", "SCAN");
+    search("Search everything in My records", "SCAN");
     expect(names()).toEqual(["FAKE Scan.pdf"]);
-    search("Search everything in FAKE Avery", "lakeside");
+    search("Search everything in My records", "lakeside");
     expect(names()).toEqual(["FAKE Referral.pdf"]);
-    search("Search everything in FAKE Avery", "no such clinic");
+    search("Search everything in My records", "no such clinic");
     expect(names()).toEqual([]);
   });
 
@@ -423,9 +423,9 @@ describe("search and filter by the clinic a document came from (#88)", () => {
     fireEvent.change(select, { target: { value: "clinic-a" } });
     expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
     // The filter and the search both apply.
-    search("Search everything in FAKE Avery", "blood");
+    search("Search everything in My records", "blood");
     expect(names()).toEqual(["FAKE Blood test.pdf"]);
-    search("Search everything in FAKE Avery", "");
+    search("Search everything in My records", "");
     fireEvent.change(clinicSelect(), { target: { value: "" } });
     expect(names()).toHaveLength(4);
   });
@@ -474,6 +474,54 @@ describe("search and filter by the clinic a document came from (#88)", () => {
     expect(
       screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
     ).toHaveLength(1);
+  });
+
+  it("inside a folder, a chosen clinic shows only that clinic's documents in the folder's subtree", () => {
+    renderLibrary({
+      ...clinics,
+      folders: [
+        folder("letters", "FAKE Letters", null),
+        folder("letters-2025", "FAKE 2025 Letters", "letters"),
+      ],
+      records: [
+        ...clinics.records,
+        {
+          ...withClinic(
+            "a3",
+            "FAKE Filed letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+        {
+          ...withClinic(
+            "a4",
+            "FAKE Deep letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          folderIds: ["letters-2025"],
+        },
+        {
+          ...withClinic(
+            "b3",
+            "FAKE Other clinic letter.pdf",
+            "clinic-b",
+            "FAKE Lakeside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+      ],
+    });
+    openFolder(/^FAKE Letters/);
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-a" } });
+    // This clinic's documents in the folder and below it; not the ones at the top level, not
+    // another clinic's.
+    expect(names().sort()).toEqual([
+      "FAKE Deep letter.pdf",
+      "FAKE Filed letter.pdf",
+    ]);
   });
 
   it("forgets the chosen clinic when the person changes, and does not bring it back", () => {

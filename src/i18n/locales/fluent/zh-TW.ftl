@@ -1665,7 +1665,7 @@ library-source-clinic = 來自 { $clinic }
 
 library-source-manualImport = 手動匯入
 
-library-status-keyRevoked = 診所已撤銷簽署金鑰
+library-status-keyRevoked = 診所已撤銷 簽署金鑰
 
 library-status-unverified = 未驗證
 
