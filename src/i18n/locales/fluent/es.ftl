@@ -1228,14 +1228,6 @@ security-encryption-state = Activado — siempre
 
 security-encryption-title = Cifrado
 
-security-erase-body = Elimina de forma permanente todos los documentos, perfiles y carpetas cifrados. No se puede deshacer.
-
-security-erase-show = Mostrar los controles de borrado
-
-security-erase-submit = Borrar toda la bóveda
-
-security-erase-title = Borrar toda la bóveda
-
 security-lockNow = Bloquear ahora
 
 security-oldBackups-deleteOlder = Elimine las copias de seguridad anteriores: los archivos cuyo nombre empieza por “myCarlos backup” y las que haya cambiado de nombre, salvo la nueva y sus copias. Están donde las guardó: una carpeta, una memoria USB o, en un teléfono, la aplicación Archivos o un almacenamiento en la nube.

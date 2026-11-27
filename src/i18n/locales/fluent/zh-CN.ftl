@@ -1088,14 +1088,6 @@ security-encryption-state = 已激活 — 一律加密
 
 security-encryption-title = 加密
 
-security-erase-body = 永久删除所有加密文档、文件和文件夹。此操作无法恢复。
-
-security-erase-show = 显示重设控制项
-
-security-erase-submit = 清除整个保险库
-
-security-erase-title = 清除整个保险库
-
 security-lockNow = 立即锁定
 
 security-oldBackups-deleteOlder = 请删除较旧的备份：名称开头为「myCarlos backup」的文件，以及您重命名过的备份，但请保留新备份及其副本。这些文件可能存放在您选择的位置，例如文件夹、USB 闪存盘，或手机上的文件应用或云端硬盘。

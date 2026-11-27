@@ -539,10 +539,6 @@ export const MESSAGE_KEYS = [
   "security.encryption.body",
   "security.encryption.state",
   "security.encryption.title",
-  "security.erase.body",
-  "security.erase.show",
-  "security.erase.submit",
-  "security.erase.title",
   "security.lockNow",
   "security.oldBackups.deleteOlder",
   "security.oldBackups.done",
@@ -2074,10 +2070,6 @@ const FLUENT_IDS_BY_KEY = {
   "security.encryption.body": "security-encryption-body",
   "security.encryption.state": "security-encryption-state",
   "security.encryption.title": "security-encryption-title",
-  "security.erase.body": "security-erase-body",
-  "security.erase.show": "security-erase-show",
-  "security.erase.submit": "security-erase-submit",
-  "security.erase.title": "security-erase-title",
   "security.lockNow": "security-lockNow",
   "security.oldBackups.deleteOlder": "security-oldBackups-deleteOlder",
   "security.oldBackups.done": "security-oldBackups-done",
@@ -3745,10 +3737,6 @@ export interface MessageArgsByKey {
   "security.encryption.body": undefined;
   "security.encryption.state": undefined;
   "security.encryption.title": undefined;
-  "security.erase.body": undefined;
-  "security.erase.show": undefined;
-  "security.erase.submit": undefined;
-  "security.erase.title": undefined;
   "security.lockNow": undefined;
   "security.oldBackups.deleteOlder": undefined;
   "security.oldBackups.done": undefined;

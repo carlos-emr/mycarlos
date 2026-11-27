@@ -1256,14 +1256,6 @@ security-encryption-state = Włączone — zawsze
 
 security-encryption-title = Szyfrowanie
 
-security-erase-body = Trwale usuwa wszystkie zaszyfrowane dokumenty, profile i foldery. Tej operacji nie można cofnąć.
-
-security-erase-show = Pokaż opcje usuwania
-
-security-erase-submit = Usuń cały sejf
-
-security-erase-title = Usuń cały sejf
-
 security-lockNow = Zablokuj teraz
 
 security-oldBackups-deleteOlder = Proszę usunąć starsze kopie zapasowe: pliki, których nazwy zaczynają się od „myCarlos backup”, oraz te, których nazwy zostały zmienione, z wyjątkiem nowej kopii i jej kopii. Znajdują się tam, gdzie zostały zapisane: w folderze, na pendrivie, a na telefonie w aplikacji Pliki lub na dysku w chmurze.

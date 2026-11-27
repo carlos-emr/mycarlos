@@ -390,9 +390,14 @@ describe("myCarlos Tauri evaluation", () => {
     expect(screen.getByText("Evaluation controls only.")).toBeVisible();
 
     const cloudBackup = screen.getByRole("button", {
-      name: "Backup to iCloud demo",
+      name: "Preview device backup exclusion",
     });
     expect(cloudBackup).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByText(/This switch changes only this preview/),
+    ).toHaveTextContent(
+      /Android app disables system cloud backup and phone-to-phone transfer.*iPhone and iPad.*exclude its data folder.*Computer backups may include the encrypted vault/,
+    );
     await user.click(cloudBackup);
     expect(cloudBackup).toHaveAttribute("aria-pressed", "false");
 
