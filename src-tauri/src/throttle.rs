@@ -203,7 +203,6 @@ impl AttemptThrottle {
 
     /// How many milliseconds are left before `attempt` may be tried again,
     /// if it must wait.
-    #[cfg(test)]
     pub fn wait(&self, attempt: Attempt, now_ms: u64) -> Option<u64> {
         let mut counts = self.lock(now_ms);
         self.left(&mut counts, attempt, now_ms)
