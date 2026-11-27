@@ -1117,7 +1117,7 @@ describe("choosing the camera and the microphone", () => {
       recorder.stop();
       await screen.findByText("Playing back…");
       expect(revoked).toEqual([]);
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
       expect(onClose).toHaveBeenCalled();
       expect(revoked).toEqual(["blob:fake/1"]);
       expect(FakePlayer.made[0].removeAttribute).toHaveBeenCalledWith("src");
