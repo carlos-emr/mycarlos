@@ -431,13 +431,15 @@ describe("the first setup's comfort screen in each language", () => {
       expect(
         screen.getByText(tr("frame.state.settingUp"), exactly),
       ).toBeVisible();
-      // Outside the app, text size follows the device.
+      // Outside the app, text size follows the device, and the setup page says nothing about it
+      // (Ben: "the text is unneeded, it just takes up more space"): the sentence and its empty row
+      // are in Preferences only.
       expect(
-        screen.getByRole("heading", { name: tr("textSize.title") }),
-      ).toBeVisible();
+        screen.queryByRole("heading", { name: tr("textSize.title") }),
+      ).toBeNull();
       expect(
-        screen.getByText(tr("textSize.followsDevice"), exactly),
-      ).toBeVisible();
+        screen.queryByText(tr("textSize.followsDevice"), exactly),
+      ).toBeNull();
       expect(
         screen.getByRole("heading", { name: tr("security.autoLock.title") }),
       ).toBeVisible();

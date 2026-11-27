@@ -36,18 +36,14 @@ export function ComfortSetup({
         <h1 id="comfort-title">{t("comfort.title")}</h1>
         <p>{t("comfort.intro")}</p>
         <div className="setting-list comfort-list">
-          {native ? (
+          {/* Where text size follows the device (a phone, a browser), there is nothing to choose
+              here, so the page says nothing about it: the sentence that explains it is in
+              Preferences, and not on this page, which only takes room. */}
+          {native && (
             <>
               <TextSizeSetting zoom={native.zoom} mac={native.mac} />
               <p className="comfort-sample">{t("comfort.sample")}</p>
             </>
-          ) : (
-            <section className="setting-row">
-              <div>
-                <h2>{t("textSize.title")}</h2>
-                <p>{t("textSize.followsDevice")}</p>
-              </div>
-            </section>
           )}
           <AppearanceSetting />
           <section className="setting-row native-setting-form">
