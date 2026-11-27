@@ -280,14 +280,17 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> Option<Mode> {
 
 /// One page as the parent sends it. A page with a key it does not know is refused (it is also the
 /// element of the renderer's `pages` for a summary, `SummarizeRequest.pages`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Page {
     pub(crate) index: u32,
     pub(crate) text: String,
 }
+redact_debug!(Page);
 
-#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Deserialize)]
 #[serde(tag = "tool", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
     #[serde(rename_all = "camelCase")]
@@ -313,12 +316,15 @@ enum Request {
     #[cfg(feature = "ai-helper-stub")]
     Probe { id: u64, what: String },
 }
+redact_debug!(Request);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Sentence {
     pub(crate) text: String,
     pub(crate) quote: String,
 }
+redact_debug!(Sentence);
 
 /// A summary as the helper writes it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -335,13 +341,15 @@ struct SummaryAnswer {
     stats: Option<Stats>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 struct TextAnswer {
     id: u64,
     text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     stats: Option<Stats>,
 }
+redact_debug!(TextAnswer);
 
 /// How an answer was made, for measuring: tokens and time for reading the prompt and for
 /// writing the answer, whether it stopped at its cap, and how often the grammar had to look at
@@ -563,7 +571,8 @@ pub(crate) fn without_slot(text: &str) -> String {
 // --- Fitting the pages ----------------------------------------------------------------------
 
 /// The pages a prompt has room for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Fit {
     /// The text of the pages read, joined as the reader joins them.
     pub(crate) text: String,
@@ -575,6 +584,7 @@ pub(crate) struct Fit {
     /// (`fit_pages`): where instructions and follow-up usually are.
     pub(crate) tail_page: Option<u32>,
 }
+redact_debug!(Fit);
 
 /// The pages' separator in the joined text, as `documentText.ts`'s PAGE_SEPARATOR.
 pub(crate) const PAGE_SEPARATOR: &str = "\n\n";
@@ -1628,3 +1638,6 @@ the patient to use it, such as the clinic's number to call.";
         assert_eq!(next_line(&mut &b""[..]), None);
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

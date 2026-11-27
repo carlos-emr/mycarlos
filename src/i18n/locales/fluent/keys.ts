@@ -1148,6 +1148,8 @@ export const MESSAGE_KEYS = [
   "reader.android.zoomOut",
   "interface.video.name",
   "interface.RecordDialog.recordAVideo",
+  "interface.RecordDialog.recordAVideoFor",
+  "interface.RecordDialog.recordingSettings",
   "interface.RecordDialog.unavailable",
   "interface.RecordDialog.why",
   "interface.RecordDialog.startingTheCameraAndMicrophone",
@@ -1163,6 +1165,9 @@ export const MESSAGE_KEYS = [
   "interface.RecordDialog.unnamedMicrophone",
   "interface.RecordDialog.systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack",
+  "interface.RecordDialog.deviceNotSwitched",
+  "interface.RecordDialog.saySomething",
+  "interface.RecordDialog.settingsNote",
   "interface.RecordDialog.testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone",
   "interface.RecordDialog.microphoneLevel",
@@ -1402,6 +1407,7 @@ export const MESSAGE_KEYS = [
   "notifications.testOff",
   "preferences.moreAutomatic",
   "preferences.moreBackground",
+  "native.backupExclusionFailed",
   "interface.AddVideo.add",
   "interface.AddVideo.hint",
   "interface.AddVideo.checking",
@@ -2802,6 +2808,10 @@ const FLUENT_IDS_BY_KEY = {
   "reader.android.zoomOut": "reader-android-zoomOut",
   "interface.video.name": "interface-video-name",
   "interface.RecordDialog.recordAVideo": "interface-RecordDialog-recordAVideo",
+  "interface.RecordDialog.recordAVideoFor":
+    "interface-RecordDialog-recordAVideoFor",
+  "interface.RecordDialog.recordingSettings":
+    "interface-RecordDialog-recordingSettings",
   "interface.RecordDialog.unavailable": "interface-RecordDialog-unavailable",
   "interface.RecordDialog.why": "interface-RecordDialog-why",
   "interface.RecordDialog.startingTheCameraAndMicrophone":
@@ -2828,6 +2838,10 @@ const FLUENT_IDS_BY_KEY = {
     "interface-RecordDialog-systemDefaultDevice",
   "interface.RecordDialog.deviceFellBack":
     "interface-RecordDialog-deviceFellBack",
+  "interface.RecordDialog.deviceNotSwitched":
+    "interface-RecordDialog-deviceNotSwitched",
+  "interface.RecordDialog.saySomething": "interface-RecordDialog-saySomething",
+  "interface.RecordDialog.settingsNote": "interface-RecordDialog-settingsNote",
   "interface.RecordDialog.testMicrophone":
     "interface-RecordDialog-testMicrophone",
   "interface.RecordDialog.stopTestingMicrophone":
@@ -3111,6 +3125,7 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.testOff": "notifications-testOff",
   "preferences.moreAutomatic": "preferences-moreAutomatic",
   "preferences.moreBackground": "preferences-moreBackground",
+  "native.backupExclusionFailed": "native-backupExclusionFailed",
   "interface.AddVideo.add": "interface-AddVideo-add",
   "interface.AddVideo.hint": "interface-AddVideo-hint",
   "interface.AddVideo.checking": "interface-AddVideo-checking",
@@ -4415,6 +4430,8 @@ export interface MessageArgsByKey {
   "reader.android.zoomOut": undefined;
   "interface.video.name": { date: FluentArgument; time: FluentArgument };
   "interface.RecordDialog.recordAVideo": undefined;
+  "interface.RecordDialog.recordAVideoFor": { name: FluentArgument };
+  "interface.RecordDialog.recordingSettings": undefined;
   "interface.RecordDialog.unavailable": undefined;
   "interface.RecordDialog.why": undefined;
   "interface.RecordDialog.startingTheCameraAndMicrophone": undefined;
@@ -4430,6 +4447,9 @@ export interface MessageArgsByKey {
   "interface.RecordDialog.unnamedMicrophone": { number: FluentArgument };
   "interface.RecordDialog.systemDefaultDevice": undefined;
   "interface.RecordDialog.deviceFellBack": undefined;
+  "interface.RecordDialog.deviceNotSwitched": undefined;
+  "interface.RecordDialog.saySomething": undefined;
+  "interface.RecordDialog.settingsNote": undefined;
   "interface.RecordDialog.testMicrophone": undefined;
   "interface.RecordDialog.stopTestingMicrophone": undefined;
   "interface.RecordDialog.microphoneLevel": undefined;
@@ -4675,6 +4695,7 @@ export interface MessageArgsByKey {
   "notifications.testOff": undefined;
   "preferences.moreAutomatic": undefined;
   "preferences.moreBackground": undefined;
+  "native.backupExclusionFailed": undefined;
   "interface.AddVideo.add": undefined;
   "interface.AddVideo.hint": undefined;
   "interface.AddVideo.checking": undefined;

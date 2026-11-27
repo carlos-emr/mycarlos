@@ -821,6 +821,9 @@ fn you_rewrite(source: &str, sentence: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

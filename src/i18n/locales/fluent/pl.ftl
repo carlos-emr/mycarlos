@@ -2621,6 +2621,8 @@ reader-android-zoomOut = Pomniejsz
 
 interface-video-name = Film, { $date }, { $time }.mp4
 interface-RecordDialog-recordAVideo = Nagraj film
+interface-RecordDialog-recordAVideoFor = Nagraj film dla: { $name }
+interface-RecordDialog-recordingSettings = Ustawienia nagrywania
 interface-RecordDialog-unavailable = Nagrywanie filmów nie jest dostępne na tym urządzeniu.
 interface-RecordDialog-why = Dlaczego?
 interface-RecordDialog-startingTheCameraAndMicrophone = Uruchamianie aparatu i mikrofonu…
@@ -2636,6 +2638,9 @@ interface-RecordDialog-unnamedCamera = Kamera { $number }
 interface-RecordDialog-unnamedMicrophone = Mikrofon { $number }
 interface-RecordDialog-systemDefaultDevice = Domyślne urządzenie systemu
 interface-RecordDialog-deviceFellBack = Kamera lub mikrofon użyty ostatnio nie jest podłączony, więc używane jest urządzenie domyślne systemu.
+interface-RecordDialog-deviceNotSwitched = Nie udało się otworzyć wybranej kamery lub mikrofonu, więc nadal działa to, które było używane.
+interface-RecordDialog-saySomething = Powiedz coś: pasek powinien się poruszyć.
+interface-RecordDialog-settingsNote = Film jest zapisywany w postaci zaszyfrowanej. myCarlos zapamiętuje te wybory na tym urządzeniu.
 interface-RecordDialog-testMicrophone = Sprawdź mikrofon
 interface-RecordDialog-stopTestingMicrophone = Zakończ sprawdzanie
 interface-RecordDialog-microphoneLevel = Poziom mikrofonu
@@ -3082,6 +3087,8 @@ notifications-testWait = Poczekaj kilka sekund i spróbuj ponownie.
 
 notifications-testFailed = Nie udało się wyświetlić powiadomienia testowego.
 notifications-testOff = Powiadomienia są wyłączone w myCarlos. Włącz je i spróbuj ponownie.
+
+native-backupExclusionFailed = Ten telefon nie zdołał wyłączyć skarbca z kopii zapasowych urządzenia. Spróbuj ponownie.
 
 interface-AddVideo-add = Dodaj film
 
