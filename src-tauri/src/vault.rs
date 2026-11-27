@@ -9339,7 +9339,10 @@ fn keep_out_of_windows_search(path: &Path) {
     let Ok(metadata) = fs::metadata(path) else {
         return;
     };
-    let attributes = metadata.file_attributes() | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+    // NORMAL (0x80) is valid only alone, so it goes when another attribute is added.
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x0000_0080;
+    let attributes =
+        (metadata.file_attributes() & !FILE_ATTRIBUTE_NORMAL) | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
     // SAFETY: `wide` is NUL-terminated and outlives the call.
     let _ =
