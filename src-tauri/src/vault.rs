@@ -962,6 +962,18 @@ pub struct VaultRecord {
     pub original_pdf_available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verified_clinic_name: Option<String>,
+    /// The clinic this document came from, as the library searches and filters by it: the id and
+    /// the name of the LINK of this vault that checked it (the name set at linking, not the
+    /// delivery's own), whether or not the document is Verified now. Absent for a document with no
+    /// such link here (a manual import, or a handover file's claim no link of this vault backs).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clinic_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clinic_name: Option<String>,
+    /// `Some(true)` when the key that signed this document is marked Revoked in that link's key
+    /// list: the screens then say so in place of "Verified". Derived at read time, never stored.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature_key_revoked: Option<bool>,
     /// The patient name and birth date the clinic wrote on a clinic document waiting in Shared
     /// with me (#340), so that the patient sees why it did not file itself. Absent for any other
     /// document, and absent when they are a hidden person's: Shared with me must not show who
@@ -2584,6 +2596,7 @@ impl VaultStore {
                     let verified =
                         delivery::verified_clinic(record, &unlocked.manifest.portal_links);
                     let carried_verified = record.carried.is_some() && verified.is_some();
+                    let clinic = delivery::clinic_view(record, &unlocked.manifest.portal_links);
                     VaultRecord {
                         id: record.id,
                         profile_id: record.profile_id,
@@ -2665,6 +2678,11 @@ impl VaultStore {
                             // Never a date later than now: the time is the file's to claim.
                             .filter(|at| *at <= crate::now_ms()),
                         verified_clinic_name: verified,
+                        clinic_id: clinic.as_ref().map(|view| view.id.clone()),
+                        clinic_name: clinic.as_ref().map(|view| view.name.clone()),
+                        signature_key_revoked: clinic
+                            .as_ref()
+                            .and_then(|view| view.key_revoked.then_some(true)),
                         // A carried aid and service date are shown only once a link of this vault
                         // to the same clinic holds the signing key (design section 7, level 2):
                         // whoever wrote a handover file could have made a consistent aid, and

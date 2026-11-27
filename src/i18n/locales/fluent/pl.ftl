@@ -718,6 +718,10 @@ library-noMatch-title = Brak pasujących dokumentów
 
 library-rename = Zmień nazwę
 
+library-filter-allClinics = Wszystkie kliniki
+
+library-filter-clinicLabel = Klinika
+
 library-search-cleared = Wyszukiwanie wyczyszczone. Foldery w tej lokalizacji: { $folders }. Dokumenty: { $documents }.
 
 library-search-results = Wyniki wyszukiwania. Foldery: { $folders }. Dokumenty: { $documents }.
@@ -1888,6 +1892,8 @@ portal-unlockRefused =
 library-source-clinic = Z { $clinic }
 
 library-source-manualImport = Import ręczny
+
+library-status-keyRevoked = Klucz podpisu unieważniony przez klinikę
 
 library-status-unverified = Nie zweryfikowano
 

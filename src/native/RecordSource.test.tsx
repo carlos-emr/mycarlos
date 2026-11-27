@@ -42,6 +42,23 @@ const CLAIMS = record("claims", "FAKE forwarded letter.pdf", {
   sourceLabel: "FAKE Clinic · Verified",
 });
 
+/** The clinic revoked the key that signed it (#88): not Verified, and it says so; the clinic is
+ * still named. A revoked key is not proof that the document is false, so the words do not say so. */
+const REVOKED = record("revoked", "FAKE revoked letter.pdf", {
+  clinicId: "clinic-1",
+  clinicName: LONG_CLINIC,
+  signatureKeyRevoked: true,
+});
+
+/** A handover record whose key was revoked, with the file's own claim of a check: one status
+ * line, not the claim beside "Signature key revoked by the clinic" (#88). */
+const REVOKED_CLAIM = record("revoked-claim", "FAKE handed-over letter.pdf", {
+  clinicId: "clinic-1",
+  clinicName: LONG_CLINIC,
+  signatureKeyRevoked: true,
+  fileSaysCheckedAtMs: Date.UTC(2026, 0, 2),
+});
+
 const snapshot: VaultSnapshot = {
   profiles: [{ id: "profile-1", displayName: "FAKE Avery", createdAtMs: 1 }],
   // A folder, so that the last column holds a Rename as well as Details.
@@ -54,7 +71,7 @@ const snapshot: VaultSnapshot = {
       createdAtMs: 1,
     },
   ],
-  records: [VERIFIED, MANUAL, CLAIMS],
+  records: [VERIFIED, MANUAL, CLAIMS, REVOKED, REVOKED_CLAIM],
   recovery: null,
   recoveryKeySetAtMs: 1,
   // Main's snapshots carry their native capture (epoch and sequence).
@@ -120,6 +137,11 @@ const expected = (locale: Locale) => {
       tr("library.source.manualImport"),
     ],
     [CLAIMS, tr("library.status.unverified"), CLAIMS.sourceLabel],
+    [
+      REVOKED,
+      tr("library.status.keyRevoked"),
+      tr("library.source.clinic", { clinic: LONG_CLINIC }),
+    ],
   ] as const;
 };
 
@@ -239,6 +261,42 @@ describe("a document's status before its source (#135)", PER_LANGUAGE, () => {
     expect(screen.queryByText(MANUAL_IMPORT_LABEL)).not.toBeInTheDocument();
     expect(
       within(row("en", CLAIMS)).queryByText("Verified", { exact: true }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the clinic revoked the signing key instead of Verified, and still names the clinic (#88)", () => {
+    renderLibrary();
+    const revoked = row("en", REVOKED);
+    expect(
+      within(revoked).getByText("Signature key revoked by the clinic", {
+        exact: true,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(revoked).queryByText("Verified", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(revoked).queryByText("Unverified", { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(revoked).getByText(
+        translate("en", "library.source.clinic", { clinic: LONG_CLINIC }),
+        { exact: true },
+      ),
+    ).toBeInTheDocument();
+    // A handover file's claim of a check is not shown beside the revoked status.
+    const claimed = row("en", REVOKED_CLAIM);
+    expect(
+      within(claimed).getByText("Signature key revoked by the clinic", {
+        exact: true,
+      }),
+    ).toBeInTheDocument();
+    expect(within(claimed).queryByText(/says it was checked/)).toBeNull();
+    // Verified wins when the check passes, whatever else is set.
+    expect(
+      within(row("en", VERIFIED)).queryByText(
+        "Signature key revoked by the clinic",
+      ),
     ).not.toBeInTheDocument();
   });
 

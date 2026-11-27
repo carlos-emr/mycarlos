@@ -1679,6 +1679,9 @@ p {
   font-weight: 700;
   line-height: 1.45;
   white-space: normal;
+  /* Wrap between the words of a status, never inside one: Chinese has no spaces, and the long
+     "Signature key revoked by the clinic" (#88) is written as two words in zh-CN and zh-TW. */
+  word-break: keep-all;
   overflow-wrap: break-word;
 }
 .record-source.verified .record-status {
@@ -2764,6 +2767,7 @@ p {
     .native-location-chip,
     .search input,
     .native-sort-choice,
+    .native-clinic-filter,
     .bulkbar,
     .native-rename-button,
     .native-section-tabs button,
@@ -3269,6 +3273,20 @@ p {
 .native-sort-label {
   color: var(--ink-soft);
   font-weight: 700;
+}
+/* #88: the Clinic filter sits beside "Sort by", its label in view before the choice. */
+.native-clinic-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.native-clinic-filter select {
+  min-height: 44px;
+  max-width: 100%;
+  font: inherit;
 }
 .native-sort-segment {
   flex-wrap: wrap;

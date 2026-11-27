@@ -2,6 +2,7 @@ import { humanValue } from "../test/humanText";
 import { getLocale } from "../i18n";
 import { describe, expect, it } from "vitest";
 import {
+  clinicsOf,
   fileExtension,
   formatBytes,
   formatFileSize,
@@ -164,5 +165,38 @@ describe("formatFileSize", () => {
     // An empty or tiny file shows only its bytes.
     expect(humanValue(formatFileSize(0, false))).toBe(humanValue("0 bytes"));
     expect(humanValue(formatFileSize(999, true))).toBe(humanValue("999 bytes"));
+  });
+});
+
+describe("clinicsOf (#88)", () => {
+  it("lists each clinic once, by id, with the name of the link that checked its documents", () => {
+    expect(
+      clinicsOf([
+        { clinicId: "b", clinicName: "FAKE Lakeside Clinic" },
+        { clinicId: "a", clinicName: "FAKE Riverside Clinic" },
+        { clinicId: "b", clinicName: "FAKE Lakeside Clinic" },
+        {},
+        { clinicId: "c" },
+        { clinicName: "FAKE Nameless Id" },
+      ]),
+    ).toEqual([
+      { id: "b", label: "FAKE Lakeside Clinic" },
+      { id: "a", label: "FAKE Riverside Clinic" },
+    ]);
+    expect(clinicsOf([])).toEqual([]);
+  });
+
+  it("numbers clinics that share a name, in id order, and keeps the others plain", () => {
+    expect(
+      clinicsOf([
+        { clinicId: "z", clinicName: "FAKE Same" },
+        { clinicId: "m", clinicName: "FAKE Same" },
+        { clinicId: "k", clinicName: "FAKE Other" },
+      ]),
+    ).toEqual([
+      { id: "k", label: "FAKE Other" },
+      { id: "m", label: "FAKE Same (1)" },
+      { id: "z", label: "FAKE Same (2)" },
+    ]);
   });
 });

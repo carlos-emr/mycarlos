@@ -369,6 +369,237 @@ const openFolder = (name: RegExp) =>
     ).getByRole("button", { name: humanText(name) }),
   );
 
+describe("search and filter by the clinic a document came from (#88)", () => {
+  const withClinic = (
+    id: string,
+    name: string,
+    clinicId: string | undefined,
+    clinicName: string | undefined,
+  ) => ({
+    ...record(id, name, []),
+    ...(clinicId ? { clinicId, clinicName } : {}),
+  });
+  const clinics: VaultSnapshot = {
+    ...snapshot,
+    folders: [],
+    records: [
+      withClinic(
+        "a1",
+        "FAKE Blood test.pdf",
+        "clinic-a",
+        "FAKE Riverside Clinic",
+      ),
+      withClinic("b1", "FAKE Referral.pdf", "clinic-b", "FAKE Lakeside Clinic"),
+      withClinic("n1", "FAKE Scan.pdf", undefined, undefined),
+      withClinic("a2", "FAKE Letter.pdf", "clinic-a", "FAKE Riverside Clinic"),
+    ],
+  };
+  const names = () => humanValue(shownDocuments()).map(([name]) => name);
+  const clinicSelect = () =>
+    screen.getByRole("combobox", { name: humanText("Clinic") });
+
+  it("finds a document by its clinic's name as well as its own name", () => {
+    renderLibrary(clinics);
+    search("Search everything in My records", "riverside");
+    expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
+    // The document's own name still matches, and a clinic name matches in any case.
+    search("Search everything in My records", "SCAN");
+    expect(names()).toEqual(["FAKE Scan.pdf"]);
+    search("Search everything in My records", "lakeside");
+    expect(names()).toEqual(["FAKE Referral.pdf"]);
+    search("Search everything in My records", "no such clinic");
+    expect(names()).toEqual([]);
+  });
+
+  it("narrows the list to one clinic and goes back to all", () => {
+    renderLibrary(clinics);
+    const select = clinicSelect();
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["All clinics", "FAKE Lakeside Clinic", "FAKE Riverside Clinic"]);
+    expect(names()).toHaveLength(4);
+    fireEvent.change(select, { target: { value: "clinic-a" } });
+    expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
+    // The filter and the search both apply.
+    search("Search everything in My records", "blood");
+    expect(names()).toEqual(["FAKE Blood test.pdf"]);
+    search("Search everything in My records", "");
+    fireEvent.change(clinicSelect(), { target: { value: "" } });
+    expect(names()).toHaveLength(4);
+  });
+
+  it("shows every document of the chosen clinic, filed in a folder or not, and no folder rows", () => {
+    renderLibrary({
+      ...clinics,
+      folders: [folder("letters", "FAKE Letters", null)],
+      records: [
+        ...clinics.records,
+        {
+          ...withClinic(
+            "a3",
+            "FAKE Filed letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+        {
+          ...withClinic(
+            "b3",
+            "FAKE Other filed letter.pdf",
+            "clinic-b",
+            "FAKE Lakeside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+      ],
+    });
+    // Before the choice, the top level shows the unfiled documents and the folder.
+    expect(names()).not.toContain("FAKE Filed letter.pdf");
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(1);
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-a" } });
+    expect(names().sort()).toEqual([
+      "FAKE Blood test.pdf",
+      "FAKE Filed letter.pdf",
+      "FAKE Letter.pdf",
+    ]);
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(0);
+    fireEvent.change(clinicSelect(), { target: { value: "" } });
+    expect(
+      screen.queryAllByRole("article", { name: humanText(/ folder$/) }),
+    ).toHaveLength(1);
+  });
+
+  it("inside a folder, a chosen clinic shows only that clinic's documents in the folder's subtree", () => {
+    renderLibrary({
+      ...clinics,
+      folders: [
+        folder("letters", "FAKE Letters", null),
+        folder("letters-2025", "FAKE 2025 Letters", "letters"),
+      ],
+      records: [
+        ...clinics.records,
+        {
+          ...withClinic(
+            "a3",
+            "FAKE Filed letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+        {
+          ...withClinic(
+            "a4",
+            "FAKE Deep letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          folderIds: ["letters-2025"],
+        },
+        {
+          ...withClinic(
+            "b3",
+            "FAKE Other clinic letter.pdf",
+            "clinic-b",
+            "FAKE Lakeside Clinic",
+          ),
+          folderIds: ["letters"],
+        },
+      ],
+    });
+    openFolder(/^FAKE Letters/);
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-a" } });
+    // This clinic's documents in the folder and below it; not the ones at the top level, not
+    // another clinic's.
+    expect(names().sort()).toEqual([
+      "FAKE Deep letter.pdf",
+      "FAKE Filed letter.pdf",
+    ]);
+  });
+
+  it("forgets the chosen clinic when the person changes, and does not bring it back", () => {
+    renderLibrary({
+      ...clinics,
+      profiles: [
+        ...clinics.profiles,
+        { id: "profile-2", displayName: "FAKE Blake", createdAtMs: 2 },
+      ],
+      records: [
+        ...clinics.records,
+        {
+          ...withClinic(
+            "k1",
+            "FAKE Blake letter.pdf",
+            "clinic-a",
+            "FAKE Riverside Clinic",
+          ),
+          profileId: "profile-2",
+        },
+        {
+          ...withClinic(
+            "k2",
+            "FAKE Blake note.pdf",
+            "clinic-b",
+            "FAKE Lakeside Clinic",
+          ),
+          profileId: "profile-2",
+        },
+      ],
+    });
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-a" } });
+    expect(names().sort()).toEqual(["FAKE Blood test.pdf", "FAKE Letter.pdf"]);
+    const sidebar = screen.getByRole("navigation", {
+      name: humanText("Record library"),
+    });
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Blake/) }),
+    );
+    // The other person, both clinics have a document there: the choice did not follow.
+    expect(clinicSelect()).toHaveValue("");
+    expect(names().sort()).toEqual([
+      "FAKE Blake letter.pdf",
+      "FAKE Blake note.pdf",
+    ]);
+    fireEvent.click(
+      within(sidebar).getByRole("button", { name: humanText(/^FAKE Avery/) }),
+    );
+    expect(clinicSelect()).toHaveValue("");
+    expect(names()).toHaveLength(4);
+  });
+
+  it("offers no clinic filter when no document has a clinic", () => {
+    renderLibrary({ ...clinics, records: [clinics.records[2]] });
+    expect(
+      screen.queryByRole("combobox", { name: humanText("Clinic") }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("tells two clinics with the same name apart, keyed on the id", () => {
+    renderLibrary({
+      ...clinics,
+      records: [
+        withClinic("x1", "FAKE One.pdf", "clinic-1", "FAKE Same Name"),
+        withClinic("x2", "FAKE Two.pdf", "clinic-2", "FAKE Same Name"),
+      ],
+    });
+    const options = within(clinicSelect()).getAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "All clinics",
+      "FAKE Same Name (1)",
+      "FAKE Same Name (2)",
+    ]);
+    fireEvent.change(clinicSelect(), { target: { value: "clinic-2" } });
+    expect(names()).toEqual(["FAKE Two.pdf"]);
+  });
+});
+
 describe("VaultLibrary search", () => {
   const separateScopes: VaultSnapshot = {
     ...filed,

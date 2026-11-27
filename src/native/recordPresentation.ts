@@ -6,6 +6,7 @@ import {
   type MessageKey,
 } from "../i18n";
 import type { IconName } from "../Icon";
+import type { VaultRecord } from "../vault";
 
 export function formatBytes(value: number): string {
   if (value < 1024) return `${formatNumber(value)} B`;
@@ -124,6 +125,46 @@ export const nameIsShared = (name: string) => SHARED_NAMES.has(sharedKey(name));
 // separate mark match the same letter typed precomposed.
 export const searchKey = (value: string) =>
   value.normalize("NFC").toLowerCase();
+
+export interface ClinicChoice {
+  id: string;
+  label: string;
+}
+
+/**
+ * The clinics the given documents came from, one choice per clinic id (#88), by the name of the
+ * link that checked them. Two clinics with the same name are numbered "(1)", "(2)" in id order so
+ * that they can be told apart; the filter is keyed on the id, never the name.
+ */
+export function clinicsOf(
+  records: readonly Pick<VaultRecord, "clinicId" | "clinicName">[],
+): ClinicChoice[] {
+  const nameById = new Map<string, string>();
+  for (const record of records) {
+    if (
+      record.clinicId !== undefined &&
+      record.clinicName !== undefined &&
+      !nameById.has(record.clinicId)
+    )
+      nameById.set(record.clinicId, record.clinicName);
+  }
+  const ids = [...nameById.keys()].sort();
+  const sharing = new Map<string, number>();
+  for (const id of ids) {
+    const name = nameById.get(id) as string;
+    sharing.set(name, (sharing.get(name) ?? 0) + 1);
+  }
+  const numbered = new Map<string, number>();
+  return ids
+    .map((id) => {
+      const name = nameById.get(id) as string;
+      if ((sharing.get(name) ?? 0) < 2) return { id, label: name };
+      const number = (numbered.get(name) ?? 0) + 1;
+      numbered.set(name, number);
+      return { id, label: `${name} (${number})` };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
 
 // The ".pdf" at the end of a document name, in the case the name uses, after
 // a non-empty stem; otherwise "". Imports are offered as PDFs, so no other

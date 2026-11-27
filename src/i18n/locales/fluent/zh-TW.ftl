@@ -604,6 +604,10 @@ library-noMatch-title = 找不到符合的紀錄
 
 library-rename = 重新命名
 
+library-filter-allClinics = 所有診所
+
+library-filter-clinicLabel = 診所
+
 library-search-cleared = 已清除搜尋。此位置的資料夾：{ $folders }。文件：{ $documents }。
 
 library-search-results = 搜尋結果。資料夾：{ $folders }。文件：{ $documents }。
@@ -1666,6 +1670,8 @@ portal-unlockRefused = { $count } 份診所文件無法驗證，因此未新增�
 library-source-clinic = 來自 { $clinic }
 
 library-source-manualImport = 手動匯入
+
+library-status-keyRevoked = 診所已撤銷 簽署金鑰
 
 library-status-unverified = 未驗證
 
