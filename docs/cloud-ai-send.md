@@ -20,7 +20,8 @@ Patients can still save a de-identified file and take it to any service. The fir
   It is in backups; older backups keep it after removal.
 - **Consent, off by default.** The `cloud-ai` Cargo feature is permitted in evaluation builds and
   refused in release builds. The patient reads the notice, enables the device setting and adds a key.
-  Every send requires a preview and **trusted native confirmation**.
+  Consent is required again in each unlocked session and ends when the vault locks. Every send
+  also requires a preview and **trusted native confirmation**.
 - **The page never sends and never holds the key.** Rust re-checks the final text (as it does before a
   save), builds and sends the request, validates the answer, restores the placeholders from the removed
   list the page hands it (checked natively: exact placeholders of this export that stand in the text sent,
@@ -37,15 +38,15 @@ Patients can still save a de-identified file and take it to any service. The fir
 |---|---|
 | Default model | A reviewed model from the selected provider's verified catalogue |
 | Key in backups | No special case; the dialogs warn plainly |
-| Server-side fallbacks | On, with a plain message if the whole chain refuses |
+| Server-side fallbacks | Off. Show the failure for the chosen model and provider. |
 | Cost warning | Bold when the estimate is over $0.50 |
 | Processing location | #25 reviews the selected provider's processing locations and notice before real data |
 | Platforms | Computers first |
 | Stored monthly total | Not now (tokens are in the history) |
 | Retry | None automatic |
 
-Still for Ben or the reviewer: who writes the notice in seven languages (English first here), the #25
-review of this way, and who runs the one live contract check (a real key on FAKE text, by hand, once).
+Ben owns the live contract check using a real key on FAKE text. The seven-language notice and
+the #25 review still need owners.
 
 ## Build order
 

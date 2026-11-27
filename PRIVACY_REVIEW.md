@@ -737,8 +737,8 @@ option stays. This assessment describes the proposed end-to-end send.
   Rust, with fixed instructions, plus the key (which identifies the patient's account to the provider, so
   the provider knows whose account it is whatever was removed) and the computer's internet address. Nothing
   else: no profile, vault, device or document identifier. **Only after a native confirmation for each
-  send** that names the provider, the model, the size and an estimated cost; there is no background send and
-  no "always allow".
+  send** that names the provider, the model, the size and an estimated cost. Consent is required in each
+  unlocked session and ends when the vault locks. There is no background send or automatic fallback.
 - **The key:** typed once, stored encrypted in the vault, never shown again (only its last four characters),
   removed with one confirmed action, and an administration key is refused. **A backup contains it**, and
   older backups keep it after removal; the dialogs say so and advise a key made for myCarlos with a spending
