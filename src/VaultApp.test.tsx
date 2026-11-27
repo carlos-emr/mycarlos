@@ -3619,7 +3619,7 @@ describe("durable vault UI", () => {
         .mockImplementation(async () =>
           captureSnapshot({ ...emptySnapshot, records: [record] }),
         ),
-      viewPage: vi.fn().mockRejectedValue({
+      readAndroidPdf: vi.fn().mockRejectedValue({
         code: "pdf_view_unavailable",
         message: "FAKE Android reader unavailable",
       }),
@@ -3628,8 +3628,13 @@ describe("durable vault UI", () => {
     await user.click(await screen.findByText(record.displayName));
     await user.click(screen.getByRole("button", { name: "Read" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "FAKE Android reader unavailable",
+      "This device does not let myCarlos open documents here.",
     );
+    expect(bridge.readAndroidPdf).toHaveBeenCalledWith(
+      record.id,
+      expect.objectContaining({ close: "Close" }),
+    );
+    expect(bridge.viewPage).not.toHaveBeenCalled();
     expect(bridge.readNativePdf).not.toHaveBeenCalled();
   });
   it.each(["locked", "pdf_locked", "late-locked"] as const)(
