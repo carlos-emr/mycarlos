@@ -1314,6 +1314,9 @@ export async function fakeVaultWith(page: Page, setup: FakeVaultSetup) {
           case "vault_add_vault": {
             if (state.status !== "unlocked")
               throw refuse("locked", "native.error.14");
+            // A degraded (read-only) vault is not left locked behind a new one.
+            if (state.snapshot.recovery !== null)
+              throw refuse("recovery_mode", "native.error.40");
             const typed = (request.name ?? "").trim().toLowerCase();
             if (
               typed === "" ||

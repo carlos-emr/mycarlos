@@ -17332,15 +17332,10 @@ describe("several vaults on one device", () => {
 
   it("sets up another vault from Security: the native add needs this vault open, locks it, and opens the new one", async () => {
     const user = userEvent.setup();
-    const state: "locked" | "unlocked" = "unlocked";
-    const openWhenAsked: string[] = [];
+    // The vault is open when the page asks (nothing else locked it); the native add locks it and
+    // opens the new one, which the fake answers with the new vault's snapshot.
     const bridge = severalVaultBridge({
-      status: vi.fn().mockImplementation(async () => state),
-      addVault: vi.fn().mockImplementation(async () => {
-        // The page asks while this vault is open; the native add locks it, then opens the new one.
-        openWhenAsked.push(state);
-        return captureSnapshot(emptySnapshot);
-      }),
+      status: vi.fn().mockResolvedValue("unlocked"),
     });
     render(<VaultApp bridge={bridge} />);
     await submitSetUp(user);
@@ -17356,9 +17351,9 @@ describe("several vaults on one device", () => {
       PASS,
       "FAKE Robin",
     );
-    // The page never locks first: it is the native add that does, so there is no gap in which the
-    // page could add without the lock.
-    expect(openWhenAsked).toEqual(["unlocked"]);
+    // The page never locks first (the native add does), so there is no gap in which the page
+    // could add without the lock: `lock` is never called, and `addVault` is called with this
+    // vault still open.
     expect(bridge.lock).not.toHaveBeenCalled();
   });
 

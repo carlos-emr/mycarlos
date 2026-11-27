@@ -388,9 +388,10 @@ impl VaultSlots {
     /// **locked here, natively** (`stop_work` first, so what it was doing ends), because an add
     /// opens the new vault and must not leave two open. Everything that can be refused without
     /// touching anything (the inputs `create` would refuse, a name that cannot be a name, a registry
-    /// that cannot be used) is refused BEFORE the lock, so such a refusal leaves the vault open. A
-    /// lock that does not hold (a key derivation or a transfer still running) adds nothing. What can
-    /// only fail later (a name already shared by four vaults, no room, a failed write) leaves the
+    /// that cannot be used, a name already shared by as many vaults as the cap allows) is refused
+    /// BEFORE the lock, so such a refusal leaves the vault open. A lock that does not hold (a key
+    /// derivation or a transfer still running) adds nothing. What can only fail later (no room, a
+    /// failed write, or another window taking the last place of a name in between) leaves the
     /// owner's vault locked: they unlock it again, and the entry that was written is taken out.
     ///
     /// One add or unlock by name runs at a time per device, so an add cannot overlap a guess. An add
@@ -413,6 +414,11 @@ impl VaultSlots {
         if self.current().open_vault_id().is_none() {
             return Err(VaultError::Locked);
         }
+        // A degraded (read-only) vault is repaired or backed up, not left locked behind a new one:
+        // refused, as an import, a hand-over and a backup are, and before anything is locked.
+        if self.current().is_open_in_recovery() {
+            return Err(VaultError::RecoveryMode);
+        }
         // A passphrase or name `create` would refuse registers nothing, and locks nothing.
         crate::vault::check_new_vault_inputs(passphrase, initial_profile_name)?;
         if !crate::vault_registry::name_is_valid(name) {
@@ -421,6 +427,14 @@ impl VaultSlots {
         // Whatever the registry could not be read as at start is left exactly as it is.
         if self.registry_problem().is_some() {
             return Err(VaultError::Storage);
+        }
+        // A name already shared by as many vaults as the cap allows is refused now, with the
+        // owner's vault still open (read from the file as it is now; another window adding the same
+        // name in between is only found out by the write below).
+        match Registry::load(&self.data_dir) {
+            Ok(Some(registry)) => registry.name_has_room(name).map_err(registry_refusal)?,
+            Ok(None) => {}
+            Err(_) => return Err(VaultError::Storage),
         }
         // Lock the owner's vault first. If it does not hold, nothing was added.
         stop_work();
@@ -1532,9 +1546,8 @@ mod tests {
         assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
         assert_eq!(slots.slots().len(), slot_count);
         assert_eq!(slots.current_slot(), current);
-        // What is only found out at the registry comes after the lock: the owner's vault is locked
-        // (they unlock it again), and nothing was added.
-        assert!(slots.current().open_vault_id().is_none());
+        // A capped name is refused before anything is locked: the owner's vault is still open.
+        assert!(slots.current().open_vault_id().is_some());
     }
 
     #[test]
@@ -1634,6 +1647,28 @@ mod tests {
         assert_eq!(slots.slots().len(), 2);
         assert_eq!(slots.current_slot(), SlotId::Main);
         assert!(slots.store_of(second).is_some());
+    }
+
+    #[test]
+    fn given_the_screens_vault_is_in_recovery_mode_when_a_vault_is_added_then_it_is_refused_and_stays_open(
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let (slots, _) = two_vault_device(temp.path());
+        let before = fs::read(temp.path().join("vaults.v1")).unwrap();
+        slots.current().unlock(PASSWORD).unwrap();
+        slots.current().put_in_recovery_for_test();
+        let stopped = Cell::new(0);
+        assert!(matches!(
+            slots.add_vault("Garden", PASSWORD, "FAKE Gardener", 5, || stopped
+                .set(stopped.get() + 1)),
+            Err(VaultError::RecoveryMode)
+        ));
+        // Nothing was stopped, locked or written: the vault is as it was, still open.
+        assert_eq!(stopped.get(), 0);
+        assert!(slots.current().open_vault_id().is_some());
+        assert_eq!(fs::read(temp.path().join("vaults.v1")).unwrap(), before);
+        assert_eq!(slots.slots().len(), 2);
+        assert_eq!(slots.current_slot(), SlotId::Main);
     }
 
     #[test]

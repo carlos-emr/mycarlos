@@ -9715,6 +9715,25 @@ impl VaultStore {
         self.session().as_ref().map(|open| open.manifest.vault_id)
     }
 
+    /// Whether the open vault is in recovery mode (read-only: its files are damaged or a write
+    /// failed); false when it is locked. Asked by what must not go on beside a degraded vault.
+    pub(crate) fn is_open_in_recovery(&self) -> bool {
+        self.session()
+            .as_ref()
+            .is_some_and(|open| open.recovery.is_some())
+    }
+
+    /// For tests: puts the open vault into recovery mode, as a failed write does.
+    #[cfg(test)]
+    pub(crate) fn put_in_recovery_for_test(&self) {
+        self.unlocked
+            .lock()
+            .unwrap()
+            .as_mut()
+            .expect("the vault is open")
+            .recovery = Some(RecoveryReason::WriteFailed);
+    }
+
     /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the
     /// vault id and its links under ONE session guard and doing the wipe inside it, so a lock in
     /// between cannot turn into a sweep with an empty link set that wipes every live key. Returns

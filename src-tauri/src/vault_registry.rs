@@ -386,6 +386,15 @@ impl Registry {
         Ok(slot)
     }
 
+    /// Whether a vault could be added under `name` now, without adding it: the same checks as
+    /// [`Registry::add_extra`] (a name that can be a name, and not already taken by
+    /// [`DUPLICATE_NAME_CAP`] vaults), so an owner can be refused BEFORE their vault is locked.
+    pub(crate) fn name_has_room(&self, name: &str) -> Result<(), RegistryError> {
+        let name = checked_name(name).map_err(RegistryError::Name)?;
+        let hash = self.hash_name(&name);
+        self.refuse_a_name_taken_too_often(&hash, None)
+    }
+
     /// Lists a vault that already exists on disk under `slot` (its folder was found, and opened by
     /// the owner's passphrase) with the name the owner now gives it (#357 4c-2). Never the default
     /// unless the registry was empty. `slot` must be an extra one the registry does not list yet
