@@ -78,6 +78,16 @@ async function fortyMore(page: Page, folderIds: string[] = []) {
   }, folderIds);
 }
 
+/** How far down the list has been scrolled: the list's own region on a wide window (the head
+ * stays in view there), the page on a phone. */
+const scrolledDown = (page: Page) =>
+  page.evaluate(() => {
+    const region = document.querySelector(".library-list-scroll");
+    return region && getComputedStyle(region).overflowY === "auto"
+      ? region.scrollTop
+      : window.scrollY;
+  });
+
 /** Forty more documents, scrolled down to the last of them. */
 async function longList(page: Page) {
   await fortyMore(page);
@@ -92,7 +102,7 @@ async function longList(page: Page) {
 }
 
 const keepsPlace = async (
-  heading: Locator,
+  page: Page,
   target: Locator,
   before: number | undefined,
 ) => {
@@ -100,15 +110,19 @@ const keepsPlace = async (
     (await target.boundingBox())?.y,
     "where the document is on screen",
   ).toBeCloseTo(before ?? NaN, 0);
-  await expect(heading).not.toBeInViewport();
+  // Still scrolled down: nothing jumped back to the top or to the heading.
+  expect(
+    await scrolledDown(page),
+    "how far the list is scrolled",
+  ).toBeGreaterThan(0);
 };
 
 test("closing a document's details far down a long list keeps the place (#90)", async ({
   page,
 }) => {
-  const { heading, target } = await longList(page);
+  const { target } = await longList(page);
   await settle(page);
-  await expect(heading).not.toBeInViewport();
+  expect(await scrolledDown(page)).toBeGreaterThan(0);
   const before = (await target.boundingBox())?.y;
 
   await press(target);
@@ -118,7 +132,7 @@ test("closing a document's details far down a long list keeps the place (#90)", 
   await expect(details).toBeHidden();
   await settle(page);
 
-  await keepsPlace(heading, target, before);
+  await keepsPlace(page, target, before);
   await focusOnPage(page);
   await expectOnlyFakedCommands(page);
 });
@@ -127,9 +141,9 @@ test("closing a document's details far down a long list keeps the place (#90)", 
 test("Escape closing details opened with a pointer keeps the place (#90)", async ({
   page,
 }) => {
-  const { heading, target } = await longList(page);
+  const { target } = await longList(page);
   await settle(page);
-  await expect(heading).not.toBeInViewport();
+  expect(await scrolledDown(page)).toBeGreaterThan(0);
   const before = (await target.boundingBox())?.y;
 
   await press(target);
@@ -139,7 +153,7 @@ test("Escape closing details opened with a pointer keeps the place (#90)", async
   await expect(details).toBeHidden();
   await settle(page);
 
-  await keepsPlace(heading, target, before);
+  await keepsPlace(page, target, before);
   await focusOnPage(page);
   await expectOnlyFakedCommands(page);
 });
@@ -148,14 +162,14 @@ test("a key that keeps the vault open after pointer use keeps the place (#90)", 
   page,
 }) => {
   await page.clock.install();
-  const { heading, target } = await longList(page);
+  const { target } = await longList(page);
   await page.clock.runFor(1000);
   await press(target);
   const details = page.getByRole("dialog");
   await press(details.getByRole("button", { name: "Close document details" }));
   await expect(details).toBeHidden();
   await page.clock.runFor(1000);
-  await expect(heading).not.toBeInViewport();
+  expect(await scrolledDown(page)).toBeGreaterThan(0);
   const before = (await target.boundingBox())?.y;
 
   // Idle until the warning, 30 seconds before the five-minute lock. Any key
@@ -167,7 +181,7 @@ test("a key that keeps the vault open after pointer use keeps the place (#90)", 
   await expect(warning).toBeHidden();
   await page.clock.runFor(1000);
 
-  await keepsPlace(heading, target, before);
+  await keepsPlace(page, target, before);
   await focusOnPage(page);
   await expectOnlyFakedCommands(page);
 });

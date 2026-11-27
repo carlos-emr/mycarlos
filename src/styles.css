@@ -5210,6 +5210,88 @@ button:disabled,
   margin-top: 2px;
 }
 
+/* The library fits the window (Ben, 24 Nov): on a wide, tall enough window the page does not
+   scroll. The title bar, the sidebar, the path and the head with its actions stay where they are;
+   everything under them (the notices, the search, which sticks to the top of the region, and the
+   list of folders and documents) scrolls in its own region. The sidebar scrolls on its own if it
+   overflows, and any other section (Security, Preferences, Hidden...) scrolls as a whole inside
+   the window, as the page did. On a phone, and on a window too short for this, the page scrolls
+   as before. If what stays above the region ever leaves it less than 14rem (very large text), the
+   main area scrolls as a whole instead of squeezing the region to nothing. */
+@media (min-width: 56.25em) and (min-height: 32em) {
+  .native-vault-page {
+    /* Positioned, so that what is placed absolutely inside it (the screen-reader-only lines) is
+       clipped with it and cannot make the document itself scroll. */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .native-vault-page > * {
+    flex: none;
+  }
+  .native-vault-page > .page-wrap {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+  }
+  .native-vault-page .app-window {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .native-vault-page .app-window > * {
+    flex: none;
+  }
+  .native-vault-page .app-window > .app-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .native-vault-page .app-body > * {
+    position: relative;
+    min-height: 0;
+    overflow-y: auto;
+    /* Fill the row, whatever the section asked (.purpose-screen starts at the top and would
+       grow past the window, with nothing to scroll it). */
+    align-self: stretch;
+  }
+  .native-vault-page .library-main {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+  }
+  .native-vault-page .library-main > * {
+    flex: none;
+  }
+  /* The region reaches the main area's edges, so that its scrollbar sits at the window's edge and
+     not inside the padding; its own padding keeps the content where it was. */
+  .native-vault-page .library-main > .library-list-scroll {
+    flex: 1 1 auto;
+    min-height: 14rem;
+    margin: 0 -22px;
+    padding: 0 22px 24px;
+    overflow-y: auto;
+    /* The search row sticks to the top, so a row focused from below is scrolled to just under it
+       and not behind it (WCAG 2.2, 2.4.11). VaultLibrary.tsx keeps the variable at the row's own
+       height, whatever the text size; 4.5rem is the answer before it has measured. */
+    scroll-padding-top: calc(var(--library-sticky-height, 4.5rem) + 4px);
+  }
+  .native-vault-page .library-list-scroll .library-search-row {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 4px 0 8px;
+    background: var(--paper);
+  }
+}
+
 /* Add a video: the button, its progress and its answer, as one item of the library's button row. */
 .add-video {
   display: inline-flex;
