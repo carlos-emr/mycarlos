@@ -135,7 +135,7 @@ pub(crate) fn summary_system_prompt(language: UiLocale) -> String {
 }
 
 /// The structured answer asked for: a few sentences, each with its quote.
-fn summary_schema() -> serde_json::Value {
+pub(crate) fn summary_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {

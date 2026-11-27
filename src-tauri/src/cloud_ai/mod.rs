@@ -23,6 +23,10 @@
 pub(crate) mod client;
 pub(crate) mod exchanges;
 pub(crate) mod keytest;
+// The providers (Anthropic, OpenAI, Gemini): hosts, key shapes, request builders and the one address
+// check. A skeleton, wired into the send path by the next change, so unused until then.
+#[allow(dead_code)]
+pub(crate) mod provider;
 pub(crate) mod request;
 pub(crate) mod response;
 pub(crate) mod restore;
