@@ -76,6 +76,8 @@ mod profile_import;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
 #[cfg(test)]
+mod refusal_tests;
+#[cfg(test)]
 mod save_stage_tests;
 // Backups that carry the videos or leave them out (#359 PR 6).
 mod backup_video;

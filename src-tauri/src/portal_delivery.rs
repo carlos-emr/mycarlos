@@ -957,3 +957,6 @@ pub fn head_bytes(head: &str) -> Option<[u8; 32]> {
     }
     Some(bytes)
 }
+
+#[cfg(test)]
+mod refusal_tests;

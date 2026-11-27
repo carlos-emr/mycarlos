@@ -1638,3 +1638,6 @@ the patient to use it, such as the clinic's number to call.";
         assert_eq!(next_line(&mut &b""[..]), None);
     }
 }
+
+#[cfg(test)]
+mod refusal_tests;

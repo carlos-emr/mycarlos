@@ -1321,6 +1321,9 @@ pub(crate) mod extraction_testing {
 }
 
 #[cfg(test)]
+mod refusal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

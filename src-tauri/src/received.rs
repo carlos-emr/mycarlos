@@ -797,3 +797,19 @@ mod tests {
         assert!(files.take(&[Uuid::new_v4()]).is_none());
     }
 }
+
+#[cfg(test)]
+mod not_pdf_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_is_not_a_pdf_says_so_and_is_told_apart_from_any_other_failure() {
+        assert_eq!(NotPdf.to_string(), "the file is not a PDF");
+        let marked = io::Error::new(io::ErrorKind::InvalidData, NotPdf);
+        assert!(is_not_pdf(&marked));
+        assert!(marked.to_string().contains("not a PDF"));
+        // Any other failure, with or without a source, is not that answer.
+        assert!(!is_not_pdf(&io::Error::other("FAKE read failed")));
+        assert!(!is_not_pdf(&io::Error::from(io::ErrorKind::UnexpectedEof)));
+    }
+}
