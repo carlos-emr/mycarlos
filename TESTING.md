@@ -36,7 +36,7 @@ welcome as pull requests.
 | Android | Android debug build | `myCarlos-Android-Evaluation` | Android phones (arm64) and emulators on a PC or Mac |
 | iOS | iOS simulator debug build | `myCarlos-iOS-Simulator-Evaluation` | The iOS Simulator on an Apple silicon Mac with Xcode |
 
-Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, and `BUILD.txt`,
+Each download is a ZIP holding the app, a `sample-files` folder of FAKE PDFs, two FAKE pictures (with FAKE GPS and details) and a short FAKE video, and `BUILD.txt`,
 which records the source it was built from; include it in bug reports. (It is not a safety
 check: the run page in step 2 is.) Downloads expire after 30 days, so use the newest run.
 These are unoptimized debug builds, so they are large: the Android APK is about 320 MB.
