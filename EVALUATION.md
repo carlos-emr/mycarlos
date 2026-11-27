@@ -71,6 +71,42 @@ In a native build, additionally:
 8. On Android, use a test document provider that fails after accepting some bytes. Confirm the app
    says the destination may contain a partial readable copy, then inspect and delete that
    destination before retrying. A provider-backed destination is not an atomic export.
+9. On a Mac (#52, "Open With"): with the built app in place, check that a PDF's Finder **Open With**
+   menu lists myCarlos, from Finder and from a Mail attachment's right-click menu.
+   - **App not running, vault locked (the start):** choose Open With. myCarlos starts and the
+     unlock screen says "1 shared file is waiting. Unlock and it goes into Shared with me. If
+     myCarlos closes first, it is not kept: share it again." After unlocking, the file is in
+     **Shared with me**.
+   - **App running and unlocked:** choose Open With again. The file appears in **Shared with me**
+     when the window next comes to the front (the page looks when it gets focus). A drop on the
+     Dock icon while myCarlos is frontmost also waits for the next time the window gets focus, so
+     note whether the file arrives at once or only after switching away and back.
+   - **Quit before unlocking:** open a PDF with myCarlos, quit without unlocking, start myCarlos
+     again: the file is **gone** (it is kept in memory only, as the unlock screen says). This is
+     expected; record that it is.
+   - On a Mac whose default PDF app is Preview, confirm double-clicking a PDF still opens Preview
+     and **Get Info > Open with** still shows Preview.
+   - Record the macOS version and the Mac's model.
+
+   `node scripts/check-macos-pdf-association.mjs <myCarlos.app>` checks the built app's
+   `Info.plist` for the same thing (role Viewer, rank Alternate, one PDF type, nothing exported).
+
+10. On Android (#50, the Share menu): from Gmail, Outlook, Samsung Email and Files, share a PDF
+   and confirm myCarlos is listed and the file arrives in **Shared with me** once the vault is
+   open. Share two PDFs at once. Open a PDF from the same apps and confirm myCarlos is **not**
+   offered to open it. Share a PDF the sender labels `application/octet-stream` and note whether
+   myCarlos is listed (it is not expected to be). On Android 11 or older, also share a PDF, leave
+   myCarlos without unlocking until its share screen is gone, then unlock: note whether the file
+   is added or named as one that could not be opened.
+   - **Known gap, to record, not to pass:** share a PDF while the vault is locked, then end the
+     app (swipe it away) and start it again: the file is **gone**. Shared files are held in
+     memory until the vault is unlocked, as the unlock screen says ("If myCarlos closes first, it
+     is not kept: share it again"). Keeping them across a quit needs the sealed inbox (#49),
+     which is not built, so that criterion of #50 stays open.
+   - Record the phone's model and Android version.
+
+   `node scripts/check-android-pdf-share.mjs <AndroidManifest.xml>` checks the manifest after
+   the Android build (the filters are written by the cargo build, not by `tauri android init`).
 
 The Rust suite automates abrupt process termination after an encrypted chunk write, completed
 staging, object rename, each redundant manifest write, and each deletion boundary. It also covers
@@ -93,7 +129,7 @@ Record evidence for these questions rather than treating a successful build as a
 | Shared UI | Can one responsive React interface serve the target form factors? | Yes, at POC depth |
 | Native bridge | Can the UI call a narrow, typed Rust command? | Yes |
 | File chooser | Does the platform picker work consistently? | Implemented; real devices still required |
-| Accessibility | Is the experience usable with target assistive technology? | Automated WCAG 2.0–2.2 A/AA checks pass across browser and durable-vault states; axe also runs at both kinds of 200% text size, where nothing is cut off at the app's own Text size, while at the reader's 200% default text some controls are known to be cut off (#84); modal focus and keyboard folder movement are implemented; manual testing required |
+| Accessibility | Is the experience usable with target assistive technology? | Automated WCAG 2.0–2.2 A/AA checks pass across browser and durable-vault states; axe also runs at both kinds of 200% text size (the app's App zoom and the reader's default text), where nothing is cut off (#84), and the setup's Create button stays reachable from 320 to 1100 px wide at the reader's 200% default text; modal focus and keyboard folder movement are implemented; manual testing required |
 | Secure vault | Can records be encrypted, recovered, backed up, and deleted safely? | Local encrypted import/export and live-vault deletion implemented; independent review, device restore, and backup tombstones remain |
 | Mobile APIs | Do biometrics, notifications, deep links, and background work meet requirements? | Not evaluated |
 | Operations | Can the app be signed, observed safely, updated, and supported? | No-egress/incident/support-bundle baseline and dependency SBOM CI recorded; signing, updating, ownership and drills remain |

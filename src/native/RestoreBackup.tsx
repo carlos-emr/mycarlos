@@ -311,6 +311,9 @@ export function RestoreBackup({
         {status}
       </p>
       {error && <p role="alert">{error}</p>}
+      {preview && preview.leftOut > 0 && (
+        <p className="restore-left-out">{t("restore.leftOut")}</p>
+      )}
       {preview && (
         <>
           {needsAgreement && (

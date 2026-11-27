@@ -22,9 +22,10 @@ export function photoName(now: Date): string {
   return formatPhotoName(getLocale(), filenameText(date), filenameText(time));
 }
 
-/** The JPEG suffix of a photo name, with its stored case, after a nonempty name. */
+/** The JPEG or PNG suffix of a picture's name, with its stored case, after a nonempty name. The
+ * vault gives an imported picture the suffix of what it is, and renames keep it. */
 export const photoExtension = (name: string) =>
-  /^[\s\S]+(\.jpe?g)$/i.exec(name)?.[1] ?? "";
+  /^[\s\S]+(\.(?:jpe?g|png))$/i.exec(name)?.[1] ?? "";
 
 /** The longest side a photo is saved at; a larger camera frame is scaled
  * down. The vault refuses more than 8192 pixels a side (photo.rs). */

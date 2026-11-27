@@ -27,12 +27,17 @@ import {
   vaultErrorMessage,
   type KnownIdentifiers,
   type PatientProfile,
+  type TextCopyOutcome,
+  type TextRange,
   type TextSaveOutcome,
   type VaultRecord,
 } from "../vault";
 import type { DocumentText } from "../documentText";
 import {
   deidentify,
+  keepAllAsMedicalTerm,
+  keepAsMedicalTerm,
+  keptEponymRanges,
   removeMore,
   restoreChecked,
   type Deidentified,
@@ -93,6 +98,10 @@ function placeholderWords(locale: Locale): PlaceholderVocabulary {
         locale,
         "interface.AnonymizePreview.note.ageOver90",
       ),
+      otherForm: (n) =>
+        translatePlain(locale, "interface.AnonymizePreview.note.otherForm", {
+          n,
+        }),
     },
   };
 }
@@ -128,6 +137,19 @@ const pageList = (pages: number[]) =>
  * the vault's own identifiers and writes the fixed first line (AI-02).
  * Nothing is saved without this preview and its confirmation. Computers
  * only, as the reader is. */
+/** The words around a removed word in the document, on one line, for the "Keep" rows. */
+function eponymContext(
+  source: string,
+  part: { start: number; end: number },
+): string {
+  const from = Math.max(0, part.start - 24);
+  const text = source
+    .slice(from, part.end + 24)
+    .replace(/\s+/gu, " ")
+    .trim();
+  return `${from > 0 ? "…" : ""}${text}${part.end + 24 < source.length ? "…" : ""}`;
+}
+
 export function AnonymizePreview({
   record,
   people,
@@ -137,6 +159,7 @@ export function AnonymizePreview({
   knownDetails,
   pickDestination,
   saveText,
+  copyText,
   exportHeader,
   cloudAi = null,
   onClose,
@@ -155,7 +178,15 @@ export function AnonymizePreview({
     pickId: string,
     ticket: string,
     text: string,
+    kept?: TextRange[],
   ) => Promise<TextSaveOutcome>;
+  /** The native re-check a save runs, for a copy: the file text approved to put on the
+   * clipboard, or a refusal with the ranges still holding a detail. */
+  copyText: (
+    ticket: string,
+    text: string,
+    kept?: TextRange[],
+  ) => Promise<TextCopyOutcome>;
   /** The fixed first line of the file, shown so the patient knows. */
   exportHeader: string;
   /** The cloud AI bridge (#72), given only in a build with the cloud AI flag; the send step
@@ -286,6 +317,21 @@ export function AnonymizePreview({
     }
   };
 
+  /** Keeps one removed word as a medical term (a new step the patient can undo). */
+  const keepOne = (sentStart: number, sentEnd: number) => {
+    if (!current) return;
+    try {
+      const next = keepAsMedicalTerm(current, sentStart, sentEnd);
+      setHistory((steps) => [...steps, next]);
+    } catch {
+      /* the part is no longer a candidate */
+    }
+  };
+  const keepAll = (phrase: string) => {
+    if (!current) return;
+    setHistory((steps) => [...steps, keepAllAsMedicalTerm(current, phrase)]);
+  };
+
   /** The selection, as a range of the shown text, when it lies in it. */
   const selectedRange = (): [number, number] | null => {
     const selection = window.getSelection();
@@ -383,37 +429,42 @@ export function AnonymizePreview({
     setNotice("");
   };
 
-  /** Exactly what Save would write: the fixed first line, a blank line, the text, the line that
-   * says where a long document was cut (when it was), and a last newline. This is the rule of the
-   * native save (`vault_export_text_picked`); the isolation marks Fluent puts round a number are
-   * not part of it. */
-  const fileText = () => {
-    const plain = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
-    let content = `${plain(exportHeader)}\n\n${current?.toSend ?? ""}`;
-    if (text && text.truncated && text.pages.length > 0)
-      content += `\n\n${plain(
-        translateNow("aiHelper.exportCut", {
-          page: text.pages[text.pages.length - 1].index + 1,
-        }),
-      )}`;
-    return `${content}\n`;
-  };
-
-  /** Copies the same text, for a person who pastes it into an AI by hand. The clipboard is the web
-   * one: the app has no clipboard plugin and gains no permission for this. */
-  const copyText = async () => {
-    if (!current) return;
+  /** Copies the text, for a person who pastes it into an AI by hand. Copy is never weaker than
+   * Save: the native side runs the same re-check on the same text and returns the file Save would
+   * write (first line, cut line, final newline); only what it returns reaches the clipboard. A
+   * refusal is handled as Save's is: the details it found are taken out, for the patient to
+   * check. The clipboard is the web one: the app has no clipboard plugin and gains no
+   * permission for this. */
+  const copyTheText = async () => {
+    if (!current || !ticket) return;
+    setSaving(true);
+    setError("");
     try {
-      await navigator.clipboard.writeText(fileText());
-      setNotice(
-        deferredText(() => translateNow("interface.AnonymizePreview.copied")),
+      const outcome = await copyText(
+        ticket,
+        current.toSend,
+        keptEponymRanges(current),
       );
-    } catch {
-      setNotice(
-        deferredText(() =>
-          translateNow("interface.AnonymizePreview.copyFailed"),
-        ),
-      );
+      if (outcome.approved === null) {
+        refuse(outcome.hits);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(outcome.approved);
+        setNotice(
+          deferredText(() => translateNow("interface.AnonymizePreview.copied")),
+        );
+      } catch {
+        setNotice(
+          deferredText(() =>
+            translateNow("interface.AnonymizePreview.copyFailed"),
+          ),
+        );
+      }
+    } catch (failure) {
+      setError(deferredText(() => vaultErrorMessage(failure)));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -423,8 +474,8 @@ export function AnonymizePreview({
     setPutBack({ parts: result.parts, flagged: result.flagged.length });
   };
 
-  /** What native code still found (a refused Save, or a refused cloud send): taken out, placeholders
-   * and moved dates whole, for the patient to check and try again. */
+  /** What native code still found (a refused Save or copy, or a refused cloud send): taken out,
+   * placeholders and moved dates whole, for the patient to check and try again. */
   const refuse = (hits: { start: number; end: number }[]) => {
     if (!current) return;
     let step = current;
@@ -460,7 +511,12 @@ export function AnonymizePreview({
         );
         return;
       }
-      const outcome = await saveText(pickId, ticket, current.toSend);
+      const outcome = await saveText(
+        pickId,
+        ticket,
+        current.toSend,
+        keptEponymRanges(current),
+      );
       if (outcome.saved) {
         setTicket(null);
         setSaved(true);
@@ -503,6 +559,9 @@ export function AnonymizePreview({
       runs.push({ start: at, text: current.toSend.slice(at) });
   }
   const possibleNames = current?.onDevice.possibleNames ?? [];
+  const eponymCandidates = (current?.onDevice.removed ?? []).filter(
+    (part) => part.eponym !== undefined,
+  );
   // Capitalised words and long numbers still in the text: highlighted for the patient to look
   // at, never removed by themselves.
   const checks = current
@@ -824,6 +883,49 @@ export function AnonymizePreview({
                 </ul>
               </div>
             )}
+            {eponymCandidates.length > 0 && (
+              <div className="native-anonymize-possible">
+                <h3>
+                  {translateNow("interface.AnonymizePreview.eponymTitle")}
+                </h3>
+                <ul>
+                  {eponymCandidates.map((part) => (
+                    <li key={part.sentStart}>
+                      <span>
+                        {translateNow("interface.AnonymizePreview.eponymOne", {
+                          phrase: part.eponym ?? "",
+                        })}
+                      </span>{" "}
+                      {/* The words around it, so that "Graves' son" is told from "Graves'
+                          disease" before one is kept; each Keep has a name of its own. */}
+                      <q className="native-anonymize-context">
+                        {eponymContext(current?.onDevice.source ?? "", part)}
+                      </q>{" "}
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        aria-label={`${translateNow("interface.AnonymizePreview.eponymKeep")} “${eponymContext(current?.onDevice.source ?? "", part)}”`}
+                        onClick={() => keepOne(part.sentStart, part.sentEnd)}
+                      >
+                        {translateNow("interface.AnonymizePreview.eponymKeep")}
+                      </button>{" "}
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => keepAll(part.eponym ?? "")}
+                      >
+                        {translateNow(
+                          "interface.AnonymizePreview.eponymKeepAll",
+                          { phrase: part.eponym ?? "" },
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <form className="native-anonymize-tools" onSubmit={removePhrase}>
               {/* Two groups, each with its own row: what is selected, and a word or phrase to
                   remove everywhere (its label above its field, its buttons below). */}
@@ -887,8 +989,8 @@ export function AnonymizePreview({
               <button
                 className="button"
                 type="button"
-                disabled={busy}
-                onClick={() => void copyText()}
+                disabled={busy || !ticket}
+                onClick={() => void copyTheText()}
               >
                 {translateNow("interface.AnonymizePreview.copy")}
               </button>

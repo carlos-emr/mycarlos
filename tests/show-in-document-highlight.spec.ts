@@ -109,6 +109,22 @@ const picture = (reader: Locator, number: number) =>
 const boxes = (reader: Locator) =>
   reader.locator(".native-reader-boxes > span");
 const mark = (reader: Locator) => reader.locator(".native-reader-text mark");
+/** How the marked words look and whether assistive technology still has them. */
+const markLook = (reader: Locator) =>
+  mark(reader).evaluate((element) => {
+    const style = getComputedStyle(element);
+    const hidden = element.closest("[aria-hidden='true'], [hidden], [inert]");
+    return {
+      background: style.backgroundColor,
+      outline: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      visibility: style.visibility,
+      display: style.display,
+      focusVisible: element.matches(":focus-visible"),
+      hiddenFromAssistiveTechnology: hidden !== null,
+    };
+  });
+const TRANSPARENT = "rgba(0, 0, 0, 0)";
 const unfold = (reader: Locator) =>
   reader.getByRole("button", {
     name: en("ai.summary.showWhole"),
@@ -117,7 +133,11 @@ const unfold = (reader: Locator) =>
 
 /** Summary (after the AI helper's notice), then the page-2 sentence's Show
  * in document. */
-async function showQuote(page: Page, reader: Locator) {
+async function showQuote(
+  page: Page,
+  reader: Locator,
+  { keyboard = false }: { keyboard?: boolean } = {},
+) {
   await reader
     .getByRole("button", { name: en("ai.summary.button"), exact: true })
     .click();
@@ -136,24 +156,60 @@ async function showQuote(page: Page, reader: Locator) {
     exact: true,
   });
   await expect(show).toHaveCount(FAKE_PAGE_COUNT);
-  await show.nth(1).click();
+  if (keyboard) {
+    // As a keyboard user does it: focus the button and press Enter.
+    await show.nth(1).focus();
+    await page.keyboard.press("Enter");
+  } else {
+    await show.nth(1).click();
+  }
   await expect(picture(reader, 2)).toBeVisible();
 }
 
-/** Where each box is, in fractions of the picture. */
+/** Where each box is, in fractions of the picture, with the picture's size in
+ * CSS pixels and whether it is the settled one.
+ *
+ * Everything is read in ONE browser turn. Reading the picture and then each box
+ * with separate calls was the flake (#292's zoom check, red on main): after a
+ * zoom the reader first scales the old picture to the new width, then, about
+ * 100 ms later, swaps in the page drawn at the new size, and the layout moves
+ * (the picture's height changes by under a pixel, and its top by 16px). A box
+ * read after that swap, over a picture read before it, came out 0.007 of the
+ * page away from where it is. In one turn the picture and the boxes always
+ * belong together.
+ *
+ * `settled`: the picture on screen is the page drawn at (at least) its width. */
 async function placed(reader: Locator) {
-  const frame = (await picture(reader, 2).boundingBox())!;
-  const found = [];
-  for (const box of await boxes(reader).all()) {
-    const at = (await box.boundingBox())!;
-    found.push([
-      (at.x - frame.x) / frame.width,
-      (at.y - frame.y) / frame.height,
-      (at.x + at.width - frame.x) / frame.width,
-      (at.y + at.height - frame.y) / frame.height,
-    ]);
-  }
-  return found;
+  return reader.evaluate((root) => {
+    const image = root.querySelector<HTMLImageElement>(
+      ".native-reader-picture img",
+    )!;
+    const frame = image.getBoundingClientRect();
+    const found = [...root.querySelectorAll(".native-reader-boxes > span")].map(
+      (box) => {
+        const at = box.getBoundingClientRect();
+        return [
+          (at.x - frame.x) / frame.width,
+          (at.y - frame.y) / frame.height,
+          (at.x + at.width - frame.x) / frame.width,
+          (at.y + at.height - frame.y) / frame.height,
+        ];
+      },
+    );
+    return {
+      boxes: found,
+      width: frame.width,
+      height: frame.height,
+      settled:
+        image.complete && image.naturalWidth >= Math.round(frame.width) - 1,
+    };
+  });
+}
+
+/** The boxes' places, once the picture has settled after a change of size. */
+async function placedSettled(reader: Locator) {
+  await expect.poll(async () => (await placed(reader)).settled).toBe(true);
+  return placed(reader);
 }
 
 /** Whether `element` is in full view inside its scroller. */
@@ -203,7 +259,7 @@ test("marks the quote on the page picture and in the text, and keeps the helper'
   ]);
   // The first box sits on the first drawn line: its left at the text's
   // margin, and around the line's baseline, 62% down the page.
-  const fitted = await placed(reader);
+  const { boxes: fitted } = await placedSettled(reader);
   expect(fitted[0][0]).toBeCloseTo(0.1, 2);
   expect(fitted[0][1]).toBeLessThan(0.62);
   expect(fitted[0][3]).toBeGreaterThan(0.62);
@@ -211,6 +267,16 @@ test("marks the quote on the page picture and in the text, and keeps the helper'
   // The marked words keep the focus, and both are in view.
   await expect(mark(reader)).toBeFocused();
   await expect(mark(reader)).toHaveText(QUOTE);
+  // The picture shows the quote, so the text's mark is not drawn a second time: no fill and no
+  // outline (unless a keyboard user needs to see the focus), yet it is still there for assistive
+  // technology: not hidden, not removed, not moved out of the reading order.
+  const quiet = await markLook(reader);
+  expect(quiet.background).toBe(TRANSPARENT);
+  if (!quiet.focusVisible) expect(quiet.outline).toBe("none");
+  expect(quiet.visibility).toBe("visible");
+  expect(quiet.display).not.toBe("none");
+  expect(quiet.hiddenFromAssistiveTechnology).toBe(false);
+  await expect(mark(reader)).toBeVisible();
   await expect(reader.locator("#reader-marked")).toHaveText(
     en("interface.reader.markedOnPage", { page: 2 }),
   );
@@ -239,13 +305,21 @@ test("marks the quote on the page picture and in the text, and keeps the helper'
       exact: true,
     }),
   ).toBeVisible();
-  await expect
-    .poll(async () => (await placed(reader))[0][0])
-    .toBeCloseTo(fitted[0][0], 2);
-  const zoomed = await placed(reader);
+  // The boxes are placed in percentages of the picture, so they cover the same
+  // words at any size. What can differ is rounding: the page drawn at the new
+  // size has whole-pixel dimensions, so its aspect ratio differs from the old
+  // one's by under a pixel in its height, and a box edge lands on a fraction of a
+  // pixel. Within 1.5 CSS pixels (a pixel of rounding and half a pixel of layout),
+  // measured on the picture's own size, is the same place; a box that had
+  // moved with the zoom would be tens of pixels off.
+  const { boxes: zoomed, width, height } = await placedSettled(reader);
+  expect(zoomed).toHaveLength(fitted.length);
   for (const [index, box] of zoomed.entries())
     for (const side of [0, 1, 2, 3])
-      expect(box[side]).toBeCloseTo(fitted[index][side], 2);
+      expect(
+        Math.abs(box[side] - fitted[index][side]) * (side % 2 ? height : width),
+        `box ${index}, side ${side}`,
+      ).toBeLessThanOrEqual(1.5);
   expect(await fakeCalls(page, "vault_page_boxes")).toHaveLength(1);
   await shot(page, "show-in-document-1280-zoomed");
   await expectOnlyFakedCommands(page);
@@ -411,6 +485,23 @@ test("keeps the summary usable and its button pressable at 200% text in a 1280 x
   await shot(page, "show-in-document-summary-200-percent");
 });
 
+test("a keyboard user still sees a 2 px focus ring on the quiet mark", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const reader = await openReader(page);
+  await showQuote(page, reader, { keyboard: true });
+  await expect(boxes(reader)).toHaveCount(2);
+  await expect(mark(reader)).toBeFocused();
+  const ring = await markLook(reader);
+  // The fill is not drawn, but the focus the keys moved there is visible, as WCAG 2.4.7 needs.
+  expect(ring.background).toBe(TRANSPARENT);
+  expect(ring.focusVisible).toBe(true);
+  expect(ring.outline).toBe("solid");
+  expect(ring.outlineWidth).toBe("2px");
+  expect(ring.hiddenFromAssistiveTechnology).toBe(false);
+});
+
 test("draws no box where the helper cannot place every word, and says the words are in the text", async ({
   page,
 }) => {
@@ -423,6 +514,12 @@ test("draws no box where the helper cannot place every word, and says the words 
   await expect(boxes(reader)).toHaveCount(0);
   await expect(mark(reader)).toHaveText(QUOTE);
   await expect(mark(reader)).toBeFocused();
+  // Nothing is drawn on the picture, so the text's mark IS the highlight and is drawn as before.
+  const drawn = await markLook(reader);
+  expect(drawn.background).not.toBe(TRANSPARENT);
+  expect(drawn.outline).toBe("solid");
+  expect(drawn.outlineWidth).toBe("2px");
+  expect(drawn.hiddenFromAssistiveTechnology).toBe(false);
   await expectOnlyFakedCommands(page);
 });
 
@@ -446,6 +543,12 @@ test("outlines the boxes in the system's highlight colour with forced colours", 
       return [`${style.outlineStyle} ${style.outlineColor}`, `solid ${colour}`];
     });
   expect(outline).toBe(highlight);
+  // Forced colours do not paint the quiet text mark in Highlight either: the picture is the only
+  // highlight, and the mark is still there for assistive technology.
+  const forced = await markLook(reader);
+  expect(forced.background).toBe(TRANSPARENT);
+  expect(forced.hiddenFromAssistiveTechnology).toBe(false);
+  await expect(mark(reader)).toBeFocused();
   await shot(page, "show-in-document-forced-colours");
 });
 
@@ -455,7 +558,9 @@ test("phone: the reader has no Summary, so no quote to show; the page reads as b
   await fakeVaultWith(page, {
     start: "unlocked",
     drawnPages: PAGES,
-    platform: "android",
+    // iOS, not Android: an Android phone reads a PDF in the native reader (#358), which draws
+    // no page picture for this page-side check; the check is the phone's reader without a Summary.
+    platform: "ios",
   });
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();

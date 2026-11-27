@@ -15,7 +15,8 @@ use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
 /// A range of the text, in UTF-16 units.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Hit {
     pub(crate) start: u32,
     pub(crate) end: u32,
@@ -1022,12 +1023,205 @@ pub(crate) fn identifier_hits(text: &str, names: &[String], birth_dates: &[Strin
     merged
 }
 
+// ---------------------------------------------------------------------------------------------
+// Medical terms the patient chose to keep (#366). The page names the ranges of the text it kept
+// ("Graves' disease"); the native side believes a range only when its own folded text is one of
+// the allow-list's phrases (its own compiled copy of `src/deidentify/eponymAllowList.json`), and
+// then spares only a hit that is exactly one of that phrase's name words. Never a free claim.
+// ---------------------------------------------------------------------------------------------
+
+/// The most kept ranges a save or copy may name, and the longest one in UTF-16 units.
+pub(crate) const MAX_KEPT_RANGES: usize = 200;
+const MAX_KEPT_UNITS: u32 = 120;
+
+struct EponymEntry {
+    tokens: Vec<String>,
+    forms: Vec<String>,
+}
+
+fn guard_key(value: &str) -> String {
+    fold_to_string(value)
+        .chars()
+        .map(|c| {
+            if matches!(c, '’' | '‘' | '`' | '´') {
+                '\''
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn eponym_entries() -> &'static [EponymEntry] {
+    static ENTRIES: std::sync::OnceLock<Vec<EponymEntry>> = std::sync::OnceLock::new();
+    ENTRIES.get_or_init(|| {
+        let list: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/deidentify/eponymAllowList.json"))
+                .unwrap_or_default();
+        let keys = |value: &serde_json::Value| -> Vec<String> {
+            value
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(guard_key))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        list["eponyms"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| EponymEntry {
+                        tokens: keys(&entry["tokens"]),
+                        forms: keys(&entry["forms"]),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// The name words a phrase of the allow-list stands for: each token whole and each of its words,
+/// as the page's guard reads them. Empty when the phrase is not on the list.
+fn name_words_of(phrase: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    for entry in eponym_entries() {
+        if !entry.forms.iter().any(|form| form == phrase) {
+            continue;
+        }
+        for token in &entry.tokens {
+            words.push(token.clone());
+            words.extend(
+                token
+                    .split(|c: char| c.is_whitespace() || c == '-')
+                    .filter(|word| word.chars().count() >= 3)
+                    .map(str::to_owned),
+            );
+        }
+    }
+    words
+}
+
+/// One word, with or without a possessive ending: "graves'", "holter", "basedow-graves".
+fn is_lone_possessive(phrase: &str) -> bool {
+    let body = phrase
+        .strip_suffix("'s")
+        .or_else(|| phrase.strip_suffix('\''))
+        .unwrap_or(phrase);
+    !body.is_empty()
+        && body
+            .chars()
+            .all(|c| c.is_alphabetic() || is_combining_mark(c) || c == '-')
+}
+
+fn utf16_slice(units: &[u16], start: u32, end: u32) -> Option<String> {
+    let (start, end) = (start as usize, end as usize);
+    if start >= end || end > units.len() {
+        return None;
+    }
+    String::from_utf16(&units[start..end]).ok()
+}
+
+/// `hits` without those the patient kept as a medical term: a hit is dropped only when it lies
+/// inside a `kept` range whose text is, as the native allow-list folds it, a phrase on the list,
+/// and the hit's own text is one of that phrase's name words. Everything else stays a hit.
+pub(crate) fn without_kept_terms(text: &str, hits: Vec<Hit>, kept: &[Hit]) -> Vec<Hit> {
+    if kept.is_empty() || kept.len() > MAX_KEPT_RANGES || hits.is_empty() {
+        return hits;
+    }
+    let units: Vec<u16> = text.encode_utf16().collect();
+    // A range that is only a name, or a name and its possessive ("Graves'", "Holter"), is no
+    // medical phrase: it is a person's name or relation, and is never believed (the page's rule).
+    let accepted: Vec<(Hit, Vec<String>)> = kept
+        .iter()
+        .filter(|range| range.end > range.start && range.end - range.start <= MAX_KEPT_UNITS)
+        .filter_map(|range| {
+            let phrase = guard_key(&utf16_slice(&units, range.start, range.end)?);
+            if is_lone_possessive(&phrase) {
+                return None;
+            }
+            let words = name_words_of(&phrase);
+            (!words.is_empty()).then_some((*range, words))
+        })
+        .collect();
+    hits.into_iter()
+        .filter(|hit| {
+            let spared = accepted.iter().any(|(range, words)| {
+                hit.start >= range.start
+                    && hit.end <= range.end
+                    && utf16_slice(&units, hit.start, hit.end)
+                        .is_some_and(|word| words.contains(&guard_key(&word)))
+            });
+            !spared
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn ranges(hits: &[Hit]) -> Vec<(u32, u32)> {
         hits.iter().map(|hit| (hit.start, hit.end)).collect()
+    }
+
+    // The look-alikes page code folds to Latin letters (`matchingCopy`): each one, as a vault name
+    // written with them must be found as the name written with Latin letters. This table is a copy
+    // of the Rust arms, so it pins them and does not by itself catch the page's list drifting from
+    // them (that would take a shared fixture read by both sides, as `date-forms.json` is).
+    #[test]
+    fn every_look_alike_folds_to_the_latin_letters_page_code_folds_it_to() {
+        let table: &[(&str, &str)] = &[
+            ("\u{2010}\u{2011}\u{2012}\u{2013}\u{2212}", "-"),
+            ("łŁ", "l"),
+            ("øØ", "o"),
+            ("đĐ", "d"),
+            ("ßẞ", "ss"),
+            ("æÆ", "ae"),
+            ("œŒ", "oe"),
+            ("ı", "i"),
+            ("ħĦ", "h"),
+            ("ŧŦ", "t"),
+            ("аАαΑ", "a"),
+            ("еЕҽΕ", "e"),
+            ("оОοΟ", "o"),
+            ("рРρΡ", "p"),
+            ("сС", "c"),
+            ("хХΧ", "x"),
+            ("уΥ", "y"),
+            ("іІιΙ", "i"),
+            ("ѕЅ", "s"),
+            ("јЈ", "j"),
+            ("һНΗ", "h"),
+            ("ԁ", "d"),
+            ("ԛ", "q"),
+            ("ѡ", "w"),
+            ("ВΒ", "b"),
+            ("КκΚ", "k"),
+            ("МΜ", "m"),
+            ("ТτΤ", "t"),
+            ("ν", "v"),
+            ("υ", "u"),
+            ("Ζ", "z"),
+            ("Ν", "n"),
+        ];
+        for (look_alikes, latin) in table {
+            for character in look_alikes.chars() {
+                assert_eq!(
+                    direct_fold(character),
+                    Some(*latin),
+                    "U+{:04X}",
+                    character as u32
+                );
+            }
+        }
+        // A plain letter, a digit and a letter this fold has no rule for are left to the caller.
+        for character in ['a', 'Z', '7', 'é', 'д'] {
+            assert_eq!(direct_fold(character), None, "{character}");
+        }
     }
 
     #[test]
@@ -1119,9 +1313,133 @@ mod tests {
     }
 
     #[test]
+    fn a_chinese_or_japanese_date_is_read_whole_and_one_that_cannot_be_is_not() {
+        // Year, month and day; a space after a unit character is allowed; a month alone; a day
+        // with no year (read as in a leap year, so 29 February stands).
+        assert_eq!(ranges(&date_hits("2026年10月8日")), vec![(0, 10)]);
+        assert_eq!(ranges(&date_hits("2026年 10月 8日")), vec![(0, 12)]);
+        assert_eq!(ranges(&date_hits("2026年10月")), vec![(0, 8)]);
+        assert_eq!(ranges(&date_hits("10月8日")), vec![(0, 5)]);
+        assert_eq!(ranges(&date_hits("2月29日")), vec![(0, 5)]);
+        // No such month, or no such day.
+        assert!(date_hits("2026年13月8日").is_empty());
+        assert!(date_hits("2026年2月30日").is_empty());
+        assert!(date_hits("2月30日").is_empty());
+    }
+
+    #[test]
+    fn a_birth_date_is_looked_for_in_each_written_form_the_remover_reads() {
+        let forms = |iso: &str| -> Vec<String> {
+            date_forms(iso)
+                .into_iter()
+                .map(|form| form.into_iter().collect())
+                .collect()
+        };
+        let april = forms("1961-04-17");
+        for expected in [
+            "1961-04-17",
+            "17/4/1961",
+            "04/17/61",
+            "17 april 1961",
+            "17 apr 1961",
+            "17 avril 1961",
+            "17-avr.-1961",
+            "april 17, 1961",
+        ] {
+            assert!(april.iter().any(|form| form == expected), "{expected}");
+        }
+        // Only the first of the month has "1er"; only September has "sept".
+        assert!(forms("1961-04-01").iter().any(|f| f == "1er avril 1961"));
+        assert!(forms("1961-04-01").iter().any(|f| f == "1er avr. 1961"));
+        assert!(!april.iter().any(|form| form.starts_with("1er")));
+        assert!(forms("1961-09-03").iter().any(|f| f == "3 sept 1961"));
+        assert!(!april.iter().any(|form| form.contains("sept")));
+        // Not a birth date: another shape, a month or a day that does not exist.
+        for iso in [
+            "1961-04",
+            "1961-04-17-1",
+            "x-04-17",
+            "1961-13-01",
+            "1961-00-01",
+            "1961-04-32",
+            "1961-04-00",
+        ] {
+            assert!(forms(iso).is_empty(), "{iso}");
+        }
+    }
+
+    #[test]
+    fn a_birth_date_written_in_french_is_found_whole() {
+        let birth = vec!["1961-04-01".to_owned()];
+        let hits = identifier_hits("né le 1er avril 1961.", &[], &birth);
+        assert_eq!(ranges(&hits), vec![(6, 20)]);
+        assert!(identifier_hits("né le 2 avril 1961.", &[], &birth).is_empty());
+        assert_eq!(date_hits("Vu le 17 avril 2026.").len(), 1);
+    }
+
+    #[test]
     fn date_hits_cover_the_whole_date_and_count_utf16_units() {
         let hits = date_hits("😀 Seen 8 October 2026 at 07:40.");
         assert_eq!(ranges(&hits), vec![(8, 22)]);
         assert!(date_hits("[DATE 2, 14 days after DATE 1]").is_empty());
+    }
+
+    #[test]
+    fn a_kept_medical_term_is_spared_only_as_an_allow_listed_phrase_and_its_name_word() {
+        let names = vec!["FAKE Pat Graves".to_owned()];
+        let text = "History of Graves' disease. Graves' son drove.";
+        let hits = identifier_hits(text, &names, &[]);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        // The phrase "Graves' disease" at 11..26 is kept: its hit goes, the other stays.
+        let kept = [Hit { start: 11, end: 26 }];
+        let left = without_kept_terms(text, hits.clone(), &kept);
+        assert_eq!(ranges(&left), [(28, 34)]);
+        // A free claim over the other place ("Graves' son") is no phrase of the list: refused.
+        let free = [Hit { start: 28, end: 39 }];
+        assert_eq!(without_kept_terms(text, hits.clone(), &free), hits);
+        // A range that is the right phrase elsewhere does not spare a hit outside it.
+        let wrong = [Hit { start: 0, end: 10 }];
+        assert_eq!(without_kept_terms(text, hits.clone(), &wrong), hits);
+        // The apostrophe may be curly, the case any; the phrase is still found.
+        let curly = "History of GRAVES’ disease.";
+        let curly_hits = identifier_hits(curly, &names, &[]);
+        assert!(without_kept_terms(curly, curly_hits, &[Hit { start: 11, end: 26 }]).is_empty());
+    }
+
+    #[test]
+    fn a_kept_range_cannot_hide_a_first_name_or_a_whole_name_or_oversized_claims() {
+        let names = vec!["FAKE Pat Graves".to_owned()];
+        let text = "Pat Graves' disease";
+        let hits = identifier_hits(text, &names, &[]);
+        // The phrase range covers the first name too, but only the name word is spared.
+        let spared = without_kept_terms(text, hits.clone(), &[Hit { start: 4, end: 19 }]);
+        assert!(spared.is_empty(), "{spared:?}");
+        // A range that takes in the first name too is no phrase of the list: nothing is spared.
+        let whole = without_kept_terms(text, hits.clone(), &[Hit { start: 0, end: 19 }]);
+        assert_eq!(ranges(&whole), ranges(&hits));
+        // Too many claims, or one beyond the length limit, spare nothing.
+        let many = vec![Hit { start: 4, end: 19 }; MAX_KEPT_RANGES + 1];
+        assert_eq!(without_kept_terms(text, hits.clone(), &many), hits);
+        let long = [Hit {
+            start: 0,
+            end: 4_000,
+        }];
+        assert_eq!(without_kept_terms(text, hits.clone(), &long), hits);
+    }
+
+    #[test]
+    fn a_name_alone_or_with_its_possessive_is_never_a_kept_phrase() {
+        let names = vec!["FAKE Pat Graves".to_owned(), "FAKE Ann Holter".to_owned()];
+        // "Graves'" is on the list as a form, but it is only the name and a possessive.
+        let text = "Graves' son drove. Holter ran.";
+        let hits = identifier_hits(text, &names, &[]);
+        assert_eq!(ranges(&hits), [(0, 6), (19, 25)]);
+        for claim in [
+            [Hit { start: 0, end: 7 }],
+            [Hit { start: 19, end: 25 }],
+            [Hit { start: 0, end: 25 }],
+        ] {
+            assert_eq!(without_kept_terms(text, hits.clone(), &claim), hits);
+        }
     }
 }

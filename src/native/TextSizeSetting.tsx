@@ -107,7 +107,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
   // Whether the next change of size is this setting's own. Any other (a key,
   // the wheel) makes what was typed, and the note about it, out of date.
   const own = useRef(false);
-  // Whether "Back to normal size" was pressed, had the focus when the size
+  // Whether "Back to 100%" was pressed, had the focus when the size
   // changed, or is where the focus went from the box with 100 typed: it goes
   // at the ordinary size, and the focus must not be left on nothing, whatever
   // changed the size (the button, a key or the wheel).
@@ -168,7 +168,7 @@ export function TextSizeSetting({ zoom, mac }: { zoom: Zoom; mac: boolean }) {
     }
     setDraft(null);
     setMessage({ text: feedback, error: false });
-    // Leaving the box for "Back to normal size" with 100 typed: the button
+    // Leaving the box for "Back to 100%" with 100 typed: the button
     // goes before its click lands, and the focus must not be lost with it.
     if (typed.level === 1 && next !== null && next === back.current)
       refocus.current = true;

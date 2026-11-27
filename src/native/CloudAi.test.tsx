@@ -258,52 +258,27 @@ describe("with the cloud AI flag on", () => {
       }
     });
 
-    it("sends nothing until Send is confirmed, and Cancel drops the prepared text", async () => {
+    it("shows no confirmation of its own: the native dialog is the one and only", async () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
       render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
-      const dialog = await screen.findByRole("alertdialog", {
-        name: "Send to Anthropic?",
-      });
-      expect(dialog).toHaveHumanTextContent(
-        'with your key "Home laptop", using Claude Opus 5.5.',
-      );
-      expect(dialog).toHaveHumanTextContent("About 11,000 characters");
-      expect(dialog).toHaveHumanTextContent(/an estimated .*0\.02/);
-      expect(calls.send).toBe(0);
-      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-      expect(calls.send).toBe(0);
-      expect(calls.cancel).toEqual(["exchange-1"]);
+      // The page asks the native side to prepare and then to send, and shows no dialog of its
+      // own (the native one names the provider, host, key, model, document, size and cost).
+      expect(await screen.findByText("Answer")).toBeVisible();
       expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(calls.prepare).toBe(1);
+      expect(calls.send).toBe(1);
     });
 
-    it("Escape sends nothing", async () => {
+    it("sends once and shows the answer as plain text, labelled as written by AI", async () => {
       const user = userEvent.setup();
       const { bridge, calls } = fakeBridge([home], true);
       render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
-      );
-      await screen.findByRole("alertdialog");
-      await user.keyboard("{Escape}");
-      expect(calls.send).toBe(0);
-      expect(calls.cancel).toEqual(["exchange-1"]);
-    });
-
-    it("sends once on Send and shows the answer as plain text, labelled as written by AI", async () => {
-      const user = userEvent.setup();
-      const { bridge, calls } = fakeBridge([home], true);
-      render(<Step bridge={bridge} />);
-      await user.click(
-        await screen.findByRole("button", { name: "Send to my AI provider…" }),
-      );
-      await user.click(
-        within(await screen.findByRole("alertdialog")).getByRole("button", {
-          name: "Send",
-        }),
       );
       expect(await screen.findByText("Answer")).toBeVisible();
       expect(calls.send).toBe(1);
@@ -328,7 +303,7 @@ describe("with the cloud AI flag on", () => {
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
-      await screen.findByRole("alertdialog");
+      await waitFor(() => expect(bridge.prepare).toHaveBeenCalled());
       const request = vi.mocked(bridge.prepare).mock.calls[0][0];
       expect(Object.keys(request).sort()).toEqual([
         "keyId",
@@ -349,7 +324,7 @@ describe("with the cloud AI flag on", () => {
       });
     });
 
-    it("says it was cancelled, not failed, when the native dialog is declined", async () => {
+    it("says it was cancelled, not failed, when the native dialog is declined (nothing is sent)", async () => {
       const user = userEvent.setup();
       const { bridge } = fakeBridge([home], true);
       bridge.send = vi.fn(async () => {
@@ -358,11 +333,6 @@ describe("with the cloud AI flag on", () => {
       render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
-      );
-      await user.click(
-        within(await screen.findByRole("alertdialog")).getByRole("button", {
-          name: "Send",
-        }),
       );
       expect(await screen.findByRole("status")).not.toHaveTextContent(
         "could not be sent",
@@ -383,11 +353,6 @@ describe("with the cloud AI flag on", () => {
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
       );
-      await user.click(
-        within(await screen.findByRole("alertdialog")).getByRole("button", {
-          name: "Send",
-        }),
-      );
       expect(await screen.findByText(/Waiting for Anthropic…/)).toBeVisible();
       reject(new Error("FAKE failure"));
       expect(await screen.findByText(/Nothing was kept\./)).toBeVisible();
@@ -407,11 +372,6 @@ describe("with the cloud AI flag on", () => {
       render(<Step bridge={bridge} />);
       await user.click(
         await screen.findByRole("button", { name: "Send to my AI provider…" }),
-      );
-      await user.click(
-        within(await screen.findByRole("alertdialog")).getByRole("button", {
-          name: "Send",
-        }),
       );
       await user.click(await screen.findByRole("button", { name: "Cancel" }));
       expect(

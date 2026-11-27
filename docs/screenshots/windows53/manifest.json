@@ -1,0 +1,135 @@
+{
+  "kind": "Synthetic production-browser proof, not Windows OS/runtime acceptance",
+  "before_ref": "29c066c1a50c271fae02c4e55dc838358f6dcdbb",
+  "before_application_source": "Same application UI as main315604a32202eae9168582bb66609841c2d8ead6; transport-only parent is not yet wired",
+  "after_source_sha256": {
+    "src/VaultApp.tsx": "be9f7dd9a8487ebc3591eda729de526af910e281a76402de85d3f23a37558b6c",
+    "src-tauri/src/lib.rs": "3239eb25fae32b2a4fb86a6be81567d1a08ba9345aef480873b557085ffa42e9",
+    "src-tauri/src/main.rs": "14a57808b84b1edc0679a0213afa43718882ef6a77dc135cef09dd98f2a87904",
+    "src-tauri/src/received.rs": "9042f1948b48138b153f2269abc2b214df2e225d2cc19b0c78d5ce5b57bfbbc7"
+  },
+  "event_script": "window.dispatchEvent(new Event('mycarlos-received-changed'));",
+  "node": "v22.14.0",
+  "cases": [
+    {
+      "revision": "before",
+      "scenario": "locked",
+      "counts": {
+        "accepts": 0,
+        "waiting": 2,
+        "records": 0,
+        "names": [],
+        "state": "locked"
+      },
+      "waitingNotice": 0,
+      "errors": []
+    },
+    {
+      "revision": "before",
+      "scenario": "already-focused",
+      "counts": {
+        "accepts": 0,
+        "waiting": 2,
+        "records": 0,
+        "names": [],
+        "state": "unlocked"
+      },
+      "errors": []
+    },
+    {
+      "revision": "before",
+      "scenario": "during-accept",
+      "counts": {
+        "accepts": 1,
+        "waiting": 1,
+        "records": 1,
+        "names": [
+          "FAKE_First_arrival.pdf"
+        ],
+        "state": "unlocked"
+      },
+      "errors": []
+    },
+    {
+      "revision": "after",
+      "scenario": "locked",
+      "counts": {
+        "accepts": 0,
+        "waiting": 2,
+        "records": 0,
+        "names": [],
+        "state": "locked"
+      },
+      "waitingNotice": 1,
+      "errors": []
+    },
+    {
+      "revision": "after",
+      "scenario": "already-focused",
+      "counts": {
+        "accepts": 1,
+        "waiting": 0,
+        "records": 2,
+        "names": [
+          "FAKE_Already_focused_A.pdf",
+          "FAKE_Already_focused_B.pdf"
+        ],
+        "state": "unlocked"
+      },
+      "errors": []
+    },
+    {
+      "revision": "after",
+      "scenario": "during-accept",
+      "counts": {
+        "accepts": 2,
+        "waiting": 0,
+        "records": 2,
+        "names": [
+          "FAKE_First_arrival.pdf",
+          "FAKE_Second_arrival.pdf"
+        ],
+        "state": "unlocked"
+      },
+      "errors": []
+    },
+    {
+      "revision": "after",
+      "scenario": "failure-then-explicit-retry",
+      "counts": {
+        "accepts": 2,
+        "waiting": 0,
+        "records": 1,
+        "names": [
+          "FAKE_Retry_after_failure.pdf"
+        ],
+        "state": "unlocked"
+      }
+    }
+  ],
+  "production_bundles_sha256": {
+    "before": {
+      "dist/index.html": "2f05bdf233b81d33265f70c34aeaa66f834eeb139ea28b4013322691ea442834",
+      "dist/assets/index-CfBu_Pt8.css": "be6adbe979e5044f44a73e2b7cd2d63886e24ba6de656ee549db2b151e790356",
+      "dist/assets/index-DR1wj8Uo.js": "a9e00c08e586c507b6807be65b2a4514d2f852a6b2d573f066afd04075d17a28"
+    },
+    "after": {
+      "dist/index.html": "5c56662ed76b44c7a92d63d744c5dfcf08fd8137c91c461d7a8369047afc70a9",
+      "dist/assets/index-Bh_6yNs2.js": "124d64b9457069ac6884296a53bff1c3abedfcf288b74c1d97760ec26bdebe01",
+      "dist/assets/index-CfBu_Pt8.css": "be6adbe979e5044f44a73e2b7cd2d63886e24ba6de656ee549db2b151e790356"
+    }
+  },
+  "images_sha256": {
+    "before-locked.png": "6d4f9855785a3a199000d0be9e8cf88ded7ef2e855ec6b148c368919bdc07a8a",
+    "after-locked.png": "94aa90710a0eece271155b513695b7e8564991e3467e1bea45b4e57d2d7694f4",
+    "before-already-focused.png": "5953cb9f8e210fece19b57bb42e62db99e84238a84b801a160ea165586d6467e",
+    "after-already-focused.png": "d1fbed22a859d9d7333231d1227c8b6bf7b787767199d5f48e1d0aecc0ad7324",
+    "before-during-accept.png": "122780ab4328b97b701b1fad600d04e7fe55e9dd32fc875f7e2543f12acad4b6",
+    "after-during-accept.png": "ba71c5fe75052b1f57bcdb4903393626618785a4e075798b37c996658a07ff02",
+    "after-failure-retry.png": "c11ae325763216b82120e4a4e3f92cd0d10fc295e1f126bc153f64ebb1e1ae4c"
+  },
+  "personally_inspected": true,
+  "native_runtime_executed": false,
+  "after_ref": "e772ca7512c61089437601be1befd6da487b059a",
+  "retained_proof_note": "The original seven images remain exact historical e772 production proof; they do not execute the later concealment fix. New affected states and current source/bundle bindings are in concealment-manifest.json."
+}

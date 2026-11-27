@@ -120,6 +120,7 @@ export const MESSAGE_KEYS = [
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword",
   "interface.UnlockPdfDialog.unlocking",
   "interface.VaultApp.chooseFilesToImport",
+  "interface.VaultLibrary.picturesNote",
   "interface.VaultApp.finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer",
   "interface.VaultApp.myCarlosCouldNotLockTheVaultIts",
@@ -222,6 +223,7 @@ export const MESSAGE_KEYS = [
   "interface.notice.movedMany",
   "interface.notice.movedNamed",
   "interface.notice.notPdf",
+  "interface.notice.receivedNotOpened",
   "interface.notice.pdfUnlocked",
   "interface.notice.personAdded",
   "interface.notice.photoSaved",
@@ -367,6 +369,10 @@ export const MESSAGE_KEYS = [
   "native.error.speedTest",
   "native.filter.backups",
   "native.filter.pdf",
+  "native.filter.video",
+  "native.filter.pictures",
+  "native.filter.pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos",
   "native.kit.text",
   "native.recovery.keep",
   "native.recovery.replace",
@@ -457,6 +463,7 @@ export const MESSAGE_KEYS = [
   "recoveryKey.hiddenWhileSaving",
   "recoveryKey.instructions",
   "recoveryKey.keyboardHint",
+  "recoveryKey.kitCloudWarning",
   "recoveryKey.kitSaved",
   "recoveryKey.label",
   "recoveryKey.leave.offered",
@@ -527,10 +534,10 @@ export const MESSAGE_KEYS = [
   "security.autoLock.shorter",
   "security.autoLock.title",
   "security.backup.body",
+  "security.backup.cloudWarning",
   "security.backup.save",
   "security.backup.title",
   "security.copies.body",
-  "security.copies.title",
   "security.devBuild.body",
   "security.devBuild.title",
   "security.encryption.body",
@@ -738,6 +745,7 @@ export const MESSAGE_KEYS = [
   "interface.history.event.passphraseChanged",
   "interface.history.event.portalLinkStarted",
   "interface.history.event.portalLinked",
+  "interface.history.event.portalLinkRemoved",
   "interface.history.event.profileCreated",
   "interface.history.event.profileDetailsChanged",
   "interface.history.event.readingAidFiled",
@@ -829,6 +837,13 @@ export const MESSAGE_KEYS = [
   "portal.tryAgain",
   "portal.tryAgainFor",
   "portal.linkAnother",
+  "portal.removeLink",
+  "portal.removeTitle",
+  "portal.removeBody",
+  "portal.removeConfirm",
+  "portal.removeKept",
+  "portal.removeNotices",
+  "portal.removed",
   "interface.history.damagedStorageOnly",
   "ai.summary.button",
   "ai.summary.title",
@@ -837,6 +852,14 @@ export const MESSAGE_KEYS = [
   "ai.notInstalled.body",
   "ai.notInstalled.openPreferences",
   "aiHelper.resultLabel",
+  "aiHelper.resultLabelShort",
+  "aiHelper.resultLabelHide",
+  "aiHelper.resultLabelInfo",
+  "ai.label.settingsTitle",
+  "ai.label.settingsBody",
+  "ai.label.settingsShowFull",
+  "ai.label.settingsFullBack",
+  "ai.label.settingsShortShown",
   "ai.result.meta",
   "ai.summary.showInDocument",
   "ai.summary.folded",
@@ -863,6 +886,19 @@ export const MESSAGE_KEYS = [
   "ai.explain.ready",
   "ai.failed",
   "ai.error.memory",
+  "ai.speed.title",
+  "ai.speed.note",
+  "ai.speed.button",
+  "ai.speed.working",
+  "ai.speed.cancel",
+  "ai.speed.result",
+  "ai.speed.cancelled",
+  "ai.speed.none",
+  "ai.speed.failed",
+  "ai.speed.estimate",
+  "ai.speed.estimateLong",
+  "ai.error.memoryNumbers",
+  "ai.error.memoryUnknown",
   "ai.error.busy",
   "ai.error.storage",
   "ai.summary.pagesMissing",
@@ -937,6 +973,10 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.placeholder.manual",
   "interface.AnonymizePreview.possibleNames",
   "interface.AnonymizePreview.removeWord",
+  "interface.AnonymizePreview.eponymTitle",
+  "interface.AnonymizePreview.eponymOne",
+  "interface.AnonymizePreview.eponymKeep",
+  "interface.AnonymizePreview.eponymKeepAll",
   "interface.AnonymizePreview.removedSummary",
   "interface.AnonymizePreview.removedCount.name",
   "interface.AnonymizePreview.removedCount.doctor",
@@ -982,6 +1022,7 @@ export const MESSAGE_KEYS = [
   "interface.AnonymizePreview.footerNote",
   "interface.AnonymizePreview.note.daysAfter",
   "interface.AnonymizePreview.note.ageOver90",
+  "interface.AnonymizePreview.note.otherForm",
   "interface.AnonymizePreview.pasteTitle",
   "interface.AnonymizePreview.pasteHelp",
   "interface.AnonymizePreview.pasteLabel",
@@ -993,12 +1034,16 @@ export const MESSAGE_KEYS = [
   "notifications.allow",
   "notifications.blocked",
   "notifications.error",
-  "notifications.help",
   "notifications.title",
+  "notifications.blockedMac",
+  "notifications.notYetAsked",
+  "notifications.notYetAskedMac",
   "notifications.unknown",
   "notifications.unavailable",
   "notifications.helpAutomatic",
   "notifications.autoAllow",
+  "notifications.autoConsent",
+  "notifications.noticesHelp",
   "notifications.autoHelp",
   "notifications.autoPaused",
   "notifications.checkBusy",
@@ -1049,9 +1094,9 @@ export const MESSAGE_KEYS = [
   "noticesStep.title",
   "noticesStep.intro",
   "noticesStep.later",
+  "noticesStep.laterBackground",
   "noticesStep.done",
   "noticesStep.notNow",
-  "notifications.autoNeedsNotices",
   "ai.settings.subtitle",
   "ai.model.progressName",
   "ai.model.progressValue",
@@ -1080,12 +1125,309 @@ export const MESSAGE_KEYS = [
   "personDetails.notNow",
   "personDetails.notSaved",
   "ai.summaryTooLarge",
+  "background.title",
+  "background.keepRunning",
+  "background.keepRunningHelp",
+  "background.startAtLogin",
+  "background.startAtLoginHelp",
+  "background.paused",
+  "background.unavailable",
+  "background.error",
+  "native.tray.open",
+  "native.tray.quit",
+  "native.tray.tooltip",
+  "native.tray.waiting",
   "personDetails.previousTitle",
   "personDetails.previousHelp",
   "personDetails.previousEntry",
   "personDetails.previousRemove",
   "personDetails.previousAdd",
   "personDetails.previousInvalid",
+  "reader.android.failed",
+  "reader.android.next",
+  "reader.android.opening",
+  "reader.android.page",
+  "reader.android.pageStatus",
+  "reader.android.pageFailed",
+  "reader.android.previous",
+  "reader.android.tooLarge",
+  "reader.android.unavailable",
+  "reader.android.zoomIn",
+  "reader.android.zoomOut",
+  "interface.video.name",
+  "interface.RecordDialog.recordAVideo",
+  "interface.RecordDialog.unavailable",
+  "interface.RecordDialog.why",
+  "interface.RecordDialog.startingTheCameraAndMicrophone",
+  "interface.RecordDialog.theVideoIsRecordedWithSound",
+  "interface.RecordDialog.yourPhoneAsksOnce",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOn",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow",
+  "interface.RecordDialog.pictureQuality",
+  "interface.RecordDialog.cameraAndMicrophone",
+  "interface.RecordDialog.camera",
+  "interface.RecordDialog.microphone",
+  "interface.RecordDialog.unnamedCamera",
+  "interface.RecordDialog.unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice",
+  "interface.RecordDialog.deviceFellBack",
+  "interface.RecordDialog.testMicrophone",
+  "interface.RecordDialog.stopTestingMicrophone",
+  "interface.RecordDialog.microphoneLevel",
+  "interface.RecordDialog.standard",
+  "interface.RecordDialog.high",
+  "interface.RecordDialog.aboutStandardPerHour",
+  "interface.RecordDialog.aboutHighPerHour",
+  "interface.RecordDialog.useTheCameraAndMicrophone",
+  "interface.RecordDialog.startRecording",
+  "interface.RecordDialog.recording",
+  "interface.RecordDialog.paused",
+  "interface.RecordDialog.pausedCameraAndMicrophoneStillOn",
+  "interface.RecordDialog.recorded",
+  "interface.RecordDialog.recordingAt",
+  "interface.RecordDialog.pauseRecording",
+  "interface.RecordDialog.resumeRecording",
+  "interface.RecordDialog.stopAndSave",
+  "interface.RecordDialog.stopAndSaveTheVideo",
+  "interface.RecordDialog.keepRecording",
+  "interface.RecordDialog.savingTheVideo",
+  "interface.RecordDialog.recordingPaused",
+  "interface.RecordDialog.recordingResumed",
+  "interface.RecordDialog.thisDeviceCannotRecordMp4",
+  "interface.RecordDialog.videoNeedsBoth",
+  "interface.RecordDialog.nothingWasRecorded",
+  "interface.RecordDialog.videoSaved",
+  "interface.RecordDialog.videoSavedStopped",
+  "interface.RecordDialog.videoSavedHidden",
+  "interface.RecordDialog.videoSavedSlow",
+  "interface.VideoViewer.video",
+  "interface.VideoViewer.player",
+  "interface.VideoViewer.thisVideoCouldNotBePlayed",
+  "interface.VideoViewer.controls",
+  "interface.VideoViewer.playPause",
+  "interface.VideoViewer.back",
+  "interface.VideoViewer.forward",
+  "interface.VideoViewer.backBig",
+  "interface.VideoViewer.forwardBig",
+  "interface.VideoViewer.volumeUp",
+  "interface.VideoViewer.volumeDown",
+  "interface.VideoViewer.mute",
+  "interface.VideoViewer.unmute",
+  "interface.VideoViewer.start",
+  "interface.VideoViewer.end",
+  "interface.VideoViewer.playVideo",
+  "interface.VideoHelp.title",
+  "interface.VideoHelp.engine",
+  "interface.VideoHelp.systems",
+  "interface.VideoHelp.restWorks",
+  "interface.RecordingRecovery.closed",
+  "interface.RecordingRecovery.closedPaused",
+  "interface.RecordingRecovery.name",
+  "interface.RecordingRecovery.askLater",
+  "interface.RecordingRecovery.delete",
+  "interface.RecordingRecovery.keep",
+  "interface.RecordingRecovery.kept",
+  "interface.RecordingRecovery.nothingToKeep",
+  "interface.RecordingRecovery.deleted",
+  "interface.RecordingRecovery.deleteSure",
+  "interface.RecordingRecovery.savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom",
+  "security.backup.size",
+  "security.backup.sizeWithVideos",
+  "security.backup.sizeNoVideos",
+  "security.backup.leaveVideosOut",
+  "security.backup.leaveVideosOutHelp",
+  "restore.leftOut",
+  "security.backup.sizeCalculating",
+  "interface.hidden.videoLeftOut",
+  "portal.deviceLine",
+  "portal.deviceLineLinked",
+  "interface.received.confirmTitleOne",
+  "interface.received.confirmTitleMany",
+  "interface.received.confirmBody",
+  "interface.received.import",
+  "interface.history.event.profileExported",
+  "interface.history.event.profileHidden",
+  "interface.history.event.profileRestored",
+  "interface.history.event.profileImported",
+  "handover.section.title",
+  "handover.section.body",
+  "handover.export.button",
+  "handover.import.button",
+  "handover.close",
+  "handover.export.title",
+  "handover.export.about",
+  "handover.export.caution",
+  "handover.export.person",
+  "handover.export.history",
+  "handover.export.keyKind.legend",
+  "handover.export.keyKind.generated",
+  "handover.export.keyKind.passphrase",
+  "handover.export.passphrase",
+  "handover.export.passphraseHint",
+  "handover.export.continue",
+  "handover.export.preparing",
+  "handover.export.keyTitle",
+  "handover.export.keyBody",
+  "handover.export.keyLabel",
+  "handover.export.keyGroup",
+  "handover.export.copy",
+  "handover.export.copied",
+  "handover.export.copyFailed",
+  "handover.export.keySaved",
+  "handover.export.saveTitle",
+  "handover.export.summary",
+  "handover.export.apart",
+  "handover.export.provider",
+  "handover.export.chooseWhere",
+  "handover.export.saving",
+  "handover.export.noLocation",
+  "handover.export.doneTitle",
+  "handover.export.done",
+  "handover.export.doneApart",
+  "handover.export.hideOffer",
+  "handover.export.leftOut",
+  "handover.export.evidenceLeftOut",
+  "handover.count.documents",
+  "handover.count.hidden",
+  "handover.count.folders",
+  "handover.count.answers",
+  "handover.count.evidence",
+  "handover.count.size",
+  "handover.import.title",
+  "handover.import.about",
+  "handover.import.choose",
+  "handover.import.noFile",
+  "handover.import.keyTitle",
+  "handover.import.key",
+  "handover.import.passphrase",
+  "handover.import.keyHint",
+  "handover.import.passphraseHint",
+  "handover.import.open",
+  "handover.import.opening",
+  "handover.import.error.typo",
+  "handover.import.error.recovery",
+  "handover.import.error.wrong",
+  "handover.import.error.newer",
+  "handover.import.error.damaged",
+  "handover.import.previewTitle",
+  "handover.import.says",
+  "handover.import.birth",
+  "handover.import.madeOn",
+  "handover.import.evidenceNote",
+  "handover.import.duplicate.legend",
+  "handover.import.duplicate.package",
+  "handover.import.duplicate.content",
+  "handover.import.duplicate.anyway",
+  "handover.import.nameLabel",
+  "handover.import.add",
+  "handover.import.adding",
+  "handover.import.doneTitle",
+  "handover.import.done",
+  "handover.import.doneAnswers",
+  "handover.import.doneEvidence",
+  "handover.import.doneDropped",
+  "handover.import.receipt",
+  "handover.import.receiptNote",
+  "handover.import.nothingNew",
+  "handover.importedAnswer",
+  "handover.export.leavingWarning",
+  "handover.export.leave.title",
+  "handover.export.leave.body",
+  "handover.export.leave.confirm",
+  "handover.export.error.weak",
+  "handover.unfinished",
+  "native.error.49",
+  "native.error.50",
+  "hiddenPeople.title",
+  "hiddenPeople.body",
+  "hiddenPeople.list",
+  "hiddenPeople.since",
+  "hiddenPeople.documents",
+  "hiddenPeople.restore",
+  "hiddenPeople.restoreFor",
+  "hiddenPeople.handOver",
+  "hiddenPeople.handOverFor",
+  "hiddenPeople.hide",
+  "hiddenPeople.hideFor",
+  "hiddenPeople.lastPerson",
+  "hiddenPeople.confirm.title",
+  "hiddenPeople.confirm.body",
+  "hiddenPeople.confirm.hide",
+  "hiddenPeople.hidden",
+  "hiddenPeople.restored",
+  "hiddenPeople.arrived.title",
+  "hiddenPeople.arrived.body",
+  "hiddenPeople.arrived.move",
+  "hiddenPeople.arrived.leave",
+  "hiddenPeople.arrived.list",
+  "portal.arrivedForHidden",
+  "hiddenPeople.damagedToo",
+  "interface.history.aboutHiddenPeople",
+  "interface.history.how.personHidden",
+  "portal.arrivedForHiddenNoClinic",
+  "fileUnder.button",
+  "fileUnder.title",
+  "fileUnder.fromClinic",
+  "fileUnder.words",
+  "fileUnder.clinicWords",
+  "fileUnder.rule",
+  "fileUnder.person",
+  "fileUnder.what.both",
+  "fileUnder.what.name",
+  "fileUnder.what.date",
+  "fileUnder.saveDetails",
+  "fileUnder.confirm",
+  "fileUnder.choose",
+  "fileUnder.differs",
+  "fileUnder.saveDetailsOnly",
+  "fileUnder.notOnItsOwn",
+  "handover.import.previousNames",
+  "library.fileSaysChecked",
+  "handover.nowVerified",
+  "notifications.autoSummary",
+  "background.keepRunningSummary",
+  "background.startAtLoginSummary",
+  "native.notice.test",
+  "notifications.testButton",
+  "notifications.testSent",
+  "notifications.testSentMac",
+  "notifications.testWait",
+  "notifications.testFailed",
+  "notifications.testOff",
+  "preferences.moreAutomatic",
+  "preferences.moreBackground",
+  "interface.AddVideo.add",
+  "interface.AddVideo.hint",
+  "interface.AddVideo.checking",
+  "interface.AddVideo.storing",
+  "interface.AddVideo.progressLabel",
+  "interface.AddVideo.cancel",
+  "interface.AddVideo.cancelling",
+  "interface.AddVideo.added",
+  "interface.AddVideo.duplicate",
+  "interface.AddVideo.cancelled",
+  "interface.AddVideo.notVideo",
+  "interface.AddVideo.videoAlone",
+  "interface.AddVideo.hevc",
+  "interface.AddVideo.videoCodec",
+  "interface.AddVideo.audioCodec",
+  "interface.AddVideo.noVideo",
+  "interface.AddVideo.tooManyTracks",
+  "interface.AddVideo.external",
+  "interface.AddVideo.fragmented",
+  "interface.AddVideo.tooBig",
+  "interface.AddVideo.tooLarge",
+  "interface.AddVideo.damaged",
+  "interface.AddVideo.adding",
   "cloudAi.title",
   "cloudAi.syntheticOnly",
   "cloudAi.notice",
@@ -1115,11 +1457,6 @@ export const MESSAGE_KEYS = [
   "cloudAi.err.generic",
   "cloudAi.send",
   "cloudAi.previewNote",
-  "cloudAi.sendTitle",
-  "cloudAi.sendBody",
-  "cloudAi.costEstimate",
-  "cloudAi.costUnknown",
-  "cloudAi.sendConfirm",
   "cloudAi.working",
   "cloudAi.cancelSend",
   "cloudAi.cancelled",
@@ -1295,6 +1632,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.UnlockPdfDialog.unlocking": "interface-UnlockPdfDialog-unlocking",
   "interface.VaultApp.chooseFilesToImport":
     "interface-VaultApp-chooseFilesToImport",
+  "interface.VaultLibrary.picturesNote": "interface-VaultLibrary-picturesNote",
   "interface.VaultApp.finishingTheTransfer":
     "interface-VaultApp-finishingTheTransfer",
   "interface.VaultApp.lockNowAndCancelTheTransfer":
@@ -1446,6 +1784,7 @@ const FLUENT_IDS_BY_KEY = {
   "interface.notice.movedMany": "interface-notice-movedMany",
   "interface.notice.movedNamed": "interface-notice-movedNamed",
   "interface.notice.notPdf": "interface-notice-notPdf",
+  "interface.notice.receivedNotOpened": "interface-notice-receivedNotOpened",
   "interface.notice.pdfUnlocked": "interface-notice-pdfUnlocked",
   "interface.notice.personAdded": "interface-notice-personAdded",
   "interface.notice.photoSaved": "interface-notice-photoSaved",
@@ -1610,6 +1949,10 @@ const FLUENT_IDS_BY_KEY = {
   "native.error.speedTest": "native-error-speedTest",
   "native.filter.backups": "native-filter-backups",
   "native.filter.pdf": "native-filter-pdf",
+  "native.filter.video": "native-filter-video",
+  "native.filter.pictures": "native-filter-pictures",
+  "native.filter.pdfAndPictures": "native-filter-pdfAndPictures",
+  "native.filter.pdfPicturesAndVideos": "native-filter-pdfPicturesAndVideos",
   "native.kit.text": "native-kit-text",
   "native.recovery.keep": "native-recovery-keep",
   "native.recovery.replace": "native-recovery-replace",
@@ -1700,6 +2043,7 @@ const FLUENT_IDS_BY_KEY = {
   "recoveryKey.hiddenWhileSaving": "recoveryKey-hiddenWhileSaving",
   "recoveryKey.instructions": "recoveryKey-instructions",
   "recoveryKey.keyboardHint": "recoveryKey-keyboardHint",
+  "recoveryKey.kitCloudWarning": "recoveryKey-kitCloudWarning",
   "recoveryKey.kitSaved": "recoveryKey-kitSaved",
   "recoveryKey.label": "recoveryKey-label",
   "recoveryKey.leave.offered": "recoveryKey-leave-offered",
@@ -1770,10 +2114,10 @@ const FLUENT_IDS_BY_KEY = {
   "security.autoLock.shorter": "security-autoLock-shorter",
   "security.autoLock.title": "security-autoLock-title",
   "security.backup.body": "security-backup-body",
+  "security.backup.cloudWarning": "security-backup-cloudWarning",
   "security.backup.save": "security-backup-save",
   "security.backup.title": "security-backup-title",
   "security.copies.body": "security-copies-body",
-  "security.copies.title": "security-copies-title",
   "security.devBuild.body": "security-devBuild-body",
   "security.devBuild.title": "security-devBuild-title",
   "security.encryption.body": "security-encryption-body",
@@ -2000,6 +2344,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-history-event-portalLinkStarted",
   "interface.history.event.portalLinked":
     "interface-history-event-portalLinked",
+  "interface.history.event.portalLinkRemoved":
+    "interface-history-event-portalLinkRemoved",
   "interface.history.event.profileCreated":
     "interface-history-event-profileCreated",
   "interface.history.event.profileDetailsChanged":
@@ -2102,6 +2448,13 @@ const FLUENT_IDS_BY_KEY = {
   "portal.tryAgain": "portal-tryAgain",
   "portal.tryAgainFor": "portal-tryAgainFor",
   "portal.linkAnother": "portal-linkAnother",
+  "portal.removeLink": "portal-removeLink",
+  "portal.removeTitle": "portal-removeTitle",
+  "portal.removeBody": "portal-removeBody",
+  "portal.removeConfirm": "portal-removeConfirm",
+  "portal.removeKept": "portal-removeKept",
+  "portal.removeNotices": "portal-removeNotices",
+  "portal.removed": "portal-removed",
   "interface.history.damagedStorageOnly":
     "interface-history-damagedStorageOnly",
   "ai.summary.button": "ai-summary-button",
@@ -2111,6 +2464,14 @@ const FLUENT_IDS_BY_KEY = {
   "ai.notInstalled.body": "ai-notInstalled-body",
   "ai.notInstalled.openPreferences": "ai-notInstalled-openPreferences",
   "aiHelper.resultLabel": "aiHelper-resultLabel",
+  "aiHelper.resultLabelShort": "aiHelper-resultLabelShort",
+  "aiHelper.resultLabelHide": "aiHelper-resultLabelHide",
+  "aiHelper.resultLabelInfo": "aiHelper-resultLabelInfo",
+  "ai.label.settingsTitle": "ai-label-settingsTitle",
+  "ai.label.settingsBody": "ai-label-settingsBody",
+  "ai.label.settingsShowFull": "ai-label-settingsShowFull",
+  "ai.label.settingsFullBack": "ai-label-settingsFullBack",
+  "ai.label.settingsShortShown": "ai-label-settingsShortShown",
   "ai.result.meta": "ai-result-meta",
   "ai.summary.showInDocument": "ai-summary-showInDocument",
   "ai.summary.folded": "ai-summary-folded",
@@ -2137,6 +2498,19 @@ const FLUENT_IDS_BY_KEY = {
   "ai.explain.ready": "ai-explain-ready",
   "ai.failed": "ai-failed",
   "ai.error.memory": "ai-error-memory",
+  "ai.speed.title": "ai-speed-title",
+  "ai.speed.note": "ai-speed-note",
+  "ai.speed.button": "ai-speed-button",
+  "ai.speed.working": "ai-speed-working",
+  "ai.speed.cancel": "ai-speed-cancel",
+  "ai.speed.result": "ai-speed-result",
+  "ai.speed.cancelled": "ai-speed-cancelled",
+  "ai.speed.none": "ai-speed-none",
+  "ai.speed.failed": "ai-speed-failed",
+  "ai.speed.estimate": "ai-speed-estimate",
+  "ai.speed.estimateLong": "ai-speed-estimateLong",
+  "ai.error.memoryNumbers": "ai-error-memoryNumbers",
+  "ai.error.memoryUnknown": "ai-error-memoryUnknown",
   "ai.error.busy": "ai-error-busy",
   "ai.error.storage": "ai-error-storage",
   "ai.summary.pagesMissing": "ai-summary-pagesMissing",
@@ -2250,6 +2624,14 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-possibleNames",
   "interface.AnonymizePreview.removeWord":
     "interface-AnonymizePreview-removeWord",
+  "interface.AnonymizePreview.eponymTitle":
+    "interface-AnonymizePreview-eponymTitle",
+  "interface.AnonymizePreview.eponymOne":
+    "interface-AnonymizePreview-eponymOne",
+  "interface.AnonymizePreview.eponymKeep":
+    "interface-AnonymizePreview-eponymKeep",
+  "interface.AnonymizePreview.eponymKeepAll":
+    "interface-AnonymizePreview-eponymKeepAll",
   "interface.AnonymizePreview.removedSummary":
     "interface-AnonymizePreview-removedSummary",
   "interface.AnonymizePreview.removedCount.name":
@@ -2330,6 +2712,8 @@ const FLUENT_IDS_BY_KEY = {
     "interface-AnonymizePreview-note-daysAfter",
   "interface.AnonymizePreview.note.ageOver90":
     "interface-AnonymizePreview-note-ageOver90",
+  "interface.AnonymizePreview.note.otherForm":
+    "interface-AnonymizePreview-note-otherForm",
   "interface.AnonymizePreview.pasteTitle":
     "interface-AnonymizePreview-pasteTitle",
   "interface.AnonymizePreview.pasteHelp":
@@ -2349,12 +2733,16 @@ const FLUENT_IDS_BY_KEY = {
   "notifications.allow": "notifications-allow",
   "notifications.blocked": "notifications-blocked",
   "notifications.error": "notifications-error",
-  "notifications.help": "notifications-help",
   "notifications.title": "notifications-title",
+  "notifications.blockedMac": "notifications-blockedMac",
+  "notifications.notYetAsked": "notifications-notYetAsked",
+  "notifications.notYetAskedMac": "notifications-notYetAskedMac",
   "notifications.unknown": "notifications-unknown",
   "notifications.unavailable": "notifications-unavailable",
   "notifications.helpAutomatic": "notifications-helpAutomatic",
   "notifications.autoAllow": "notifications-autoAllow",
+  "notifications.autoConsent": "notifications-autoConsent",
+  "notifications.noticesHelp": "notifications-noticesHelp",
   "notifications.autoHelp": "notifications-autoHelp",
   "notifications.autoPaused": "notifications-autoPaused",
   "notifications.checkBusy": "notifications-checkBusy",
@@ -2409,9 +2797,9 @@ const FLUENT_IDS_BY_KEY = {
   "noticesStep.title": "noticesStep-title",
   "noticesStep.intro": "noticesStep-intro",
   "noticesStep.later": "noticesStep-later",
+  "noticesStep.laterBackground": "noticesStep-laterBackground",
   "noticesStep.done": "noticesStep-done",
   "noticesStep.notNow": "noticesStep-notNow",
-  "notifications.autoNeedsNotices": "notifications-autoNeedsNotices",
   "ai.settings.subtitle": "ai-settings-subtitle",
   "ai.model.progressName": "ai-model-progressName",
   "ai.model.progressValue": "ai-model-progressValue",
@@ -2440,12 +2828,359 @@ const FLUENT_IDS_BY_KEY = {
   "personDetails.notNow": "personDetails-notNow",
   "personDetails.notSaved": "personDetails-notSaved",
   "ai.summaryTooLarge": "ai-summaryTooLarge",
+  "background.title": "background-title",
+  "background.keepRunning": "background-keepRunning",
+  "background.keepRunningHelp": "background-keepRunningHelp",
+  "background.startAtLogin": "background-startAtLogin",
+  "background.startAtLoginHelp": "background-startAtLoginHelp",
+  "background.paused": "background-paused",
+  "background.unavailable": "background-unavailable",
+  "background.error": "background-error",
+  "native.tray.open": "native-tray-open",
+  "native.tray.quit": "native-tray-quit",
+  "native.tray.tooltip": "native-tray-tooltip",
+  "native.tray.waiting": "native-tray-waiting",
   "personDetails.previousTitle": "personDetails-previousTitle",
   "personDetails.previousHelp": "personDetails-previousHelp",
   "personDetails.previousEntry": "personDetails-previousEntry",
   "personDetails.previousRemove": "personDetails-previousRemove",
   "personDetails.previousAdd": "personDetails-previousAdd",
   "personDetails.previousInvalid": "personDetails-previousInvalid",
+  "reader.android.failed": "reader-android-failed",
+  "reader.android.next": "reader-android-next",
+  "reader.android.opening": "reader-android-opening",
+  "reader.android.page": "reader-android-page",
+  "reader.android.pageStatus": "reader-android-pageStatus",
+  "reader.android.pageFailed": "reader-android-pageFailed",
+  "reader.android.previous": "reader-android-previous",
+  "reader.android.tooLarge": "reader-android-tooLarge",
+  "reader.android.unavailable": "reader-android-unavailable",
+  "reader.android.zoomIn": "reader-android-zoomIn",
+  "reader.android.zoomOut": "reader-android-zoomOut",
+  "interface.video.name": "interface-video-name",
+  "interface.RecordDialog.recordAVideo": "interface-RecordDialog-recordAVideo",
+  "interface.RecordDialog.unavailable": "interface-RecordDialog-unavailable",
+  "interface.RecordDialog.why": "interface-RecordDialog-why",
+  "interface.RecordDialog.startingTheCameraAndMicrophone":
+    "interface-RecordDialog-startingTheCameraAndMicrophone",
+  "interface.RecordDialog.theVideoIsRecordedWithSound":
+    "interface-RecordDialog-theVideoIsRecordedWithSound",
+  "interface.RecordDialog.yourPhoneAsksOnce":
+    "interface-RecordDialog-yourPhoneAsksOnce",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOn":
+    "interface-RecordDialog-theCameraAndMicrophoneAreOn",
+  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow":
+    "interface-RecordDialog-theCameraAndMicrophoneAreOnNow",
+  "interface.RecordDialog.pictureQuality":
+    "interface-RecordDialog-pictureQuality",
+  "interface.RecordDialog.cameraAndMicrophone":
+    "interface-RecordDialog-cameraAndMicrophone",
+  "interface.RecordDialog.camera": "interface-RecordDialog-camera",
+  "interface.RecordDialog.microphone": "interface-RecordDialog-microphone",
+  "interface.RecordDialog.unnamedCamera":
+    "interface-RecordDialog-unnamedCamera",
+  "interface.RecordDialog.unnamedMicrophone":
+    "interface-RecordDialog-unnamedMicrophone",
+  "interface.RecordDialog.systemDefaultDevice":
+    "interface-RecordDialog-systemDefaultDevice",
+  "interface.RecordDialog.deviceFellBack":
+    "interface-RecordDialog-deviceFellBack",
+  "interface.RecordDialog.testMicrophone":
+    "interface-RecordDialog-testMicrophone",
+  "interface.RecordDialog.stopTestingMicrophone":
+    "interface-RecordDialog-stopTestingMicrophone",
+  "interface.RecordDialog.microphoneLevel":
+    "interface-RecordDialog-microphoneLevel",
+  "interface.RecordDialog.standard": "interface-RecordDialog-standard",
+  "interface.RecordDialog.high": "interface-RecordDialog-high",
+  "interface.RecordDialog.aboutStandardPerHour":
+    "interface-RecordDialog-aboutStandardPerHour",
+  "interface.RecordDialog.aboutHighPerHour":
+    "interface-RecordDialog-aboutHighPerHour",
+  "interface.RecordDialog.useTheCameraAndMicrophone":
+    "interface-RecordDialog-useTheCameraAndMicrophone",
+  "interface.RecordDialog.startRecording":
+    "interface-RecordDialog-startRecording",
+  "interface.RecordDialog.recording": "interface-RecordDialog-recording",
+  "interface.RecordDialog.paused": "interface-RecordDialog-paused",
+  "interface.RecordDialog.pausedCameraAndMicrophoneStillOn":
+    "interface-RecordDialog-pausedCameraAndMicrophoneStillOn",
+  "interface.RecordDialog.recorded": "interface-RecordDialog-recorded",
+  "interface.RecordDialog.recordingAt": "interface-RecordDialog-recordingAt",
+  "interface.RecordDialog.pauseRecording":
+    "interface-RecordDialog-pauseRecording",
+  "interface.RecordDialog.resumeRecording":
+    "interface-RecordDialog-resumeRecording",
+  "interface.RecordDialog.stopAndSave": "interface-RecordDialog-stopAndSave",
+  "interface.RecordDialog.stopAndSaveTheVideo":
+    "interface-RecordDialog-stopAndSaveTheVideo",
+  "interface.RecordDialog.keepRecording":
+    "interface-RecordDialog-keepRecording",
+  "interface.RecordDialog.savingTheVideo":
+    "interface-RecordDialog-savingTheVideo",
+  "interface.RecordDialog.recordingPaused":
+    "interface-RecordDialog-recordingPaused",
+  "interface.RecordDialog.recordingResumed":
+    "interface-RecordDialog-recordingResumed",
+  "interface.RecordDialog.thisDeviceCannotRecordMp4":
+    "interface-RecordDialog-thisDeviceCannotRecordMp4",
+  "interface.RecordDialog.videoNeedsBoth":
+    "interface-RecordDialog-videoNeedsBoth",
+  "interface.RecordDialog.nothingWasRecorded":
+    "interface-RecordDialog-nothingWasRecorded",
+  "interface.RecordDialog.videoSaved": "interface-RecordDialog-videoSaved",
+  "interface.RecordDialog.videoSavedStopped":
+    "interface-RecordDialog-videoSavedStopped",
+  "interface.RecordDialog.videoSavedHidden":
+    "interface-RecordDialog-videoSavedHidden",
+  "interface.RecordDialog.videoSavedSlow":
+    "interface-RecordDialog-videoSavedSlow",
+  "interface.VideoViewer.video": "interface-VideoViewer-video",
+  "interface.VideoViewer.player": "interface-VideoViewer-player",
+  "interface.VideoViewer.thisVideoCouldNotBePlayed":
+    "interface-VideoViewer-thisVideoCouldNotBePlayed",
+  "interface.VideoViewer.controls": "interface-VideoViewer-controls",
+  "interface.VideoViewer.playPause": "interface-VideoViewer-playPause",
+  "interface.VideoViewer.back": "interface-VideoViewer-back",
+  "interface.VideoViewer.forward": "interface-VideoViewer-forward",
+  "interface.VideoViewer.backBig": "interface-VideoViewer-backBig",
+  "interface.VideoViewer.forwardBig": "interface-VideoViewer-forwardBig",
+  "interface.VideoViewer.volumeUp": "interface-VideoViewer-volumeUp",
+  "interface.VideoViewer.volumeDown": "interface-VideoViewer-volumeDown",
+  "interface.VideoViewer.mute": "interface-VideoViewer-mute",
+  "interface.VideoViewer.unmute": "interface-VideoViewer-unmute",
+  "interface.VideoViewer.start": "interface-VideoViewer-start",
+  "interface.VideoViewer.end": "interface-VideoViewer-end",
+  "interface.VideoViewer.playVideo": "interface-VideoViewer-playVideo",
+  "interface.VideoHelp.title": "interface-VideoHelp-title",
+  "interface.VideoHelp.engine": "interface-VideoHelp-engine",
+  "interface.VideoHelp.systems": "interface-VideoHelp-systems",
+  "interface.VideoHelp.restWorks": "interface-VideoHelp-restWorks",
+  "interface.RecordingRecovery.closed": "interface-RecordingRecovery-closed",
+  "interface.RecordingRecovery.closedPaused":
+    "interface-RecordingRecovery-closedPaused",
+  "interface.RecordingRecovery.name": "interface-RecordingRecovery-name",
+  "interface.RecordingRecovery.askLater":
+    "interface-RecordingRecovery-askLater",
+  "interface.RecordingRecovery.delete": "interface-RecordingRecovery-delete",
+  "interface.RecordingRecovery.keep": "interface-RecordingRecovery-keep",
+  "interface.RecordingRecovery.kept": "interface-RecordingRecovery-kept",
+  "interface.RecordingRecovery.nothingToKeep":
+    "interface-RecordingRecovery-nothingToKeep",
+  "interface.RecordingRecovery.deleted": "interface-RecordingRecovery-deleted",
+  "interface.RecordingRecovery.deleteSure":
+    "interface-RecordingRecovery-deleteSure",
+  "interface.RecordingRecovery.savedLocked":
+    "interface-RecordingRecovery-savedLocked",
+  "interface.RecordingRecovery.savedLockedPaused":
+    "interface-RecordingRecovery-savedLockedPaused",
+  "interface.RecordDialog.videoSavedFailed":
+    "interface-RecordDialog-videoSavedFailed",
+  "interface.RecordDialog.notEnoughRoom":
+    "interface-RecordDialog-notEnoughRoom",
+  "interface.RecordDialog.lowOnRoom": "interface-RecordDialog-lowOnRoom",
+  "interface.RecordDialog.lowOnRoomMinutes":
+    "interface-RecordDialog-lowOnRoomMinutes",
+  "interface.RecordDialog.videoSavedNoRoom":
+    "interface-RecordDialog-videoSavedNoRoom",
+  "interface.RecordDialog.videoKeptUnfinished":
+    "interface-RecordDialog-videoKeptUnfinished",
+  "interface.RecordingRecovery.finishedWithRoom":
+    "interface-RecordingRecovery-finishedWithRoom",
+  "interface.RecordingRecovery.stillNoRoom":
+    "interface-RecordingRecovery-stillNoRoom",
+  "security.backup.size": "security-backup-size",
+  "security.backup.sizeWithVideos": "security-backup-sizeWithVideos",
+  "security.backup.sizeNoVideos": "security-backup-sizeNoVideos",
+  "security.backup.leaveVideosOut": "security-backup-leaveVideosOut",
+  "security.backup.leaveVideosOutHelp": "security-backup-leaveVideosOutHelp",
+  "restore.leftOut": "restore-leftOut",
+  "security.backup.sizeCalculating": "security-backup-sizeCalculating",
+  "interface.hidden.videoLeftOut": "interface-hidden-videoLeftOut",
+  "portal.deviceLine": "portal-deviceLine",
+  "portal.deviceLineLinked": "portal-deviceLineLinked",
+  "interface.received.confirmTitleOne": "interface-received-confirmTitleOne",
+  "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
+  "interface.received.confirmBody": "interface-received-confirmBody",
+  "interface.received.import": "interface-received-import",
+  "interface.history.event.profileExported":
+    "interface-history-event-profileExported",
+  "interface.history.event.profileHidden":
+    "interface-history-event-profileHidden",
+  "interface.history.event.profileRestored":
+    "interface-history-event-profileRestored",
+  "interface.history.event.profileImported":
+    "interface-history-event-profileImported",
+  "handover.section.title": "handover-section-title",
+  "handover.section.body": "handover-section-body",
+  "handover.export.button": "handover-export-button",
+  "handover.import.button": "handover-import-button",
+  "handover.close": "handover-close",
+  "handover.export.title": "handover-export-title",
+  "handover.export.about": "handover-export-about",
+  "handover.export.caution": "handover-export-caution",
+  "handover.export.person": "handover-export-person",
+  "handover.export.history": "handover-export-history",
+  "handover.export.keyKind.legend": "handover-export-keyKind-legend",
+  "handover.export.keyKind.generated": "handover-export-keyKind-generated",
+  "handover.export.keyKind.passphrase": "handover-export-keyKind-passphrase",
+  "handover.export.passphrase": "handover-export-passphrase",
+  "handover.export.passphraseHint": "handover-export-passphraseHint",
+  "handover.export.continue": "handover-export-continue",
+  "handover.export.preparing": "handover-export-preparing",
+  "handover.export.keyTitle": "handover-export-keyTitle",
+  "handover.export.keyBody": "handover-export-keyBody",
+  "handover.export.keyLabel": "handover-export-keyLabel",
+  "handover.export.keyGroup": "handover-export-keyGroup",
+  "handover.export.copy": "handover-export-copy",
+  "handover.export.copied": "handover-export-copied",
+  "handover.export.copyFailed": "handover-export-copyFailed",
+  "handover.export.keySaved": "handover-export-keySaved",
+  "handover.export.saveTitle": "handover-export-saveTitle",
+  "handover.export.summary": "handover-export-summary",
+  "handover.export.apart": "handover-export-apart",
+  "handover.export.provider": "handover-export-provider",
+  "handover.export.chooseWhere": "handover-export-chooseWhere",
+  "handover.export.saving": "handover-export-saving",
+  "handover.export.noLocation": "handover-export-noLocation",
+  "handover.export.doneTitle": "handover-export-doneTitle",
+  "handover.export.done": "handover-export-done",
+  "handover.export.doneApart": "handover-export-doneApart",
+  "handover.export.hideOffer": "handover-export-hideOffer",
+  "handover.export.leftOut": "handover-export-leftOut",
+  "handover.export.evidenceLeftOut": "handover-export-evidenceLeftOut",
+  "handover.count.documents": "handover-count-documents",
+  "handover.count.hidden": "handover-count-hidden",
+  "handover.count.folders": "handover-count-folders",
+  "handover.count.answers": "handover-count-answers",
+  "handover.count.evidence": "handover-count-evidence",
+  "handover.count.size": "handover-count-size",
+  "handover.import.title": "handover-import-title",
+  "handover.import.about": "handover-import-about",
+  "handover.import.choose": "handover-import-choose",
+  "handover.import.noFile": "handover-import-noFile",
+  "handover.import.keyTitle": "handover-import-keyTitle",
+  "handover.import.key": "handover-import-key",
+  "handover.import.passphrase": "handover-import-passphrase",
+  "handover.import.keyHint": "handover-import-keyHint",
+  "handover.import.passphraseHint": "handover-import-passphraseHint",
+  "handover.import.open": "handover-import-open",
+  "handover.import.opening": "handover-import-opening",
+  "handover.import.error.typo": "handover-import-error-typo",
+  "handover.import.error.recovery": "handover-import-error-recovery",
+  "handover.import.error.wrong": "handover-import-error-wrong",
+  "handover.import.error.newer": "handover-import-error-newer",
+  "handover.import.error.damaged": "handover-import-error-damaged",
+  "handover.import.previewTitle": "handover-import-previewTitle",
+  "handover.import.says": "handover-import-says",
+  "handover.import.birth": "handover-import-birth",
+  "handover.import.madeOn": "handover-import-madeOn",
+  "handover.import.evidenceNote": "handover-import-evidenceNote",
+  "handover.import.duplicate.legend": "handover-import-duplicate-legend",
+  "handover.import.duplicate.package": "handover-import-duplicate-package",
+  "handover.import.duplicate.content": "handover-import-duplicate-content",
+  "handover.import.duplicate.anyway": "handover-import-duplicate-anyway",
+  "handover.import.nameLabel": "handover-import-nameLabel",
+  "handover.import.add": "handover-import-add",
+  "handover.import.adding": "handover-import-adding",
+  "handover.import.doneTitle": "handover-import-doneTitle",
+  "handover.import.done": "handover-import-done",
+  "handover.import.doneAnswers": "handover-import-doneAnswers",
+  "handover.import.doneEvidence": "handover-import-doneEvidence",
+  "handover.import.doneDropped": "handover-import-doneDropped",
+  "handover.import.receipt": "handover-import-receipt",
+  "handover.import.receiptNote": "handover-import-receiptNote",
+  "handover.import.nothingNew": "handover-import-nothingNew",
+  "handover.importedAnswer": "handover-importedAnswer",
+  "handover.export.leavingWarning": "handover-export-leavingWarning",
+  "handover.export.leave.title": "handover-export-leave-title",
+  "handover.export.leave.body": "handover-export-leave-body",
+  "handover.export.leave.confirm": "handover-export-leave-confirm",
+  "handover.export.error.weak": "handover-export-error-weak",
+  "handover.unfinished": "handover-unfinished",
+  "native.error.49": "native-error-49",
+  "native.error.50": "native-error-50",
+  "hiddenPeople.title": "hiddenPeople-title",
+  "hiddenPeople.body": "hiddenPeople-body",
+  "hiddenPeople.list": "hiddenPeople-list",
+  "hiddenPeople.since": "hiddenPeople-since",
+  "hiddenPeople.documents": "hiddenPeople-documents",
+  "hiddenPeople.restore": "hiddenPeople-restore",
+  "hiddenPeople.restoreFor": "hiddenPeople-restoreFor",
+  "hiddenPeople.handOver": "hiddenPeople-handOver",
+  "hiddenPeople.handOverFor": "hiddenPeople-handOverFor",
+  "hiddenPeople.hide": "hiddenPeople-hide",
+  "hiddenPeople.hideFor": "hiddenPeople-hideFor",
+  "hiddenPeople.lastPerson": "hiddenPeople-lastPerson",
+  "hiddenPeople.confirm.title": "hiddenPeople-confirm-title",
+  "hiddenPeople.confirm.body": "hiddenPeople-confirm-body",
+  "hiddenPeople.confirm.hide": "hiddenPeople-confirm-hide",
+  "hiddenPeople.hidden": "hiddenPeople-hidden",
+  "hiddenPeople.restored": "hiddenPeople-restored",
+  "hiddenPeople.arrived.title": "hiddenPeople-arrived-title",
+  "hiddenPeople.arrived.body": "hiddenPeople-arrived-body",
+  "hiddenPeople.arrived.move": "hiddenPeople-arrived-move",
+  "hiddenPeople.arrived.leave": "hiddenPeople-arrived-leave",
+  "hiddenPeople.arrived.list": "hiddenPeople-arrived-list",
+  "portal.arrivedForHidden": "portal-arrivedForHidden",
+  "hiddenPeople.damagedToo": "hiddenPeople-damagedToo",
+  "interface.history.aboutHiddenPeople": "interface-history-aboutHiddenPeople",
+  "interface.history.how.personHidden": "interface-history-how-personHidden",
+  "portal.arrivedForHiddenNoClinic": "portal-arrivedForHiddenNoClinic",
+  "fileUnder.button": "fileUnder-button",
+  "fileUnder.title": "fileUnder-title",
+  "fileUnder.fromClinic": "fileUnder-fromClinic",
+  "fileUnder.words": "fileUnder-words",
+  "fileUnder.clinicWords": "fileUnder-clinicWords",
+  "fileUnder.rule": "fileUnder-rule",
+  "fileUnder.person": "fileUnder-person",
+  "fileUnder.what.both": "fileUnder-what-both",
+  "fileUnder.what.name": "fileUnder-what-name",
+  "fileUnder.what.date": "fileUnder-what-date",
+  "fileUnder.saveDetails": "fileUnder-saveDetails",
+  "fileUnder.confirm": "fileUnder-confirm",
+  "fileUnder.choose": "fileUnder-choose",
+  "fileUnder.differs": "fileUnder-differs",
+  "fileUnder.saveDetailsOnly": "fileUnder-saveDetailsOnly",
+  "fileUnder.notOnItsOwn": "fileUnder-notOnItsOwn",
+  "handover.import.previousNames": "handover-import-previousNames",
+  "library.fileSaysChecked": "library-fileSaysChecked",
+  "handover.nowVerified": "handover-nowVerified",
+  "notifications.autoSummary": "notifications-autoSummary",
+  "background.keepRunningSummary": "background-keepRunningSummary",
+  "background.startAtLoginSummary": "background-startAtLoginSummary",
+  "native.notice.test": "native-notice-test",
+  "notifications.testButton": "notifications-testButton",
+  "notifications.testSent": "notifications-testSent",
+  "notifications.testSentMac": "notifications-testSentMac",
+  "notifications.testWait": "notifications-testWait",
+  "notifications.testFailed": "notifications-testFailed",
+  "notifications.testOff": "notifications-testOff",
+  "preferences.moreAutomatic": "preferences-moreAutomatic",
+  "preferences.moreBackground": "preferences-moreBackground",
+  "interface.AddVideo.add": "interface-AddVideo-add",
+  "interface.AddVideo.hint": "interface-AddVideo-hint",
+  "interface.AddVideo.checking": "interface-AddVideo-checking",
+  "interface.AddVideo.storing": "interface-AddVideo-storing",
+  "interface.AddVideo.progressLabel": "interface-AddVideo-progressLabel",
+  "interface.AddVideo.cancel": "interface-AddVideo-cancel",
+  "interface.AddVideo.cancelling": "interface-AddVideo-cancelling",
+  "interface.AddVideo.added": "interface-AddVideo-added",
+  "interface.AddVideo.duplicate": "interface-AddVideo-duplicate",
+  "interface.AddVideo.cancelled": "interface-AddVideo-cancelled",
+  "interface.AddVideo.notVideo": "interface-AddVideo-notVideo",
+  "interface.AddVideo.videoAlone": "interface-AddVideo-videoAlone",
+  "interface.AddVideo.hevc": "interface-AddVideo-hevc",
+  "interface.AddVideo.videoCodec": "interface-AddVideo-videoCodec",
+  "interface.AddVideo.audioCodec": "interface-AddVideo-audioCodec",
+  "interface.AddVideo.noVideo": "interface-AddVideo-noVideo",
+  "interface.AddVideo.tooManyTracks": "interface-AddVideo-tooManyTracks",
+  "interface.AddVideo.external": "interface-AddVideo-external",
+  "interface.AddVideo.fragmented": "interface-AddVideo-fragmented",
+  "interface.AddVideo.tooBig": "interface-AddVideo-tooBig",
+  "interface.AddVideo.tooLarge": "interface-AddVideo-tooLarge",
+  "interface.AddVideo.damaged": "interface-AddVideo-damaged",
+  "interface.AddVideo.adding": "interface-AddVideo-adding",
   "cloudAi.title": "cloudAi-title",
   "cloudAi.syntheticOnly": "cloudAi-syntheticOnly",
   "cloudAi.notice": "cloudAi-notice",
@@ -2475,11 +3210,6 @@ const FLUENT_IDS_BY_KEY = {
   "cloudAi.err.generic": "cloudAi-err-generic",
   "cloudAi.send": "cloudAi-send",
   "cloudAi.previewNote": "cloudAi-previewNote",
-  "cloudAi.sendTitle": "cloudAi-sendTitle",
-  "cloudAi.sendBody": "cloudAi-sendBody",
-  "cloudAi.costEstimate": "cloudAi-costEstimate",
-  "cloudAi.costUnknown": "cloudAi-costUnknown",
-  "cloudAi.sendConfirm": "cloudAi-sendConfirm",
   "cloudAi.working": "cloudAi-working",
   "cloudAi.cancelSend": "cloudAi-cancelSend",
   "cloudAi.cancelled": "cloudAi-cancelled",
@@ -2536,6 +3266,7 @@ export interface MessageArgsByKey {
   "comfort.continue": undefined;
   "comfort.intro": undefined;
   "comfort.later": {
+    appearance: FluentArgument;
     autoLock: FluentArgument;
     preferences: FluentArgument;
     security: FluentArgument;
@@ -2632,6 +3363,7 @@ export interface MessageArgsByKey {
   "interface.UnlockPdfDialog.thisDocumentIsLockedWithAPassword": undefined;
   "interface.UnlockPdfDialog.unlocking": undefined;
   "interface.VaultApp.chooseFilesToImport": undefined;
+  "interface.VaultLibrary.picturesNote": undefined;
   "interface.VaultApp.finishingTheTransfer": undefined;
   "interface.VaultApp.lockNowAndCancelTheTransfer": undefined;
   "interface.VaultApp.myCarlosCouldNotLockTheVaultIts": undefined;
@@ -2750,6 +3482,7 @@ export interface MessageArgsByKey {
     where: FluentArgument;
   };
   "interface.notice.notPdf": { name: FluentArgument };
+  "interface.notice.receivedNotOpened": { name: FluentArgument };
   "interface.notice.pdfUnlocked": { name: FluentArgument };
   "interface.notice.personAdded": { name: FluentArgument };
   "interface.notice.photoSaved": { name: FluentArgument };
@@ -2934,6 +3667,10 @@ export interface MessageArgsByKey {
   "native.error.speedTest": undefined;
   "native.filter.backups": undefined;
   "native.filter.pdf": undefined;
+  "native.filter.video": undefined;
+  "native.filter.pictures": undefined;
+  "native.filter.pdfAndPictures": undefined;
+  "native.filter.pdfPicturesAndVideos": undefined;
   "native.kit.text": {
     date: FluentArgument;
     key: FluentArgument;
@@ -3031,6 +3768,7 @@ export interface MessageArgsByKey {
   "recoveryKey.hiddenWhileSaving": undefined;
   "recoveryKey.instructions": undefined;
   "recoveryKey.keyboardHint": undefined;
+  "recoveryKey.kitCloudWarning": undefined;
   "recoveryKey.kitSaved": undefined;
   "recoveryKey.label": { label: FluentArgument };
   "recoveryKey.leave.offered": undefined;
@@ -3101,10 +3839,10 @@ export interface MessageArgsByKey {
   "security.autoLock.shorter": undefined;
   "security.autoLock.title": undefined;
   "security.backup.body": undefined;
+  "security.backup.cloudWarning": undefined;
   "security.backup.save": undefined;
   "security.backup.title": undefined;
   "security.copies.body": undefined;
-  "security.copies.title": undefined;
   "security.devBuild.body": undefined;
   "security.devBuild.title": undefined;
   "security.encryption.body": undefined;
@@ -3335,6 +4073,7 @@ export interface MessageArgsByKey {
   "interface.history.event.passphraseChanged": undefined;
   "interface.history.event.portalLinkStarted": undefined;
   "interface.history.event.portalLinked": undefined;
+  "interface.history.event.portalLinkRemoved": undefined;
   "interface.history.event.profileCreated": undefined;
   "interface.history.event.profileDetailsChanged": undefined;
   "interface.history.event.readingAidFiled": undefined;
@@ -3426,6 +4165,13 @@ export interface MessageArgsByKey {
   "portal.tryAgain": undefined;
   "portal.tryAgainFor": { clinic: FluentArgument };
   "portal.linkAnother": undefined;
+  "portal.removeLink": undefined;
+  "portal.removeTitle": undefined;
+  "portal.removeBody": { clinic: FluentArgument; device: FluentArgument };
+  "portal.removeConfirm": undefined;
+  "portal.removeKept": undefined;
+  "portal.removeNotices": undefined;
+  "portal.removed": undefined;
   "interface.history.damagedStorageOnly": undefined;
   "ai.summary.button": undefined;
   "ai.summary.title": undefined;
@@ -3434,6 +4180,14 @@ export interface MessageArgsByKey {
   "ai.notInstalled.body": undefined;
   "ai.notInstalled.openPreferences": undefined;
   "aiHelper.resultLabel": undefined;
+  "aiHelper.resultLabelShort": undefined;
+  "aiHelper.resultLabelHide": undefined;
+  "aiHelper.resultLabelInfo": undefined;
+  "ai.label.settingsTitle": undefined;
+  "ai.label.settingsBody": undefined;
+  "ai.label.settingsShowFull": undefined;
+  "ai.label.settingsFullBack": undefined;
+  "ai.label.settingsShortShown": undefined;
   "ai.result.meta": {
     date: FluentArgument;
     model: FluentArgument;
@@ -3468,6 +4222,19 @@ export interface MessageArgsByKey {
   "ai.explain.ready": undefined;
   "ai.failed": undefined;
   "ai.error.memory": undefined;
+  "ai.speed.title": undefined;
+  "ai.speed.note": undefined;
+  "ai.speed.button": undefined;
+  "ai.speed.working": undefined;
+  "ai.speed.cancel": undefined;
+  "ai.speed.result": { read: FluentArgument; write: FluentArgument };
+  "ai.speed.cancelled": undefined;
+  "ai.speed.none": undefined;
+  "ai.speed.failed": undefined;
+  "ai.speed.estimate": { minutes: FluentArgument };
+  "ai.speed.estimateLong": undefined;
+  "ai.error.memoryNumbers": { free: FluentArgument; needed: FluentArgument };
+  "ai.error.memoryUnknown": { needed: FluentArgument };
   "ai.error.busy": undefined;
   "ai.error.storage": undefined;
   "ai.summary.pagesMissing": undefined;
@@ -3542,6 +4309,10 @@ export interface MessageArgsByKey {
   "interface.AnonymizePreview.placeholder.manual": undefined;
   "interface.AnonymizePreview.possibleNames": undefined;
   "interface.AnonymizePreview.removeWord": { word: FluentArgument };
+  "interface.AnonymizePreview.eponymTitle": undefined;
+  "interface.AnonymizePreview.eponymOne": { phrase: FluentArgument };
+  "interface.AnonymizePreview.eponymKeep": undefined;
+  "interface.AnonymizePreview.eponymKeepAll": { phrase: FluentArgument };
   "interface.AnonymizePreview.removedSummary": { list: FluentArgument };
   "interface.AnonymizePreview.removedCount.name": { count: FluentArgument };
   "interface.AnonymizePreview.removedCount.doctor": { count: FluentArgument };
@@ -3601,6 +4372,7 @@ export interface MessageArgsByKey {
     number: FluentArgument;
   };
   "interface.AnonymizePreview.note.ageOver90": undefined;
+  "interface.AnonymizePreview.note.otherForm": { n: FluentArgument };
   "interface.AnonymizePreview.pasteTitle": undefined;
   "interface.AnonymizePreview.pasteHelp": undefined;
   "interface.AnonymizePreview.pasteLabel": undefined;
@@ -3612,12 +4384,16 @@ export interface MessageArgsByKey {
   "notifications.allow": undefined;
   "notifications.blocked": undefined;
   "notifications.error": undefined;
-  "notifications.help": undefined;
   "notifications.title": undefined;
+  "notifications.blockedMac": undefined;
+  "notifications.notYetAsked": undefined;
+  "notifications.notYetAskedMac": undefined;
   "notifications.unknown": undefined;
   "notifications.unavailable": undefined;
   "notifications.helpAutomatic": undefined;
   "notifications.autoAllow": undefined;
+  "notifications.autoConsent": undefined;
+  "notifications.noticesHelp": undefined;
   "notifications.autoHelp": undefined;
   "notifications.autoPaused": undefined;
   "notifications.checkBusy": undefined;
@@ -3676,9 +4452,13 @@ export interface MessageArgsByKey {
     preferences: FluentArgument;
     settings: FluentArgument;
   };
+  "noticesStep.laterBackground": {
+    background: FluentArgument;
+    preferences: FluentArgument;
+    settings: FluentArgument;
+  };
   "noticesStep.done": undefined;
   "noticesStep.notNow": undefined;
-  "notifications.autoNeedsNotices": undefined;
   "ai.settings.subtitle": undefined;
   "ai.model.progressName": undefined;
   "ai.model.progressValue": {
@@ -3711,12 +4491,315 @@ export interface MessageArgsByKey {
   "personDetails.notNow": undefined;
   "personDetails.notSaved": undefined;
   "ai.summaryTooLarge": undefined;
+  "background.title": undefined;
+  "background.keepRunning": undefined;
+  "background.keepRunningHelp": undefined;
+  "background.startAtLogin": undefined;
+  "background.startAtLoginHelp": undefined;
+  "background.paused": undefined;
+  "background.unavailable": undefined;
+  "background.error": undefined;
+  "native.tray.open": undefined;
+  "native.tray.quit": undefined;
+  "native.tray.tooltip": undefined;
+  "native.tray.waiting": undefined;
   "personDetails.previousTitle": undefined;
   "personDetails.previousHelp": undefined;
   "personDetails.previousEntry": { number: FluentArgument };
   "personDetails.previousRemove": { number: FluentArgument };
   "personDetails.previousAdd": undefined;
   "personDetails.previousInvalid": undefined;
+  "reader.android.failed": undefined;
+  "reader.android.next": undefined;
+  "reader.android.opening": undefined;
+  "reader.android.page": { page: FluentArgument; total: FluentArgument };
+  "reader.android.pageStatus": { page: FluentArgument; total: FluentArgument };
+  "reader.android.pageFailed": { page: FluentArgument; total: FluentArgument };
+  "reader.android.previous": undefined;
+  "reader.android.tooLarge": undefined;
+  "reader.android.unavailable": undefined;
+  "reader.android.zoomIn": undefined;
+  "reader.android.zoomOut": undefined;
+  "interface.video.name": { date: FluentArgument; time: FluentArgument };
+  "interface.RecordDialog.recordAVideo": undefined;
+  "interface.RecordDialog.unavailable": undefined;
+  "interface.RecordDialog.why": undefined;
+  "interface.RecordDialog.startingTheCameraAndMicrophone": undefined;
+  "interface.RecordDialog.theVideoIsRecordedWithSound": undefined;
+  "interface.RecordDialog.yourPhoneAsksOnce": undefined;
+  "interface.RecordDialog.theCameraAndMicrophoneAreOn": undefined;
+  "interface.RecordDialog.theCameraAndMicrophoneAreOnNow": undefined;
+  "interface.RecordDialog.pictureQuality": undefined;
+  "interface.RecordDialog.cameraAndMicrophone": undefined;
+  "interface.RecordDialog.camera": undefined;
+  "interface.RecordDialog.microphone": undefined;
+  "interface.RecordDialog.unnamedCamera": { number: FluentArgument };
+  "interface.RecordDialog.unnamedMicrophone": { number: FluentArgument };
+  "interface.RecordDialog.systemDefaultDevice": undefined;
+  "interface.RecordDialog.deviceFellBack": undefined;
+  "interface.RecordDialog.testMicrophone": undefined;
+  "interface.RecordDialog.stopTestingMicrophone": undefined;
+  "interface.RecordDialog.microphoneLevel": undefined;
+  "interface.RecordDialog.standard": undefined;
+  "interface.RecordDialog.high": undefined;
+  "interface.RecordDialog.aboutStandardPerHour": undefined;
+  "interface.RecordDialog.aboutHighPerHour": undefined;
+  "interface.RecordDialog.useTheCameraAndMicrophone": undefined;
+  "interface.RecordDialog.startRecording": undefined;
+  "interface.RecordDialog.recording": undefined;
+  "interface.RecordDialog.paused": undefined;
+  "interface.RecordDialog.pausedCameraAndMicrophoneStillOn": undefined;
+  "interface.RecordDialog.recorded": { time: FluentArgument };
+  "interface.RecordDialog.recordingAt": { height: FluentArgument };
+  "interface.RecordDialog.pauseRecording": undefined;
+  "interface.RecordDialog.resumeRecording": undefined;
+  "interface.RecordDialog.stopAndSave": undefined;
+  "interface.RecordDialog.stopAndSaveTheVideo": undefined;
+  "interface.RecordDialog.keepRecording": undefined;
+  "interface.RecordDialog.savingTheVideo": undefined;
+  "interface.RecordDialog.recordingPaused": undefined;
+  "interface.RecordDialog.recordingResumed": undefined;
+  "interface.RecordDialog.thisDeviceCannotRecordMp4": undefined;
+  "interface.RecordDialog.videoNeedsBoth": undefined;
+  "interface.RecordDialog.nothingWasRecorded": undefined;
+  "interface.RecordDialog.videoSaved": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedStopped": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedHidden": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedSlow": { name: FluentArgument };
+  "interface.VideoViewer.video": undefined;
+  "interface.VideoViewer.player": { name: FluentArgument };
+  "interface.VideoViewer.thisVideoCouldNotBePlayed": undefined;
+  "interface.VideoViewer.controls": undefined;
+  "interface.VideoViewer.playPause": undefined;
+  "interface.VideoViewer.back": { seconds: FluentArgument };
+  "interface.VideoViewer.forward": { seconds: FluentArgument };
+  "interface.VideoViewer.backBig": { seconds: FluentArgument };
+  "interface.VideoViewer.forwardBig": { seconds: FluentArgument };
+  "interface.VideoViewer.volumeUp": undefined;
+  "interface.VideoViewer.volumeDown": undefined;
+  "interface.VideoViewer.mute": undefined;
+  "interface.VideoViewer.unmute": undefined;
+  "interface.VideoViewer.start": undefined;
+  "interface.VideoViewer.end": undefined;
+  "interface.VideoViewer.playVideo": undefined;
+  "interface.VideoHelp.title": undefined;
+  "interface.VideoHelp.engine": undefined;
+  "interface.VideoHelp.systems": undefined;
+  "interface.VideoHelp.restWorks": undefined;
+  "interface.RecordingRecovery.closed": undefined;
+  "interface.RecordingRecovery.closedPaused": undefined;
+  "interface.RecordingRecovery.name": { name: FluentArgument };
+  "interface.RecordingRecovery.askLater": undefined;
+  "interface.RecordingRecovery.delete": undefined;
+  "interface.RecordingRecovery.keep": undefined;
+  "interface.RecordingRecovery.kept": { name: FluentArgument };
+  "interface.RecordingRecovery.nothingToKeep": undefined;
+  "interface.RecordingRecovery.deleted": undefined;
+  "interface.RecordingRecovery.deleteSure": undefined;
+  "interface.RecordingRecovery.savedLocked": { name: FluentArgument };
+  "interface.RecordingRecovery.savedLockedPaused": { name: FluentArgument };
+  "interface.RecordDialog.videoSavedFailed": { name: FluentArgument };
+  "interface.RecordDialog.notEnoughRoom": undefined;
+  "interface.RecordDialog.lowOnRoom": undefined;
+  "interface.RecordDialog.lowOnRoomMinutes": { minutes: FluentArgument };
+  "interface.RecordDialog.videoSavedNoRoom": { name: FluentArgument };
+  "interface.RecordDialog.videoKeptUnfinished": undefined;
+  "interface.RecordingRecovery.finishedWithRoom": { name: FluentArgument };
+  "interface.RecordingRecovery.stillNoRoom": { name: FluentArgument };
+  "security.backup.size": { size: FluentArgument };
+  "security.backup.sizeWithVideos": {
+    size: FluentArgument;
+    videos: FluentArgument;
+  };
+  "security.backup.sizeNoVideos": { size: FluentArgument };
+  "security.backup.leaveVideosOut": undefined;
+  "security.backup.leaveVideosOutHelp": undefined;
+  "restore.leftOut": undefined;
+  "security.backup.sizeCalculating": undefined;
+  "interface.hidden.videoLeftOut": undefined;
+  "portal.deviceLine": { device: FluentArgument };
+  "portal.deviceLineLinked": { date: FluentArgument; device: FluentArgument };
+  "interface.received.confirmTitleOne": { name: FluentArgument };
+  "interface.received.confirmTitleMany": { count: FluentArgument };
+  "interface.received.confirmBody": undefined;
+  "interface.received.import": undefined;
+  "interface.history.event.profileExported": undefined;
+  "interface.history.event.profileHidden": undefined;
+  "interface.history.event.profileRestored": undefined;
+  "interface.history.event.profileImported": undefined;
+  "handover.section.title": undefined;
+  "handover.section.body": undefined;
+  "handover.export.button": undefined;
+  "handover.import.button": undefined;
+  "handover.close": undefined;
+  "handover.export.title": undefined;
+  "handover.export.about": undefined;
+  "handover.export.caution": undefined;
+  "handover.export.person": undefined;
+  "handover.export.history": undefined;
+  "handover.export.keyKind.legend": undefined;
+  "handover.export.keyKind.generated": undefined;
+  "handover.export.keyKind.passphrase": undefined;
+  "handover.export.passphrase": undefined;
+  "handover.export.passphraseHint": undefined;
+  "handover.export.continue": undefined;
+  "handover.export.preparing": undefined;
+  "handover.export.keyTitle": undefined;
+  "handover.export.keyBody": undefined;
+  "handover.export.keyLabel": undefined;
+  "handover.export.keyGroup": {
+    characters: FluentArgument;
+    number: FluentArgument;
+  };
+  "handover.export.copy": undefined;
+  "handover.export.copied": undefined;
+  "handover.export.copyFailed": undefined;
+  "handover.export.keySaved": undefined;
+  "handover.export.saveTitle": undefined;
+  "handover.export.summary": { name: FluentArgument };
+  "handover.export.apart": undefined;
+  "handover.export.provider": undefined;
+  "handover.export.chooseWhere": undefined;
+  "handover.export.saving": undefined;
+  "handover.export.noLocation": undefined;
+  "handover.export.doneTitle": undefined;
+  "handover.export.done": { count: FluentArgument; name: FluentArgument };
+  "handover.export.doneApart": undefined;
+  "handover.export.hideOffer": { name: FluentArgument };
+  "handover.export.leftOut": { count: FluentArgument };
+  "handover.export.evidenceLeftOut": { count: FluentArgument };
+  "handover.count.documents": { count: FluentArgument };
+  "handover.count.hidden": { count: FluentArgument };
+  "handover.count.folders": { count: FluentArgument };
+  "handover.count.answers": { count: FluentArgument };
+  "handover.count.evidence": { count: FluentArgument };
+  "handover.count.size": { size: FluentArgument };
+  "handover.import.title": undefined;
+  "handover.import.about": undefined;
+  "handover.import.choose": undefined;
+  "handover.import.noFile": undefined;
+  "handover.import.keyTitle": undefined;
+  "handover.import.key": undefined;
+  "handover.import.passphrase": undefined;
+  "handover.import.keyHint": undefined;
+  "handover.import.passphraseHint": undefined;
+  "handover.import.open": undefined;
+  "handover.import.opening": undefined;
+  "handover.import.error.typo": undefined;
+  "handover.import.error.recovery": undefined;
+  "handover.import.error.wrong": undefined;
+  "handover.import.error.newer": undefined;
+  "handover.import.error.damaged": undefined;
+  "handover.import.previewTitle": undefined;
+  "handover.import.says": { name: FluentArgument };
+  "handover.import.birth": { date: FluentArgument };
+  "handover.import.madeOn": { date: FluentArgument };
+  "handover.import.evidenceNote": undefined;
+  "handover.import.duplicate.legend": undefined;
+  "handover.import.duplicate.package": undefined;
+  "handover.import.duplicate.content": { count: FluentArgument };
+  "handover.import.duplicate.anyway": undefined;
+  "handover.import.nameLabel": undefined;
+  "handover.import.add": undefined;
+  "handover.import.adding": undefined;
+  "handover.import.doneTitle": undefined;
+  "handover.import.done": { count: FluentArgument; name: FluentArgument };
+  "handover.import.doneAnswers": { count: FluentArgument };
+  "handover.import.doneEvidence": undefined;
+  "handover.import.doneDropped": { count: FluentArgument };
+  "handover.import.receipt": undefined;
+  "handover.import.receiptNote": undefined;
+  "handover.import.nothingNew": undefined;
+  "handover.importedAnswer": undefined;
+  "handover.export.leavingWarning": undefined;
+  "handover.export.leave.title": undefined;
+  "handover.export.leave.body": undefined;
+  "handover.export.leave.confirm": undefined;
+  "handover.export.error.weak": undefined;
+  "handover.unfinished": undefined;
+  "native.error.49": undefined;
+  "native.error.50": undefined;
+  "hiddenPeople.title": undefined;
+  "hiddenPeople.body": undefined;
+  "hiddenPeople.list": undefined;
+  "hiddenPeople.since": { date: FluentArgument };
+  "hiddenPeople.documents": { count: FluentArgument };
+  "hiddenPeople.restore": undefined;
+  "hiddenPeople.restoreFor": { name: FluentArgument };
+  "hiddenPeople.handOver": undefined;
+  "hiddenPeople.handOverFor": { name: FluentArgument };
+  "hiddenPeople.hide": undefined;
+  "hiddenPeople.hideFor": { name: FluentArgument };
+  "hiddenPeople.lastPerson": undefined;
+  "hiddenPeople.confirm.title": { name: FluentArgument };
+  "hiddenPeople.confirm.body": { name: FluentArgument };
+  "hiddenPeople.confirm.hide": { name: FluentArgument };
+  "hiddenPeople.hidden": { name: FluentArgument };
+  "hiddenPeople.restored": { name: FluentArgument };
+  "hiddenPeople.arrived.title": { name: FluentArgument };
+  "hiddenPeople.arrived.body": { count: FluentArgument; name: FluentArgument };
+  "hiddenPeople.arrived.move": { name: FluentArgument };
+  "hiddenPeople.arrived.leave": undefined;
+  "hiddenPeople.arrived.list": undefined;
+  "portal.arrivedForHidden": { clinic: FluentArgument; count: FluentArgument };
+  "hiddenPeople.damagedToo": { count: FluentArgument };
+  "interface.history.aboutHiddenPeople": { count: FluentArgument };
+  "interface.history.how.personHidden": undefined;
+  "portal.arrivedForHiddenNoClinic": { count: FluentArgument };
+  "fileUnder.button": undefined;
+  "fileUnder.title": { document: FluentArgument };
+  "fileUnder.fromClinic": undefined;
+  "fileUnder.words": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.clinicWords": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.rule": undefined;
+  "fileUnder.person": undefined;
+  "fileUnder.what.both": { date: FluentArgument; name: FluentArgument };
+  "fileUnder.what.name": { name: FluentArgument };
+  "fileUnder.what.date": { date: FluentArgument };
+  "fileUnder.saveDetails": { person: FluentArgument; what: FluentArgument };
+  "fileUnder.confirm": { person: FluentArgument };
+  "fileUnder.choose": undefined;
+  "fileUnder.differs": undefined;
+  "fileUnder.saveDetailsOnly": { person: FluentArgument; what: FluentArgument };
+  "fileUnder.notOnItsOwn": undefined;
+  "handover.import.previousNames": { names: FluentArgument };
+  "library.fileSaysChecked": { date: FluentArgument };
+  "handover.nowVerified": { clinic: FluentArgument; count: FluentArgument };
+  "notifications.autoSummary": undefined;
+  "background.keepRunningSummary": undefined;
+  "background.startAtLoginSummary": undefined;
+  "native.notice.test": undefined;
+  "notifications.testButton": undefined;
+  "notifications.testSent": undefined;
+  "notifications.testSentMac": undefined;
+  "notifications.testWait": undefined;
+  "notifications.testFailed": undefined;
+  "notifications.testOff": undefined;
+  "preferences.moreAutomatic": undefined;
+  "preferences.moreBackground": undefined;
+  "interface.AddVideo.add": undefined;
+  "interface.AddVideo.hint": undefined;
+  "interface.AddVideo.checking": undefined;
+  "interface.AddVideo.storing": { percent: FluentArgument };
+  "interface.AddVideo.progressLabel": undefined;
+  "interface.AddVideo.cancel": undefined;
+  "interface.AddVideo.cancelling": undefined;
+  "interface.AddVideo.added": undefined;
+  "interface.AddVideo.duplicate": undefined;
+  "interface.AddVideo.cancelled": undefined;
+  "interface.AddVideo.notVideo": undefined;
+  "interface.AddVideo.videoAlone": undefined;
+  "interface.AddVideo.hevc": undefined;
+  "interface.AddVideo.videoCodec": undefined;
+  "interface.AddVideo.audioCodec": undefined;
+  "interface.AddVideo.noVideo": undefined;
+  "interface.AddVideo.tooManyTracks": undefined;
+  "interface.AddVideo.external": undefined;
+  "interface.AddVideo.fragmented": undefined;
+  "interface.AddVideo.tooBig": undefined;
+  "interface.AddVideo.tooLarge": undefined;
+  "interface.AddVideo.damaged": undefined;
+  "interface.AddVideo.adding": undefined;
   "cloudAi.title": undefined;
   "cloudAi.syntheticOnly": undefined;
   "cloudAi.notice": undefined;
@@ -3750,16 +4833,6 @@ export interface MessageArgsByKey {
   "cloudAi.err.generic": undefined;
   "cloudAi.send": undefined;
   "cloudAi.previewNote": undefined;
-  "cloudAi.sendTitle": undefined;
-  "cloudAi.sendBody": {
-    characters: FluentArgument;
-    cost: FluentArgument;
-    label: FluentArgument;
-    model: FluentArgument;
-  };
-  "cloudAi.costEstimate": { amount: FluentArgument };
-  "cloudAi.costUnknown": undefined;
-  "cloudAi.sendConfirm": undefined;
   "cloudAi.working": undefined;
   "cloudAi.cancelSend": undefined;
   "cloudAi.cancelled": undefined;

@@ -1,10 +1,18 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
 } from "react";
+import {
+  aiLabelIsShort,
+  aiLabelSnapshot,
+  rememberShortAiLabel,
+  subscribeAiLabel,
+} from "../aiLabelPreference";
 import {
   formatDate,
   getLocale,
@@ -14,10 +22,18 @@ import {
 } from "../i18n";
 import { explainTerm, summarizeDocument } from "../ai/localModel";
 import { hasVaultErrorCode } from "../vault";
+import { gigabytes, memoryShortfall } from "../ai/memoryWords";
 import { useSummaryProgress } from "./useSummaryProgress";
-import { keptSources, keptSummary, type KeptAnswers } from "../ai/kept";
+import { keptSources, keptSummaryInfo, type KeptAnswers } from "../ai/kept";
 import { SMALL_WINDOW, useMediaMatch } from "./smallWindow";
 import { estimateFit, type FitEstimate } from "../ai/capacity";
+import {
+  ANSWER_CEILING_MINUTES,
+  SHOW_FROM_MINUTES,
+  summaryMinutes,
+  tokensRead,
+  type Speed,
+} from "../ai/speedEstimate";
 import {
   ModelCancelled,
   ModelNotInstalled,
@@ -40,6 +56,9 @@ export interface ReaderAi {
   /** Stops a text read still going: the panel closed before it ended. */
   cancelText: () => void;
   onOpenPreferences: () => void;
+  /** Opens the full notice about the AI helper (#355). The Summary section offers it from the
+   * moment it opens, before any summary exists. */
+  onOpenAiNotice?: () => void;
   /** The answers kept with this document, where the vault keeps them. */
   kept?: KeptAnswers;
   /** Runs `open` once the patient may use the helper: at once, or after the
@@ -101,11 +120,29 @@ export function ReaderAiPanel({
   onReturnFocus: () => void;
 }) {
   const { t } = useI18n();
+  /** The refusal for memory with its numbers (#305): what a start needs and what is free. */
+  const memoryText = (
+    shortfall: ReturnType<typeof memoryShortfall>,
+  ): string => {
+    if (!shortfall) return t("ai.error.memory");
+    const needed = gigabytes(shortfall.needed, "up");
+    return shortfall.available === null
+      ? t("ai.error.memoryUnknown", { needed })
+      : t("ai.error.memoryNumbers", {
+          needed,
+          free: gigabytes(shortfall.available, "down"),
+        });
+  };
   const lang = getLocale();
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [working, setWorking] = useState(false);
   // The last run's failure, said in the panel's alert; null when none.
   const [failed, setFailed] = useState<{ failure: unknown } | null>(null);
+  // Only a refusal for memory carries numbers that matter; read once per render.
+  const failedMemory =
+    failed && hasVaultErrorCode(failed.failure, "aiMemory")
+      ? memoryShortfall(failed.failure)
+      : null;
   const [noText, setNoText] = useState(false);
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   // A document longer than the model reads at a time, waiting for the
@@ -127,6 +164,8 @@ export function ReaderAiPanel({
   // Whether the summary shown is one the vault kept, and whether keeping
   // the latest answer failed (it is still shown).
   const [fromKept, setFromKept] = useState(false);
+  // The kept answer came in a handover file, not from this computer's model (#360).
+  const [fromImported, setFromImported] = useState(false);
   // Why the answer on screen was not kept, if it was not.
   const [keepFailed, setKeepFailed] = useState<
     "ai.keepFailed" | "ai.keepFull" | "ai.summaryTooLarge" | null
@@ -148,6 +187,9 @@ export function ReaderAiPanel({
   // Whole minutes the answer has been working for, shown from the first
   // (#72: a long document's summary may take up to 20 minutes).
   const [workingMinutes, setWorkingMinutes] = useState(0);
+  // How long a summary may take on this computer, once the patient has run the speed check and
+  // the document is long enough for it to matter (#305). Null says nothing.
+  const [timeNote, setTimeNote] = useState<number | null>(null);
   useEffect(() => {
     if (!working) return;
     const started = Date.now();
@@ -260,6 +302,7 @@ export function ReaderAiPanel({
     );
     if (!live.current) return;
     setFromKept(false);
+    setFromImported(false);
     setSummary(result);
     // A new summary: no sentence of it is shown yet.
     setShownIndex(null);
@@ -282,20 +325,22 @@ export function ReaderAiPanel({
     const mine = ++run.current;
     progress.reset();
     setTooLong(null);
+    setTimeNote(null);
     setWorking(true);
     setFailed(null);
     setKeepFailed(null);
     const fresh = again > 0;
     Promise.resolve(
       !fresh && aiRef.current.kept
-        ? keptSummary(aiRef.current.kept, SUMMARY_LANGUAGE)
+        ? keptSummaryInfo(aiRef.current.kept, SUMMARY_LANGUAGE)
         : null,
     )
       .then(async (found) => {
         if (found) {
           if (!live.current) return;
           setFromKept(true);
-          setSummary(found);
+          setFromImported(found.imported);
+          setSummary(found.summary);
           // A new summary: no sentence of it is shown yet.
           setShownIndex(null);
           setUnfolded(false);
@@ -313,6 +358,22 @@ export function ReaderAiPanel({
         if (document.pages.every((page) => !page.text.trim())) {
           setNoText(true);
           return;
+        }
+        // The time it may take, from the speed this computer measured (if it was).
+        {
+          const measured: Speed | null =
+            (await aiRef.current.model.speed?.().catch(() => null)) ?? null;
+          // Closed, or a newer request started, while the speed was asked: nothing more is done.
+          if (!live.current || run.current !== mine) return;
+          const known = statusRef.current;
+          const room = known?.state === "installed" ? known.capacity : null;
+          if (measured && room) {
+            const minutes = summaryMinutes(
+              tokensRead(document, room),
+              measured,
+            );
+            setTimeNote(minutes >= SHOW_FROM_MINUTES ? minutes : null);
+          }
         }
         // A document longer than the model reads at a time waits for the
         // patient's choice (#301): an estimate from its length, so only a
@@ -478,6 +539,21 @@ export function ReaderAiPanel({
       )}
       {/* Hidden, never removed, while folded: the answer and its state stay. */}
       <div id="reader-ai-whole" ref={wholeRef} hidden={folded}>
+        {/* About the AI helper (#355): its heading, the privacy paragraph and the button that
+          opens the notice, there as the Summary opens and before any summary is made. */}
+        {tool === "summary" && ai.onOpenAiNotice && (
+          <div className="native-reader-ai-about">
+            <h4>{t("aiHelper.notice.title")}</h4>
+            <p>{t("aiHelper.notice.introShare")}</p>
+            <button
+              className="button"
+              type="button"
+              onClick={ai.onOpenAiNotice}
+            >
+              {t("aiHelper.notice.title")}
+            </button>
+          </div>
+        )}
         {/* Said in the app's language, only when it is not English: the summary
           below is in English (`SUMMARY_LANGUAGE`). */}
         {tool === "summary" && lang !== SUMMARY_LANGUAGE && (
@@ -593,6 +669,13 @@ export function ReaderAiPanel({
                 {stageWords}
               </p>
             )}
+            {timeNote !== null && (
+              <p className="native-reader-ai-wait">
+                {timeNote > ANSWER_CEILING_MINUTES
+                  ? t("ai.speed.estimateLong")
+                  : t("ai.speed.estimate", { minutes: timeNote })}
+              </p>
+            )}
             <progress
               {...(progress.view.stage === "before"
                 ? { "aria-labelledby": "reader-ai-stage" }
@@ -630,17 +713,19 @@ export function ReaderAiPanel({
         )}
         {failed && (
           <p role="alert">
-            {t(
-              Object.entries(OWN_WORDS).find(([code]) =>
-                hasVaultErrorCode(failed.failure, code),
-              )?.[1] ?? "ai.failed",
-            )}
+            {failedMemory
+              ? memoryText(failedMemory)
+              : t(
+                  Object.entries(OWN_WORDS).find(([code]) =>
+                    hasVaultErrorCode(failed.failure, code),
+                  )?.[1] ?? "ai.failed",
+                )}
           </p>
         )}
         {noText && <p>{t("ai.summary.noText")}</p>}
         {summary && (
           <div className="native-reader-ai-result">
-            <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+            <AiResultLabel tool={summary.tool} model={summary.model} />
             <ol lang={summary.lang}>
               {summary.sentences.map(({ text, source }, index) => (
                 <li key={index}>
@@ -679,6 +764,9 @@ export function ReaderAiPanel({
               at={summary.createdAt}
             />
             {keepFailed && <p role="alert">{t(keepFailed)}</p>}
+            {fromKept && fromImported && (
+              <p className="field-hint">{t("handover.importedAnswer")}</p>
+            )}
             {fromKept && (
               <button
                 ref={againRef}
@@ -694,7 +782,7 @@ export function ReaderAiPanel({
         )}
         {explained && tool === "explain" && (
           <div className="native-reader-ai-result">
-            <p className="ai-label">{t("aiHelper.resultLabel")}</p>
+            <AiResultLabel tool={explained.tool} model={explained.model} />
             <p>{explained.text}</p>
             <ResultMeta
               tool={explained.tool}
@@ -706,6 +794,72 @@ export function ReaderAiPanel({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The warning above an AI answer (#351). The full sentence, with "Don't show this again"; after
+ * that choice, for this tool and model, the short "AI draft" tag and a small button that shows the
+ * full sentence. The tag is never removed, and a screen reader hears it as the answer's first
+ * words. Settings → AI helper brings the full sentence back.
+ */
+function AiResultLabel({ tool, model }: { tool: AiTool; model: ModelInfo }) {
+  const { t } = useI18n();
+  useSyncExternalStore(subscribeAiLabel, aiLabelSnapshot);
+  const [open, setOpen] = useState(false);
+  const fullId = useId();
+  const warningId = useId();
+  const infoRef = useRef<HTMLButtonElement | null>(null);
+  // Pressing Don't show this again takes its own button away: the focus goes to the button that
+  // took its place (What "AI draft" means), not to the page.
+  const [justHid, setJustHid] = useState(false);
+  const short = aiLabelIsShort(tool, model.sha256);
+  useLayoutEffect(() => {
+    if (short && justHid) {
+      infoRef.current?.focus();
+      setJustHid(false);
+    }
+  }, [short, justHid]);
+  // The sentence (or the tag) stays a paragraph of its own: the button sits beside it, so that a
+  // test or a reader finds the warning's words exactly.
+  if (!short)
+    return (
+      <div className="ai-label-row">
+        <p id={warningId} className="ai-label">
+          {t("aiHelper.resultLabel")}
+        </p>
+        <button
+          className="button ai-label-hide"
+          type="button"
+          aria-describedby={warningId}
+          onClick={() => {
+            setJustHid(true);
+            rememberShortAiLabel(tool, model.sha256);
+          }}
+        >
+          {t("aiHelper.resultLabelHide")}
+        </button>
+      </div>
+    );
+  return (
+    <div className="ai-label-short">
+      <div className="ai-label-row">
+        <p className="ai-label">{t("aiHelper.resultLabelShort")}</p>
+        <button
+          ref={infoRef}
+          className="button ai-label-info"
+          type="button"
+          aria-expanded={open}
+          aria-controls={fullId}
+          onClick={() => setOpen((now) => !now)}
+        >
+          {t("aiHelper.resultLabelInfo")}
+        </button>
+      </div>
+      <p id={fullId} className="ai-label" hidden={!open}>
+        {t("aiHelper.resultLabel")}
+      </p>
+    </div>
   );
 }
 
