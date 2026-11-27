@@ -255,42 +255,32 @@ impl VaultStore {
         token: &str,
         check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
     ) -> PushOutcome {
-        self.push_received_for_session(self.portal_link_ticket(), token, check)
-    }
-
-    fn push_received_for_session(
-        &self,
-        session: u64,
-        token: &str,
-        check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
-    ) -> PushOutcome {
         let Ok(token) = NoticeToken::parse(token) else {
             return PushOutcome::Ignored;
         };
-        let Ok(mut inbox) = self.push_inbox.lock() else {
-            return PushOutcome::Ignored;
-        };
-        let open = {
-            let guard = self.session();
-            if self.portal_link_ticket() != session || !inbox.first_time(&token) {
-                return PushOutcome::Ignored;
-            }
-            guard
-                .as_ref()
-                .map(|o| o.recovery.is_none() && o.manifest.remote_notices.opted_in())
-        };
-        match open {
-            // Locked: whether remote notices are on is in the vault. Owe one check; opening
-            // decides.
+        match self.admit_push_token(&token) {
+            Ok(session) => self.owed_check(session, check),
+            Err(outcome) => outcome,
+        }
+    }
+
+    /// Admit each fresh token before coalescing work. A locked store records its own owed check
+    /// under the inbox lock, so an immediately following unlock observes it even if the worker is busy.
+    pub(crate) fn admit_push_token(&self, token: &NoticeToken) -> Result<u64, PushOutcome> {
+        let mut inbox = self.push_inbox.lock().map_err(|_| PushOutcome::Ignored)?;
+        if !inbox.first_time(token) {
+            return Err(PushOutcome::Ignored);
+        }
+        let guard = self.session();
+        match guard.as_ref() {
             None => {
                 inbox.owe_check();
-                PushOutcome::Pending
+                Err(PushOutcome::Pending)
             }
-            Some(false) => PushOutcome::Ignored,
-            Some(true) => {
-                drop(inbox);
-                self.owed_check(session, check)
+            Some(open) if open.recovery.is_none() && open.manifest.remote_notices.opted_in() => {
+                Ok(self.portal_link_ticket())
             }
+            Some(_) => Err(PushOutcome::Ignored),
         }
     }
 
@@ -301,12 +291,21 @@ impl VaultStore {
     pub(crate) fn android_notice_received(
         &self,
         received_session: u64,
-        token: &NoticeToken,
         check: impl FnOnce(u64) -> Result<crate::portal_pickup::CheckResult, VaultError>,
         display: impl FnOnce(),
     ) -> PushOutcome {
+        {
+            let guard = self.session();
+            if self.portal_link_ticket() != received_session
+                || !guard.as_ref().is_some_and(|open| {
+                    open.recovery.is_none() && open.manifest.remote_notices.opted_in()
+                })
+            {
+                return PushOutcome::Ignored;
+            }
+        }
         let mut arrival_session = None;
-        let outcome = self.push_received_for_session(received_session, token.as_str(), |session| {
+        let outcome = self.owed_check(received_session, |session| {
             let result = check(session)?;
             if result.added > 0 {
                 arrival_session = Some(session);
@@ -485,7 +484,6 @@ mod tests {
             permission: std::sync::Mutex::new(Permission::Granted),
         };
         let session = store.portal_link_ticket();
-        let token = |n: u8| NoticeToken::parse(&format!("{n:022}")).unwrap();
         let result = |added| {
             Ok(crate::portal_pickup::CheckResult {
                 added,
@@ -494,7 +492,7 @@ mod tests {
         };
         let never = || panic!("unexpected local display");
         assert_eq!(
-            store.android_notice_received(session, &token(0), |_| panic!("no consent"), never),
+            store.android_notice_received(session, |_| panic!("no consent"), never),
             PushOutcome::Ignored
         );
         let seen = RefCell::new(Vec::new());
@@ -505,21 +503,19 @@ mod tests {
         assert_eq!(
             store.android_notice_received(
                 session.wrapping_sub(1),
-                &token(1),
                 |_| panic!("stale callback"),
                 never
             ),
             PushOutcome::Ignored
         );
         assert_eq!(
-            store.android_notice_received(session, &token(1), |_| result(0), never),
+            store.android_notice_received(session, |_| result(0), never),
             PushOutcome::Checked
         );
         let displayed = std::cell::Cell::new(0);
         assert_eq!(
             store.android_notice_received(
                 session,
-                &token(2),
                 |_| result(1),
                 || displayed.set(displayed.get() + 1)
             ),
@@ -527,13 +523,8 @@ mod tests {
         );
         assert_eq!(displayed.get(), 1);
         assert_eq!(
-            store.android_notice_received(session, &token(2), |_| panic!("duplicate"), never),
-            PushOutcome::Ignored
-        );
-        assert_eq!(
             store.android_notice_received(
                 session,
-                &token(3),
                 |_| {
                     store
                         .set_remote_notices(false, &source, session, &exchange)
@@ -544,6 +535,110 @@ mod tests {
             ),
             PushOutcome::Checked
         );
+    }
+
+    #[cfg(feature = "android-push")]
+    #[test]
+    fn android_checks_once_when_a_replay_and_a_fresh_notice_arrive_in_either_order() {
+        use crate::android_push_queue::PendingNotices;
+        let (_temp, store, _) = store_with_links();
+        let store = std::sync::Arc::new(store);
+        let source = FakePushSource {
+            platform: crate::document_notifications::Platform::AndroidFcm,
+            permission: std::sync::Mutex::new(Permission::Granted),
+        };
+        let seen = RefCell::new(Vec::new());
+        store
+            .set_remote_notices(
+                true,
+                &source,
+                store.portal_link_ticket(),
+                &portal(&seen, |_| None),
+            )
+            .unwrap();
+
+        let mut pending = PendingNotices::default();
+        let mut checks = 0;
+        // Process token 1, then a replay before a fresh token, a replay after a fresh token,
+        // and finally only replays. Each batch containing anything new asks for exactly one check.
+        for (batch, expected) in [(&[1u8][..], 1), (&[1, 2], 2), (&[3, 2], 3), (&[1, 2, 3], 3)] {
+            for n in batch {
+                let token = NoticeToken::parse(&format!("{n:022}")).unwrap();
+                pending.push(std::sync::Arc::clone(&store), token);
+            }
+            for cue in pending.take() {
+                assert_eq!(
+                    cue.store.android_notice_received(
+                        cue.session,
+                        |_| {
+                            checks += 1;
+                            Ok(Default::default())
+                        },
+                        || panic!("no document was added")
+                    ),
+                    PushOutcome::Checked
+                );
+            }
+            assert_eq!(checks, expected);
+        }
+
+        // A cue received while locked belongs to this vault's next unlock, even if the worker
+        // has no opportunity to drain its queue in between.
+        store.lock();
+        pending.push(
+            std::sync::Arc::clone(&store),
+            NoticeToken::parse(TOKEN).unwrap(),
+        );
+        store.unlock(PASSWORD).unwrap();
+        assert!(pending.take().is_empty());
+        assert_eq!(
+            store.reconcile_after_unlock(store.portal_link_ticket(), |_| {
+                checks += 1;
+                Ok(Default::default())
+            }),
+            PushOutcome::Checked
+        );
+        assert_eq!(checks, 4);
+    }
+
+    #[cfg(feature = "android-push")]
+    #[test]
+    fn android_pending_checks_follow_their_vault_and_replace_only_its_old_session() {
+        use crate::android_push_queue::PendingNotices;
+        let (_first_dir, first, _) = store_with_links();
+        let (_second_dir, second, _) = store_with_links();
+        let first = std::sync::Arc::new(first);
+        let second = std::sync::Arc::new(second);
+        let source = FakePushSource {
+            platform: crate::document_notifications::Platform::AndroidFcm,
+            permission: std::sync::Mutex::new(Permission::Granted),
+        };
+        for store in [&first, &second] {
+            let seen = RefCell::new(Vec::new());
+            store
+                .set_remote_notices(
+                    true,
+                    &source,
+                    store.portal_link_ticket(),
+                    &portal(&seen, |_| None),
+                )
+                .unwrap();
+        }
+        let token = |n: u8| NoticeToken::parse(&format!("{n:022}")).unwrap();
+        let mut pending = PendingNotices::default();
+        pending.push(std::sync::Arc::clone(&first), token(1));
+        pending.push(std::sync::Arc::clone(&second), token(2));
+        pending.push(std::sync::Arc::clone(&second), token(3));
+        first.lock();
+        first.unlock(PASSWORD).unwrap();
+        pending.push(std::sync::Arc::clone(&first), token(4));
+
+        let notices = pending.take();
+        assert_eq!(notices.len(), 2);
+        assert!(std::sync::Arc::ptr_eq(&notices[0].store, &first));
+        assert_eq!(notices[0].session, first.portal_link_ticket());
+        assert!(std::sync::Arc::ptr_eq(&notices[1].store, &second));
+        assert!(pending.take().is_empty());
     }
 
     /// Every file's bytes under `root`, but the open store's lock file: it is empty, and on

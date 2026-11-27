@@ -30,16 +30,24 @@ internal object PushState {
     }
     private var listener: ((String) -> Unit)? = null
 
-    @Synchronized fun listen(c: Context, notify: (String) -> Unit) {
-        listener = notify
-        if (enabled(c) && ReadyMessagingService.permitted(c))
-            prefs(c).getString("notice", null)?.let(notify)
+    fun listen(c: Context, notify: (String) -> Unit) {
+        val retained = synchronized(this) {
+            listener = notify
+            if (enabled(c) && ReadyMessagingService.permitted(c)) prefs(c).getString("notice", null)
+            else null
+        }
+        retained?.let(notify)
     }
 
-    @Synchronized fun receive(c: Context, notice: String) {
-        if (!enabled(c)) return
-        check(prefs(c).edit().putString("notice", notice).commit())
-        listener?.invoke(notice)
+    fun receive(c: Context, notice: String) {
+        val notify = synchronized(this) {
+            if (!enabled(c)) return
+            check(prefs(c).edit().putString("notice", notice).commit())
+            listener
+        }
+        // Rust may be holding its session lock while the native display checks enabled().
+        // Call across the native bridge only after releasing the transport monitor.
+        notify?.invoke(notice)
     }
     @Synchronized fun snapshot(c: Context): JSONObject {
         val p = prefs(c)

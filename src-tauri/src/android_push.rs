@@ -143,11 +143,13 @@ pub(crate) fn listen<R: Runtime>(
                 if let InvokeResponseBody::Json(json) = body {
                     if let Ok(value) = serde_json::from_str::<String>(&json) {
                         if let Ok(token) = NoticeToken::parse(&value) {
-                            incoming
+                            if incoming
                                 .lock()
                                 .unwrap_or_else(|p| p.into_inner())
-                                .push(Arc::clone(stores.arc()), token);
-                            let _ = wake.try_send(());
+                                .push(Arc::clone(stores.arc()), token)
+                            {
+                                let _ = wake.try_send(());
+                            }
                         }
                     }
                 }
@@ -172,7 +174,6 @@ pub(crate) fn listen<R: Runtime>(
                     {
                         cue.store.android_notice_received(
                             cue.session,
-                            &cue.token,
                             |session| cue.store.check_documents(session),
                             || {
                                 let _ = plugin.run_mobile_plugin::<()>("showGeneric", ());
