@@ -886,7 +886,10 @@ The workflow `mycarlos-android-emulator.yml` builds the Android debug app for an
 emulator, starts an Android 34 emulator on a hosted Linux runner and runs
 `scripts/android-emulator-smoke.sh`. It runs by hand (Actions > myCarlos Android emulator smoke
 test > Run workflow) and on pull requests that change the workflow, that script or the Android
-security script; ordinary pull requests do not run it.
+security script. For changes confined to the picker or preflight JavaScript, run the emulator
+workflow manually. Local runs require a disposable account and emulator, explicitly selected
+with `MYCARLOS_DISPOSABLE_ANDROID_EMULATOR=1`. The launcher refuses a preinstalled myCarlos
+package, including retained package data.
 
 What it checks:
 
@@ -897,7 +900,8 @@ What it checks:
 - The picker journey requires a fresh emulator and the installed debug APK. It creates a
   synthetic vault with a one-minute lock, waits 65 seconds in the Android picker, imports a
   FAKE PDF from Downloads, and compares the saved copy's SHA-256 with the fixture. It then
-  presses Home with the picker open and checks the lock screen on return.
+  presses Home with the picker open. A return to myCarlos must show a locked vault. If the
+  launcher restores DocumentsUI, the artifact records the outstanding Home check as pending.
 - A screenshot of the first screen, the log and the check output are kept as the
   `myCarlos-Android-Emulator-Smoke` artifact for 14 days.
 

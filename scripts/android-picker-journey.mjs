@@ -2,19 +2,19 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { _android as android, expect } from "@playwright/test";
+import {
+  appPackage as app,
+  emulatorSerial,
+} from "./android-emulator-preflight.mjs";
 
-const app = "ca.carlos.mycarlos";
 const documentsUi = /.*\.documentsui/;
-const devices = await android.devices();
+const serial = emulatorSerial();
+const { _android: android, expect } = await import("@playwright/test");
+const devices = await android.devices({ host: "127.0.0.1", port: 5037 });
 try {
   assert.equal(devices.length, 1, "Use a single fresh Android emulator");
   const [device] = devices;
-  assert.match(device.serial(), /^emulator-\d+$/);
-  assert.equal(
-    (await device.shell("getprop ro.kernel.qemu")).toString().trim(),
-    "1",
-  );
+  assert.equal(device.serial(), serial);
   device.setDefaultTimeout(30_000);
   const page = await (await device.webView({ pkg: app })).page();
   page.setDefaultTimeout(30_000);
@@ -26,6 +26,12 @@ try {
   };
 
   // Only a first-run app is eligible. Do not unlock or clear an existing vault.
+  assert.equal(
+    await page.evaluate(() =>
+      window.__TAURI_INTERNALS__.invoke("vault_status"),
+    ),
+    "absent",
+  );
   await expect(
     page.getByRole("heading", { name: "Make myCarlos comfortable for you" }),
   ).toBeVisible();
@@ -116,14 +122,26 @@ try {
       `am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p ${app}`,
     );
     await expect.poll(foreground).toMatch(/ca\.carlos\.mycarlos|\.documentsui/);
-    // Launchers can restore the picker task. Return from that picker normally.
-    if (/\.documentsui/.test(await foreground()))
-      await device.input.press("Back");
-    await expect(
-      page.getByRole("heading", { name: "Unlock your vault" }),
-    ).toBeVisible({ timeout: 30_000 });
-    await expect(row).toHaveCount(0);
-    console.log("PASS Home with the picker open returned to a locked vault");
+    // Returning to DocumentsUI is still a pending pick. Back from there would
+    // exercise foreground cancellation, a different lifecycle from returning
+    // to the app after Home. Record the observed branch in the artifact.
+    if (/\.documentsui/.test(await foreground())) {
+      console.log(
+        "PENDING Home restored the system picker; return to the app after background settlement still needs device evidence",
+      );
+    } else {
+      await expect(
+        page.getByRole("heading", { name: "Unlock your vault" }),
+      ).toBeVisible({ timeout: 30_000 });
+      assert.equal(
+        await page.evaluate(() =>
+          window.__TAURI_INTERNALS__.invoke("vault_status"),
+        ),
+        "locked",
+      );
+      await expect(row).toHaveCount(0);
+      console.log("PASS Home with the picker open returned to a locked vault");
+    }
   } finally {
     await device.shell(`rm -f ${directory}/${source} ${directory}/${copy}`);
   }
