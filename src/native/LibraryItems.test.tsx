@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { humanText } from "../test/humanText";
 import type { VaultFolder, VaultRecord } from "../vault";
 import { LibraryItems } from "./LibraryItems";
 import type { DragItem, VaultDragDrop } from "./useVaultDragDrop";
@@ -127,11 +128,15 @@ describe.each(["list", "grid"] as const)("the library's %s view", (view) => {
     const { onOpenFolder, onRenameFolder, onOpenRecord } = open(view);
 
     fireEvent.click(
-      screen.getByRole("button", { name: /FAKE Letters, open folder/ }),
+      screen.getByRole("button", {
+        name: humanText(/FAKE Letters, open folder/),
+      }),
     );
     expect(onOpenFolder).toHaveBeenCalledExactlyOnceWith("folder-1");
     fireEvent.click(
-      screen.getByRole("button", { name: /Rename folder FAKE Letters/ }),
+      screen.getByRole("button", {
+        name: humanText(/Rename folder FAKE Letters/),
+      }),
     );
     expect(onRenameFolder).toHaveBeenCalledExactlyOnceWith(FOLDER);
     fireEvent.click(
