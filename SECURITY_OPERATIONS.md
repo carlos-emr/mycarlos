@@ -18,8 +18,20 @@ production end-of-support schedule remain an owner decision and release gate.
   the AI helper's model download (#72, #219, on main). The fields pickup may send are listed
   under [Portal pickup](#portal-pickup-what-may-leave-the-device); the download sends none
   ([AI helper](#ai-helper-72-nothing-about-the-patient-leaves-the-device)); nothing else may leave the device.
-- The AI helper (#72) adds one host to the allow-list, for the model file only: its "cloud" way is
-  a text file the patient saves, and its model helper has no network.
+- Native code downloads local model files from the reviewed model addresses. The model helper runs
+  offline. Patients can save a text file for use outside the app.
+- **Proposed cloud send (#72, the patient's own key):** the off-by-default `cloud-ai` feature can run
+  in evaluation builds. Release builds refuse it. The native client's planned egress allowlist is:
+  - Anthropic, `api.anthropic.com:443`, `POST /v1/messages` and `GET /v1/models`.
+  - OpenAI, `api.openai.com:443`, `POST /v1/chat/completions` and `GET /v1/models`.
+  - Google Gemini, `generativelanguage.googleapis.com:443`, `POST /v1beta/models/{model}:generateContent`
+    for a verified model ID, and `GET /v1beta/models`.
+
+  What may leave: the re-checked, de-identified text of one document, the app's fixed instructions and
+  schema, the patient's API key in the selected provider's authentication header, a fixed
+  `myCarlos` user-agent with no identifier, and the time. Nothing else: no profile, vault, device or
+  document identifier, no cookies, no referrer. The key, the text, the answer and the request and
+  response bodies are never logged (THREAT_MODEL AI-11, NET-09).
 - There is no automatic support bundle. A future bundle must be generated locally, display every
   field to the patient before export, contain no document/profile/file name/path, key material,
   passphrase-derived value, vault/object ID or free-form log, and require an explicit save action.
