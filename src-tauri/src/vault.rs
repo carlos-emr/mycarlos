@@ -45,6 +45,9 @@ mod notice_keys;
 mod remote_notices;
 pub use backup_video::{BackupPlan, BackupSize};
 pub(crate) use delivery::AidFiling;
+pub use picked_video::{
+    PickedVideoOutcome, PickedVideoRequest, VideoImportJob, VideoImportProgress, VideoImportStage,
+};
 #[allow(unused_imports)]
 pub use playback::PlaybackOpened;
 #[cfg(test)]
@@ -79,6 +82,8 @@ mod backup_video;
 mod playback;
 // Recording into the vault (#359): the video commands call it.
 mod recording;
+// A video the patient picks from their own files: checked, cleaned and sealed.
+mod picked_video;
 
 use ai_results::StoredAiResult;
 pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInput, AiTool};
@@ -97,8 +102,8 @@ pub use ai_results::{check_answer as check_ai_answer, AiResultInfo, AiResultInpu
 /// a newer manifest.
 /// Format 13 (previous full names) follows 12 (remembered refusals, #143). Its number was
 /// taken at merge (VAULT_FORMAT.md, "Format numbers are taken at merge"); the numbers
-/// after it are the profile handover's 14 and hiding a person's 15 (#360), the cloud AI key
-/// draft's 16 (#389) and #418's 17. A renumber changes this
+/// after it are the profile handover's 14 and hiding a person's 15 (#360), link removal's 16
+/// (#160), the cloud AI key draft's 17 (#389) and #418's 18. A renumber changes this
 /// line, the section in VAULT_FORMAT.md and the tests that name 12 and 13.
 const MANIFEST_FORMAT_PREVIOUS_FULL_NAMES: u32 = 13;
 /// Format 14 (provisional, #360) is the profile handover: a profile can be hidden, can say
@@ -118,7 +123,11 @@ const MANIFEST_FORMAT_HIDDEN_PROFILES: u32 = 15;
 /// The first format that can hold a hidden profile. The library, the lists, search, the AI
 /// helper, the notices and delivery filing all honour `hidden` on a profile from here.
 const HIDDEN_PROFILES_FORMAT: Option<u32> = Some(MANIFEST_FORMAT_HIDDEN_PROFILES);
-const VAULT_FORMAT: u32 = MANIFEST_FORMAT_HIDDEN_PROFILES;
+/// Format 16 (removing a clinic link, #160) adds the `portalLinkRemoved` history event. No
+/// manifest field changed; an older build refuses the vault because it cannot read the event.
+/// The number is taken at merge, after the profile handover's 14 and hiding a person's 15.
+const MANIFEST_FORMAT_LINK_REMOVAL: u32 = 16;
+const VAULT_FORMAT: u32 = MANIFEST_FORMAT_LINK_REMOVAL;
 /// At most this many entries of a person's old history are kept on an imported profile.
 const MAX_IMPORTED_HISTORY: usize = 2_000;
 /// And at most this many across every imported profile of a vault, so that handing over many
@@ -1458,12 +1467,12 @@ impl VaultStore {
         enabled: bool,
     ) -> Result<crate::document_notification_runtime::Status, VaultError> {
         if !enabled {
-            // Revoke final OS acceptance before even an in-memory cache lock.
+            // Revoke final OS acceptance before even an in-memory cache lock. Only the notices
+            // stop: the automatic document checks are their own choice (a check that is running
+            // goes on, and its documents are filed as before).
             if let Some(runtime) = self.notifications.get() {
                 runtime.suspend_notices();
             }
-            self.collection.suspend();
-            self.drop_idle_collection_cache();
         }
         self.notifications
             .get()
@@ -1481,7 +1490,7 @@ impl VaultStore {
         let stamp = self.collection.suspend();
         self.drop_idle_collection_cache();
         run_at_test_boundary("notifications.after-automatic-suspend");
-        if !cfg!(any(test, windows)) {
+        if !cfg!(any(test, desktop)) {
             return Err(VaultError::Invalid);
         }
         let status = self
@@ -1505,13 +1514,14 @@ impl VaultStore {
     /// (`VaultSlots::start_document_collection`, #357) on the vault the screen is on. Returns
     /// `false` once the collection has been stopped for good (`stop_document_collection`, at exit),
     /// which ends the worker; a lock or a switch only cancels, so it returns `true` then. Checks only
-    /// while this vault is unlocked and its owner turned automatic checks on (Windows; elsewhere
-    /// there is nothing to run).
+    /// while this vault is unlocked and its owner turned automatic checks on (desktop; a phone has
+    /// no worker). The notice at the end of a check goes through the runtime, which on a system
+    /// with no notices records nothing.
     pub(crate) fn document_tick(&self) -> bool {
         if self.collection.is_shutdown() {
             return false;
         }
-        #[cfg(windows)]
+        #[cfg(desktop)]
         self.automatic_document_tick();
         true
     }
@@ -1532,7 +1542,7 @@ impl VaultStore {
         }
     }
 
-    #[cfg(windows)]
+    #[cfg(desktop)]
     fn automatic_document_tick(&self) {
         if !self.automatic_collection_allowed() {
             return;
@@ -2476,6 +2486,20 @@ impl VaultStore {
                     let mut summary = self.link_summary(link);
                     summary.refused_deliveries =
                         refused_for(&unlocked.manifest, link.id, crate::now_ms()).count();
+                    summary.notices_enrolled = unlocked
+                        .manifest
+                        .remote_notices
+                        .has_destination_for(link.id);
+                    summary.has_documents = unlocked.manifest.records.iter().any(|record| {
+                        record
+                            .delivery
+                            .as_ref()
+                            .is_some_and(|c| c.link_id == link.id)
+                            || record
+                                .reading_aid
+                                .as_ref()
+                                .is_some_and(|a| a.link_id == link.id)
+                    });
                     summary
                 })
                 .collect(),
@@ -2750,6 +2774,95 @@ impl VaultStore {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .contains(&link_id)
+    }
+
+    /// Removes a clinic link that has never delivered a document (#160): the link with its
+    /// private keys (zeroized on drop), its remembered refusals, its waiting reading aids and its
+    /// push registration, and one history entry, in one commit. A link with a filed document or
+    /// reading aid is refused (`Invalid`): its custody proof is checked with the link's keys at
+    /// every unlock, so the keys must stay. Nobody is told: the clinic may still list the device.
+    /// Removing a link that is already gone is not an error. Refused while a document check or
+    /// other portal work holds the portal guard (`Portal(Busy)`), and when the session changed
+    /// since the caller took `session` (`Portal(Cancelled)`).
+    pub fn remove_portal_link(&self, link_id: Uuid, session: u64) -> Result<(), VaultError> {
+        use portal_link::LinkError;
+        let _work = self.start_portal_work()?;
+        let cancelled = || self.portal_session.load(Ordering::Acquire) != session;
+        if cancelled() {
+            return Err(VaultError::Portal(LinkError::Cancelled));
+        }
+        {
+            // Already gone is not a write: look under the session lock and return early, as
+            // `forget_refusals` does, so a double click makes no commit and no history entry.
+            let guard = self.session();
+            let open = guard.as_ref().ok_or(VaultError::Locked)?;
+            if open.recovery.is_some() {
+                return Err(VaultError::RecoveryMode);
+            }
+            if !open.manifest.portal_links.iter().any(|l| l.id == link_id) {
+                return Ok(());
+            }
+        }
+        let removed = self.mutate_recorded(|manifest, entries| {
+            if cancelled() {
+                return Err(VaultError::Portal(LinkError::Cancelled));
+            }
+            // Gone between the early check above and this commit (a second removal won the
+            // race): nothing to do, and `false` makes this commit write nothing of its own.
+            let Some(index) = manifest.portal_links.iter().position(|l| l.id == link_id) else {
+                return Ok(false);
+            };
+            let has_custody = manifest.records.iter().any(|record| {
+                record
+                    .delivery
+                    .as_ref()
+                    .is_some_and(|c| c.link_id == link_id)
+                    || record
+                        .reading_aid
+                        .as_ref()
+                        .is_some_and(|a| a.link_id == link_id)
+            });
+            if has_custody {
+                return Err(VaultError::Invalid);
+            }
+            // A push destination or a queued revocation means the portal still holds a
+            // subscription for this device: removing the link would strand it. Refused until the
+            // patient turns notices off and the revocation has gone out.
+            if manifest.remote_notices.has_destination_for(link_id) {
+                return Err(VaultError::Invalid);
+            }
+            let link = manifest.portal_links.remove(index);
+            manifest.refused_deliveries.retain(|r| r.link_id != link_id);
+            manifest.waiting_aids.retain(|a| a.link_id != link_id);
+            manifest.remote_notices.drop_link(link_id);
+            let mut entry = HistoryEntry::new(HistoryEvent::PortalLinkRemoved, crate::now_ms());
+            entry.portal_link_id = Some(link_id);
+            entry.profile_id = link.profile_id;
+            entry.name = link
+                .clinic
+                .as_ref()
+                .map(|clinic| clinic.clinic_name.clone());
+            entries.push(entry);
+            Ok(true)
+        })?;
+        if removed {
+            // After the commit: the vault is the source of truth, and this state only caches it.
+            self.forget_link_state(link_id);
+            // The link's notice key goes too; a crash before this is covered by the sweep when
+            // the vault is next opened (`notice_key::after_open`).
+            crate::notice_key::after_link_removed(link_id);
+        }
+        Ok(())
+    }
+
+    /// Drops what this run remembers about a link that is no longer in the vault.
+    fn forget_link_state(&self, link_id: Uuid) {
+        self.gone_links
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&link_id);
+        // Also clears the approval polling progress.
+        self.invalidate_collection_cache();
     }
 
     pub(crate) fn mark_link_gone(&self, link_id: Uuid) {
@@ -8711,6 +8824,56 @@ mod collection_object_tests {
         store.set_automatic_checks(true).ok().unwrap();
         store
     }
+    /// A store whose runtime has a backend that can show notices, with nothing turned on.
+    fn unconsented_store(path: &Path) -> Arc<VaultStore> {
+        use crate::document_notification_runtime::{active::Backend, Error, Permission, Runtime};
+        struct BackendMock;
+        impl Backend for BackendMock {
+            fn permission(&self) -> Permission {
+                Permission::Allowed
+            }
+            fn accept(&self, _body: &str, _current: &dyn Fn() -> bool) -> Result<(), Error> {
+                Ok(())
+            }
+        }
+        let store = Arc::new(VaultStore::new(path.join("vault")));
+        let runtime = Runtime::load_for_test(path.join("state.json"), Box::new(BackendMock));
+        assert!(store.notifications.set(Arc::new(runtime)).is_ok());
+        store
+    }
+
+    #[test]
+    fn the_automatic_check_runs_with_the_notices_off_and_the_notices_do_not_stop_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = unconsented_store(temp.path());
+        assert!(!store.automatic_collection_allowed());
+        // Its own consent, no notices: the check is allowed to run.
+        let status = store.set_automatic_checks(true).ok().unwrap();
+        assert!(status.automatic_checks_enabled && !status.enabled);
+        assert!(store.automatic_collection_allowed());
+        // Turning the notices on and off again does not stop or pause it.
+        store.set_notifications(true).ok().unwrap();
+        assert!(store.automatic_collection_allowed());
+        store.set_notifications(false).ok().unwrap();
+        assert!(store.automatic_collection_allowed());
+        assert!(!store.collection.paused());
+        // Only its own switch turns it off.
+        store.set_automatic_checks(false).ok().unwrap();
+        assert!(!store.automatic_collection_allowed());
+    }
+
+    #[test]
+    fn a_saved_choice_to_check_automatically_is_still_on_when_the_vault_is_opened_again() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = unconsented_store(temp.path());
+        store.set_automatic_checks(true).ok().unwrap();
+        drop(store);
+        // A new store over the same ledger (the next start of the app): on without any notice.
+        let again = unconsented_store(temp.path());
+        assert!(again.notifications.get().unwrap().automatic_eligible());
+        assert!(!again.notifications.get().unwrap().status().enabled);
+    }
+
     const PASSWORD: &str = "river-azimuth-cobalt-sparrow-934";
 
     /// `unlock` is untouched by the derive/install split (the older unlock tests above and below
@@ -9647,6 +9810,26 @@ impl VaultStore {
     /// The open vault's id, for what is kept outside it (#230's notice keys).
     pub(crate) fn open_vault_id(&self) -> Option<Uuid> {
         self.session().as_ref().map(|open| open.manifest.vault_id)
+    }
+
+    /// Wipes the notice keys of the open vault whose link is no longer in it (#160), reading the
+    /// vault id and its links under ONE session guard and doing the wipe inside it, so a lock in
+    /// between cannot turn into a sweep with an empty link set that wipes every live key. Returns
+    /// false, and sweeps nothing, when the vault is locked.
+    pub(crate) fn sweep_notice_keys(&self) -> bool {
+        self.with_open_links(crate::notice_key::sweep_removed_links)
+    }
+
+    /// Calls `f` with the open vault's id and its link ids while holding the session guard; false
+    /// (and `f` not called) when locked.
+    fn with_open_links(&self, f: impl FnOnce(Uuid, &HashSet<Uuid>)) -> bool {
+        let guard = self.session();
+        let Some(open) = guard.as_ref() else {
+            return false;
+        };
+        let links: HashSet<Uuid> = open.manifest.portal_links.iter().map(|l| l.id).collect();
+        f(open.manifest.vault_id, &links);
+        true
     }
 }
 
@@ -19129,6 +19312,10 @@ mod tests {
             // Previous full names, format 13: the last before the profile
             // handover (14, #360).
             MANIFEST_FORMAT_PREVIOUS_FULL_NAMES,
+            // The profile handover, format 14: the last before hiding a person (15).
+            MANIFEST_FORMAT_PROFILE_HANDOVER,
+            // Hiding a person, format 15: the last before link removal (16, #160).
+            MANIFEST_FORMAT_HIDDEN_PROFILES,
         ] {
             let root = temp.path().join(format!("format-{from}"));
             let (store, imported, master_key, vault_id) =

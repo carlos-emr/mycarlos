@@ -17,7 +17,7 @@ pub enum MessageId {
     AiKeepFailed,
     AiKeepFull,
     AiLabelSettingsBody,
-    AiLabelSettingsFullShown,
+    AiLabelSettingsFullBack,
     AiLabelSettingsShortShown,
     AiLabelSettingsShowFull,
     AiLabelSettingsTitle,
@@ -339,6 +339,28 @@ pub enum MessageId {
     HiddenPeopleRestored,
     HiddenPeopleSince,
     HiddenPeopleTitle,
+    InterfaceAddVideoAdd,
+    InterfaceAddVideoAdded,
+    InterfaceAddVideoAdding,
+    InterfaceAddVideoAudioCodec,
+    InterfaceAddVideoCancel,
+    InterfaceAddVideoCancelled,
+    InterfaceAddVideoCancelling,
+    InterfaceAddVideoChecking,
+    InterfaceAddVideoDamaged,
+    InterfaceAddVideoDuplicate,
+    InterfaceAddVideoExternal,
+    InterfaceAddVideoFragmented,
+    InterfaceAddVideoHevc,
+    InterfaceAddVideoHint,
+    InterfaceAddVideoNoVideo,
+    InterfaceAddVideoNotVideo,
+    InterfaceAddVideoProgressLabel,
+    InterfaceAddVideoStoring,
+    InterfaceAddVideoTooBig,
+    InterfaceAddVideoTooLarge,
+    InterfaceAddVideoTooManyTracks,
+    InterfaceAddVideoVideoCodec,
     InterfaceAiHelperNoticeContinue,
     InterfaceAnonymizePreviewCheckPicked,
     InterfaceAnonymizePreviewClose,
@@ -500,10 +522,15 @@ pub enum MessageId {
     InterfaceRecordDetailsViewPhoto,
     InterfaceRecordDialogAboutHighPerHour,
     InterfaceRecordDialogAboutStandardPerHour,
+    InterfaceRecordDialogCamera,
+    InterfaceRecordDialogCameraAndMicrophone,
+    InterfaceRecordDialogDeviceFellBack,
     InterfaceRecordDialogHigh,
     InterfaceRecordDialogKeepRecording,
     InterfaceRecordDialogLowOnRoom,
     InterfaceRecordDialogLowOnRoomMinutes,
+    InterfaceRecordDialogMicrophone,
+    InterfaceRecordDialogMicrophoneLevel,
     InterfaceRecordDialogNotEnoughRoom,
     InterfaceRecordDialogNothingWasRecorded,
     InterfaceRecordDialogPauseRecording,
@@ -523,11 +550,16 @@ pub enum MessageId {
     InterfaceRecordDialogStartingTheCameraAndMicrophone,
     InterfaceRecordDialogStopAndSave,
     InterfaceRecordDialogStopAndSaveTheVideo,
+    InterfaceRecordDialogStopTestingMicrophone,
+    InterfaceRecordDialogSystemDefaultDevice,
+    InterfaceRecordDialogTestMicrophone,
     InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
     InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
     InterfaceRecordDialogTheVideoIsRecordedWithSound,
     InterfaceRecordDialogThisDeviceCannotRecordMp4,
     InterfaceRecordDialogUnavailable,
+    InterfaceRecordDialogUnnamedCamera,
+    InterfaceRecordDialogUnnamedMicrophone,
     InterfaceRecordDialogUseTheCameraAndMicrophone,
     InterfaceRecordDialogVideoKeptUnfinished,
     InterfaceRecordDialogVideoNeedsBoth,
@@ -611,6 +643,7 @@ pub enum MessageId {
     InterfaceVaultLibraryNoLocationChosenNothingChanged,
     InterfaceVaultLibraryNoRecoveryKeyYet,
     InterfaceVaultLibraryPassphraseChanged,
+    InterfaceVaultLibraryPicturesNote,
     InterfaceVaultLibraryPrivateVault,
     InterfaceVaultLibraryRecords,
     InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere,
@@ -705,6 +738,7 @@ pub enum MessageId {
     InterfaceHistoryEventMoved,
     InterfaceHistoryEventOther,
     InterfaceHistoryEventPassphraseChanged,
+    InterfaceHistoryEventPortalLinkRemoved,
     InterfaceHistoryEventPortalLinkStarted,
     InterfaceHistoryEventPortalLinked,
     InterfaceHistoryEventProfileCreated,
@@ -938,6 +972,9 @@ pub enum MessageId {
     NativeFilterBackups,
     NativeFilterModels,
     NativeFilterPdf,
+    NativeFilterPdfAndPictures,
+    NativeFilterPictures,
+    NativeFilterVideo,
     NativeKitText,
     NativeNoticeArrival,
     NativeNoticeTest,
@@ -986,20 +1023,23 @@ pub enum MessageId {
     NoticesStepTitle,
     NotificationsAllow,
     NotificationsAutoAllow,
+    NotificationsAutoConsent,
     NotificationsAutoHelp,
-    NotificationsAutoNeedsNotices,
     NotificationsAutoPaused,
     NotificationsAutoSummary,
     NotificationsBlocked,
+    NotificationsBlockedMac,
     NotificationsCheckBusy,
     NotificationsError,
-    NotificationsHelp,
     NotificationsHelpAutomatic,
     NotificationsNotYetAsked,
+    NotificationsNotYetAskedMac,
+    NotificationsNoticesHelp,
     NotificationsTestButton,
     NotificationsTestFailed,
     NotificationsTestOff,
     NotificationsTestSent,
+    NotificationsTestSentMac,
     NotificationsTestWait,
     NotificationsTitle,
     NotificationsUnavailable,
@@ -1147,6 +1187,13 @@ pub enum MessageId {
     PortalPartialResult,
     PortalPerson,
     PortalRefusedDocuments,
+    PortalRemoveBody,
+    PortalRemoveConfirm,
+    PortalRemoveKept,
+    PortalRemoveLink,
+    PortalRemoveNotices,
+    PortalRemoveTitle,
+    PortalRemoved,
     PortalRequestApproval,
     PortalRestartApproval,
     PortalResult,
@@ -1396,7 +1443,7 @@ impl MessageId {
         Self::AiKeepFailed,
         Self::AiKeepFull,
         Self::AiLabelSettingsBody,
-        Self::AiLabelSettingsFullShown,
+        Self::AiLabelSettingsFullBack,
         Self::AiLabelSettingsShortShown,
         Self::AiLabelSettingsShowFull,
         Self::AiLabelSettingsTitle,
@@ -1718,6 +1765,28 @@ impl MessageId {
         Self::HiddenPeopleRestored,
         Self::HiddenPeopleSince,
         Self::HiddenPeopleTitle,
+        Self::InterfaceAddVideoAdd,
+        Self::InterfaceAddVideoAdded,
+        Self::InterfaceAddVideoAdding,
+        Self::InterfaceAddVideoAudioCodec,
+        Self::InterfaceAddVideoCancel,
+        Self::InterfaceAddVideoCancelled,
+        Self::InterfaceAddVideoCancelling,
+        Self::InterfaceAddVideoChecking,
+        Self::InterfaceAddVideoDamaged,
+        Self::InterfaceAddVideoDuplicate,
+        Self::InterfaceAddVideoExternal,
+        Self::InterfaceAddVideoFragmented,
+        Self::InterfaceAddVideoHevc,
+        Self::InterfaceAddVideoHint,
+        Self::InterfaceAddVideoNoVideo,
+        Self::InterfaceAddVideoNotVideo,
+        Self::InterfaceAddVideoProgressLabel,
+        Self::InterfaceAddVideoStoring,
+        Self::InterfaceAddVideoTooBig,
+        Self::InterfaceAddVideoTooLarge,
+        Self::InterfaceAddVideoTooManyTracks,
+        Self::InterfaceAddVideoVideoCodec,
         Self::InterfaceAiHelperNoticeContinue,
         Self::InterfaceAnonymizePreviewCheckPicked,
         Self::InterfaceAnonymizePreviewClose,
@@ -1879,10 +1948,15 @@ impl MessageId {
         Self::InterfaceRecordDetailsViewPhoto,
         Self::InterfaceRecordDialogAboutHighPerHour,
         Self::InterfaceRecordDialogAboutStandardPerHour,
+        Self::InterfaceRecordDialogCamera,
+        Self::InterfaceRecordDialogCameraAndMicrophone,
+        Self::InterfaceRecordDialogDeviceFellBack,
         Self::InterfaceRecordDialogHigh,
         Self::InterfaceRecordDialogKeepRecording,
         Self::InterfaceRecordDialogLowOnRoom,
         Self::InterfaceRecordDialogLowOnRoomMinutes,
+        Self::InterfaceRecordDialogMicrophone,
+        Self::InterfaceRecordDialogMicrophoneLevel,
         Self::InterfaceRecordDialogNotEnoughRoom,
         Self::InterfaceRecordDialogNothingWasRecorded,
         Self::InterfaceRecordDialogPauseRecording,
@@ -1902,11 +1976,16 @@ impl MessageId {
         Self::InterfaceRecordDialogStartingTheCameraAndMicrophone,
         Self::InterfaceRecordDialogStopAndSave,
         Self::InterfaceRecordDialogStopAndSaveTheVideo,
+        Self::InterfaceRecordDialogStopTestingMicrophone,
+        Self::InterfaceRecordDialogSystemDefaultDevice,
+        Self::InterfaceRecordDialogTestMicrophone,
         Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn,
         Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOnNow,
         Self::InterfaceRecordDialogTheVideoIsRecordedWithSound,
         Self::InterfaceRecordDialogThisDeviceCannotRecordMp4,
         Self::InterfaceRecordDialogUnavailable,
+        Self::InterfaceRecordDialogUnnamedCamera,
+        Self::InterfaceRecordDialogUnnamedMicrophone,
         Self::InterfaceRecordDialogUseTheCameraAndMicrophone,
         Self::InterfaceRecordDialogVideoKeptUnfinished,
         Self::InterfaceRecordDialogVideoNeedsBoth,
@@ -1990,6 +2069,7 @@ impl MessageId {
         Self::InterfaceVaultLibraryNoLocationChosenNothingChanged,
         Self::InterfaceVaultLibraryNoRecoveryKeyYet,
         Self::InterfaceVaultLibraryPassphraseChanged,
+        Self::InterfaceVaultLibraryPicturesNote,
         Self::InterfaceVaultLibraryPrivateVault,
         Self::InterfaceVaultLibraryRecords,
         Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere,
@@ -2084,6 +2164,7 @@ impl MessageId {
         Self::InterfaceHistoryEventMoved,
         Self::InterfaceHistoryEventOther,
         Self::InterfaceHistoryEventPassphraseChanged,
+        Self::InterfaceHistoryEventPortalLinkRemoved,
         Self::InterfaceHistoryEventPortalLinkStarted,
         Self::InterfaceHistoryEventPortalLinked,
         Self::InterfaceHistoryEventProfileCreated,
@@ -2317,6 +2398,9 @@ impl MessageId {
         Self::NativeFilterBackups,
         Self::NativeFilterModels,
         Self::NativeFilterPdf,
+        Self::NativeFilterPdfAndPictures,
+        Self::NativeFilterPictures,
+        Self::NativeFilterVideo,
         Self::NativeKitText,
         Self::NativeNoticeArrival,
         Self::NativeNoticeTest,
@@ -2365,20 +2449,23 @@ impl MessageId {
         Self::NoticesStepTitle,
         Self::NotificationsAllow,
         Self::NotificationsAutoAllow,
+        Self::NotificationsAutoConsent,
         Self::NotificationsAutoHelp,
-        Self::NotificationsAutoNeedsNotices,
         Self::NotificationsAutoPaused,
         Self::NotificationsAutoSummary,
         Self::NotificationsBlocked,
+        Self::NotificationsBlockedMac,
         Self::NotificationsCheckBusy,
         Self::NotificationsError,
-        Self::NotificationsHelp,
         Self::NotificationsHelpAutomatic,
         Self::NotificationsNotYetAsked,
+        Self::NotificationsNotYetAskedMac,
+        Self::NotificationsNoticesHelp,
         Self::NotificationsTestButton,
         Self::NotificationsTestFailed,
         Self::NotificationsTestOff,
         Self::NotificationsTestSent,
+        Self::NotificationsTestSentMac,
         Self::NotificationsTestWait,
         Self::NotificationsTitle,
         Self::NotificationsUnavailable,
@@ -2526,6 +2613,13 @@ impl MessageId {
         Self::PortalPartialResult,
         Self::PortalPerson,
         Self::PortalRefusedDocuments,
+        Self::PortalRemoveBody,
+        Self::PortalRemoveConfirm,
+        Self::PortalRemoveKept,
+        Self::PortalRemoveLink,
+        Self::PortalRemoveNotices,
+        Self::PortalRemoveTitle,
+        Self::PortalRemoved,
         Self::PortalRequestApproval,
         Self::PortalRestartApproval,
         Self::PortalResult,
@@ -2775,7 +2869,7 @@ impl MessageId {
             Self::AiKeepFailed => "ai-keepFailed",
             Self::AiKeepFull => "ai-keepFull",
             Self::AiLabelSettingsBody => "ai-label-settingsBody",
-            Self::AiLabelSettingsFullShown => "ai-label-settingsFullShown",
+            Self::AiLabelSettingsFullBack => "ai-label-settingsFullBack",
             Self::AiLabelSettingsShortShown => "ai-label-settingsShortShown",
             Self::AiLabelSettingsShowFull => "ai-label-settingsShowFull",
             Self::AiLabelSettingsTitle => "ai-label-settingsTitle",
@@ -3097,6 +3191,28 @@ impl MessageId {
             Self::HiddenPeopleRestored => "hiddenPeople-restored",
             Self::HiddenPeopleSince => "hiddenPeople-since",
             Self::HiddenPeopleTitle => "hiddenPeople-title",
+            Self::InterfaceAddVideoAdd => "interface-AddVideo-add",
+            Self::InterfaceAddVideoAdded => "interface-AddVideo-added",
+            Self::InterfaceAddVideoAdding => "interface-AddVideo-adding",
+            Self::InterfaceAddVideoAudioCodec => "interface-AddVideo-audioCodec",
+            Self::InterfaceAddVideoCancel => "interface-AddVideo-cancel",
+            Self::InterfaceAddVideoCancelled => "interface-AddVideo-cancelled",
+            Self::InterfaceAddVideoCancelling => "interface-AddVideo-cancelling",
+            Self::InterfaceAddVideoChecking => "interface-AddVideo-checking",
+            Self::InterfaceAddVideoDamaged => "interface-AddVideo-damaged",
+            Self::InterfaceAddVideoDuplicate => "interface-AddVideo-duplicate",
+            Self::InterfaceAddVideoExternal => "interface-AddVideo-external",
+            Self::InterfaceAddVideoFragmented => "interface-AddVideo-fragmented",
+            Self::InterfaceAddVideoHevc => "interface-AddVideo-hevc",
+            Self::InterfaceAddVideoHint => "interface-AddVideo-hint",
+            Self::InterfaceAddVideoNoVideo => "interface-AddVideo-noVideo",
+            Self::InterfaceAddVideoNotVideo => "interface-AddVideo-notVideo",
+            Self::InterfaceAddVideoProgressLabel => "interface-AddVideo-progressLabel",
+            Self::InterfaceAddVideoStoring => "interface-AddVideo-storing",
+            Self::InterfaceAddVideoTooBig => "interface-AddVideo-tooBig",
+            Self::InterfaceAddVideoTooLarge => "interface-AddVideo-tooLarge",
+            Self::InterfaceAddVideoTooManyTracks => "interface-AddVideo-tooManyTracks",
+            Self::InterfaceAddVideoVideoCodec => "interface-AddVideo-videoCodec",
             Self::InterfaceAiHelperNoticeContinue => "interface-AiHelperNotice-continue",
             Self::InterfaceAnonymizePreviewCheckPicked => "interface-AnonymizePreview-checkPicked",
             Self::InterfaceAnonymizePreviewClose => "interface-AnonymizePreview-close",
@@ -3420,12 +3536,19 @@ impl MessageId {
             Self::InterfaceRecordDialogAboutStandardPerHour => {
                 "interface-RecordDialog-aboutStandardPerHour"
             }
+            Self::InterfaceRecordDialogCamera => "interface-RecordDialog-camera",
+            Self::InterfaceRecordDialogCameraAndMicrophone => {
+                "interface-RecordDialog-cameraAndMicrophone"
+            }
+            Self::InterfaceRecordDialogDeviceFellBack => "interface-RecordDialog-deviceFellBack",
             Self::InterfaceRecordDialogHigh => "interface-RecordDialog-high",
             Self::InterfaceRecordDialogKeepRecording => "interface-RecordDialog-keepRecording",
             Self::InterfaceRecordDialogLowOnRoom => "interface-RecordDialog-lowOnRoom",
             Self::InterfaceRecordDialogLowOnRoomMinutes => {
                 "interface-RecordDialog-lowOnRoomMinutes"
             }
+            Self::InterfaceRecordDialogMicrophone => "interface-RecordDialog-microphone",
+            Self::InterfaceRecordDialogMicrophoneLevel => "interface-RecordDialog-microphoneLevel",
             Self::InterfaceRecordDialogNotEnoughRoom => "interface-RecordDialog-notEnoughRoom",
             Self::InterfaceRecordDialogNothingWasRecorded => {
                 "interface-RecordDialog-nothingWasRecorded"
@@ -3455,6 +3578,13 @@ impl MessageId {
             Self::InterfaceRecordDialogStopAndSaveTheVideo => {
                 "interface-RecordDialog-stopAndSaveTheVideo"
             }
+            Self::InterfaceRecordDialogStopTestingMicrophone => {
+                "interface-RecordDialog-stopTestingMicrophone"
+            }
+            Self::InterfaceRecordDialogSystemDefaultDevice => {
+                "interface-RecordDialog-systemDefaultDevice"
+            }
+            Self::InterfaceRecordDialogTestMicrophone => "interface-RecordDialog-testMicrophone",
             Self::InterfaceRecordDialogTheCameraAndMicrophoneAreOn => {
                 "interface-RecordDialog-theCameraAndMicrophoneAreOn"
             }
@@ -3468,6 +3598,10 @@ impl MessageId {
                 "interface-RecordDialog-thisDeviceCannotRecordMp4"
             }
             Self::InterfaceRecordDialogUnavailable => "interface-RecordDialog-unavailable",
+            Self::InterfaceRecordDialogUnnamedCamera => "interface-RecordDialog-unnamedCamera",
+            Self::InterfaceRecordDialogUnnamedMicrophone => {
+                "interface-RecordDialog-unnamedMicrophone"
+            }
             Self::InterfaceRecordDialogUseTheCameraAndMicrophone => {
                 "interface-RecordDialog-useTheCameraAndMicrophone"
             }
@@ -3649,6 +3783,7 @@ impl MessageId {
             Self::InterfaceVaultLibraryPassphraseChanged => {
                 "interface-VaultLibrary-passphraseChanged"
             }
+            Self::InterfaceVaultLibraryPicturesNote => "interface-VaultLibrary-picturesNote",
             Self::InterfaceVaultLibraryPrivateVault => "interface-VaultLibrary-privateVault",
             Self::InterfaceVaultLibraryRecords => "interface-VaultLibrary-records",
             Self::InterfaceVaultLibraryRecoveryKeySavedKeepYourKitSomewhere => {
@@ -3790,6 +3925,9 @@ impl MessageId {
             Self::InterfaceHistoryEventOther => "interface-history-event-other",
             Self::InterfaceHistoryEventPassphraseChanged => {
                 "interface-history-event-passphraseChanged"
+            }
+            Self::InterfaceHistoryEventPortalLinkRemoved => {
+                "interface-history-event-portalLinkRemoved"
             }
             Self::InterfaceHistoryEventPortalLinkStarted => {
                 "interface-history-event-portalLinkStarted"
@@ -4070,6 +4208,9 @@ impl MessageId {
             Self::NativeFilterBackups => "native-filter-backups",
             Self::NativeFilterModels => "native-filter-models",
             Self::NativeFilterPdf => "native-filter-pdf",
+            Self::NativeFilterPdfAndPictures => "native-filter-pdfAndPictures",
+            Self::NativeFilterPictures => "native-filter-pictures",
+            Self::NativeFilterVideo => "native-filter-video",
             Self::NativeKitText => "native-kit-text",
             Self::NativeNoticeArrival => "native-notice-arrival",
             Self::NativeNoticeTest => "native-notice-test",
@@ -4118,20 +4259,23 @@ impl MessageId {
             Self::NoticesStepTitle => "noticesStep-title",
             Self::NotificationsAllow => "notifications-allow",
             Self::NotificationsAutoAllow => "notifications-autoAllow",
+            Self::NotificationsAutoConsent => "notifications-autoConsent",
             Self::NotificationsAutoHelp => "notifications-autoHelp",
-            Self::NotificationsAutoNeedsNotices => "notifications-autoNeedsNotices",
             Self::NotificationsAutoPaused => "notifications-autoPaused",
             Self::NotificationsAutoSummary => "notifications-autoSummary",
             Self::NotificationsBlocked => "notifications-blocked",
+            Self::NotificationsBlockedMac => "notifications-blockedMac",
             Self::NotificationsCheckBusy => "notifications-checkBusy",
             Self::NotificationsError => "notifications-error",
-            Self::NotificationsHelp => "notifications-help",
             Self::NotificationsHelpAutomatic => "notifications-helpAutomatic",
             Self::NotificationsNotYetAsked => "notifications-notYetAsked",
+            Self::NotificationsNotYetAskedMac => "notifications-notYetAskedMac",
+            Self::NotificationsNoticesHelp => "notifications-noticesHelp",
             Self::NotificationsTestButton => "notifications-testButton",
             Self::NotificationsTestFailed => "notifications-testFailed",
             Self::NotificationsTestOff => "notifications-testOff",
             Self::NotificationsTestSent => "notifications-testSent",
+            Self::NotificationsTestSentMac => "notifications-testSentMac",
             Self::NotificationsTestWait => "notifications-testWait",
             Self::NotificationsTitle => "notifications-title",
             Self::NotificationsUnavailable => "notifications-unavailable",
@@ -4279,6 +4423,13 @@ impl MessageId {
             Self::PortalPartialResult => "portal-partialResult",
             Self::PortalPerson => "portal-person",
             Self::PortalRefusedDocuments => "portal-refusedDocuments",
+            Self::PortalRemoveBody => "portal-removeBody",
+            Self::PortalRemoveConfirm => "portal-removeConfirm",
+            Self::PortalRemoveKept => "portal-removeKept",
+            Self::PortalRemoveLink => "portal-removeLink",
+            Self::PortalRemoveNotices => "portal-removeNotices",
+            Self::PortalRemoveTitle => "portal-removeTitle",
+            Self::PortalRemoved => "portal-removed",
             Self::PortalRequestApproval => "portal-requestApproval",
             Self::PortalRestartApproval => "portal-restartApproval",
             Self::PortalResult => "portal-result",
@@ -4707,6 +4858,7 @@ impl MessageId {
             "interface.VaultApp.chooseFilesToImport" => {
                 Some(Self::InterfaceVaultAppChooseFilesToImport)
             }
+            "interface.VaultLibrary.picturesNote" => Some(Self::InterfaceVaultLibraryPicturesNote),
             "interface.VaultApp.finishingTheTransfer" => {
                 Some(Self::InterfaceVaultAppFinishingTheTransfer)
             }
@@ -5089,6 +5241,9 @@ impl MessageId {
             "native.error.speedTest" => Some(Self::NativeErrorSpeedTest),
             "native.filter.backups" => Some(Self::NativeFilterBackups),
             "native.filter.pdf" => Some(Self::NativeFilterPdf),
+            "native.filter.video" => Some(Self::NativeFilterVideo),
+            "native.filter.pictures" => Some(Self::NativeFilterPictures),
+            "native.filter.pdfAndPictures" => Some(Self::NativeFilterPdfAndPictures),
             "native.kit.text" => Some(Self::NativeKitText),
             "native.recovery.keep" => Some(Self::NativeRecoveryKeep),
             "native.recovery.replace" => Some(Self::NativeRecoveryReplace),
@@ -5493,6 +5648,9 @@ impl MessageId {
                 Some(Self::InterfaceHistoryEventPortalLinkStarted)
             }
             "interface.history.event.portalLinked" => Some(Self::InterfaceHistoryEventPortalLinked),
+            "interface.history.event.portalLinkRemoved" => {
+                Some(Self::InterfaceHistoryEventPortalLinkRemoved)
+            }
             "interface.history.event.profileCreated" => {
                 Some(Self::InterfaceHistoryEventProfileCreated)
             }
@@ -5604,6 +5762,13 @@ impl MessageId {
             "portal.tryAgain" => Some(Self::PortalTryAgain),
             "portal.tryAgainFor" => Some(Self::PortalTryAgainFor),
             "portal.linkAnother" => Some(Self::PortalLinkAnother),
+            "portal.removeLink" => Some(Self::PortalRemoveLink),
+            "portal.removeTitle" => Some(Self::PortalRemoveTitle),
+            "portal.removeBody" => Some(Self::PortalRemoveBody),
+            "portal.removeConfirm" => Some(Self::PortalRemoveConfirm),
+            "portal.removeKept" => Some(Self::PortalRemoveKept),
+            "portal.removeNotices" => Some(Self::PortalRemoveNotices),
+            "portal.removed" => Some(Self::PortalRemoved),
             "interface.history.damagedStorageOnly" => {
                 Some(Self::InterfaceHistoryDamagedStorageOnly)
             }
@@ -5620,7 +5785,7 @@ impl MessageId {
             "ai.label.settingsTitle" => Some(Self::AiLabelSettingsTitle),
             "ai.label.settingsBody" => Some(Self::AiLabelSettingsBody),
             "ai.label.settingsShowFull" => Some(Self::AiLabelSettingsShowFull),
-            "ai.label.settingsFullShown" => Some(Self::AiLabelSettingsFullShown),
+            "ai.label.settingsFullBack" => Some(Self::AiLabelSettingsFullBack),
             "ai.label.settingsShortShown" => Some(Self::AiLabelSettingsShortShown),
             "ai.result.meta" => Some(Self::AiResultMeta),
             "ai.summary.showInDocument" => Some(Self::AiSummaryShowInDocument),
@@ -5966,13 +6131,16 @@ impl MessageId {
             "notifications.allow" => Some(Self::NotificationsAllow),
             "notifications.blocked" => Some(Self::NotificationsBlocked),
             "notifications.error" => Some(Self::NotificationsError),
-            "notifications.help" => Some(Self::NotificationsHelp),
             "notifications.title" => Some(Self::NotificationsTitle),
+            "notifications.blockedMac" => Some(Self::NotificationsBlockedMac),
             "notifications.notYetAsked" => Some(Self::NotificationsNotYetAsked),
+            "notifications.notYetAskedMac" => Some(Self::NotificationsNotYetAskedMac),
             "notifications.unknown" => Some(Self::NotificationsUnknown),
             "notifications.unavailable" => Some(Self::NotificationsUnavailable),
             "notifications.helpAutomatic" => Some(Self::NotificationsHelpAutomatic),
             "notifications.autoAllow" => Some(Self::NotificationsAutoAllow),
+            "notifications.autoConsent" => Some(Self::NotificationsAutoConsent),
+            "notifications.noticesHelp" => Some(Self::NotificationsNoticesHelp),
             "notifications.autoHelp" => Some(Self::NotificationsAutoHelp),
             "notifications.autoPaused" => Some(Self::NotificationsAutoPaused),
             "notifications.checkBusy" => Some(Self::NotificationsCheckBusy),
@@ -6023,7 +6191,6 @@ impl MessageId {
             "noticesStep.later" => Some(Self::NoticesStepLater),
             "noticesStep.done" => Some(Self::NoticesStepDone),
             "noticesStep.notNow" => Some(Self::NoticesStepNotNow),
-            "notifications.autoNeedsNotices" => Some(Self::NotificationsAutoNeedsNotices),
             "ai.settings.subtitle" => Some(Self::AiSettingsSubtitle),
             "ai.model.progressName" => Some(Self::AiModelProgressName),
             "ai.model.progressValue" => Some(Self::AiModelProgressValue),
@@ -6102,6 +6269,32 @@ impl MessageId {
             }
             "interface.RecordDialog.pictureQuality" => {
                 Some(Self::InterfaceRecordDialogPictureQuality)
+            }
+            "interface.RecordDialog.cameraAndMicrophone" => {
+                Some(Self::InterfaceRecordDialogCameraAndMicrophone)
+            }
+            "interface.RecordDialog.camera" => Some(Self::InterfaceRecordDialogCamera),
+            "interface.RecordDialog.microphone" => Some(Self::InterfaceRecordDialogMicrophone),
+            "interface.RecordDialog.unnamedCamera" => {
+                Some(Self::InterfaceRecordDialogUnnamedCamera)
+            }
+            "interface.RecordDialog.unnamedMicrophone" => {
+                Some(Self::InterfaceRecordDialogUnnamedMicrophone)
+            }
+            "interface.RecordDialog.systemDefaultDevice" => {
+                Some(Self::InterfaceRecordDialogSystemDefaultDevice)
+            }
+            "interface.RecordDialog.deviceFellBack" => {
+                Some(Self::InterfaceRecordDialogDeviceFellBack)
+            }
+            "interface.RecordDialog.testMicrophone" => {
+                Some(Self::InterfaceRecordDialogTestMicrophone)
+            }
+            "interface.RecordDialog.stopTestingMicrophone" => {
+                Some(Self::InterfaceRecordDialogStopTestingMicrophone)
+            }
+            "interface.RecordDialog.microphoneLevel" => {
+                Some(Self::InterfaceRecordDialogMicrophoneLevel)
             }
             "interface.RecordDialog.standard" => Some(Self::InterfaceRecordDialogStandard),
             "interface.RecordDialog.high" => Some(Self::InterfaceRecordDialogHigh),
@@ -6400,6 +6593,7 @@ impl MessageId {
             "native.notice.test" => Some(Self::NativeNoticeTest),
             "notifications.testButton" => Some(Self::NotificationsTestButton),
             "notifications.testSent" => Some(Self::NotificationsTestSent),
+            "notifications.testSentMac" => Some(Self::NotificationsTestSentMac),
             "notifications.testWait" => Some(Self::NotificationsTestWait),
             "notifications.testFailed" => Some(Self::NotificationsTestFailed),
             "notifications.testOff" => Some(Self::NotificationsTestOff),
@@ -6412,6 +6606,28 @@ impl MessageId {
             "interface.receive.inboxRemoved" => Some(Self::InterfaceReceiveInboxRemoved),
             "interface.receive.inboxKeyChanged" => Some(Self::InterfaceReceiveInboxKeyChanged),
             "interface.received.removeKept" => Some(Self::InterfaceReceivedRemoveKept),
+            "interface.AddVideo.add" => Some(Self::InterfaceAddVideoAdd),
+            "interface.AddVideo.hint" => Some(Self::InterfaceAddVideoHint),
+            "interface.AddVideo.checking" => Some(Self::InterfaceAddVideoChecking),
+            "interface.AddVideo.storing" => Some(Self::InterfaceAddVideoStoring),
+            "interface.AddVideo.progressLabel" => Some(Self::InterfaceAddVideoProgressLabel),
+            "interface.AddVideo.cancel" => Some(Self::InterfaceAddVideoCancel),
+            "interface.AddVideo.cancelling" => Some(Self::InterfaceAddVideoCancelling),
+            "interface.AddVideo.added" => Some(Self::InterfaceAddVideoAdded),
+            "interface.AddVideo.duplicate" => Some(Self::InterfaceAddVideoDuplicate),
+            "interface.AddVideo.cancelled" => Some(Self::InterfaceAddVideoCancelled),
+            "interface.AddVideo.notVideo" => Some(Self::InterfaceAddVideoNotVideo),
+            "interface.AddVideo.hevc" => Some(Self::InterfaceAddVideoHevc),
+            "interface.AddVideo.videoCodec" => Some(Self::InterfaceAddVideoVideoCodec),
+            "interface.AddVideo.audioCodec" => Some(Self::InterfaceAddVideoAudioCodec),
+            "interface.AddVideo.noVideo" => Some(Self::InterfaceAddVideoNoVideo),
+            "interface.AddVideo.tooManyTracks" => Some(Self::InterfaceAddVideoTooManyTracks),
+            "interface.AddVideo.external" => Some(Self::InterfaceAddVideoExternal),
+            "interface.AddVideo.fragmented" => Some(Self::InterfaceAddVideoFragmented),
+            "interface.AddVideo.tooBig" => Some(Self::InterfaceAddVideoTooBig),
+            "interface.AddVideo.tooLarge" => Some(Self::InterfaceAddVideoTooLarge),
+            "interface.AddVideo.damaged" => Some(Self::InterfaceAddVideoDamaged),
+            "interface.AddVideo.adding" => Some(Self::InterfaceAddVideoAdding),
             _ => None,
         }
     }
