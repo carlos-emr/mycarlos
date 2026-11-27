@@ -727,7 +727,7 @@ native-addVault-confirm = Crear una nueva bóveda
 
 native-addVault-decline = No crear
 
-native-addVault-message = Se pidió a myCarlos crear una bóveda nueva y vacía en este dispositivo mientras está bloqueado. Sus bóvedas actuales siguen bloqueadas: no se abren ni se modifican. Si usted no lo pidió, elija «No crear».
+native-addVault-message = Se pidió a myCarlos crear una bóveda nueva y vacía en este dispositivo. Ninguna bóveda existente se abre ni se modifica; si hay una abierta, se bloquea primero. Si usted no lo pidió, elija «No crear».
 
 native-addVault-title = ¿Crear una nueva bóveda en este dispositivo?
 

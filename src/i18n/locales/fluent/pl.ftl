@@ -748,7 +748,7 @@ native-addVault-confirm = Utwórz nowy sejf
 
 native-addVault-decline = Nie twórz
 
-native-addVault-message = Poproszono myCarlos o utworzenie nowego, pustego sejfu na tym urządzeniu, gdy jest zablokowany. Istniejące sejfy pozostają zablokowane: nie są otwierane ani zmieniane. Jeśli nie prosisz o to, wybierz „Nie twórz”.
+native-addVault-message = Poproszono myCarlos o utworzenie nowego, pustego sejfu na tym urządzeniu. Żaden istniejący sejf nie jest otwierany ani zmieniany; otwarty sejf zostanie najpierw zablokowany. Jeśli nie prosisz o to, wybierz „Nie twórz”.
 
 native-addVault-title = Utworzyć nowy sejf na tym urządzeniu?
 

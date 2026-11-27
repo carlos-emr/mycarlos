@@ -706,7 +706,7 @@ native-addVault-confirm = Set up a new vault
 
 native-addVault-decline = Do not set up
 
-native-addVault-message = myCarlos was asked to set up a new, empty vault on this device while it is locked. Your existing vaults stay locked: they are not opened or changed. If you did not ask for this, choose "Do not set up".
+native-addVault-message = myCarlos was asked to set up a new, empty vault on this device. No existing vault is opened or changed; a vault that is open is locked first. If you did not ask for this, choose "Do not set up".
 
 native-addVault-title = Set up a new vault on this device?
 

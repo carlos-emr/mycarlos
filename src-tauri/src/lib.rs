@@ -7610,6 +7610,26 @@ fn release_add(last: &AtomicU64, taken_at_ms: u64, before: u64) {
     let _ = last.compare_exchange(taken_at_ms, before, Ordering::AcqRel, Ordering::Acquire);
 }
 
+/// How long after a DECLINED confirmation dialog the next add must wait (#562 re-review F-A).
+/// A declined dialog made no vault, so it gives the five-minute place back; but then nothing would
+/// meter the dialogs themselves, and a page on the lock screen could put up one operating-system
+/// message box after another (and each one holds the name-attempt slot, so every unlock by name
+/// answers "busy" while it is open). A minute is long enough to stop that loop and short enough
+/// that a person who clicked the wrong button is not made to wait long.
+const DECLINE_COOLDOWN_MS: u64 = 60 * 1000;
+
+/// After the dialog was declined at `declined_at_ms`: instead of giving the place back whole, keeps
+/// it taken until [`DECLINE_COOLDOWN_MS`] after the decline (the next add answers a wait of that
+/// time, with no dialog), unless another add has taken the place since. The place is moved back so
+/// that its interval ends at the cooldown's end, never later than the full interval would.
+fn hold_add_after_decline(last: &AtomicU64, taken_at_ms: u64, declined_at_ms: u64) {
+    let held_from = declined_at_ms
+        .saturating_add(DECLINE_COOLDOWN_MS)
+        .saturating_sub(ADD_INTERVAL_MS)
+        .max(1);
+    let _ = last.compare_exchange(taken_at_ms, held_from, Ordering::AcqRel, Ordering::Acquire);
+}
+
 /// Add a vault (#357 4c). The name is what the owner will type to find it, the passphrase opens it
 /// and the profile name is its first person; the vault is created first and its name written second
 /// (`VaultSlots::add_vault_confirmed`), and the new vault becomes the one the screen is on, opened
@@ -7703,7 +7723,13 @@ async fn vault_add_vault(
         Ok(Ok(opened)) => opened,
         Ok(Err(error)) => {
             if store.vaults_made() == made_before {
-                release_add(&LAST_ADD_MS, now, reserved);
+                if matches!(error, VaultError::Cancelled) {
+                    // The dialog was shown and declined: a short cooldown, not the whole place
+                    // back, so the dialogs themselves are metered (#562 re-review F-A).
+                    hold_add_after_decline(&LAST_ADD_MS, now, now_ms());
+                } else {
+                    release_add(&LAST_ADD_MS, now, reserved);
+                }
             }
             return Err(PublicError::from(error));
         }
@@ -9296,6 +9322,58 @@ mod tests {
         assert_eq!(
             reserve_add(&last, 5_000),
             Ok(start + 1_000 + ADD_INTERVAL_MS)
+        );
+    }
+
+    #[test]
+    fn a_declined_dialog_keeps_a_short_cooldown_so_the_dialogs_are_metered_too() {
+        let last = AtomicU64::new(0);
+        let start = 10_000_000;
+        assert_eq!(reserve_add(&last, start), Ok(0));
+        // The dialog stayed open twenty seconds and was declined: the next add waits a minute
+        // from the decline (not five from the start, and not nothing), and shows no dialog.
+        let declined = start + 20_000;
+        hold_add_after_decline(&last, start, declined);
+        assert_eq!(reserve_add(&last, declined), Err(DECLINE_COOLDOWN_MS));
+        assert_eq!(
+            reserve_add(&last, declined + DECLINE_COOLDOWN_MS - 1),
+            Err(1)
+        );
+        // After the cooldown the add is asked again.
+        assert!(reserve_add(&last, declined + DECLINE_COOLDOWN_MS).is_ok());
+        // A decline that belongs to an older try does not touch a place another add has taken
+        // since, and the cooldown never outlasts the full interval.
+        let taken_by_another = last.load(Ordering::Acquire);
+        hold_add_after_decline(&last, start, declined + 5_000);
+        assert_eq!(last.load(Ordering::Acquire), taken_by_another);
+        const _: () = assert!(DECLINE_COOLDOWN_MS < ADD_INTERVAL_MS);
+        // Early in the clock's life the place is still taken (never recorded as "no add yet").
+        let early = AtomicU64::new(0);
+        assert_eq!(reserve_add(&early, 1_000), Ok(0));
+        hold_add_after_decline(&early, 1_000, 2_000);
+        assert_ne!(early.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn a_declined_dialog_holds_the_place_and_every_other_refusal_gives_it_back() {
+        let source = include_str!("lib.rs");
+        let body = source.split("async fn vault_add_vault(").nth(1).unwrap();
+        let body = body.split("/// \"Find my other vaults\"").next().unwrap();
+        let code: String = body
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let decline = code.find("VaultError::Cancelled").unwrap();
+        let hold = code
+            .find("hold_add_after_decline(&LAST_ADD_MS, now, now_ms())")
+            .unwrap();
+        let release = code
+            .find("release_add(&LAST_ADD_MS, now, reserved)")
+            .unwrap();
+        assert!(
+            decline < hold && hold < release,
+            "the decline holds, then the rest give back"
         );
     }
 

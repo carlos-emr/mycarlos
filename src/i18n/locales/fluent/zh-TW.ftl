@@ -622,7 +622,7 @@ native-addVault-confirm = 建立新保險庫
 
 native-addVault-decline = 不建立
 
-native-addVault-message = myCarlos 在鎖定狀態下收到了在此裝置上建立一個空保險庫的要求。您現有的保險庫仍保持鎖定：不會被開啟或變更。如果這不是您的要求，請選擇「不建立」。
+native-addVault-message = myCarlos 收到了在此裝置上建立一個空保險庫的要求。現有的保險庫不會被開啟或變更；如果有已開啟的保險庫，會先將其鎖定。如果這不是您的要求，請選擇「不建立」。
 
 native-addVault-title = 要在此裝置上建立新保險庫嗎？
 

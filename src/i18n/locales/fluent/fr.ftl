@@ -727,7 +727,7 @@ native-addVault-confirm = Créer un nouveau coffre-fort
 
 native-addVault-decline = Ne pas créer
 
-native-addVault-message = On a demandé à myCarlos de créer un nouveau coffre-fort vide sur cet appareil pendant qu’il est verrouillé. Vos coffres-forts actuels restent verrouillés : ils ne sont ni ouverts ni modifiés. Si vous n’avez pas fait cette demande, choisissez « Ne pas créer ».
+native-addVault-message = On a demandé à myCarlos de créer un nouveau coffre-fort vide sur cet appareil. Aucun coffre-fort existant n’est ouvert ni modifié ; s’il y en a un d’ouvert, il est d’abord verrouillé. Si vous n’avez pas fait cette demande, choisissez « Ne pas créer ».
 
 native-addVault-title = Créer un nouveau coffre-fort sur cet appareil?
 

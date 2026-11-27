@@ -727,7 +727,7 @@ native-addVault-confirm = Criar um novo cofre
 
 native-addVault-decline = Não criar
 
-native-addVault-message = O myCarlos foi solicitado a criar um cofre novo e vazio neste dispositivo enquanto ele está bloqueado. Seus cofres atuais continuam bloqueados: não são abertos nem alterados. Se você não pediu isso, escolha "Não criar".
+native-addVault-message = O myCarlos foi solicitado a criar um cofre novo e vazio neste dispositivo. Nenhum cofre existente é aberto nem alterado; se houver um aberto, ele é bloqueado primeiro. Se você não pediu isso, escolha "Não criar".
 
 native-addVault-title = Criar um novo cofre neste dispositivo?
 

@@ -622,7 +622,7 @@ native-addVault-confirm = 新建保险库
 
 native-addVault-decline = 不新建
 
-native-addVault-message = myCarlos 在锁定状态下收到了在此设备上新建一个空保险库的请求。您现有的保险库保持锁定：不会被打开或更改。如果这不是您的请求，请选择“不新建”。
+native-addVault-message = myCarlos 收到了在此设备上新建一个空保险库的请求。现有的保险库不会被打开或更改；如果有已打开的保险库，会先将其锁定。如果这不是您的请求，请选择“不新建”。
 
 native-addVault-title = 要在此设备上新建保险库吗？
 
