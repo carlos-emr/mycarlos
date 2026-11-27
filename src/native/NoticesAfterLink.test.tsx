@@ -225,6 +225,23 @@ describe("Notices after the first clinic link", () => {
       "You can change these any time in Settings, under Preferences: Checking for documents.",
     );
     expect(settingCalls()).toEqual([]);
+    // This is a phone: native answers "no background mode" (the default here), so the dialog has
+    // no background section, no line about background choices, and sets nothing in the background.
+    // The line is gated by the step itself, not only by the section's own empty render.
+    expect(native.invoke).toHaveBeenCalledWith("background_status", {
+      locale: "en",
+    });
+    const text = visibleText(dialog.textContent ?? "");
+    expect(text).not.toContain("Running in the background");
+    expect(text).not.toContain("background choices");
+    expect(
+      screen.queryByRole("checkbox", {
+        name: humanText(
+          "Keep myCarlos running in the background after I close its window",
+        ),
+      }),
+    ).toBeNull();
+    expect(backgroundCalls()).toEqual([]);
   });
 
   it("each box changes the same setting as Preferences, and Done keeps it", async () => {
