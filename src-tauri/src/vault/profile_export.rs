@@ -714,9 +714,13 @@ impl From<PackageError> for VaultError {
 /// `error_of_package` for a package this export is WRITING or reading back to check: what the
 /// catch-all would call `Invalid` ("something you typed wasn't accepted") is the file failing its
 /// own check, which no typing caused, so it is `PackageNotVerified`. Cancel, storage, wrong key
-/// (the key the file was just written with not opening it), too large and the rest keep their
-/// own words.
+/// (the key the file was just written with not opening it) and a newer format keep their own
+/// words, and so does a package that is too large: that is a true statement about the person's
+/// records (the file was not written at all), not a failed check, so it stays `Invalid`.
 fn error_of_written_package(error: PackageError) -> VaultError {
+    if error == PackageError::TooLarge {
+        return VaultError::Invalid;
+    }
     match error_of_package(error) {
         VaultError::Invalid => VaultError::PackageNotVerified,
         other => other,
@@ -1654,7 +1658,16 @@ mod tests {
                 VaultError::PackageNotVerified
             ));
         }
-        // The rest keep their own words.
+        // The rest keep their own words. A package too large is not a failed check (nothing was
+        // written to check), and a newer format is its own refusal.
+        assert!(matches!(
+            error_of_written_package(PackageError::TooLarge),
+            VaultError::Invalid
+        ));
+        assert!(matches!(
+            error_of_written_package(PackageError::NewerFormat),
+            VaultError::NewerFormat
+        ));
         assert!(matches!(
             error_of_written_package(PackageError::Cancelled),
             VaultError::Cancelled
