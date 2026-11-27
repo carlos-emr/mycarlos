@@ -22,6 +22,7 @@ interface LibrarySidebarProps {
     | "history"
     | "security"
     | "preferences"
+    | "notices"
     | "ai";
   /** Files added to Shared with me since the vault was unlocked, until it
    * is opened (#61). */
@@ -283,9 +284,15 @@ export function LibrarySidebar({
           <Icon name="shield" /> {translateNow("security.title")}
         </button>
         <button
-          className={section === "preferences" ? "selected" : ""}
+          className={
+            section === "preferences" || section === "notices" ? "selected" : ""
+          }
           type="button"
-          aria-current={section === "preferences" ? "page" : undefined}
+          aria-current={
+            section === "preferences" || section === "notices"
+              ? "page"
+              : undefined
+          }
           onClick={onOpenPreferences}
         >
           <Icon name="settings" /> {translateNow("sidebar.preferences")}

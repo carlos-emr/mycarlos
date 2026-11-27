@@ -2386,6 +2386,59 @@ restore-leftOut = 此備份是在不含影片的情況下製作的。還原它�
 security-backup-sizeCalculating = 正在計算備份大小…
 interface-hidden-videoLeftOut = 備份中未包含的影片
 
+notices-about-title = 關於 myCarlos
+
+notices-about-body = 建置 myCarlos 所用的函式庫、其所採用的授權，以及取得原始碼的方式。
+
+notices-open = 開放原始碼聲明
+
+notices-title = 開放原始碼聲明
+
+notices-back = 返回偏好設定
+
+notices-intro = myCarlos 是自由軟體，使用開放原始碼函式庫建置。每個函式庫皆依各自的授權散布。它們的聲明與授權文字列於此處。
+
+notices-own-title = myCarlos 本身的授權
+
+notices-own-body = myCarlos 是自由軟體，採用 GNU Affero 通用公共授權條款第 3 版，或（由您選擇）任何更新版本。您可依這些條款使用、研究、分享及修改它。
+
+notices-own-show = 顯示完整授權文字
+
+notices-source-title = 取得原始碼
+
+notices-source-body = 這是此版本 myCarlos（{ $version }）的對應原始碼：完整原始碼與建置說明可在下方位址取得。請在網頁瀏覽器中輸入該位址。若無法連線，請向提供 myCarlos 給您的人索取原始碼。
+
+notices-list-title = 函式庫與工具
+
+notices-loading = 正在載入聲明…
+
+notices-failed = 無法載入聲明。請關閉後重新開啟此頁面再試一次。
+
+notices-search = 依名稱或授權搜尋函式庫
+
+notices-count-all = 共 { $total } 個函式庫與工具
+
+notices-count-filtered = { $total } 個函式庫與工具中的 { $count } 個
+
+notices-none = 沒有符合您搜尋的函式庫。
+
+notices-noText = 此函式庫的授權不要求附上文字。
+
+notices-kind-javascript = JavaScript 函式庫
+
+notices-kind-rust = Rust 函式庫
+
+notices-kind-bundled = 隨 myCarlos 一併提供
+
+notices-copy = 複製位址
+
+notices-copied = 位址已複製。
+
+notices-copyFailed = 請選取整個位址並複製。
+
+notices-usedUnder = 依 { $license } 使用
+
+notices-repository = 原始碼：{ $address }
 handover-section-title = 移交某人的記錄
 
 handover-section-body = 將某人的文件複製到一個檔案中供另一台裝置使用，例如把孩子自己的記錄交給孩子。該檔案有自己的金鑰，不會改變您的保險庫。您也可以從別人交給您的檔案中新增一個人。

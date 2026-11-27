@@ -2386,6 +2386,59 @@ restore-leftOut = 此备份是在不含视频的情况下制作的。恢复它�
 security-backup-sizeCalculating = 正在计算备份大小…
 interface-hidden-videoLeftOut = 备份中未包含的视频
 
+notices-about-title = 关于 myCarlos
+
+notices-about-body = 构建 myCarlos 所用的库、它所采用的许可证，以及获取其源代码的方式。
+
+notices-open = 开源声明
+
+notices-title = 开源声明
+
+notices-back = 返回偏好设置
+
+notices-intro = myCarlos 是自由软件，使用开源库构建。每个库都按各自的许可证分发。它们的声明和许可证文本列在这里。
+
+notices-own-title = myCarlos 自身的许可证
+
+notices-own-body = myCarlos 是自由软件，采用 GNU Affero 通用公共许可证第 3 版，或（由您选择）任何更高版本。您可以依据这些条款使用、研究、分享和修改它。
+
+notices-own-show = 显示完整许可证文本
+
+notices-source-title = 获取源代码
+
+notices-source-body = 这是此版本 myCarlos（{ $version }）的对应源代码：完整源代码及构建说明可在下方地址获取。请在网页浏览器中输入该地址。如果无法访问，请向提供 myCarlos 给您的人索取源代码。
+
+notices-list-title = 库和工具
+
+notices-loading = 正在加载声明…
+
+notices-failed = 无法加载声明。请关闭后重新打开此页面再试。
+
+notices-search = 按名称或许可证搜索库
+
+notices-count-all = 共 { $total } 个库和工具
+
+notices-count-filtered = { $total } 个库和工具中的 { $count } 个
+
+notices-none = 没有与您的搜索匹配的库。
+
+notices-noText = 此库的许可证不要求附带文本。
+
+notices-kind-javascript = JavaScript 库
+
+notices-kind-rust = Rust 库
+
+notices-kind-bundled = 随 myCarlos 一同提供
+
+notices-copy = 复制地址
+
+notices-copied = 地址已复制。
+
+notices-copyFailed = 请选中整个地址并复制。
+
+notices-usedUnder = 按 { $license } 使用
+
+notices-repository = 源代码：{ $address }
 handover-section-title = 移交某人的记录
 
 handover-section-body = 将某人的文档复制到一个文件中供另一台设备使用，例如把孩子自己的记录交给孩子。该文件有自己的密钥，不会改变您的保险库。您也可以从别人交给您的文件中添加一个人。

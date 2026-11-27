@@ -1251,6 +1251,33 @@ export const MESSAGE_KEYS = [
   "interface.received.confirmTitleMany",
   "interface.received.confirmBody",
   "interface.received.import",
+  "notices.about.title",
+  "notices.about.body",
+  "notices.open",
+  "notices.title",
+  "notices.back",
+  "notices.intro",
+  "notices.own.title",
+  "notices.own.body",
+  "notices.own.show",
+  "notices.source.title",
+  "notices.source.body",
+  "notices.list.title",
+  "notices.loading",
+  "notices.failed",
+  "notices.search",
+  "notices.count.all",
+  "notices.count.filtered",
+  "notices.none",
+  "notices.noText",
+  "notices.kind.javascript",
+  "notices.kind.rust",
+  "notices.kind.bundled",
+  "notices.copy",
+  "notices.copied",
+  "notices.copyFailed",
+  "notices.usedUnder",
+  "notices.repository",
   "interface.history.event.profileExported",
   "interface.history.event.profileHidden",
   "interface.history.event.profileRestored",
@@ -2955,6 +2982,33 @@ const FLUENT_IDS_BY_KEY = {
   "interface.received.confirmTitleMany": "interface-received-confirmTitleMany",
   "interface.received.confirmBody": "interface-received-confirmBody",
   "interface.received.import": "interface-received-import",
+  "notices.about.title": "notices-about-title",
+  "notices.about.body": "notices-about-body",
+  "notices.open": "notices-open",
+  "notices.title": "notices-title",
+  "notices.back": "notices-back",
+  "notices.intro": "notices-intro",
+  "notices.own.title": "notices-own-title",
+  "notices.own.body": "notices-own-body",
+  "notices.own.show": "notices-own-show",
+  "notices.source.title": "notices-source-title",
+  "notices.source.body": "notices-source-body",
+  "notices.list.title": "notices-list-title",
+  "notices.loading": "notices-loading",
+  "notices.failed": "notices-failed",
+  "notices.search": "notices-search",
+  "notices.count.all": "notices-count-all",
+  "notices.count.filtered": "notices-count-filtered",
+  "notices.none": "notices-none",
+  "notices.noText": "notices-noText",
+  "notices.kind.javascript": "notices-kind-javascript",
+  "notices.kind.rust": "notices-kind-rust",
+  "notices.kind.bundled": "notices-kind-bundled",
+  "notices.copy": "notices-copy",
+  "notices.copied": "notices-copied",
+  "notices.copyFailed": "notices-copyFailed",
+  "notices.usedUnder": "notices-usedUnder",
+  "notices.repository": "notices-repository",
   "interface.history.event.profileExported":
     "interface-history-event-profileExported",
   "interface.history.event.profileHidden":
@@ -4521,6 +4575,33 @@ export interface MessageArgsByKey {
   "interface.received.confirmTitleMany": { count: FluentArgument };
   "interface.received.confirmBody": undefined;
   "interface.received.import": undefined;
+  "notices.about.title": undefined;
+  "notices.about.body": undefined;
+  "notices.open": undefined;
+  "notices.title": undefined;
+  "notices.back": undefined;
+  "notices.intro": undefined;
+  "notices.own.title": undefined;
+  "notices.own.body": undefined;
+  "notices.own.show": undefined;
+  "notices.source.title": undefined;
+  "notices.source.body": { version: FluentArgument };
+  "notices.list.title": undefined;
+  "notices.loading": undefined;
+  "notices.failed": undefined;
+  "notices.search": undefined;
+  "notices.count.all": { total: FluentArgument };
+  "notices.count.filtered": { count: FluentArgument; total: FluentArgument };
+  "notices.none": undefined;
+  "notices.noText": undefined;
+  "notices.kind.javascript": undefined;
+  "notices.kind.rust": undefined;
+  "notices.kind.bundled": undefined;
+  "notices.copy": undefined;
+  "notices.copied": undefined;
+  "notices.copyFailed": undefined;
+  "notices.usedUnder": { license: FluentArgument };
+  "notices.repository": { address: FluentArgument };
   "interface.history.event.profileExported": undefined;
   "interface.history.event.profileHidden": undefined;
   "interface.history.event.profileRestored": undefined;

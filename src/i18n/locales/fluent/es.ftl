@@ -2639,6 +2639,59 @@ restore-leftOut = Esta copia de seguridad se hizo sin videos. Al restaurarla se 
 security-backup-sizeCalculating = Calculando el tamaño de la copia de seguridad…
 interface-hidden-videoLeftOut = Video que se dejó fuera de la copia de seguridad
 
+notices-about-title = Acerca de myCarlos
+
+notices-about-body = Las bibliotecas con las que se ha creado myCarlos, la licencia bajo la que se comparte y dónde obtener su código fuente.
+
+notices-open = Avisos de código abierto
+
+notices-title = Avisos de código abierto
+
+notices-back = Volver a Preferencias
+
+notices-intro = myCarlos es software libre, creado con bibliotecas de código abierto. Cada biblioteca se comparte bajo su propia licencia. Aquí figuran sus avisos y los textos de sus licencias.
+
+notices-own-title = Licencia de myCarlos
+
+notices-own-body = myCarlos es software libre bajo la Licencia Pública General Affero de GNU, versión 3 o (a su elección) cualquier versión posterior. Puede usarlo, estudiarlo, compartirlo y modificarlo según esas condiciones.
+
+notices-own-show = Mostrar el texto completo de la licencia
+
+notices-source-title = Obtener el código fuente
+
+notices-source-body = Este es el Código Fuente Correspondiente de esta versión de myCarlos ({ $version }): el código fuente completo, con las instrucciones para compilarlo, está disponible en la dirección de abajo. Escríbala en un navegador web. Si no puede acceder, pida el código fuente a quien le dio myCarlos.
+
+notices-list-title = Bibliotecas y herramientas
+
+notices-loading = Cargando los avisos…
+
+notices-failed = No se pudieron cargar los avisos. Cierre y vuelva a abrir esta página para intentarlo de nuevo.
+
+notices-search = Buscar bibliotecas por nombre o licencia
+
+notices-count-all = { $total } bibliotecas y herramientas
+
+notices-count-filtered = { $count } de { $total } bibliotecas y herramientas
+
+notices-none = Ninguna biblioteca coincide con su búsqueda.
+
+notices-noText = La licencia de esta biblioteca no exige incluir ningún texto.
+
+notices-kind-javascript = Biblioteca de JavaScript
+
+notices-kind-rust = Biblioteca de Rust
+
+notices-kind-bundled = Incluida en myCarlos
+
+notices-copy = Copiar la dirección
+
+notices-copied = Dirección copiada.
+
+notices-copyFailed = Seleccione toda la dirección y cópiela.
+
+notices-usedUnder = Se usa bajo { $license }
+
+notices-repository = Código fuente: { $address }
 handover-section-title = Entregar los registros de una persona
 
 handover-section-body = Copie los documentos de una persona en un archivo para otro dispositivo, por ejemplo para dar a un niño sus propios registros. El archivo tiene su propia clave y no cambia su bóveda. También puede añadir una persona desde un archivo que alguien le haya dado.

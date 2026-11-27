@@ -2604,6 +2604,59 @@ restore-leftOut = This backup was made without videos. Restoring it brings back 
 security-backup-sizeCalculating = Working out how big the backup will be…
 interface-hidden-videoLeftOut = Video left out of the backup
 
+notices-about-title = About myCarlos
+
+notices-about-body = The libraries myCarlos is built with, the licence it is shared under, and where to get its source code.
+
+notices-open = Open-source notices
+
+notices-title = Open-source notices
+
+notices-back = Back to Preferences
+
+notices-intro = myCarlos is free software, built with open-source libraries. Each library is shared under its own licence. Their notices and licence texts are listed here.
+
+notices-own-title = myCarlos’s own licence
+
+notices-own-body = myCarlos is free software under the GNU Affero General Public License, version 3 or (at your option) any later version. You may use, study, share and change it under those terms.
+
+notices-own-show = Show the full licence text
+
+notices-source-title = Get the source code
+
+notices-source-body = This is the Corresponding Source of this version of myCarlos ({ $version }): the complete source code, with the instructions to build it, is available at the address below. Type it into a web browser. If you cannot reach it, ask whoever gave you myCarlos for the source.
+
+notices-list-title = Libraries and tools
+
+notices-loading = Loading the notices…
+
+notices-failed = The notices could not be loaded. Close and reopen this page to try again.
+
+notices-search = Search the libraries by name or licence
+
+notices-count-all = { $total } libraries and tools
+
+notices-count-filtered = { $count } of { $total } libraries and tools
+
+notices-none = No library matches your search.
+
+notices-noText = This library’s licence does not ask for a text to be included.
+
+notices-kind-javascript = JavaScript library
+
+notices-kind-rust = Rust library
+
+notices-kind-bundled = Bundled with myCarlos
+
+notices-copy = Copy the address
+
+notices-copied = Address copied.
+
+notices-copyFailed = Select the whole address and copy it.
+
+notices-usedUnder = Used under { $license }
+
+notices-repository = Source code: { $address }
 handover-section-title = Hand a person's records over
 
 handover-section-body = Copy one person's documents into a file for another device, for example to give a child their own records. The file has its own key and does not change your vault. You can also add a person from a file someone gave you.

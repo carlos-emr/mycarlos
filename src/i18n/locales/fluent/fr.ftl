@@ -2639,6 +2639,59 @@ restore-leftOut = Cette sauvegarde a été faite sans les vidéos. La restaurer 
 security-backup-sizeCalculating = Calcul de la taille de la sauvegarde…
 interface-hidden-videoLeftOut = Vidéo laissée de côté dans la sauvegarde
 
+notices-about-title = À propos de myCarlos
+
+notices-about-body = Les bibliothèques avec lesquelles myCarlos est construit, la licence sous laquelle il est partagé et où obtenir son code source.
+
+notices-open = Avis sur les logiciels libres
+
+notices-title = Avis sur les logiciels libres
+
+notices-back = Retour aux préférences
+
+notices-intro = myCarlos est un logiciel libre, construit avec des bibliothèques libres. Chaque bibliothèque est partagée sous sa propre licence. Leurs avis et textes de licence sont listés ici.
+
+notices-own-title = Licence de myCarlos
+
+notices-own-body = myCarlos est un logiciel libre sous la licence publique générale GNU Affero, version 3 ou (à votre choix) toute version ultérieure. Vous pouvez l’utiliser, l’étudier, le partager et le modifier selon ces conditions.
+
+notices-own-show = Afficher le texte complet de la licence
+
+notices-source-title = Obtenir le code source
+
+notices-source-body = Voici le Code Source Correspondant de cette version de myCarlos ({ $version }) : le code source complet, avec les instructions pour le compiler, est disponible à l’adresse ci-dessous. Saisissez-la dans un navigateur web. Si vous ne pouvez pas y accéder, demandez le code source à la personne qui vous a remis myCarlos.
+
+notices-list-title = Bibliothèques et outils
+
+notices-loading = Chargement des avis…
+
+notices-failed = Les avis n’ont pas pu être chargés. Fermez puis rouvrez cette page pour réessayer.
+
+notices-search = Rechercher les bibliothèques par nom ou par licence
+
+notices-count-all = { $total } bibliothèques et outils
+
+notices-count-filtered = { $count } sur { $total } bibliothèques et outils
+
+notices-none = Aucune bibliothèque ne correspond à votre recherche.
+
+notices-noText = La licence de cette bibliothèque n’exige pas qu’un texte soit joint.
+
+notices-kind-javascript = Bibliothèque JavaScript
+
+notices-kind-rust = Bibliothèque Rust
+
+notices-kind-bundled = Fournie avec myCarlos
+
+notices-copy = Copier l’adresse
+
+notices-copied = Adresse copiée.
+
+notices-copyFailed = Sélectionnez toute l’adresse et copiez-la.
+
+notices-usedUnder = Utilisé sous { $license }
+
+notices-repository = Code source : { $address }
 handover-section-title = Transmettre les dossiers d'une personne
 
 handover-section-body = Copiez les documents d'une personne dans un fichier pour un autre appareil, par exemple pour donner à un enfant ses propres dossiers. Le fichier a sa propre clé et ne modifie pas votre coffre. Vous pouvez aussi ajouter une personne à partir d'un fichier que quelqu'un vous a remis.
