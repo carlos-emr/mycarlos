@@ -710,8 +710,8 @@ document, and answers are in backups like the rest of the vault (question 17). E
   A point that still has no valid source after the safety checks is never dropped (it may be a
   real finding the model misquoted): it is shown after the sourced points, under the fixed
   heading "General points (not tied to one line)", without a link and in a softer style (#581).
-  Only when NO point has a source are they shown together, each marked "No source found". A link
-  shows where a sentence came from, not that it is right.
+  A summary with no sourced points still uses this heading. A link shows where a sentence came
+  from, not that it is right.
 - **Scanned pages** have no text, so the helper cannot work on them until on-device text
   recognition exists.
 - **Phones:** the PDF helper does not run on phones (`THREAT_MODEL.md` IMP-02), so a phone can

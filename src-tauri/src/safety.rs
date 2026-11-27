@@ -769,57 +769,6 @@ fn names_a_doctor_the_source_lacks(sentence: &str, source: &str) -> bool {
         .any(|parts| !parts.iter().all(|p| have.contains(p)))
 }
 
-/// How a sentence says that the document does NOT say something. The model is told to leave out
-/// a sentence it has no quote for; one about an absence has no true quote, so it gets one that is
-/// not in the letter, and the runner then keeps the sentence without a source. Lower-case text,
-/// one space between words.
-const ABSENCE_SUBJECTS: &[&str] = &["document", "letter", "report"];
-const ABSENCE_NEGATIONS: &[&str] = &["does not", "doesn't", "did not"];
-/// Verbs about SAYING. A report that "does not show" or "has no" something states a negative finding, which
-/// is a real result (the unfound quote only means the model misquoted it): those are never dropped.
-const ABSENCE_VERBS: &[&str] = &[
-    "say", "mention", "give", "tell", "list", "include", "state", "provide", "specify", "describe",
-    "explain",
-];
-const ABSENCE_THIRD_PERSON: &[&str] = &["gives no", "mentions no", "says nothing", "is silent"];
-/// Only for the letter and the document: "The report lists/includes no …" can be a reassuring result.
-const ABSENCE_THIRD_PERSON_DOCUMENT_ONLY: &[&str] = &["lists no", "includes no"];
-const ABSENCE_OTHER: &[&str] = &[
-    "there is no mention",
-    "no information is given",
-    "no instructions are given",
-    "nothing is said about",
-];
-
-/// Whether an English summary sentence reports what the document does not say ("The document
-/// does not give instructions for taking medicine."). Such a sentence has no source of its own;
-/// the runner drops it when its quote is not in the letter (`local_runner`), never when it is.
-pub(crate) fn is_absence_sentence(text: &str) -> bool {
-    // Words only: an apostrophe goes ("doesn't" is "doesnt"), so both spellings of it match.
-    let words = |t: &str| {
-        tokens(&t.replace(['\'', '\u{2019}'], ""))
-            .into_iter()
-            .map(|w| w.0)
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    let line = format!(" {} ", words(text));
-    let has = |phrase: &str| line.contains(&format!(" {} ", words(phrase)));
-    ABSENCE_SUBJECTS.iter().any(|subject| {
-        ABSENCE_NEGATIONS.iter().any(|negation| {
-            ABSENCE_VERBS
-                .iter()
-                .any(|verb| has(&format!("the {subject} {negation} {verb}")))
-        }) || ABSENCE_THIRD_PERSON
-            .iter()
-            .any(|phrase| has(&format!("the {subject} {phrase}")))
-            || (*subject != "report"
-                && ABSENCE_THIRD_PERSON_DOCUMENT_ONLY
-                    .iter()
-                    .any(|phrase| has(&format!("the {subject} {phrase}"))))
-    }) || ABSENCE_OTHER.iter().any(|phrase| has(phrase))
-}
-
 /// Which way a medicine instruction goes. A summary sentence that says the opposite does not carry it:
 /// "keep taking X" is not "stop taking X".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2139,27 +2088,6 @@ mod tests {
     }
 
     #[test]
-    fn given_absence_sentences_when_read_then_only_those_that_say_the_document_lacks_something_match(
-    ) {
-        for yes in [
-            "The document does not give instructions for taking medicine.",
-            "The document doesn\u{2019}t say when to come back.",
-            "You may continue your current medicines as the document does not tell you to change them.",
-            "The letter gives no phone number.",
-            "There is no mention of allergies.",
-        ] {
-            assert!(is_absence_sentence(yes), "{yes}");
-        }
-        for no in [
-            "You must take Vitamin D3 2,000 units by mouth once a day.",
-            "The document says you must stop taking iron after the infusion.",
-            "The documents are in the folder.",
-        ] {
-            assert!(!is_absence_sentence(no), "{no}");
-        }
-    }
-
-    #[test]
     fn given_a_time_limit_taken_from_a_question_when_checked_then_the_letters_sentence_is_quoted() {
         check_case("a_time_limit_taken_from_a_question");
     }
@@ -2293,18 +2221,6 @@ mod tests {
     }
 
     #[test]
-    fn given_a_negative_finding_when_absence_is_read_then_it_is_not_an_absence_sentence() {
-        for finding in [
-            "The report does not show any sign of celiac disease.",
-            "The report has no evidence of cancer.",
-            "The document contains no signs of infection.",
-            "The biopsy did not find any sign of cancer.",
-        ] {
-            assert!(!is_absence_sentence(finding), "{finding}");
-        }
-    }
-
-    #[test]
     fn given_a_ligature_when_words_are_read_then_they_are_their_letters() {
         // The letter's PDF text has "\u{FB01}rst" (a ligature); the summary has "first".
         assert!(!time_limit_the_source_lacks(
@@ -2375,19 +2291,6 @@ mod tests {
             vec![vec!["fakeham"]]
         );
         assert_eq!(doctor_surnames("Dr. Anh Do will see you"), vec![vec!["do"]]);
-    }
-
-    #[test]
-    fn given_reassuring_report_phrases_when_absence_is_read_then_only_the_letter_and_document_count(
-    ) {
-        assert!(!is_absence_sentence("The report lists no abnormal cells."));
-        assert!(!is_absence_sentence(
-            "The report includes no signs of infection."
-        ));
-        assert!(is_absence_sentence("The letter lists no phone number."));
-        assert!(is_absence_sentence(
-            "The document includes no instructions."
-        ));
     }
 
     #[test]

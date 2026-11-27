@@ -1246,7 +1246,7 @@ p {
   padding-left: 10px;
   border-left: 3px solid var(--line);
   color: var(--ink-soft);
-  font-size: 0.95em;
+  font-size: 0.95rem;
 }
 .native-reader-ai-result .ai-general-heading {
   margin: 0;

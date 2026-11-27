@@ -266,8 +266,7 @@ describe("the reader's AI helper", () => {
     expect(model.calls).toHaveLength(1);
   });
 
-  it("says no source was found for each point when none of them has one, with no group", async () => {
-    // Nothing to separate them from: today's behaviour.
+  it("labels every point as general when none has a source", async () => {
     const model = fakeLocalModel({
       sentences: () => [
         {
@@ -288,10 +287,17 @@ describe("the reader's AI helper", () => {
     const panel = screen.getByRole("region", {
       name: "Summary in plain words",
     });
-    await within(panel).findByText(/the letter is about a recent visit/);
-    expect(within(panel).getAllByText("No source found")).toHaveLength(2);
-    expect(within(panel).queryByRole("group")).toBeNull();
-    expect(within(panel).queryByText(/General points/)).toBeNull();
+    const group = await within(panel).findByRole("group", {
+      name: "General points (not tied to one line)",
+    });
+    expect(within(group).getAllByRole("listitem")).toHaveLength(2);
+    expect(
+      within(group).getByText(/the letter is about a recent visit/),
+    ).toBeVisible();
+    expect(within(group).getByText(/the doctor was thorough/)).toBeVisible();
+    expect(
+      within(panel).queryByRole("button", { name: "Show me in the document" }),
+    ).toBeNull();
   });
 
   it("shortens the warning to an AI draft tag after Don't show this again, never removes the tag, and brings the sentence back from the info button", async () => {

@@ -285,7 +285,8 @@ test.describe("with a model on this device", () => {
   test("a point with no source is not dropped: it follows the sourced ones under General points, with no link", async ({
     page,
   }) => {
-    const general = "FAKE: the letter is about a recent visit to the clinic.";
+    const general =
+      "The document does not give instructions for taking medicine.";
     const reader = await openReader(page, {
       model: INSTALLED,
       generalPoint: general,
