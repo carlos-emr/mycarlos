@@ -167,4 +167,83 @@ describe("native appearance", () => {
     expect(setTheme).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("reports a failed platform check and sends no window-theme command", async () => {
+    runtimeInfo.mockRejectedValue(new Error("no runtime"));
+    const appearance = startAppearance();
+    cleanups.push(startNativeAppearance(appearance));
+    await tick();
+    expect(appearance.snapshot().nativeError).toBe("appearance.error.window");
+    expect(setTheme).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("says nothing about a platform check that fails after cleanup", async () => {
+    let fail!: (reason: Error) => void;
+    runtimeInfo.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const appearance = startAppearance();
+    const stop = startNativeAppearance(appearance);
+    stop();
+    fail(new Error("late"));
+    await tick();
+    expect(appearance.snapshot().nativeError).toBe("");
+    expect(setTheme).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ignores a native theme command that finishes or fails after cleanup", async () => {
+    let finish!: () => void;
+    setTheme.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const appearance = startAppearance();
+    const stop = startNativeAppearance(appearance);
+    await tick();
+    stop();
+    finish();
+    await tick();
+    expect(setTheme).toHaveBeenCalledTimes(1);
+    expect(appearance.snapshot().nativeError).toBe("");
+
+    let fail!: (reason: Error) => void;
+    setTheme.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const second = startAppearance();
+    const stopSecond = startNativeAppearance(second);
+    await tick();
+    stopSecond();
+    fail(new Error("late"));
+    await tick();
+    expect(second.snapshot().nativeError).toBe("");
+  });
+
+  it("does not blame the latest choice for an older command that fails or times out", async () => {
+    let fail!: (reason: Error) => void;
+    setTheme.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const appearance = startAppearance();
+    cleanups.push(startNativeAppearance(appearance));
+    await tick();
+    appearance.set("dark");
+    await tick();
+    expect(appearance.snapshot().nativeError).toBe("");
+    fail(new Error("old command"));
+    await tick();
+    expect(appearance.snapshot().nativeError).toBe("");
+    // The older command's deadline passing after the latest choice finished is no error either.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(appearance.snapshot().nativeError).toBe("");
+  });
 });
