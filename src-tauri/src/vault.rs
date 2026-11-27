@@ -76,6 +76,8 @@ mod profile_import;
 #[cfg_attr(not(test), allow(dead_code))]
 mod profile_package;
 #[cfg(test)]
+mod reach_tests;
+#[cfg(test)]
 mod refusal_tests;
 #[cfg(test)]
 mod save_stage_tests;
@@ -179,6 +181,9 @@ pub(crate) const MAX_IMPORT_FILES: usize = 100;
 /// Where every document so far comes from: the patient added it, and nothing has checked it.
 pub(crate) const MANUAL_IMPORT_LABEL: &str = "Manual import — unverified";
 pub(crate) const MAX_FOLDER_ASSIGNMENTS: usize = 1_000;
+/// Folders nest at most this deep (create, move and the manifest's structure check all say 32).
+/// `Manifest::folder_in_reach` bounds its walk by it.
+const MAX_FOLDER_DEPTH: usize = 32;
 const MIN_PASSPHRASE_CHARS: usize = 15;
 const MAX_PASSPHRASE_BYTES: usize = 1024;
 const CREATE_STAGE_PREFIX: &str = ".create-";
@@ -863,13 +868,88 @@ struct Manifest {
 }
 
 impl Manifest {
-    /// Whether `profile_id` is a person who is hidden (#360): their documents, folders and
-    /// lists are out of the library, search and the AI helper's reach. A profile that is not
-    /// in the manifest is not hidden (the caller's own lookup says it is missing).
-    fn person_is_hidden(&self, profile_id: Uuid) -> bool {
-        self.profiles
+    /// Whether `profile_id` is a person in reach: not hidden (#360). A hidden person's
+    /// documents, folders and lists are out of the library, search and the AI helper's reach.
+    /// A profile that is not in the manifest is in reach here (the caller's own lookup says it
+    /// is missing).
+    ///
+    /// **The person's flag, as far as documents and folders are concerned, is read here.** Their
+    /// lookups ask one of the three reach helpers, so that a later reason a document or folder
+    /// can be out of reach (hiding a folder, #574) is added in exactly these bodies, never at
+    /// call sites where one could be missed. (Operations on the person's own record, renaming,
+    /// hiding and restoring them, listing people, still read `profile.hidden` directly: they
+    /// are about the person, not about reach.)
+    pub(crate) fn person_in_reach(&self, profile_id: Uuid) -> bool {
+        !self
+            .profiles
             .iter()
             .any(|profile| profile.id == profile_id && profile.hidden.is_some())
+    }
+
+    /// Whether a document is in reach: it is listed, opened, searched, exported, renamed, given
+    /// AI answers and so on only while this is true. Today: its person is in reach. (A document
+    /// hidden on its own, or as damaged, is a separate flag that its own callers check.)
+    pub(crate) fn record_in_reach(&self, record: &StoredRecord) -> bool {
+        self.person_in_reach(record.profile_id)
+    }
+
+    /// Whether a folder is in reach: it exists, its person is in reach, and every folder above
+    /// it is. Written to be **bounded and to fail closed**: it follows at most
+    /// `MAX_FOLDER_DEPTH + 1` parents, and a cycle, a parent that is not in the manifest, or a
+    /// chain deeper than the limit all answer `false` (never `true`, never a loop, never a
+    /// panic). It also runs on a manifest inside a mutation closure, which no validation has
+    /// seen yet.
+    pub(crate) fn folder_in_reach(&self, folder_id: Uuid) -> bool {
+        self.walk_in_reach(folder_id, |id| {
+            self.folders
+                .iter()
+                .find(|folder| folder.id == id)
+                .map(|folder| (folder.profile_id, folder.parent_id))
+        })
+    }
+
+    /// The ids of every folder in reach, found once (the snapshot and the history view filter
+    /// every folder and document). The same answer, by the same walk, as asking
+    /// `folder_in_reach` of each folder, but through an id map built once: O(folders x depth),
+    /// not a scan of every folder at every step.
+    pub(crate) fn folders_in_reach(&self) -> HashSet<Uuid> {
+        let by_id: HashMap<Uuid, (Uuid, Option<Uuid>)> = self
+            .folders
+            .iter()
+            .map(|folder| (folder.id, (folder.profile_id, folder.parent_id)))
+            .collect();
+        self.folders
+            .iter()
+            .filter(|folder| self.walk_in_reach(folder.id, |id| by_id.get(&id).copied()))
+            .map(|folder| folder.id)
+            .collect()
+    }
+
+    /// The one walk behind both: from `folder_id` up through `parent_id`, asking `lookup` for a
+    /// folder's (person, parent). Bounded and fail closed (see `folder_in_reach`).
+    fn walk_in_reach(
+        &self,
+        folder_id: Uuid,
+        lookup: impl Fn(Uuid) -> Option<(Uuid, Option<Uuid>)>,
+    ) -> bool {
+        let mut current = folder_id;
+        let mut seen = HashSet::new();
+        for _ in 0..=MAX_FOLDER_DEPTH {
+            if !seen.insert(current) {
+                return false;
+            }
+            let Some((profile_id, parent_id)) = lookup(current) else {
+                return false;
+            };
+            if !self.person_in_reach(profile_id) {
+                return false;
+            }
+            match parent_id {
+                None => return true,
+                Some(parent) => current = parent,
+            }
+        }
+        false
     }
 }
 
@@ -2358,24 +2438,30 @@ impl VaultStore {
         let people: HashSet<Uuid> = manifest
             .profiles
             .iter()
-            .filter(|profile| profile.hidden.is_some())
+            .filter(|profile| !manifest.person_in_reach(profile.id))
             .map(|profile| profile.id)
             .collect();
-        if people.is_empty() {
-            return Ok(view);
-        }
+        // What is out of reach, by the same helpers the library's lists use (a document or a
+        // folder is left out of the history exactly when it is left out of the library).
+        let in_reach = manifest.folders_in_reach();
         let records: HashSet<Uuid> = manifest
             .records
             .iter()
-            .filter(|record| people.contains(&record.profile_id))
+            .filter(|record| !manifest.record_in_reach(record))
             .map(|record| record.id)
             .collect();
         let folders: HashSet<Uuid> = manifest
             .folders
             .iter()
-            .filter(|folder| people.contains(&folder.profile_id))
+            .filter(|folder| !in_reach.contains(&folder.id))
             .map(|folder| folder.id)
             .collect();
+        // Nothing hidden of ANY kind: the view is as it was read. The return is on all three
+        // sets, not on the people alone, so that a vault with something hidden that is not a
+        // person (a folder, #574) is still filtered.
+        if people.is_empty() && records.is_empty() && folders.is_empty() {
+            return Ok(view);
+        }
         let about = |entry: &HistoryEntry| {
             entry.profile_id.is_some_and(|id| people.contains(&id))
                 || entry.record_id.is_some_and(|id| records.contains(&id))
@@ -2546,7 +2632,9 @@ impl VaultStore {
                 .iter()
                 .filter(|record| {
                     unlocked.unavailable.contains(&record.id)
-                        && unlocked.manifest.person_is_hidden(record.profile_id)
+                        // The people's own count: documents of a hidden person, not of a hidden
+                        // folder (a folder's count is a separate figure, #574).
+                        && !unlocked.manifest.person_in_reach(record.profile_id)
                 })
                 .count(),
             hidden_profiles: unlocked
@@ -2568,18 +2656,22 @@ impl VaultStore {
                     })
                 })
                 .collect(),
-            folders: unlocked
-                .manifest
-                .folders
-                .iter()
-                .filter(|folder| !unlocked.manifest.person_is_hidden(folder.profile_id))
-                .cloned()
-                .collect(),
+            folders: {
+                // The folders in reach, found once for the whole list.
+                let in_reach = unlocked.manifest.folders_in_reach();
+                unlocked
+                    .manifest
+                    .folders
+                    .iter()
+                    .filter(|folder| in_reach.contains(&folder.id))
+                    .cloned()
+                    .collect()
+            },
             records: unlocked
                 .manifest
                 .records
                 .iter()
-                .filter(|record| !unlocked.manifest.person_is_hidden(record.profile_id))
+                .filter(|record| unlocked.manifest.record_in_reach(record))
                 .map(|record| {
                     let verified =
                         delivery::verified_clinic(record, &unlocked.manifest.portal_links);
@@ -3137,6 +3229,10 @@ impl VaultStore {
                 if folder.profile_id != profile_id {
                     return Err(VaultError::Invalid);
                 }
+                // A folder is never created inside a place out of reach (#574).
+                if !manifest.folder_in_reach(parent) {
+                    return Err(VaultError::NotFound);
+                }
                 ensure_depth(manifest, Some(parent), 1)?;
             }
             let id = Uuid::new_v4();
@@ -3171,7 +3267,7 @@ impl VaultStore {
                 .find(|folder| folder.id == folder_id)
                 .cloned()
                 .ok_or(VaultError::NotFound)?;
-            if manifest.person_is_hidden(current.profile_id) {
+            if !manifest.folder_in_reach(folder_id) {
                 return Err(VaultError::NotFound);
             }
             if parent_id == Some(folder_id) {
@@ -3187,6 +3283,10 @@ impl VaultStore {
                     || is_descendant(manifest, parent, folder_id)
                 {
                     return Err(VaultError::Invalid);
+                }
+                // A folder is never moved into a place out of reach (#574).
+                if !manifest.folder_in_reach(parent) {
+                    return Err(VaultError::NotFound);
                 }
                 ensure_depth(manifest, Some(parent), subtree_depth(manifest, folder_id)?)?;
             }
@@ -3231,12 +3331,12 @@ impl VaultStore {
             return Err(VaultError::Invalid);
         }
         self.mutate_recorded(|manifest, entries| {
-            let hidden_person = manifest
+            let out_of_reach = manifest
                 .records
                 .iter()
                 .find(|record| record.id == record_id)
-                .is_some_and(|record| manifest.person_is_hidden(record.profile_id));
-            if hidden_person {
+                .is_some_and(|record| !manifest.record_in_reach(record));
+            if out_of_reach {
                 return Err(VaultError::NotFound);
             }
             let record = manifest
@@ -3287,19 +3387,19 @@ impl VaultStore {
             // Folder validity depends only on the owning profile, so check each
             // profile once rather than once per record. Record ids are unique
             // within a manifest, so one pass both finds and counts the targets.
+            // Reach is judged for EACH record, not once per person: a document can be out
+            // of reach (in a hidden folder, #574) although its person is in reach.
             let mut profile_ids = HashSet::new();
             let mut found = 0_usize;
+            let mut out_of_reach = false;
             for record in &manifest.records {
                 if unique_record_ids.contains(&record.id) {
                     found += 1;
+                    out_of_reach |= !manifest.record_in_reach(record);
                     profile_ids.insert(record.profile_id);
                 }
             }
-            if found != unique_record_ids.len()
-                || profile_ids
-                    .iter()
-                    .any(|profile_id| manifest.person_is_hidden(*profile_id))
-            {
+            if found != unique_record_ids.len() || out_of_reach {
                 return Err(VaultError::NotFound);
             }
             let assignments = unique(folder_ids);
@@ -3666,10 +3766,7 @@ impl VaultStore {
                 .manifest
                 .records
                 .iter()
-                .find(|record| {
-                    record.id == *record_id
-                        && !unlocked.manifest.person_is_hidden(record.profile_id)
-                })
+                .find(|record| record.id == *record_id && unlocked.manifest.record_in_reach(record))
                 .ok_or(VaultError::NotFound)?;
             // Folder changes within the same person use assign_folders;
             // this operation changes the person and their keyed fingerprint.
@@ -3794,9 +3891,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         let original = prefer_original
             .then_some(record.original_pdf.as_ref())
@@ -3842,9 +3937,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         // The name is asked for just before a save picker opens. Refuse here, as
         // `export` will, so nobody chooses a destination for a lost object.
@@ -3927,9 +4020,12 @@ impl VaultStore {
         let Some(unlocked) = guard.as_mut() else {
             return;
         };
-        let Some(record) = unlocked.manifest.records.iter().find(|record| {
-            record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-        }) else {
+        let Some(record) = unlocked
+            .manifest
+            .records
+            .iter()
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
+        else {
             return;
         };
         let mut entry =
@@ -3961,9 +4057,7 @@ impl VaultStore {
                 .manifest
                 .records
                 .iter()
-                .find(|record| {
-                    record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-                })
+                .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
                 .ok_or(VaultError::NotFound)?;
             if record.hidden.is_some() {
                 return Err(VaultError::NotFound);
@@ -4067,9 +4161,7 @@ impl VaultStore {
         let record = manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         if let Some(delivery) = record
             .delivery
@@ -4317,9 +4409,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         if record.hidden.is_some() == hidden.is_some() {
             return Ok(());
@@ -4433,7 +4523,9 @@ impl VaultStore {
                     .records
                     .iter()
                     .find(|record| record.id == *id)
-                    .is_some_and(|record| unlocked.manifest.person_is_hidden(record.profile_id))
+                    // The people's own partition (the screen's confirmation counts hidden
+                    // people's damaged documents separately from a folder's, #574).
+                    .is_some_and(|record| !unlocked.manifest.person_in_reach(record.profile_id))
             });
         if confirmed != shown_to_patient.into_iter().collect::<HashSet<Uuid>>()
             || hidden_people_documents != of_hidden_people.len()
@@ -10062,7 +10154,8 @@ fn require_profile(manifest: &Manifest, profile_id: Uuid) -> Result<(), VaultErr
     if manifest
         .profiles
         .iter()
-        .any(|profile| profile.id == profile_id && profile.hidden.is_none())
+        .any(|profile| profile.id == profile_id)
+        && manifest.person_in_reach(profile_id)
     {
         Ok(())
     } else {
@@ -10075,18 +10168,23 @@ fn validate_folder_ids(
     profile_id: Uuid,
     folder_ids: &[Uuid],
 ) -> Result<(), VaultError> {
-    if folder_ids.len() <= MAX_FOLDER_ASSIGNMENTS
-        && folder_ids.iter().all(|id| {
+    if folder_ids.len() > MAX_FOLDER_ASSIGNMENTS
+        || !folder_ids.iter().all(|id| {
             manifest
                 .folders
                 .iter()
                 .any(|folder| folder.id == *id && folder.profile_id == profile_id)
         })
     {
-        Ok(())
-    } else {
-        Err(VaultError::Invalid)
+        return Err(VaultError::Invalid);
     }
+    // A folder of the right person that is out of reach is not named to the caller (as a hidden
+    // person's records are not): a document is never filed into a place the patient cannot see,
+    // by an import, a photo, a recording, a move or a re-save (#574).
+    if !folder_ids.iter().all(|id| manifest.folder_in_reach(*id)) {
+        return Err(VaultError::NotFound);
+    }
+    Ok(())
 }
 
 fn unique(values: Vec<Uuid>) -> Vec<Uuid> {

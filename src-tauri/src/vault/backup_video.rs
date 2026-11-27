@@ -60,9 +60,7 @@ impl BackupPlan {
             .copied()
             .filter(|id| {
                 manifest.records.iter().any(|record| {
-                    record.id == *id
-                        && record.hidden.is_none()
-                        && !manifest.person_is_hidden(record.profile_id)
+                    record.id == *id && record.hidden.is_none() && manifest.record_in_reach(record)
                 })
             })
             .collect()
@@ -119,7 +117,7 @@ impl VaultStore {
         for record in &unlocked.manifest.records {
             if !camera_made.contains(&record.id)
                 || record.hidden.is_some()
-                || unlocked.manifest.person_is_hidden(record.profile_id)
+                || !unlocked.manifest.record_in_reach(record)
                 || record.plaintext_size < 12
             {
                 continue;

@@ -1333,7 +1333,10 @@ impl VaultStore {
                 .folder_ids
                 .iter()
                 .copied()
-                .filter(|id| unlocked.manifest.folders.iter().any(|f| f.id == *id))
+                // A folder that is gone, or is out of reach by now (hidden after the recording
+                // began, #574), is dropped: the recording is filed with the rest, never silently
+                // into a place the patient who just made it cannot see.
+                .filter(|id| unlocked.manifest.folder_in_reach(*id))
                 .collect();
             let record = StoredRecord {
                 id: record_id,
@@ -1486,9 +1489,7 @@ impl VaultStore {
             .manifest
             .records
             .iter()
-            .find(|record| {
-                record.id == record_id && !unlocked.manifest.person_is_hidden(record.profile_id)
-            })
+            .find(|record| record.id == record_id && unlocked.manifest.record_in_reach(record))
             .ok_or(VaultError::NotFound)?;
         if !object_required(record)
             && object_presence_name(&self.root, &record.object_name) != ObjectPresence::Present
