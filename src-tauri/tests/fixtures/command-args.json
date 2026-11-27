@@ -557,6 +557,19 @@
       "arguments": {},
       "raw": false
     },
+    "vault_mark_all_seen": {
+      "arguments": {},
+      "raw": false
+    },
+    "vault_mark_seen": {
+      "arguments": {
+        "request": {
+          "optional": false,
+          "struct": "MarkSeenRequest"
+        }
+      },
+      "raw": false
+    },
     "vault_move_to_person": {
       "arguments": {
         "request": {
@@ -1409,6 +1422,17 @@
           "struct": null
         },
         "profileId": {
+          "optional": false,
+          "struct": null
+        }
+      },
+      "open": false
+    },
+    "MarkSeenRequest": {
+      "ambiguous": false,
+      "denyUnknown": true,
+      "fields": {
+        "recordIds": {
           "optional": false,
           "struct": null
         }
