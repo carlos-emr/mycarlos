@@ -2,7 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectNoAxeViolations, expectOnlyFakedCommands } from "./support/a11y";
 import { translate } from "./support/fluent";
 import { fakeNoticesWith, noticeCalls } from "./support/noticeFake";
-import { fakeVaultWith, myRecords, sidebar } from "./support/vaultFake";
+import {
+  fakeCalls,
+  fakeVaultWith,
+  myRecords,
+  sidebar,
+} from "./support/vaultFake";
 
 // The notices step right after the first clinic link (#235): the existing
 // Notices setting, offered once in a dialog, nothing ticked. What is ticked
@@ -17,9 +22,14 @@ test.beforeEach(({}, testInfo) => {
   );
 });
 
-/** Unlocked, unlinked, notices supported and off; links the first clinic. */
-async function linkFirstClinic(page: Page) {
-  await fakeVaultWith(page, { start: "unlocked", portal: "unlinked" });
+/** Unlocked, unlinked, notices supported and off; links the first clinic. `background` makes it a
+ * computer that can keep myCarlos running in the background (the tray icon). */
+async function linkFirstClinic(page: Page, background = false) {
+  await fakeVaultWith(page, {
+    start: "unlocked",
+    portal: "unlinked",
+    ...(background ? { background: "available" as const } : {}),
+  });
   await fakeNoticesWith(page, {});
   await page.goto("/");
   await expect(myRecords(page)).toBeVisible();
@@ -140,4 +150,82 @@ test("Escape is Not now", async ({ page }) => {
   await expect(dialog).toHaveCount(0);
   const boxes = await preferencesBoxes(page);
   await expect(boxes.notices).not.toBeChecked();
+});
+
+// A computer with a background mode: the step also offers the two background choices (#235).
+test("on a computer with a background mode, the step offers keeping myCarlos running and starting at sign-in, and what is ticked is on in Preferences", async ({
+  page,
+}) => {
+  const dialog = await linkFirstClinic(page, true);
+  const keep = dialog.getByRole("checkbox", {
+    name: en("background.keepRunning"),
+    exact: true,
+  });
+  const login = dialog.getByRole("checkbox", {
+    name: en("background.startAtLogin"),
+    exact: true,
+  });
+  await expect(keep).not.toBeChecked();
+  await expect(login).not.toBeChecked();
+  await expect(
+    dialog.getByRole("heading", { name: en("background.title"), level: 3 }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page);
+  await keep.check();
+  await expect(keep).toBeChecked();
+  await login.check();
+  await expect(login).toBeChecked();
+  // A saved choice leaves only Done.
+  await expect(
+    dialog.getByRole("button", { name: en("noticesStep.notNow"), exact: true }),
+  ).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: en("noticesStep.done"), exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(await fakeCalls(page, "background_set_keep_running")).toEqual([
+    { enabled: true },
+  ]);
+  expect(await fakeCalls(page, "background_set_start_at_login")).toEqual([
+    { enabled: true },
+  ]);
+  await preferencesBoxes(page);
+  await expect(
+    page.getByRole("checkbox", {
+      name: en("background.keepRunning"),
+      exact: true,
+    }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", {
+      name: en("background.startAtLogin"),
+      exact: true,
+    }),
+  ).toBeChecked();
+  await expectOnlyFakedCommands(page);
+});
+
+test("on a computer with a background mode, Not now leaves the background choices off too", async ({
+  page,
+}) => {
+  const dialog = await linkFirstClinic(page, true);
+  await dialog
+    .getByRole("button", { name: en("noticesStep.notNow"), exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(await fakeCalls(page, "background_set_keep_running")).toEqual([]);
+  expect(await fakeCalls(page, "background_set_start_at_login")).toEqual([]);
+  await preferencesBoxes(page);
+  await expect(
+    page.getByRole("checkbox", {
+      name: en("background.keepRunning"),
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await expect(
+    page.getByRole("checkbox", {
+      name: en("background.startAtLogin"),
+      exact: true,
+    }),
+  ).not.toBeChecked();
 });

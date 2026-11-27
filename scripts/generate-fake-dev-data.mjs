@@ -1,8 +1,43 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
+import {
+  fakeDemoClip,
+  fakePictureWithDetails,
+  fakePictureWithLocation,
+} from "./fake-media.mjs";
 
 export const FAKE_PREFIX = "FAKE";
+
+// Demo pictures and a short clip for "+ New" and "Add a video" (see fake-media.mjs).
+const media = [
+  {
+    fileName: "FAKE_Picture_with_location.jpg",
+    kind: "picture",
+    profileName: "FAKE Avery Patient",
+    folders: ["FAKE Test Results"],
+    description:
+      "JPEG test pattern with a FAKE GPS position in its EXIF, to show picture cleaning",
+    bytes: () => fakePictureWithLocation(),
+  },
+  {
+    fileName: "FAKE_Picture_with_details.png",
+    kind: "picture",
+    profileName: "FAKE Avery Patient",
+    folders: ["FAKE Test Results"],
+    description:
+      "PNG test pattern with FAKE text chunks and EXIF details, to show picture cleaning",
+    bytes: () => fakePictureWithDetails(),
+  },
+  {
+    fileName: "FAKE_demo_clip.mp4",
+    kind: "video",
+    profileName: "FAKE Morgan Patient",
+    folders: ["FAKE Imaging"],
+    description: "2 second 160x112 test-pattern clip (H.264, no sound)",
+    bytes: () => fakeDemoClip(),
+  },
+];
 
 const documents = [
   {
@@ -126,6 +161,13 @@ export async function generateFakeDevData(outputDirectory) {
     duplicateBytes,
   );
   generated.push(duplicate.fileName);
+  for (const item of media) {
+    await writeFile(
+      path.join(outputDirectory, item.fileName),
+      await item.bytes(),
+    );
+    generated.push(item.fileName);
+  }
   const manifest = {
     warning:
       "FAKE synthetic development data only. Contains no patient information.",
@@ -147,6 +189,7 @@ export async function generateFakeDevData(outputDirectory) {
       ),
       duplicate,
     ],
+    media: media.map(({ bytes: _bytes, ...item }) => item),
   };
   await writeFile(
     path.join(outputDirectory, "FAKE_MANIFEST.json"),

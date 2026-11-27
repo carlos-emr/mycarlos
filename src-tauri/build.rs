@@ -177,6 +177,7 @@ fn main() {
             "vault_assign_folders_batch",
             "vault_import_pick",
             "vault_import_picked",
+            "vault_import_any_pick",
             "vault_import_video_pick",
             "vault_import_video_picked",
             "vault_video_import_progress",
