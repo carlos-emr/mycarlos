@@ -14,12 +14,12 @@
   }
  ],
  "made": "2026-11-27",
- "count": 4912,
+ "count": 4914,
  "dropped": {
   "counted": 101902157,
   "distinct names counted": 135303,
   "below the 98 % cutoff": 130382,
-  "exceptions": 9,
+  "exceptions": 7,
   "not a plain single-word name": 1108
  },
  "note": "First words of first names: births since 1940 in Argentina (RENAPER) and the people in Spain's Padron Continuo at 1 Jan 2022 whose name is held by 20 or more (INE), lower case, the commonest names holding 98 % of the counted. Names that are also common words are kept on purpose.",
@@ -609,6 +609,7 @@
   "asia",
   "asier",
   "asif",
+  "asma",
   "asmaa",
   "asmae",
   "assane",
@@ -2224,6 +2225,7 @@
   "ingrid",
   "inhar",
   "inmaculada",
+  "inna",
   "inocencia",
   "inocencio",
   "inocenta",

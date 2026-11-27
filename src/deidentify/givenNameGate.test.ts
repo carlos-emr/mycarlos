@@ -95,10 +95,7 @@ describe("a Spanish header's subject after 'para' is a person when it starts wit
   it.each([
     "Plan de cuidados para Prevención De Caídas",
     "Plan de cuidados para Salud Mental",
-    "Informe para Asma Infantil",
     "Resumen para Vida Diaria",
-    "Plan para Mama Derecha",
-    "Informe para Santa Casa",
     "Plan de cuidados para Cuidados Paliativos",
     "Resumen de alta para Insuficiencia Cardiaca",
   ])("leaves a topic alone: %s", (text) => {
@@ -144,7 +141,7 @@ describe("a Spanish header's subject after 'para' is a person when it starts wit
       "paz",
     ])
       expect(isKnownGivenName(name), name).toBe(true);
-    for (const word of ["salud", "asma", "vida", "mama", "santo", "santa"])
+    for (const word of ["salud", "vida"])
       expect(isKnownGivenName(word), word).toBe(false);
   });
 });
@@ -274,24 +271,73 @@ describe("the given-name and surname lists", () => {
       }
   });
 
-  it("keeps the hand exceptions out of EVERY list (the gate reads them together), each with its reason", () => {
-    const lists = [givenNamesEn, givenNamesFr, givenNamesPl, givenNamesEs];
-    const hand = Object.entries(exceptions)
-      .filter(([group]) => !group.startsWith("_"))
-      .flatMap(([group, words]) =>
-        Object.entries(words as Record<string, string>).map(
-          ([name, reason]) => ({ group, name, reason }),
-        ),
-      );
-    expect(hand.length).toBeGreaterThan(15);
-    for (const { group, name, reason } of hand) {
-      expect(reason.length, `${group}: ${name}`).toBeGreaterThan(10);
-      for (const file of lists)
-        expect(file.names, `${group}: ${name} in ${file.name}`).not.toContain(
-          name,
-        );
+  it('keeps the hand exceptions out: the "all" group from every list, a language group from its own list only', () => {
+    const lists = {
+      en: givenNamesEn,
+      fr: givenNamesFr,
+      pl: givenNamesPl,
+      es: givenNamesEs,
+    } as const;
+    const groups = Object.entries(exceptions).filter(
+      ([group]) => !group.startsWith("_"),
+    ) as [string, Record<string, string>][];
+    expect(groups.map(([group]) => group).sort()).toEqual(["all", "es", "pl"]);
+    let total = 0;
+    for (const [group, words] of groups)
+      for (const [name, reason] of Object.entries(words)) {
+        total += 1;
+        expect(reason.length, `${group}: ${name}`).toBeGreaterThan(10);
+        const from =
+          group === "all"
+            ? Object.values(lists)
+            : [lists[group as keyof typeof lists]];
+        for (const file of from)
+          expect(file.names, `${group}: ${name} in ${file.name}`).not.toContain(
+            name,
+          );
+      }
+    expect(total).toBeGreaterThan(15);
+    // A word that does harm in any language is out of every list, so the gate does not know it.
+    for (const name of Object.keys(exceptions.all))
       expect(isKnownGivenName(name), name).toBe(false);
-    }
+  });
+
+  it("keeps a real given name in the lists of the languages where it is one", () => {
+    // Asma and Line are given names in French, English and Spanish data; Inna and Santa too. A
+    // language's own exception (the Polish word "inna", the Spanish "santa") drops it from that
+    // list only. A missed name is the worse mistake.
+    for (const name of ["asma", "line", "inna", "santa", "santo", "mama"])
+      expect(isKnownGivenName(name), name).toBe(true);
+    expect(givenNamesPl.names).not.toContain("inna");
+    expect(givenNamesFr.names).toContain("inna");
+    expect(givenNamesEs.names).not.toContain("santa");
+    expect(givenNamesFr.names).toContain("santa");
+  });
+
+  it.each([
+    ["Care plan for Asma Khan", "Khan"],
+    ["Plan de soins pour Asma Benali", "Benali"],
+    ["Plan de soins pour Line Tremblay", "Tremblay"],
+    ["Plan de soins pour Inna Petrova", "Petrova"],
+    ["Plan de cuidados para Asma Ejemplo", "Ejemplo"],
+  ])("still catches the real name: %s", (text, surname) => {
+    expect(send(text)).not.toContain(surname);
+  });
+
+  it("leaves a lower-case care phrase alone, and states the cost for a title-case one", () => {
+    for (const text of [
+      "Plan para asma bronquial",
+      "Care plan for asma control",
+      "Plan de soins pour line care",
+    ])
+      expect(send(text), text).toBe(text);
+    // Title case reads as a name where the word is a given name somewhere: over-redaction, never a
+    // missed name.
+    for (const text of [
+      "Informe para Asma Infantil",
+      "Informe para Santa Casa",
+    ])
+      expect(send(text), text).toMatch(/\[NAME[^\]]*\]$/u);
   });
 
   it.each([

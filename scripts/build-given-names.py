@@ -31,7 +31,9 @@ refuses scripts, so it is downloaded by a person in a browser and given to
   a year are "<5" in Quebec's table and count as 2;
 - `scripts/given-names-exceptions.json` names the few names dropped by hand
   because they are ordinary words that do real harm as a gate, each with its
-  reason. Names that are also common words (Rose, May, Faith) are KEPT: a
+  reason. Group "all" is dropped from every list (words that are almost never
+  a name); a language group ("pl", "es") from that language's list only, so a
+  word that is a real given name elsewhere (Asma, Line, Santa) stays there. Names that are also common words (Rose, May, Faith) are KEPT: a
   missed name is the worse mistake.
 `--check` rebuilds in memory and fails when a data file differs.
 """
@@ -335,18 +337,13 @@ def build_all(raw: Path, ssa_zip: Path | None, today: str) -> dict[str, str]:
     exceptions_all = json.loads(EXCEPTIONS.read_text(encoding="utf-8"))
     files: dict[str, str] = {}
 
-    # The gate reads every list together, so a name dropped by hand is dropped from ALL of them (a
-    # name left in another language's list would bring it back): the exceptions of every language apply
-    # to every list. The `_note` key is not an exception.
-    merged_exceptions = {
-        name: reason
-        for lang, hand in exceptions_all.items()
-        if not lang.startswith("_")
-        for name, reason in hand.items()
-    }
+    # The gate reads every list together, so a word that does harm as a name in ANY language is in the
+    # "all" group and is dropped from every list; a language group is dropped from that list only (a
+    # word that is a real given name in another language stays there). `_note` is not a group.
+    everywhere = exceptions_all.get("all", {})
 
     def lang_exceptions(lang: str) -> dict[str, str]:
-        return merged_exceptions
+        return {**everywhere, **exceptions_all.get(lang, {})}
 
     def write(file: str, name: str, sources: list[str], names: list[str], dropped: dict, note: str) -> None:
         document = meta(name, sources, pins, {"names": names, "dropped": dropped}, note, today)

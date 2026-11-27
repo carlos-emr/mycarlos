@@ -101,11 +101,24 @@ class Spanish(unittest.TestCase):
             builder.add_ine(tally, b"")
         self.assertEqual(tally.counts, {"antonio": 627738, "jose": 300789, "maria": 100})
 
-    def test_an_exception_of_any_language_is_dropped_from_every_list(self):
-        # The exceptions file groups words by language, but the lists are read together.
+    def test_exceptions_are_global_only_for_words_that_are_never_a_name(self):
         hand = builder.json.loads(builder.EXCEPTIONS.read_text(encoding="utf-8"))
-        self.assertIn("salud", hand["es"])
+        groups = {key for key in hand if not key.startswith("_")}
+        self.assertEqual(groups, {"all", "es", "pl"})
+        # Care words almost never a name: dropped from every list.
+        for word in ["salud", "vida", "baby", "infant", "female"]:
+            self.assertIn(word, hand["all"], word)
+        # A word that is also a real given name elsewhere is dropped from its own language's list only,
+        # or not at all: Asma and Line stay (a missed name is the worse mistake).
         self.assertIn("inna", hand["pl"])
+        self.assertIn("santa", hand["es"])
+        for word in ["asma", "line", "inna", "santa"]:
+            self.assertNotIn(word, hand["all"], word)
+        for group in groups:
+            for word, reason in hand[group].items():
+                self.assertGreater(len(reason), 10, word)
+        for word in ["asma", "line"]:
+            self.assertTrue(all(word not in hand[group] for group in groups), word)
 
 
 class Readers(unittest.TestCase):

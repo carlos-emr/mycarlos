@@ -1,29 +1,25 @@
 {
-  "_note": "Names dropped by hand from EVERY list (the gate reads the lists together, so an exception of one language applies to all), each with its reason. Ordinary words that are also given names are KEPT (a missed name is the worse mistake); a name goes here only when it does real harm as a gate in a header such as 'Plan for X Y'. Keys are lower case; the language groups only say where a word was found.",
-  "en": {
+  "_note": "Names dropped by hand, each with its reason. Group \"all\": dropped from EVERY list, because the gate reads the lists together and a word left in another language's list would bring it back: care and everyday words that are almost never a name (baby, female, infant, walker, salud, vida ...). A language group (\"pl\", \"es\"): dropped from that language's list only: a word that is also a real given name in another list stays there, even where it is an ordinary word in the language of the group (Asma, Line, Santa): a missed name is the worse mistake, and the over-redaction of a title-case topic is a stated cost. Keys are lower case.",
+  "all": {
     "baby": "Ontario's registrations hold \"Baby\" for an unnamed newborn (22,709 births): a placeholder, not a name, and an everyday care word",
+    "elder": "an English care word (\"elder care\") held as a rare name",
     "female": "a care word (\"Screening for Female Patients\"), not a name",
-    "male": "a care word (\"Screening for Male Patients\"), not a name",
     "infant": "a care word (\"Care plan for Infant Feeding\"), not a name",
-    "walker": "a mobility aid (\"Assessment for Walker Use\")",
-    "ward": "a hospital ward (\"Plan for Ward Round\")",
+    "junior": "an English word held as a rare name (a suffix of a name, not a name)",
+    "male": "a care word (\"Screening for Male Patients\"), not a name",
     "not": "an ordinary word that registrations hold as a rare name",
     "real": "an ordinary word that registrations hold as a rare name",
-    "line": "\"line management\", \"line change\"; the French name Line stays in the French list"
-  },
-  "fr": {
-    "elder": "an English care word (\"elder care\") held as a rare name",
-    "junior": "an English word held as a rare name (a suffix of a name, not a name)"
+    "salud": "\"health\": \"Plan de cuidados para Salud Mental\", \"para Salud Pública\"; Salud as a name is rare next to the word",
+    "vida": "\"life\" in a title (\"Resumen para Vida Diaria\", \"Calidad de Vida\"), not a name",
+    "walker": "a mobility aid (\"Assessment for Walker Use\")",
+    "ward": "a hospital ward (\"Plan for Ward Round\")"
   },
   "pl": {
     "inna": "an ordinary Polish word (\"another\"); documented false positive in pasteBackForms.test.ts"
   },
   "es": {
-    "salud": "\"health\": \"Plan de cuidados para Salud Mental\", \"para Salud Pública\"; Salud as a name is rare next to the word",
-    "asma": "\"asthma\" in a title (\"Informe para Asma Infantil\"); the Arabic name Asma is rare",
-    "vida": "\"life\" in a title (\"Resumen para Vida Diaria\", \"Calidad de Vida\"), not a name",
-    "mama": "\"breast\" (\"Plan para Mama Derecha\"), not a name",
-    "santo": "\"saint\" in a place or institution (\"Plan para Santo Hospital\"), not a name",
-    "santa": "\"saint\" in a place or institution (\"Informe para Santa Casa\"), not a name"
+    "mama": "\"breast\" (\"Plan para Mama Derecha\"); Mama stays in the other lists where it is a name",
+    "santa": "\"saint\" in a Spanish place or institution (\"Informe para Santa Casa\"); Santa stays in the other languages' lists where it is a name",
+    "santo": "\"saint\" in a Spanish place or institution (\"Plan para Santo Hospital\"); Santo stays in the other lists where it is a name"
   }
 }
