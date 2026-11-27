@@ -9129,12 +9129,16 @@ mod tests {
         // A vault whose header cannot be read is unknown, not absent: nothing may be guessed.
         // Every header file there is is made unreadable in place (a removal goes only through
         // remove_owned_file, #71, which a test in this module cannot reach).
+        let mut damaged = 0;
         for name in ["header-0.json", "header-1.json", "header.json"] {
             let path = temp.path().join("other").join(name);
             if path.exists() {
                 std::fs::write(path, b"{").unwrap();
+                damaged += 1;
             }
         }
+        // The case is only this one if a header was there to damage.
+        assert!(damaged > 0, "the other vault has no header file to damage");
         assert_eq!(other.notice_key_vault(), vault::NoticeKeyVault::Unknown);
         assert_eq!(other_vault_ids(&this, &all), None);
     }
